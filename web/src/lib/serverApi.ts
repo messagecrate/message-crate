@@ -910,7 +910,7 @@ export function getImportContacts(
 
 // ── Export Runs ─────────────────────────────────────────────────────────────
 //
-// The desktop app pages a run's messages from its Rust side (`message-crate-pull`),
+// The desktop app pages a run's messages from its Rust side (`message-crate-export`),
 // so `GET /v1/exports/{id}/messages` has no function here.
 
 export function getExport(id: number, opts?: RequestOptions): Promise<Schema["ExportRun"]> {

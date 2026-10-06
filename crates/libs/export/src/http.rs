@@ -332,7 +332,7 @@ mod tests {
             &format!("http://127.0.0.1:{port}"),
             "mc_test",
             &ExportScope::Everything,
-            "message-crate-pull",
+            "message-crate-export",
         )
         .expect_err("nothing listens on that port");
         assert_eq!(err.to_string(), "Export Run start failed");
@@ -405,12 +405,12 @@ mod tests {
         };
         let body = serde_json::to_value(CreateExportBody {
             scope: &scope,
-            tool: "message-crate-pull",
+            tool: "message-crate-export",
         })
         .unwrap();
         assert_eq!(
             body,
-            serde_json::json!({ "scope": { "kind": "query", "list": "conversations", "q": "from:me" }, "tool": "message-crate-pull" })
+            serde_json::json!({ "scope": { "kind": "query", "list": "conversations", "q": "from:me" }, "tool": "message-crate-export" })
         );
     }
 

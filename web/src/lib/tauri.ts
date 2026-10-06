@@ -278,7 +278,7 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
  */
 export type ExportQueryList = components["schemas"]["ExportQueryList"];
 
-export interface PullConfig {
+export interface ExportConfig {
   base_url: string;
   token: string;
   out_dir: string;
@@ -290,8 +290,8 @@ export interface PullConfig {
 }
 
 /** Download conversations from a server into a directory. */
-export async function invokePull(config: PullConfig): Promise<void> {
-  return invoke("pull", {
+export async function invokeExport(config: ExportConfig): Promise<void> {
+  return invoke("export", {
     args: {
       baseUrl: config.base_url,
       token: config.token,
@@ -328,8 +328,8 @@ export type ExportFormat = (typeof EXPORT_FORMATS)[number]["id"];
 export interface ExportDir {
   /** Where the result lands unless another destination is chosen. */
   dir: string;
-  /** Where an Export pulls its JSON Lines before converting them. */
-  pulled: string;
+  /** Where an Export writes its JSON Lines before converting them. */
+  exported: string;
   /** Where an Export's conversion writes when the result lands in `dir`. */
   converting: string;
 }
@@ -632,7 +632,7 @@ export function parseTauriJobResult(summary: string): TauriJobResult {
       };
     }
   } catch {
-    // Format and pull jobs send a plain sentence, not JSON.
+    // Format and export jobs send a plain sentence, not JSON.
   }
   return { summary };
 }

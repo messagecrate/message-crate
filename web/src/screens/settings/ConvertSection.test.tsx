@@ -50,7 +50,7 @@ beforeEach(() => {
   tauriState.isTauri = true;
   invokeCreateExportDir.mockResolvedValue({
     dir: CONVERT_DIR,
-    pulled: `${CONVERT_DIR}/.pulled`,
+    exported: `${CONVERT_DIR}/.exported`,
     converting: `${CONVERT_DIR}/.converting`,
   });
   invokeFinishExportDir.mockResolvedValue(CONVERT_DIR);

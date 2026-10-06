@@ -1,8 +1,8 @@
 [package]
-name = "message-crate-pull"
+name = "message-crate-export"
 version = "0.1.0"
 edition = "2024"
-description = "Pull messages from a Message Crate export API into a message-ir directory"
+description = "Export messages from a Message Crate export API into a message-ir directory"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]

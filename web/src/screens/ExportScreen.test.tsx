@@ -8,7 +8,7 @@ import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
 
-const invokePull = vi.hoisted(() => vi.fn());
+const invokeExport = vi.hoisted(() => vi.fn());
 const invokeFormat = vi.hoisted(() => vi.fn());
 const invokeFinishExportDir = vi.hoisted(() => vi.fn());
 const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
@@ -24,7 +24,7 @@ vi.mock("../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/tauri")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
-    invokePull: (...args: unknown[]) => invokePull(...args),
+    invokeExport: (...args: unknown[]) => invokeExport(...args),
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
@@ -56,8 +56,8 @@ afterEach(() => {
 /** The directory the desktop makes for the export in the Export Directory. */
 const EXPORT_DIR = {
   dir: "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv",
-  pulled:
-    "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv/.pulled",
+  exported:
+    "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv/.exported",
   converting:
     "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv/.converting",
 };
@@ -108,29 +108,29 @@ async function exportAs(directory: string, formatLabel: string) {
 }
 
 describe("ExportScreen", () => {
-  it("pulls straight into the chosen directory for JSON Lines", async () => {
+  it("exports straight into the chosen directory for JSON Lines", async () => {
     await exportTo("/home/demo/out");
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // Everything is the scope the screen opens in without a query, and it
-    // sends a blank query, which message-crate-pull reads as the whole account.
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
-    // JSONL is what pull already writes, so there is nothing to convert. The
+    // sends a blank query, which message-crate-export reads as the whole account.
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
+    // JSONL is what an Export already writes, so there is nothing to convert. The
     // export's own directory is finished, which deletes it when it is empty.
     expect(invokeFormat).not.toHaveBeenCalled();
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
-  it("pulls JSON Lines into its own directory in the Export Directory when no directory is chosen", async () => {
+  it("exports JSON Lines into its own directory in the Export Directory when no directory is chosen", async () => {
     const user = setupUser();
     renderScreen();
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl", "");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
     expect(await screen.findByText(/Export complete/)).toHaveTextContent(
       `Export complete. JSON Lines (.jsonl) saved to ${EXPORT_DIR.dir}.`,
@@ -146,11 +146,11 @@ describe("ExportScreen", () => {
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.pulled });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.exported });
     // The conversion may not write into the directory that holds its input,
     // so it writes beside it and the finish moves the result up.
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({
-      input_dir: EXPORT_DIR.pulled,
+      input_dir: EXPORT_DIR.exported,
       output_dir: EXPORT_DIR.converting,
     });
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
@@ -159,14 +159,14 @@ describe("ExportScreen", () => {
     );
   });
 
-  it("pulls into the export's own directory and converts into the chosen directory for CSV", async () => {
-    const pulled = EXPORT_DIR.pulled;
+  it("exports into the export's own directory and converts into the chosen directory for CSV", async () => {
+    const exported = EXPORT_DIR.exported;
     await exportAs("/home/demo/out", "CSV (.csv)");
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: pulled });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: exported });
     expect(invokeFormat.mock.calls[0][0]).toEqual({
-      input_dir: pulled,
+      input_dir: exported,
       output_dir: "/home/demo/out",
       output_format: "csv",
       started_from: "export",
@@ -174,10 +174,10 @@ describe("ExportScreen", () => {
     });
   });
 
-  it("hands the conversion the time the Export Run started, before the pull", async () => {
-    let pulled = 0;
-    invokePull.mockImplementation(async () => {
-      pulled = Date.now();
+  it("hands the conversion the time the Export Run started, before the export step", async () => {
+    let exportStepAt = 0;
+    invokeExport.mockImplementation(async () => {
+      exportStepAt = Date.now();
     });
     const before = Date.now();
     await exportAs("/home/demo/out", "CSV (.csv)");
@@ -185,7 +185,7 @@ describe("ExportScreen", () => {
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     const started = invokeFormat.mock.calls[0][0].run_started_ms as number;
     expect(started).toBeGreaterThanOrEqual(before);
-    expect(started).toBeLessThanOrEqual(pulled);
+    expect(started).toBeLessThanOrEqual(exportStepAt);
   });
 
   it("starts nothing when the desktop refuses Save to for holding the Export Directory", async () => {
@@ -198,7 +198,7 @@ describe("ExportScreen", () => {
       await screen.findByText("/home/demo holds the Export Directory, where the export works."),
     ).toBeTruthy();
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "/home/demo");
-    expect(invokePull).not.toHaveBeenCalled();
+    expect(invokeExport).not.toHaveBeenCalled();
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
@@ -214,7 +214,7 @@ describe("ExportScreen", () => {
     // disk, in a directory the person never chose and will not think to look in.
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "pulled" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async () => {
       throw new Error("unsupported output format");
@@ -227,7 +227,7 @@ describe("ExportScreen", () => {
     expect(await screen.findByText("unsupported output format")).toBeTruthy();
   });
 
-  it("does not start the conversion when Cancel is pressed after the pull finished", async () => {
+  it("does not start the conversion when Cancel is pressed after the export step finished", async () => {
     // A Cancel sent while no job runs stops nothing, and invokeFormat starts
     // its job with a cancel flag of its own, so the screen must not start it.
     let releaseFormat: () => void = () => {};
@@ -236,7 +236,7 @@ describe("ExportScreen", () => {
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "pulled" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
@@ -253,8 +253,8 @@ describe("ExportScreen", () => {
     expect(invokeFormat).not.toHaveBeenCalled();
   });
 
-  it("keeps Convert off between the pull and the format step, and lets it start once the export ends", async () => {
-    // Each job holds the desktop only while it runs; between the pull and the
+  it("keeps Convert off between the export step and the format step, and lets it start once the export ends", async () => {
+    // Each job holds the desktop only while it runs; between the export step and the
     // format step the desktop has nothing running, so a Convert started there
     // would make it refuse the format step (#1407).
     let releaseFormat: () => void = () => {};
@@ -263,7 +263,7 @@ describe("ExportScreen", () => {
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "pulled" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
@@ -291,9 +291,9 @@ describe("ExportScreen", () => {
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    // The pull has ended and the format step has not started.
+    // The export step has ended and the format step has not started.
     await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
-    expect(invokePull).toHaveBeenCalledTimes(1);
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeFormat).not.toHaveBeenCalled();
     expect(currentDesktopJob()).toBe("Export");
     expect(convert).toBeDisabled();
@@ -317,13 +317,13 @@ describe("ExportScreen", () => {
 
   it("ignores a second Export while one is already under way", async () => {
     // The desktop backend runs one job at a time (src-tauri/src/commands/jobs.rs),
-    // and between the pull and the conversion it has nothing running to refuse.
-    let releasePull: () => void = () => {};
-    const pullStarted = new Promise<void>((resolve) => {
-      releasePull = resolve;
+    // and between the export step and the conversion it has nothing running to refuse.
+    let releaseExport: () => void = () => {};
+    const exportStarted = new Promise<void>((resolve) => {
+      releaseExport = resolve;
     });
     invokeCreateExportDir.mockImplementation(async () => {
-      await pullStarted;
+      await exportStarted;
       return EXPORT_DIR;
     });
 
@@ -341,10 +341,10 @@ describe("ExportScreen", () => {
     // itself 80 ms later. On a busy machine that lands after the first export
     // has ended and the button is live again, and starts a second one.
     fireEvent.click(exportButton);
-    releasePull();
+    releaseExport();
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokePull).toHaveBeenCalledTimes(1);
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledTimes(1);
   });
 
@@ -368,10 +368,10 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // A search typed here, with no hand-off, is for the Messages list.
     expect(screen.getByRole("button", { name: /Search in/ })).toHaveTextContent("Messages");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
   });
 
   it("opens in Search with the query it was given, and sends it", async () => {
@@ -391,9 +391,9 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // Sent as a Messages query, the server would refuse `messages:` (#959).
-    expect(invokePull.mock.calls[0][0]).toMatchObject({
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({
       query: "messages:>100 tag:Work",
       list: "conversations",
     });
@@ -409,12 +409,12 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
   });
 
   it("will not export a Search scope with a blank query", async () => {
-    // message-crate-pull reads a blank query as the whole account, which is not what
+    // message-crate-export reads a blank query as the whole account, which is not what
     // someone who chose Search and left the box empty asked for.
     const user = setupUser();
     renderScreen("from:me");
@@ -453,19 +453,19 @@ describe("ExportScreen", () => {
   });
 
   it("locks the directory field while an export runs", async () => {
-    let releasePull: () => void = () => {};
-    const pullHeld = new Promise<void>((resolve) => {
-      releasePull = resolve;
+    let releaseExport: () => void = () => {};
+    const exportHeld = new Promise<void>((resolve) => {
+      releaseExport = resolve;
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
-      await pullHeld;
+      await exportHeld;
       await invokeFn();
-      return { summary: "pulled" };
+      return { summary: "exported" };
     });
 
     await exportTo("/a");
     expect(screen.getByPlaceholderText("The Export Directory")).toBeDisabled();
-    releasePull();
+    releaseExport();
     await screen.findByText(/Export complete/);
     expect(screen.getByPlaceholderText("The Export Directory")).toBeEnabled();
   });

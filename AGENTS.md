@@ -262,7 +262,7 @@ message-crate
 │   ├── exporters/          # backup parsers (iMessage, WhatsApp, SMS, experimental)
 │   ├── helpers/            # imessage-reader (GPL helper process the app spawns) and its protocol
 │   ├── libs/               # shared libraries (ir, ir-format, reexport, contacts, media,
-│   │                       #   message-crate-push, message-crate-pull, …)
+│   │                       #   message-crate-push, message-crate-export, …)
 │   └── server/             # message-crate-server (HTTP API + SQLite) and demo-seed
 ├── docker/                 # Dockerfile and Compose for a release-shaped server image
 ├── docs/                   # Astro Starlight site (messagecrate.app)
@@ -277,7 +277,7 @@ message-crate
 ├── src-tauri/              # Tauri v2 native shell (not a workspace member)
 │   ├── capabilities/       # Tauri permission manifests
 │   ├── icons/              # desktop app icons
-│   └── src/                # Tauri commands wrapping exporters / push / pull
+│   └── src/                # Tauri commands wrapping exporters / push / export
 ├── staging/                # empty; the release Compose file mounts it for JSONL imports
 ├── tests/
 │   └── fixtures/           # committed schema and search fixtures (no personal backups)

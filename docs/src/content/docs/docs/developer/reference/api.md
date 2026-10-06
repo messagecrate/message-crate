@@ -9,7 +9,7 @@ Three places describe the server's `/v1` interface, and this page is the smalles
 - The [HTTP interface rules](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/http-api.md) state what every route must do, each rule with its reason: route shape, lists and paging, failures as problem documents, credentials and what each reaches, and runs.
 - This page walks through an Import Run and an Export Run from start to finish, and lists the words of the search language.
 
-Day-to-day import uses the desktop [Import](/docs/user/features/messages/import/) screen and download uses [Export](/docs/user/features/messages/export/). Both call this API with [JSONL](/docs/developer/reference/export-structure/) and attachment bytes keyed by SHA-256, through the `message-crate-push` and `message-crate-pull` libraries.
+Day-to-day import uses the desktop [Import](/docs/user/features/messages/import/) screen and download uses [Export](/docs/user/features/messages/export/). Both call this API with [JSONL](/docs/developer/reference/export-structure/) and attachment bytes keyed by SHA-256, through the `message-crate-push` and `message-crate-export` libraries.
 
 ## Tokens
 
@@ -62,7 +62,7 @@ A batch holds one pooled database connection for the whole of its work: parsing 
 Every export is an Export Run, and there is no unrecorded export. `POST /v1/exports` creates one and answers `201 Created` with the run: what was asked for, and the four counts the server computed for it at creation — messages, conversations, distinct attachments, and their bytes. The body names a `scope` in one of three forms, stored as given, and an optional `tool`:
 
 ```json title="POST /v1/exports"
-{ "scope": { "kind": "everything" }, "tool": "message-crate-pull" }
+{ "scope": { "kind": "everything" }, "tool": "message-crate-export" }
 { "scope": { "kind": "query", "list": "messages", "q": "from:me date:>2024" } }
 { "scope": { "kind": "query", "list": "conversations", "q": "messages:>100" } }
 { "scope": { "kind": "selection", "conversation_ids": [12, 40], "message_ids": [913] } }

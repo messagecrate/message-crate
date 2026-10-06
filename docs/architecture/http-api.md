@@ -440,7 +440,7 @@ security scheme with its scopes, so every route says which it accepts.
   with a session) or by its expiry, never by the program holding it.
 - `GET /v1/session` answers whose credential the caller holds — the account's
   id and username — for a session or a token. Why: a program holding a token
-  needs to know which account it writes to before it starts, and push and pull
+  needs to know which account it writes to before it starts, and push and export
   label their work with it. `DELETE /v1/session` refuses a token with `403`,
   because a token is not a Session and a `204` would say something ended when
   nothing did.

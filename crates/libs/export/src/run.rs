@@ -14,7 +14,7 @@ use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
-use crate::journal::{self, PullJournalEvent, PullJournalState, ServerTarget};
+use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
@@ -24,7 +24,7 @@ pub const DEFAULT_PAGE_LIMIT: usize = 500;
 /// The largest page the server will hand back for `GET /v1/exports/{id}/messages`.
 pub const MAX_PAGE_LIMIT: usize = 500;
 /// The `tool` every run this crate creates is recorded under.
-pub const TOOL_NAME: &str = "message-crate-pull";
+pub const TOOL_NAME: &str = "message-crate-export";
 /// Default number of workers that fetch Assets in parallel.
 pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
 /// Extra tries for transient HTTP failures, matching the message-crate-push default.
@@ -32,7 +32,7 @@ const MAX_RETRIES: u32 = 3;
 
 /// Settings for one Export Run (output directory, URL, search, flags).
 #[derive(Debug, Clone)]
-pub struct PullConfig {
+pub struct ExportConfig {
     /// Directory the JSON Lines files and attachments are written into.
     pub out_dir: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
@@ -61,7 +61,7 @@ pub struct PullConfig {
 /// Final summary of an Export Run: conversations, messages, and the Assets
 /// fetched and kept.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct PullReport {
+pub struct ExportReport {
     /// Account id the token resolved to.
     pub account: i64,
     /// The Export Run the server recorded for this export.
@@ -104,7 +104,7 @@ pub enum ProgressEvent {
         total_so_far: u64,
     },
     /// The run finished; the report is final.
-    Done(PullReport),
+    Done(ExportReport),
 }
 
 /// Callback type for live progress (desktop log panel, tests).
@@ -163,23 +163,26 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 /// Export the matching messages into `cfg.out_dir` as JSON Lines plus attachments.
 ///
 /// JSON Lines means one JSON object per line. A local journal
-/// (`.message-crate-pull-state.jsonl`) records which Assets were already fetched so a
+/// (`.message-crate-export-state.jsonl`) records which Assets were already fetched so a
 /// later run can skip them.
 ///
 /// # Errors
 ///
 /// Returns an error when the session token or output directory is missing, login fails, a
 /// page or Asset fetch fails, or a conversation file cannot be written.
-pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Result<PullReport> {
+pub fn run(
+    cfg: &ExportConfig,
+    mut on_progress: Option<&mut ProgressFn<'_>>,
+) -> Result<ExportReport> {
     if cfg.token.trim().is_empty() {
         bail!("session token is required");
     }
     if cfg.out_dir.as_os_str().is_empty() {
         bail!("output directory is required");
     }
-    let pull = Pull::login(cfg, &mut on_progress)?;
+    let exporter = Export::login(cfg, &mut on_progress)?;
     prepare_out_dir(&cfg.out_dir, cfg.skip_attachments)?;
-    if pull.journal.export_complete {
+    if exporter.journal.export_complete {
         emit(
             &mut on_progress,
             ProgressEvent::Log(
@@ -190,8 +193,8 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
 
     // Nothing is recorded for a run the caller already gave up on.
     check_cancel(cfg.cancel.as_ref())?;
-    let export = pull.start_export(&mut on_progress)?;
-    let outcome = pull.export_into_directory(&export, &mut on_progress);
+    let export = exporter.start_export(&mut on_progress)?;
+    let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
     // it ended. A close that fails after the files are written is a warning,
     // not a failed export: the directory is complete, only the record is not.
@@ -200,7 +203,7 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     } else {
         CloseAction::Cancel
     };
-    if let Err(error) = pull.close_export(export.id, action) {
+    if let Err(error) = exporter.close_export(export.id, action) {
         // A refused completion follows a run whose files are all written; a
         // refused cancellation follows the failure the run returns below.
         let line = match action {
@@ -216,10 +219,10 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
         refused_paths,
     } = outcome?;
 
-    let report = PullReport {
-        account: pull.account,
+    let report = ExportReport {
+        account: exporter.account,
         export_id: export.id,
-        query: pull.query,
+        query: exporter.query,
         conversations,
         messages,
         assets_fetched: assets.fetched,
@@ -273,8 +276,8 @@ struct Written {
 
 /// One authenticated Export Run: the connection, the account it resolved
 /// to, and the local journal of files already on disk.
-struct Pull<'a> {
-    cfg: &'a PullConfig,
+struct Export<'a> {
+    cfg: &'a ExportConfig,
     session: HttpSession,
     account: i64,
     /// The server and account this Export Run's journal lines belong to.
@@ -282,16 +285,16 @@ struct Pull<'a> {
     /// The search query with surrounding whitespace removed.
     query: String,
     journal_path: PathBuf,
-    journal: PullJournalState,
+    journal: ExportJournalState,
 }
 
-impl<'a> Pull<'a> {
+impl<'a> Export<'a> {
     /// Check the token, announce the account and query, and load the journal.
     ///
     /// # Errors
     ///
     /// Returns an error when login fails or the journal cannot be read.
-    fn login(cfg: &'a PullConfig, out: &mut Option<&mut ProgressFn<'_>>) -> Result<Self> {
+    fn login(cfg: &'a ExportConfig, out: &mut Option<&mut ProgressFn<'_>>) -> Result<Self> {
         let auth = authenticate(&cfg.base_url, &cfg.token).map_err(|e| anyhow::anyhow!("{e}"))?;
         let account = auth.account_id;
         let username = auth.username;
@@ -561,7 +564,7 @@ impl<'a> Pull<'a> {
         };
         for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
-                let event = PullJournalEvent::AssetOk {
+                let event = ExportJournalEvent::AssetOk {
                     target: self.target.clone(),
                     sha256: sha.clone(),
                 };
@@ -571,7 +574,7 @@ impl<'a> Pull<'a> {
                         ProgressEvent::Log(format!(
                             "Asset {sha} could not be added to {}, the record of \
                              fetched Assets: {error:#}",
-                            journal::PULL_JOURNAL_NAME
+                            journal::EXPORT_JOURNAL_NAME
                         )),
                     );
                 }
@@ -631,7 +634,7 @@ impl<'a> Pull<'a> {
         assets: &AssetCounts,
         seen_assets: HashMap<String, String>,
     ) {
-        let event = PullJournalEvent::ExportComplete {
+        let event = ExportJournalEvent::ExportComplete {
             target: self.target.clone(),
             conversations,
             messages,
@@ -642,13 +645,13 @@ impl<'a> Pull<'a> {
                 out,
                 ProgressEvent::Log(format!(
                     "Export Run {export_id} could not be recorded as finished in {}: {error:#}",
-                    journal::PULL_JOURNAL_NAME
+                    journal::EXPORT_JOURNAL_NAME
                 )),
             );
         }
         let mut recorded_assets = self.journal.assets.clone();
         recorded_assets.extend(seen_assets.into_keys());
-        let final_state = PullJournalState {
+        let final_state = ExportJournalState {
             assets: recorded_assets,
             export_complete: true,
         };
@@ -657,7 +660,7 @@ impl<'a> Pull<'a> {
                 out,
                 ProgressEvent::Log(format!(
                     "{} could not be rewritten in its shortest form: {error:#}",
-                    journal::PULL_JOURNAL_NAME
+                    journal::EXPORT_JOURNAL_NAME
                 )),
             );
         }
@@ -899,7 +902,7 @@ mod out_dir_tests {
         // clean an exported directory, so an export that staged into one would
         // leave the run directory behind.
         let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("pulled");
+        let out = dir.path().join("exported");
 
         prepare_out_dir(&out, false).unwrap();
 
@@ -923,7 +926,7 @@ mod out_dir_tests {
     fn runs_again_over_a_directory_it_already_prepared() {
         // A second export into the same directory is a later Export Run over it.
         let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("pulled");
+        let out = dir.path().join("exported");
 
         prepare_out_dir(&out, false).unwrap();
         prepare_out_dir(&out, false).unwrap();

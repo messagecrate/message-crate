@@ -1,30 +1,30 @@
-//! `pull` command — export messages from a Message Crate server.
+//! `export` command — export messages from a Message Crate server.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use message_crate_core::count_of;
-use message_crate_pull::{
-    DEFAULT_ASSET_FETCH_WORKERS, DEFAULT_PAGE_LIMIT, ExportQueryList, ProgressEvent, PullConfig,
-    run as run_pull,
+use message_crate_export::{
+    DEFAULT_ASSET_FETCH_WORKERS, DEFAULT_PAGE_LIMIT, ExportConfig, ExportQueryList, ProgressEvent,
+    run as run_export,
 };
 
 use super::events;
 use super::jobs::{spawn_job, start_job};
 use crate::state::{AppState, JobName};
 
-/// User-facing parameters for the `pull` command.
+/// User-facing parameters for the `export` command.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PullArgs {
+pub struct ExportArgs {
     /// Base URL of the server, for example `http://127.0.0.1:8080`.
     pub base_url: String,
     /// The logged-in Session's token, sent as the bearer token. Never an API
     /// Token, and never a password.
     pub token: String,
-    /// Directory the pulled conversation files are written into.
+    /// Directory the exported conversation files are written into.
     pub out_dir: String,
-    /// Search query selecting what to pull. Blank pulls everything.
+    /// Search query selecting what to export. Blank exports everything.
     pub query: String,
     /// The list the query is for, `conversations` or `messages`: every
     /// message of the conversations the query shows, or the messages it
@@ -46,17 +46,17 @@ pub struct PullArgs {
 /// while holding the shared state lock. Failures during the Export are
 /// sent as `extract:error`.
 #[tauri::command(async)]
-pub fn pull(
+pub fn export(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     app: tauri::AppHandle,
-    args: PullArgs,
+    args: ExportArgs,
 ) -> Result<(), String> {
     let job = start_job(&state, JobName::Export)?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
     spawn_job(app, job, move || {
-        let cfg = PullConfig {
+        let cfg = ExportConfig {
             out_dir: PathBuf::from(&args.out_dir),
             base_url: args.base_url,
             token: args.token,
@@ -86,7 +86,7 @@ pub fn pull(
             ProgressEvent::Done(_) => {}
         };
 
-        let report = run_pull(&cfg, Some(&mut progress))?;
+        let report = run_export(&cfg, Some(&mut progress))?;
         Ok(finished_line(report.messages, report.conversations))
     });
 

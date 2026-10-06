@@ -1,6 +1,6 @@
 //! Local log of which Assets an Export from a server already fetched.
 //!
-//! The file is `.message-crate-pull-state.jsonl`. JSON Lines means one JSON object per
+//! The file is `.message-crate-export-state.jsonl`. JSON Lines means one JSON object per
 //! line. A later Export Run can skip Assets that are already on disk.
 
 use std::collections::HashSet;
@@ -13,12 +13,12 @@ pub use jsonl_journal::ServerTarget;
 use serde::{Deserialize, Serialize};
 
 /// Filename of the journal, written in the output directory.
-pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
+pub const EXPORT_JOURNAL_NAME: &str = ".message-crate-export-state.jsonl";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
-/// One row in `.message-crate-pull-state.jsonl`.
-pub enum PullJournalEvent {
+/// One row in `.message-crate-export-state.jsonl`.
+pub enum ExportJournalEvent {
     /// One Asset is on disk, so a later run can skip fetching it.
     AssetOk {
         /// Server and account the Asset came from.
@@ -44,16 +44,16 @@ pub enum PullJournalEvent {
 
 #[derive(Debug, Default)]
 /// Skip sets rebuilt from the journal for one [`ServerTarget`].
-pub struct PullJournalState {
+pub struct ExportJournalState {
     /// SHA-256 fingerprints (hex of the file bytes) of attachments already on disk.
     pub assets: HashSet<String>,
     /// True if the last run finished cleanly (an `export_complete` event was written).
     pub export_complete: bool,
 }
 
-/// Path of `.message-crate-pull-state.jsonl` inside the output directory.
+/// Path of `.message-crate-export-state.jsonl` inside the output directory.
 pub fn journal_path(out_dir: &Path) -> PathBuf {
-    out_dir.join(PULL_JOURNAL_NAME)
+    out_dir.join(EXPORT_JOURNAL_NAME)
 }
 
 /// The Export's log line for a line of the journal that could not be read.
@@ -83,18 +83,18 @@ pub fn load(
     path: &Path,
     target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
-) -> Result<PullJournalState> {
-    let mut state = PullJournalState::default();
-    let events: Vec<PullJournalEvent> =
-        jsonl_journal::load_events("pull journal", path, &mut |line, error| {
+) -> Result<ExportJournalState> {
+    let mut state = ExportJournalState::default();
+    let events: Vec<ExportJournalEvent> =
+        jsonl_journal::load_events("export journal", path, &mut |line, error| {
             on_unreadable(unreadable_line_sentence(path, line, error));
         })?;
     for event in events.into_iter().filter(|event| event.target() == target) {
         match event {
-            PullJournalEvent::AssetOk { sha256, .. } => {
+            ExportJournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
-            PullJournalEvent::ExportComplete { .. } => state.export_complete = true,
+            ExportJournalEvent::ExportComplete { .. } => state.export_complete = true,
         }
     }
     Ok(state)
@@ -106,8 +106,8 @@ pub fn load(
 ///
 /// Returns an error when the parent directory cannot be created, the file cannot
 /// be opened, or the write fails.
-pub fn append(path: &Path, event: &PullJournalEvent) -> Result<()> {
-    jsonl_journal::append("pull journal", path, event)
+pub fn append(path: &Path, event: &ExportJournalEvent) -> Result<()> {
+    jsonl_journal::append("export journal", path, event)
 }
 
 /// Rewrite the lines of `target` from in-memory `state`, and keep every line
@@ -120,16 +120,16 @@ pub fn append(path: &Path, event: &PullJournalEvent) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error when the temporary file cannot be written or the rename fails.
-pub fn compact(path: &Path, target: &ServerTarget, state: &PullJournalState) -> Result<()> {
-    jsonl_journal::compact_with::<PullJournalEvent, _>("pull journal", path, |read| {
-        let mut events: Vec<PullJournalEvent> = read
+pub fn compact(path: &Path, target: &ServerTarget, state: &ExportJournalState) -> Result<()> {
+    jsonl_journal::compact_with::<ExportJournalEvent, _>("export journal", path, |read| {
+        let mut events: Vec<ExportJournalEvent> = read
             .into_iter()
             .filter(|event| event.target() != target)
             .collect();
         let mut assets: Vec<_> = state.assets.iter().collect();
         assets.sort_unstable();
         for sha in assets {
-            events.push(PullJournalEvent::AssetOk {
+            events.push(ExportJournalEvent::AssetOk {
                 target: target.clone(),
                 sha256: sha.clone(),
             });
@@ -137,7 +137,7 @@ pub fn compact(path: &Path, target: &ServerTarget, state: &PullJournalState) -> 
         if state.export_complete {
             // A later Export Run ignores the counts; an `export_complete` row
             // only means the last Export Run finished.
-            events.push(PullJournalEvent::ExportComplete {
+            events.push(ExportJournalEvent::ExportComplete {
                 target: target.clone(),
                 conversations: 0,
                 messages: 0,
@@ -148,7 +148,7 @@ pub fn compact(path: &Path, target: &ServerTarget, state: &PullJournalState) -> 
     })
 }
 
-impl PullJournalEvent {
+impl ExportJournalEvent {
     /// The server and account of the run that wrote this line.
     fn target(&self) -> &ServerTarget {
         match self {
@@ -169,7 +169,7 @@ mod tests {
     #[test]
     fn loads_asset_and_export_complete_events() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
         fs::write(
             &path,
             concat!(
@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn filters_by_url_and_username() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
         fs::write(
             &path,
             concat!(
@@ -218,8 +218,8 @@ mod tests {
     #[test]
     fn compact_sorts_assets_and_rewrites() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
-        let mut state = PullJournalState::default();
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
+        let mut state = ExportJournalState::default();
         state.assets.insert("ccc".into());
         state.assets.insert("aaa".into());
         state.assets.insert("bbb".into());
@@ -235,18 +235,18 @@ mod tests {
         assert!(reloaded.export_complete);
     }
 
-    /// `append` is what a pull actually calls, once per Asset, and nothing
+    /// `append` is what an Export Run actually calls, once per Asset, and nothing
     /// called it: every test here wrote the file by hand or went through
     /// `compact`. Replacing it with a no-op made a later Export Run start
     /// from nothing and fetch every Asset again, with the suite green.
     #[test]
     fn appended_events_are_on_disk_and_load_back() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
 
         append(
             &path,
-            &PullJournalEvent::AssetOk {
+            &ExportJournalEvent::AssetOk {
                 target: alice(),
                 sha256: "aaa".into(),
             },
@@ -261,7 +261,7 @@ mod tests {
 
         append(
             &path,
-            &PullJournalEvent::AssetOk {
+            &ExportJournalEvent::AssetOk {
                 target: alice(),
                 sha256: "bbb".into(),
             },
@@ -284,17 +284,17 @@ mod tests {
         );
     }
 
-    /// The parent directory is created on the way. A pull writing its first
+    /// The parent directory is created on the way. An Export Run writing its first
     /// journal into a fresh output directory would otherwise fail on the very
     /// first asset.
     #[test]
     fn appending_creates_the_directory_it_needs() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("not-yet").join(PULL_JOURNAL_NAME);
+        let path = dir.path().join("not-yet").join(EXPORT_JOURNAL_NAME);
 
         append(
             &path,
-            &PullJournalEvent::AssetOk {
+            &ExportJournalEvent::AssetOk {
                 target: alice(),
                 sha256: "aaa".into(),
             },
@@ -318,7 +318,7 @@ mod tests {
     #[test]
     fn an_unreadable_line_is_skipped_and_named_by_its_line_in_the_file() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
         fs::write(
             &path,
             concat!(
@@ -354,15 +354,15 @@ mod tests {
     #[test]
     fn compact_keeps_the_lines_of_every_other_server_and_account() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
         let alice_a = ServerTarget::new("http://server-a", "alice");
         let bob_a = ServerTarget::new("http://server-a", "bob");
         let alice_b = ServerTarget::new("http://server-b", "alice");
-        let asset = |target: &ServerTarget, sha256: &str| PullJournalEvent::AssetOk {
+        let asset = |target: &ServerTarget, sha256: &str| ExportJournalEvent::AssetOk {
             target: target.clone(),
             sha256: sha256.into(),
         };
-        let complete = |target: &ServerTarget| PullJournalEvent::ExportComplete {
+        let complete = |target: &ServerTarget| ExportJournalEvent::ExportComplete {
             target: target.clone(),
             conversations: 1,
             messages: 1,
@@ -377,7 +377,7 @@ mod tests {
         ] {
             append(&path, &event).unwrap();
         }
-        let mut state = PullJournalState::default();
+        let mut state = ExportJournalState::default();
         state.assets.insert("ccc".into());
         state.assets.insert("ddd".into());
         state.export_complete = true;
@@ -405,10 +405,10 @@ mod tests {
     #[test]
     fn each_event_writes_its_target_as_url_and_username_keys() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let path = dir.path().join(EXPORT_JOURNAL_NAME);
         append(
             &path,
-            &PullJournalEvent::AssetOk {
+            &ExportJournalEvent::AssetOk {
                 target: alice(),
                 sha256: "aaa".into(),
             },
@@ -416,7 +416,7 @@ mod tests {
         .unwrap();
         append(
             &path,
-            &PullJournalEvent::ExportComplete {
+            &ExportJournalEvent::ExportComplete {
                 target: alice(),
                 conversations: 2,
                 messages: 3,
