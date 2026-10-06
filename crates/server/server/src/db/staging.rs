@@ -628,10 +628,10 @@ pub async fn take_staged_copy_from_later_backup(
 }
 
 /// Give the staged message `staged` the mark `deletion` of another copy of
-/// it from the same import, when one of the two backups has no date: a
+/// it from the same import, when the two backups' dates cannot decide
+/// ([`later_backup`]): a
 /// copy that carries a mark adds it, and one with none leaves the staged
-/// mark, as [`promote_deletion_marks`] does for a stored message. Returns
-/// whether the mark changed.
+/// mark, as [`promote_deletion_marks`] does for a stored message.
 ///
 /// # Errors
 ///
@@ -640,15 +640,13 @@ pub async fn add_staged_copy_mark(
     conn: &mut SqliteConnection,
     staged: i64,
     deletion: message_ir::Deletion,
-) -> Result<bool> {
-    let done = sqlx::query(
-        "UPDATE staging_messages SET deletion = $1 WHERE id = $2 AND deletion IS NOT $1",
-    )
-    .bind(deletion.as_str())
-    .bind(staged)
-    .execute(&mut *conn)
-    .await?;
-    Ok(done.rows_affected() == 1)
+) -> Result<()> {
+    sqlx::query("UPDATE staging_messages SET deletion = $1 WHERE id = $2")
+        .bind(deletion.as_str())
+        .bind(staged)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }
 
 /// Give the staged message `staged` the text `body` and the earlier
@@ -1235,17 +1233,37 @@ pub async fn write_message_map(
 /// Whether a staged copy of a message comes from a later backup than the
 /// copy held, as an SQL expression over the two backups' dates `staged` and
 /// `held`: true when both have a date and the staged one is later, false
-/// when both have one and it is not, and NULL when either has none. NULL
-/// means the dates cannot decide, and the caller falls back on the rule for
-/// files without a date. The one rule for which of two copies of a message
-/// from one source is the later backup, for a stored message
-/// ([`promote_deletion_marks`], [`write_edit_map`]) and, in Rust, for two
-/// copies staged in one import (`imports_api::staging`).
+/// when both have one and it is earlier, and NULL when either has none or
+/// the two are equal. NULL means the dates cannot decide, and the caller
+/// falls back on the rule for files without a date. Equal dates are the
+/// same backup read again, where that rule changes nothing because the two
+/// copies agree, or two reads of one Mac's `chat.db` within one second,
+/// where it adds a mark and takes a later edit as it would with no dates.
+/// The one rule for which of two copies of a message from one source is
+/// the later backup, for a stored message ([`promote_deletion_marks`],
+/// [`write_edit_map`]) and, in Rust ([`later_backup`]), for two copies
+/// staged in one import (`imports_api::staging`).
 ///
 /// Both dates have one fixed whole-second UTC form
-/// (`models::conversation_from_ir`), so the text orders as the time.
+/// (`models::conversation_from_ir`), so the text orders as the time, and
+/// two backups are told apart to the second.
 fn later_backup_sql(staged: &str, held: &str) -> String {
-    format!("CASE WHEN {staged} IS NOT NULL AND {held} IS NOT NULL THEN {staged} > {held} END")
+    format!(
+        "CASE WHEN {staged} IS NOT NULL AND {held} IS NOT NULL AND {staged} <> {held} \
+             THEN {staged} > {held} END"
+    )
+}
+
+/// [`later_backup_sql`]'s rule in Rust, for two copies of a message staged
+/// in one import: `Some(true)` when the copy `staged` comes from a later
+/// backup than the copy `held`, `Some(false)` when from an earlier one, and
+/// `None` when either has no date or the two are equal.
+#[must_use]
+pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> Option<bool> {
+    match (staged, held) {
+        (Some(staged), Some(held)) if staged != held => Some(staged > held),
+        _ => None,
+    }
 }
 
 /// Give each stored message the mark its staged row carries, through
@@ -1256,10 +1274,10 @@ fn later_backup_sql(staged: &str, held: &str) -> String {
 /// When both the staged row's backup and the stored message's have a date
 /// ([`later_backup_sql`]), the later backup decides: a staged row from a
 /// later backup gives its mark or clears the one held, and one from an
-/// earlier or the same backup changes nothing. When either has no date, a
-/// staged row with no mark leaves the stored mark as it is: a backup that
-/// does not say a message was deleted does not say it was restored, and
-/// nothing says which backup is newer.
+/// earlier backup changes nothing. When either has no date, or the two are
+/// equal, a staged row with no mark leaves the stored mark as it is: a
+/// backup that does not say a message was deleted does not say it was
+/// restored, and nothing says which backup is newer.
 ///
 /// Each message whose mark changes is named in `_promote_mark_map`, so the
 /// search index follows the mark when the promotion indexes
@@ -1364,8 +1382,8 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 /// When both backups have a date ([`later_backup_sql`]), a staged row from
 /// a later backup gives its text and earlier versions whatever their times
 /// say, when either differs from what the message holds (#1804); one from
-/// an earlier or the same backup gives nothing. When either has no date,
-/// the staged row gives them when it records a later edit
+/// an earlier backup gives nothing. When either has no date, or the two
+/// are equal, the staged row gives them when it records a later edit
 /// ([`later_edit_sql`]).
 ///
 /// An append skips a message production already holds, so a later backup in

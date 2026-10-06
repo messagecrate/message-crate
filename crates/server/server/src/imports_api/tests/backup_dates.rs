@@ -196,6 +196,33 @@ async fn a_later_backup_that_clears_an_unsent_mark_makes_the_text_searchable() {
     }
 }
 
+/// Two files with the same backup date, as two reads of one Mac's
+/// `chat.db` within one second give: the date cannot say which is newer,
+/// so the rules for files without one hold, and the mark one of them
+/// carries is added in every order rather than lost to the other.
+#[tokio::test]
+async fn equal_backup_dates_fall_back_to_the_rules_for_files_without_one() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup: Some(LATER_BACKUP),
+                text: "read twice",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let unmarked = file("unmarked-same.jsonl", None);
+    let marked = file("marked-same.jsonl", Some(Deletion::Unsent));
+    for held in every_order(tmp.path(), "same-date", [&unmarked, &marked]).await {
+        assert_eq!(held.deletion.as_deref(), Some("unsent"), "{held:?}");
+        assert_eq!(held.backup_taken_at.as_deref(), Some(LATER_BACKUP_AT));
+    }
+}
+
 /// The scenario of #1804: backup A lists part 1's earlier versions
 /// [x@t0, y@t100]; backup B, made later, after part 1 was unsent (which
 /// drops its versions) and part 0 was edited, lists part 0's [a@t0] only.
