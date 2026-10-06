@@ -449,7 +449,9 @@ the millisecond or in whole seconds (`time_precision` in the conversation
 file, `messages.time_precision`). The dedupe hides a whole-second message as
 the duplicate of a message from the same source that matches it in
 everything else and has milliseconds in the same second, so the message is
-shown once, with its milliseconds. The content key stays at whole seconds,
+shown once. It is shown with its milliseconds unless another source holds it
+too and that source's copy wins the cross-source comparison (`pick_winner`,
+which ranks by attachments and then import order, not precision). The content key stays at whole seconds,
 so the two share a key, and the exact pass sets the whole-second copy aside
 before it compares sources (`content_key_group_flags` in `dedupe.rs`). A
 source that holds a message only in whole seconds, or only with

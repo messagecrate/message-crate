@@ -626,7 +626,9 @@ async fn flag_exact_content_key_dupes(
 /// beside one timed by `X-smssync-date`). The rest are flagged by
 /// [`exact_group_flags`] when two or more sources hold them, and each twin
 /// is hidden under the rest's winner, which is always shown, so the message
-/// is shown once and with its milliseconds. A source that holds the
+/// is shown once. It keeps its milliseconds unless another source's copy
+/// wins the cross-source comparison, as one whole-second source imported
+/// first does. A source that holds the
 /// message only in whole seconds keeps every copy, as one that holds it
 /// only with milliseconds does.
 fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
