@@ -47,7 +47,7 @@ released versions carry their date on the heading.
   be read in full: …` before.
 - 2026-10-05: **The server picks the order of the Messages list.** With no
   `sort`, `GET /v1/messages` now puts the best match first when the search
-  has a plain word to rank by, and the newest message first when it has
+  has a free-text word to rank by, and the newest message first when it has
   none. It used to list the oldest first. Each page says which order it
   applied and which words it ranks by, in a new `search` key beside `items`,
   and the web app reads both from there: the sort menu offers Relevance only
