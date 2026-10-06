@@ -1290,8 +1290,9 @@ describe("useImportJob wiring", () => {
   });
 
   describe("an earlier part's Staging row about one conversation (#1688)", () => {
-    // Part 1 records p.jpg as not decrypted while it writes c.jsonl, and the
-    // app closes before c.jsonl is written to the end.
+    // Part 1 records p.jpg as not decrypted while it writes c.jsonl. The
+    // record it writes then, before any `extract:file-written` for c.jsonl,
+    // is what the run directory holds if the app closes at that moment.
     const notDecryptedEvent: ImportIssueEvent = {
       kind: "error",
       step: "attachments",
@@ -1308,8 +1309,9 @@ describe("useImportJob wiring", () => {
     };
 
     /**
-     * Part 1: a Staging that records the row and is still writing c.jsonl
-     * when the app closes. Returns the record the run directory held then.
+     * Part 1: a Staging that records the row and never announces c.jsonl as
+     * written. Returns the record written once the row arrived, which is
+     * what an app that closed then would leave in the run directory.
      */
     async function firstPartThatCloses(): Promise<Record<string, unknown>> {
       const seen: { record?: Record<string, unknown> } = {};
@@ -1358,7 +1360,7 @@ describe("useImportJob wiring", () => {
 
     async function resumeAndComplete(status: "written" | "skipped") {
       const leftByPart1 = await firstPartThatCloses();
-      // The row waits apart: c.jsonl was not written when the app closed.
+      // The row waits apart: c.jsonl was not yet written.
       expect(leftByPart1).toEqual(
         expect.objectContaining({ issues: [], lastStopIssues: [notDecrypted] }),
       );
