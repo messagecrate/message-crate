@@ -111,14 +111,14 @@ pub(crate) fn headroom_shortfall(needed: u64, available: u64, disk: Disk) -> Opt
     })
 }
 
-/// The error for a write into the Scratch Directory that ran out of room
-/// part-way, where no check could measure what it needed first. It opens as
+/// The error for a write into the Scratch Directory that found its disk
+/// full, where no check could measure what it needed first. It opens as
 /// [`check_headroom`]'s sentence for that disk does, so the person reads the
 /// same words whichever way the disk ran short.
 pub fn scratch_disk_full() -> anyhow::Error {
     anyhow::anyhow!(
-        "{}: it filled up while this backup was being read. Free some space on that \
-         disk and run the import again.",
+        "{}: there was no room left to finish reading this backup. Free some space \
+         on that disk and run the import again.",
         not_enough_space(Disk::Scratch)
     )
 }

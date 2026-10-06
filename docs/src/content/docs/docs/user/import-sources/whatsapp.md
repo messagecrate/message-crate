@@ -41,7 +41,7 @@ The phone number the WhatsApp account is registered to is also required, because
 Staging has `wtsexporter` decrypt `msgstore.db.crypt15` into the Scratch Directory, `scratch` in the operating system's app-data directory, while it reads the backup.
 The decrypted database is larger than the `.crypt15` file, because the backup is compressed, and for a long-used WhatsApp account it can run to several GB.
 Nothing knows that size before the database is written, so Staging can't check for room first, as it does for every other backup.
-A disk that is full, or fills part-way, stops the run with `Not enough space on the disk that holds the Scratch Directory: it filled up while this backup was being read. Free some space on that disk and run the import again.`
+A disk that is full, or fills part-way, stops the run with `Not enough space on the disk that holds the Scratch Directory: there was no room left to finish reading this backup. Free some space on that disk and run the import again.`
 The part already written is deleted with the rest of the run's working files, so the import can run again once that disk has room.
 
 ### Without root: the 64-digit key

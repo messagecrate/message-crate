@@ -131,9 +131,10 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// # Errors
 ///
 /// Returns an error when the work directory is missing, the process cannot start, or
-/// wtsexporter exits with a non-zero status. When its output says the disk is
-/// full, or the output directory finds it full, the error is the free-space
-/// sentence for the Scratch Directory.
+/// wtsexporter exits with a non-zero status. When wtsexporter's output says
+/// the disk is full, or writing the key file into the work directory fails
+/// because the disk is full, the error is the free-space sentence for the
+/// Scratch Directory.
 pub(crate) fn run_wtsexporter(
     bin: &Path,
     args: &WtsexporterArgs,
@@ -146,8 +147,7 @@ pub(crate) fn run_wtsexporter(
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(out_dir)
-        .map_err(|err| scratch_write_error(err, format!("create {}", out_dir.display())))?;
+    std::fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
 
     let output = wtsexporter_command(bin, args, out_dir, json_out)?
         .output()
