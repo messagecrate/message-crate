@@ -30,7 +30,7 @@ With **Conversations**, plain words match a Conversation's title and the people 
 With **Messages**, the same box lists every message that matches, from every Conversation, and plain words match what was said.
 [Browse messages](/docs/user/features/messages/browse/#the-messages-list) describes that list.
 
-Some words work on only one of the two lists: `from:`, `to:`, `in:` and `attachments:` only on Messages, and `messages:` only on Conversations.
+Some words work on only one of the two lists: `from:`, `to:`, `in:`, `attachments:`, `deleted:` and `unsent:` only on Messages, and `messages:` only on Conversations.
 Such a word stays in the box when the switch changes, underlined with a red wavy line, and the list searches with the other words.
 So `from:me dinner` on Conversations lists the Conversations that match `dinner`, and switching back to Messages searches `from:me dinner` again.
 Clicking an underlined word opens a note that names the list it works in, such as "`from:` works only in Messages", with a **Remove** button that deletes that word from the box.
@@ -145,7 +145,7 @@ The tiles mark which lists accept the word: <ListTiles on="C" /> Contacts, <List
 | `groups:` | how many Contact Groups | count | <ListTiles on="C" /> |
 | `participants:` | how many people in the conversation | count | <ListTiles on="V M" /> |
 | `attachments:` | how many attachments on the message | count | <ListTiles on="M" /> |
-| `deleted:` | Deleted in the source app: `yes` is a message with that mark, `no` one without it. An unsent message is `unsent:` | `yes`, `no` | <ListTiles on="M" /> |
+| `deleted:` | Deleted in the source app: `yes` is a message with that mark, `no` one without it. `unsent:` finds unsent messages | `yes`, `no` | <ListTiles on="M" /> |
 | `unsent:` | Unsent by its sender: `yes` is a message with that mark, `no` one without it | `yes`, `no` | <ListTiles on="M" /> |
 | `trashed:` | in the Trash | `yes`, `no`, `any` | <ListTiles on="C V M" /> |
 

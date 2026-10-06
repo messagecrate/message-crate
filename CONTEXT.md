@@ -68,7 +68,7 @@ A mark on a Message its sender pulled back after sending it. The backup
 usually holds no text for it, so it is shown as an empty muted bubble that
 reads "Unsent". It is kept apart from Deleted in the source app, because the
 sender took the message back for everyone rather than a person deleting
-their own copy; `unsent:yes` or `unsent:no` narrows to or away from it.
+their own copy. `unsent:yes` or `unsent:no` narrows a search to or away from it.
 _Avoid_: Retracted, Recalled, Deleted
 
 **Earlier version**:

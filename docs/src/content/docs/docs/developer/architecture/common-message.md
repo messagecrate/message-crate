@@ -123,7 +123,7 @@ Apple Messages also writes each reaction as a row of its own (`message_kind` `ta
 | `deleted_in_source_app` | The person deleted the message in the source app before the backup was made, and the backup still holds it. `text` is whatever text the backup kept. |
 | `unsent` | The sender took the message back for everyone: every part of it was unsent, or some part was and no part has text or an attachment left, so `text` is empty. |
 
-A message with neither leaves `deletion` out of the file. A message only partly unsent, with text or an attachment left in another part, carries no mark. A marked message is imported, listed and searched like any other; the search words `deleted:` and `unsent:` each narrow to or away from one mark.
+A message with neither leaves `deletion` out of the file. A message only partly unsent, with text or an attachment left in another part, carries no mark. A marked message is imported, listed and searched like any other. The search words `deleted:` and `unsent:` each narrow to or away from one mark.
 
 `Deletion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::Deletion` is that type. Apple Messages fills it: a message in a chat's recently deleted list is `deleted_in_source_app`, and a message whose every part was unsent is `unsent` rather than an announcement that someone unsent it. Every other source writes none yet.
 
