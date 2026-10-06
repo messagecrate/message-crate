@@ -405,9 +405,11 @@ otherwise keep an older title against a newer one. A title of only spaces counts
 as no title. The rule is the same in one batch as across several, in any order.
 Why: a group is renamed over time, so the copy whose messages run later carries
 the name the group has now. An old backup uploaded after a newer one can't bring the old
-name back, because its messages stop earlier. The time a backup was made is not
-recorded by every source, and the time an exporter ran says nothing about the
-backup, so neither decides it
+name back, because its messages stop earlier. The backup date a conversation
+file carries (`export.backup_taken_at_unix_ms`) is missing where a source records
+none, and for several sources is a file's modification time, which copying the
+file can change; the time an exporter ran says nothing about the backup; so
+neither decides the title
 ([#1408](https://github.com/messagecrate/message-crate/issues/1408)).
 
 **Between two copies of one message from one source, the copy from the later

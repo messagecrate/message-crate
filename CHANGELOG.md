@@ -32,8 +32,8 @@ released versions carry their date on the heading.
   and a message unsent after the older backup reads as unsent. An older
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
-  A message file at the previous schema version, 10, is refused, and the
-  backup must be exported again with this build.
+  Message files exported before they said when their backup was made are
+  refused, and the backup must be exported again with this build.
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -154,11 +154,10 @@ released versions carry their date on the heading.
   in place of `num_replies`.
 - A Saved Search that uses `deleted:yes` finds fewer messages than before:
   it leaves unsent messages out. Add `or unsent:yes` to it to find both.
-- Message files at schema version 10, exported before they said when their
-  backup was made, are refused when you import or convert them. Export the
-  backup again with this build. A program that reads the HTTP API finds the
-  backup's date in a message's `backup_taken_at` and an Import Run's
-  `backup_taken_at`.
+- Message files exported before they said when their backup was made are
+  refused when you import or convert them. Export the backup again with
+  this build. A program that reads the HTTP API finds the backup's date in
+  a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
 
 ## [0.10.1] - 2026-10-05
 

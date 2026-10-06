@@ -585,6 +585,11 @@ What each reaches:
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
+  The times are the run's own, when it started and ended; the owner reads
+  nothing of the backup an import read, neither the file the desktop app
+  recorded (`source_fingerprint`) nor when the backup was made
+  (`backup_taken_at`), because both say when and from what the account's
+  phone was backed up.
   Why: a staging summary lists the addresses of everyone in the backup, an
   issue names its conversation's file, a note names a file or an address, and
   an export's query is a search over
