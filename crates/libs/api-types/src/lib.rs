@@ -432,8 +432,8 @@ api_shape! {
     pub struct ReplyTo {
         /// The quoted message's `guid`, as the backup named it; `null` when
         /// it named none. A named message can still be missing from this
-        /// Message Crate, for example one deleted on the phone before the
-        /// backup while its reply was kept.
+        /// Message Crate, for example one deleted before the backup was
+        /// made, so the backup does not hold it, while its reply was kept.
         pub guid: Option<String>,
         /// The part of the quoted message the reply answers; 0 for the first
         /// or only part. `null` when the source does not record one.

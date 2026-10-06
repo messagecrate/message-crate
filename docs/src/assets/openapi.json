@@ -18599,7 +18599,7 @@
               "string",
               "null"
             ],
-            "description": "The quoted message's `guid`, as the backup named it; `null` when\nit named none. A named message can still be missing from this\nMessage Crate, for example one deleted on the phone before the\nbackup while its reply was kept."
+            "description": "The quoted message's `guid`, as the backup named it; `null` when\nit named none. A named message can still be missing from this\nMessage Crate, for example one deleted before the backup was\nmade, so the backup does not hold it, while its reply was kept."
           },
           "part_index": {
             "type": [

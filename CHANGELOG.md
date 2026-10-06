@@ -35,8 +35,8 @@ released versions carry their date on the heading.
 
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
-  reply set aside as a duplicate no longer counts, and a reply that quotes a
-  copy set aside as a duplicate counts for the copy shown. The web app shows
+  reply hidden as a duplicate no longer counts, and a reply that quotes a
+  copy hidden as a duplicate counts for the copy shown. The web app shows
   no reply count, so nothing changes on screen.
 
 ### Upgrading

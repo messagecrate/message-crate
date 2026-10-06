@@ -4828,8 +4828,8 @@ export interface components {
             /**
              * @description The quoted message's `guid`, as the backup named it; `null` when
              *     it named none. A named message can still be missing from this
-             *     Message Crate, for example one deleted on the phone before the
-             *     backup while its reply was kept.
+             *     Message Crate, for example one deleted before the backup was
+             *     made, so the backup does not hold it, while its reply was kept.
              */
             guid: string | null;
             /**
