@@ -84,13 +84,25 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
             result.messages
         );
     }
-    let errors: Vec<&String> = result
+    // The file it could not read is a sentence naming it, under the Import
+    // Errors heading, and the summary ends there: the messages kept with
+    // something left out are counted, not listed, so there is no Notes
+    // heading (#1920).
+    let heading = result
         .messages
         .iter()
-        .filter(|l| l.starts_with("  error: "))
-        .collect();
+        .position(|l| l == "  Import Errors")
+        .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
+    let errors = &result.messages[heading + 1..];
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
-    assert!(errors[0].contains("sms-2-broken.xml"), "{}", errors[0]);
+    let broken_file = input.join("sms-2-broken.xml").display().to_string();
+    assert!(
+        errors[0].starts_with(&format!(
+            "    The file {broken_file} could not be read in full: "
+        )),
+        "{}",
+        errors[0]
+    );
     // The file it could not read is an Import Error naming it (#1626), and
     // each message kept with something left out is a note naming the file
     // and the message (#1707).
@@ -165,13 +177,15 @@ fn convert_and_import_word_every_count_and_error_alike() {
     )
     .expect("read");
     let converted = report.log_lines();
-    assert_eq!(converted.len(), 11, "{converted:?}");
+    // Ten counts, then the Import Errors heading and the one file under it.
+    assert_eq!(converted.len(), 12, "{converted:?}");
+    assert_eq!(converted[10], "Import Errors", "{converted:?}");
     // Every line Convert logs is a line of the import's summary, in the same
-    // order.
+    // order, whatever each sets it in by.
     let mut rest = imported.iter().map(|l| l.trim_start());
     for line in &converted {
         assert!(
-            rest.any(|l| l == line),
+            rest.any(|l| l == line.trim_start()),
             "{line:?} missing from, or out of order in, {imported:?}"
         );
     }

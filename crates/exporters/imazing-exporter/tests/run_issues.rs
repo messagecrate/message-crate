@@ -69,7 +69,7 @@ fn a_live_photo_video_two_rows_name_is_a_note_naming_the_picture() {
             kind: "note".into(),
             step: "parse".into(),
             item: picture.display().to_string(),
-            reason: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV".into(),
+            reason: "This picture is named by 2 rows. Its Live Photo video goes to the first of them in the CSV".into(),
             conversation: None,
         }]
     );

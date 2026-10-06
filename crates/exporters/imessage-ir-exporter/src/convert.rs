@@ -22,7 +22,8 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    Counter, ExportReport, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
+    Counter, ExportReport, ItemKind, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
+    RunIssue, item_line, item_reason,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
@@ -499,10 +500,10 @@ fn attachment_to_ir(
 /// over: the decrypt failed, or the decrypted copy could not be written or
 /// read back. Each one is recorded without its bytes, as a missing one is,
 /// but the run counts them apart, because a full scratch disk is a fault to
-/// fix and not a gap in the backup. Each entry holds the attachment's path
-/// and what happened to it, worded to follow "Attachment <path> ".
+/// fix and not a gap in the backup. Each entry is the sentence that names
+/// the attachment and says what happened to it, its [`item_line`].
 #[derive(Debug, Default)]
-struct NotDecrypted(Vec<(PathBuf, String)>);
+struct NotDecrypted(Vec<String>);
 
 impl NotDecrypted {
     /// How many reasons the run's summary names; the rest are counted.
@@ -526,8 +527,9 @@ impl NotDecrypted {
         );
     }
 
-    /// Note one attachment and what happened to it, `what` following
-    /// "Attachment <path> ", on the log and to the issue sink as it happens.
+    /// Note one attachment and what happened to it, `what_happened` worded
+    /// to follow the attachment: its [`item_line`] on the log, and an Import
+    /// Error with its [`item_reason`] to the issue sink, as it happens.
     ///
     /// The row names `conversation`, the conversation file the write queue
     /// is writing, because a resumed Staging skips that file once it is
@@ -540,17 +542,19 @@ impl NotDecrypted {
         options: &ExportOptions,
         conversation: Option<&str>,
         path: &Path,
-        what: String,
+        what_happened: String,
     ) {
-        options.emit_log(format!("Attachment {} {what}", path.display()));
+        let item = path.display().to_string();
+        let line = item_line(ItemKind::Attachment, &item, &what_happened);
+        options.emit_log(line.clone());
         options.emit_issue(RunIssue {
             kind: "error".into(),
             step: "attachments".into(),
-            item: path.display().to_string(),
-            reason: what.clone(),
+            item,
+            reason: item_reason(ItemKind::Attachment, &what_happened),
             conversation: conversation.map(str::to_string),
         });
-        self.0.push((path.to_path_buf(), what));
+        self.0.push(line);
     }
 
     /// Add the count and the first reasons to `report`.
@@ -559,11 +563,9 @@ impl NotDecrypted {
             return;
         }
         report.bump(ATTACHMENT_NOT_DECRYPTED, self.0.len() as u64);
-        for (path, what) in self.0.iter().take(Self::REASONS_NAMED) {
-            report
-                .errors
-                .push(format!("attachment {} {what}", path.display()));
-        }
+        report
+            .errors
+            .extend(self.0.into_iter().take(Self::REASONS_NAMED));
     }
 }
 
@@ -980,7 +982,7 @@ mod tests {
 
         assert_eq!(
             *lines.lock().unwrap(),
-            ["Attachment Library/SMS/a.jpg could not be decrypted: bad key"]
+            ["The attachment Library/SMS/a.jpg could not be decrypted: bad key"]
         );
     }
 
