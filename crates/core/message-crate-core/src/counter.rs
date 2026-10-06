@@ -187,7 +187,7 @@ const IMPORT_ERRORS_HEADING: &str = "Import Errors";
 /// The heading the run summary gives its notes.
 const NOTES_HEADING: &str = "Notes";
 
-/// What an item of the backup that an Import Error or a note names is. Its
+/// The kind of backup item that an Import Error or a note names. Its
 /// noun goes before the item in an [`item_line`] and after "This" in an
 /// [`item_reason`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
