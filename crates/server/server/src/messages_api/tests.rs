@@ -24,13 +24,13 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00Z",
+                    timestamp: "2024-01-01T10:00:00.000Z",
                     is_from_me: false,
                     body: "dentist on tuesday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00Z",
+                    timestamp: "2024-01-02T10:00:00.000Z",
                     is_from_me: true,
                     body: "see you there",
                 },
@@ -48,7 +48,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00Z",
+                timestamp: "2024-02-01T10:00:00.000Z",
                 is_from_me: false,
                 body: "the dentist called again",
             }],
@@ -83,7 +83,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-03-01T10:00:00Z",
+                timestamp: "2024-03-01T10:00:00.000Z",
                 is_from_me: false,
                 body: "bob's dentist",
             }],
@@ -587,6 +587,166 @@ async fn deleted_and_unsent_each_find_only_their_own_mark() {
     );
 }
 
+/// One Apple Messages conversation file holding `said`, a message the owner
+/// sent about the lighthouse under the subject "Weekend plans" with a map of
+/// the harbour attached, marked `deletion`, and a reply that mentions none
+/// of them.
+fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
+    let header = conversation_header("imessage", "+15555550107")
+        .owner("+15555550106", None)
+        .participant("+15555550107", None);
+    let mut said = message_line("g-said", "Meet at the lighthouse")
+        .at(1_578_308_040_000)
+        .outgoing()
+        .subject("Weekend plans")
+        .attachment(IrAttachment {
+            missing_reason: Some("not_found".into()),
+            ..attachment(
+                "attachments/harbour-map.png",
+                "harbour-map.png",
+                "image/png",
+            )
+        });
+    if let Some(deletion) = deletion {
+        said = said.deletion(deletion);
+    }
+    let reply = message_line("g-reply", "Sounds good")
+        .at(1_578_308_100_000)
+        .sender("+15555550107");
+    header.line() + &said.line() + &reply.line()
+}
+
+/// The guids `q` finds on the Messages list, oldest first.
+async fn found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> Vec<String> {
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/messages?q={q}&sort=date"),
+        &account.token,
+    )
+    .await;
+    guids(&page)
+}
+
+/// How many conversations `q` finds on the Conversations list.
+async fn conversations_found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> u64 {
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations?q={q}"),
+        &account.token,
+    )
+    .await;
+    page["total"].as_u64().unwrap()
+}
+
+/// The searches that reach `said` in [`lighthouse_file`] only through what
+/// an Unsent message hides: free text in its body, subject and file name,
+/// the `body:`, `subject:` and `filename:` words, and its attachment's kind.
+const HIDDEN_TEXT_QUERIES: [&str; 8] = [
+    "lighthouse",
+    "plans",
+    "harbour",
+    "lighthouse%20from%3Ame",
+    "body%3Alighthouse",
+    "subject%3Aplans",
+    "filename%3Aharbour",
+    "attachment%3Aimage",
+];
+
+/// A search finds a message by what it shows (#1758). An Unsent message
+/// reads "Unsent" and nothing else, so when a later import marks Unsent a
+/// message an earlier import stored with its text, no word of its body,
+/// subject or file names finds it any more, on Messages or Conversations,
+/// while `unsent:yes`, `from:me`, `in:` and `date:`, which the row shows,
+/// still do.
+#[tokio::test]
+async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() {
+    let (fixture, alice) = fixture_with_account().await;
+    let first = lighthouse_file(None);
+    import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
+
+    let later = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
+
+    for q in HIDDEN_TEXT_QUERIES {
+        assert!(
+            found(&fixture, &alice, q).await.is_empty(),
+            "{q} finds the Unsent message by text it hides"
+        );
+    }
+    assert_eq!(
+        conversations_found(&fixture, &alice, "body%3Alighthouse").await,
+        0,
+        "body: on Conversations reads the text the Unsent message hides"
+    );
+    assert_eq!(found(&fixture, &alice, "unsent%3Ayes").await, ["g-said"]);
+    assert_eq!(found(&fixture, &alice, "from%3Ame").await, ["g-said"]);
+    assert_eq!(
+        found(&fixture, &alice, "body%3Anone").await,
+        ["g-said"],
+        "an Unsent message shows no body"
+    );
+    for q in ["in%3A5550107", "date%3A2020"] {
+        assert_eq!(
+            found(&fixture, &alice, q).await,
+            ["g-said", "g-reply"],
+            "{q}"
+        );
+    }
+    assert_eq!(
+        found(&fixture, &alice, "-lighthouse").await,
+        ["g-said", "g-reply"],
+        "a negated word leaves out only a message that shows it"
+    );
+}
+
+/// A message that arrives Unsent in its first import is never found by the
+/// text it hides, and is found by `unsent:yes` and `from:me`.
+#[tokio::test]
+async fn a_message_unsent_in_its_first_import_is_not_found_by_its_text() {
+    let (fixture, alice) = fixture_with_account().await;
+    let file = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    import_conversation_file(&fixture, alice.account_id, "only", &file, "imessage").await;
+
+    for q in HIDDEN_TEXT_QUERIES {
+        assert!(found(&fixture, &alice, q).await.is_empty(), "{q}");
+    }
+    assert_eq!(found(&fixture, &alice, "unsent%3Ayes").await, ["g-said"]);
+    assert_eq!(found(&fixture, &alice, "from%3Ame").await, ["g-said"]);
+}
+
+/// A message Deleted in the source app shows its text, so it stays found by
+/// it when a later import marks it.
+#[tokio::test]
+async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text() {
+    let (fixture, alice) = fixture_with_account().await;
+    let first = lighthouse_file(None);
+    import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
+    let later = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
+    assert_eq!(found(&fixture, &alice, "deleted%3Ayes").await, ["g-said"]);
+}
+
+/// An Unsent message that a later backup marks Deleted in the source app
+/// instead shows its text again, so its text finds it again: the promotion
+/// writes back the index row the Unsent mark kept out.
+#[tokio::test]
+async fn an_unsent_message_a_later_import_marks_deleted_is_found_by_its_text_again() {
+    let (fixture, alice) = fixture_with_account().await;
+    let unsent = lighthouse_file(Some(message_ir::Deletion::Unsent));
+    import_conversation_file(&fixture, alice.account_id, "unsent", &unsent, "imessage").await;
+    let deleted = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
+    import_conversation_file(&fixture, alice.account_id, "deleted", &deleted, "imessage").await;
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
+}
+
 /// The message of a messages page whose guid is `guid`.
 fn message_by_guid(page: &serde_json::Value, guid: &str) -> serde_json::Value {
     page["items"]
@@ -614,9 +774,9 @@ async fn an_edited_message_is_returned_with_its_earlier_versions_and_their_times
         edited["earlier_versions"],
         serde_json::json!([
             {"part_index": 0, "text": "Meet at the library",
-             "edited_at": "2020-01-06T11:10:00Z", "matched": false},
+             "edited_at": "2020-01-06T11:10:00.000Z", "matched": false},
             {"part_index": 0, "text": "Meet at the museum",
-             "edited_at": "2020-01-06T11:10:30Z", "matched": false}
+             "edited_at": "2020-01-06T11:10:30.000Z", "matched": false}
         ]),
         "{page}"
     );
@@ -1601,16 +1761,16 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
 
     let today = chrono::Utc::now().with_timezone(&zone).date_naive();
     let local = |day: chrono::NaiveDate, h: u32, m: u32| {
-        zone.from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
+        let instant = zone
+            .from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
             .single()
             .unwrap()
-            .with_timezone(&chrono::Utc)
-            .format("%Y-%m-%dT%H:%M:%SZ")
-            .to_string()
+            .with_timezone(&chrono::Utc);
+        crate::models::utc_timestamp_text(instant)
     };
     let early_today = local(today, 0, 30);
     let late_yesterday = local(today.pred_opt().unwrap(), 23, 30);
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let now = crate::models::utc_timestamp_text(chrono::Utc::now());
     seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -1680,25 +1840,25 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00Z",
+                    timestamp: "2024-01-01T10:00:00.000Z",
                     is_from_me: false,
                     body: "dentist dentist dentist",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00Z",
+                    timestamp: "2024-01-02T10:00:00.000Z",
                     is_from_me: false,
                     body: "after work I will call the office of the dentist about next week",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-03T10:00:00Z",
+                    timestamp: "2024-01-03T10:00:00.000Z",
                     is_from_me: true,
                     body: "the dentist moved it",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-04T10:00:00Z",
+                    timestamp: "2024-01-04T10:00:00.000Z",
                     is_from_me: true,
                     body: "nothing to see",
                 },
@@ -1894,4 +2054,84 @@ async fn a_conversations_messages_take_no_relevance() {
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
+}
+
+/// An Apple Messages conversation file whose two messages are 300 ms apart
+/// in one second, the later one listed first, and whose earlier message has
+/// an earlier version written 125 ms before it was sent (#1096).
+fn apple_messages_sub_second_times() -> String {
+    at_current_schema_version(include_str!(
+        "../../tests/fixtures/apple-messages-sub-second-times.jsonl"
+    ))
+}
+
+/// A message time the source records to the millisecond is stored and
+/// returned to the millisecond, on the message and on its earlier version
+/// (#1096).
+#[tokio::test]
+async fn a_message_time_keeps_its_milliseconds_through_import_and_the_api() {
+    let (fixture, alice) = fixture_with_account().await;
+    let counts = import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "sub-second",
+        &apple_messages_sub_second_times(),
+        "imessage",
+    )
+    .await;
+    assert_eq!(counts.messages, 2);
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let first = message_by_guid(&page, "guid-first");
+    assert_eq!(first["timestamp"], "2020-01-06T11:10:00.250Z", "{page}");
+    assert_eq!(
+        first["earlier_versions"][0]["edited_at"], "2020-01-06T11:10:00.125Z",
+        "{page}"
+    );
+    assert_eq!(
+        message_by_guid(&page, "guid-300-ms-later")["timestamp"],
+        "2020-01-06T11:10:00.550Z",
+        "{page}"
+    );
+}
+
+/// Two messages 300 ms apart in one conversation are listed in the order of
+/// their times, though the file lists the later one first, on the messages
+/// route and on the conversation's own (#1096).
+#[tokio::test]
+async fn two_messages_300_ms_apart_are_ordered_by_their_times() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "sub-second",
+        &apple_messages_sub_second_times(),
+        "imessage",
+    )
+    .await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    assert_eq!(guids(&page), ["guid-first", "guid-300-ms-later"], "{page}");
+    let newest_first: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=-date", &alice.token).await;
+    assert_eq!(
+        guids(&newest_first),
+        ["guid-300-ms-later", "guid-first"],
+        "{newest_first}"
+    );
+
+    let conversation_id = &page["items"][0]["conversation"]["id"];
+    let thread: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations/{conversation_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        guids(&thread),
+        ["guid-first", "guid-300-ms-later"],
+        "{thread}"
+    );
 }

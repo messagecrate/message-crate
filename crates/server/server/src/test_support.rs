@@ -770,7 +770,8 @@ pub async fn delete_raw(state: &AppState, path: &str, token: &str) -> (StatusCod
 pub struct SeedMessage<'a> {
     /// The `messages.source` slug, such as `imessage`.
     pub source: &'a str,
-    /// RFC 3339 timestamp, stored as text the way the importer writes it.
+    /// RFC 3339 timestamp, stored as text the way the importer writes it: UTC
+    /// to the millisecond (`2020-01-01T00:00:00.000Z`).
     pub timestamp: &'a str,
     /// Whether the account sent it.
     pub is_from_me: bool,
@@ -834,7 +835,7 @@ pub struct MessageRow<'a> {
     pub source: &'a str,
     /// `messages.guid`. `None` writes NULL, which the table refuses.
     pub guid: Option<String>,
-    /// RFC 3339 in UTC, as the importer writes it.
+    /// RFC 3339 in UTC to the millisecond, as the importer writes it.
     pub timestamp: &'a str,
     /// Whether the account sent it.
     pub is_from_me: bool,
@@ -870,7 +871,7 @@ pub struct MessageRow<'a> {
 
 impl MessageRow<'_> {
     /// A received `imessage` message in `conversation_id` of `account_id`,
-    /// with a fresh guid, at 2020-01-01T00:00:00Z, and nothing optional set.
+    /// with a fresh guid, at 2020-01-01T00:00:00.000Z, and nothing optional set.
     pub fn new(account_id: i64, conversation_id: i64) -> Self {
         Self {
             id: None,
@@ -878,7 +879,7 @@ impl MessageRow<'_> {
             account_id,
             source: "imessage",
             guid: Some(unique_guid()),
-            timestamp: "2020-01-01T00:00:00Z",
+            timestamp: "2020-01-01T00:00:00.000Z",
             is_from_me: false,
             sender_handle_id: None,
             owner_handle_id: None,
@@ -1069,7 +1070,7 @@ pub async fn seed_one_message(state: &AppState, account_id: i64) {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00Z",
+                timestamp: "2020-01-01T00:00:00.000Z",
                 is_from_me: true,
                 body: "hello",
             }],
@@ -1250,13 +1251,13 @@ mod tests {
                 messages: &[
                     SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-01T00:00:00Z",
+                        timestamp: "2020-01-01T00:00:00.000Z",
                         is_from_me: true,
                         body: "first",
                     },
                     SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-02T00:00:00Z",
+                        timestamp: "2020-01-02T00:00:00.000Z",
                         is_from_me: false,
                         body: "second",
                     },
@@ -1301,7 +1302,7 @@ mod tests {
                     source_file: "seed.jsonl",
                     messages: &[SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-01T00:00:00Z",
+                        timestamp: "2020-01-01T00:00:00.000Z",
                         is_from_me: true,
                         body: "hello, this is a message long enough to add up",
                     }],

@@ -2344,6 +2344,7 @@ dependencies = [
  "imazing-exporter",
  "imessage-ir-exporter",
  "ios-backup",
+ "libc",
  "media",
  "message-crate-core",
  "message-crate-export",
@@ -2367,6 +2368,7 @@ dependencies = [
  "tauri-plugin-shell",
  "tempfile",
  "whatsapp-exporter",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

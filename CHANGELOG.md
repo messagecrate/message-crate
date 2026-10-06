@@ -86,6 +86,12 @@ released versions carry their date on the heading.
   in the background, converting attachments, until the computer restarted.
   It now notices within two seconds that the app is gone and stops the way
   it does on a normal stop, finishing what it was answering first.
+- 2026-10-05: **Closing the desktop app stops a video conversion its Message
+  Crate was running.** The app stopped its Message Crate, but a video it was
+  converting went on converting in the background until it was done, and
+  the result was thrown away. The conversion now stops with the Message
+  Crate. On Windows the same happens when the app crashes, so there the
+  Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
 
@@ -120,6 +126,27 @@ released versions carry their date on the heading.
   email address on Text Message is still an email address, because iMessage
   reaches one.
 
+#### Browsing and search
+
+- 2026-10-05: **A search no longer finds an Unsent message by the text it
+  hides.** An Unsent message reads "Unsent" and nothing else, but when an
+  earlier import stored it with its text, a search for a word of that text,
+  or of an attachment's file name, still listed it, with nothing on the row
+  to say why. `body:`, `subject:`, `filename:` and the attachment words did
+  the same. A search now finds a message by what it shows: `unsent:yes`,
+  `from:`, the conversation and the date still find an Unsent message, and a
+  message Deleted in the source app is still found by its text.
+
+- 2026-10-05: **A message keeps the milliseconds of its time.** Message
+  Crate kept a message's time to the whole second and dropped the
+  milliseconds that WhatsApp, Apple Messages and SMS Backup & Restore
+  record. Two messages sent within one second could then show
+  in the wrong order. The time is now kept to the millisecond, a
+  conversation lists its messages in the order they were sent, and an
+  export written from Message Crate keeps the milliseconds too. A backup
+  that records whole seconds, such as iMazing or OpenExtract, lists the
+  messages of one second in the order the backup gives them, as before.
+
 ### Upgrading
 
 - The database format changed. **An existing Message Crate is rebuilt empty
@@ -142,6 +169,9 @@ released versions carry their date on the heading.
   backup again with this build. A program that reads the HTTP API finds the
   backup's date in a message's `backup_taken_at` and an Import Run's
   `backup_taken_at`.
+- If you have a program that reads messages from the HTTP API, a message's
+  `timestamp` and an earlier version's `edited_at` now carry three digits of
+  milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
 
 ## [0.10.1] - 2026-10-05
 

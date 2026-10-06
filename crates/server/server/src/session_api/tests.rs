@@ -233,7 +233,7 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source,
-                timestamp: "2020-01-01T00:00:00Z",
+                timestamp: "2020-01-01T00:00:00.000Z",
                 is_from_me: true,
                 body: "hello",
             }],

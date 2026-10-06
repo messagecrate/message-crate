@@ -1259,7 +1259,10 @@ fn later_backup_sql(staged: &str, held: &str) -> String {
 /// earlier or the same backup changes nothing. When either has no date, a
 /// staged row with no mark leaves the stored mark as it is: a backup that
 /// does not say a message was deleted does not say it was restored, and
-/// nothing says which backup is newer. Returns how many messages changed.
+/// nothing says which backup is newer. The search index follows the mark
+/// when the promotion indexes (`schema::index_messages_fts_from_promote_map`):
+/// a message marked Unsent loses its index row, because it shows none of its
+/// text (#1758). Returns how many messages changed.
 ///
 /// # Errors
 ///

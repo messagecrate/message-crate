@@ -214,6 +214,23 @@ version of an edited message. Punctuation inside a term splits it into words
 that must appear next to each other in that order, and a term that is only
 punctuation or emoji finds no message text.
 
+**A search finds a message by what it shows.** An Unsent message reads
+"Unsent" and nothing else, so no word of the body, subject or attachment
+file names it hides finds it, even when an earlier import stored them
+(#1758). For free text, `messages_fts` holds no row for it and the file-name
+match skips it. The sync triggers (`schema/sql/fts_triggers_create.sql`) and
+the promotion's own indexing (`index_messages_fts_from_promote_map` in
+`db/schema.rs`) both keep the row out, and a later import that marks a
+stored message Unsent removes it. The `body:`, `subject:`, `filename:`,
+`attachment:`, `size:` and `attachments:` words read an Unsent message as
+having no body, subject or attachments, on every list, so `body:none` and
+`attachments:0` match it (`shows_its_content` in `emit.rs`). Every other
+word still applies to it, because the row shows its mark, its sender, its
+conversation and its date: `unsent:yes`, `from:`, `in:` and `date:` find it. Its earlier versions are
+shown under it in the conversation, so they still find it. A message
+Deleted in the source app shows its text, so its text finds it. Why: a hit
+whose row shows nothing that matched looks like a search bug.
+
 **A word an earlier version holds finds the message, and the answer says
 so.** Each free-text word matches a message when its final text (the body,
 subject, and attachment text above) holds it or any one of its earlier
@@ -289,7 +306,7 @@ below use these phrases for them:
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
 | Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members. The `orphaned:` key of a conversation of orphaned messages is read as nothing for the same reason; it is found by its title and its sender | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
-| Messages | one message | the full-text indexes (above): the final text and every earlier version, and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Messages | one message | the full-text indexes (above): the final text and every earlier version, and attachment file names, an Unsent message's own text and file names excepted | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
 an `or` included. Why these words: `trashed:` is the question of the trash
@@ -333,12 +350,16 @@ Text, `none`, `any`.
 - **Conversations**: one of the conversation's messages has this body. `none` is one whose body is empty.
 - **Messages**: the message's body.
 
+An Unsent message has no body here, whatever an import stored, because its row shows none (#1758).
+
 ### `subject:`
 
 Text, `none`, `any`.
 
 - **Conversations**: one of the conversation's messages has this subject line.
 - **Messages**: the message's subject line.
+
+An Unsent message has no subject line here, for the same reason as `body:`.
 
 ### `name:`
 
@@ -479,6 +500,8 @@ Choice: `image`, `video`, `audio`, `document`, `pdf`, `contact`, `other`, `any`,
 type that is not a vCard, any `application/vnd.` type, Word, or RTF. `other`
 is anything else.
 
+An Unsent message has no attachments here, for the same reason as `body:`.
+
 ### `filename:`
 
 Text, with no `none` or `any`.
@@ -486,12 +509,16 @@ Text, with no `none` or `any`.
 - **Conversations**: one of the conversation's messages has an attachment whose file name contains the text.
 - **Messages**: the message has one.
 
+An Unsent message has no attachments here, for the same reason as `body:`.
+
 ### `size:`
 
 Size.
 
 - **Conversations**: one of the conversation's messages has an attachment of this size.
 - **Messages**: the message has one. An attachment with no recorded size matches no size.
+
+An Unsent message has no attachments here, for the same reason as `body:`.
 
 ### `messages:`
 
@@ -525,6 +552,8 @@ Count.
 
 - **Messages**: how many attachments the message has.
 
+An Unsent message has no attachments here, for the same reason as `body:`.
+
 ### `deleted:`
 
 Flag: `yes`, `no`. No list leaves a marked message out, so the word lifts no
@@ -536,7 +565,7 @@ default and takes no `any`: a search without it already sees every message.
 
 Flag: `yes`, `no`, for the same reason as `deleted:`.
 
-- **Messages**: `yes` is a message marked Unsent, `no` one without that mark. A message with no mark is `no`, so `unsent:yes` and `-unsent:yes` split the list.
+- **Messages**: `yes` is a message marked Unsent, `no` one without that mark. A message with no mark is `no`, so `unsent:yes` and `-unsent:yes` split the list. Free text does not find an Unsent message by the text it hides (above), so `unsent:yes` is how a search reaches it.
 
 ### `trashed:`
 

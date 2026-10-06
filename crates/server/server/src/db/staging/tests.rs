@@ -30,7 +30,7 @@ async fn reset_for_account_leaves_other_accounts() {
                 account_id: account,
                 source: "sms",
                 guid: "g1",
-                timestamp: "2020-01-01T00:00:00Z",
+                timestamp: "2020-01-01T00:00:00.000Z",
                 is_from_me: 0,
                 sender_handle_id: None,
                 owner_handle_id: None,

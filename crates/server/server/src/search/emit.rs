@@ -297,6 +297,10 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         // file-name match makes any part of a file name findable, and the
         // earlier versions' own index finds a word an edit took out.
         //
+        // An Unsent message shows neither its text nor its attachments, so
+        // the index holds no row for it and the file-name match skips it
+        // (#1758). Its earlier versions are shown, so they still find it.
+        //
         // A version finds each message that shows it: the message holding
         // it, and each message its `duplicate_of` chain leads to whose
         // holder it is (`earlier_versions_holder_sql`, #1757). Asking the
@@ -310,7 +314,12 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         ListKind::Messages => {
             out.push("m.id IN (");
             fts::matching_ids(out, term);
-            out.push(" UNION ALL SELECT a.message_id FROM attachments a WHERE ");
+            out.push(&format!(
+                " UNION ALL SELECT a.message_id FROM attachments a \
+                 JOIN messages am ON am.id = a.message_id \
+                 WHERE {} AND ",
+                shows_its_content("am")
+            ));
             free_text_match(out, "coalesce(a.original_name, '')", term);
             if ctx.earlier_versions {
                 out.push(&format!(
@@ -414,11 +423,38 @@ fn text_match(out: &mut Sql, column: &str, term: &FieldTerm, v: &Value) -> Resul
     }
 }
 
+/// The message `alias` shows its body, subject and attachments: it is not
+/// Unsent. An Unsent message reads "Unsent" and nothing else, whatever an
+/// earlier import stored, so no word finds it by any of them (#1758).
+fn shows_its_content(alias: &str) -> String {
+    format!("{alias}.deletion IS NOT '{}'", Deletion::Unsent.as_str())
+}
+
+/// The text column `column` of message `m` as its row shows it: empty for
+/// an Unsent message ([`shows_its_content`]).
+fn shown_text(column: &str) -> String {
+    format!(
+        "CASE WHEN {} THEN coalesce({column}, '') ELSE '' END",
+        shows_its_content("m")
+    )
+}
+
+/// The attachments of message `m` as its row shows them, as the `FROM` and
+/// `WHERE` of a subquery over alias `a`: none for an Unsent message
+/// ([`shows_its_content`]).
+fn shown_attachments() -> String {
+    format!(
+        "attachments a WHERE a.message_id = m.id AND {}",
+        shows_its_content("m")
+    )
+}
+
 /// The six text words. On Contacts, `name:` and `identity:` look at the
 /// contact itself; everywhere else they look at the conversation's
 /// participants. `body:`, `subject:`, and `filename:` always look at
-/// messages (and their attachments); `title:` always looks at the
-/// conversation.
+/// messages (and their attachments), as each message shows them, so an
+/// Unsent message has no body, subject or attachments to match; `title:`
+/// always looks at the conversation.
 fn emit_text_word(
     ctx: &ListCtx,
     out: &mut Sql,
@@ -428,10 +464,10 @@ fn emit_text_word(
     let mut result: Result<(), QueryError> = Ok(());
     match (term.spec.word, ctx.list) {
         ("body", _) => ctx.message(out, |o| {
-            result = text_match(o, "coalesce(m.body, '')", term, v);
+            result = text_match(o, &shown_text("m.body"), term, v);
         }),
         ("subject", _) => ctx.message(out, |o| {
-            result = text_match(o, "coalesce(m.subject, '')", term, v);
+            result = text_match(o, &shown_text("m.subject"), term, v);
         }),
         ("title", _) => ctx.conversation(out, |o| {
             result = text_match(
@@ -510,7 +546,7 @@ fn emit_text_word(
             }
         }),
         ("filename", _) => ctx.message(out, |o| {
-            o.push("EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND ");
+            o.push(&format!("EXISTS (SELECT 1 FROM {} AND ", shown_attachments()));
             result = text_match(o, "coalesce(a.original_name, '')", term, v);
             o.push(")");
         }),
@@ -1057,13 +1093,16 @@ fn emit_kind_word(
         }
         ("attachment", Value::Choice("any")) => {
             ctx.message(out, |o| {
-                o.push("EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)");
+                o.push(&format!("EXISTS (SELECT 1 FROM {})", shown_attachments()));
             });
             Ok(())
         }
         ("attachment", Value::Choice("none")) => {
             ctx.message(out, |o| {
-                o.push("NOT EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id)");
+                o.push(&format!(
+                    "NOT EXISTS (SELECT 1 FROM {})",
+                    shown_attachments()
+                ));
             });
             Ok(())
         }
@@ -1071,16 +1110,18 @@ fn emit_kind_word(
             let pred = attachment_kind_sql(k);
             ctx.message(out, |o| {
                 o.push(&format!(
-                    "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND {pred})"
+                    "EXISTS (SELECT 1 FROM {} AND {pred})",
+                    shown_attachments()
                 ));
             });
             Ok(())
         }
         ("size", Value::Size(cmp)) => {
             ctx.message(out, |o| {
-                o.push(
-                    "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND a.size_bytes IS NOT NULL AND ",
-                );
+                o.push(&format!(
+                    "EXISTS (SELECT 1 FROM {} AND a.size_bytes IS NOT NULL AND ",
+                    shown_attachments()
+                ));
                 cmp_sql(o, "a.size_bytes", cmp);
                 o.push(")");
             });
@@ -1247,7 +1288,7 @@ fn emit_measure_word(
         ("attachments", Value::Count(cmp)) => {
             cmp_sql(
                 out,
-                "(SELECT COUNT(*) FROM attachments a WHERE a.message_id = m.id)",
+                &format!("(SELECT COUNT(*) FROM {})", shown_attachments()),
                 cmp,
             );
             Ok(())
