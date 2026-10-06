@@ -675,6 +675,135 @@ async fn identical_rows_from_one_source_are_both_kept() {
     }
 }
 
+/// Insert one received SMS Backup+ message "On my way" at `timestamp`,
+/// recorded with `precision`, and answer its id.
+async fn sms_backup_plus_row(
+    conn: &mut SqliteConnection,
+    guid: &str,
+    timestamp: &'static str,
+    precision: message_ir::TimePrecision,
+) -> i64 {
+    MessageRow {
+        source: "sms-backup-plus",
+        guid: Some(guid.into()),
+        timestamp,
+        time_precision: precision,
+        is_from_me: false,
+        body: Some("On my way"),
+        sort_order: 0,
+        ..MessageRow::new(TEST_ACCOUNT_ID, 1)
+    }
+    .insert(conn)
+    .await
+}
+
+/// One source that holds a message once in whole seconds and once with
+/// milliseconds in the same second shows it once, with the milliseconds:
+/// the whole-second copy is the duplicate (#1923).
+#[tokio::test]
+async fn a_whole_second_message_is_the_duplicate_of_its_millisecond_twin_in_one_source() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let whole = sms_backup_plus_row(
+        &mut conn,
+        "g-whole",
+        "2015-03-12T18:04:22.000Z",
+        message_ir::TimePrecision::Seconds,
+    )
+    .await;
+    let exact = sms_backup_plus_row(
+        &mut conn,
+        "g-exact",
+        "2015-03-12T18:04:22.250Z",
+        message_ir::TimePrecision::Milliseconds,
+    )
+    .await;
+
+    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
+        .await
+        .unwrap();
+
+    assert_eq!((stats.exact_groups, stats.exact_flagged), (1, 1));
+    assert_eq!(duplicate_of(&mut conn, whole).await, Some(exact));
+    assert_eq!(duplicate_of(&mut conn, exact).await, None);
+}
+
+/// A time whose source recorded milliseconds is never taken for a whole
+/// second because it ends in `.000`: the flag decides, never the time. One
+/// source holds the message at `.000` with milliseconds, at `.250` with
+/// milliseconds, and once in whole seconds. The two millisecond copies are
+/// two messages and both stay shown; only the whole-second copy is hidden.
+#[tokio::test]
+async fn a_millisecond_time_ending_in_000_is_not_whole_seconds() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let on_the_second = sms_backup_plus_row(
+        &mut conn,
+        "g-000",
+        "2015-03-12T18:04:22.000Z",
+        message_ir::TimePrecision::Milliseconds,
+    )
+    .await;
+    let later = sms_backup_plus_row(
+        &mut conn,
+        "g-250",
+        "2015-03-12T18:04:22.250Z",
+        message_ir::TimePrecision::Milliseconds,
+    )
+    .await;
+    let whole = sms_backup_plus_row(
+        &mut conn,
+        "g-whole",
+        "2015-03-12T18:04:22.000Z",
+        message_ir::TimePrecision::Seconds,
+    )
+    .await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, on_the_second).await, None);
+    assert_eq!(duplicate_of(&mut conn, later).await, None);
+    assert!(
+        [Some(on_the_second), Some(later)].contains(&duplicate_of(&mut conn, whole).await),
+        "the whole-second copy is hidden under a millisecond copy"
+    );
+}
+
+/// A source that holds a message only in whole seconds keeps every copy,
+/// as it did before: two whole-second messages in one second are two
+/// messages.
+#[tokio::test]
+async fn two_whole_second_messages_from_one_source_are_both_kept() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let mut ids = Vec::new();
+    for guid in ["g1", "g2"] {
+        ids.push(
+            sms_backup_plus_row(
+                &mut conn,
+                guid,
+                "2015-03-12T18:04:22.000Z",
+                message_ir::TimePrecision::Seconds,
+            )
+            .await,
+        );
+    }
+
+    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
+        .await
+        .unwrap();
+
+    assert_eq!((stats.exact_groups, stats.exact_flagged), (0, 0));
+    for id in ids {
+        assert_eq!(duplicate_of(&mut conn, id).await, None);
+    }
+}
+
 /// One message held by three sources is one exact group with one survivor:
 /// the first-listed source's copy, with the other two pointing at it.
 #[tokio::test]
