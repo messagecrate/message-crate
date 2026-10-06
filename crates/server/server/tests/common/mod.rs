@@ -4,7 +4,7 @@
 
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -80,6 +80,29 @@ pub fn create_database(root: &Path, data_dir: &Path) {
     assert!(output.status.success(), "{output:?}");
 }
 
+/// A Data Directory with an empty database, and an empty website directory,
+/// both under `root`, so `serve` listens without first building the Demo
+/// Account. Returns the two directories.
+pub fn empty_message_crate(root: &Path) -> (PathBuf, PathBuf) {
+    let data_dir = root.join("data");
+    let static_dir = root.join("static");
+    std::fs::create_dir_all(&data_dir).unwrap();
+    std::fs::create_dir_all(&static_dir).unwrap();
+    create_database(root, &data_dir);
+    (data_dir, static_dir)
+}
+
+/// The address a line of the server's output names, when it is the
+/// listening line. Fails the test when the listening line names no address.
+pub fn listening_address(line: &str) -> Option<SocketAddr> {
+    let url = line.strip_prefix(LISTENING_LINE)?;
+    Some(
+        url.strip_prefix("http://")
+            .and_then(|address| address.parse().ok())
+            .unwrap_or_else(|| panic!("the listening line names no address: {line}")),
+    )
+}
+
 /// `serve` as the desktop app starts it, on port 0. The server binds the
 /// port the operating system chooses and names it on its listening line, so
 /// no other process can take the port between the choice and the bind.
@@ -117,14 +140,8 @@ pub fn listen(command: &mut Command) -> (Running, SocketAddr) {
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match received.recv_timeout(left) {
-            Ok(line) => match line.strip_prefix(LISTENING_LINE) {
-                Some(url) => {
-                    let address = url
-                        .strip_prefix("http://")
-                        .and_then(|address| address.parse().ok())
-                        .unwrap_or_else(|| panic!("the listening line names no address: {line}"));
-                    return (child, address);
-                }
+            Ok(line) => match listening_address(&line) {
+                Some(address) => return (child, address),
                 None => seen.push(line),
             },
             Err(mpsc::RecvTimeoutError::Disconnected) => panic!(

@@ -34,6 +34,7 @@ use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
 use crate::db::schema;
 use crate::db::session_tokens;
+use crate::exit_with_parent::ParentWatch;
 use crate::keyed_locks::KeyedLocks;
 use crate::open_db::OpenDb;
 use crate::problem::{Problem, ProblemType};
@@ -1323,6 +1324,9 @@ pub(crate) fn http_app(state: AppState) -> Router {
 /// Returns an error when the database cannot be opened, the operation lock
 /// cannot be taken, or the listener cannot bind.
 pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<()> {
+    // First, so the process is watched from the moment the server starts,
+    // through a first start's Demo Account build.
+    let exit_with_parent = exit_with_parent.map(ParentWatch::start);
     let server = cfg.require_server()?.clone();
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
@@ -1407,6 +1411,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // this waits for it.
     media_queue.stop().await;
     served?;
+    tracing::info!("The server has stopped");
     Ok(())
 }
 
@@ -1422,7 +1427,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
-    exit_with_parent: Option<u32>,
+    exit_with_parent: Option<ParentWatch>,
     on_signal: impl FnOnce() + Send + 'static,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
@@ -1436,13 +1441,10 @@ async fn serve_until_shutdown(
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, or once the process
 /// `exit_with_parent` names is gone, so axum drains in-flight requests before
 /// exiting. A crashed desktop app ends its server this way (#1934).
-async fn shutdown_signal(exit_with_parent: Option<u32>) {
+async fn shutdown_signal(exit_with_parent: Option<ParentWatch>) {
     let parent_gone = async {
         match exit_with_parent {
-            Some(pid) => {
-                crate::exit_with_parent::parent_gone(pid).await;
-                eprintln!("The process that started the server, process {pid}, has ended");
-            }
+            Some(watch) => watch.gone().await,
             None => std::future::pending().await,
         }
     };
@@ -1450,7 +1452,7 @@ async fn shutdown_signal(exit_with_parent: Option<u32>) {
         () = stop_requested() => {}
         () = parent_gone => {}
     }
-    eprintln!("The server is shutting down");
+    tracing::info!("The server is shutting down");
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix. `docker stop` and a service

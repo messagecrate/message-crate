@@ -1,39 +1,48 @@
 //! A server the desktop app started stops itself once the app is gone, and a
 //! server started any other way never does (#1934).
 //!
-//! Each test starts `serve` from a shell that stands in for the app: the shell
-//! starts the server in the background, prints its process id, and waits on
-//! its standard input. Closing that input ends the shell the way a crash ends
-//! the app, without asking the server anything. The server writes to the
-//! shell's standard error, which the test reads, so the pipe closes only once
-//! the shell and the server have both exited.
+//! Each test starts `serve` from a shell that stands in for the app. Like the
+//! app, the shell holds the only read end of the server's standard error, so
+//! the pipe breaks when the shell ends: the shell starts the server writing
+//! into a named pipe, prints the server's process id, and copies what the
+//! server writes to its own output from a background loop. Closing the
+//! shell's standard input ends the loop and the shell the way a crash ends
+//! the app, without asking the server anything.
 //!
 //! Unix only: on Windows the server waits on the app's process handle
 //! instead, and CI runs these tests on Linux.
 
 #![cfg(unix)]
 
-// This test starts the server from a shell, so it uses only
-// `create_database` and `WAIT` of the shared helpers.
+// This test starts the server from a shell, so it uses only some of the
+// shared helpers.
 #[allow(dead_code)]
 mod common;
 
 use std::io::{BufRead, BufReader};
 use std::net::{SocketAddr, TcpStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use message_crate_serve_protocol::{EXIT_WITH_PARENT_ARG, LISTENING_LINE, PARENT_CHECK_INTERVAL};
+use message_crate_serve_protocol::{EXIT_WITH_PARENT_ARG, PARENT_CHECK_INTERVAL};
 
-use common::{WAIT, create_database};
+use common::{WAIT, empty_message_crate, listening_address};
 
 /// How long a server on an empty database may take to stop once it has
 /// noticed its parent is gone: no request is in flight and no media pass
-/// runs, so this is the time to drain nothing and exit.
-const STOP_ALLOWANCE: Duration = Duration::from_secs(5);
+/// runs, so this is the time to drain nothing and exit, with room for a
+/// slow CI runner. It is shorter than [`PARENT_CHECK_INTERVAL`], so a server
+/// that missed a check fails the test.
+const STOP_ALLOWANCE: Duration = Duration::from_millis(1500);
+
+/// The lines the server writes to its log on a stop it was asked for: as the
+/// stop begins, before it tells the media pass to stop ffmpeg, and as the
+/// last thing `serve` does, once the requests in flight and ffmpeg have
+/// stopped.
+const STOP_LINES: [&str; 2] = ["The server is shutting down", "The server has stopped"];
 
 /// The shell standing in for the app, and the server it started.
 struct Started {
@@ -43,9 +52,11 @@ struct Started {
     parent_input: Option<ChildStdin>,
     /// The server's process id, killed when the test ends however it ends.
     server_pid: libc::pid_t,
-    /// The server's standard error, a line at a time. Disconnected once the
-    /// shell and the server have both exited.
+    /// What the server writes to standard error, a line at a time, while the
+    /// shell runs.
     lines: Receiver<String>,
+    /// The server's Data Directory, which holds its log.
+    data_dir: PathBuf,
 }
 
 impl Drop for Started {
@@ -61,43 +72,50 @@ impl Drop for Started {
 }
 
 impl Started {
-    /// Start the shell, which starts `serve` on an empty database with
-    /// `exit_with_parent` among its arguments: `--exit-with-parent $$` names
-    /// the shell. Returns once the server listens, with its address.
-    fn serve(data_dir: &Path, static_dir: &Path, exit_with_parent: bool) -> (Self, SocketAddr) {
+    /// Start the shell, which starts `serve` on the empty Message Crate in
+    /// `root`, with `--exit-with-parent $$`, naming the shell, when
+    /// `exit_with_parent`. Returns once the server listens, with its address.
+    fn serve(root: &Path, exit_with_parent: bool) -> (Self, SocketAddr) {
+        let (data_dir, static_dir) = empty_message_crate(root);
         let flag = if exit_with_parent {
             format!("--{EXIT_WITH_PARENT_ARG} $$")
         } else {
             String::new()
         };
         // `$0` is the server program, `$1` the Data Directory, `$2` the
-        // website directory. `$!` is the background server's id, and `read`
-        // keeps the shell alive until its standard input closes. `read`
-        // fails there, so `|| true` makes the shell's own exit a success.
+        // website directory, `$3` the named pipe. Opening the pipe waits for
+        // the other end, so the server writes nothing before the loop reads.
+        // `read` keeps the shell alive until its standard input closes, when
+        // it fails, so `|| true` makes the shell's own exit a success.
         let script = format!(
-            r#""$0" serve --data-dir "$1" --bind 127.0.0.1:0 --static-dir "$2" {flag} >/dev/null </dev/null & echo $!; read _ || true"#
+            r#"mkfifo "$3"
+"$0" serve --data-dir "$1" --bind 127.0.0.1:0 --static-dir "$2" {flag} 2>"$3" >/dev/null </dev/null &
+echo $!
+while IFS= read -r line; do echo "$line"; done <"$3" &
+copier=$!
+read _ || true
+kill $copier"#
         );
         let mut parent = Command::new("sh")
             .arg("-c")
             .arg(script)
             .arg(env!("CARGO_BIN_EXE_message-crate-server"))
-            .arg(data_dir)
-            .arg(static_dir)
+            .arg(&data_dir)
+            .arg(&static_dir)
+            .arg(root.join("server-stderr"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::inherit())
             .spawn()
             .unwrap();
+        let mut output = BufReader::new(parent.stdout.take().unwrap());
         let mut pid = String::new();
-        BufReader::new(parent.stdout.take().unwrap())
-            .read_line(&mut pid)
-            .unwrap();
+        output.read_line(&mut pid).unwrap();
         let server_pid = pid.trim().parse().unwrap();
-        let stderr = parent.stderr.take().unwrap();
         let (sender, lines) = mpsc::channel();
-        // Reads until the output closes, so the pipe never fills.
+        // Reads until the shell's output closes, so the pipe never fills.
         thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            for line in output.lines().map_while(Result::ok) {
                 let _ = sender.send(line);
             }
         });
@@ -107,6 +125,7 @@ impl Started {
             parent_input,
             server_pid,
             lines,
+            data_dir,
         };
         let address = started.listening();
         (started, address)
@@ -124,11 +143,8 @@ impl Started {
                     seen.join("\n")
                 )
             });
-            if let Some(url) = line.strip_prefix(LISTENING_LINE) {
-                return url
-                    .strip_prefix("http://")
-                    .and_then(|address| address.parse().ok())
-                    .unwrap_or_else(|| panic!("the listening line names no address: {line}"));
+            if let Some(address) = listening_address(&line) {
+                return address;
             }
             seen.push(line);
         }
@@ -143,36 +159,48 @@ impl Started {
         Instant::now()
     }
 
-    /// Whether the server's output closed, which it does when the server
-    /// exits, before `deadline`.
+    /// Whether the server is still a running process.
+    fn server_runs(&self) -> bool {
+        // SAFETY: `kill` with signal 0 takes no pointers and sends nothing;
+        // it only reports whether the process exists.
+        let exists = unsafe { libc::kill(self.server_pid, 0) } == 0;
+        // An exited server that its new parent has not yet reaped still
+        // exists, as a zombie, state `Z` in `/proc` on Linux.
+        let zombie =
+            std::fs::read_to_string(format!("/proc/{}/stat", self.server_pid)).is_ok_and(|stat| {
+                stat.rsplit_once(')')
+                    .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z'))
+            });
+        exists && !zombie
+    }
+
+    /// Whether the server has exited by `deadline`.
     fn exited_by(&self, deadline: Instant) -> bool {
         loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.lines.recv_timeout(left) {
-                Ok(_) => {}
-                Err(RecvTimeoutError::Disconnected) => return true,
-                Err(RecvTimeoutError::Timeout) => return false,
+            if !self.server_runs() {
+                return true;
             }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(50));
         }
     }
-}
 
-/// A Data Directory with an empty database and an empty website directory,
-/// so `serve` listens without first building the Demo Account.
-fn empty_message_crate(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
-    let data_dir = root.join("data");
-    let static_dir = root.join("static");
-    std::fs::create_dir_all(&data_dir).unwrap();
-    std::fs::create_dir_all(&static_dir).unwrap();
-    create_database(root, &data_dir);
-    (data_dir, static_dir)
+    /// Everything in the server's log.
+    fn log(&self) -> String {
+        let mut log = String::new();
+        for entry in std::fs::read_dir(self.data_dir.join("logs")).unwrap() {
+            log.push_str(&std::fs::read_to_string(entry.unwrap().path()).unwrap());
+        }
+        log
+    }
 }
 
 #[test]
 fn a_server_told_to_exit_with_its_parent_stops_once_the_parent_is_gone() {
     let root = tempfile::tempdir().unwrap();
-    let (data_dir, static_dir) = empty_message_crate(root.path());
-    let (mut started, _address) = Started::serve(&data_dir, &static_dir, true);
+    let (mut started, _address) = Started::serve(root.path(), true);
 
     let parent_ended = started.end_parent();
 
@@ -181,13 +209,21 @@ fn a_server_told_to_exit_with_its_parent_stops_once_the_parent_is_gone() {
         "the server kept running {:?} after its parent was gone",
         PARENT_CHECK_INTERVAL + STOP_ALLOWANCE
     );
+    // It stopped the way Ctrl-C stops it, not by a panic on the standard
+    // error the parent took with it.
+    let log = started.log();
+    for line in STOP_LINES {
+        assert!(
+            log.contains(line),
+            "no {line:?} in the server's log:\n{log}"
+        );
+    }
 }
 
 #[test]
 fn a_server_started_without_the_flag_keeps_running_when_its_parent_is_gone() {
     let root = tempfile::tempdir().unwrap();
-    let (data_dir, static_dir) = empty_message_crate(root.path());
-    let (mut started, address) = Started::serve(&data_dir, &static_dir, false);
+    let (mut started, address) = Started::serve(root.path(), false);
 
     let parent_ended = started.end_parent();
 
