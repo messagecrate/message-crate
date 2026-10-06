@@ -56,14 +56,12 @@ released versions carry their date on the heading.
   belongs only to images built by hand from a branch, which show the commit
   in their version, so one `sha-` tag always names one image. Pull a
   release by its version, such as `0.11.0`, or by `latest`.
-- 2026-10-05: **An Export's state file is now
-  `.message-crate-export-state.jsonl`.** The desktop app's Export keeps this
-  file in the directory it writes, to remember which attachments it already
-  fetched. It was named `.message-crate-pull-state.jsonl`. The old file is
-  no longer read and can be deleted; attachments already in the directory
-  are still kept rather than fetched again. The server now records an Export
-  Run the desktop app starts with the tool name `message-crate-export`, and
-  the library behind it is the `message-crate-export` crate.
+- 2026-10-05: **An Export keeps its record of fetched attachments under a
+  new name.** The desktop app's Export keeps a small record in the directory
+  it writes, so a later Export there does not fetch the same attachments
+  again. That record now has a new name; one with the old name is ignored and
+  can be deleted, and attachments already in the directory are still not
+  fetched again.
 
 ### Fixes
 
