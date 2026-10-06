@@ -630,15 +630,15 @@ async fn flag_exact_content_key_dupes(
 /// message only in whole seconds keeps every copy, as one that holds it
 /// only with milliseconds does.
 fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
-    let with_milliseconds: HashSet<&str> = cands
+    let with_milliseconds: HashSet<String> = cands
         .iter()
         .filter(|c| !c.whole_seconds)
-        .map(|c| c.cand.source.as_str())
+        .map(|c| c.cand.source.clone())
         .collect();
-    let (twins, rest): (Vec<&KeyedCand>, Vec<&KeyedCand>) = cands
-        .iter()
+    let (twins, rest): (Vec<KeyedCand>, Vec<KeyedCand>) = cands
+        .into_iter()
         .partition(|c| c.whole_seconds && with_milliseconds.contains(c.cand.source.as_str()));
-    let rest: Vec<Cand> = rest.into_iter().map(|c| c.cand.clone()).collect();
+    let rest: Vec<Cand> = rest.into_iter().map(|c| c.cand).collect();
     let sources: HashSet<&str> = rest.iter().map(|c| c.source.as_str()).collect();
     let mut flags = if sources.len() < 2 {
         Vec::new()
