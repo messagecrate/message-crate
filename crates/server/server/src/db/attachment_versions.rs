@@ -210,6 +210,37 @@ pub async fn record(
     Ok(done.rows_affected())
 }
 
+/// Record on every attachment row of `account_id` for the original
+/// `original_sha` whether every browser shows it as it is
+/// (`attachments.shown_as_is`), the decision the `/v1` Attachment answers.
+/// Rows that already say so are left alone. The update runs in a write
+/// transaction of its own, as [`record`] does.
+///
+/// # Errors
+///
+/// Returns a database error when the statement fails.
+pub async fn record_shown_as_is(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    original_sha: &str,
+    shown_as_is: bool,
+) -> Result<(), sqlx::Error> {
+    let mut tx = begin_write(conn).await?;
+    sqlx::query(
+        "UPDATE attachments
+         SET shown_as_is = $1
+         WHERE sha256 = $2
+           AND shown_as_is != $1
+           AND message_id IN (SELECT id FROM messages WHERE account_id = $3)",
+    )
+    .bind(shown_as_is)
+    .bind(original_sha)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await
+}
+
 /// Point the attachment rows of `account_id` for the original
 /// `original_sha` that name no `version` at `file`, and answer how many
 /// rows it pointed. Rows that already name one are left alone. 0 when no

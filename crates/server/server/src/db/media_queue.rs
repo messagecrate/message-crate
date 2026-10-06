@@ -62,6 +62,27 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>, s
     .await
 }
 
+/// Every Asset queued in a row after `rowid`, in the order they were
+/// queued. 0 gives every queued Asset. An Asset queued again gets a new row,
+/// so it is given again.
+///
+/// # Errors
+///
+/// Returns a database error when the query fails.
+pub async fn queued_after(
+    conn: &mut SqliteConnection,
+    rowid: i64,
+) -> Result<Vec<QueuedAsset>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT account_id, sha256, rowid FROM media_queue
+         WHERE rowid > $1
+         ORDER BY rowid",
+    )
+    .bind(rowid)
+    .fetch_all(&mut *conn)
+    .await
+}
+
 /// Take `asset` off the queue, unless it was queued again since it was
 /// read.
 ///
