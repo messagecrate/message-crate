@@ -440,34 +440,105 @@ fn without_ffmpeg_the_queue_waits() {
     );
 }
 
-/// The pass records whether each queued original is shown as it is before
-/// it converts any, so a photo queued behind a long video opens at once
-/// rather than after the video's Preview is made. The sweep leaves the
-/// queue as it is.
+/// The sweep the pass runs before each conversion records whether each
+/// queued original is shown as it is, converts nothing, and leaves the
+/// queue as it is, so a photo queued behind a long video opens at once
+/// rather than after the video's Preview is made.
 #[test]
-fn the_pass_decides_every_queued_original_before_it_converts_any() {
+fn decide_queued_records_every_queued_original_and_leaves_the_queue() {
     with_real_ffmpeg(async {
         let (fixture, alice) = fixture_with_account().await;
         let state = &fixture.state;
         let imported = import_three(&fixture, &alice).await;
 
-        decide_queued(&state.db, &state.cfg, &AtomicBool::new(false))
-            .await
-            .unwrap();
+        let mut stats = ProcessAssetsStats::default();
+        decide_queued(
+            &state.db,
+            &state.cfg,
+            &AtomicBool::new(false),
+            0,
+            &mut stats,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(queued(state).await, 3, "nothing leaves the queue");
+        assert_eq!(stats, ProcessAssetsStats::default(), "nothing failed");
         let after = attachments(state, &alice, imported.conversation_id).await;
         assert_eq!(
             [&imported.photo, &imported.h264, &imported.hevc].map(|sha| shown_as_is(&after, sha)),
             [true, true, false].map(serde_json::Value::Bool),
             "{after:?}"
         );
-        assert_eq!(
-            attachments(state, &alice, imported.conversation_id).await[0]["thumbnail_mime_type"],
-            serde_json::Value::Null,
-            "nothing is converted"
-        );
+        for attachment in &after {
+            assert_eq!(
+                attachment["thumbnail_mime_type"],
+                serde_json::Value::Null,
+                "nothing is converted: {attachment}"
+            );
+        }
     });
+}
+
+/// The pass sweeps again before each conversion, from the last row it
+/// decided, so an Asset an Import Run queues while a long video is converted
+/// is decided before the next conversion rather than at its own turn.
+#[tokio::test]
+async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = &fixture.state;
+    let imported = import_three(&fixture, &alice).await;
+    let stop = AtomicBool::new(false);
+    let mut stats = ProcessAssetsStats::default();
+    let undecide_photo = || async {
+        crate::db::attachment_versions::record_shown_as_is(
+            &mut state.db.acquire().await.unwrap(),
+            alice.account_id,
+            &imported.photo,
+            false,
+        )
+        .await
+        .unwrap();
+    };
+    let last = decide_queued(&state.db, &state.cfg, &stop, 0, &mut stats)
+        .await
+        .unwrap();
+    undecide_photo().await;
+
+    // A later Import Run queues the same Assets again, in new rows.
+    let run: i64 = sqlx::query_scalar("SELECT id FROM imports WHERE account_id = $1")
+        .bind(alice.account_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    crate::db::media_queue::queue_import_run(
+        &mut state.db.acquire().await.unwrap(),
+        alice.account_id,
+        run,
+    )
+    .await
+    .unwrap();
+    let newest = decide_queued(&state.db, &state.cfg, &stop, last, &mut stats)
+        .await
+        .unwrap();
+
+    let after = attachments(state, &alice, imported.conversation_id).await;
+    assert_eq!(
+        shown_as_is(&after, &imported.photo),
+        serde_json::json!(true)
+    );
+    assert!(newest > last, "the sweep moves on to the newest row");
+
+    // Nothing was queued since, so the next sweep decides nothing.
+    undecide_photo().await;
+    decide_queued(&state.db, &state.cfg, &stop, newest, &mut stats)
+        .await
+        .unwrap();
+    let after = attachments(state, &alice, imported.conversation_id).await;
+    assert_eq!(
+        shown_as_is(&after, &imported.photo),
+        serde_json::json!(false)
+    );
 }
 
 /// Only ffprobe can read an MP4's codec, so a pass that has lost ffmpeg

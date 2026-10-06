@@ -80,7 +80,12 @@ pub struct FfmpegToolsProbe {
 
 /// True when both ffmpeg and ffprobe resolve from the search path.
 pub fn ffmpeg_available() -> bool {
-    resolve_tool("ffmpeg").is_some() && resolve_tool("ffprobe").is_some()
+    resolve_tool("ffmpeg").is_some() && ffprobe_available()
+}
+
+/// True when ffprobe resolves from the search path.
+pub(crate) fn ffprobe_available() -> bool {
+    resolve_tool("ffprobe").is_some()
 }
 
 /// Fail with an installation hint when ffmpeg and ffprobe are not available.

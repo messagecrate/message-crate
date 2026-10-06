@@ -63,11 +63,11 @@ The `/v1` Attachment's `shown_as_is` is the one place a client reads the
 decision.
 The server's media pass (rule 4) decides it with `media::browser_shows`, the same call that spares the Asset a Preview.
 It stores the answer on the Asset's attachment rows (`attachments.shown_as_is`), so a read never runs ffprobe.
-The pass decides every queued Asset before it converts any, so a photo queued behind a long video opens at once.
+Before each conversion, the pass decides every Asset queued since it last looked, so a photo queued behind a long video opens at once.
 It is false until the pass has looked at the file.
 Without ffmpeg the pass still decides every type but MP4, so a photo opens as it is on a server that cannot convert.
 Only ffprobe can read an MP4's codec, so without it an MP4 keeps what an earlier pass decided, and one never looked at counts as not shown as it is.
-A Demo Account built without ffmpeg is decided the same way.
+A Demo Account build without ffmpeg decides every original of the account the same way.
 
 The web app reads it in `fullVersion` (`web/src/lib/attachmentMedia.ts`) and keeps no list of types of its own.
 It opens the original when `shown_as_is` is true, the Preview when it is false and the attachment has one (`preview_mime_type`), and neither otherwise.

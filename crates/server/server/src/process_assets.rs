@@ -81,8 +81,8 @@ pub struct ProcessAssetsStats {
     pub not_removed: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
-    /// Originals whose rows could not be told whether every browser shows
-    /// them as they are (`attachments.shown_as_is`).
+    /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
+    /// could not be recorded.
     pub not_decided: u64,
 }
 
@@ -166,8 +166,8 @@ impl ProcessAssetsStats {
         if self.not_decided > 0 {
             failures.push(words(
                 self.not_decided,
-                "1 original whose rows could not be told whether every browser shows it as it is",
-                "{n} originals whose rows could not be told whether every browser shows them as they are",
+                "1 original whose shown-as-is decision could not be recorded",
+                "{n} originals whose shown-as-is decisions could not be recorded",
             ));
         }
         failures
@@ -222,21 +222,16 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// as it is ([`media::browser_shows`]): the decision that both spares it a
 /// Preview and is answered as the `/v1` Attachment's `shown_as_is`. An
 /// incomplete `.part` original is never handed to ffprobe, and is not.
-/// `None` for an MP4 while ffprobe is missing: only ffprobe can read its
-/// codec, so nothing is known, and a decision an earlier pass recorded with
-/// ffprobe must stay.
+/// `None` when nothing can be known, as for an MP4 while ffprobe is
+/// missing, so a decision an earlier pass recorded stays.
 fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
     if is_part_path(&row.assets_path) {
         return Some(false);
     }
-    let media_type = media_type(row);
-    if media_type.as_deref() == Some("video/mp4") && !media::ffmpeg_available() {
-        return None;
-    }
-    Some(media::browser_shows(
+    media::browser_shows(
         &assets_dir.join(&row.assets_path),
-        media_type.as_deref(),
-    ))
+        media_type(row).as_deref(),
+    )
 }
 
 /// Record `decided` on every row of `account_id`'s original `sha256`, the
@@ -245,7 +240,7 @@ fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
 /// # Errors
 ///
 /// Returns an error when the rows cannot be written.
-async fn record_shown_as_is(
+async fn record_decision_if_known(
     db: &SqlitePool,
     account_id: i64,
     sha256: &str,
@@ -261,9 +256,9 @@ async fn record_shown_as_is(
 
 /// Decide whether every browser shows each original of `account_id` as it
 /// is, the one `only` names or every one, and record it on its rows, without
-/// making anything. The server's pass does this for every queued Asset
-/// before it converts any, and a Demo Account build without ffmpeg does it
-/// for the account, so a photo opens at once rather than after the videos
+/// making anything. The server's pass does this for each newly queued Asset
+/// before its next conversion, and a Demo Account build without ffmpeg does
+/// it for the account, so a photo opens at once rather than after the videos
 /// queued before it, and on a server that cannot convert.
 ///
 /// # Errors
@@ -282,7 +277,8 @@ pub(crate) async fn decide_shown_as_is(
     let mut decided = std::collections::HashSet::new();
     for row in &rows {
         if decided.insert(row.sha256.as_str()) {
-            record_shown_as_is(db, account_id, &row.sha256, shown_as_is(&assets_dir, row)).await?;
+            record_decision_if_known(db, account_id, &row.sha256, shown_as_is(&assets_dir, row))
+                .await?;
         }
     }
     Ok(())
@@ -696,7 +692,7 @@ impl<'a> AccountPass<'a> {
         let not_decided = if self.opts.dry_run {
             None
         } else {
-            record_shown_as_is(db, self.account_id, &row.sha256, decided)
+            record_decision_if_known(db, self.account_id, &row.sha256, decided)
                 .await
                 .err()
         };

@@ -74,7 +74,7 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
         "image/webp",
         "audio/mpeg",
     ] {
-        assert!(browser_shows(nowhere, Some(shown)), "{shown}");
+        assert_eq!(browser_shows(nowhere, Some(shown)), Some(true), "{shown}");
     }
     for preview in [
         "image/heic",
@@ -86,15 +86,16 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
         "audio/mp4",
         "audio/x-caf",
     ] {
-        assert!(!browser_shows(nowhere, Some(preview)), "{preview}");
+        assert_eq!(
+            browser_shows(nowhere, Some(preview)),
+            Some(false),
+            "{preview}"
+        );
     }
-    assert!(
-        !browser_shows(nowhere, None),
+    assert_eq!(
+        browser_shows(nowhere, None),
+        Some(false),
         "a file of no known type gets a Preview"
-    );
-    assert!(
-        !browser_shows(nowhere, Some("video/mp4")),
-        "an MP4 ffprobe cannot read gets a Preview"
     );
 }
 
@@ -109,11 +110,30 @@ fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
     let hevc = dir.path().join("hevc.mp4");
     video(&hevc, &["-c:v", "libx265", "-tag:v", "hvc1"]);
 
-    assert!(browser_shows(&h264, Some("video/mp4")));
-    assert!(
-        !browser_shows(&hevc, Some("video/mp4")),
+    assert_eq!(browser_shows(&h264, Some("video/mp4")), Some(true));
+    assert_eq!(
+        browser_shows(&hevc, Some("video/mp4")),
+        Some(false),
         "HEVC in an MP4 needs a Preview"
     );
+    assert_eq!(
+        browser_shows(Path::new("no/such/file"), Some("video/mp4")),
+        Some(false),
+        "an MP4 ffprobe cannot read gets a Preview"
+    );
+}
+
+/// Without ffprobe nothing is known about an MP4's codec, so the answer is
+/// `None` and a caller keeps what an earlier answer said. Every other type
+/// is still answered by its type alone.
+#[test]
+fn without_ffprobe_an_mp4_is_not_known() {
+    let _hidden = crate::testutil::hide_ffmpeg();
+    let nowhere = Path::new("no/such/file");
+
+    assert_eq!(browser_shows(nowhere, Some("video/mp4")), None);
+    assert_eq!(browser_shows(nowhere, Some("image/jpeg")), Some(true));
+    assert_eq!(browser_shows(nowhere, Some("image/heic")), Some(false));
 }
 
 #[test]
@@ -171,7 +191,7 @@ fn a_hevc_video_preview_is_h264_that_every_browser_plays() {
     make_preview(&src, Kind::Video, &dest, &NOT_STOPPED).unwrap();
 
     assert_eq!(shape(&dest), ("h264".to_string(), 320, 240));
-    assert!(browser_shows(&dest, Some("video/mp4")));
+    assert_eq!(browser_shows(&dest, Some("video/mp4")), Some(true));
 }
 
 #[test]

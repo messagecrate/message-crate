@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result, bail};
 
 use crate::Kind;
-use crate::tools::{probe_video, require_ffmpeg, run_ffmpeg_until};
+use crate::tools::{ffprobe_available, probe_video, require_ffmpeg, run_ffmpeg_until};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -82,16 +82,24 @@ pub fn media_type_of(
 /// Preview.
 ///
 /// Only an MP4 is opened, by ffprobe, to read its video codec. One ffprobe
-/// cannot read counts as not shown, so it is given a Preview.
+/// cannot read counts as not shown, so it is given a Preview. `None` for an
+/// MP4 while ffprobe is missing: nothing can be known about its codec, so a
+/// caller keeps what it knew before.
 #[must_use]
-pub fn browser_shows(src: &Path, media_type: Option<&str>) -> bool {
+pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
     let Some(media_type) = media_type else {
-        return false;
+        return Some(false);
     };
     if SHOWN_AS_IS.contains(&media_type) {
-        return true;
+        return Some(true);
     }
-    media_type == "video/mp4" && probe_video(src).is_ok_and(|probe| probe.codec == "h264")
+    if media_type != "video/mp4" {
+        return Some(false);
+    }
+    if !ffprobe_available() {
+        return None;
+    }
+    Some(probe_video(src).is_ok_and(|probe| probe.codec == "h264"))
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the

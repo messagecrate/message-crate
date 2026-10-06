@@ -1838,7 +1838,7 @@ fn the_done_line_counts_one_and_many() {
          1 original whose Preview or Thumbnail could not be made, \
          1 incomplete original that could not be removed, \
          1 damaged Preview or Thumbnail that could not be dropped, \
-         1 original whose rows could not be told whether every browser shows it as it is"
+         1 original whose shown-as-is decision could not be recorded"
     );
     let many = ProcessAssetsStats {
         scanned: 9,
