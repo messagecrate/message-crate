@@ -131,8 +131,9 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// # Errors
 ///
 /// Returns an error when the work directory is missing, the process cannot start, or
-/// wtsexporter exits with a non-zero status; when its output says the disk
-/// is full, the error is the free-space sentence for the Scratch Directory.
+/// wtsexporter exits with a non-zero status. When its output says the disk is
+/// full, or the output directory finds it full, the error is the free-space
+/// sentence for the Scratch Directory.
 pub(crate) fn run_wtsexporter(
     bin: &Path,
     args: &WtsexporterArgs,
@@ -145,7 +146,8 @@ pub(crate) fn run_wtsexporter(
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
+    std::fs::create_dir_all(out_dir)
+        .map_err(|err| scratch_write_error(err, format!("create {}", out_dir.display())))?;
 
     let output = wtsexporter_command(bin, args, out_dir, json_out)?
         .output()
@@ -189,14 +191,30 @@ pub(crate) fn run_wtsexporter(
 }
 
 /// Whether wtsexporter's output says a write failed because its disk is
-/// full: Python's words for `ENOSPC`, and Windows' for its own error.
+/// full. Python prints `[Errno 28]` for `ENOSPC` and `[WinError 112]` for
+/// Windows' `ERROR_DISK_FULL` in every system language; the words after them
+/// are matched too, in English, for output that carries the words alone.
 fn names_a_full_disk(output: &str) -> bool {
     [
+        "[Errno 28]",
+        "[WinError 112]",
         "No space left on device",
         "There is not enough space on the disk",
     ]
     .iter()
     .any(|words| output.contains(words))
+}
+
+/// `err`, from a write into the work directory under the Scratch Directory,
+/// as the free-space error when the disk is full, so a disk already full
+/// before wtsexporter starts reads as one that fills while it runs.
+/// Any other error keeps `what` as its context.
+fn scratch_write_error(err: std::io::Error, what: String) -> anyhow::Error {
+    if err.kind() == std::io::ErrorKind::StorageFull {
+        scratch_disk_full()
+    } else {
+        anyhow::Error::new(err).context(what)
+    }
 }
 
 /// The wtsexporter command for `args`, writing media to `out_dir` and JSON
@@ -444,9 +462,9 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
     }
     let mut file = opts
         .open(&path)
-        .with_context(|| format!("create {}", path.display()))?;
+        .map_err(|err| scratch_write_error(err, format!("create {}", path.display())))?;
     file.write_all(&raw)
-        .with_context(|| format!("write {}", path.display()))?;
+        .map_err(|err| scratch_write_error(err, format!("write {}", path.display())))?;
     Ok(path)
 }
 
@@ -454,7 +472,8 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 mod tests {
     use super::{
         Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
-        resolve_forwarded_paths, run_wtsexporter, wtsexporter_command,
+        names_a_full_disk, resolve_forwarded_paths, run_wtsexporter, scratch_write_error,
+        wtsexporter_command,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use std::fs;
@@ -961,5 +980,40 @@ mod tests {
 
         drop(work);
         assert!(!partial.exists(), "the partial database is deleted");
+    }
+
+    /// Python's error codes for a full disk name it in any system language,
+    /// so a German Windows' `ERROR_DISK_FULL` is still the free-space error.
+    #[test]
+    fn a_full_disk_is_found_by_its_error_code_in_any_language() {
+        assert!(names_a_full_disk(
+            "OSError: [WinError 112] Auf dem Datenträger ist nicht genug Speicherplatz vorhanden"
+        ));
+        assert!(names_a_full_disk(
+            "OSError: [Errno 28] Espace insuffisant sur le périphérique"
+        ));
+        assert!(!names_a_full_disk("ValueError: The key is incorrect"));
+    }
+
+    /// A Scratch Directory disk already full before wtsexporter starts gives
+    /// the same free-space error as one that fills while it runs; any other
+    /// write error keeps its own words.
+    #[test]
+    fn a_full_disk_before_wtsexporter_starts_is_the_free_space_error() {
+        let full = scratch_write_error(
+            std::io::Error::from(std::io::ErrorKind::StorageFull),
+            "create work/decryption.key".to_string(),
+        )
+        .to_string();
+        assert!(
+            full.starts_with("Not enough space on the disk that holds the Scratch Directory"),
+            "{full}"
+        );
+
+        let denied = scratch_write_error(
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            "create work/decryption.key".to_string(),
+        );
+        assert_eq!(denied.to_string(), "create work/decryption.key");
     }
 }
