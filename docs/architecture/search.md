@@ -215,19 +215,20 @@ that must appear next to each other in that order, and a term that is only
 punctuation or emoji finds no message text.
 
 **A search finds a message by what it shows.** An Unsent message reads
-"Unsent" and nothing else, so `messages_fts` holds no row for it and the
-file-name match skips it: a word of the text or file names it hides does not
-find it, even when an earlier import stored them (#1758). Every other word
-still applies to it, because the row shows its mark, its sender, its
-conversation and its date: `unsent:yes`, `from:`, `in:` and `date:` find it.
-Its earlier versions are shown under it, so they still find it. A message
-Deleted in the source app shows its text, so its text finds it. The sync
-triggers (`schema/sql/fts_triggers_create.sql`) and the promotion's own
-indexing (`index_messages_fts_from_promote_map` in `db/schema.rs`) both keep
-the row out, and a later import that marks a stored message Unsent removes
-it. Why: a hit whose row shows nothing that matched looks like a search bug.
-The `body:`, `subject:` and `filename:` words read the stored columns and
-still match the hidden text (#1954).
+"Unsent" and nothing else, so no word of the body, subject or attachment
+file names it hides finds it, even when an earlier import stored them
+(#1758). For free text, `messages_fts` holds no row for it and the file-name
+match skips it. The sync triggers (`schema/sql/fts_triggers_create.sql`) and
+the promotion's own indexing (`index_messages_fts_from_promote_map` in
+`db/schema.rs`) both keep the row out, and a later import that marks a
+stored message Unsent removes it. The `body:`, `subject:` and `filename:`
+words read an Unsent message as having no body, subject or attachments, on
+every list, so `body:none` matches it. Every other word still applies to it,
+because the row shows its mark, its sender, its conversation and its date:
+`unsent:yes`, `from:`, `in:` and `date:` find it. Its earlier versions are
+shown under it in the conversation, so they still find it. A message
+Deleted in the source app shows its text, so its text finds it. Why: a hit
+whose row shows nothing that matched looks like a search bug.
 
 **A word an earlier version holds finds the message, and the answer says
 so.** Each free-text word matches a message when its final text (the body,
@@ -348,12 +349,16 @@ Text, `none`, `any`.
 - **Conversations**: one of the conversation's messages has this body. `none` is one whose body is empty.
 - **Messages**: the message's body.
 
+An Unsent message has no body here, whatever an import stored, because its row shows none (#1758).
+
 ### `subject:`
 
 Text, `none`, `any`.
 
 - **Conversations**: one of the conversation's messages has this subject line.
 - **Messages**: the message's subject line.
+
+An Unsent message has no subject line here, for the same reason as `body:`.
 
 ### `name:`
 
@@ -500,6 +505,8 @@ Text, with no `none` or `any`.
 
 - **Conversations**: one of the conversation's messages has an attachment whose file name contains the text.
 - **Messages**: the message has one.
+
+An Unsent message has no attachments here, for the same reason as `body:`.
 
 ### `size:`
 

@@ -422,11 +422,20 @@ fn text_match(out: &mut Sql, column: &str, term: &FieldTerm, v: &Value) -> Resul
     }
 }
 
+/// A message's body as its row shows it: an Unsent message reads "Unsent"
+/// and shows no body, whatever an earlier import stored (#1758).
+const SHOWN_BODY: &str = "CASE WHEN m.deletion = 'unsent' THEN '' ELSE coalesce(m.body, '') END";
+
+/// A message's subject as its row shows it, empty for an Unsent message.
+const SHOWN_SUBJECT: &str =
+    "CASE WHEN m.deletion = 'unsent' THEN '' ELSE coalesce(m.subject, '') END";
+
 /// The six text words. On Contacts, `name:` and `identity:` look at the
 /// contact itself; everywhere else they look at the conversation's
 /// participants. `body:`, `subject:`, and `filename:` always look at
-/// messages (and their attachments); `title:` always looks at the
-/// conversation.
+/// messages (and their attachments), as each message shows them, so an
+/// Unsent message has no body, subject or attachments to match; `title:`
+/// always looks at the conversation.
 fn emit_text_word(
     ctx: &ListCtx,
     out: &mut Sql,
@@ -436,10 +445,10 @@ fn emit_text_word(
     let mut result: Result<(), QueryError> = Ok(());
     match (term.spec.word, ctx.list) {
         ("body", _) => ctx.message(out, |o| {
-            result = text_match(o, "coalesce(m.body, '')", term, v);
+            result = text_match(o, SHOWN_BODY, term, v);
         }),
         ("subject", _) => ctx.message(out, |o| {
-            result = text_match(o, "coalesce(m.subject, '')", term, v);
+            result = text_match(o, SHOWN_SUBJECT, term, v);
         }),
         ("title", _) => ctx.conversation(out, |o| {
             result = text_match(
@@ -518,7 +527,10 @@ fn emit_text_word(
             }
         }),
         ("filename", _) => ctx.message(out, |o| {
-            o.push("EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id AND ");
+            o.push(
+                "EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = m.id \
+                 AND m.deletion IS NOT 'unsent' AND ",
+            );
             result = text_match(o, "coalesce(a.original_name, '')", term, v);
             o.push(")");
         }),

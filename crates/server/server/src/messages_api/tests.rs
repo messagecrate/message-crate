@@ -588,8 +588,9 @@ async fn deleted_and_unsent_each_find_only_their_own_mark() {
 }
 
 /// One Apple Messages conversation file holding `said`, a message the owner
-/// sent about the lighthouse with a map of the harbour attached, marked
-/// `deletion`, and a reply that mentions neither.
+/// sent about the lighthouse under the subject "Weekend plans" with a map of
+/// the harbour attached, marked `deletion`, and a reply that mentions none
+/// of them.
 fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
     let header = conversation_header("imessage", "+15555550107")
         .owner("+15555550106", None)
@@ -597,6 +598,7 @@ fn lighthouse_file(deletion: Option<message_ir::Deletion>) -> String {
     let mut said = message_line("g-said", "Meet at the lighthouse")
         .at(1_578_308_040_000)
         .outgoing()
+        .subject("Weekend plans")
         .attachment(IrAttachment {
             missing_reason: Some("not_found".into()),
             ..attachment(
@@ -625,30 +627,73 @@ async fn found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> V
     guids(&page)
 }
 
+/// How many conversations `q` finds on the Conversations list.
+async fn conversations_found(fixture: &TestFixture, account: &RegisteredAccount, q: &str) -> u64 {
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations?q={q}"),
+        &account.token,
+    )
+    .await;
+    page["total"].as_u64().unwrap()
+}
+
+/// The searches that reach `said` in [`lighthouse_file`] only through text
+/// an Unsent message hides: free text in its body, subject and file name,
+/// and the `body:`, `subject:` and `filename:` words.
+const HIDDEN_TEXT_QUERIES: [&str; 7] = [
+    "lighthouse",
+    "plans",
+    "harbour",
+    "lighthouse%20from%3Ame",
+    "body%3Alighthouse",
+    "subject%3Aplans",
+    "filename%3Aharbour",
+];
+
 /// A search finds a message by what it shows (#1758). An Unsent message
 /// reads "Unsent" and nothing else, so when a later import marks Unsent a
-/// message an earlier import stored with its text, a word of that text and
-/// a word of its attachment's file name stop finding it, while `unsent:yes`
-/// and `from:me`, which the row shows, still do.
+/// message an earlier import stored with its text, no word of its body,
+/// subject or file names finds it any more, on Messages or Conversations,
+/// while `unsent:yes`, `from:me`, `in:` and `date:`, which the row shows,
+/// still do.
 #[tokio::test]
 async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() {
     let (fixture, alice) = fixture_with_account().await;
     let first = lighthouse_file(None);
     import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
-    assert_eq!(found(&fixture, &alice, "lighthouse").await, ["g-said"]);
-    assert_eq!(found(&fixture, &alice, "harbour").await, ["g-said"]);
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
 
     let later = lighthouse_file(Some(message_ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
 
-    for q in ["lighthouse", "harbour", "lighthouse%20from%3Ame"] {
+    for q in HIDDEN_TEXT_QUERIES {
         assert!(
             found(&fixture, &alice, q).await.is_empty(),
             "{q} finds the Unsent message by text it hides"
         );
     }
+    assert_eq!(
+        conversations_found(&fixture, &alice, "body%3Alighthouse").await,
+        0,
+        "body: on Conversations reads the text the Unsent message hides"
+    );
     assert_eq!(found(&fixture, &alice, "unsent%3Ayes").await, ["g-said"]);
     assert_eq!(found(&fixture, &alice, "from%3Ame").await, ["g-said"]);
+    assert_eq!(
+        found(&fixture, &alice, "body%3Anone").await,
+        ["g-said"],
+        "an Unsent message shows no body"
+    );
+    for q in ["in%3A5550107", "date%3A2020"] {
+        assert_eq!(
+            found(&fixture, &alice, q).await,
+            ["g-said", "g-reply"],
+            "{q}"
+        );
+    }
     assert_eq!(
         found(&fixture, &alice, "-lighthouse").await,
         ["g-said", "g-reply"],
@@ -656,24 +701,23 @@ async fn a_message_unsent_by_a_later_import_is_not_found_by_the_text_it_hides() 
     );
 }
 
-/// A message that arrives Unsent in its first import is never found by its
-/// text or its attachment's file name, and is found by `unsent:yes` and
-/// `from:me`.
+/// A message that arrives Unsent in its first import is never found by the
+/// text it hides, and is found by `unsent:yes` and `from:me`.
 #[tokio::test]
 async fn a_message_unsent_in_its_first_import_is_not_found_by_its_text() {
     let (fixture, alice) = fixture_with_account().await;
     let file = lighthouse_file(Some(message_ir::Deletion::Unsent));
     import_conversation_file(&fixture, alice.account_id, "only", &file, "imessage").await;
 
-    assert!(found(&fixture, &alice, "lighthouse").await.is_empty());
-    assert!(found(&fixture, &alice, "harbour").await.is_empty());
+    for q in HIDDEN_TEXT_QUERIES {
+        assert!(found(&fixture, &alice, q).await.is_empty(), "{q}");
+    }
     assert_eq!(found(&fixture, &alice, "unsent%3Ayes").await, ["g-said"]);
     assert_eq!(found(&fixture, &alice, "from%3Ame").await, ["g-said"]);
 }
 
 /// A message Deleted in the source app shows its text, so it stays found by
-/// it when a later import marks it, and an Unsent message a later backup
-/// marks Deleted in the source app instead is found by its text again.
+/// it when a later import marks it.
 #[tokio::test]
 async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text() {
     let (fixture, alice) = fixture_with_account().await;
@@ -681,17 +725,25 @@ async fn a_message_marked_deleted_by_a_later_import_is_still_found_by_its_text()
     import_conversation_file(&fixture, alice.account_id, "first", &first, "imessage").await;
     let later = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
     import_conversation_file(&fixture, alice.account_id, "later", &later, "imessage").await;
-    assert_eq!(found(&fixture, &alice, "lighthouse").await, ["g-said"]);
-    assert_eq!(found(&fixture, &alice, "harbour").await, ["g-said"]);
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
     assert_eq!(found(&fixture, &alice, "deleted%3Ayes").await, ["g-said"]);
+}
 
-    let (fixture, bob) = fixture_with_account().await;
+/// An Unsent message that a later backup marks Deleted in the source app
+/// instead shows its text again, so its text finds it again: the promotion
+/// writes back the index row the Unsent mark kept out.
+#[tokio::test]
+async fn an_unsent_message_a_later_import_marks_deleted_is_found_by_its_text_again() {
+    let (fixture, alice) = fixture_with_account().await;
     let unsent = lighthouse_file(Some(message_ir::Deletion::Unsent));
-    import_conversation_file(&fixture, bob.account_id, "unsent", &unsent, "imessage").await;
+    import_conversation_file(&fixture, alice.account_id, "unsent", &unsent, "imessage").await;
     let deleted = lighthouse_file(Some(message_ir::Deletion::DeletedInSourceApp));
-    import_conversation_file(&fixture, bob.account_id, "deleted", &deleted, "imessage").await;
-    assert_eq!(found(&fixture, &bob, "lighthouse").await, ["g-said"]);
-    assert_eq!(found(&fixture, &bob, "harbour").await, ["g-said"]);
+    import_conversation_file(&fixture, alice.account_id, "deleted", &deleted, "imessage").await;
+    for q in HIDDEN_TEXT_QUERIES {
+        assert_eq!(found(&fixture, &alice, q).await, ["g-said"], "{q}");
+    }
 }
 
 /// The message of a messages page whose guid is `guid`.
