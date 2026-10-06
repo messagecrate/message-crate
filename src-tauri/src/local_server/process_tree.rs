@@ -24,7 +24,7 @@ use std::process::{Child, Command, ExitStatus};
 pub(super) struct ServerProcess {
     child: Child,
     /// The Job Object the server runs in, or `None` when the system refused
-    /// one; the server is then killed alone.
+    /// one. The server is then killed alone.
     #[cfg(windows)]
     job: Option<std::os::windows::io::OwnedHandle>,
 }

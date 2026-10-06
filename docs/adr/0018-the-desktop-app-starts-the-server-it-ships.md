@@ -61,7 +61,7 @@ The server ends one of two ways.
 - **The app closes normally.** The app kills the server. Its database
   survives that, and the only work a kill interrupts is an import the closing
   app was running. The kill does not reach an ffmpeg the server runs; #1737
-  is about ending that too. (Superseded on 2026-10-05; see the note below.)
+  is about ending that too. (The note of 2026-10-05 below replaces this sentence.)
 - **The app is gone without closing**, because it crashed or was killed. The
   app starts the server with `--exit-with-parent` and the app's process id,
   so the server notices and stops itself, the way it stops on Ctrl-C or

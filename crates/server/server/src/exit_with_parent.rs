@@ -8,8 +8,8 @@
 //! computer restarted. With it, the server stops the way it stops on Ctrl-C
 //! or SIGTERM: the requests in flight finish and ffmpeg is stopped (#1736).
 //! On Windows the Job Object the app puts the server in usually kills it
-//! first, when the system closes the crashed app's handle to the job (#1737);
-//! this watch stops a server the system would not put in a job.
+//! first, when the system closes the crashed app's handle to the job (#1737).
+//! This watch stops a server the system would not put in a job.
 //!
 //! On Unix the server checks its parent process id every
 //! [`PARENT_CHECK_INTERVAL`]. A process whose parent ends gets a new parent,
