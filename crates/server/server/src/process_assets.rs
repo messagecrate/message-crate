@@ -81,6 +81,9 @@ pub struct ProcessAssetsStats {
     pub not_removed: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
+    /// Originals whose rows could not be told whether every browser shows
+    /// them as they are (`attachments.shown_as_is`).
+    pub not_decided: u64,
 }
 
 impl ProcessAssetsStats {
@@ -96,6 +99,7 @@ impl ProcessAssetsStats {
         self.not_made += other.not_made;
         self.not_removed += other.not_removed;
         self.not_dropped += other.not_dropped;
+        self.not_decided += other.not_decided;
     }
 
     /// Count what processing one original did.
@@ -114,10 +118,11 @@ impl ProcessAssetsStats {
         }
         self.dropped += outcome.dropped;
         self.shared += outcome.shared;
-        // A decision that could not be recorded is a database write that
-        // failed, as a version made but not recorded is, and counts the same.
-        if outcome.not_made.is_some() || outcome.not_decided.is_some() {
+        if outcome.not_made.is_some() {
             self.not_made += 1;
+        }
+        if outcome.not_decided.is_some() {
+            self.not_decided += 1;
         }
         self.not_dropped += outcome.not_dropped.len() as u64;
         if outcome.left_as_it_was() {
@@ -156,6 +161,13 @@ impl ProcessAssetsStats {
                 self.not_dropped,
                 "1 damaged Preview or Thumbnail that could not be dropped",
                 "{n} damaged Previews or Thumbnails that could not be dropped",
+            ));
+        }
+        if self.not_decided > 0 {
+            failures.push(words(
+                self.not_decided,
+                "1 original whose rows could not be told whether every browser shows it as it is",
+                "{n} originals whose rows could not be told whether every browser shows them as they are",
             ));
         }
         failures
@@ -210,20 +222,49 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// as it is ([`media::browser_shows`]): the decision that both spares it a
 /// Preview and is answered as the `/v1` Attachment's `shown_as_is`. An
 /// incomplete `.part` original is never handed to ffprobe, and is not.
-fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> bool {
-    !is_part_path(&row.assets_path)
-        && media::browser_shows(
-            &assets_dir.join(&row.assets_path),
-            media_type(row).as_deref(),
-        )
+/// `None` for an MP4 while ffprobe is missing: only ffprobe can read its
+/// codec, so nothing is known, and a decision an earlier pass recorded with
+/// ffprobe must stay.
+fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
+    if is_part_path(&row.assets_path) {
+        return Some(false);
+    }
+    let media_type = media_type(row);
+    if media_type.as_deref() == Some("video/mp4") && !media::ffmpeg_available() {
+        return None;
+    }
+    Some(media::browser_shows(
+        &assets_dir.join(&row.assets_path),
+        media_type.as_deref(),
+    ))
 }
 
-/// Decide whether every browser shows the original `sha256` of `account_id`
-/// as it is, and record it on its rows, without making anything. The
-/// server's pass does this for a queued Asset when ffmpeg is missing, so a
-/// photo opens as it is on a server that cannot convert. Without ffprobe an
-/// MP4's codec cannot be read, so an MP4 is recorded as not shown as it is
-/// until a pass with ffprobe looks at it again.
+/// Record `decided` on every row of `account_id`'s original `sha256`, the
+/// one write of the decision. `None` writes nothing.
+///
+/// # Errors
+///
+/// Returns an error when the rows cannot be written.
+async fn record_shown_as_is(
+    db: &SqlitePool,
+    account_id: i64,
+    sha256: &str,
+    decided: Option<bool>,
+) -> Result<()> {
+    if let Some(shown) = decided {
+        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, sha256, shown)
+            .await
+            .context("record whether it is shown as it is")?;
+    }
+    Ok(())
+}
+
+/// Decide whether every browser shows each original of `account_id` as it
+/// is, the one `only` names or every one, and record it on its rows, without
+/// making anything. The server's pass does this for every queued Asset
+/// before it converts any, and a Demo Account build without ffmpeg does it
+/// for the account, so a photo opens at once rather than after the videos
+/// queued before it, and on a server that cannot convert.
 ///
 /// # Errors
 ///
@@ -232,15 +273,17 @@ pub(crate) async fn decide_shown_as_is(
     cfg: &Config,
     db: &SqlitePool,
     account_id: i64,
-    sha256: &str,
+    only: Option<&str>,
 ) -> Result<()> {
     let assets_dir = cfg.paths.assets_dir_for_account(account_id);
-    let rows =
-        versions_db::stored_originals(&mut *db.acquire().await?, account_id, Some(sha256)).await?;
+    let rows = versions_db::stored_originals(&mut *db.acquire().await?, account_id, only).await?;
+    // Rows come one per original and stored path; an original stored under
+    // two paths is decided once.
+    let mut decided = std::collections::HashSet::new();
     for row in &rows {
-        let shown = shown_as_is(&assets_dir, row);
-        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, &row.sha256, shown)
-            .await?;
+        if decided.insert(row.sha256.as_str()) {
+            record_shown_as_is(db, account_id, &row.sha256, shown_as_is(&assets_dir, row)).await?;
+        }
     }
     Ok(())
 }
@@ -640,17 +683,23 @@ impl<'a> AccountPass<'a> {
                 &self.converted_dir,
             )
         };
+        let decided = shown_as_is(&self.assets_dir, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
-            browser_shows: shown_as_is(&self.assets_dir, row),
+            browser_shows: decided.unwrap_or(false),
         };
         // The decision is stored whatever the options leave alone, so the
-        // `/v1` Attachment answers it without running ffprobe on a read.
-        let not_decided = self
-            .record_shown_as_is(db, row, on_disk.browser_shows)
-            .await;
+        // `/v1` Attachment answers it without running ffprobe on a read. A
+        // dry run writes nothing.
+        let not_decided = if self.opts.dry_run {
+            None
+        } else {
+            record_shown_as_is(db, self.account_id, &row.sha256, decided)
+                .await
+                .err()
+        };
         let versions = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => {
                 return Outcome {
@@ -715,33 +764,6 @@ impl<'a> AccountPass<'a> {
             outcome.not_made = Some(anyhow::anyhow!(not_made.join("; ")));
         }
         outcome
-    }
-
-    /// Record on the rows of `row`'s original whether every browser shows it
-    /// as it is, and answer why not when the rows cannot be written. A dry
-    /// run writes nothing.
-    async fn record_shown_as_is(
-        &self,
-        db: &SqlitePool,
-        row: &StoredOriginal,
-        shown: bool,
-    ) -> Option<anyhow::Error> {
-        if self.opts.dry_run {
-            return None;
-        }
-        let recorded = async {
-            versions_db::record_shown_as_is(
-                &mut *db.acquire().await?,
-                self.account_id,
-                &row.sha256,
-                shown,
-            )
-            .await
-        }
-        .await;
-        recorded
-            .err()
-            .map(|err| anyhow::Error::new(err).context("record whether it is shown as it is"))
     }
 
     /// Make `version` of the original at `source_path`, a `kind` file, store

@@ -1828,6 +1828,7 @@ fn the_done_line_counts_one_and_many() {
         not_made: 1,
         not_removed: 1,
         not_dropped: 1,
+        not_decided: 1,
     };
     assert_eq!(
         done_line(&one, false),
@@ -1836,7 +1837,8 @@ fn the_done_line_counts_one_and_many() {
          shared 1 existing Preview or Thumbnail with more attachments, left 1 original as it was, \
          1 original whose Preview or Thumbnail could not be made, \
          1 incomplete original that could not be removed, \
-         1 damaged Preview or Thumbnail that could not be dropped"
+         1 damaged Preview or Thumbnail that could not be dropped, \
+         1 original whose rows could not be told whether every browser shows it as it is"
     );
     let many = ProcessAssetsStats {
         scanned: 9,
@@ -1849,6 +1851,7 @@ fn the_done_line_counts_one_and_many() {
         not_made: 2,
         not_removed: 3,
         not_dropped: 4,
+        not_decided: 0,
     };
     assert_eq!(
         done_line(&many, true),

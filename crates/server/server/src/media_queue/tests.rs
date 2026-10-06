@@ -440,6 +440,118 @@ fn without_ffmpeg_the_queue_waits() {
     );
 }
 
+/// The pass records whether each queued original is shown as it is before
+/// it converts any, so a photo queued behind a long video opens at once
+/// rather than after the video's Preview is made. The sweep leaves the
+/// queue as it is.
+#[test]
+fn the_pass_decides_every_queued_original_before_it_converts_any() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let imported = import_three(&fixture, &alice).await;
+
+        decide_queued(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
+
+        assert_eq!(queued(state).await, 3, "nothing leaves the queue");
+        let after = attachments(state, &alice, imported.conversation_id).await;
+        assert_eq!(
+            [&imported.photo, &imported.h264, &imported.hevc].map(|sha| shown_as_is(&after, sha)),
+            [true, true, false].map(serde_json::Value::Bool),
+            "{after:?}"
+        );
+        assert_eq!(
+            attachments(state, &alice, imported.conversation_id).await[0]["thumbnail_mime_type"],
+            serde_json::Value::Null,
+            "nothing is converted"
+        );
+    });
+}
+
+/// Only ffprobe can read an MP4's codec, so a pass that has lost ffmpeg
+/// leaves an MP4 as an earlier pass with it decided: an H.264 MP4 queued
+/// again keeps opening its original.
+#[test]
+fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (fixture, alice) = runtime.block_on(fixture_with_account());
+    let state = &fixture.state;
+    let imported = runtime.block_on(import_three(&fixture, &alice));
+    {
+        let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+            return;
+        };
+        runtime
+            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
+            .unwrap();
+    }
+    let run: i64 = runtime
+        .block_on(
+            sqlx::query_scalar("SELECT id FROM imports WHERE account_id = $1")
+                .bind(alice.account_id)
+                .fetch_one(&state.db),
+        )
+        .unwrap();
+    runtime
+        .block_on(async {
+            let mut conn = state.db.acquire().await.unwrap();
+            crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run).await
+        })
+        .unwrap();
+
+    {
+        let _hidden = media::testutil::hide_ffmpeg();
+        runtime
+            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
+            .unwrap();
+    }
+
+    let after = runtime.block_on(attachments(state, &alice, imported.conversation_id));
+    assert_eq!(shown_as_is(&after, &imported.h264), serde_json::json!(true));
+    assert_eq!(
+        shown_as_is(&after, &imported.photo),
+        serde_json::json!(true)
+    );
+}
+
+/// A Demo Account built without ffmpeg is never queued, so the build decides
+/// every original of the account itself (`decide_shown_as_is` with no
+/// fingerprint): its photos open as they are.
+#[test]
+fn without_ffmpeg_every_original_of_an_account_is_decided() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (fixture, alice) = runtime.block_on(fixture_with_account());
+    let state = &fixture.state;
+    let imported = runtime.block_on(import_three(&fixture, &alice));
+
+    {
+        let _hidden = media::testutil::hide_ffmpeg();
+        runtime
+            .block_on(crate::process_assets::decide_shown_as_is(
+                &state.cfg,
+                &state.db,
+                alice.account_id,
+                None,
+            ))
+            .unwrap();
+    }
+
+    let after = runtime.block_on(attachments(state, &alice, imported.conversation_id));
+    assert_eq!(
+        [&imported.photo, &imported.h264, &imported.hevc].map(|sha| shown_as_is(&after, sha)),
+        [true, false, false].map(serde_json::Value::Bool),
+        "{after:?}"
+    );
+}
+
 /// An Import Run that ends while the pass works on one of its Assets queues
 /// it again, and the pass, when it is done with the old row, leaves the new
 /// one: the run's new rows still get the versions.
