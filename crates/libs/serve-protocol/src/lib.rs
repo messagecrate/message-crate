@@ -23,3 +23,19 @@ pub const LISTENING_LINE: &str = "message-crate-server serve listening on ";
 /// same moment, and waits for that server to answer rather than reporting a
 /// failed start. 75 is `EX_TEMPFAIL` in BSD's `sysexits.h`: try again later.
 pub const OPERATION_LOCK_HELD_EXIT_CODE: u8 = 75;
+
+/// The long name of the `serve` flag that names, by process id, the process
+/// that started the server: `--exit-with-parent <pid>`.
+///
+/// The desktop app passes its own id. A server given the flag stops itself
+/// once that process is gone, the same way it stops on Ctrl-C or SIGTERM, so
+/// a crashed app leaves no server behind (#1934). A server started without
+/// the flag, by Docker or `./scripts/run-dev.sh`, watches nothing.
+pub const EXIT_WITH_PARENT_ARG: &str = "exit-with-parent";
+
+/// How often a server started with [`EXIT_WITH_PARENT_ARG`] checks on Unix
+/// whether its parent is still the process it was given. On Unix a process
+/// whose parent ends gets a new parent, and nothing tells it so, which is why
+/// the server asks. On Windows the server waits on the parent's process
+/// handle, which is signalled the moment the parent ends.
+pub const PARENT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
