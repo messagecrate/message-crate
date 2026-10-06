@@ -596,3 +596,22 @@ fn the_archive_counts_the_characters_xml_cannot_carry() {
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.contains(r#"body="bell and escape""#), "{text}");
 }
+
+/// The file's `backup_date` is the newest date of the conversations it
+/// writes messages for: a WhatsApp conversation, which writes none, does
+/// not move it.
+#[test]
+fn the_backup_date_comes_from_the_conversations_written() {
+    let mut sms = message_ir::testutil::sample_document("hello ir");
+    sms.export.backup_taken_at_unix_ms = Some(1_788_256_800_000);
+    let mut whatsapp = message_ir::testutil::sample_whatsapp_document("hello whatsapp");
+    whatsapp.export.backup_taken_at_unix_ms = Some(1_790_793_912_000);
+
+    let tmp = tempfile::tempdir().unwrap();
+    let mut report = message_crate_core::ExportReport::default();
+    let path = SbrArchive
+        .write(tmp.path(), &[sms, whatsapp], &mut report)
+        .unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains(r#"backup_date="1788256800000""#), "{text}");
+}

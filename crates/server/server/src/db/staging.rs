@@ -629,9 +629,9 @@ pub async fn take_staged_copy_from_later_backup(
 
 /// Give the staged message `staged` the mark `deletion` of another copy of
 /// it from the same import, when the two backups' dates cannot decide
-/// ([`later_backup`]): a
-/// copy that carries a mark adds it, and one with none leaves the staged
-/// mark, as [`promote_deletion_marks`] does for a stored message.
+/// ([`later_backup`]): a copy that carries a mark adds it, and one with
+/// none leaves the staged mark, as [`promote_deletion_marks`] does for a
+/// stored message.
 ///
 /// # Errors
 ///
@@ -1254,15 +1254,28 @@ fn later_backup_sql(staged: &str, held: &str) -> String {
     )
 }
 
+/// Which of two copies of a message comes from the later backup, by
+/// [`later_backup`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackupOrder<'a> {
+    /// The copy comes from a later backup, made at this date.
+    Later(&'a str),
+    /// The copy comes from an earlier backup.
+    Earlier,
+    /// Either copy has no date, or the two dates are equal: the dates
+    /// cannot decide, and the rules for files without one hold.
+    Undecided,
+}
+
 /// [`later_backup_sql`]'s rule in Rust, for two copies of a message staged
-/// in one import: `Some(true)` when the copy `staged` comes from a later
-/// backup than the copy `held`, `Some(false)` when from an earlier one, and
-/// `None` when either has no date or the two are equal.
+/// in one import: whether the copy from the backup made at `staged` is
+/// later than the copy held from the backup made at `held`.
 #[must_use]
-pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> Option<bool> {
+pub fn later_backup<'a>(staged: Option<&'a str>, held: Option<&str>) -> BackupOrder<'a> {
     match (staged, held) {
-        (Some(staged), Some(held)) if staged != held => Some(staged > held),
-        _ => None,
+        (Some(staged), Some(held)) if staged > held => BackupOrder::Later(staged),
+        (Some(staged), Some(held)) if staged < held => BackupOrder::Earlier,
+        _ => BackupOrder::Undecided,
     }
 }
 

@@ -59,7 +59,13 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         .map(owner_from_form)
         .transpose()?;
 
-    let read = if let Some(json) = &source.json {
+    let ConversionInput {
+        json_path,
+        media_roots,
+        owner_identity,
+        backup_taken_at_unix_ms,
+        work,
+    } = if let Some(json) = &source.json {
         // Allowed roots are only the backup input and the JSON parent — never
         // the process CWD, which would let crafted paths copy arbitrary files.
         let mut media_roots = Vec::new();
@@ -74,7 +80,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         // A ready-made result.json names no owner; the form's number is all
         // there is, and a conversion may leave it empty. It names no backup
         // date either, so it is dated by when it was written.
-        ReadJson {
+        ConversionInput {
             json_path: json.clone(),
             media_roots,
             owner_identity: form_owner,
@@ -163,7 +169,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             }
         };
 
-        ReadJson {
+        ConversionInput {
             json_path: kept,
             media_roots,
             owner_identity: Some(owner_identity),
@@ -172,13 +178,6 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         }
     };
 
-    let ReadJson {
-        json_path,
-        media_roots,
-        owner_identity,
-        backup_taken_at_unix_ms,
-        work,
-    } = read;
     if !json_path.is_file() {
         bail!("JSON not found: {}", json_path.display());
     }
@@ -209,7 +208,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 
 /// The `result.json` a run converts, and what the conversion needs to know
 /// about the backup it came from.
-struct ReadJson {
+struct ConversionInput {
     /// The JSON to convert.
     json_path: std::path::PathBuf,
     /// Where the conversion may look for media.

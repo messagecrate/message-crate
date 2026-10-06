@@ -166,14 +166,11 @@ impl SbrBackupWriter {
                 out,
                 r"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>"
             )?;
-            match self.backup_date_unix_ms {
-                Some(date) => writeln!(
-                    out,
-                    r#"<smses count="{}" backup_date="{date}">"#,
-                    self.count
-                )?,
-                None => writeln!(out, r#"<smses count="{}">"#, self.count)?,
-            }
+            let backup_date = self
+                .backup_date_unix_ms
+                .map(|date| format!(r#" backup_date="{date}""#))
+                .unwrap_or_default();
+            writeln!(out, r#"<smses count="{}"{backup_date}>"#, self.count)?;
             // Every element written to the body ends with a line break, so
             // the closing tag starts a line of its own.
             io::copy(&mut body, &mut out)
