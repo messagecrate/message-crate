@@ -414,8 +414,8 @@ jobs:
           #   and latest, and never sha-<commit>. Its image reports the
           #   Product Version alone and is reached by its version tags.
           # - A manual run with push_docker_image pushes sha-<commit> alone,
-          #   and its image always reports the commit as Build metadata, so
-          #   sha-<commit> always names an image that reports
+          #   with the commit as Build metadata. A release never pushes it,
+          #   so sha-<commit> always names an image that reports
           #   0.x.y+<commit>.
           tags: |
             type=semver,pattern={{version}},enable=${{ needs.changes.outputs.release == 'true' }}
