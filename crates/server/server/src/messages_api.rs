@@ -23,6 +23,10 @@ use crate::server::{ApiError, AppState, FullAccess};
 /// One page of the Messages list and how the server read its search: the
 /// four keys of every page, and `search`, the one key a page carries beside
 /// them (`docs/architecture/http-api.md`, "Lists").
+// The four keys are written out rather than taken from `Page<Message>` with
+// `#[serde(flatten)]`: utoipa describes a flattened field as an `allOf` of
+// two schemas, which gives the page no `properties` of its own for the page
+// rules (`openapi/document_rules.rs`) and the generated web types to read.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ListMessagesResponse {
     /// The rows on this page.
