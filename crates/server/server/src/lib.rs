@@ -21,6 +21,7 @@ pub(crate) mod credentials;
 pub(crate) mod db;
 pub(crate) mod declared_query;
 pub(crate) mod dedupe;
+pub(crate) mod exit_with_parent;
 pub(crate) mod exports_api;
 pub(crate) mod extract;
 pub(crate) mod import_cli;

@@ -2031,6 +2031,7 @@ dependencies = [
  "utoipa-axum",
  "utoipa-swagger-ui",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

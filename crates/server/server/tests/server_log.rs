@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use common::lines::{attachment, conversation_header, message_line};
-use common::{create_database, listen, serve};
+use common::{empty_message_crate, listen, serve};
 
 /// The owner's password.
 const OWNER_PASSWORD: &str = "Owner-Pw-7q2Lx9Vb";
@@ -86,11 +86,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     use reqwest::StatusCode as S;
 
     let root = tempfile::tempdir().unwrap();
-    let data_dir = root.path().join("data");
-    let static_dir = root.path().join("static");
-    std::fs::create_dir_all(&data_dir).unwrap();
-    std::fs::create_dir_all(&static_dir).unwrap();
-    create_database(root.path(), &data_dir);
+    let (data_dir, static_dir) = empty_message_crate(root.path());
     let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "trace"));
     let base = format!("http://{address}");
     let base = base.as_str();
