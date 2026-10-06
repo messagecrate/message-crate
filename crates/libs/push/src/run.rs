@@ -261,12 +261,12 @@ impl RunPaths {
 /// # Errors
 ///
 /// Returns an error when setup fails, a worker disconnects, the report cannot
-/// be written, or the server refuses to complete the Import Run this Upload
-/// started and the run did not halt. A conversation that fails is recorded
-/// in the report and the run goes on to the next one. A session the server
-/// stops accepting during the run is not an error: the run stops as for a
-/// cancel, and the report says so in `session_refused`. A refused completion
-/// of a run that halted is not an error either: the report comes back with
+/// be written, or the Upload could not complete the Import Run it started
+/// and the run did not pause. A conversation that fails is recorded in the
+/// report and the run goes on to the next one. A session the server stops
+/// accepting during the run is not an error: the run pauses, and the report
+/// says so in `session_refused`. A failed completion of a paused run is not
+/// an error either. The report comes back with
 /// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
 /// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
@@ -373,35 +373,47 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     // completion leaves a report that is not `ok` beside the error. A
     // refused session cannot complete it: the run stays open on the server
     // for the next Upload.
-    let mut completed = if cfg.import_id.is_none() && !session_refused {
+    let completed = if cfg.import_id.is_none() && !session_refused {
         complete_import_run(&session, import_id, &report, &mut out)
     } else {
         Ok(())
     };
-    if let Err(error) = &completed {
-        report.ok = false;
-        report.completion_refused = true;
-        // A paused run returns its report, not the refusal: the caller tells
-        // a pause from a failure by `cancelled`, which the error would hide
-        // (#1635). The refusal goes to the log instead.
-        if cancelled {
-            out.show(format!(
-                "The server refused to complete Import Run {import_id}, so it still holds \
-                 the run as running: {error:#}"
-            ));
-            completed = Ok(());
+    let completion_error = match completed {
+        Ok(()) => None,
+        Err(error) => {
+            report.ok = false;
+            report.completion_refused = true;
+            // A session that ended before the completion refuses it too, and
+            // the caller ends the session by this flag.
+            if message_crate_http::is_session_refused(&error) {
+                report.session_refused = true;
+            }
+            // A paused run returns its report, not the refusal. The caller
+            // tells a pause from a failure by `cancelled`, which the error
+            // would hide (#1635), so the refusal goes to the log instead.
+            if cancelled {
+                out.show(format!(
+                    "The Upload could not complete its Import Run, so the server may still \
+                     hold it as running: {error:#}"
+                ));
+                None
+            } else {
+                Some(error)
+            }
         }
-    }
+    };
     let written = write_report(&paths.report, &report);
     // A refused completion of a run that did not pause is the error that
-    // matters: the server still holds the run. A report that could not be
+    // matters: the server may still hold the run. A report that could not be
     // written as well goes to the log.
-    if let (Err(_), Err(write_error)) = (&completed, &written) {
+    if let (Some(_), Err(write_error)) = (&completion_error, &written) {
         out.log(&format!(
             "The Upload's report could not be written: {write_error:#}"
         ));
     }
-    completed?;
+    if let Some(error) = completion_error {
+        return Err(error);
+    }
     written?;
     out.log("");
     out.log(&format_push_summary(&report));
@@ -710,9 +722,9 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error when the server refuses to complete the run. The server
-/// then still holds the run as running, so the caller must not report the
-/// Upload as a success.
+/// Returns an error when the server refuses the completion or no answer
+/// comes. The server may then still hold the run as running, so the caller
+/// must not report the Upload as a success.
 fn complete_import_run(
     session: &Session,
     import_id: i64,
