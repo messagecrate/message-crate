@@ -46,7 +46,7 @@ pub use pipeline::{
 pub use process::{
     CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,
 };
-pub use progress::{ProgressEvent, ProgressSink, emit_progress};
+pub use progress::{ProgressEvent, ProgressSink, WriteStatus, emit_progress};
 pub use run::{finish_run, run_pipeline};
 pub use scratch::{
     ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, ScratchDir, WHATSAPP_DIRECTORY,

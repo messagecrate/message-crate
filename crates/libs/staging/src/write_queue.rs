@@ -34,7 +34,7 @@ use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
-    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
+    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink, WriteStatus,
     attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
@@ -285,7 +285,11 @@ impl UnitOutcome {
             progress,
             ProgressEvent::FileWritten {
                 file: self.file.clone(),
-                skipped: !self.written,
+                status: if self.written {
+                    WriteStatus::Written
+                } else {
+                    WriteStatus::Skipped
+                },
             },
         );
     }

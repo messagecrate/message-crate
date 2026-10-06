@@ -4,7 +4,7 @@
 //! Tauri because it is not serializable. These structs match the TypeScript
 //! types in `web/src/lib/types.ts`.
 
-use message_crate_core::{IssueSink, ProgressEvent, ProgressSink, RunIssue};
+use message_crate_core::{IssueSink, ProgressEvent, ProgressSink, RunIssue, WriteStatus};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -127,15 +127,8 @@ impl From<ProgressEvent> for WindowEvent {
             },
             ProgressEvent::Prepare { done, total } => counts("prepare", done, total),
             ProgressEvent::Media { done, total } => counts("media", done, total),
-            ProgressEvent::FileWritten { file, skipped } => {
-                return Self::FileWritten(ExtractFileWrittenEvent {
-                    file,
-                    status: if skipped {
-                        WriteStatus::Skipped
-                    } else {
-                        WriteStatus::Written
-                    },
-                });
+            ProgressEvent::FileWritten { file, status } => {
+                return Self::FileWritten(ExtractFileWrittenEvent { file, status });
             }
         })
     }
@@ -196,20 +189,18 @@ pub struct ExtractFileDoneEvent {
 pub struct ExtractFileWrittenEvent {
     /// The conversation file, as Staging's issue rows and the Upload name it.
     pub file: String,
-    /// What the write queue did with the file.
+    /// What the write queue did with the file: `written` or `skipped`, as
+    /// `ImportFileWrittenEvent.status` names it.
+    #[serde(serialize_with = "write_status")]
     pub status: WriteStatus,
 }
 
-/// What the write queue did with one conversation file, as
-/// `ImportFileWrittenEvent.status` names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WriteStatus {
-    /// Written now.
-    Written,
-    /// An earlier part of the run had written it to the end, and it was not
-    /// read again.
-    Skipped,
+/// A [`WriteStatus`] as the window names it.
+fn write_status<S: serde::Serializer>(status: &WriteStatus, out: S) -> Result<S::Ok, S::Error> {
+    out.serialize_str(match status {
+        WriteStatus::Written => "written",
+        WriteStatus::Skipped => "skipped",
+    })
 }
 
 /// Failure details for the `extract:error` event.
@@ -317,10 +308,13 @@ mod tests {
     /// its own event, which says whether it was written now (#1688).
     #[test]
     fn a_finished_conversation_file_is_sent_apart_from_the_counts() {
-        for (skipped, status) in [(false, "written"), (true, "skipped")] {
+        for (written, status) in [
+            (WriteStatus::Written, "written"),
+            (WriteStatus::Skipped, "skipped"),
+        ] {
             let event = WindowEvent::from(ProgressEvent::FileWritten {
                 file: "c.jsonl".into(),
-                skipped,
+                status: written,
             });
             let WindowEvent::FileWritten(written) = event else {
                 panic!("not a finished file: {event:?}");

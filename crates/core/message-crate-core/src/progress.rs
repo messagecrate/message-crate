@@ -74,9 +74,20 @@ pub enum ProgressEvent {
         /// The conversation file's name in the output directory, without
         /// the directory: the name the Upload gives the file too.
         file: String,
-        /// True when a resumed run found the file already written.
-        skipped: bool,
+        /// Whether the write queue wrote the file now or skipped it.
+        status: WriteStatus,
     },
+}
+
+/// What the write queue did with one conversation file
+/// ([`ProgressEvent::FileWritten`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteStatus {
+    /// Written now.
+    Written,
+    /// A resumed run found the file already written to the end, and did not
+    /// read its conversation again.
+    Skipped,
 }
 
 impl ProgressEvent {

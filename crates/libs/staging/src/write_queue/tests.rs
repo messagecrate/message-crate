@@ -1082,12 +1082,12 @@ fn conversation_files(dir: &Path) -> Vec<String> {
     names
 }
 
-/// The `FileWritten` events among `events`, as (file, skipped).
-fn files_written(events: &[ProgressEvent]) -> Vec<(String, bool)> {
+/// The `FileWritten` events among `events`, as (file, status).
+fn files_written(events: &[ProgressEvent]) -> Vec<(String, WriteStatus)> {
     events
         .iter()
         .filter_map(|event| match event {
-            ProgressEvent::FileWritten { file, skipped } => Some((file.clone(), *skipped)),
+            ProgressEvent::FileWritten { file, status } => Some((file.clone(), *status)),
             _ => None,
         })
         .collect()
@@ -1140,7 +1140,10 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
     assert_eq!(*loaded_for.borrow(), second, "only the unit written loads");
     assert_eq!(
         files_written(&seen.lock().unwrap()),
-        [(first[0].clone(), true), (second[0].clone(), false)]
+        [
+            (first[0].clone(), WriteStatus::Skipped),
+            (second[0].clone(), WriteStatus::Written)
+        ]
     );
 }
 
@@ -1166,10 +1169,10 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
     drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
 
     let mut done = files_written(&seen.lock().unwrap());
-    done.sort();
-    let written: Vec<(String, bool)> = conversation_files(&out)
+    done.sort_by(|a, b| a.0.cmp(&b.0));
+    let written: Vec<(String, WriteStatus)> = conversation_files(&out)
         .into_iter()
-        .map(|name| (name, false))
+        .map(|name| (name, WriteStatus::Written))
         .collect();
     assert_eq!(done, written);
 }
