@@ -264,6 +264,26 @@ below). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
 
+The Messages list, `GET /v1/messages`, is the one page with a key beside the
+four: `search`, which says how the server read the request. `search.sort` is
+the order the page is in, spelled as the `sort` parameter takes it, and
+`search.terms` is the free-text terms the query ranks by, each a `text` and
+whether it is a `prefix`. The key describes the query, not the rows, so every
+page of one query carries the same value.
+Why: with no `sort`, the server picks the order from the query, best match
+first when it has a free-text term and newest first when it has none
+(`docs/architecture/search.md`), and the web app shows that order in its sort
+menu and draws the terms in bold. Only the module that parses the search
+language knows which words those are
+(`docs/adr/0004-one-search-language-compiled-in-one-module.md`). The web app
+once read them from `q` with a parser of its own, a second copy of the
+grammar that nothing held to the first (#1538).
+Rejected: a route of its own that reads a query and answers its terms. A
+query is not a resource, and every new search would wait for that answer
+before it could ask for its first page in the right order.
+`openapi/document_rules.rs` names the route and its schema,
+`ListMessagesResponse`, and fails any other page with a key beyond the four.
+
 A `POST` that reads the rows its body names — contact summaries, unmatched
 identities — answers the whole of that body as one page and takes no `offset`
 or `limit`: `total` is the row count, `limit` is the cap the body is held to,
