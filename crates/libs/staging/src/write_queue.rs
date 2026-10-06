@@ -13,7 +13,7 @@
 //! loader recorded about one of them is never reported again. The loader is
 //! told which conversation file it loads for, so such a row names it, and
 //! the drain announces each file it writes or skips
-//! ([`ProgressEvent::FileDone`]): the desktop app keeps a row apart until
+//! ([`ProgressEvent::FileWritten`]): the desktop app keeps a row apart until
 //! its conversation is written (#1688).
 //!
 //! Writers never transcode. Convert and compress stage the originals here and
@@ -279,11 +279,11 @@ struct UnitOutcome {
 
 impl UnitOutcome {
     /// Say that the drain finished with this unit's conversation file
-    /// ([`ProgressEvent::FileDone`]).
+    /// ([`ProgressEvent::FileWritten`]).
     fn announce(&self, progress: Option<&ProgressSink>) {
         emit_progress(
             progress,
-            ProgressEvent::FileDone {
+            ProgressEvent::FileWritten {
                 file: self.file.clone(),
                 skipped: !self.written,
             },
@@ -299,7 +299,7 @@ fn signed(bytes: u64) -> i64 {
 /// Loads one attachment's bytes by source; `Ok(None)` or
 /// [`LoadError::Unreadable`] marks it missing, and [`LoadError::Fatal`]
 /// stops the drain. The first argument is the name of the conversation file
-/// the attachment's conversation is written to ([`ProgressEvent::FileDone`]),
+/// the attachment's conversation is written to ([`ProgressEvent::FileWritten`]),
 /// for a row the loader records about the attachment to name (#1688).
 pub type AttachmentLoader<'a> =
     dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
@@ -447,7 +447,7 @@ fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
 
 /// The name of the conversation file a unit is written to, without its
 /// directory: the name the Upload gives the file, and the one
-/// [`ProgressEvent::FileDone`] and a loader's rows name it by.
+/// [`ProgressEvent::FileWritten`] and a loader's rows name it by.
 fn conversation_file_name(doc: &ConversationDocument) -> String {
     format!("{}.jsonl", doc.filename_stem())
 }

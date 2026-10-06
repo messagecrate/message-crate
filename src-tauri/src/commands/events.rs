@@ -127,10 +127,14 @@ impl From<ProgressEvent> for WindowEvent {
             },
             ProgressEvent::Prepare { done, total } => counts("prepare", done, total),
             ProgressEvent::Media { done, total } => counts("media", done, total),
-            ProgressEvent::FileDone { file, skipped } => {
+            ProgressEvent::FileWritten { file, skipped } => {
                 return Self::FileWritten(ExtractFileWrittenEvent {
                     file,
-                    status: if skipped { "skipped" } else { "written" }.into(),
+                    status: if skipped {
+                        WriteStatus::Skipped
+                    } else {
+                        WriteStatus::Written
+                    },
                 });
             }
         })
@@ -192,9 +196,20 @@ pub struct ExtractFileDoneEvent {
 pub struct ExtractFileWrittenEvent {
     /// The conversation file, as Staging's issue rows and the Upload name it.
     pub file: String,
-    /// `written` (written now) or `skipped` (an earlier part of the run had
-    /// written it to the end, and it was not read again).
-    pub status: String,
+    /// What the write queue did with the file.
+    pub status: WriteStatus,
+}
+
+/// What the write queue did with one conversation file, as
+/// `ImportFileWrittenEvent.status` names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WriteStatus {
+    /// Written now.
+    Written,
+    /// An earlier part of the run had written it to the end, and it was not
+    /// read again.
+    Skipped,
 }
 
 /// Failure details for the `extract:error` event.
@@ -303,7 +318,7 @@ mod tests {
     #[test]
     fn a_finished_conversation_file_is_sent_apart_from_the_counts() {
         for (skipped, status) in [(false, "written"), (true, "skipped")] {
-            let event = WindowEvent::from(ProgressEvent::FileDone {
+            let event = WindowEvent::from(ProgressEvent::FileWritten {
                 file: "c.jsonl".into(),
                 skipped,
             });

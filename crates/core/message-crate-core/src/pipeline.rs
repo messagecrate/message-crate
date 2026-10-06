@@ -104,7 +104,7 @@ pub struct RunIssue {
     /// Why, in one sentence; for a note, what the run did.
     pub reason: String,
     /// The conversation file the row is about, by the name the write queue
-    /// announces it with ([`crate::ProgressEvent::FileDone`]), for a row
+    /// announces it with ([`crate::ProgressEvent::FileWritten`]), for a row
     /// recorded while the write queue writes that conversation. A resumed
     /// Staging skips a conversation already written without reading it
     /// again, so such a row is reported again only while its conversation
