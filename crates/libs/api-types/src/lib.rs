@@ -487,6 +487,9 @@ pub enum TimePrecision {
 }
 
 impl TimePrecision {
+    /// Both precisions.
+    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
+
     /// The precision as the wire and the database spell it.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -497,9 +500,7 @@ impl TimePrecision {
 
     /// Read a sent or stored value; anything else names no precision.
     pub fn parse(value: &str) -> Option<Self> {
-        [Self::Seconds, Self::Milliseconds]
-            .into_iter()
-            .find(|p| p.as_str() == value)
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
     }
 }
 

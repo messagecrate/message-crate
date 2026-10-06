@@ -30,6 +30,9 @@ pub enum TimePrecision {
 }
 
 impl TimePrecision {
+    /// Both precisions.
+    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
+
     /// The name the conversation file, the database and the HTTP API use:
     /// `seconds` or `milliseconds`.
     pub fn as_str(self) -> &'static str {
@@ -40,12 +43,8 @@ impl TimePrecision {
     }
 
     /// The precision [`Self::as_str`] names, or `None` for any other text.
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "seconds" => Some(Self::Seconds),
-            "milliseconds" => Some(Self::Milliseconds),
-            _ => None,
-        }
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
     }
 }
 
