@@ -1601,18 +1601,16 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
 
     let today = chrono::Utc::now().with_timezone(&zone).date_naive();
     let local = |day: chrono::NaiveDate, h: u32, m: u32| {
-        zone.from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
+        let instant = zone
+            .from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
             .single()
             .unwrap()
-            .with_timezone(&chrono::Utc)
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-            .to_string()
+            .with_timezone(&chrono::Utc);
+        crate::models::utc_timestamp_text(instant)
     };
     let early_today = local(today, 0, 30);
     let late_yesterday = local(today.pred_opt().unwrap(), 23, 30);
-    let now = chrono::Utc::now()
-        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
-        .to_string();
+    let now = crate::models::utc_timestamp_text(chrono::Utc::now());
     seed_conversation(
         &fixture.state,
         &SeedConversation {

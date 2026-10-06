@@ -660,7 +660,7 @@ fn pick_winner(cands: &[Cand], prio: &HashMap<&str, usize>) -> i64 {
 /// pass match at whole seconds.
 ///
 /// Strict RFC3339 is sufficient: `messages.timestamp`
-/// are only ever written by `models::format_utc_timestamp` (chrono's
+/// are only ever written by `models::utc_timestamp_text` (chrono's
 /// `to_rfc3339_opts(SecondsFormat::Millis, true)`), so no lenient spellings reach
 /// this path. Unparseable input yields `None`.
 fn parse_rfc3339_utc_secs(ts: &str) -> Option<i64> {

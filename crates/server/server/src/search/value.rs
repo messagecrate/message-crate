@@ -72,7 +72,7 @@ pub(crate) enum Value {
 pub(crate) fn utc_instant(zone: chrono_tz::Tz, day: NaiveDate) -> Option<String> {
     let midnight = day.and_hms_opt(0, 0, 0).expect("midnight is a valid time");
     let instant = first_instant_at_or_after(zone, midnight);
-    (instant.year() <= 9999).then(|| instant.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+    (instant.year() <= 9999).then(|| crate::models::utc_timestamp_text(instant))
 }
 
 /// The first instant whose clock reading in `zone` is `local` or later.

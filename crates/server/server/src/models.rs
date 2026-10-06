@@ -1,7 +1,7 @@
 //! Import-side records mapped from message-ir JSONL.
 
 use anyhow::{Context, Result};
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use message_ir::{
     ConversationHeader, Deletion, EarlierVersion, HandleService, HandleType, IrAttachment,
     IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo,
@@ -503,17 +503,19 @@ fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
 }
 
 /// The UTC RFC 3339 string for a Unix time in milliseconds, or `None` when it
-/// cannot be represented. It always has three fractional digits and a `Z`
-/// suffix (`2015-03-12T18:04:22.000Z` for a whole second), so every stored
-/// time has one form and sorts as text in time order. The server stores the
-/// instant and nothing about where the phone was; the account's time zone
-/// turns it into a clock reading.
+/// cannot be represented, in the form `utc_timestamp_text` writes. The server
+/// stores the instant and nothing about where the phone was; the account's
+/// time zone turns it into a clock reading.
 fn format_utc_timestamp(ms: i64) -> Option<String> {
-    Some(
-        Utc.timestamp_millis_opt(ms)
-            .single()?
-            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-    )
+    Some(utc_timestamp_text(Utc.timestamp_millis_opt(ms).single()?))
+}
+
+/// The one text form of a stored message time: UTC RFC 3339 with three
+/// fractional digits and a `Z` suffix (`2015-03-12T18:04:22.000Z` for a whole
+/// second). Every stored time and every string compared with one, such as a
+/// search day bound, is written here, so they all sort as text in time order.
+pub(crate) fn utc_timestamp_text(instant: DateTime<Utc>) -> String {
+    instant.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
 #[cfg(test)]

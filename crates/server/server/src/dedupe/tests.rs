@@ -1442,9 +1442,9 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
                 _ => {}
             }
             guid += 1;
-            let timestamp = chrono::DateTime::from_timestamp(copy_secs, 0)
-                .unwrap()
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+            let timestamp = crate::models::utc_timestamp_text(
+                chrono::DateTime::from_timestamp(copy_secs, 0).unwrap(),
+            );
             let conversation_id = chat.conversations[rng.below(chat.conversations.len())];
             let source = GEN_SOURCES[rng.below(GEN_SOURCES.len())];
             let id = MessageRow {
