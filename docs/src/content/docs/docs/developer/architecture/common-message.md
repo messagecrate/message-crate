@@ -103,7 +103,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Source | Date |
 |--------|------|
 | Apple Messages from an iPhone backup | The `Date` in the backup's `Manifest.plist`, which is readable whether or not the backup is encrypted |
-| Apple Messages from a Mac `chat.db` | The database file's modification time, when Messages last wrote it |
+| Apple Messages from a Mac `chat.db` | When Messages last wrote the database: the newest modification time of `chat.db` and its `chat.db-wal` and `chat.db-shm` files |
 | WhatsApp from an iPhone backup | The `Date` in the backup's `Manifest.plist` |
 | WhatsApp from Android | The modification time of the database file, `msgstore.db.crypt15` or a decrypted `msgstore.db` |
 | WhatsApp from a ready-made `result.json` | The JSON file's modification time |
@@ -112,7 +112,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | OpenExtract, GO SMS Pro, SMS Backup+ | The newest modification time of the files read, because none of them records a date of its own |
 | An Export Run of the server | The newest backup date of the conversation's messages |
 
-The import reads it to decide between two copies of one message from one source. The copy from the later backup gives the message its deletion mark, mark or no mark, and its text and earlier versions, in one import in either file order and across imports in either order. A copy from an earlier backup changes neither. A file that says nothing keeps the rules for files without a date: a mark adds and is never cleared, and an edit counts as later when its newest earlier version is newer. Attachments and reactions add from either copy.
+The import reads it to decide between two copies of one message from one source. The copy from the later backup gives the message its deletion mark, mark or no mark, and its text and earlier versions, in one import in either file order and across imports in either order. A copy from an earlier backup changes neither. The server keeps the date to the second. A file that says nothing, or two copies whose dates are the same second, keep the rules for files without a date: a mark adds and is never cleared, and an edit counts as later when its newest earlier version is newer. Attachments and reactions add from either copy.
 
 CSV carries it in the `backup_taken_at_unix_ms` column of every row, and EML and MBOX in the `X-ME-Backup-Taken-At-Unix-Ms` header of every mail, blank or absent when the file says nothing. A value that is not a whole number is refused rather than read as no date.
 
