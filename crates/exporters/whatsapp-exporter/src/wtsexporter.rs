@@ -2,7 +2,7 @@
 
 use crate::ios_backup::DecryptedWhatsapp;
 use anyhow::{Context, Result, bail};
-use message_staging::{Disk, disk_full};
+use message_staging::scratch_disk_full;
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -169,7 +169,7 @@ pub(crate) fn run_wtsexporter(
         // so no check can measure it first; a disk that fills is reported
         // as a check would report it (#1820).
         if names_a_full_disk(&combined) {
-            return Err(disk_full(Disk::Scratch));
+            return Err(scratch_disk_full());
         }
         bail!(
             "wtsexporter failed ({}){}\n{}",

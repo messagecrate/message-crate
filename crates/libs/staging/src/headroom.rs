@@ -111,16 +111,15 @@ pub(crate) fn headroom_shortfall(needed: u64, available: u64, disk: Disk) -> Opt
     })
 }
 
-/// The error for a write that ran out of room part-way on `disk`, where no
-/// check could measure the need first: wtsexporter decrypting an Android
-/// WhatsApp backup, whose decrypted size nothing knows until it is written.
-/// It opens as [`check_headroom`]'s sentence does, so the person reads the
+/// The error for a write into the Scratch Directory that ran out of room
+/// part-way, where no check could measure what it needed first. It opens as
+/// [`check_headroom`]'s sentence for that disk does, so the person reads the
 /// same words whichever way the disk ran short.
-pub fn disk_full(disk: Disk) -> anyhow::Error {
+pub fn scratch_disk_full() -> anyhow::Error {
     anyhow::anyhow!(
-        "{}: reading this backup filled it before it finished. Free some space there \
-         and run the import again.",
-        not_enough_space(disk)
+        "{}: it filled up while this backup was being read. Free some space on that \
+         disk and run the import again.",
+        not_enough_space(Disk::Scratch)
     )
 }
 
@@ -182,15 +181,14 @@ mod tests {
         );
     }
 
-    /// A disk that filled part-way is named the way a check names it.
+    /// A Scratch Directory disk that filled part-way is named the way a
+    /// check names it.
     #[test]
-    fn a_full_disk_is_named_as_a_short_one_is() {
-        for disk in [Disk::Staging, Disk::Scratch] {
-            let full = disk_full(disk).to_string();
-            let short = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, disk).unwrap();
-            let opening = |text: &str| text.split(':').next().unwrap().to_string();
-            assert_eq!(opening(&full), opening(&short), "{full}");
-        }
+    fn a_full_scratch_disk_is_named_as_a_short_one_is() {
+        let full = scratch_disk_full().to_string();
+        let short = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Scratch).unwrap();
+        let opening = |text: &str| text.split(':').next().unwrap().to_string();
+        assert_eq!(opening(&full), opening(&short), "{full}");
     }
 
     /// The check reads the disk that holds the directory it is given.
