@@ -80,14 +80,17 @@ const PHOTO_CAPTIONS: &[&str] = &[
 const EMOJI_ONLY: &[&str] = &["👍", "😂", "❤️", "🎉", "😊"];
 
 /// Export metadata stamped on a conversation header. `owner_identity` is the
-/// Demo Account's identity the conversation's messages are held at.
-fn export_meta(source: &str, owner_identity: &str) -> ExportMeta {
+/// Demo Account's identity the conversation's messages are held at, and
+/// `backup_taken_at_unix_ms` when the backup was made: the settings'
+/// reference time, which every generated message is before.
+fn export_meta(source: &str, owner_identity: &str, backup_taken_at_unix_ms: i64) -> ExportMeta {
     ExportMeta {
         source: source.into(),
         tool: "demo-seed".into(),
         tool_version: "0.2.0".into(),
         owner_identity: Some(owner_identity.into()),
         owner_display_name: Some("Me".into()),
+        backup_taken_at_unix_ms: Some(backup_taken_at_unix_ms),
     }
 }
 
@@ -194,6 +197,7 @@ impl<R: Rng> Seeder<'_, R> {
                 IrConversationType::Individual,
                 &[],
                 IMESSAGE_SOURCE,
+                self.cfg.reference_time.timestamp_millis(),
             )?;
             self.stats.conversation_files += 1;
         }
@@ -204,6 +208,7 @@ impl<R: Rng> Seeder<'_, R> {
                 IrConversationType::Group,
                 &EMPTY_GROUP_MEMBERS,
                 IMESSAGE_SOURCE,
+                self.cfg.reference_time.timestamp_millis(),
             )?;
             self.stats.conversation_files += 1;
         }
@@ -387,7 +392,11 @@ impl<R: Rng> Seeder<'_, R> {
             None,
             participants,
             msg_count,
-            export_meta(source_id(flavor), OWNER_PHONE),
+            export_meta(
+                source_id(flavor),
+                OWNER_PHONE,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
         )?;
 
         let timestamps = self.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
@@ -479,7 +488,11 @@ impl<R: Rng> Seeder<'_, R> {
             None,
             individual_participants(chat_id, overlap.display_name.clone()),
             overlap.msg_count,
-            export_meta(IMESSAGE_SOURCE, OWNER_PHONE),
+            export_meta(
+                IMESSAGE_SOURCE,
+                OWNER_PHONE,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
         )?;
         let mut origin_guid: Option<String> = None;
         for (i, shared) in overlap.shared.iter().enumerate() {
@@ -534,7 +547,11 @@ impl<R: Rng> Seeder<'_, R> {
             None,
             individual_participants(chat_id, overlap.display_name.clone()),
             android_total,
-            export_meta(SBR_SOURCE, OWNER_PHONE),
+            export_meta(
+                SBR_SOURCE,
+                OWNER_PHONE,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
         )?;
         for (i, shared) in overlap.shared.iter().enumerate() {
             let msg = shared.message(
@@ -621,7 +638,11 @@ impl<R: Rng> Seeder<'_, R> {
             None,
             participants,
             msg_count,
-            export_meta(IMESSAGE_SOURCE, owner_identity),
+            export_meta(
+                IMESSAGE_SOURCE,
+                owner_identity,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
         )?;
 
         let timestamps = self.timestamps(msg_count, 1.5, sample_direct_day_burst);
@@ -683,7 +704,11 @@ impl<R: Rng> Seeder<'_, R> {
             group.title.clone(),
             participants,
             header_message_count,
-            export_meta(IMESSAGE_SOURCE, OWNER_PHONE),
+            export_meta(
+                IMESSAGE_SOURCE,
+                OWNER_PHONE,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
         )?;
 
         if let Some(title) = rename_title {
@@ -835,7 +860,11 @@ impl<R: Rng> Seeder<'_, R> {
                 None,
                 sender.into_iter().collect(),
                 messages.len(),
-                export_meta(IMESSAGE_SOURCE, OWNER_PHONE),
+                export_meta(
+                    IMESSAGE_SOURCE,
+                    OWNER_PHONE,
+                    self.cfg.reference_time.timestamp_millis(),
+                ),
             )?;
             for msg in messages {
                 self.emit(&mut file, msg)?;
@@ -857,6 +886,7 @@ fn write_header_only(
     conv_type: IrConversationType,
     member_phones: &[&str],
     source: &str,
+    backup_taken_at_unix_ms: i64,
 ) -> Result<()> {
     let path = staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id)));
     let mut file = open_jsonl(&path)?;
@@ -875,7 +905,7 @@ fn write_header_only(
         None,
         participants,
         0,
-        export_meta(source, OWNER_PHONE),
+        export_meta(source, OWNER_PHONE, backup_taken_at_unix_ms),
     )?;
     Ok(())
 }

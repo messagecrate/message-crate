@@ -26,6 +26,23 @@ pub fn ios_backup_encrypted_flag(backup_root: &Path) -> Option<bool> {
     }
 }
 
+/// When the iPhone backup at `backup_root` was made, in Unix milliseconds:
+/// the `Date` its `Manifest.plist` records. The plist is not encrypted, even
+/// in an encrypted backup, so no password is needed.
+///
+/// Returns `None` when the file is missing, cannot be parsed, or has no
+/// date: the conversation file then says nothing about when the backup was
+/// made, and the import falls back to its rules for a file without one.
+pub fn ios_backup_date_unix_ms(backup_root: &Path) -> Option<i64> {
+    let file = File::open(backup_root.join("Manifest.plist")).ok()?;
+    let value = plist::Value::from_reader(file).ok()?;
+    let date = value.as_dictionary()?.get("Date")?.as_date()?;
+    let since = std::time::SystemTime::from(date)
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
 /// Every regular file `Manifest.db` lists under `domain` in the iPhone
 /// backup at `backup_root`, which is not encrypted, as its path inside the
 /// domain and its size where the backup keeps it
@@ -77,8 +94,9 @@ pub fn ios_backup_domain_files(backup_root: &Path, domain: &str) -> Result<Vec<(
 
 #[cfg(test)]
 mod tests {
-    use super::{ios_backup_domain_files, ios_backup_encrypted_flag};
+    use super::{ios_backup_date_unix_ms, ios_backup_domain_files, ios_backup_encrypted_flag};
     use std::fs;
+    use std::path::Path;
 
     fn write_plist(dir: &std::path::Path, is_encrypted: &str) {
         let body = format!(
@@ -106,6 +124,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("Manifest.plist"), b"not a plist").unwrap();
         assert_eq!(ios_backup_encrypted_flag(dir.path()), None);
+    }
+
+    /// The fixture's `Manifest.plist` was written by hand in the shape
+    /// iTunes and Finder write it, with the backup's `Date`.
+    #[test]
+    fn the_backup_date_is_the_manifest_s_date() {
+        let fixture = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dated-backup");
+        // 2026-09-30T18:45:12Z
+        assert_eq!(ios_backup_date_unix_ms(&fixture), Some(1_790_793_912_000));
+    }
+
+    #[test]
+    fn a_backup_without_a_manifest_date_has_no_date() {
+        let missing = tempfile::tempdir().unwrap();
+        assert_eq!(ios_backup_date_unix_ms(missing.path()), None);
+
+        let undated = tempfile::tempdir().unwrap();
+        write_plist(undated.path(), "false");
+        assert_eq!(ios_backup_date_unix_ms(undated.path()), None);
     }
 
     #[test]

@@ -15,6 +15,7 @@ fn base_sms() -> MailMessage {
         export_source: "sms-backup-restore".into(),
         export_tool: "SMS Backup & Restore".into(),
         export_tool_version: "10.26.003".into(),
+        backup_taken_at_unix_ms: None,
         filename_suffix: None,
         message: IrMessage {
             guid: "aabbccddeeff00112233445566778899".into(),
@@ -912,6 +913,7 @@ fn x_me_values(msg: &MailMessage) -> serde_json::Value {
         "export_source": msg.export_source,
         "export_tool": msg.export_tool,
         "export_tool_version": msg.export_tool_version,
+        "backup_taken_at_unix_ms": msg.backup_taken_at_unix_ms,
         "message": msg.message,
         "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
         "attachment_types": msg.attachments.iter().map(|a| &a.meta.mime_type).collect::<Vec<_>>(),

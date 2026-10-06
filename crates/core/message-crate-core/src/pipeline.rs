@@ -462,13 +462,15 @@ pub fn prepare_outputs(
     Ok((resolved, output))
 }
 
-/// Standard export metadata: source / tool / version plus the owner identity.
+/// Standard export metadata: source / tool / version, the owner identity,
+/// and when the backup was made.
 pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
     owner_identity: Option<String>,
     owner_display_name: Option<String>,
+    backup_taken_at_unix_ms: Option<i64>,
 ) -> message_ir::ExportMeta {
     message_ir::ExportMeta {
         source: source.to_string(),
@@ -476,12 +478,58 @@ pub fn export_meta(
         tool_version: tool_version.to_string(),
         owner_identity,
         owner_display_name,
+        backup_taken_at_unix_ms,
     }
+}
+
+/// When a file was last changed, in Unix milliseconds, or `None` when it
+/// cannot be read or its time is before 1970. The backup date of a source
+/// whose files record none of their own: the file was written when the
+/// backup was made, or copied with its time kept.
+pub fn file_modified_unix_ms(path: &std::path::Path) -> Option<i64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    let since = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
+    i64::try_from(since.as_millis()).ok()
+}
+
+/// The latest [`file_modified_unix_ms`] of `paths`, or `None` when none has
+/// one: the backup date of a source read from several files, which is as
+/// new as the newest of them.
+pub fn newest_file_modified_unix_ms<'a>(
+    paths: impl IntoIterator<Item = &'a std::path::Path>,
+) -> Option<i64> {
+    paths.into_iter().filter_map(file_modified_unix_ms).max()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A source with no date of its own is as new as its newest file, and
+    /// a file that is not there adds nothing.
+    #[test]
+    fn a_backup_read_from_files_is_as_new_as_the_newest() {
+        use crate::testutil::{TEST_BACKUP_TAKEN_AT_UNIX_MS, set_modified_unix_ms};
+        let dir = tempfile::tempdir().unwrap();
+        let older = dir.path().join("older.csv");
+        let newer = dir.path().join("newer.csv");
+        fs::write(&older, "a").unwrap();
+        fs::write(&newer, "b").unwrap();
+        set_modified_unix_ms(&older, TEST_BACKUP_TAKEN_AT_UNIX_MS - 86_400_000);
+        set_modified_unix_ms(&newer, TEST_BACKUP_TAKEN_AT_UNIX_MS);
+
+        assert_eq!(
+            file_modified_unix_ms(&older),
+            Some(TEST_BACKUP_TAKEN_AT_UNIX_MS - 86_400_000)
+        );
+        let missing = dir.path().join("missing.csv");
+        assert_eq!(file_modified_unix_ms(&missing), None);
+        assert_eq!(
+            newest_file_modified_unix_ms([older.as_path(), newer.as_path(), missing.as_path()]),
+            Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)
+        );
+        assert_eq!(newest_file_modified_unix_ms([missing.as_path()]), None);
+    }
 
     #[test]
     fn the_not_sms_or_mms_line_names_the_format_and_the_count() {

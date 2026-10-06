@@ -108,6 +108,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let export_source = optional_header(headers, hn::EXPORT_SOURCE).unwrap_or_default();
     let export_tool = optional_header(headers, hn::EXPORT_TOOL).unwrap_or_default();
     let export_tool_version = optional_header(headers, hn::EXPORT_TOOL_VERSION).unwrap_or_default();
+    let backup_taken_at_unix_ms = parse_backup_taken_at(headers)?;
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers)?;
@@ -160,6 +161,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         export_source,
         export_tool,
         export_tool_version,
+        backup_taken_at_unix_ms,
         filename_suffix: None,
         message: IrMessage {
             guid,
@@ -323,6 +325,18 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     typed_header(headers, name)?.parse().ok()
 }
 
+/// When the backup was made, from `X-ME-Backup-Taken-At-Unix-Ms`, or none
+/// when the header is absent. A value that is not a whole number is refused
+/// rather than read as no date.
+fn parse_backup_taken_at(headers: &[MailHeader<'_>]) -> Result<Option<i64>> {
+    let Some(raw) = typed_header(headers, hn::BACKUP_TAKEN_AT_UNIX_MS) else {
+        return Ok(None);
+    };
+    raw.parse()
+        .map(Some)
+        .with_context(|| format!("This mail's {} header {raw:?}", hn::BACKUP_TAKEN_AT_UNIX_MS))
+}
+
 /// The message's mark from `X-ME-Deletion`, or none when the header is
 /// absent. A value that names neither mark is refused rather than dropped.
 fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
@@ -469,6 +483,7 @@ mod tests {
             export_source: "sms-backup-restore".into(),
             export_tool: "SMS Backup & Restore".into(),
             export_tool_version: "10.26.003".into(),
+            backup_taken_at_unix_ms: None,
             filename_suffix: None,
             message: IrMessage {
                 guid: "aabbccddeeff00112233445566778899".into(),
@@ -586,6 +601,7 @@ mod tests {
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
+            backup_taken_at_unix_ms: None,
             filename_suffix: None,
             message: IrMessage {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
@@ -713,6 +729,7 @@ mod tests {
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
+            backup_taken_at_unix_ms: None,
             filename_suffix: None,
             message: IrMessage {
                 guid: "11111111-2222-3333-4444-555555555555".into(),

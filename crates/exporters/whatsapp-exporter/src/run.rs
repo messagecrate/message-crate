@@ -5,7 +5,8 @@ use crate::emit::{ConvertRequest, convert_json};
 use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
 use crate::wtsexporter::{
-    Platform, WtsexporterArgs, extracts_ios_backup, resolve_wtsexporter, run_wtsexporter,
+    Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, resolve_wtsexporter,
+    run_wtsexporter,
 };
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
@@ -58,104 +59,121 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         .map(owner_from_form)
         .transpose()?;
 
-    let (json_path, media_roots, owner_identity, _work_keep_alive) = if let Some(json) =
-        &source.json
-    {
-        // Allowed roots are only the backup input and the JSON parent — never
-        // the process CWD, which would let crafted paths copy arbitrary files.
-        let mut media_roots = Vec::new();
-        if let Some(path) = &input {
-            media_roots.push(path.clone());
-        }
-        if let Some(parent) = json.parent() {
-            media_roots.push(parent.to_path_buf());
-        }
-        media_roots.sort();
-        media_roots.dedup();
-        // A ready-made result.json names no owner; the form's number is all
-        // there is, and a conversion may leave it empty.
-        (json.clone(), media_roots, form_owner, None)
-    } else {
-        let platform =
-            platform.ok_or_else(|| anyhow::anyhow!("platform is required unless json is set"))?;
-        let input = match input {
-            Some(path) => path,
-            None => env::current_dir().context("resolve current working directory")?,
-        };
-
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let bin = resolve_wtsexporter()?;
-        let work = mark_output_and_make_work_directory(config)?;
-        let json_out = work.path().join("result.json");
-
-        // Cooperative only: cancel is checked before and after the external process.
-        // Killing wtsexporter mid-run is not implemented.
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let mut args = WtsexporterArgs {
-            platform,
-            input: input.clone(),
-            work_dir: work.path().to_path_buf(),
-            key: source.key.clone(),
-            backup: source.backup.clone(),
-            wa: source.wa.clone(),
-            media: source.media.clone(),
-            db: source.db.clone(),
-            business: source.business,
-        };
-        // wtsexporter cannot be given an iPhone backup password, so an
-        // encrypted backup's WhatsApp files are decrypted into the work
-        // directory first and wtsexporter reads those instead of the backup.
-        // From a backup that is not encrypted, wtsexporter extracts them into
-        // the work directory itself, so that disk is checked for room first.
-        if platform == Platform::Ios {
-            if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
-                args.read_decrypted(decrypted);
-            } else if extracts_ios_backup(&args)?
-                && let Some(bytes) = extract_bytes(source)?
-            {
-                check_headroom(work.path(), bytes, Disk::Scratch)?;
+    let (json_path, media_roots, owner_identity, backup_taken_at_unix_ms, _work_keep_alive) =
+        if let Some(json) = &source.json {
+            // Allowed roots are only the backup input and the JSON parent — never
+            // the process CWD, which would let crafted paths copy arbitrary files.
+            let mut media_roots = Vec::new();
+            if let Some(path) = &input {
+                media_roots.push(path.clone());
             }
-        }
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let log = run_wtsexporter(&bin, &args, &json_out)?;
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+            if let Some(parent) = json.parent() {
+                media_roots.push(parent.to_path_buf());
+            }
+            media_roots.sort();
+            media_roots.dedup();
+            // A ready-made result.json names no owner; the form's number is all
+            // there is, and a conversion may leave it empty. It names no backup
+            // date either, so it is dated by when it was written.
+            (
+                json.clone(),
+                media_roots,
+                form_owner,
+                message_crate_core::file_modified_unix_ms(json),
+                None,
+            )
+        } else {
+            let platform = platform
+                .ok_or_else(|| anyhow::anyhow!("platform is required unless json is set"))?;
+            let input = match input {
+                Some(path) => path,
+                None => env::current_dir().context("resolve current working directory")?,
+            };
 
-        if !log.trim().is_empty() {
-            let trimmed = log.trim_end_matches('\n');
-            messages.push(trimmed.to_string());
-        }
+            message_crate_core::check_cancel(config.cancel.as_ref())?;
+            let bin = resolve_wtsexporter()?;
+            let work = mark_output_and_make_work_directory(config)?;
+            let json_out = work.path().join("result.json");
 
-        let kept = config.output.join("wtsexporter_result.json");
-        fs::copy(&json_out, &kept).with_context(|| format!("copy JSON to {}", kept.display()))?;
+            // Cooperative only: cancel is checked before and after the external process.
+            // Killing wtsexporter mid-run is not implemented.
+            message_crate_core::check_cancel(config.cancel.as_ref())?;
+            let mut args = WtsexporterArgs {
+                platform,
+                input: input.clone(),
+                work_dir: work.path().to_path_buf(),
+                key: source.key.clone(),
+                backup: source.backup.clone(),
+                wa: source.wa.clone(),
+                media: source.media.clone(),
+                db: source.db.clone(),
+                business: source.business,
+            };
+            // Read before an encrypted backup's files are decrypted, which points
+            // `args` at the decrypted copy, dated the moment it was made.
+            let backup_taken_at_unix_ms = backup_taken_at_unix_ms(&args);
+            // wtsexporter cannot be given an iPhone backup password, so an
+            // encrypted backup's WhatsApp files are decrypted into the work
+            // directory first and wtsexporter reads those instead of the backup.
+            // From a backup that is not encrypted, wtsexporter extracts them into
+            // the work directory itself, so that disk is checked for room first.
+            if platform == Platform::Ios {
+                if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
+                    args.read_decrypted(decrypted);
+                } else if extracts_ios_backup(&args)?
+                    && let Some(bytes) = extract_bytes(source)?
+                {
+                    check_headroom(work.path(), bytes, Disk::Scratch)?;
+                }
+            }
+            message_crate_core::check_cancel(config.cancel.as_ref())?;
+            let log = run_wtsexporter(&bin, &args, &json_out)?;
+            message_crate_core::check_cancel(config.cancel.as_ref())?;
 
-        // Work directory (wtsexporter extract) + backup input. The backup input is the
-        // process cwd when the config names no input.
-        let mut media_roots = vec![work.path().to_path_buf(), input];
-        media_roots.sort();
-        media_roots.dedup();
+            if !log.trim().is_empty() {
+                let trimmed = log.trim_end_matches('\n');
+                messages.push(trimmed.to_string());
+            }
 
-        let owner_identity = match platform {
-            // wtsexporter copies the whole app-group domain into the work
-            // dir, preferences plist included; a backup someone extracted by
-            // hand has it under the input directory. The form's number covers a
-            // backup that carries no owner key (the Business app, a moved key).
-            Platform::Ios => match owner_from_backup(&media_roots, &mut messages).or(form_owner) {
-                Some(owner) => owner,
-                None => bail!(
-                    "the backup does not contain your WhatsApp phone number; \
+            let kept = config.output.join("wtsexporter_result.json");
+            fs::copy(&json_out, &kept)
+                .with_context(|| format!("copy JSON to {}", kept.display()))?;
+
+            // Work directory (wtsexporter extract) + backup input. The backup input is the
+            // process cwd when the config names no input.
+            let mut media_roots = vec![work.path().to_path_buf(), input];
+            media_roots.sort();
+            media_roots.dedup();
+
+            let owner_identity = match platform {
+                // wtsexporter copies the whole app-group domain into the work
+                // dir, preferences plist included; a backup someone extracted by
+                // hand has it under the input directory. The form's number covers a
+                // backup that carries no owner key (the Business app, a moved key).
+                Platform::Ios => {
+                    match owner_from_backup(&media_roots, &mut messages).or(form_owner) {
+                        Some(owner) => owner,
+                        None => bail!(
+                            "the backup does not contain your WhatsApp phone number; \
                      enter it on the import form"
-                ),
-            },
-            // A crypt backup carries no owner; the form checks the field is
-            // filled before the run starts, so this only guards a caller
-            // that skipped the form.
-            Platform::Android => {
-                form_owner.ok_or_else(|| anyhow::anyhow!("Owner's WhatsApp number is required."))?
-            }
-        };
+                        ),
+                    }
+                }
+                // A crypt backup carries no owner; the form checks the field is
+                // filled before the run starts, so this only guards a caller
+                // that skipped the form.
+                Platform::Android => form_owner
+                    .ok_or_else(|| anyhow::anyhow!("Owner's WhatsApp number is required."))?,
+            };
 
-        (kept, media_roots, Some(owner_identity), Some(work))
-    };
+            (
+                kept,
+                media_roots,
+                Some(owner_identity),
+                backup_taken_at_unix_ms,
+                Some(work),
+            )
+        };
 
     if !json_path.is_file() {
         bail!("JSON not found: {}", json_path.display());
@@ -170,6 +188,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         transforms,
         media_search_roots: &media_roots,
         owner_identity,
+        backup_taken_at_unix_ms,
         output_format: config.output_format,
         cancel: config.cancel.as_ref(),
         resume: config.resume,
@@ -182,6 +201,34 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     messages.append(&mut result.messages);
     result.messages = messages;
     Ok(result)
+}
+
+/// When the backup wtsexporter reads was made, in Unix milliseconds: an
+/// iPhone backup's `Manifest.plist` date, or for Android the modification
+/// time of the WhatsApp database file (`msgstore.db.crypt15` or a decrypted
+/// `msgstore.db`), which WhatsApp writes when it backs up. `None` when
+/// neither can be read, such as an iPhone backup extracted by hand without
+/// its manifest.
+pub(crate) fn backup_taken_at_unix_ms(args: &WtsexporterArgs) -> Option<i64> {
+    match args.platform {
+        Platform::Ios => ::ios_backup::ios_backup_date_unix_ms(&args.input),
+        Platform::Android => {
+            let database = args
+                .backup
+                .clone()
+                .or_else(|| args.db.clone())
+                .or_else(|| android_crypt_backup(&args.input))
+                .unwrap_or_else(|| {
+                    let decrypted = args.input.join("msgstore.db");
+                    if decrypted.is_file() {
+                        decrypted
+                    } else {
+                        args.input.clone()
+                    }
+                });
+            message_crate_core::file_modified_unix_ms(&database)
+        }
+    }
 }
 
 /// Mark the output directory as an export directory, then make the work
@@ -216,6 +263,7 @@ fn mark_output_and_make_work_directory(config: &ExporterConfig) -> Result<Scratc
 
 #[cfg(test)]
 mod tests {
+    use crate::wtsexporter::WtsexporterArgs;
     use message_crate_core::testutil::jsonl_run_config;
     use message_crate_core::{ExporterConfig, SourceConfig, WhatsappConfig};
     use std::fs;
@@ -329,5 +377,64 @@ mod tests {
         let _work = super::mark_output_and_make_work_directory(&config).unwrap();
 
         assert!(output.join("earlier.jsonl").is_file());
+    }
+
+    /// The arguments for a backup at `input` on `platform`, naming no file.
+    fn args_for(platform: crate::wtsexporter::Platform, input: &Path) -> WtsexporterArgs {
+        WtsexporterArgs {
+            platform,
+            input: input.to_path_buf(),
+            work_dir: input.to_path_buf(),
+            key: None,
+            backup: None,
+            wa: None,
+            media: None,
+            db: None,
+            business: false,
+        }
+    }
+
+    /// An iPhone backup is dated by its `Manifest.plist`.
+    #[test]
+    fn an_iphone_backup_is_dated_by_its_manifest() {
+        let backup = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ios-backup");
+        let args = args_for(crate::wtsexporter::Platform::Ios, &backup);
+        // 2026-09-30T18:45:12Z
+        assert_eq!(
+            super::backup_taken_at_unix_ms(&args),
+            Some(1_790_793_912_000)
+        );
+    }
+
+    /// An Android backup records no date inside it, so it is dated by when
+    /// WhatsApp wrote its database file; an iPhone backup with no manifest
+    /// has no date.
+    #[test]
+    fn an_android_backup_is_dated_by_its_database_file() {
+        use message_crate_core::testutil::{TEST_BACKUP_TAKEN_AT_UNIX_MS, set_modified_unix_ms};
+        let dir = tempfile::tempdir().unwrap();
+        let crypt = dir.path().join("msgstore.db.crypt15");
+        fs::write(&crypt, b"encrypted").unwrap();
+        set_modified_unix_ms(&crypt, TEST_BACKUP_TAKEN_AT_UNIX_MS);
+        let args = args_for(crate::wtsexporter::Platform::Android, dir.path());
+        assert_eq!(
+            super::backup_taken_at_unix_ms(&args),
+            Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)
+        );
+
+        let named = dir.path().join("elsewhere.crypt15");
+        fs::write(&named, b"encrypted").unwrap();
+        set_modified_unix_ms(&named, TEST_BACKUP_TAKEN_AT_UNIX_MS - 60_000);
+        let mut args = args_for(crate::wtsexporter::Platform::Android, dir.path());
+        args.backup = Some(named);
+        assert_eq!(
+            super::backup_taken_at_unix_ms(&args),
+            Some(TEST_BACKUP_TAKEN_AT_UNIX_MS - 60_000),
+            "the file the form names wins"
+        );
+
+        let unpacked = tempfile::tempdir().unwrap();
+        let args = args_for(crate::wtsexporter::Platform::Ios, unpacked.path());
+        assert_eq!(super::backup_taken_at_unix_ms(&args), None);
     }
 }

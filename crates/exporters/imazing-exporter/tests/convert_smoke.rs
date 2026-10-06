@@ -159,3 +159,34 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
     });
     assert_eq!(report.conversations, 1);
 }
+
+/// An iMazing export records no date inside it, so the conversation file
+/// says when iMazing wrote the CSV: the export date.
+#[test]
+fn the_backup_date_is_the_export_date_of_the_csv() {
+    use message_crate_core::testutil::{
+        TEST_BACKUP_TAKEN_AT_UNIX_MS, jsonl_backup_dates, set_modified_unix_ms,
+    };
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let input = tempfile::tempdir().expect("tempdir");
+    let messages = input.path().join("messages.csv");
+    fs::copy(fixture.join("messages.csv"), &messages).expect("copy fixture");
+    set_modified_unix_ms(&messages, TEST_BACKUP_TAKEN_AT_UNIX_MS);
+
+    let output = tempfile::tempdir().expect("tempdir");
+    convert_export(ConvertExportArgs {
+        input: &messages,
+        output: output.path(),
+        timezone: Some("UTC"),
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        resume: false,
+        issues: None,
+    })
+    .expect("convert");
+    assert_eq!(
+        jsonl_backup_dates(output.path()),
+        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+    );
+}

@@ -138,7 +138,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -172,6 +172,13 @@ pub struct ExportMeta {
     pub owner_identity: Option<String>,
     /// Outgoing display name. Set when known (iMessage caller-id or `"Me"`).
     pub owner_display_name: Option<String>,
+    /// When the backup this file was read from was made, in Unix
+    /// milliseconds: an iPhone backup's `Manifest.plist` date, an SMS Backup
+    /// & Restore file's `backup_date`, or the backup file's modification
+    /// time where the source records nothing better. `None` when nothing
+    /// says. Between two copies of one message from one source, the import
+    /// lets the copy from the later backup decide its deletion mark and text.
+    pub backup_taken_at_unix_ms: Option<i64>,
 }
 
 /// The shape of a conversation: one-to-one, group, or orphaned.

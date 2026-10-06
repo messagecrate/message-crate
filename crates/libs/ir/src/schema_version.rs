@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the push client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-9
-//! file is not expected to match version 10 (version 9 kept a reply's link in
-//! `imessage.is_reply` and `imessage.in_reply_to_guid`, which version 10 would
-//! pass over, so every reply would arrive as a plain message), and the person
-//! should read "schema version 9", not a file that imports without its
-//! replies.
+//! words, and refuses it before parsing the rest of the file: a version-10
+//! file is not expected to match version 11 (version 10 did not say when its
+//! backup was made, so an import could not tell which of two backups of one
+//! phone is the later one, and a file read as version 11 would claim it has
+//! no date when it only never asked), and the person should read "schema
+//! version 10", not a file that imports by other rules than its own.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -93,6 +93,21 @@ mod tests {
                 .to_string(),
             format!("This file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
         );
+    }
+
+    /// Version 10 had no `export.backup_taken_at_unix_ms`; version 11 says
+    /// when the backup was made, and the import lets the later backup decide
+    /// a message's mark and text. A version-10 file is refused by its
+    /// version, never read as a file whose backup has no date.
+    #[test]
+    fn refuses_a_version_10_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":10,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("This file is schema version 10; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 11);
     }
 
     #[test]

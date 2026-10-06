@@ -138,6 +138,7 @@ mod tests {
                 tool_version: "10.26.003".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: Some("Me".into()),
+                backup_taken_at_unix_ms: None,
             },
             conversation: ConversationMeta {
                 chat_identifier: "+15555550101".into(),
@@ -154,7 +155,7 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":10"#));
+        assert!(header.contains(r#""schema_version":11"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 

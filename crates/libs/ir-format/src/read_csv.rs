@@ -48,7 +48,8 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
         bail!("CSV has no data rows: {}", path.display());
     }
 
-    let header = header_from_row(&cols, &rows[0]);
+    let header = header_from_row(&cols, &rows[0])
+        .with_context(|| format!("parse CSV row 1 in {}", path.display()))?;
     let mut messages = Vec::with_capacity(rows.len());
     for (i, record) in rows.iter().enumerate() {
         messages.push(
@@ -63,7 +64,15 @@ pub fn read_conversation_csv(path: &Path) -> Result<ConversationDocument> {
 }
 
 /// Rebuild the conversation header from the first CSV row's conversation columns.
-fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> ConversationHeader {
+///
+/// # Errors
+///
+/// Returns an error when `backup_taken_at_unix_ms` holds anything but a
+/// whole number or a blank.
+fn header_from_row(
+    cols: &HashMap<&str, usize>,
+    row: &csv::StringRecord,
+) -> Result<ConversationHeader> {
     let get = |name: &str| cell(cols, row, name).unwrap_or("");
     let participants = parse_participants(get("participants_json"));
     let group_title = {
@@ -74,7 +83,14 @@ fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Conv
             Some(t.to_string())
         }
     };
-    ConversationHeader {
+    let backup_taken_at_unix_ms = match get("backup_taken_at_unix_ms").trim() {
+        "" => None,
+        ms => Some(
+            ms.parse::<i64>()
+                .with_context(|| format!("bad backup_taken_at_unix_ms {ms:?}"))?,
+        ),
+    };
+    Ok(ConversationHeader {
         schema_version: SCHEMA_VERSION,
         export: ExportMeta {
             source: get("export_source").to_string(),
@@ -82,6 +98,7 @@ fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Conv
             tool_version: get("export_tool_version").to_string(),
             owner_identity: nonempty(get("owner_identity")),
             owner_display_name: nonempty(get("owner_display_name")),
+            backup_taken_at_unix_ms,
         },
         conversation: ConversationMeta {
             chat_identifier: get("chat_identifier").to_string(),
@@ -90,7 +107,7 @@ fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Conv
             participants,
             stats: ConversationStats::default(),
         },
-    }
+    })
 }
 
 /// Rebuild one message from a CSV row.

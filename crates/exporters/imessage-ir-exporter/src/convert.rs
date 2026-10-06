@@ -390,6 +390,7 @@ fn message_to_ir(
             owner_identity: (!record.owner_identity.is_empty())
                 .then(|| record.owner_identity.clone()),
             owner_display_name: record.owner_display_name.clone(),
+            backup_taken_at_unix_ms: None,
         }),
         IrDirection::Incoming => (record.sender_identity, record.sender_display_name),
     };
@@ -676,6 +677,7 @@ fn write_conversations(
     options.emit_log("");
     options.emit_log(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
     options.emit_progress(ProgressEvent::Prepare { done: 0, total });
+    let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
     let mut written = 0usize;
     let mut kept = 0u64;
     for (chat_identifier, convo) in conversations {
@@ -685,7 +687,12 @@ fn write_conversations(
             continue;
         }
         kept += 1;
-        let doc = pending_to_document(chat_identifier, convo, options.use_caller_id);
+        let doc = pending_to_document(
+            chat_identifier,
+            convo,
+            options.use_caller_id,
+            backup_taken_at_unix_ms,
+        );
         let document_id = doc.conversation.chat_identifier.clone();
         sink.write_document(doc)
             .map_err(|e| anyhow!("write {} for {}: {e:#}", format.as_str(), document_id))?;
@@ -700,11 +707,14 @@ fn write_conversations(
     Ok(kept)
 }
 
-/// Project one accumulated conversation into the shared document shape.
+/// Project one accumulated conversation into the shared document shape,
+/// read from a backup made at `backup_taken_at_unix_ms`
+/// ([`ExportOptions::backup_taken_at_unix_ms`]).
 fn pending_to_document(
     chat_identifier: String,
     convo: PendingConversation,
     use_caller_id: bool,
+    backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationDocument {
     let export = ExportMeta {
         source: EXPORT_SOURCE.into(),
@@ -714,6 +724,7 @@ fn pending_to_document(
         owner_display_name: convo
             .owner_display_name
             .or_else(|| use_caller_id.then(|| "Me".to_string())),
+        backup_taken_at_unix_ms,
     };
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
@@ -749,9 +760,15 @@ fn pending_to_unit(
     chat_identifier: String,
     mut convo: PendingConversation,
     use_caller_id: bool,
+    backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationUnit {
     let loads = std::mem::take(&mut convo.attachment_loads);
-    let doc = pending_to_document(chat_identifier, convo, use_caller_id);
+    let doc = pending_to_document(
+        chat_identifier,
+        convo,
+        use_caller_id,
+        backup_taken_at_unix_ms,
+    );
     let mut loads = loads.into_iter();
     ConversationUnit::from_doc(doc, |_, att| attachment_source(loads.next(), att))
 }
@@ -775,11 +792,19 @@ fn drain_conversations(
     not_decrypted: &mut NotDecrypted,
 ) -> Result<ExportReport> {
     let use_caller_id = options.use_caller_id;
+    let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
     let units: Vec<ConversationUnit> = collected
         .conversations
         .into_iter()
         .filter(|(_, convo)| !convo.messages.is_empty())
-        .map(|(chat_identifier, convo)| pending_to_unit(chat_identifier, convo, use_caller_id))
+        .map(|(chat_identifier, convo)| {
+            pending_to_unit(
+                chat_identifier,
+                convo,
+                use_caller_id,
+                backup_taken_at_unix_ms,
+            )
+        })
         .collect();
 
     let queue = WriteQueueOptions {
@@ -1212,7 +1237,7 @@ mod tests {
             attachment_loads: Vec::new(),
         };
 
-        let doc = pending_to_document("+15555550122".into(), convo, false);
+        let doc = pending_to_document("+15555550122".into(), convo, false, None);
 
         let senders: Vec<_> = doc
             .messages
@@ -1343,7 +1368,7 @@ mod tests {
             ],
         };
 
-        let unit = pending_to_unit("+15555550101".into(), convo, false);
+        let unit = pending_to_unit("+15555550101".into(), convo, false, None);
 
         assert_eq!(unit.attachments.len(), 2);
         assert_eq!(unit.attachments[0].message_index, 0);

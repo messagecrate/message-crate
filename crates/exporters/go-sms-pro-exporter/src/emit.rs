@@ -455,14 +455,21 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         report: ExportReport::with_issues(issues.cloned()),
         skips: SkipDetails::default(),
     };
-    for xml_path in sorted_files(input_dir, &is_xml_file)? {
+    let xml_paths = sorted_files(input_dir, &is_xml_file)?;
+    let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
+    for xml_path in &xml_paths {
         message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_xml(&xml_path);
+        ingest.ingest_xml(xml_path);
     }
-    for pdu_path in sorted_files(input_dir, &is_pdu_file)? {
+    for pdu_path in &pdu_paths {
         message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_pdu(&pdu_path)?;
+        ingest.ingest_pdu(pdu_path)?;
     }
+    // GO SMS Pro writes no date of its own, so the backup is as new as the
+    // newest file it wrote.
+    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+        xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
+    );
     message_crate_core::check_cancel(cancel)?;
     let Ingest {
         conversations,
@@ -478,6 +485,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             EXPORT_TOOL_VERSION,
             Some(owner_identity),
             None,
+            backup_taken_at_unix_ms,
         ),
     };
     let mut documents = Vec::new();
@@ -835,6 +843,7 @@ mod tests {
                 EXPORT_TOOL,
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
+                None,
                 None,
             ),
         };

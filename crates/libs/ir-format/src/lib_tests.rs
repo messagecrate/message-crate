@@ -820,3 +820,87 @@ fn eml_keeps_each_messages_owner_and_each_attachments_size_and_missing_reason() 
 fn mbox_keeps_each_messages_owner_each_attachments_metadata_and_a_text_attachments_bytes() {
     assert_hard_fields_survive(OutputFormat::Mbox);
 }
+
+/// Write a document whose backup has `backup_taken_at_unix_ms` in `format`
+/// and read it back.
+fn backup_date_after_round_trip(
+    format: OutputFormat,
+    backup_taken_at_unix_ms: Option<i64>,
+) -> Option<i64> {
+    let mut doc = message_ir::testutil::sample_document("from the backup");
+    doc.export.backup_taken_at_unix_ms = backup_taken_at_unix_ms;
+    let tmp = tempfile::tempdir().unwrap();
+    let path = write_format(tmp.path(), format, doc).unwrap();
+    let back = match format {
+        OutputFormat::Json => read_conversation_json(&path),
+        OutputFormat::Jsonl => read_conversation_jsonl(&path),
+        OutputFormat::Csv => read_conversation_csv(&path),
+        OutputFormat::Eml => read_conversation_eml_dir(&path),
+        OutputFormat::Mbox => read_conversation_mbox(&path),
+        other => panic!("no round trip for {}", other.as_str()),
+    }
+    .unwrap();
+    back.export.backup_taken_at_unix_ms
+}
+
+/// Every format keeps when the backup was made, and a file that does not
+/// say reads back saying nothing, never a date of the reader's own.
+#[test]
+fn every_format_keeps_when_the_backup_was_made() {
+    for format in [
+        OutputFormat::Json,
+        OutputFormat::Jsonl,
+        OutputFormat::Csv,
+        OutputFormat::Eml,
+        OutputFormat::Mbox,
+    ] {
+        assert_eq!(
+            backup_date_after_round_trip(format, Some(1_790_793_912_345)),
+            Some(1_790_793_912_345),
+            "{}",
+            format.as_str()
+        );
+        assert_eq!(
+            backup_date_after_round_trip(format, None),
+            None,
+            "{}",
+            format.as_str()
+        );
+    }
+}
+
+#[test]
+fn csv_refuses_a_backup_date_that_is_not_a_number() {
+    let doc = message_ir::testutil::sample_document("hello");
+    let tmp = tempfile::tempdir().unwrap();
+    let path = write_format(tmp.path(), OutputFormat::Csv, doc).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let column = CSV_HEADERS
+        .iter()
+        .position(|h| *h == "backup_taken_at_unix_ms")
+        .unwrap();
+    let mut row = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(lines[1].as_bytes())
+        .records()
+        .next()
+        .unwrap()
+        .unwrap()
+        .iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    row[column] = "yesterday".into();
+    let mut out = csv::Writer::from_writer(Vec::new());
+    out.write_record(&row).unwrap();
+    lines[1] = String::from_utf8(out.into_inner().unwrap())
+        .unwrap()
+        .trim_end()
+        .to_string();
+    fs::write(&path, lines.join("\n")).unwrap();
+    let err = read_conversation_csv(&path).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("bad backup_taken_at_unix_ms \"yesterday\""),
+        "{err:#}"
+    );
+}

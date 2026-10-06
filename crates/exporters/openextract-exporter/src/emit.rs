@@ -18,7 +18,7 @@ use phone::Handle;
 use serde_json::{Map, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = "openextract";
 const EXPORT_TOOL: &str = "OpenExtract";
@@ -69,9 +69,10 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         conversations: BTreeMap::new(),
         report: ExportReport::with_issues(issues.cloned()),
     };
-    for path in discover_csv_files(input)? {
+    let csv_files = discover_csv_files(input)?;
+    for path in &csv_files {
         message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_file(&path);
+        ingest.ingest_file(path);
     }
     message_crate_core::check_cancel(cancel)?;
     let Ingest {
@@ -79,12 +80,15 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         mut report,
     } = ingest;
 
+    // OpenExtract writes no date of its own, so the backup is as new as the
+    // newest CSV it wrote.
     let export = message_crate_core::export_meta(
         EXPORT_SOURCE,
         EXPORT_TOOL,
         EXPORT_TOOL_VERSION,
         None,
         None,
+        message_crate_core::newest_file_modified_unix_ms(csv_files.iter().map(PathBuf::as_path)),
     );
     let mut documents = Vec::new();
     for (chat_id, mut pending) in conversations {

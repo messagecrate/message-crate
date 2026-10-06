@@ -40,8 +40,8 @@ pub use exporters::{
 };
 pub use pipeline::{
     CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT_NOTE, NOTE, RunIssue, RunResult,
-    discover_files, emit_issue, export_meta, prepare_outputs, project_conversation,
-    unreadable_parts_note,
+    discover_files, emit_issue, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
+    prepare_outputs, project_conversation, unreadable_parts_note,
 };
 pub use process::{
     CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,

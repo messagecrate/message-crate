@@ -521,6 +521,8 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         ..
     } = ingest;
 
+    // SMS Backup+ writes no backup date of its own, so the backup is as new
+    // as the newest mail file read.
     let hooks = SbpProjection {
         export: message_crate_core::export_meta(
             EXPORT_SOURCE,
@@ -528,6 +530,9 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
             EXPORT_TOOL_VERSION,
             Some(owner_identity),
             None,
+            message_crate_core::newest_file_modified_unix_ms(
+                eml_paths.iter().map(PathBuf::as_path),
+            ),
         ),
     };
     let mut documents = Vec::new();
@@ -832,6 +837,7 @@ mod tests {
                 tool_version: String::new(),
                 owner_identity: None,
                 owner_display_name: None,
+                backup_taken_at_unix_ms: None,
             },
             conversation: ConversationMeta {
                 chat_identifier: "test".into(),
@@ -904,6 +910,7 @@ mod tests {
                 EXPORT_TOOL,
                 EXPORT_TOOL_VERSION,
                 Some("+15555550100".into()),
+                None,
                 None,
             ),
         };
