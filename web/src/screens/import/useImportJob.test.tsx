@@ -27,6 +27,7 @@ import type {
 import type {
   AttachmentMediaMode,
   ImportFileDoneEvent,
+  ImportFileWrittenEvent,
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
@@ -1286,6 +1287,71 @@ describe("useImportJob wiring", () => {
         }),
       },
     ]);
+  });
+
+  describe("an earlier part's Staging row about one conversation (#1688)", () => {
+    // Part 1 recorded p.jpg as not decrypted while it wrote c.jsonl, and
+    // stopped before c.jsonl was written to the end.
+    const notDecrypted = {
+      kind: "error",
+      stage: "staging",
+      item: "Library/SMS/Attachments/p.jpg",
+      reason: "could not be decrypted: No space left on device",
+      conversation: "c.jsonl",
+    };
+
+    /** A resumed Staging that finishes c.jsonl as `status` says. */
+    function stagingThatFinishes(status: "written" | "skipped") {
+      return async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        _onIssue?: (event: ImportIssueEvent) => void,
+        _onFileDone?: (event: ImportFileDoneEvent) => void,
+        onFileWritten?: (event: ImportFileWrittenEvent) => void,
+      ) => {
+        await fn();
+        onFileWritten?.({ file: "c.jsonl", status });
+        return EXTRACT_RESULT;
+      };
+    }
+
+    async function resumeAndComplete(status: "written" | "skipped") {
+      readRunRecordMock.mockResolvedValue({ issues: [], lastStopIssues: [notDecrypted] });
+      runMock.mockReset();
+      runMock.mockImplementationOnce(stagingThatFinishes(status));
+      runMock.mockImplementationOnce(
+        runResult({ summary: "Upload finished.", report: okReport() }),
+      );
+      const { result } = renderHook(() => useImportJob());
+      await act(() =>
+        result.current.startImport(form({ attachmentMedia: "copy" }), undefined, {
+          runId: 1,
+          runDir: "/staging/run-1",
+          identities: null,
+        }),
+      );
+      await act(() => result.current.approve());
+    }
+
+    it("is not in the completion once the resumed Staging writes that conversation clean", async () => {
+      await resumeAndComplete("written");
+
+      expect(completeImportMock).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ status: "completed", issues: [] }),
+      );
+    });
+
+    it("stays in the completion when the resumed Staging skipped that conversation as written", async () => {
+      await resumeAndComplete("skipped");
+
+      const { conversation: _conversation, ...sent } = notDecrypted;
+      expect(completeImportMock).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ issues: [sent] }),
+      );
+    });
   });
 
   it("writes an issue that arrives during Media into the directory before Media ends (#1479)", async () => {

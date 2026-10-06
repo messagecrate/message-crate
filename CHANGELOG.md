@@ -31,6 +31,17 @@ released versions carry their date on the heading.
   `main` branch and in no release yet; a backup read by any other gives
   replies with no link.
 
+### Fixes
+
+- 2026-10-05: **A resumed Staging no longer leaves behind an Error it put
+  right.** When an iPhone import stopped after an attachment could not be
+  decrypted, for example on a full disk, and the resumed Staging then wrote
+  that attachment's conversation with the attachment decrypted, the finished
+  run still listed the attachment as not decrypted. Such an Error now waits
+  until its conversation is written, and goes when a resumed Staging writes
+  the conversation again. An Error about a conversation written before the
+  stop stays, because the resumed Staging does not read it again.
+
 ### Design
 
 - 2026-10-05: **A message's reply count is counted when it is read.** It is

@@ -313,6 +313,8 @@ On the computer that staged the run, it also deletes the run's directory.
 A run whose app closed or crashed keeps every Error that Staging, Media, or Upload had reported before it stopped, because each Error is written into the run's directory the moment its Stage reports it.
 A resumed Stage reads again what it had not finished, and an Error it reports again is listed once.
 An Upload Error about a conversation that the resumed Upload then sends is dropped, so the run never records a failure for a conversation that reached the Message Crate.
+A Staging Error about an attachment of a conversation that the resumed Staging then writes is dropped too, because that Staging read the attachment again and reports it afresh if it still fails.
+A Staging Error about a conversation that was already written before the stop is kept, because the resumed Staging does not read that conversation again.
 
 | The run stopped | The screen reads | The button |
 |---|---|---|

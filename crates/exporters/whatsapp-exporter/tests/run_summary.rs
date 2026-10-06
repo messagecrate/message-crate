@@ -150,6 +150,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
             reason:
                 "This attachment's file is not in the backup, so its message is kept without it."
                     .into(),
+            conversation: None,
         }]
     );
 }

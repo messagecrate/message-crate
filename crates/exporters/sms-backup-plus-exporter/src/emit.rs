@@ -362,6 +362,7 @@ fn project_and_count(
                 step: "parse".into(),
                 item: format!("{eml_path} (sender)"),
                 reason: "The sender of this group message could not be read and was left out. The message itself is kept.".into(),
+                conversation: None,
             });
         }
     }

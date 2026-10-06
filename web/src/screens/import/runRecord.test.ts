@@ -44,6 +44,7 @@ function part(overrides: Partial<RunPart> = {}): RunPart {
     prepareMs: null,
     uploadMs: null,
     conversations: new Map(),
+    staged: new Map(),
     report: null,
     ...overrides,
   };
@@ -327,6 +328,58 @@ describe("the record written while a stage runs (#1639)", () => {
         part({ issues: [skip], conversations: new Map([["a.jsonl", "failed"]]) }),
       ).lastStopIssues,
     ).toEqual([skip]);
+  });
+});
+
+describe("a Staging row waits until its conversation is written (#1688)", () => {
+  // The iPhone exporter records an attachment it could not decrypt while the
+  // write queue writes that attachment's conversation, c.jsonl. A resumed
+  // Staging skips a conversation already written without reading it again.
+  const notDecrypted: ImportIssue = {
+    kind: "error",
+    stage: "staging",
+    item: "Library/SMS/Attachments/p.jpg",
+    reason: "could not be decrypted: No space left on device",
+    conversation: "c.jsonl",
+  };
+
+  it("completes without the row once the resumed Staging writes its conversation clean", () => {
+    // Part 1 records the row and stops before it writes c.jsonl.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [notDecrypted] }));
+    expect(carried.issues).toEqual([]);
+    expect(issuesToDiscard(carried)).toEqual([notDecrypted]);
+    // Part 2 resumes, writes c.jsonl with p.jpg decrypted, and the run completes.
+    const resumed = part({ staged: new Map([["c.jsonl", "written"]]) });
+    expect(recordToCarry(carried, resumed).lastStopIssues).toEqual([]);
+    expect(wholeRun(carried, resumed).issues).toEqual([]);
+  });
+
+  it("keeps the row about a conversation the resumed Staging skipped as already written", () => {
+    // Part 1 wrote c.jsonl but closed before its record said so.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [notDecrypted] }));
+    const resumed = part({ staged: new Map([["c.jsonl", "skipped"]]) });
+    expect(recordToCarry(carried, resumed).issues).toEqual([notDecrypted]);
+    expect(recordToCarry(carried, resumed).lastStopIssues).toEqual([]);
+    expect(wholeRun(carried, resumed).issues).toEqual([notDecrypted]);
+  });
+
+  it("takes the row in once the part writes its conversation", () => {
+    const writing = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [notDecrypted] }));
+    expect(writing.lastStopIssues).toEqual([notDecrypted]);
+    const written = recordToCarry(
+      EMPTY_RUN_RECORD,
+      part({ issues: [notDecrypted], staged: new Map([["c.jsonl", "written"]]) }),
+    );
+    expect(written.issues).toEqual([notDecrypted]);
+    expect(written.lastStopIssues).toEqual([]);
+  });
+
+  it("keeps a waiting Staging row when the Upload sends its conversation", () => {
+    // The Upload sending c.jsonl says nothing of whether Staging read p.jpg again.
+    const carried: RunRecord = { issues: [], lastStopIssues: [notDecrypted] };
+    const uploaded = part({ conversations: new Map([["c.jsonl", "ok"]]) });
+    expect(wholeRun(carried, uploaded).issues).toEqual([notDecrypted]);
+    expect(issuesToDiscard(recordToCarry(carried, uploaded))).toEqual([notDecrypted]);
   });
 });
 

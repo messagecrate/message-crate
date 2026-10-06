@@ -56,8 +56,10 @@ import type {
   AttachmentMediaMode,
   ConversationStatus,
   ImportFileDoneEvent,
+  ImportFileWrittenEvent,
   ImportIssueEvent,
   ImportProgressEvent,
+  StagedStatus,
 } from "../../lib/types";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
@@ -393,6 +395,11 @@ type RunScratch = {
    * far (`extract:file-done`): `ok`, `skipped` or `failed`, by file.
    */
   conversations: Map<string, ConversationStatus>;
+  /**
+   * What this part's Staging said of each conversation file it finished so
+   * far (`extract:file-written`): `written` or `skipped`, by file.
+   */
+  staged: Map<string, StagedStatus>;
   counts: { filesParsed?: number; messagesParsed?: number };
   timing: StageTiming;
   durations: ExtractDurations;
@@ -434,6 +441,7 @@ function freshScratch(): RunScratch {
     issues: [],
     notes: [],
     conversations: new Map(),
+    staged: new Map(),
     counts: {},
     timing: { ...EMPTY_TIMING },
     durations: { ...EMPTY_DURATIONS },
@@ -561,6 +569,7 @@ function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void
   scratch.issues = [];
   scratch.notes = [];
   scratch.conversations = new Map();
+  scratch.staged = new Map();
   scratch.counts = {};
   scratch.timing = { ...EMPTY_TIMING };
   scratch.durations = { ...EMPTY_DURATIONS };
@@ -587,6 +596,7 @@ function currentPart(
     filesParsed: run.counts.filesParsed,
     messagesParsed: run.counts.messagesParsed,
     conversations: run.conversations,
+    staged: run.staged,
     report,
   };
 }
@@ -644,16 +654,18 @@ function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
  * Write the run's record so far into its run directory, for the part
  * that resumes it. Called wherever the run stops with the run still open (at
  * a Review, and when `finishImport` leaves the run open), and while a stage
- * runs, as each issue arrives (`recordIssue`, `recordFileDone`). A failed
- * write loses only this part's record; the run itself is unaffected.
+ * runs, as each issue arrives (`recordIssue`, `recordFileDone`,
+ * `recordFileWritten`). A failed write loses only this part's record; the
+ * run itself is unaffected.
  *
  * While a stage runs, the write leaves in the run directory every issue
  * the window had received: each stage sends its issues the moment it
- * records them, and the Upload says when it has sent each conversation, so
- * a crash loses only what arrived while the last write was on its way to
- * disk. The record is the one a pause now would leave (`recordToCarry`): an
- * Upload's rows about a conversation not yet on the server wait apart, and
- * an earlier pause's rows about a conversation this Upload has since sent
+ * records them, Staging says when it has written each conversation, and the
+ * Upload says when it has sent each one, so a crash loses only what arrived
+ * while the last write was on its way to disk. The record is the one a pause now would leave (`recordToCarry`): an
+ * Upload's rows about a conversation not yet on the server wait apart, as do
+ * Staging's rows about a conversation not yet written, and an earlier
+ * pause's rows about a conversation this part has since sent, or written,
  * go.
  */
 async function saveCarriedRecord(
@@ -791,6 +803,20 @@ function recordFileDone(event: ImportFileDoneEvent): void {
   }
 }
 
+/**
+ * Note what Staging's write queue did with one conversation. The record
+ * changes only when some Staging row is about that conversation, so it is
+ * written again only then (#1688).
+ */
+function recordFileWritten(event: ImportFileWrittenEvent): void {
+  scratch.staged.set(event.file, event.status);
+  const about = (issue: ImportIssue) =>
+    issue.stage === "staging" && issue.conversation === event.file;
+  if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
+    void saveCarriedRecord();
+  }
+}
+
 function recordError(stage: ImportIssueStage, message: string): void {
   scratch.issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
 }
@@ -812,6 +838,7 @@ function runJob(invokeFn: () => Promise<void>): Promise<TauriJobResult> {
     applyProgress,
     recordIssue,
     recordFileDone,
+    recordFileWritten,
   );
 }
 

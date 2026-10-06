@@ -64,15 +64,29 @@ pub enum ProgressEvent {
         /// Files the Media stage covers.
         total: usize,
     },
+    /// The write queue finished with one conversation file: it wrote the
+    /// file, or a resumed run found it already written to the end and
+    /// skipped it without reading the conversation again. The desktop app
+    /// keeps a Staging row about a conversation apart until its file is
+    /// written, because only until then does a resumed run report it again
+    /// (#1688). Never held back, since each names its own file.
+    FileDone {
+        /// The conversation file's name in the output directory, without
+        /// the directory: the name the Upload gives the file too.
+        file: String,
+        /// True when a resumed run found the file already written.
+        skipped: bool,
+    },
 }
 
 impl ProgressEvent {
     /// Where this event's stage keeps its last-delivered time, or `None` for
     /// an event that is never held back. A setup step is one: each carries
-    /// its own label, and there are only a handful of them.
+    /// its own label, and there are only a handful of them. A finished
+    /// conversation file is another: each names its own file.
     fn paced_stage(&self) -> Option<usize> {
         match self {
-            Self::Setup { .. } => None,
+            Self::Setup { .. } | Self::FileDone { .. } => None,
             Self::Parse { .. } => Some(0),
             Self::Attachments { .. } => Some(1),
             Self::Prepare { .. } => Some(2),
@@ -85,7 +99,7 @@ impl ProgressEvent {
     /// total is unknown, so no count is known to be the last.
     fn is_stage_boundary(&self) -> bool {
         match *self {
-            Self::Setup { .. } => true,
+            Self::Setup { .. } | Self::FileDone { .. } => true,
             Self::Parse { done, total }
             | Self::Attachments { done, total, .. }
             | Self::Prepare { done, total }
