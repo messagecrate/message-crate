@@ -70,6 +70,7 @@ fn convert_export_smoke_on_sample_fixture() {
             ("text", "hello"),
             ("direction", "incoming"),
             ("timestamp_unix_ms", "1400773261000"),
+            ("time_precision", "milliseconds"),
             ("chat_identifier", "+15555550101"),
         ],
     );
@@ -83,6 +84,7 @@ fn convert_export_smoke_on_sample_fixture() {
             ("text", "hey"),
             ("direction", "outgoing"),
             ("timestamp_unix_ms", "1400773321000"),
+            ("time_precision", "milliseconds"),
         ],
     );
     // The `<mms>` is a different parse: its text lives in a `text/plain` part
@@ -95,6 +97,7 @@ fn convert_export_smoke_on_sample_fixture() {
             ("direction", "incoming"),
             ("message_kind", "mms"),
             ("timestamp_unix_ms", "1400773400000"),
+            ("time_precision", "milliseconds"),
         ],
     );
 
@@ -344,7 +347,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         .expect("expected .json");
     let raw = fs::read_to_string(&json_path).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(doc["schema_version"], 11);
+    assert_eq!(doc["schema_version"], 12);
     assert!(
         doc["conversation"]["stats"]["message_count"]
             .as_u64()
@@ -389,7 +392,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     let body = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = body.lines();
     let header: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 11);
+    assert_eq!(header["schema_version"], 12);
     assert!(header.get("messages").is_none());
     assert!(
         header["conversation"]["stats"]["message_count"]

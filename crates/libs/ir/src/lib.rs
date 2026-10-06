@@ -138,7 +138,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -473,6 +473,12 @@ pub struct IrMessage {
     pub guid: String,
     /// Unix milliseconds; the chronological sort key.
     pub timestamp_unix_ms: i64,
+    /// Whether the source recorded [`Self::timestamp_unix_ms`] to the
+    /// millisecond or in whole seconds. Required: the flag, never the
+    /// value, says whether a time has milliseconds, since a millisecond
+    /// time can end in `.000`. The import shows a whole-second message once
+    /// when its source also holds it with milliseconds in the same second.
+    pub time_precision: TimePrecision,
     /// Incoming or outgoing.
     pub direction: IrDirection,
     /// Transport the message arrived on.

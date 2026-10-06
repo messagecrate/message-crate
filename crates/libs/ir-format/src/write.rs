@@ -26,6 +26,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "timestamp_utc",
     "timestamp_display",
     "timestamp_unix_ms",
+    "time_precision",
     "direction",
     "service",
     "sender_identity",
@@ -381,7 +382,7 @@ fn csv_record<'a>(
     backup_taken_at: &'a str,
     msg: &'a IrMessage,
     cells: &'a MessageCells,
-) -> [&'a str; 47] {
+) -> [&'a str; 48] {
     let im = &cells.imessage;
     [
         doc.conversation.chat_identifier.as_str(),
@@ -393,6 +394,7 @@ fn csv_record<'a>(
         cells.ts_utc.as_str(),
         cells.ts_display.as_str(),
         cells.timestamp_unix_ms.as_str(),
+        msg.time_precision.as_str(),
         msg.direction.as_str(),
         msg.service.as_str(),
         msg.sender_identity.as_deref().unwrap_or(""),

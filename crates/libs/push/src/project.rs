@@ -155,13 +155,14 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":11"#));
+        assert!(header.contains(r#""schema_version":12"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
         let msg = IrMessage {
             guid: "g1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
@@ -190,6 +191,7 @@ mod tests {
         let msg = IrMessage {
             guid: "g1".into(),
             timestamp_unix_ms: 1,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,

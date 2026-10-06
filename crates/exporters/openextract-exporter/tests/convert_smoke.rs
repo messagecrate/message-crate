@@ -68,6 +68,8 @@ fn convert_all_conversations_keys_the_chat_by_its_number() {
             ("sender_identity", "+15555550122"),
             // 2020-01-01T17:00:00+00:00 in the source.
             ("timestamp_unix_ms", "1577898000000"),
+            // OpenExtract writes whole seconds only.
+            ("time_precision", "seconds"),
         ],
     );
     // "Is From Me" is True on this row, and the direction column is where that
@@ -78,6 +80,7 @@ fn convert_all_conversations_keys_the_chat_by_its_number() {
             ("text", "Hi Sam"),
             ("direction", "outgoing"),
             ("timestamp_unix_ms", "1577898060000"),
+            ("time_precision", "seconds"),
         ],
     );
 }

@@ -4,6 +4,7 @@ use super::*;
 use message_crate_core::OutputFormat;
 use message_ir::{
     ConversationDocument, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
+    TimePrecision,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -234,6 +235,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
     doc.messages.push(IrMessage {
         guid: "MULTI-PART-GUID".into(),
         timestamp_unix_ms: 1_400_773_263_000,
+        time_precision: message_ir::TimePrecision::Milliseconds,
         direction: IrDirection::Incoming,
         service: IrService::IMessage,
         message_kind: IrMessageKind::IMessage,
@@ -901,6 +903,102 @@ fn csv_refuses_a_backup_date_that_is_not_a_number() {
     let err = read_conversation_csv(&path).unwrap_err();
     assert!(
         format!("{err:#}").contains("bad backup_taken_at_unix_ms \"yesterday\""),
+        "{err:#}"
+    );
+}
+
+/// Write a document of two messages, one whose source recorded whole
+/// seconds and one whose source recorded milliseconds that end in `.000`,
+/// in `format`, and read back each message's precision in time order.
+fn precisions_after_round_trip(format: OutputFormat) -> Vec<(i64, TimePrecision)> {
+    let mut doc = message_ir::testutil::sample_document("whole second");
+    let mut whole = doc.messages[0].clone();
+    whole.timestamp_unix_ms = 1_400_773_261_000;
+    whole.time_precision = TimePrecision::Seconds;
+    let mut exact = whole.clone();
+    exact.guid = "bbccddeeff00112233445566778899aa".into();
+    exact.text = "milliseconds that end in .000".into();
+    exact.timestamp_unix_ms = 1_400_773_262_000;
+    exact.time_precision = TimePrecision::Milliseconds;
+    doc.messages = vec![whole, exact];
+    let tmp = tempfile::tempdir().unwrap();
+    let path = write_format(tmp.path(), format, doc).unwrap();
+    let back = match format {
+        OutputFormat::Json => read_conversation_json(&path),
+        OutputFormat::Jsonl => read_conversation_jsonl(&path),
+        OutputFormat::Csv => read_conversation_csv(&path),
+        OutputFormat::Eml => read_conversation_eml_dir(&path),
+        OutputFormat::Mbox => read_conversation_mbox(&path),
+        other => panic!("no round trip for {}", other.as_str()),
+    }
+    .unwrap();
+    let mut out: Vec<(i64, TimePrecision)> = back
+        .messages
+        .iter()
+        .map(|m| (m.timestamp_unix_ms, m.time_precision))
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+/// Every format keeps whether a message's time has milliseconds, and a
+/// millisecond time that ends in `.000` reads back as milliseconds, never
+/// as whole seconds.
+#[test]
+fn every_format_keeps_whether_a_time_has_milliseconds() {
+    for format in [
+        OutputFormat::Json,
+        OutputFormat::Jsonl,
+        OutputFormat::Csv,
+        OutputFormat::Eml,
+        OutputFormat::Mbox,
+    ] {
+        assert_eq!(
+            precisions_after_round_trip(format),
+            [
+                (1_400_773_261_000, TimePrecision::Seconds),
+                (1_400_773_262_000, TimePrecision::Milliseconds),
+            ],
+            "{}",
+            format.as_str()
+        );
+    }
+}
+
+/// A CSV row whose `time_precision` is blank is refused, never read as
+/// either precision.
+#[test]
+fn csv_refuses_a_row_without_a_time_precision() {
+    let doc = message_ir::testutil::sample_document("hello");
+    let tmp = tempfile::tempdir().unwrap();
+    let path = write_format(tmp.path(), OutputFormat::Csv, doc).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
+    let column = CSV_HEADERS
+        .iter()
+        .position(|h| *h == "time_precision")
+        .unwrap();
+    let mut row = csv::ReaderBuilder::new()
+        .has_headers(false)
+        .from_reader(lines[1].as_bytes())
+        .records()
+        .next()
+        .unwrap()
+        .unwrap()
+        .iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    row[column] = String::new();
+    let mut out = csv::Writer::from_writer(Vec::new());
+    out.write_record(&row).unwrap();
+    lines[1] = String::from_utf8(out.into_inner().unwrap())
+        .unwrap()
+        .trim_end()
+        .to_string();
+    fs::write(&path, lines.join("\n")).unwrap();
+    let err = read_conversation_csv(&path).unwrap_err();
+    assert!(
+        format!("{err:#}").contains("bad time_precision \"\""),
         "{err:#}"
     );
 }

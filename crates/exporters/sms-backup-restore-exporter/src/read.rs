@@ -493,8 +493,10 @@ fn dedupe(messages: &mut Vec<PendingMessage>) -> u64 {
     let before = messages.len();
     let mut kept = kept.into_iter();
     messages.retain_mut(|m| match kept.next().flatten() {
-        Some(ms) => {
-            if m.time().0 != ms {
+        Some((ms, precision)) => {
+            // A whole-second copy that keeps a millisecond copy's time keeps
+            // its precision too, even when that time ends in `.000`.
+            if m.time() != (ms, precision) {
                 m.date_ms = ms.to_string();
             }
             true
@@ -624,7 +626,7 @@ fn ir_message(
     message: &PendingMessage,
     owner: &(Option<String>, Option<String>),
 ) -> IrMessage {
-    let (timestamp_unix_ms, _) = message.time();
+    let (timestamp_unix_ms, time_precision) = message.time();
     let digests = message.attachment_digests();
     let (sender_identity, sender_display_name) = if message.is_from_me {
         owner.clone()
@@ -643,6 +645,7 @@ fn ir_message(
         })
         .into_string(),
         timestamp_unix_ms,
+        time_precision,
         direction: if message.is_from_me {
             IrDirection::Outgoing
         } else {

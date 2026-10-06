@@ -885,6 +885,7 @@ fn conversation_headers<'m>(
         (headers::SERVICE, msg.message.service.as_str()),
         (headers::MESSAGE_KIND, msg.message.message_kind.as_str()),
         (headers::TIMESTAMP_UNIX_MS, &timestamp),
+        (headers::TIME_PRECISION, msg.message.time_precision.as_str()),
         (headers::GUID, msg.message.guid.as_str()),
         (headers::EXPORT_SOURCE, msg.export_source.as_str()),
         (headers::EXPORT_TOOL, msg.export_tool.as_str()),

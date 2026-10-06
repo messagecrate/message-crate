@@ -7,8 +7,8 @@ use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, nonempty,
-    parse_android_type,
+    IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision,
+    nonempty, parse_android_type,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -116,6 +116,10 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let timestamp_unix_ms = get("timestamp_unix_ms")
         .parse::<i64>()
         .with_context(|| format!("bad timestamp_unix_ms {:?}", get("timestamp_unix_ms")))?;
+    // The flag, never the time, says whether a time has milliseconds, so a
+    // blank or unknown precision is refused rather than guessed.
+    let time_precision = TimePrecision::parse(get("time_precision"))
+        .with_context(|| format!("bad time_precision {:?}", get("time_precision")))?;
     let direction = match get("direction").to_ascii_lowercase().as_str() {
         "outgoing" => IrDirection::Outgoing,
         _ => IrDirection::Incoming,
@@ -158,6 +162,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     Ok(IrMessage {
         guid: get("guid").to_string(),
         timestamp_unix_ms,
+        time_precision,
         direction,
         service: IrService::parse(get("service")),
         message_kind: IrMessageKind::parse(get("message_kind")),

@@ -22,7 +22,7 @@ use chat_db_fixture::{
 };
 use common::{config, helper_binary};
 use message_crate_core::{ExporterConfig, OutputFormat};
-use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage};
+use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage, TimePrecision};
 use message_ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
@@ -82,6 +82,20 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     assert_eq!(staged.len(), 1, "{staged:?}");
     assert_eq!(fs::read(&staged[0]).unwrap(), PHOTO_BYTES);
     assert!(all.contains("\"attachments/"), "{all}");
+
+    // `chat.db` records times below the second, so every message says
+    // milliseconds.
+    for path in &files {
+        let doc = read_conversation_jsonl(path).unwrap();
+        for msg in &doc.messages {
+            assert_eq!(
+                msg.time_precision,
+                TimePrecision::Milliseconds,
+                "{}",
+                msg.guid
+            );
+        }
+    }
 }
 
 /// Every conversation file of a Mac `chat.db` export says the database's

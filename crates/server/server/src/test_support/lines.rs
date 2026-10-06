@@ -149,6 +149,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
     MessageLine(message_ir::IrMessage {
         guid: guid.to_string(),
         timestamp_unix_ms: 1_426_183_462_000,
+        time_precision: message_ir::TimePrecision::Milliseconds,
         direction: message_ir::IrDirection::Incoming,
         service: message_ir::IrService::IMessage,
         message_kind: message_ir::IrMessageKind::IMessage,

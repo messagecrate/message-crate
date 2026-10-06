@@ -15,6 +15,9 @@ pub(crate) const SERVICE: &str = "X-ME-Service";
 pub(crate) const MESSAGE_KIND: &str = "X-ME-Message-Kind";
 /// Message timestamp in Unix milliseconds.
 pub(crate) const TIMESTAMP_UNIX_MS: &str = "X-ME-Timestamp-Unix-Ms";
+/// Whether the timestamp has milliseconds: `seconds` or `milliseconds`, as
+/// `message_ir::TimePrecision` names them.
+pub(crate) const TIME_PRECISION: &str = "X-ME-Time-Precision";
 /// Message guid.
 pub(crate) const GUID: &str = "X-ME-Guid";
 /// Export source id.

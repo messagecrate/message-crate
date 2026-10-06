@@ -11,16 +11,42 @@
 //! so the id carries no counter of occurrences: a counter would depend on the
 //! order the copies are read in.
 
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-/// How finely a source recorded a message's time.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file.
+///
+/// The flag, never the value, says whether a time has milliseconds: a
+/// millisecond time can end in `.000`, and a whole-second one always does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum TimePrecision {
     /// Whole seconds: the milliseconds are zero because the source has none.
     Seconds,
     /// Milliseconds, as the phone stored them.
     Milliseconds,
+}
+
+impl TimePrecision {
+    /// The name the conversation file, the database and the HTTP API use:
+    /// `seconds` or `milliseconds`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Milliseconds => "milliseconds",
+        }
+    }
+
+    /// The precision [`Self::as_str`] names, or `None` for any other text.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "seconds" => Some(Self::Seconds),
+            "milliseconds" => Some(Self::Milliseconds),
+            _ => None,
+        }
+    }
 }
 
 /// What a message's identity is made from.
@@ -164,10 +190,10 @@ pub struct MessageCopy<'a> {
 /// which copy was read first. Two millisecond copies with different times
 /// are two messages.
 ///
-/// Returns one entry per copy, in order: `Some(time)` for a copy that is
-/// kept, with the time in milliseconds it keeps, and `None` for a copy that
-/// repeats a kept one.
-pub fn one_copy_per_message(copies: &[MessageCopy<'_>]) -> Vec<Option<i64>> {
+/// Returns one entry per copy, in order: `Some((time, precision))` for a
+/// copy that is kept, with the time in milliseconds it keeps and how finely
+/// that time was recorded, and `None` for a copy that repeats a kept one.
+pub fn one_copy_per_message(copies: &[MessageCopy<'_>]) -> Vec<Option<(i64, TimePrecision)>> {
     struct Kept {
         index: usize,
         timestamp_unix_ms: i64,
@@ -244,7 +270,12 @@ pub fn one_copy_per_message(copies: &[MessageCopy<'_>]) -> Vec<Option<i64>> {
             }
         }
         for k in kept {
-            fate[k.index] = Some(k.timestamp_unix_ms);
+            let precision = if k.exact {
+                TimePrecision::Milliseconds
+            } else {
+                TimePrecision::Seconds
+            };
+            fate[k.index] = Some((k.timestamp_unix_ms, precision));
         }
     }
     fate
@@ -353,7 +384,10 @@ mod tests {
         ];
         assert_eq!(
             one_copy_per_message(&copies),
-            [Some(1_609_459_200_000), Some(1_609_459_200_000)]
+            [
+                Some((1_609_459_200_000, SECS)),
+                Some((1_609_459_200_000, SECS))
+            ]
         );
     }
 
@@ -365,7 +399,7 @@ mod tests {
         ];
         assert_eq!(
             one_copy_per_message(&copies),
-            [Some(1_609_459_200_300), None]
+            [Some((1_609_459_200_300, MS)), None]
         );
     }
 
@@ -377,7 +411,7 @@ mod tests {
         ];
         assert_eq!(
             one_copy_per_message(&copies),
-            [Some(1_609_459_200_100), Some(1_609_459_200_400)]
+            [Some((1_609_459_200_100, MS)), Some((1_609_459_200_400, MS))]
         );
     }
 
@@ -387,11 +421,11 @@ mod tests {
         let exact = copy("+15555550122", 1_609_459_200_876, MS, &[]);
         assert_eq!(
             one_copy_per_message(&[whole, exact]),
-            [None, Some(1_609_459_200_876)]
+            [None, Some((1_609_459_200_876, MS))]
         );
         assert_eq!(
             one_copy_per_message(&[exact, whole]),
-            [Some(1_609_459_200_876), None]
+            [Some((1_609_459_200_876, MS)), None]
         );
     }
 
@@ -402,11 +436,11 @@ mod tests {
         let xml = copy("+15555550122", 1_609_459_200_250, MS, &[]);
         assert_eq!(
             one_copy_per_message(&[xml, pdu]),
-            [None, Some(1_609_459_200_250)]
+            [None, Some((1_609_459_200_250, MS))]
         );
         assert_eq!(
             one_copy_per_message(&[pdu, xml]),
-            [Some(1_609_459_200_250), None]
+            [Some((1_609_459_200_250, MS)), None]
         );
     }
 
@@ -420,7 +454,10 @@ mod tests {
         ];
         assert_eq!(
             one_copy_per_message(&copies),
-            [Some(1_609_459_200_000), Some(1_609_459_200_000)]
+            [
+                Some((1_609_459_200_000, SECS)),
+                Some((1_609_459_200_000, SECS))
+            ]
         );
     }
 
@@ -432,7 +469,7 @@ mod tests {
         b.vendor_key = Some("B2");
         assert_eq!(
             one_copy_per_message(&[a, b]),
-            [Some(1_609_459_200_000), Some(1_609_459_200_000)]
+            [Some((1_609_459_200_000, MS)), Some((1_609_459_200_000, MS))]
         );
     }
 
@@ -444,7 +481,10 @@ mod tests {
         ];
         assert_eq!(
             one_copy_per_message(&copies),
-            [Some(1_609_459_200_000), Some(1_609_459_201_000)]
+            [
+                Some((1_609_459_200_000, SECS)),
+                Some((1_609_459_201_000, SECS))
+            ]
         );
     }
 }

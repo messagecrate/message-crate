@@ -50,6 +50,7 @@ fn sample_doc() -> ConversationDocument {
         messages: vec![IrMessage {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,

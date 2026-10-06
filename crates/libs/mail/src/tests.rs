@@ -20,6 +20,7 @@ fn base_sms() -> MailMessage {
         message: IrMessage {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: message_ir::IrService::Sms,
             message_kind: message_ir::IrMessageKind::Sms,
@@ -489,7 +490,7 @@ fn writes_conversation_mboxrd() {
     a.message.timestamp_unix_ms = 1_400_773_261_000;
     let mut b = base_sms();
     b.message.guid = "bbccddeeff00112233445566778899aa".into();
-    b.message.text = "second".into();
+    b.message.text = "the next one".into();
     b.message.timestamp_unix_ms = 1_400_773_361_000;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -501,7 +502,7 @@ fn writes_conversation_mboxrd() {
     assert!(text.contains(">From spoofed"));
     // Chronological: first then second
     let first_pos = text.find("first").unwrap();
-    let second_pos = text.find("second").unwrap();
+    let second_pos = text.find("the next one").unwrap();
     assert!(first_pos < second_pos);
     assert_eq!(text.matches("\nFrom ").count(), 1); // one additional From_ between records
     assert!(text.contains("X-ME-Guid: aabbccddeeff00112233445566778899"));
@@ -511,7 +512,7 @@ fn writes_conversation_mboxrd() {
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(parsed.len(), 2);
     assert_eq!(parsed[0].message.text, "From spoofed\nfirst\nlast");
-    assert_eq!(parsed[1].message.text, "second");
+    assert_eq!(parsed[1].message.text, "the next one");
 }
 
 #[test]
@@ -565,6 +566,7 @@ fn a_mail_that_names_addresses_handles_is_refused() {
         "X-ME-Chat-Identifier: sam@example.com\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Participants: [{\"handle\":\"sam@example.com\"}]\r\n",
         "X-ME-Sender-Handle: sam@example.com\r\n",
         "\r\n",
@@ -614,6 +616,7 @@ fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Tapbacks: [{\"part_index\":0,\"kind\":\"loved\",\"is_from_me\":false,\"reactor_identity\":\"+15555550101\"}]\r\n",
         "\r\n",
         "hello\r\n",
@@ -635,6 +638,7 @@ fn a_mail_that_keeps_a_reply_link_in_x_me_thread_originator_guid_is_refused() {
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Is-Reply: true\r\n",
         "X-ME-Thread-Originator-Guid: parent-guid\r\n",
         "\r\n",
@@ -713,6 +717,7 @@ fn a_mail_that_keeps_the_deleted_mark_in_x_me_is_deleted_is_refused() {
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Is-Deleted: true\r\n",
         "\r\n",
         "hello\r\n",
@@ -734,6 +739,7 @@ fn a_mail_that_keeps_the_edit_history_in_x_me_edits_is_refused() {
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Edits: [{\"part_index\":0,\"status\":\"edited\",\"text\":\"helo\"}]\r\n",
         "\r\n",
         "hello\r\n",
@@ -767,6 +773,7 @@ fn assert_json_header_is_refused(header: &str, value: &str, what: &str) {
         "X-ME-Chat-Identifier: +15555550101\r\n\
          X-ME-Guid: g1\r\n\
          X-ME-Timestamp-Unix-Ms: 1400773261000\r\n\
+         X-ME-Time-Precision: milliseconds\r\n\
          X-ME-Service: imessage\r\n\
          {header}: {value}\r\n\
          \r\n\
@@ -817,6 +824,7 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Time-Precision: milliseconds\r\n",
         "X-ME-Deletion: trashed\r\n",
         "\r\n",
         "hello\r\n",
@@ -1019,6 +1027,7 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
         "X-ME-Conversation-Type: group \r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000 \r\n",
+        "X-ME-Time-Precision: seconds \r\n",
         "X-ME-Direction: outgoing \r\n",
         "X-ME-Service: imessage \r\n",
         "X-ME-Message-Kind: imessage \r\n",
@@ -1036,6 +1045,10 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     let msg = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
     assert_eq!(msg.conversation_type, "group");
     assert_eq!(msg.message.timestamp_unix_ms, 1_400_773_261_000);
+    assert_eq!(
+        msg.message.time_precision,
+        message_ir::TimePrecision::Seconds
+    );
     assert_eq!(msg.message.direction, IrDirection::Outgoing);
     assert_eq!(msg.message.service, message_ir::IrService::IMessage);
     assert_eq!(

@@ -60,6 +60,8 @@ fn convert_smoke_writes_csv_not_json() {
             ("direction", "incoming"),
             ("sender_identity", "+14075550107"),
             ("timestamp_unix_ms", "1609459200000"),
+            // The XML records milliseconds, though these end in `.000`.
+            ("time_precision", "milliseconds"),
             ("chat_identifier", "+14075550107"),
         ],
     );
@@ -73,6 +75,7 @@ fn convert_smoke_writes_csv_not_json() {
             ("text", "smoke reply"),
             ("direction", "outgoing"),
             ("timestamp_unix_ms", "1609459260000"),
+            ("time_precision", "milliseconds"),
         ],
     );
     // The PDU beside the XML lands in the same conversation.
@@ -82,6 +85,8 @@ fn convert_smoke_writes_csv_not_json() {
             ("text", "Hello one to one"),
             ("direction", "incoming"),
             ("sender_identity", "+14075550107"),
+            // A PDU file's name records whole seconds only.
+            ("time_precision", "seconds"),
         ],
     );
 }

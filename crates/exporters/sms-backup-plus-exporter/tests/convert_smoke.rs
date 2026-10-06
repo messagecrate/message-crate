@@ -86,6 +86,9 @@ fn convert_smoke_writes_csv_not_json() {
             ("text", "Hello from Alice"),
             ("direction", "incoming"),
             ("timestamp_unix_ms", "1609459200000"),
+            // `X-smssync-date` records milliseconds, though these end in
+            // `.000`.
+            ("time_precision", "milliseconds"),
             ("chat_identifier", "+14075550107"),
         ],
     );
@@ -316,6 +319,7 @@ fn two_messages_sharing_an_smssync_id_both_survive() {
             ("text", "Hello from Alex"),
             ("direction", "outgoing"),
             ("timestamp_unix_ms", "1609459200313"),
+            ("time_precision", "milliseconds"),
         ],
     );
     assert_csv_row(
@@ -323,6 +327,7 @@ fn two_messages_sharing_an_smssync_id_both_survive() {
         &[
             ("text", "Hello from Sam"),
             ("timestamp_unix_ms", "1609459300000"),
+            ("time_precision", "milliseconds"),
         ],
     );
     // The same-chat pair: both messages, in one conversation file.
@@ -432,5 +437,39 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
             .iter()
             .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
         "{dates:?}"
+    );
+}
+
+/// A message with no `X-smssync-date` takes its time from the mail's `Date`,
+/// which records whole seconds, and says so.
+#[test]
+fn a_message_timed_by_its_date_header_has_whole_seconds() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&input).expect("input dir");
+    fs::write(
+        input.join("dated.eml"),
+        "From: dana@unknown.email\n\
+         To: me@example.com\n\
+         Subject: SMS with Dana\n\
+         Date: Fri, 01 Jan 2021 00:00:05 +0000\n\
+         X-smssync-type: 1\n\
+         X-smssync-address: +15555550133\n\
+         Content-Type: text/plain; charset=utf-8\n\
+         \n\
+         Timed by Date\n",
+    )
+    .expect("write fixture");
+
+    convert(&[input.as_path()], &out).expect("convert");
+
+    assert_csv_row(
+        &out.join("+15555550133.csv"),
+        &[
+            ("text", "Timed by Date"),
+            ("timestamp_unix_ms", "1609459205000"),
+            ("time_precision", "seconds"),
+        ],
     );
 }
