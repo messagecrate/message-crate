@@ -735,6 +735,21 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
             ("chat1000000007".to_string(), "other".to_string()),
         ]
     );
+    let contacts: Vec<String> = sqlx::query_scalar(
+        "SELECT c.preferred_name FROM contacts c
+         JOIN contact_handles ch ON ch.account_id = c.account_id AND ch.contact_id = c.id
+         JOIN handles h ON h.id = ch.handle_id
+         WHERE c.account_id = $1 AND h.raw = 'alerts@example.com'",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        contacts,
+        ["Alerts".to_string()],
+        "the one contact the participant named holds the address"
+    );
 }
 
 /// iMessage reaches an email address, so an iMessage sender with one is an

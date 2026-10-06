@@ -38,10 +38,11 @@ pub fn handle_type_of(address: &str) -> HandleType {
 /// `stated` is the type the source gave, else the shape ([`handle_type_of`])
 /// decides. WhatsApp carries phone numbers and its own ids (`…@lid`,
 /// `…@g.us`, `…@s.whatsapp.net`), which are `Other`, so an address with an
-/// `@` on WhatsApp is `Other` however it looks (#1671). The phone service
-/// carries what iMessage and SMS carry together, phone numbers and email
-/// addresses, so the shape's type stands there. A phone number is a phone
-/// number on every service (#1144).
+/// `@` on WhatsApp is `Other` however it looks (#1671). iMessage reaches an
+/// email address and shares the phone service with SMS, and an address has
+/// one type on one service, so the shape's type stands there; how SMS's
+/// phone-only rule is held on that service is #1958. A phone number is a
+/// phone number on every service (#1144).
 pub fn handle_type_on(
     address: &str,
     stated: Option<HandleType>,
