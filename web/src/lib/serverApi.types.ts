@@ -3294,7 +3294,8 @@ export interface components {
              * @description `deleted_in_source_app` for a message the person deleted in the
              *     app it came from before the backup, `unsent` for one its sender
              *     took back; `null` for neither. The message is listed and found
-             *     like any other either way.
+             *     like any other either way. The search word `deleted:` narrows to
+             *     or away from the first mark, and `unsent:` the second.
              */
             deletion: components["schemas"]["Deletion"] | null;
             /**
@@ -4346,7 +4347,8 @@ export interface components {
                  * @description `deleted_in_source_app` for a message the person deleted in the
                  *     app it came from before the backup, `unsent` for one its sender
                  *     took back; `null` for neither. The message is listed and found
-                 *     like any other either way.
+                 *     like any other either way. The search word `deleted:` narrows to
+                 *     or away from the first mark, and `unsent:` the second.
                  */
                 deletion: components["schemas"]["Deletion"] | null;
                 /**

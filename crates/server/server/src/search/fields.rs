@@ -269,8 +269,16 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         value_type: ValueType::Flag,
         lists: &[M],
         values: &["yes", "no"],
-        help: "deleted in the source app, or unsent",
+        help: "marked deleted in the source app",
         example: "deleted:yes",
+    },
+    FieldSpec {
+        word: "unsent",
+        value_type: ValueType::Flag,
+        lists: &[M],
+        values: &["yes", "no"],
+        help: "marked unsent by its sender",
+        example: "unsent:yes",
     },
     FieldSpec {
         word: "trashed",
