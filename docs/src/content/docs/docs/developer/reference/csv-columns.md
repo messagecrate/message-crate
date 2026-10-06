@@ -24,6 +24,7 @@ CSV output contains one row per message. Conversation and export identity are re
 | `timestamp_utc` | UTC RFC 3339 time. |
 | `timestamp_display` | Human-readable time. |
 | `timestamp_unix_ms` | Unix time in milliseconds. |
+| `time_precision` | `milliseconds` when the source recorded the time below the second, `seconds` when it recorded whole seconds. A millisecond time can end in `000` and is still `milliseconds`. A file with a blank or any other value is refused. |
 | `direction` | `incoming` or `outgoing`. |
 | `service` | `sms`, `imessage`, `whatsapp`, `rcs`, `discord`, `signal`, `telegram`, `slack`, or `unknown`. |
 | `sender_identity` | Sender phone number, email, or other identity. Outgoing rows use the export owner when known. |

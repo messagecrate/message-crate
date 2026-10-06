@@ -390,3 +390,6 @@ Which backup is newer comes from the backup's own date: the date an iPhone backu
 **Settings → Storage → Import history** shows it beside the backup each run read.
 A backup that records no date at all keeps a mark once given, and takes a newer text only when its edits are newer.
 It also keeps the attachments and reactions each backup holds of a message, each one once, so one import of two backups stores what two separate imports of them store.
+
+Some backups record a message's time to the second and others to the millisecond, and an SMS Backup+ backup can hold both for one message.
+When the Message Crate hides duplicates (the server's `import` and `dedupe-cross-source` commands do), a message one backup app holds once to the second and once to the millisecond is shown once, at its time to the millisecond.

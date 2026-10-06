@@ -37,7 +37,7 @@ Import and view messages in SQLite
 
 * `import` — Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
 * `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
-* `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source
+* `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source, or once in whole seconds beside its millisecond copy in one source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
 * `create-database` — Create an empty database, with no Demo Account. `serve` adds the Demo Account only to a database that does not exist yet, so this is how a Message Crate starts empty
 * `serve` — Run the HTTP API. A database that does not exist yet is created with the Demo Account before the server listens
@@ -109,7 +109,7 @@ Discard the account's running Import Run, if it has one. A killed `import` leave
 
 ## `message-crate-server dedupe-cross-source`
 
-Soft-hide the same SMS when it appears under more than one import source
+Soft-hide the same SMS when it appears under more than one import source, or once in whole seconds beside its millisecond copy in one source
 
 **Usage:** `message-crate-server dedupe-cross-source [OPTIONS] --account <ACCOUNT>`
 

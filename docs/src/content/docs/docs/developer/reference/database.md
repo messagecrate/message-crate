@@ -54,7 +54,8 @@ handle is on in `contact_handles`.
 
 ### `messages`
 
-One row = one message (`source`, `guid`, timestamps, `is_from_me`, optional
+One row = one message (`source`, `guid`, timestamps, `time_precision`,
+`is_from_me`, optional
 `service` for per-message transport such as `sms` / `imessage` / `rcs` /
 `whatsapp`, `body`, `content_key`, optional `sender_handle_id` → `handles`,
 optional `duplicate_of`).

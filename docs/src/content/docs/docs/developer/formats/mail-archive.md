@@ -144,6 +144,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | `X-ME-Service` | lowercase common-message vocabulary preferred (`sms` / `imessage` / …) | Older exports may use `SMS` / `iMessage` |
 | `X-ME-Message-Kind` | see taxonomy below | |
 | `X-ME-Timestamp-Unix-Ms` | integer string | Authoritative epoch ms (UTC) |
+| `X-ME-Time-Precision` | `seconds` / `milliseconds` | Whether the source recorded the time below the second; required. The header, never the time, decides: a millisecond time can end in `000`. A missing header or another value is refused |
 | `X-ME-Subject` | string | When distinct from mail `Subject` |
 | `X-ME-Guid` | hex / guid string | Matches CSV `guid` when possible |
 | `X-ME-Export-Source` | string | e.g. `sms-backup-restore` |
@@ -340,6 +341,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `group_title` | `X-ME-Group-Title` |
 | `guid` | `X-ME-Guid` + `Message-ID` |
 | `timestamp` / `timestamp_utc` / `timestamp_unix_ms` | `Date` + `X-ME-Timestamp-Unix-Ms` |
+| `time_precision` | `X-ME-Time-Precision` (`seconds`/`milliseconds`; required) |
 | `direction` | `X-ME-Direction` |
 | `service` | `X-ME-Service` |
 | `sender_identity` / `sender_display_name` | headers + `From` phrase |
