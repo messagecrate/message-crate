@@ -240,7 +240,7 @@ fn ticking_the_network_setting_on_another_address_starts_no_server() {
     assert_eq!(server.set_open_to_network(true), Status::Idle);
     thread::sleep(POLL_INTERVAL * 2);
     assert_eq!(server.status(), Status::Idle);
-    assert!(server.lock().child.is_none());
+    assert!(server.lock().server.is_none());
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn a_message_crate_already_answering_is_used_and_nothing_is_started() {
             started_by_app: false
         }
     );
-    assert!(server.lock().child.is_none());
+    assert!(server.lock().server.is_none());
 }
 
 #[test]
@@ -535,6 +535,55 @@ mod with_a_script {
         path
     }
 
+    /// The process id a script wrote to `started`, once it is there.
+    fn started_process(started: &Path) -> libc::pid_t {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Ok(text) = std::fs::read_to_string(started) {
+                return text.trim().parse().unwrap();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the server never started its process"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Whether process `pid` ends within ten seconds. A killed process is a
+    /// zombie until the system reaps it, which a container whose first
+    /// process reaps nothing never does, so a zombie counts as ended. One
+    /// that is still running at the end is killed here, so the test leaves
+    /// nothing running.
+    fn ends_or_is_killed(pid: libc::pid_t) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            // SAFETY: signal 0 checks the process exists and sends nothing.
+            let exists = unsafe { libc::kill(pid, 0) } == 0;
+            if !exists || is_zombie(pid) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                // SAFETY: ends the test's own process, which outlived the
+                // server.
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+                return false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Whether `pid` is a zombie: state `Z` in `/proc/<pid>/stat` on Linux.
+    /// Other systems have no `/proc`, so a zombie there counts as running.
+    fn is_zombie(pid: libc::pid_t) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            // The state follows the command name, which is in parentheses
+            // and may itself hold spaces or parentheses.
+            stat.rsplit_once(')')
+                .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z'))
+        })
+    }
+
     #[test]
     fn a_server_that_stops_while_starting_fails_with_what_it_wrote() {
         let dir = tempfile::tempdir().unwrap();
@@ -596,8 +645,8 @@ mod with_a_script {
         // the process to exist.
         let deadline = Instant::now() + Duration::from_secs(20);
         let pid = loop {
-            if let Some(child) = server.lock().child.as_ref() {
-                break child.id();
+            if let Some(process) = server.lock().server.as_ref() {
+                break process.id();
             }
             assert!(Instant::now() < deadline, "the server was never started");
             thread::sleep(Duration::from_millis(20));
@@ -605,10 +654,63 @@ mod with_a_script {
 
         server.stop();
 
-        assert!(server.lock().child.is_none());
+        assert!(server.lock().server.is_none());
         // `stop` waited for the process, so its id is no longer a process.
         assert!(!Path::new(&format!("/proc/{pid}")).exists() || !cfg!(target_os = "linux"));
         // The start that was waiting on it now reports the failure.
+        assert!(matches!(settled(&server), Status::Failed { .. }));
+    }
+
+    #[test]
+    fn stop_ends_the_processes_the_server_started_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let started = dir.path().join("started");
+        // Starts a process of its own, the way the server starts ffmpeg,
+        // writes down its id, and waits for it.
+        let program = script(
+            dir.path(),
+            &format!(
+                "sleep 600 &\necho $! > {}.part\nmv {0}.part {0}\nwait",
+                started.display()
+            ),
+        );
+        let launch = launch_at(free_address(), &program, dir.path());
+
+        let server = LocalServer::default();
+        server.ensure_started(launch);
+        let pid = started_process(&started);
+
+        server.stop();
+
+        assert!(
+            ends_or_is_killed(pid),
+            "the server's own process outlived the server"
+        );
+    }
+
+    #[test]
+    fn a_server_that_exits_on_its_own_takes_its_processes_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let started = dir.path().join("started");
+        // Starts a process of its own, the way the server starts ffmpeg,
+        // writes down its id, and exits without it.
+        let program = script(
+            dir.path(),
+            &format!(
+                "sleep 600 &\necho $! > {}.part\nmv {0}.part {0}\nexit 3",
+                started.display()
+            ),
+        );
+        let launch = launch_at(free_address(), &program, dir.path());
+
+        let server = LocalServer::default();
+        server.ensure_started(launch);
+        let pid = started_process(&started);
+
+        assert!(
+            ends_or_is_killed(pid),
+            "the server's own process outlived the server's exit"
+        );
         assert!(matches!(settled(&server), Status::Failed { .. }));
     }
 
@@ -628,7 +730,7 @@ mod with_a_script {
             ..launch_at(address, &program, dir.path())
         });
         let deadline = Instant::now() + Duration::from_secs(20);
-        while server.lock().child.is_none() {
+        while server.lock().server.is_none() {
             assert!(Instant::now() < deadline, "the server was never started");
             thread::sleep(Duration::from_millis(20));
         }

@@ -1138,7 +1138,10 @@ pub async fn write_message_map(
 /// already holds, so a message imported before it was deleted or unsent
 /// takes the mark only here. A staged row with no mark leaves the stored
 /// mark as it is: a backup that does not say a message was deleted does not
-/// say it was restored. Returns how many messages changed.
+/// say it was restored. The search index follows the mark when the
+/// promotion indexes (`schema::index_messages_fts_from_promote_map`): a
+/// message marked Unsent loses its index row, because it shows none of its
+/// text (#1758). Returns how many messages changed.
 ///
 /// # Errors
 ///

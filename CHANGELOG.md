@@ -67,6 +67,12 @@ released versions carry their date on the heading.
   in the background, converting attachments, until the computer restarted.
   It now notices within two seconds that the app is gone and stops the way
   it does on a normal stop, finishing what it was answering first.
+- 2026-10-05: **Closing the desktop app stops a video conversion its Message
+  Crate was running.** The app stopped its Message Crate, but a video it was
+  converting went on converting in the background until it was done, and
+  the result was thrown away. The conversion now stops with the Message
+  Crate. On Windows the same happens when the app crashes, so there the
+  Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
 
@@ -102,6 +108,15 @@ released versions carry their date on the heading.
   reaches one.
 
 #### Browsing and search
+
+- 2026-10-05: **A search no longer finds an Unsent message by the text it
+  hides.** An Unsent message reads "Unsent" and nothing else, but when an
+  earlier import stored it with its text, a search for a word of that text,
+  or of an attachment's file name, still listed it, with nothing on the row
+  to say why. `body:`, `subject:`, `filename:` and the attachment words did
+  the same. A search now finds a message by what it shows: `unsent:yes`,
+  `from:`, the conversation and the date still find an Unsent message, and a
+  message Deleted in the source app is still found by its text.
 
 - 2026-10-05: **A message keeps the milliseconds of its time.** Message
   Crate kept a message's time to the whole second and dropped the

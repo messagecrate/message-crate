@@ -88,7 +88,9 @@ CREATE TABLE IF NOT EXISTS messages (
     reply_to_part INTEGER,
     -- 'deleted_in_source_app': the person deleted it in the app it came from
     -- before the backup; 'unsent': its sender took it back. NULL for neither.
-    -- The message is listed and searched like any other either way.
+    -- The message is listed like any other either way. An Unsent message
+    -- shows none of its text, so a word of it does not find the message
+    -- (fts_triggers_create.sql); a Deleted one is found by its text.
     deletion TEXT CHECK (deletion IN ('deleted_in_source_app', 'unsent')),
     -- Stable order within the conversation when timestamps collide.
     sort_order INTEGER NOT NULL,

@@ -3,10 +3,13 @@
 //!
 //! The desktop app starts the server with the app's own process id here
 //! (`src-tauri/src/local_server.rs`). A normal close of the app kills the
-//! server. A crash of the app kills nothing, so without this the server would
-//! keep serving and converting media until the computer restarted. With it,
-//! the server stops the way it stops on Ctrl-C or SIGTERM: the requests in
-//! flight finish and ffmpeg is stopped (#1736).
+//! server with its ffmpeg. A crash of the app kills nothing on Unix, so
+//! without this the server would keep serving and converting media until the
+//! computer restarted. With it, the server stops the way it stops on Ctrl-C
+//! or SIGTERM: the requests in flight finish and ffmpeg is stopped (#1736).
+//! On Windows the Job Object the app puts the server in usually kills it
+//! first, when the system closes the crashed app's handle to the job (#1737).
+//! This watch stops a server the system would not put in a job.
 //!
 //! On Unix the server checks its parent process id every
 //! [`PARENT_CHECK_INTERVAL`]. A process whose parent ends gets a new parent,

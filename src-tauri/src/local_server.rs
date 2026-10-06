@@ -24,15 +24,20 @@
 //! The app stops the server it started when it closes, and never one it only
 //! found. The process is killed, not asked: the server's database survives
 //! that, and the only work a kill can interrupt is an import this app was
-//! running anyway. The kill does not reach an ffmpeg the server runs; #1737
-//! is about ending that too.
+//! running anyway. The kill takes the server's whole process tree, so an
+//! ffmpeg converting a video for it ends too (#1737): a process group on
+//! Unix, a Job Object on Windows (`process_tree`).
 //!
-//! An app that crashes kills nothing, so the server ends itself instead. The
-//! app starts it with `--exit-with-parent` and this app's process id, and the
-//! server stops once that process is gone, the way it stops on Ctrl-C or
-//! SIGTERM: ffmpeg stopped and the work in flight finished (#1934). It checks
-//! every two seconds on Unix (`PARENT_CHECK_INTERVAL`) and waits on the app's
-//! process handle on Windows. An app started again before that server is gone
+//! An app that crashes kills nothing on Unix, so the server ends itself
+//! instead. The app starts it with `--exit-with-parent` and this app's
+//! process id, and the server stops once that process is gone, the way it
+//! stops on Ctrl-C or SIGTERM: ffmpeg stopped and the work in flight finished
+//! (#1934). It checks every two seconds on Unix (`PARENT_CHECK_INTERVAL`) and
+//! waits on the app's process handle on Windows. On Windows the Job Object
+//! usually ends the tree first: the system closes the crashed app's handle to
+//! the job, and the job kills the server and its ffmpeg the way closing the
+//! app does. The server's own watch is then left for a server the system
+//! would not put in a job. An app started again before that server is gone
 //! finds it answering and uses it. The screens ask for the state every three
 //! seconds while it is ready (`READY_POLL_MS` in
 //! `web/src/lib/useLocalServer.ts`), and the check that finds the address
@@ -46,12 +51,13 @@
 use message_crate_serve_protocol::{
     EXIT_WITH_PARENT_ARG, LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE,
 };
+use process_tree::ServerProcess;
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::{self, JoinHandle};
@@ -579,7 +585,7 @@ struct Inner {
     /// Whether the start under way creates the database.
     first_time: bool,
     /// The server this app started, while it runs.
-    child: Option<Child>,
+    server: Option<ServerProcess>,
     /// The threads reading that server's output.
     readers: Vec<JoinHandle<()>>,
     /// That server's last output lines.
@@ -629,13 +635,13 @@ impl Inner {
         }
     }
 
-    /// Kill the server this app started and wait for it to end.
+    /// Kill the server this app started, with every process it started,
+    /// and wait for it to end.
     fn kill(&mut self) {
         self.generation += 1;
         self.readers.clear();
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+        if let Some(server) = self.server.take() {
+            server.kill();
         }
     }
 }
@@ -654,7 +660,7 @@ impl Default for LocalServer {
                 state: State::default(),
                 launch: None,
                 first_time: false,
-                child: None,
+                server: None,
                 readers: Vec::new(),
                 output: Output::default(),
                 listened: Arc::default(),
@@ -797,9 +803,9 @@ impl LocalServer {
         inner.first_time = launch.is_first_start();
         let output = Output::default();
         let listened = Arc::new(AtomicBool::new(false));
-        let (child, readers) = spawn_server(&launch, &output, &listened)?;
+        let (server, readers) = spawn_server(&launch, &output, &listened)?;
         inner.generation += 1;
-        inner.child = Some(child);
+        inner.server = Some(server);
         inner.readers = readers;
         inner.output = output;
         inner.listened = listened;
@@ -821,13 +827,13 @@ impl LocalServer {
                     return;
                 }
                 // `Some(code)` once the server has exited.
-                let exited = match inner.child.as_mut().map(Child::try_wait) {
+                let exited = match inner.server.as_mut().map(ServerProcess::reap_if_exited) {
                     Some(Ok(None)) => None,
                     Some(Ok(Some(status))) => Some(status.code()),
                     None | Some(Err(_)) => Some(None),
                 };
                 if let Some(code) = exited {
-                    inner.child = None;
+                    inner.server = None;
                     let readers = std::mem::take(&mut inner.readers);
                     let output = Arc::clone(&inner.output);
                     drop(inner);
@@ -863,7 +869,7 @@ fn spawn_server(
     launch: &Launch,
     output: &Output,
     listened: &Arc<AtomicBool>,
-) -> Result<(Child, Vec<JoinHandle<()>>), String> {
+) -> Result<(ServerProcess, Vec<JoinHandle<()>>), String> {
     std::fs::create_dir_all(&launch.data_dir)
         .map_err(|e| format!("create {}: {e}", launch.data_dir.display()))?;
     let mut command = Command::new(&launch.program);
@@ -873,9 +879,9 @@ fn spawn_server(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     hide_console(&mut command);
-    let mut child = command
-        .spawn()
+    let mut server = ServerProcess::spawn(&mut command)
         .map_err(|e| format!("start {}: {e}", launch.program.display()))?;
+    let child = server.child();
     let mut readers = Vec::new();
     if let Some(stdout) = child.stdout.take() {
         readers.push(keep_output(
@@ -891,7 +897,7 @@ fn spawn_server(
             Arc::clone(listened),
         ));
     }
-    Ok((child, readers))
+    Ok((server, readers))
 }
 
 /// Keep a console window from opening beside the app on Windows.
@@ -951,6 +957,8 @@ fn joined(output: &Output) -> String {
 pub fn data_dir_in(app_data_dir: &Path, dev: bool) -> PathBuf {
     app_data_dir.join(if dev { "data-dev" } else { "data" })
 }
+
+mod process_tree;
 
 #[cfg(test)]
 mod tests;

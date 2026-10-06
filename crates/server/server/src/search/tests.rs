@@ -1191,6 +1191,61 @@ mod text_words {
             11
         );
     }
+
+    /// An Unsent message reads "Unsent" and nothing else, so every word reads
+    /// it as having no body, subject or attachments, whatever was stored
+    /// (#1758): free text and `body:` miss its body on Messages and
+    /// Conversations, `body:none` and `-body:` take it, and the attachment
+    /// words, `filename:`, `size:` and `attachments:` see no attachment on it.
+    #[tokio::test]
+    async fn an_unsent_message_shows_no_body_subject_or_attachments() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        sqlx::query("UPDATE messages SET deletion = 'unsent' WHERE id IN ($1, $2)")
+            .bind(f.jane_avocado_to_me)
+            .bind(f.feb_big_jpeg)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        for (list, q) in [
+            (ListKind::Messages, "toast"),
+            (ListKind::Messages, "body:toast"),
+            (ListKind::Conversations, "body:toast"),
+            (ListKind::Messages, "filename:beach*"),
+            (ListKind::Messages, "beach"),
+        ] {
+            assert!(run(&mut conn, list, q).await.is_empty(), "{q} on {list:?}");
+        }
+        for (q, unsent) in [
+            ("body:none", f.jane_avocado_to_me),
+            ("-body:toast", f.jane_avocado_to_me),
+            ("attachment:none", f.feb_big_jpeg),
+            ("attachments:0", f.feb_big_jpeg),
+        ] {
+            assert!(
+                run(&mut conn, ListKind::Messages, q)
+                    .await
+                    .contains(&unsent),
+                "{q} leaves out the Unsent message"
+            );
+        }
+        for q in [
+            "attachment:any",
+            "attachment:image",
+            "size:>800k",
+            "attachments:1",
+        ] {
+            assert!(
+                !run(&mut conn, ListKind::Messages, q)
+                    .await
+                    .contains(&f.feb_big_jpeg),
+                "{q} finds the Unsent message by an attachment it hides"
+            );
+        }
+    }
 }
 
 /// A capital outside ASCII is the same letter as its small form on every
