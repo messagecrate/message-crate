@@ -225,7 +225,8 @@ pub fn message_list_sort_text(order: &[SortKey<MessageListSort>]) -> String {
             let name = MESSAGE_LIST_SORT_KEYS
                 .iter()
                 .find(|(_, key)| *key == k.key)
-                .map_or("", |(name, _)| *name);
+                .map(|(name, _)| *name)
+                .expect("MESSAGE_LIST_SORT_KEYS names every MessageListSort key");
             match k.direction {
                 Direction::Asc => name.to_string(),
                 Direction::Desc => format!("-{name}"),
@@ -393,7 +394,7 @@ pub(crate) fn message_list_page_sql(
             ));
         };
         from_sql.push_str(RANK_JOIN_SQL);
-        params.push(SqlParam::Text(rank_query.to_string()));
+        params.push(SqlParam::Text(rank_query));
     }
     params.extend_from_slice(filter.params());
 

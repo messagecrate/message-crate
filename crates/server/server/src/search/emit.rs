@@ -79,7 +79,6 @@ pub(crate) fn compile(
     Ok(Filter {
         where_sql,
         params,
-        rank_query,
         ranked_terms,
         final_text,
         earlier_version_match,
