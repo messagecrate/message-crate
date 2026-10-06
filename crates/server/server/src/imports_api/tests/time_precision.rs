@@ -77,6 +77,44 @@ async fn a_whole_second_copy_and_a_millisecond_copy_are_shown_once_with_the_mill
     }
 }
 
+/// A copy cut to the second elsewhere that kept the guid of a message whose
+/// time has other milliseconds stays `seconds`: its time is not the
+/// millisecond copy's, so nothing says the source recorded it.
+#[tokio::test]
+async fn a_whole_second_copy_at_another_time_keeps_seconds() {
+    let header =
+        conversation_header("sms-backup-plus", "+15555550123").participant("+15555550123", None);
+    let whole = message_line("g-same", "On my way")
+        .at(SECOND)
+        .whole_seconds()
+        .sms()
+        .sender("+15555550123");
+    let exact = message_line("g-same", "On my way")
+        .at(SECOND + 678)
+        .sms()
+        .sender("+15555550123");
+    for (label, imports) in [
+        (
+            "two imports",
+            vec![
+                format!("{header}\n{whole}\n"),
+                format!("{header}\n{exact}\n"),
+            ],
+        ),
+        ("one import", vec![format!("{header}\n{whole}\n{exact}\n")]),
+    ] {
+        let (state, _fixture, token) = importer().await;
+        for body in imports {
+            import_with_dedupe(&state, &token, "sms-backup-plus", body).await;
+        }
+        let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+        let items = page["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{label}: {page}");
+        assert_eq!(items[0]["timestamp"], "2015-03-12T18:04:22.000Z", "{label}");
+        assert_eq!(items[0]["time_precision"], "seconds", "{label}");
+    }
+}
+
 /// A message whose source recorded whole seconds and one whose source
 /// recorded milliseconds that end in `.000` keep their precision through
 /// the import, the API and an Export Run, and neither hides the other: they
@@ -159,8 +197,14 @@ async fn one_message_held_at_whole_seconds_and_at_000_milliseconds_says_millisec
     let file = |whole: bool| format!("{header}\n{}\n", line(whole));
     let both = |first: bool| format!("{header}\n{}\n{}\n", line(first), line(!first));
     for (label, imports) in [
-        ("whole second first, two imports", vec![file(true), file(false)]),
-        ("milliseconds first, two imports", vec![file(false), file(true)]),
+        (
+            "whole second first, two imports",
+            vec![file(true), file(false)],
+        ),
+        (
+            "milliseconds first, two imports",
+            vec![file(false), file(true)],
+        ),
         ("whole second first, one import", vec![both(true)]),
         ("milliseconds first, one import", vec![both(false)]),
     ] {

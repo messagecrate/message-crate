@@ -1359,18 +1359,19 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
     Ok(sqlx::query(&sql).execute(&mut *conn).await?.rows_affected())
 }
 
-/// Mark each stored message `milliseconds` when its staged row is: a
-/// whole-second copy and a millisecond copy whose time ends in `.000` have
-/// one guid, so they are one message, and the source did record its time
-/// to the millisecond, whichever copy was stored first (#1923). A staged
-/// `seconds` row leaves the stored flag as it is. Returns how many messages
-/// changed.
+/// Mark each stored message `milliseconds` when its staged row is and has
+/// the same time: a whole-second copy and a millisecond copy whose time
+/// ends in `.000` have one guid, so they are one message, and the source
+/// did record its time to the millisecond, whichever copy was stored first
+/// (#1923). A staged `seconds` row, or one at another time (a copy cut to
+/// the second elsewhere that kept the guid), leaves the stored flag as it
+/// is.
 ///
 /// # Errors
 ///
 /// Returns an error when the update fails.
-pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<u64> {
-    Ok(sqlx::query(
+pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
+    sqlx::query(
         r"
         UPDATE messages
         SET time_precision = sm.time_precision
@@ -1379,25 +1380,32 @@ pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<u64> 
         WHERE messages.id = mm.prod_id
           AND sm.time_precision = $1
           AND messages.time_precision != $1
+          AND sm.timestamp = messages.timestamp
         ",
     )
     .bind(message_ir::TimePrecision::Milliseconds.as_str())
     .execute(&mut *conn)
-    .await?
-    .rows_affected())
+    .await?;
+    Ok(())
 }
 
-/// Mark the staged message `staged` `milliseconds`, for another copy of it
-/// from the same import that is: the staged-row form of
+/// Mark the staged message `staged` `milliseconds` when it is at
+/// `timestamp`, for another copy of it from the same import that is
+/// `milliseconds` at that time: the staged-row form of
 /// [`promote_time_precision`].
 ///
 /// # Errors
 ///
 /// Returns an error when the update fails.
-pub async fn add_staged_copy_milliseconds(conn: &mut SqliteConnection, staged: i64) -> Result<()> {
-    sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2")
+pub async fn add_staged_copy_milliseconds(
+    conn: &mut SqliteConnection,
+    staged: i64,
+    timestamp: &str,
+) -> Result<()> {
+    sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2 AND timestamp = $3")
         .bind(message_ir::TimePrecision::Milliseconds.as_str())
         .bind(staged)
+        .bind(timestamp)
         .execute(&mut *conn)
         .await?;
     Ok(())
