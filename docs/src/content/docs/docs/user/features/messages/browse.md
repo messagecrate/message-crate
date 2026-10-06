@@ -114,7 +114,10 @@ A message its sender unsent is an empty faded bubble with a dashed outline that 
 The backup holds no text for an unsent message, so the bubble has none to show.
 
 Neither mark hides a message, and search finds both like any other.
-`deleted:yes` narrows a search to marked messages, and `deleted:no` leaves them out ([Search](/docs/user/features/messages/search/)).
+Each mark has its own search word ([Search](/docs/user/features/messages/search/)).
+`deleted:yes` narrows a search to messages deleted in the source app, and `deleted:no` leaves them out.
+`unsent:yes` narrows it to unsent messages, and `unsent:no` leaves them out.
+A search for both marks writes both words, as `deleted:yes or unsent:yes`.
 Apple Messages is the source that records the marks today.
 Moving a Conversation to the Trash is a separate thing, done inside Message Crate ([Trash](/docs/user/features/messages/trash/)).
 

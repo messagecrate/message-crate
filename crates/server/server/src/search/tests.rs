@@ -3597,6 +3597,20 @@ mod refusals {
         );
     }
 
+    /// `deleted:` and `unsent:` are Messages words: the mark is on a
+    /// message, so the Contacts and Conversations lists refuse both and name
+    /// the word (#1935).
+    #[test]
+    fn deleted_and_unsent_are_refused_outside_messages() {
+        for list in [ListKind::Contacts, ListKind::Conversations] {
+            for (query, word) in [("deleted:yes", "deleted"), ("unsent:yes", "unsent")] {
+                let e = err(list, query);
+                assert_eq!(e.kind, QueryErrorKind::WrongList, "{list:?} {query}");
+                assert_eq!(e.field, Some(word), "{list:?} {query}");
+            }
+        }
+    }
+
     /// Issue #1207: an empty phrase compiled to `LIKE '%%'`, which matched
     /// every contact and conversation, and on Messages matched exactly the
     /// messages with an attachment. It is refused like `body:""`.

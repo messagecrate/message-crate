@@ -79,6 +79,10 @@ conversations	trashed:yes (identity:"Book Club" first-message:<2022-01-01 messag
 conversations	trashed:yes (identity:"Say ""Hi""" service:whatsapp)
 conversations	with:#42
 conversations	with:#7
+messages	(deleted:yes or unsent:yes) dinner
+messages	deleted:no unsent:no or dinner
+messages	deleted:yes dinner
+messages	dinner -unsent:yes
 messages	from:#42
 messages	from:#7
 messages	group:"#3"

@@ -411,7 +411,8 @@ api_shape! {
         /// `deleted_in_source_app` for a message the person deleted in the
         /// app it came from before the backup, `unsent` for one its sender
         /// took back; `null` for neither. The message is listed and found
-        /// like any other either way.
+        /// like any other either way. The search word `deleted:` narrows to
+        /// or away from the first mark, and `unsent:` the second.
         pub deletion: Option<Deletion>,
         /// The earlier versions of an edited message, oldest first within
         /// each part; `text` is the final version. Empty for a message never

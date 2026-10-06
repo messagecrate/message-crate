@@ -486,6 +486,7 @@ mod tests {
             ok: true,
             cancelled: false,
             session_refused: false,
+            completion_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,
