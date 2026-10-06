@@ -70,23 +70,27 @@ impl ServerProcess {
         self.child.id()
     }
 
-    /// Whether the server has exited, without waiting. A server found
-    /// exited takes every process it started with it, so an ffmpeg it left
-    /// behind ends too. On Windows the job does that when this
-    /// `ServerProcess` is dropped.
-    pub(super) fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+    /// Whether the server has exited, without waiting, reaping it if so.
+    /// A server found exited takes every process it started with it, so an
+    /// ffmpeg it left behind ends too: on Unix its group is killed before it
+    /// is reaped, and on Windows the job does it when this `ServerProcess`
+    /// is dropped.
+    pub(super) fn reap_if_exited(&mut self) -> io::Result<Option<ExitStatus>> {
         #[cfg(unix)]
-        if self.exited_unreaped() {
-            // The server is not reaped yet, so its process id still names
-            // its group.
-            self.kill_tree();
+        match self.exited_unreaped() {
+            // Not reaped here, so a server that exits after the check is
+            // found on the next call, its group still named by its id.
+            Ok(false) => return Ok(None),
+            Ok(true) => self.kill_tree(),
+            // Already reaped, or the check failed: `Child` knows or says why.
+            Err(_) => {}
         }
         self.child.try_wait()
     }
 
     /// Whether the server has exited and is not reaped yet.
     #[cfg(unix)]
-    fn exited_unreaped(&self) -> bool {
+    fn exited_unreaped(&self) -> io::Result<bool> {
         // `id_t` is the `u32` `Child::id` gives, on Linux and macOS alike.
         let pid: libc::id_t = self.child.id();
         // SAFETY: a `siginfo_t` of zeros is valid, and `si_pid` stays 0
@@ -102,8 +106,11 @@ impl ServerProcess {
                 libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
             )
         };
+        if found != 0 {
+            return Err(io::Error::last_os_error());
+        }
         // SAFETY: `info` was written by `waitid`, or is still zeros.
-        found == 0 && unsafe { info.si_pid() } != 0
+        Ok(unsafe { info.si_pid() } != 0)
     }
 
     /// Kill the server and every process it started, then wait for the

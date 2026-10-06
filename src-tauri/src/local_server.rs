@@ -827,7 +827,7 @@ impl LocalServer {
                     return;
                 }
                 // `Some(code)` once the server has exited.
-                let exited = match inner.server.as_mut().map(ServerProcess::try_wait) {
+                let exited = match inner.server.as_mut().map(ServerProcess::reap_if_exited) {
                     Some(Ok(None)) => None,
                     Some(Ok(Some(status))) => Some(status.code()),
                     None | Some(Err(_)) => Some(None),
