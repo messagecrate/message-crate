@@ -525,28 +525,14 @@ pub struct EarlierVersion {
 pub struct ReplyTo {
     /// The quoted message's GUID, as the source names it; `None` when the
     /// source names none. A named message can still be missing from the
-    /// export: Apple Messages names a thread's originator after it was
-    /// deleted on the phone, and an export with a date range can leave it
-    /// out. WhatsApp names one only when it is in the same chat.
+    /// export: Apple Messages names a thread's originator even when it was
+    /// deleted before the backup was made, so the backup does not hold it,
+    /// and an export with a date range can leave it out. WhatsApp names one
+    /// only when it is in the same chat.
     pub guid: Option<String>,
     /// The part of the quoted message the reply answers; 0 for the first or
     /// only part. `None` when the source does not record one.
     pub part_index: Option<u32>,
-}
-
-impl ReplyTo {
-    /// The reply a flat record describes, from its reply mark and the quoted
-    /// message's guid and part: CSV cells and mail headers both carry a
-    /// reply this way. A record that names a quoted guid is a reply even
-    /// without its mark; one with neither is not a reply.
-    #[must_use]
-    pub fn from_mark(
-        is_reply: bool,
-        guid: Option<String>,
-        part_index: Option<u32>,
-    ) -> Option<Self> {
-        (is_reply || guid.is_some()).then_some(Self { guid, part_index })
-    }
 }
 
 /// One attachment's metadata and where its bytes are.

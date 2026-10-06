@@ -189,7 +189,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
 /// headers; `None` for a mail that is not a reply.
 fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
-    ReplyTo::from_mark(
+    message_ir::reply_to_from_mark(
         header_bool(headers, hn::IS_REPLY),
         optional_header(headers, hn::REPLY_TO_GUID),
         header_u32(headers, hn::REPLY_TO_PART),

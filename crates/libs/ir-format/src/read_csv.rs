@@ -167,7 +167,7 @@ fn reply_to_from_cells(is_reply: bool, guid: &str, part: &str) -> Option<ReplyTo
     } else {
         part.parse().ok()
     };
-    ReplyTo::from_mark(is_reply, nonempty(guid), part_index)
+    message_ir::reply_to_from_mark(is_reply, nonempty(guid), part_index)
 }
 
 /// Check every required column is present and return the name → index map

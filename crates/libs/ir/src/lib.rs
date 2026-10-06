@@ -78,14 +78,28 @@ pub use imessage_reader_protocol::Deletion;
 /// file carries.
 pub use imessage_reader_protocol::EarlierVersion;
 
-/// The message a reply quotes: its guid when that message is in the same
-/// export, and the part replied to when the source records one. A message
+/// The message a reply quotes: its guid when the source names it, and the
+/// part replied to when the source records one. A message
 /// with one is a reply even when the quoted message cannot be named.
 ///
 /// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
 /// reason: the Apple Messages Reader writes it in the shape the conversation
 /// file carries.
 pub use imessage_reader_protocol::ReplyTo;
+
+/// The reply a flat record describes, from its reply mark and the quoted
+/// message's guid and part, as the CSV `is_reply`, `reply_to_guid` and
+/// `reply_to_part` cells and the `X-ME-Is-Reply` and `X-ME-Reply-To-*` mail
+/// headers carry it. A record that names a quoted guid is a reply even
+/// without its mark; one with neither is not a reply.
+#[must_use]
+pub fn reply_to_from_mark(
+    is_reply: bool,
+    guid: Option<String>,
+    part_index: Option<u32>,
+) -> Option<ReplyTo> {
+    (is_reply || guid.is_some()).then_some(ReplyTo { guid, part_index })
+}
 
 /// The mark a text field holds, as the CSV `deletion` cell and the
 /// `X-ME-Deletion` mail header write it: blank for no mark, else
