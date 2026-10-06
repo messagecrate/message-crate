@@ -613,6 +613,58 @@ mod with_a_script {
     }
 
     #[test]
+    fn stop_ends_the_processes_the_server_started_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let started = dir.path().join("started");
+        // Starts a process of its own, the way the server starts ffmpeg,
+        // writes down its id, and waits for it.
+        let program = script(
+            dir.path(),
+            &format!(
+                "sleep 600 &\necho $! > {}.part\nmv {0}.part {0}\nwait",
+                started.display()
+            ),
+        );
+        let launch = launch_at(free_address(), &program, dir.path());
+
+        let server = LocalServer::default();
+        server.ensure_started(launch);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let pid: libc::pid_t = loop {
+            if let Ok(text) = std::fs::read_to_string(&started) {
+                break text.trim().parse().unwrap();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the server never started its process"
+            );
+            thread::sleep(Duration::from_millis(20));
+        };
+
+        server.stop();
+
+        // The kill reaches the process at once, but it is a zombie until the
+        // system reaps it, so it is given a while to go. One that outlives
+        // the server is ended here, so the test leaves nothing running.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let ended = loop {
+            // SAFETY: signal 0 checks the process exists and sends nothing.
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                break true;
+            }
+            if Instant::now() >= deadline {
+                break false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        if !ended {
+            // SAFETY: ends the test's own `sleep`, which outlived the server.
+            unsafe { libc::kill(pid, libc::SIGKILL) };
+        }
+        assert!(ended, "the server's own process outlived the server");
+    }
+
+    #[test]
     fn turning_the_network_setting_off_during_a_start_is_applied() {
         let dir = tempfile::tempdir().unwrap();
         let binds = dir.path().join("binds");
