@@ -85,10 +85,10 @@ released versions carry their date on the heading.
   hides.** An Unsent message reads "Unsent" and nothing else, but when an
   earlier import stored it with its text, a search for a word of that text,
   or of an attachment's file name, still listed it, with nothing on the row
-  to say why. `body:`, `subject:` and `filename:` did the same. A search now
-  finds a message by what it shows: `unsent:yes`, `from:`, the conversation
-  and the date still find an Unsent message, and a message Deleted in the
-  source app is still found by its text.
+  to say why. `body:`, `subject:`, `filename:` and the attachment words did
+  the same. A search now finds a message by what it shows: `unsent:yes`,
+  `from:`, the conversation and the date still find an Unsent message, and a
+  message Deleted in the source app is still found by its text.
 
 ### Upgrading
 

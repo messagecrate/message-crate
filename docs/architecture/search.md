@@ -221,11 +221,12 @@ file names it hides finds it, even when an earlier import stored them
 match skips it. The sync triggers (`schema/sql/fts_triggers_create.sql`) and
 the promotion's own indexing (`index_messages_fts_from_promote_map` in
 `db/schema.rs`) both keep the row out, and a later import that marks a
-stored message Unsent removes it. The `body:`, `subject:` and `filename:`
-words read an Unsent message as having no body, subject or attachments, on
-every list, so `body:none` matches it. Every other word still applies to it,
-because the row shows its mark, its sender, its conversation and its date:
-`unsent:yes`, `from:`, `in:` and `date:` find it. Its earlier versions are
+stored message Unsent removes it. The `body:`, `subject:`, `filename:`,
+`attachment:`, `size:` and `attachments:` words read an Unsent message as
+having no body, subject or attachments, on every list, so `body:none` and
+`attachments:0` match it (`shows_its_content` in `emit.rs`). Every other
+word still applies to it, because the row shows its mark, its sender, its
+conversation and its date: `unsent:yes`, `from:`, `in:` and `date:` find it. Its earlier versions are
 shown under it in the conversation, so they still find it. A message
 Deleted in the source app shows its text, so its text finds it. Why: a hit
 whose row shows nothing that matched looks like a search bug.
@@ -499,6 +500,8 @@ Choice: `image`, `video`, `audio`, `document`, `pdf`, `contact`, `other`, `any`,
 type that is not a vCard, any `application/vnd.` type, Word, or RTF. `other`
 is anything else.
 
+An Unsent message has no attachments here, for the same reason as `body:`.
+
 ### `filename:`
 
 Text, with no `none` or `any`.
@@ -514,6 +517,8 @@ Size.
 
 - **Conversations**: one of the conversation's messages has an attachment of this size.
 - **Messages**: the message has one. An attachment with no recorded size matches no size.
+
+An Unsent message has no attachments here, for the same reason as `body:`.
 
 ### `messages:`
 
@@ -546,6 +551,8 @@ Count.
 Count.
 
 - **Messages**: how many attachments the message has.
+
+An Unsent message has no attachments here, for the same reason as `body:`.
 
 ### `deleted:`
 

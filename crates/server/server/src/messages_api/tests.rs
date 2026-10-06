@@ -638,10 +638,10 @@ async fn conversations_found(fixture: &TestFixture, account: &RegisteredAccount,
     page["total"].as_u64().unwrap()
 }
 
-/// The searches that reach `said` in [`lighthouse_file`] only through text
+/// The searches that reach `said` in [`lighthouse_file`] only through what
 /// an Unsent message hides: free text in its body, subject and file name,
-/// and the `body:`, `subject:` and `filename:` words.
-const HIDDEN_TEXT_QUERIES: [&str; 7] = [
+/// the `body:`, `subject:` and `filename:` words, and its attachment's kind.
+const HIDDEN_TEXT_QUERIES: [&str; 8] = [
     "lighthouse",
     "plans",
     "harbour",
@@ -649,6 +649,7 @@ const HIDDEN_TEXT_QUERIES: [&str; 7] = [
     "body%3Alighthouse",
     "subject%3Aplans",
     "filename%3Aharbour",
+    "attachment%3Aimage",
 ];
 
 /// A search finds a message by what it shows (#1758). An Unsent message
