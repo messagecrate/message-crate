@@ -1,4 +1,6 @@
-//! Import-side records mapped from message-ir JSONL.
+//! Import-side records mapped from message-ir JSONL, and the one text form
+//! of a stored message time (`utc_timestamp_text`), which search day bounds
+//! use too.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
