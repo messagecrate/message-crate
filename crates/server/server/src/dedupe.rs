@@ -590,7 +590,9 @@ async fn flag_exact_content_key_dupes(
             },
             // The flag decides, never the time: a millisecond time can end
             // in `.000`.
-            whole_seconds: time_precision == message_ir::TimePrecision::Seconds.as_str(),
+            whole_seconds: message_ir::TimePrecision::parse(&time_precision)
+                .with_context(|| format!("message {id}: time_precision {time_precision:?}"))?
+                == message_ir::TimePrecision::Seconds,
         });
     }
 
