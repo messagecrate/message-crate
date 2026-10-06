@@ -611,3 +611,136 @@ async fn a_sender_who_is_not_a_participant_is_typed_by_the_address_not_the_servi
         ]
     );
 }
+
+/// A WhatsApp header can name a participant by an internal id and give it no
+/// type, as a hand-written or third-party file can. WhatsApp carries no email
+/// address, so the id is `other` though it holds an `@`. Typed by its shape
+/// alone it was stored as an email identity on WhatsApp (#1671).
+#[tokio::test]
+async fn an_untyped_whatsapp_participant_with_an_at_is_other() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("whatsapp", "123456789012345@lid")
+        .participant("123456789012345@lid", Some("Ada"))
+        .line()
+        + &incoming_whatsapp("g-lid-untyped-1", "123456789012345@lid");
+    import_one(&mut conn, "123456789012345@lid.jsonl", &body)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        handle_types(&mut conn).await,
+        [("123456789012345@lid".to_string(), "other".to_string())]
+    );
+}
+
+/// The addresses of the `email` identities the account holds on `service`.
+async fn email_identities_on(conn: &mut SqliteConnection, service: &str) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT raw FROM handles
+         WHERE account_id = $1 AND service = $2 AND handle_type = 'email'
+         ORDER BY raw",
+    )
+    .bind(TEST_ACCOUNT)
+    .bind(service)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// Every place an import meets an address on WhatsApp: a one-to-one chat id
+/// no participant names, an untyped participant, a sender the header does
+/// not list, a reaction's sender, and the holder's own address. Each holds an
+/// `@`, and none becomes an email identity, because WhatsApp carries none
+/// (#1671).
+#[tokio::test]
+async fn an_import_writes_no_email_identity_on_whatsapp() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let group = conversation_header("whatsapp", "120363042@g.us")
+        .group()
+        .participant("111111111111111@lid", None)
+        .line()
+        + &message_line("g-wa-1", "hi")
+            .service(IrService::Whatsapp)
+            .kind(IrMessageKind::Unknown)
+            .sender("15555550160@s.whatsapp.net")
+            .owner_identity("15555550100@s.whatsapp.net")
+            .reaction(message_ir::Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("222222222222222@lid".into()),
+                reactor_display_name: None,
+            })
+            .line();
+    let one_to_one = conversation_header("whatsapp", "333333333333333@lid").line()
+        + &incoming_whatsapp("g-wa-2", "333333333333333@lid");
+    import_one(&mut conn, "120363042@g.us.jsonl", &group)
+        .await
+        .unwrap();
+    import_one(&mut conn, "333333333333333@lid.jsonl", &one_to_one)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        email_identities_on(&mut conn, "whatsapp").await,
+        Vec::<String>::new()
+    );
+    let whatsapp: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM handles WHERE account_id = $1 AND service = 'whatsapp'",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(whatsapp, 6, "the group, four people and the holder");
+}
+
+/// A sender the header does not list, writing over SMS from an address with
+/// an `@`, as an email-to-text gateway does: SMS carries phone numbers only,
+/// so the sender is `other`, never an email identity on Text Message (#1671).
+#[tokio::test]
+async fn an_sms_sender_with_an_at_is_other() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("sms-backup-restore", "chat1000000007")
+        .group()
+        .typed_participant("+15555550156", None, HandleType::Phone)
+        .line()
+        + &message_line("g-sms-at-1", "hi")
+            .sms()
+            .sender("alerts@example.com")
+            .line();
+    import_one(&mut conn, "chat1000000007.jsonl", &body)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        handle_types(&mut conn).await,
+        [
+            ("+15555550156".to_string(), "phone".to_string()),
+            ("alerts@example.com".to_string(), "other".to_string()),
+            ("chat1000000007".to_string(), "other".to_string()),
+        ]
+    );
+}
+
+/// iMessage reaches an email address, so an iMessage sender with one is an
+/// email identity on the phone service.
+#[tokio::test]
+async fn an_imessage_sender_with_an_email_address_is_email() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("imessage", "ada@example.com").line()
+        + &incoming("g-im-email-1", "ada@example.com");
+    import_one(&mut conn, "ada@example.com.jsonl", &body)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        email_identities_on(&mut conn, "phone").await,
+        ["ada@example.com".to_string()]
+    );
+}

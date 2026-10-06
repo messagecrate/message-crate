@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use message_ir::{HandleService, HandleType};
+use message_ir::{HandleService, HandleType, IrService};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -24,12 +24,44 @@ pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<S
     phone::normalize_typed_handle(raw, handle_type)
 }
 
-/// The type of an address the source did not type: [`phone::Handle::parse`],
-/// the one rule for what an address is. It reads the address alone and never
-/// the service, so one address has one type wherever it arrives (#1432). A
-/// blank address is `Other`.
+/// The shape of an address the source did not type: [`phone::Handle::parse`],
+/// the one rule for what an address looks like. A blank address is `Other`.
+/// An import never stores this type without asking the service first:
+/// [`handle_type_on`] does both.
 pub fn handle_type_of(address: &str) -> HandleType {
     phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
+}
+
+/// The type an import gives an address it meets: the service decides which
+/// types are valid, and the shape picks among them.
+///
+/// `stated` is the type the source gave, else the shape
+/// ([`handle_type_of`]) decides. An email address is kept only where the
+/// address can be one: never on WhatsApp, and never on a message `transport`
+/// of SMS or RCS. There it is `Other`, as WhatsApp's own ids (`…@lid`,
+/// `…@g.us`, `…@s.whatsapp.net`) are. `transport` is `None` where the import
+/// does not know the message's transport, as for a conversation's
+/// participants on the phone service, which iMessage shares with SMS: iMessage
+/// reaches an email address, so the shape's type stands. A phone number stays
+/// a phone number on every service, one the model does not know included
+/// (#1144).
+pub fn handle_type_on(
+    address: &str,
+    stated: Option<HandleType>,
+    service: HandleService,
+    transport: Option<IrService>,
+) -> HandleType {
+    let kind = stated.unwrap_or_else(|| handle_type_of(address));
+    let carries_email = service != HandleService::Whatsapp
+        && !matches!(
+            transport,
+            Some(IrService::Whatsapp | IrService::Sms | IrService::Rcs)
+        );
+    if kind == HandleType::Email && !carries_email {
+        HandleType::Other
+    } else {
+        kind
+    }
 }
 
 /// A new identity refused because its service cannot carry its type: an
