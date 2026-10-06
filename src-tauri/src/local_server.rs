@@ -24,14 +24,24 @@
 //! The app stops the server it started when it closes, and never one it only
 //! found. The process is killed, not asked: the server's database survives
 //! that, and the only work a kill can interrupt is an import this app was
-//! running anyway.
+//! running anyway. The kill does not reach an ffmpeg the server runs; #1737
+//! is about ending that too.
+//!
+//! An app that crashes kills nothing, so the server ends itself instead. The
+//! app starts it with `--exit-with-parent` and this app's process id, and the
+//! server stops once that process is gone, the way it stops on Ctrl-C or
+//! SIGTERM: ffmpeg stopped and the work in flight finished (#1934). It checks
+//! every few seconds on Unix and waits on the app's process handle on
+//! Windows.
 //!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
 //! happened. [`LocalServer`] holds that state with the processes and does
 //! what [`step`] asks.
 
-use message_crate_serve_protocol::{LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE};
+use message_crate_serve_protocol::{
+    EXIT_WITH_PARENT_ARG, LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE,
+};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
@@ -501,7 +511,8 @@ impl Launch {
         }
     }
 
-    /// The arguments the server is started with.
+    /// The arguments the server is started with. They name this app's
+    /// process, so the server stops itself if the app crashes.
     pub fn arguments(&self) -> Vec<String> {
         let mut arguments = vec![
             "serve".into(),
@@ -511,6 +522,8 @@ impl Launch {
             self.bind().to_string(),
             "--static-dir".into(),
             self.static_dir.display().to_string(),
+            format!("--{EXIT_WITH_PARENT_ARG}"),
+            std::process::id().to_string(),
         ];
         for origin in &self.cors_origins {
             arguments.push("--cors-origin".into());

@@ -1315,13 +1315,14 @@ pub(crate) fn http_app(state: AppState) -> Router {
         .with_state(state)
 }
 
-/// Start the HTTP server.
+/// Start the HTTP server. It runs until Ctrl-C or SIGTERM, or, when
+/// `exit_with_parent` names a process, until that process is gone.
 ///
 /// # Errors
 ///
 /// Returns an error when the database cannot be opened, the operation lock
 /// cannot be taken, or the listener cannot bind.
-pub async fn run(cfg: Config) -> anyhow::Result<()> {
+pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<()> {
     let server = cfg.require_server()?.clone();
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
@@ -1397,7 +1398,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
             demo_build.stop_conversions();
         }
     };
-    let served = serve_until_shutdown(listener, app, on_signal).await;
+    let served = serve_until_shutdown(listener, app, exit_with_parent, on_signal).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
@@ -1409,8 +1410,9 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Serve `app` on `listener` until a shutdown signal arrives, then stop
-/// accepting connections and return once the requests in flight have finished.
+/// Serve `app` on `listener` until a shutdown signal arrives, or until the
+/// process `exit_with_parent` names is gone, then stop accepting connections
+/// and return once the requests in flight have finished.
 ///
 /// `on_signal` runs as the signal arrives, before the requests drain. The
 /// server stops its conversions there: Ctrl-C in a terminal reaches the
@@ -1420,20 +1422,34 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
+    exit_with_parent: Option<u32>,
     on_signal: impl FnOnce() + Send + 'static,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
-            shutdown_signal().await;
+            shutdown_signal(exit_with_parent).await;
             on_signal();
         })
         .await
 }
 
-/// Resolve on Ctrl-C, or on SIGTERM on Unix, so axum drains in-flight
-/// requests before exiting.
-async fn shutdown_signal() {
-    stop_requested().await;
+/// Resolve on Ctrl-C, or on SIGTERM on Unix, or once the process
+/// `exit_with_parent` names is gone, so axum drains in-flight requests before
+/// exiting. A crashed desktop app ends its server this way (#1934).
+async fn shutdown_signal(exit_with_parent: Option<u32>) {
+    let parent_gone = async {
+        match exit_with_parent {
+            Some(pid) => {
+                crate::exit_with_parent::parent_gone(pid).await;
+                eprintln!("The process that started the server, process {pid}, has ended");
+            }
+            None => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        () = stop_requested() => {}
+        () = parent_gone => {}
+    }
     eprintln!("The server is shutting down");
 }
 
