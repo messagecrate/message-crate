@@ -408,11 +408,20 @@ jobs:
         with:
           images: bitrealm/message-crate
           flavor: latest=false
+          # Each tag belongs to one kind of run, so a release and a manual
+          # run for the same commit never push the same tag:
+          # - A release (a pushed v* tag) pushes <version>, <major>.<minor>
+          #   and latest, and never sha-<commit>. Its image reports the
+          #   Product Version alone and is reached by its version tags.
+          # - A manual run with push_docker_image pushes sha-<commit> alone,
+          #   and its image always reports the commit as Build metadata, so
+          #   sha-<commit> names one image, 0.x.y+<commit>, whichever run
+          #   pushed last.
           tags: |
             type=semver,pattern={{version}},enable=${{ needs.changes.outputs.release == 'true' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ needs.changes.outputs.release == 'true' }}
             type=raw,value=latest,enable=${{ needs.changes.outputs.release == 'true' }}
-            type=sha,prefix=sha-,format=short
+            type=sha,prefix=sha-,format=short,enable=${{ needs.changes.outputs.release != 'true' }}
 
       # Empty on a release (a pushed v* tag) on purpose: a release reports
       # the Product Version alone. A manual run reports the commit, whatever

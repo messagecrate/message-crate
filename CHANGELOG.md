@@ -43,6 +43,11 @@ released versions carry their date on the heading.
   reply hidden as a duplicate no longer counts, and a reply that quotes a
   copy hidden as a duplicate counts for the copy shown. The web app shows
   no reply count, so nothing changes on screen.
+- 2026-10-05: **A released Docker image is tagged by its version only.** A
+  release no longer also tags its image `sha-` and the commit. That tag now
+  belongs only to images built by hand from a branch, which show the commit
+  in their version, so one `sha-` tag always names one image. Pull a
+  release by its version, such as `0.11.0`, or by `latest`.
 
 ### Fixes
 

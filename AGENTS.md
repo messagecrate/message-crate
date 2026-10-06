@@ -491,14 +491,14 @@ Three version numbers are easy to mix up:
 | What            | Example             | Meaning                                                                                |
 |-----------------|---------------------|----------------------------------------------------------------------------------------|
 | Product version | `0.9.0`             | Desktop app + server image. Git tag is `v0.9.0`.                                       |
-| Docker Hub tag  | `0.9.0` (no `v`)    | `bitrealm/message-crate:0.9.0`. Also `0.9`, `latest`, and `sha-…`.                     |
+| Docker Hub tag  | `0.9.0` (no `v`)    | `bitrealm/message-crate:0.9.0`. Also `0.9` and `latest`; `sha-…` is a manual push's alone. |
 | JSONL schema    | `schema_version: N` | Shared chat file format. `N` is `SCHEMA_VERSION` in `crates/libs/ir/src/lib.rs`, independent of the product version. A file at any other version is refused, never upgraded. |
 | Build           | `0.9.0+343fe0d8`    | The product version plus the commit, which is what a screen shows as "Version". `.dirty` follows the commit when tracked files held uncommitted changes; a build from a `v*` tag is `0.9.0` alone; `0.9.0+unknown` when nothing is known. Nobody writes it: `crates/libs/build-version` works it out for the server and the desktop app, and `web/vite.config.ts` for the SPA, under the same rules. |
 | Schema fingerprint | `1176793189`     | Derived from `schema/sql/*.sql` and stamped into the database. Shown in Owner Home → Server Settings. Never bumped by hand. |
 
 The Build asks git for the commit. Where there is no `.git`, which is the case inside `docker/Dockerfile`, set `MESSAGE_CRATE_BUILD_METADATA` to the part after the `+` (the Dockerfile takes it as the `BUILD_METADATA` build argument). Set and empty means a release, and is what the tag job passes.
 
-To push a Docker image without a release, start CI by hand with `gh workflow run ci.yml --ref <branch> -f push_docker_image=true`. After every CI job passes it pushes `bitrealm/message-crate:sha-<commit>` only, never `latest` or a version tag, and that image reports the Build with the commit.
+To push a Docker image without a release, start CI by hand with `gh workflow run ci.yml --ref <branch> -f push_docker_image=true`. After every CI job passes it pushes `bitrealm/message-crate:sha-<commit>` only, never `latest` or a version tag, and that image reports the Build with the commit. A release never pushes `sha-<commit>`, so that tag names the same image whichever run pushed it last.
 
 **Product version files** (keep these in lockstep; current value is `0.10.1`; CI's `version` job fails when they disagree, and on a `v*` tag when the tag disagrees with them):
 

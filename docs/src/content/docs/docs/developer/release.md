@@ -5,7 +5,7 @@ description: "How Message Crate versions ship: version lockstep, git tags, and t
 
 Releasing is a maintainer task. One product version ([Semantic Versioning](https://semver.org/spec/v2.0.0.html): `MAJOR.MINOR.PATCH`) ships as two artifacts:
 
-- The server image `bitrealm/message-crate:<version>` on Docker Hub (also `<major>.<minor>`, `latest`, and `sha-…`). The Docker tag has no `v` prefix (`0.8.0`, not `v0.8.0`).
+- The server image `bitrealm/message-crate:<version>` on Docker Hub (also `<major>.<minor>` and `latest`). The Docker tag has no `v` prefix (`0.8.0`, not `v0.8.0`).
 - Unsigned desktop installers on [GitHub Releases](https://github.com/messagecrate/message-crate/releases): Linux `.deb` and AppImage, Windows `.msi`, macOS `.dmg`.
 
 The same tag publishes this documentation site to messagecrate.app, so the site always describes the released version.
