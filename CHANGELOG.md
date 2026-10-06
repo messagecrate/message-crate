@@ -70,6 +70,16 @@ released versions carry their date on the heading.
   the conversation again. An Error about a conversation written before the
   stop stays, because the resumed Staging does not read it again.
 
+- 2026-10-05: **An import no longer stores a WhatsApp id as an email
+  address.** A WhatsApp file that named a person by an internal id such as
+  `123456789012345@lid` and gave it no type stored that id as an email
+  identity, so the identities list called it `email`. An import now stores
+  every address with an `@` on WhatsApp as `other`, wherever it appears: the
+  chat, its members, the senders, the reactions and your own address. An
+  address with an `@` that sends a text over SMS or RCS, as an email-to-text
+  gateway does, is `other` too. An email address that sends an iMessage is
+  still an email address.
+
 ### Upgrading
 
 - The database format changed. **An existing Message Crate is rebuilt empty
