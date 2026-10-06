@@ -49,9 +49,18 @@ fn convert_messages_keys_the_chat_by_its_number() {
             ("direction", "incoming"),
             ("service", "sms"),
             ("sender_display_name", "Bob Sample"),
+            // iMazing writes whole seconds only.
+            ("time_precision", "seconds"),
         ],
     );
-    assert_csv_row(&out, &[("text", "Hi Bob"), ("direction", "outgoing")]);
+    assert_csv_row(
+        &out,
+        &[
+            ("text", "Hi Bob"),
+            ("direction", "outgoing"),
+            ("time_precision", "seconds"),
+        ],
+    );
     // The third row is an iMessage carrying an attachment, so it proves both
     // that the service column follows the source and that the attachment file
     // name reached the row rather than only the directory.
@@ -91,7 +100,11 @@ fn convert_whatsapp_csv_direct() {
     // parse that lost the column or put the flag on the wrong message fails.
     assert_csv_row(
         &out,
-        &[("text", "Hello on WhatsApp"), ("direction", "incoming")],
+        &[
+            ("text", "Hello on WhatsApp"),
+            ("direction", "incoming"),
+            ("time_precision", "seconds"),
+        ],
     );
     assert_csv_row(
         &out,

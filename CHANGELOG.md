@@ -21,6 +21,21 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-06: **A message recorded once to the second and once to the
+  millisecond shows once.** Every message file now says whether each
+  message's time has milliseconds or only whole seconds, as its backup app
+  recorded it. iMazing, OpenExtract, GO SMS Pro's PDU files and SMS Backup+
+  mails timed only to the second record whole seconds; the other sources
+  record milliseconds. When one backup app holds a message twice, once to
+  the second and once to the millisecond, such as two SMS Backup+ mails of
+  one message, hiding duplicates hides the whole-second copy and shows the
+  message at its time to the millisecond. When another backup app holds the
+  message too, its copy may be the one shown, and it can have whole seconds
+  only. A time to the millisecond that ends in `.000` counts as
+  milliseconds. CSV exports carry it in a `time_precision` column, and mail
+  exports in an `X-ME-Time-Precision` header. Message files exported before
+  they said whether each time has milliseconds are refused, and the backup
+  must be exported again with this build.
 - 2026-10-05: **The newer backup decides when a message changed between two
   backups of one phone.** Every message file now says when its backup was
   made: an iPhone backup's own date, the date an SMS Backup & Restore file
@@ -181,6 +196,10 @@ released versions carry their date on the heading.
   refused when you import or convert them. Export the backup again with
   this build. A program that reads the HTTP API finds the backup's date in
   a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
+- Message files exported before each message said whether its time has
+  milliseconds are refused when you import or convert them. Export the
+  backup again with this build. A program that reads the HTTP API finds it
+  in a message's `time_precision`, `seconds` or `milliseconds`.
 
 ## [0.10.1] - 2026-10-05
 

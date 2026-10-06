@@ -149,6 +149,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
     MessageLine(message_ir::IrMessage {
         guid: guid.to_string(),
         timestamp_unix_ms: 1_426_183_462_000,
+        time_precision: message_ir::TimePrecision::Milliseconds,
         direction: message_ir::IrDirection::Incoming,
         service: message_ir::IrService::IMessage,
         message_kind: message_ir::IrMessageKind::IMessage,
@@ -171,6 +172,13 @@ impl MessageLine {
     /// Sent at `timestamp_unix_ms`, in milliseconds since 1970-01-01 UTC.
     pub fn at(mut self, timestamp_unix_ms: i64) -> Self {
         self.0.timestamp_unix_ms = timestamp_unix_ms;
+        self
+    }
+
+    /// From a source that records whole seconds: `time_precision` is
+    /// `seconds`. The time stays as it was.
+    pub fn whole_seconds(mut self) -> Self {
+        self.0.time_precision = message_ir::TimePrecision::Seconds;
         self
     }
 

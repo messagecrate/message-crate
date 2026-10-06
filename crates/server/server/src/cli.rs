@@ -39,7 +39,8 @@ pub enum Commands {
     /// Work on an account's Import Runs (`discard` clears a stranded one)
     Imports(ImportsArgs),
 
-    /// Soft-hide the same SMS when it appears under more than one import source
+    /// Soft-hide the same SMS when it appears under more than one import source,
+    /// or once in whole seconds beside its millisecond copy in one source
     DedupeCrossSource(DedupeArgs),
 
     /// Rebuild the Demo Account: generate Demo Data, clear the account,

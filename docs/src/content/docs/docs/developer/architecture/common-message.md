@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 11 only** (breaking). Version 11 says when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 10 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 12 only** (breaking). Version 12 says whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 11 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 11`)
+## Document schema (`schema_version: 12`)
 
 ```json
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -63,6 +63,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
     {
       "guid": "…",
       "timestamp_unix_ms": 1400773261000,
+      "time_precision": "milliseconds",
       "direction": "outgoing",
       "service": "sms",
       "message_kind": "sms",
@@ -95,6 +96,27 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 - Display names are not duplicated under `source`.
 - `guid` is Apple's own id for Apple Messages. Every other source's `guid` is a `MessageGuid`: SHA-256 of the chat id, the direction, the sender of an incoming message, the UTC instant in milliseconds, the text with whitespace collapsed, the sorted attachment digests, and the source's own key where it has one (WhatsApp's `key_id`). It reads no time zone and no display format, so one backup gives the same ids on any computer. The server refuses a message whose `guid` is empty.
 - Two records a backup cannot tell apart are one message, and the exporter keeps one (`message_ir::one_copy_per_message`). The server's content key, which matches one message across sources, is the same identity at whole seconds.
+
+### Time precision
+
+Every message has a required `time_precision`: `milliseconds` when the source recorded the time below the second, `seconds` when it recorded whole seconds and `timestamp_unix_ms` ends in `000` because the source has nothing finer. The flag, never the time, says which: a millisecond time can end in `000` too, and it is still `milliseconds`. Each exporter writes what its source records:
+
+| Source | Precision |
+|--------|-----------|
+| Apple Messages | `milliseconds` |
+| WhatsApp | `milliseconds` |
+| SMS Backup & Restore | `milliseconds`, from the `date` attribute |
+| GO SMS Pro | `milliseconds` for a message from the XML backup; `seconds` for one read only from a PDU file, whose name records the second |
+| SMS Backup+ | `milliseconds` from `X-smssync-date`; `seconds` for a mail without it, timed by its `Date` header |
+| iMazing | `seconds` |
+| OpenExtract | `seconds` |
+| An Export Run of the server | The precision the server stored |
+
+When an exporter keeps one copy of a message that its source recorded twice ([Identity](#identity)), a whole-second copy that takes a millisecond copy's time takes its precision too.
+
+The server keeps the flag and answers it as `time_precision` on a message. Within one source, it shows a whole-second message once when the source also holds it with milliseconds in the same second: the whole-second copy is hidden as the duplicate, and the message is shown with its milliseconds, unless another source holds it too and that source's copy is the one shown. An SMS Backup+ message imported once from a mail timed by `Date` and once from one timed by `X-smssync-date` is one message.
+
+CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Time-Precision` header. A blank or unknown value is refused rather than guessed. SMS Backup & Restore XML has no place for it: an Export Run that writes XML leaves it out, and the XML reads back as `milliseconds`, the precision its `date` attribute holds, whatever the server stored.
 
 ### When the backup was made
 
@@ -204,7 +226,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":11,"export":{…},"conversation":{…}}
+{"schema_version":12,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{
     Deletion, EarlierVersion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
-    IrSource, Reaction, ReplyTo,
+    IrSource, Reaction, ReplyTo, TimePrecision,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -87,6 +87,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         .with_context(|| format!("missing required header {}", hn::TIMESTAMP_UNIX_MS))?
         .parse::<i64>()
         .context("parse X-ME-Timestamp-Unix-Ms")?;
+    let time_precision = parse_time_precision(headers)?;
     let direction = match typed_header(headers, hn::DIRECTION)
         .unwrap_or_default()
         .to_ascii_lowercase()
@@ -166,6 +167,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         message: IrMessage {
             guid,
             timestamp_unix_ms,
+            time_precision,
             direction,
             service,
             message_kind,
@@ -337,6 +339,21 @@ fn parse_backup_taken_at(headers: &[MailHeader<'_>]) -> Result<Option<i64>> {
         .with_context(|| format!("This mail's {} header {raw:?}", hn::BACKUP_TAKEN_AT_UNIX_MS))
 }
 
+/// Whether the message's time has milliseconds, from the required
+/// `X-ME-Time-Precision`. A missing header or a value other than `seconds`
+/// or `milliseconds` is refused: the flag, never the time, says whether a
+/// time ending in `.000` has milliseconds.
+fn parse_time_precision(headers: &[MailHeader<'_>]) -> Result<TimePrecision> {
+    let raw = typed_header(headers, hn::TIME_PRECISION)
+        .with_context(|| format!("missing required header {}", hn::TIME_PRECISION))?;
+    TimePrecision::parse(&raw).with_context(|| {
+        format!(
+            "This mail's {} header {raw:?} is neither seconds nor milliseconds",
+            hn::TIME_PRECISION
+        )
+    })
+}
+
 /// The message's mark from `X-ME-Deletion`, or none when the header is
 /// absent. A value that names neither mark is refused rather than dropped.
 fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
@@ -488,6 +505,7 @@ mod tests {
             message: IrMessage {
                 guid: "aabbccddeeff00112233445566778899".into(),
                 timestamp_unix_ms: 1_400_773_261_000,
+                time_precision: message_ir::TimePrecision::Milliseconds,
                 direction: IrDirection::Outgoing,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Sms,
@@ -606,6 +624,7 @@ mod tests {
             message: IrMessage {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 timestamp_unix_ms: 1_400_773_261_000,
+                time_precision: message_ir::TimePrecision::Milliseconds,
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
@@ -734,6 +753,7 @@ mod tests {
             message: IrMessage {
                 guid: "11111111-2222-3333-4444-555555555555".into(),
                 timestamp_unix_ms: 1_400_773_261_000,
+                time_precision: message_ir::TimePrecision::Milliseconds,
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,

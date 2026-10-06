@@ -230,6 +230,18 @@ fn messages_keep_their_time_and_their_identity() {
             (9_999_999_999_000, "last second"),
         ]
     );
+    // WhatsApp stores milliseconds, and the seconds wtsexporter writes carry
+    // them as a fraction, so every time has milliseconds, whole or not.
+    assert!(
+        doc.messages
+            .iter()
+            .all(|m| m.time_precision == message_ir::TimePrecision::Milliseconds),
+        "{:?}",
+        doc.messages
+            .iter()
+            .map(|m| m.time_precision)
+            .collect::<Vec<_>>()
+    );
     assert_ne!(
         doc.messages[1].guid, doc.messages[2].guid,
         "the same text in the same second is two messages"

@@ -77,6 +77,7 @@ fn message(
         "service": "sms",
         "guid": guid,
         "timestamp": timestamp,
+        "time_precision": "milliseconds",
         "sort_order": id,
         "is_from_me": false,
         "sender": "+15555550101",

@@ -274,7 +274,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     let mut replies: Vec<(usize, PendingReply)> = Vec::new();
     let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
     for ((msg, p), kept) in convo.messages.iter().zip(&prepared).zip(kept) {
-        let Some(timestamp_unix_ms) = kept else {
+        let Some((timestamp_unix_ms, time_precision)) = kept else {
             tally.duplicates += 1;
             continue;
         };
@@ -322,6 +322,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         messages.push(IrMessage {
             guid,
             timestamp_unix_ms,
+            time_precision,
             direction: if outgoing {
                 IrDirection::Outgoing
             } else {

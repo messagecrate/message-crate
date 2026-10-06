@@ -19,6 +19,7 @@ use sqlx::{Executor, Row};
 
 pub use message_crate_api_types::{
     Attachment, Deletion, EarlierVersion, Message, MessageConversation, ReplyTo, Tapback,
+    TimePrecision,
 };
 
 use crate::db::conversations::is_group_type;
@@ -55,6 +56,7 @@ struct RawRow {
     reply_count: i64,
     deletion: Option<String>,
     backup_taken_at: Option<String>,
+    time_precision: TimePrecision,
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
@@ -475,7 +477,8 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
                 ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label, m.deletion, m.backup_taken_at
+                ho.raw AS owner, {label} AS label, m.deletion, m.backup_taken_at,
+                m.time_precision
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
@@ -529,6 +532,12 @@ async fn fetch_message_page(
                 label: row.try_get(20)?,
                 deletion: row.try_get(21)?,
                 backup_taken_at: row.try_get(22)?,
+                time_precision: {
+                    let stored: String = row.try_get(23)?;
+                    TimePrecision::parse(&stored).ok_or_else(|| {
+                        sqlx::Error::Decode(format!("time_precision {stored:?}").into())
+                    })?
+                },
             })
         })
         .collect::<Result<Vec<RawRow>, ApiError>>()?;
@@ -553,6 +562,7 @@ async fn fetch_message_page(
                 service: r.service,
                 guid: r.guid,
                 timestamp: r.timestamp,
+                time_precision: r.time_precision,
                 sort_order: r.sort_order,
                 is_from_me: r.is_from_me,
                 sender: r.sender,

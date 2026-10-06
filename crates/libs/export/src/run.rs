@@ -980,6 +980,7 @@ mod asset_ref_tests {
             "source": source,
             "guid": "g1",
             "timestamp": "2015-03-12T18:05:22Z",
+            "time_precision": "milliseconds",
             "sort_order": 0,
             "is_from_me": false,
             "is_announcement": false,

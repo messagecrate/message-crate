@@ -607,8 +607,11 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     .unwrap();
     let staging_message: i64 = sqlx::query_scalar(
         "INSERT INTO staging_messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order
-         ) VALUES ($1, $2, 'imessage', 'g-staged', '2020-01-01T00:00:00Z', 1, 0) RETURNING id",
+            conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
+            sort_order
+         ) VALUES (
+            $1, $2, 'imessage', 'g-staged', '2020-01-01T00:00:00.000Z', 'milliseconds', 1, 0
+         ) RETURNING id",
     )
     .bind(staging_conversation)
     .bind(ACCOUNT_A)

@@ -851,6 +851,7 @@ mod tests {
             messages: vec![IrMessage {
                 guid: "g".into(),
                 timestamp_unix_ms: 0,
+                time_precision: message_ir::TimePrecision::Milliseconds,
                 direction: IrDirection::Incoming,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Mms,

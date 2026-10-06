@@ -203,6 +203,8 @@ pub struct StagingMessage<'a> {
     pub guid: &'a str,
     /// RFC 3339 UTC instant the message was sent.
     pub timestamp: &'a str,
+    /// Whether the source recorded `timestamp` to the millisecond.
+    pub time_precision: message_ir::TimePrecision,
     /// 1 when the account holder sent it.
     pub is_from_me: i64,
     /// Sender's handle id; `None` when unknown.
@@ -344,7 +346,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
-const MESSAGE_BIND_COLUMNS: usize = 19;
+const MESSAGE_BIND_COLUMNS: usize = 20;
 const ATTACHMENT_BIND_COLUMNS: usize = ATTACHMENT_COLUMNS.len();
 const TAPBACK_BIND_COLUMNS: usize = TAPBACK_COLUMNS.len();
 const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
@@ -369,7 +371,7 @@ pub async fn insert_messages(
     let sql = format!(
         r"
         INSERT INTO staging_messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
             reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
         ) VALUES {}
@@ -386,6 +388,7 @@ pub async fn insert_messages(
             .bind(row.source)
             .bind(row.guid)
             .bind(row.timestamp)
+            .bind(row.time_precision.as_str())
             .bind(row.is_from_me)
             .bind(row.sender_handle_id)
             .bind(row.owner_handle_id)
@@ -1070,12 +1073,13 @@ pub async fn staged_message_id_bounds(
 /// the production ids follow it, which the id-map zip relies on.
 const INSERT_MESSAGES_FROM_STAGING: &str = r"
         INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
             reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
         )
         SELECT
-            cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.is_from_me,
+            cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.time_precision,
+            sm.is_from_me,
             sm.sender_handle_id, sm.owner_handle_id, sm.service, sm.subject, sm.body, sm.is_announcement, sm.is_reply,
             sm.reply_to_guid, sm.reply_to_part, sm.deletion, sm.sort_order, sm.import_id,
             sm.backup_taken_at
@@ -1353,6 +1357,58 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
         later = later_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
     );
     Ok(sqlx::query(&sql).execute(&mut *conn).await?.rows_affected())
+}
+
+/// Mark each stored message `milliseconds` when its staged row is and has
+/// the same time: a whole-second copy and a millisecond copy whose time
+/// ends in `.000` have one guid, so they are one message, and the source
+/// did record its time to the millisecond, whichever copy was stored first
+/// (#1923). A staged `seconds` row, or one at another time (a copy cut to
+/// the second elsewhere that kept the guid), leaves the stored flag as it
+/// is.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
+    sqlx::query(
+        r"
+        UPDATE messages
+        SET time_precision = sm.time_precision
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE messages.id = mm.prod_id
+          AND sm.time_precision = $1
+          AND messages.time_precision != $1
+          AND sm.timestamp = messages.timestamp
+        ",
+    )
+    .bind(message_ir::TimePrecision::Milliseconds.as_str())
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Mark the staged message `staged` `milliseconds` when it is at
+/// `timestamp`, for another copy of it from the same import that is
+/// `milliseconds` at that time: the staged-row form of
+/// [`promote_time_precision`].
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn add_staged_copy_milliseconds(
+    conn: &mut SqliteConnection,
+    staged: i64,
+    timestamp: &str,
+) -> Result<()> {
+    sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2 AND timestamp = $3")
+        .bind(message_ir::TimePrecision::Milliseconds.as_str())
+        .bind(staged)
+        .bind(timestamp)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }
 
 /// Whether one copy of a message records a later edit than another, as an

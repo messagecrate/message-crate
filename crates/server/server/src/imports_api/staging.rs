@@ -903,19 +903,20 @@ async fn flush_staging_message_chunk(
     Ok(())
 }
 
-/// Give the message staged under `row`'s guid what `row`, another copy of
-/// it from the same import, adds, by the rules a later import of the copy
-/// would follow (`db::staging::promote_deletion_marks`,
+/// Give the message staged under `row`'s guid what `row`, another copy of it
+/// from the same import, adds, by the rules a later import of the copy would
+/// follow (`db::staging::promote_deletion_marks`,
 /// `db::staging::write_edit_map`): the attachments and reactions the staged
 /// message does not hold yet, and its mark and text as follows. When both
 /// backups have a date, a copy from a later backup gives its text, earlier
 /// versions and mark, mark or no mark, and one from an earlier backup gives
 /// neither (#1741, #1804). When either has no date, or the two dates are
-/// equal ([`db_staging::later_backup`]), the copy gives its text and
-/// earlier versions when it records a later edit, and its mark when it
-/// carries one. One import of two backups then stores
-/// what two separate imports of them store, in either file order (#1806,
-/// #1837).
+/// equal ([`db_staging::later_backup`]), the copy gives its text and earlier
+/// versions when it records a later edit, and its mark when it carries one.
+/// A copy at the staged message's time that has milliseconds marks it
+/// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import
+/// of two backups then stores what two separate imports of them store, in
+/// either file order (#1806, #1837).
 async fn add_staged_copy(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -929,6 +930,7 @@ async fn add_staged_copy(
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
         && staged_source.backup_taken_at.is_none()
+        && row.msg.time_precision == message_ir::TimePrecision::Seconds
     {
         return Ok(());
     }
@@ -940,6 +942,9 @@ async fn add_staged_copy(
     let staged = db_staging::staged_message_id(tx, key)
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
+    if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
+        db_staging::add_staged_copy_milliseconds(tx, staged, &row.msg.timestamp).await?;
+    }
     let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
     match db_staging::later_backup(staged_source.backup_taken_at, held_backup.as_deref()) {
         BackupOrder::Later(copy_backup) => {
@@ -1001,6 +1006,7 @@ async fn insert_message_rows(
             source: staged_source.source,
             guid: &row.msg.guid,
             timestamp: &row.msg.timestamp,
+            time_precision: row.msg.time_precision,
             is_from_me: row.msg.is_from_me as i64,
             sender_handle_id: row.sender_handle_id,
             owner_handle_id: row.owner_handle_id,

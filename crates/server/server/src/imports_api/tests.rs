@@ -676,8 +676,8 @@ async fn staging_keeps_both_rows_when_guids_differ_only_by_whitespace() {
     let assets = tmp.path().join("assets");
     let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     // The guids are the input under test, so these lines stay written out.
-    let first = r#"{"guid":"g-space","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"trimmed","attachments":[{"path":"attachments/trim.bin","original_name":"trim.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
-    let second = r#"{"guid":" g-space","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"padded","attachments":[{"path":"attachments/pad.bin","original_name":"pad.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
+    let first = r#"{"guid":"g-space","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"trimmed","attachments":[{"path":"attachments/trim.bin","original_name":"trim.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
+    let second = r#"{"guid":" g-space","timestamp_unix_ms":1426183463000,"time_precision":"milliseconds","direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"padded","attachments":[{"path":"attachments/pad.bin","original_name":"pad.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
     let path = write_jsonl(
         tmp.path(),
         "guid-whitespace.jsonl",
@@ -2357,7 +2357,7 @@ async fn rejects_attachment_path_traversal() {
             conversation_header("sms-backup-restore", "+15555550123")
                 .participant("+15555550123", None),
             // The path is the input under test, so the line stays written out.
-            r#"{"guid":"g-trav","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"x","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":null}],"imessage":null,"source":null}
+            r#"{"guid":"g-trav","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"x","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":null}],"imessage":null,"source":null}
 "#
         ),
     );
@@ -2428,7 +2428,7 @@ async fn failed_replace_keeps_existing_messages() {
             conversation_header("sms-backup-restore", "+14075550107")
                 .participant("+14075550107", None),
             // The path is the input under test, so the line stays written out.
-            r#"{"guid":"g-bad","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+14075550107","sender_display_name":null,"subject":null,"text":"nope","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":1,"missing_reason":null}],"imessage":null,"source":null}
+            r#"{"guid":"g-bad","timestamp_unix_ms":1426183462000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+14075550107","sender_display_name":null,"subject":null,"text":"nope","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":1,"missing_reason":null}],"imessage":null,"source":null}
 "#
         ),
     );
@@ -2789,7 +2789,7 @@ fn one_attachment_batch(path: &str, sha: Option<&str>) -> String {
     let digest = sha.map_or("null".to_string(), |sha| format!(r#""{sha}""#));
     format!(
         r#"{header}
-{{"guid":"g-att","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}
+{{"guid":"g-att","timestamp_unix_ms":1700000000000,"time_precision":"milliseconds","direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}
 "#
     )
 }
@@ -5810,3 +5810,4 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
 }
 
 mod backup_dates;
+mod time_precision;

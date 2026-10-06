@@ -142,10 +142,12 @@ pub struct DedupeStats {
     /// Content keys written: those missing and those whose inputs changed
     /// (not a duplicate count).
     pub keys_filled: u64,
-    /// Groups of messages sharing one content key.
+    /// Groups of messages sharing one content key in which a message was
+    /// hidden.
     pub exact_groups: u64,
     /// Messages hidden as exact duplicates: all but as many per group as one
-    /// source holds.
+    /// source holds, and each whole-second message whose own source holds
+    /// it with milliseconds too.
     pub exact_flagged: u64,
     /// Messages flagged as near duplicates.
     pub near_flagged: u64,
@@ -175,7 +177,8 @@ pub async fn source_priority_from_db(
 }
 
 /// Refresh the content keys, clear prior flags, then soft-hide cross-source
-/// duplicates, all in one transaction.
+/// duplicates and the whole-second twins of a message one source holds with
+/// milliseconds too, all in one transaction.
 ///
 /// Survivor preference: most attachments, then the source imported first (min
 /// message id, then source name), then the lowest message id. Optional
@@ -536,9 +539,17 @@ struct Cand {
     att_count: i64,
 }
 
+/// One message of a content-key group in the exact pass: the candidate,
+/// and whether its source recorded its time in whole seconds.
+struct KeyedCand {
+    cand: Cand,
+    whole_seconds: bool,
+}
+
 /// Hide the messages that share a fingerprint with a preferred-source twin,
-/// keeping as many as one source holds (see [`exact_group_flags`]). Returns
-/// (groups, hidden).
+/// keeping as many as one source holds (see [`exact_group_flags`]), and
+/// each whole-second message whose own source holds it with milliseconds
+/// too (see [`content_key_group_flags`]). Returns (groups, hidden).
 async fn flag_exact_content_key_dupes(
     tx: &mut WriteTx<'_>,
     account_id: i64,
@@ -547,9 +558,9 @@ async fn flag_exact_content_key_dupes(
     let conn: &mut SqliteConnection = tx;
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    let rows: Vec<(i64, String, String, i64)> = sqlx::query_as(
+    let rows: Vec<(i64, String, String, i64, String)> = sqlx::query_as(
         r"
-        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0)
+        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0), m.time_precision
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN (
@@ -569,24 +580,30 @@ async fn flag_exact_content_key_dupes(
     .fetch_all(&mut *conn)
     .await?;
 
-    let mut by_key: HashMap<String, Vec<Cand>> = HashMap::new();
-    for (id, source, content_key, att_count) in rows {
-        by_key.entry(content_key).or_default().push(Cand {
-            id,
-            source,
-            att_count,
+    let mut by_key: HashMap<String, Vec<KeyedCand>> = HashMap::new();
+    for (id, source, content_key, att_count, time_precision) in rows {
+        by_key.entry(content_key).or_default().push(KeyedCand {
+            cand: Cand {
+                id,
+                source,
+                att_count,
+            },
+            // The flag decides, never the time: a millisecond time can end
+            // in `.000`.
+            whole_seconds: message_ir::TimePrecision::parse(&time_precision)
+                .with_context(|| format!("message {id}: time_precision {time_precision:?}"))?
+                == message_ir::TimePrecision::Seconds,
         });
     }
 
     let mut flags: Vec<(i64, i64)> = Vec::new(); // (loser_id, winner_id)
     let mut groups = 0u64;
-    for cands in by_key.values() {
-        let sources: HashSet<&str> = cands.iter().map(|c| c.source.as_str()).collect();
-        if sources.len() < 2 {
-            continue;
+    for cands in by_key.into_values() {
+        let group_flags = content_key_group_flags(cands, prio);
+        if !group_flags.is_empty() {
+            groups += 1;
         }
-        groups += 1;
-        flags.extend(exact_group_flags(cands, prio));
+        flags.extend(group_flags);
     }
     let flagged = flags.len() as u64;
 
@@ -597,6 +614,43 @@ async fn flag_exact_content_key_dupes(
     apply_duplicate_flags(conn, "_pass_a_flags", &flags).await?;
 
     Ok((groups, flagged))
+}
+
+/// The `(loser, winner)` pairs of the messages that share one content key.
+///
+/// A whole-second message whose own source also holds a message of the same
+/// key with milliseconds is first set aside as that message's twin: the key
+/// is taken at whole seconds, so the two match in everything else and fall
+/// in the same second, and the source recorded the message twice, once
+/// without its milliseconds (an SMS Backup+ mail timed by its `Date` header
+/// beside one timed by `X-smssync-date`). The rest are flagged by
+/// [`exact_group_flags`] when two or more sources hold them, and each twin
+/// is hidden under the rest's winner, which is always shown, so the message
+/// is shown once. It keeps its milliseconds unless another source's copy
+/// wins the cross-source comparison, as one whole-second source imported
+/// first does. A source that holds the message only in whole seconds keeps
+/// every copy, as one that holds it only with milliseconds does.
+fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
+    let with_milliseconds: HashSet<String> = cands
+        .iter()
+        .filter(|c| !c.whole_seconds)
+        .map(|c| c.cand.source.clone())
+        .collect();
+    let (twins, rest): (Vec<KeyedCand>, Vec<KeyedCand>) = cands
+        .into_iter()
+        .partition(|c| c.whole_seconds && with_milliseconds.contains(c.cand.source.as_str()));
+    let rest: Vec<Cand> = rest.into_iter().map(|c| c.cand).collect();
+    let sources: HashSet<&str> = rest.iter().map(|c| c.source.as_str()).collect();
+    let mut flags = if sources.len() < 2 {
+        Vec::new()
+    } else {
+        exact_group_flags(&rest, prio)
+    };
+    if !twins.is_empty() {
+        let winner = pick_winner(&rest, prio);
+        flags.extend(twins.into_iter().map(|t| (t.cand.id, winner)));
+    }
+    flags
 }
 
 /// The `(loser, winner)` pairs of one group of copies that two or more

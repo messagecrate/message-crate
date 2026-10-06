@@ -28,7 +28,7 @@ use message_crate_core::{
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, SCHEMA_VERSION, nonempty, owner_sender,
+    IrService, SCHEMA_VERSION, TimePrecision, nonempty, owner_sender,
 };
 use message_ir_format::FormatSink;
 use message_staging::{
@@ -410,6 +410,9 @@ fn message_to_ir(
     let message = IrMessage {
         guid: record.guid,
         timestamp_unix_ms: record.timestamp_unix_ms,
+        // `chat.db` records a message's time in nanoseconds (since macOS
+        // 10.13 and iOS 11).
+        time_precision: TimePrecision::Milliseconds,
         direction,
         service: IrService::parse(&record.service),
         message_kind: IrMessageKind::parse(&record.message_kind),
@@ -1317,6 +1320,7 @@ mod tests {
         IrMessage {
             guid: format!("guid-{ts}"),
             timestamp_unix_ms: ts,
+            time_precision: TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
             message_kind: IrMessageKind::IMessage,

@@ -35,6 +35,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
         messages: vec![IrMessage {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: crate::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
@@ -113,6 +114,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
             IrMessage {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 timestamp_unix_ms: 1_400_773_261_000,
+                time_precision: crate::TimePrecision::Milliseconds,
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
@@ -157,6 +159,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
             IrMessage {
                 guid: "TAPBACK-GUID-0001".into(),
                 timestamp_unix_ms: 1_400_773_262_000,
+                time_precision: crate::TimePrecision::Milliseconds,
                 direction: IrDirection::Outgoing,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::Tapback,

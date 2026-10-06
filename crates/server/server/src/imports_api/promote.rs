@@ -277,8 +277,11 @@ impl Promote<'_> {
             ),
         );
 
-        let phase = Self::begin("Recording which backup each changed message came from…");
+        let phase = Self::begin(
+            "Recording which backup each changed message came from, and whether its time has milliseconds…",
+        );
         let dated = staging::promote_backup_dates(self.tx).await?;
+        staging::promote_time_precision(self.tx).await?;
         self.done(
             phase,
             words(

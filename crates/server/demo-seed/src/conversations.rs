@@ -13,7 +13,7 @@ use chrono::{Duration, Utc};
 use message_ir::{
     ConversationHeader, ConversationMeta, ConversationStats, Deletion, EarlierVersion, ExportMeta,
     IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, orphaned_chat_id,
+    IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -317,6 +317,8 @@ impl SharedMessage {
         IrMessage {
             guid,
             timestamp_unix_ms: self.timestamp,
+            // Every source the demo imitates records milliseconds.
+            time_precision: TimePrecision::Milliseconds,
             direction: if self.from_me {
                 IrDirection::Outgoing
             } else {
@@ -1127,6 +1129,8 @@ impl<R: Rng> Seeder<'_, R> {
         IrMessage {
             guid: guid.into(),
             timestamp_unix_ms,
+            // Every source the demo imitates records milliseconds.
+            time_precision: TimePrecision::Milliseconds,
             direction: if from_me {
                 IrDirection::Outgoing
             } else {

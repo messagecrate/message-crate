@@ -62,6 +62,13 @@ CREATE TABLE IF NOT EXISTS messages (
     -- text sorts in time order and lists order by it. Shown, searched and
     -- filed by day and year in the account's time zone (accounts.time_zone).
     timestamp TEXT NOT NULL,
+    -- Whether the source recorded timestamp to the millisecond or in whole
+    -- seconds, as the conversation file's time_precision says. The flag, never
+    -- the time, decides: a millisecond time can end in .000. Within one
+    -- source, a 'seconds' message is the duplicate of one that matches it in
+    -- everything else with 'milliseconds' in the same second
+    -- (docs/architecture/contacts-identities-and-messages.md).
+    time_precision TEXT NOT NULL CHECK (time_precision IN ('seconds', 'milliseconds')),
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,
     -- Sender identity (`handles.id`); NULL when unknown.

@@ -34,6 +34,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
         messages: vec![IrMessage {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
@@ -240,6 +241,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
         messages: vec![IrMessage {
             guid: "LEAK-27".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
             message_kind: IrMessageKind::IMessage,
@@ -313,6 +315,7 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
     ),
     ("conversation.conversation_type", "enum value"),
     ("conversation.participants[].identity_type", "enum value"),
+    ("messages[].time_precision", "enum value"),
     ("messages[].direction", "enum value"),
     ("messages[].service", "enum value"),
     ("messages[].message_kind", "enum value"),

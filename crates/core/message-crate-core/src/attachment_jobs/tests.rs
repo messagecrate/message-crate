@@ -480,6 +480,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         messages: vec![IrMessage {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Mms,
@@ -723,6 +724,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         messages: vec![IrMessage {
             guid: "guid-1".into(),
             timestamp_unix_ms: 1_400_773_261_000,
+            time_precision: message_ir::TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Mms,
