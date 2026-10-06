@@ -17,7 +17,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 Bullets under the version still in development carry the date they landed;
 released versions carry their date on the heading.
 
-## [0.10.2] — in development
+## [0.11.0] — in development
 
 ### Features
 
@@ -31,7 +31,30 @@ released versions carry their date on the heading.
   `main` branch and in no release yet; a backup read by any other gives
   replies with no link.
 
+### Design
+
+- 2026-10-05: **A message's reply count is counted when it is read.** It is
+  the number of replies Message Crate shows that quote the message, so a
+  reply hidden as a duplicate no longer counts, and a reply that quotes a
+  copy hidden as a duplicate counts for the copy shown. The web app shows
+  no reply count, so nothing changes on screen.
+
 ### Fixes
+
+#### Importing
+
+- 2026-10-05: **A WhatsApp import from Android that fills the disk holding
+  the Scratch Directory stops with the free-space sentence.** The encrypted
+  WhatsApp backup is decrypted into the Scratch Directory, and its decrypted
+  size isn't known until it is written, so no check can measure it first.
+  When that disk filled, the run stopped with `wtsexporter`'s own error. It
+  now stops with "Not enough space on the disk that holds the Scratch
+  Directory", the sentence every other free-space check gives, whichever
+  language Windows is set to and whether the disk was full before
+  `wtsexporter` started or filled while it ran. The part already written is
+  deleted with the rest of the run's working files, as it was before. The
+  WhatsApp guide says the decrypted database can run to several GB and where
+  it is written.
 
 - 2026-10-05: **A resumed Staging no longer leaves behind an Error it put
   right.** When an iPhone import stopped after an attachment could not be
@@ -41,14 +64,6 @@ released versions carry their date on the heading.
   until its conversation is written, and goes when a resumed Staging writes
   the conversation again. An Error about a conversation written before the
   stop stays, because the resumed Staging does not read it again.
-
-### Design
-
-- 2026-10-05: **A message's reply count is counted when it is read.** It is
-  the number of replies Message Crate shows that quote the message, so a
-  reply hidden as a duplicate no longer counts, and a reply that quotes a
-  copy hidden as a duplicate counts for the copy shown. The web app shows
-  no reply count, so nothing changes on screen.
 
 ### Upgrading
 

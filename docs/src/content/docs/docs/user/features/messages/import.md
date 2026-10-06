@@ -214,6 +214,7 @@ While Staging reads the backup, it keeps its working files in the Scratch Direct
 They are deleted when Staging ends, whether it finished or failed.
 If the app was closed or stopped during Staging, they are deleted the next time the app starts.
 Before it writes, Staging checks that the disk holding the Scratch Directory and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.
+A WhatsApp backup from Android is the exception, because its decrypted size isn't known until it is written: [WhatsApp](/docs/user/import-sources/whatsapp/#room-on-disk) says what it needs.
 
 ### Staging Review
 
