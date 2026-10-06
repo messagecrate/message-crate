@@ -372,8 +372,11 @@ api_shape! {
         /// Export GUID for replies and grouping. Every message has one,
         /// because the import refuses a message without one.
         pub guid: String,
-        /// The instant the message was sent: RFC 3339 in UTC with a `Z`
-        /// suffix. A caller shows it in the account's time zone
+        /// The instant the message was sent, to the millisecond: RFC 3339
+        /// in UTC with three fractional digits and a `Z` suffix
+        /// (`2015-03-12T18:04:22.250Z`; `.000` when the source records
+        /// whole seconds). Messages are listed in the order of this time. A
+        /// caller shows it in the account's time zone
         /// (`Account.time_zone`); the database stores nothing
         /// about where the phone was.
         pub timestamp: String,
@@ -450,8 +453,8 @@ api_shape! {
         pub part_index: i64,
         /// The part's text in this version.
         pub text: String,
-        /// When this version was written: RFC 3339 in UTC with a `Z` suffix,
-        /// as `Message.timestamp`. The original's is when it was sent, a
+        /// When this version was written, to the millisecond in the form
+        /// `Message.timestamp` takes. The original's is when it was sent, a
         /// later version's is when the edit that wrote it was made. `None`
         /// when the source does not record it.
         pub edited_at: Option<String>,
@@ -603,7 +606,7 @@ mod tests {
             source: "imessage".into(),
             service: None,
             guid: "g1".into(),
-            timestamp: "2024-01-01T00:00:00Z".into(),
+            timestamp: "2024-01-01T00:00:00.000Z".into(),
             sort_order: 0,
             is_from_me: false,
             sender: None,

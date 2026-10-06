@@ -397,7 +397,7 @@ of a group, or one chat id written two ways, merges into the conversation
 already there. The merged conversation keeps the group title of the copy whose
 latest message is later. A copy with no title never clears a title, and when
 both copies' latest messages share one time, the title already stored stays.
-Times are compared to the second, the precision a message's time is stored at.
+Times are compared to the millisecond, the precision a message's time is stored at.
 The conversation stores the latest message time of the copy that gave its
 title (`group_title_at`), and an incoming copy is compared with that, not with
 the whole conversation: an untitled copy whose messages end last would

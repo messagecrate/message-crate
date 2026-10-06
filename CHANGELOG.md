@@ -113,7 +113,7 @@ released versions carry their date on the heading.
   email address on Text Message is still an email address, because iMessage
   reaches one.
 
-#### Search
+#### Browsing and search
 
 - 2026-10-05: **A search no longer finds an Unsent message by the text it
   hides.** An Unsent message reads "Unsent" and nothing else, but when an
@@ -123,6 +123,16 @@ released versions carry their date on the heading.
   the same. A search now finds a message by what it shows: `unsent:yes`,
   `from:`, the conversation and the date still find an Unsent message, and a
   message Deleted in the source app is still found by its text.
+
+- 2026-10-05: **A message keeps the milliseconds of its time.** Message
+  Crate kept a message's time to the whole second and dropped the
+  milliseconds that WhatsApp, Apple Messages and SMS Backup & Restore
+  record. Two messages sent within one second could then show
+  in the wrong order. The time is now kept to the millisecond, a
+  conversation lists its messages in the order they were sent, and an
+  export written from Message Crate keeps the milliseconds too. A backup
+  that records whole seconds, such as iMazing or OpenExtract, lists the
+  messages of one second in the order the backup gives them, as before.
 
 ### Upgrading
 
@@ -141,6 +151,9 @@ released versions carry their date on the heading.
   in place of `num_replies`.
 - A Saved Search that uses `deleted:yes` finds fewer messages than before:
   it leaves unsent messages out. Add `or unsent:yes` to it to find both.
+- If you have a program that reads messages from the HTTP API, a message's
+  `timestamp` and an earlier version's `edited_at` now carry three digits of
+  milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
 
 ## [0.10.1] - 2026-10-05
 
