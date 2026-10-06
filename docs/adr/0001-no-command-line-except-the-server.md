@@ -107,7 +107,7 @@ The binary is a convenience for working on the repository, run through
   addresses return 404 rather than pointing somewhere that does not answer the
   question they were bookmarked for.
 
-## Note, 2026-10-05: `message-crate-pull` is now `message-crate-export`
+## Amended 2026-10-05: `message-crate-pull` is now `message-crate-export`
 
 The text above is kept as it was decided. Since #1906, the crate it calls
 `message-crate-pull` is `message-crate-export`, at `crates/libs/export/`,

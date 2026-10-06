@@ -213,7 +213,7 @@ case into Convert would have to be undone.
   crates and removed wherever the result is simpler, and tests are rewritten to
   match rather than preserved.
 
-## Note, 2026-10-05: `message-crate-pull` is now `message-crate-export`
+## Amended 2026-10-05: `message-crate-pull` is now `message-crate-export`
 
 The text above is kept as it was decided. Since #1906, the crate it calls
 `message-crate-pull` is `message-crate-export`, at `crates/libs/export/`,
