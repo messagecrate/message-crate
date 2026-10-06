@@ -2650,8 +2650,8 @@ export interface components {
         /** @description One earlier version of one part of an edited message. */
         EarlierVersion: {
             /**
-             * @description When this version was written: RFC 3339 in UTC with a `Z` suffix,
-             *     as `Message.timestamp`. The original's is when it was sent, a
+             * @description When this version was written, to the millisecond in the form
+             *     `Message.timestamp` takes. The original's is when it was sent, a
              *     later version's is when the edit that wrote it was made. `None`
              *     when the source does not record it.
              */
@@ -3367,8 +3367,11 @@ export interface components {
             /** @description Body text, when present. */
             text: string | null;
             /**
-             * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
-             *     suffix. A caller shows it in the account's time zone
+             * @description The instant the message was sent, to the millisecond: RFC 3339
+             *     in UTC with three fractional digits and a `Z` suffix
+             *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
+             *     whole seconds). Messages are listed in the order of this time. A
+             *     caller shows it in the account's time zone
              *     (`Account.time_zone`); the database stores nothing
              *     about where the phone was.
              */
@@ -4420,8 +4423,11 @@ export interface components {
                 /** @description Body text, when present. */
                 text: string | null;
                 /**
-                 * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
-                 *     suffix. A caller shows it in the account's time zone
+                 * @description The instant the message was sent, to the millisecond: RFC 3339
+                 *     in UTC with three fractional digits and a `Z` suffix
+                 *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
+                 *     whole seconds). Messages are listed in the order of this time. A
+                 *     caller shows it in the account's time zone
                  *     (`Account.time_zone`); the database stores nothing
                  *     about where the phone was.
                  */

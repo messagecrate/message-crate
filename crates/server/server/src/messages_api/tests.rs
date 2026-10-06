@@ -24,13 +24,13 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00Z",
+                    timestamp: "2024-01-01T10:00:00.000Z",
                     is_from_me: false,
                     body: "dentist on tuesday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00Z",
+                    timestamp: "2024-01-02T10:00:00.000Z",
                     is_from_me: true,
                     body: "see you there",
                 },
@@ -48,7 +48,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00Z",
+                timestamp: "2024-02-01T10:00:00.000Z",
                 is_from_me: false,
                 body: "the dentist called again",
             }],
@@ -83,7 +83,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-03-01T10:00:00Z",
+                timestamp: "2024-03-01T10:00:00.000Z",
                 is_from_me: false,
                 body: "bob's dentist",
             }],
@@ -614,9 +614,9 @@ async fn an_edited_message_is_returned_with_its_earlier_versions_and_their_times
         edited["earlier_versions"],
         serde_json::json!([
             {"part_index": 0, "text": "Meet at the library",
-             "edited_at": "2020-01-06T11:10:00Z", "matched": false},
+             "edited_at": "2020-01-06T11:10:00.000Z", "matched": false},
             {"part_index": 0, "text": "Meet at the museum",
-             "edited_at": "2020-01-06T11:10:30Z", "matched": false}
+             "edited_at": "2020-01-06T11:10:30.000Z", "matched": false}
         ]),
         "{page}"
     );
@@ -1605,12 +1605,14 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
             .single()
             .unwrap()
             .with_timezone(&chrono::Utc)
-            .format("%Y-%m-%dT%H:%M:%SZ")
+            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
             .to_string()
     };
     let early_today = local(today, 0, 30);
     let late_yesterday = local(today.pred_opt().unwrap(), 23, 30);
-    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let now = chrono::Utc::now()
+        .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string();
     seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -1680,25 +1682,25 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00Z",
+                    timestamp: "2024-01-01T10:00:00.000Z",
                     is_from_me: false,
                     body: "dentist dentist dentist",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00Z",
+                    timestamp: "2024-01-02T10:00:00.000Z",
                     is_from_me: false,
                     body: "after work I will call the office of the dentist about next week",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-03T10:00:00Z",
+                    timestamp: "2024-01-03T10:00:00.000Z",
                     is_from_me: true,
                     body: "the dentist moved it",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-04T10:00:00Z",
+                    timestamp: "2024-01-04T10:00:00.000Z",
                     is_from_me: true,
                     body: "nothing to see",
                 },
@@ -1894,4 +1896,84 @@ async fn a_conversations_messages_take_no_relevance() {
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
+}
+
+/// An Apple Messages conversation file whose two messages are 300 ms apart
+/// in one second, the later one listed first, and whose earlier message has
+/// an earlier version written 125 ms before it was sent (#1096).
+fn apple_messages_sub_second_times() -> String {
+    at_current_schema_version(include_str!(
+        "../../tests/fixtures/apple-messages-sub-second-times.jsonl"
+    ))
+}
+
+/// A message time the source records to the millisecond is stored and
+/// returned to the millisecond, on the message and on its earlier version
+/// (#1096).
+#[tokio::test]
+async fn a_message_time_keeps_its_milliseconds_through_import_and_the_api() {
+    let (fixture, alice) = fixture_with_account().await;
+    let counts = import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "sub-second",
+        &apple_messages_sub_second_times(),
+        "imessage",
+    )
+    .await;
+    assert_eq!(counts.messages, 2);
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let first = message_by_guid(&page, "guid-first");
+    assert_eq!(first["timestamp"], "2020-01-06T11:10:00.250Z", "{page}");
+    assert_eq!(
+        first["earlier_versions"][0]["edited_at"], "2020-01-06T11:10:00.125Z",
+        "{page}"
+    );
+    assert_eq!(
+        message_by_guid(&page, "guid-300-ms-later")["timestamp"],
+        "2020-01-06T11:10:00.550Z",
+        "{page}"
+    );
+}
+
+/// Two messages 300 ms apart in one conversation are listed in the order of
+/// their times, though the file lists the later one first, on the messages
+/// route and on the conversation's own (#1096).
+#[tokio::test]
+async fn two_messages_300_ms_apart_are_ordered_by_their_times() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "sub-second",
+        &apple_messages_sub_second_times(),
+        "imessage",
+    )
+    .await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    assert_eq!(guids(&page), ["guid-first", "guid-300-ms-later"], "{page}");
+    let newest_first: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=-date", &alice.token).await;
+    assert_eq!(
+        guids(&newest_first),
+        ["guid-300-ms-later", "guid-first"],
+        "{newest_first}"
+    );
+
+    let conversation_id = &page["items"][0]["conversation"]["id"];
+    let thread: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations/{conversation_id}/messages"),
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        guids(&thread),
+        ["guid-first", "guid-300-ms-later"],
+        "{thread}"
+    );
 }

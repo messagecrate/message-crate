@@ -562,8 +562,8 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     for (body, ts) in [
-        ("hi", "2024-06-01T12:00:00Z"),
-        ("there", "2024-06-01T13:00:00Z"),
+        ("hi", "2024-06-01T12:00:00.000Z"),
+        ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
             timestamp: ts,
@@ -576,7 +576,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     }
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
     MessageRow {
-        timestamp: "2024-06-01T14:00:00Z",
+        timestamp: "2024-06-01T14:00:00.000Z",
         is_from_me: true,
         body: Some("back at you"),
         ..MessageRow::new(account, 1)
@@ -612,7 +612,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00Z",
+        timestamp: "2024-07-01T12:00:00.000Z",
         sender_handle_id: Some(peer),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -636,7 +636,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-08-01T12:00:00Z",
+        timestamp: "2024-08-01T12:00:00.000Z",
         body: Some("nope"),
         ..MessageRow::new(account, 9)
     }
@@ -665,11 +665,11 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     assert_eq!(detail.identities[0].group_messages, 1);
     assert_eq!(
         detail.identities[0].start_date.as_deref(),
-        Some("2024-06-01T12:00:00Z")
+        Some("2024-06-01T12:00:00.000Z")
     );
     assert_eq!(
         detail.identities[0].end_date.as_deref(),
-        Some("2024-07-01T12:00:00Z")
+        Some("2024-07-01T12:00:00.000Z")
     );
 }
 
@@ -719,8 +719,8 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     for (body, ts) in [
-        ("hi", "2024-06-01T12:00:00Z"),
-        ("there", "2024-06-01T13:00:00Z"),
+        ("hi", "2024-06-01T12:00:00.000Z"),
+        ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
             timestamp: ts,
@@ -758,7 +758,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00Z",
+        timestamp: "2024-07-01T12:00:00.000Z",
         sender_handle_id: Some(sam_handle),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -806,7 +806,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-05-01T09:00:00Z",
+        timestamp: "2024-05-01T09:00:00.000Z",
         sender_handle_id: Some(pat_handle),
         body: Some("hey"),
         ..MessageRow::new(account, 3)
@@ -827,11 +827,11 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     assert_eq!(summaries[0].group_message_count, 1);
     assert_eq!(
         summaries[0].start_date.as_deref(),
-        Some("2024-06-01T12:00:00Z")
+        Some("2024-06-01T12:00:00.000Z")
     );
     assert_eq!(
         summaries[0].end_date.as_deref(),
-        Some("2024-07-01T12:00:00Z")
+        Some("2024-07-01T12:00:00.000Z")
     );
 
     assert_eq!(summaries[1].id, pat_id);
@@ -842,11 +842,11 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     assert_eq!(summaries[1].group_message_count, 0);
     assert_eq!(
         summaries[1].start_date.as_deref(),
-        Some("2024-05-01T09:00:00Z")
+        Some("2024-05-01T09:00:00.000Z")
     );
     assert_eq!(
         summaries[1].end_date.as_deref(),
-        Some("2024-05-01T09:00:00Z")
+        Some("2024-05-01T09:00:00.000Z")
     );
 }
 

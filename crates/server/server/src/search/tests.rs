@@ -2617,6 +2617,43 @@ mod measure_words {
         );
     }
 
+    /// A day begins at its first millisecond: a message sent then is on that
+    /// day, and one sent a millisecond before is on the day before. The
+    /// stored time has milliseconds, so the day's start is compared in the
+    /// same text form (#1096).
+    #[tokio::test]
+    async fn a_day_begins_at_its_first_millisecond() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let c = f.ana_direct;
+        let h = Some(f.ana_handle);
+        let last_of_april = message(
+            &mut conn,
+            ACCOUNT,
+            msg(c, "2013-04-30T23:59:59.999Z", false, h, "a"),
+        )
+        .await;
+        let first_of_may = message(
+            &mut conn,
+            ACCOUNT,
+            msg(c, "2013-05-01T00:00:00.000Z", false, h, "b"),
+        )
+        .await;
+        let m = ListKind::Messages;
+        assert_eq!(
+            run(&mut conn, m, "date:2013-05-01").await,
+            vec![first_of_may]
+        );
+        assert_eq!(
+            run(&mut conn, m, "date:2013-04-30").await,
+            vec![last_of_april]
+        );
+        assert_eq!(
+            run(&mut conn, m, "date:>=2013-05-01 date:<2013-06").await,
+            vec![first_of_may]
+        );
+    }
+
     /// Year 9999 ends at the start of year 10000, which in UTC or west of it
     /// is an instant chrono writes `+10000-…`. As text that sorts before every
     /// stored timestamp, so the comparison went the wrong way (#1205).

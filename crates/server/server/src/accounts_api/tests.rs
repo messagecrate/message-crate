@@ -2069,13 +2069,13 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
     let two = [
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-01-01T00:00:00Z",
+            timestamp: "2020-01-01T00:00:00.000Z",
             is_from_me: true,
             body: "a",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-01-02T00:00:00Z",
+            timestamp: "2020-01-02T00:00:00.000Z",
             is_from_me: false,
             body: "b",
         },
@@ -2095,19 +2095,19 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
     let three = [
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-01T00:00:00Z",
+            timestamp: "2020-02-01T00:00:00.000Z",
             is_from_me: true,
             body: "c",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-02T00:00:00Z",
+            timestamp: "2020-02-02T00:00:00.000Z",
             is_from_me: false,
             body: "d",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-03T00:00:00Z",
+            timestamp: "2020-02-03T00:00:00.000Z",
             is_from_me: false,
             body: "e",
         },
@@ -2192,8 +2192,8 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
             {
                 "address": "+15555550100",
                 "service": "phone",
-                "start_date": "2020-01-01T00:00:00Z",
-                "end_date": "2020-02-02T00:00:00Z",
+                "start_date": "2020-01-01T00:00:00.000Z",
+                "end_date": "2020-02-02T00:00:00.000Z",
                 "conversations": 2,
                 "direct_messages": 2,
                 "group_messages": 2
@@ -2201,8 +2201,8 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
             {
                 "address": "alice@example.com",
                 "service": "email",
-                "start_date": "2020-02-03T00:00:00Z",
-                "end_date": "2020-02-03T00:00:00Z",
+                "start_date": "2020-02-03T00:00:00.000Z",
+                "end_date": "2020-02-03T00:00:00.000Z",
                 "conversations": 1,
                 "direct_messages": 0,
                 "group_messages": 1
@@ -2243,7 +2243,7 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00Z",
+                timestamp: "2020-01-01T00:00:00.000Z",
                 is_from_me: true,
                 body: "photos",
             }],

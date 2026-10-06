@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     -- The message's id from the export: Apple's own for Apple Messages, otherwise
     -- the exporter's MessageGuid. Never empty; the import refuses a message without one.
     guid TEXT NOT NULL CHECK (guid != ''),
-    -- The instant the message was sent, RFC 3339 in UTC with a Z suffix. Shown, searched
-    -- and filed by day and year in the account's time zone (accounts.time_zone).
+    -- The instant the message was sent, in the form messages.timestamp holds:
+    -- RFC 3339 in UTC to the millisecond (2015-03-12T18:04:22.250Z).
     timestamp TEXT NOT NULL,
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,

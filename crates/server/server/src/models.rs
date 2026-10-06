@@ -90,7 +90,9 @@ pub struct MessageRecord {
     /// The line the message is on in its file or batch, counted from 1 with
     /// blank lines included, so a refusal of one of its attachments names it.
     pub line: usize,
-    /// The instant the message was sent: RFC 3339 in UTC with a `Z` suffix.
+    /// The instant the message was sent, to the millisecond: RFC 3339 in UTC
+    /// with three fractional digits and a `Z` suffix
+    /// (`2015-03-12T18:04:22.250Z`).
     pub timestamp: String,
     /// True for messages sent by the account owner.
     pub is_from_me: bool,
@@ -136,8 +138,9 @@ pub struct EarlierVersionRecord {
     pub part_index: i64,
     /// The part's text in this version.
     pub text: String,
-    /// When this version was written, RFC 3339 in UTC with a `Z` suffix as
-    /// `MessageRecord::timestamp`; `None` when the source does not record it.
+    /// When this version was written, to the millisecond in the form
+    /// `MessageRecord::timestamp` takes; `None` when the source does not
+    /// record it.
     pub edited_at: Option<String>,
 }
 
@@ -336,8 +339,7 @@ fn message_from_ir(
     header_owner: Option<&str>,
     line: usize,
 ) -> Result<MessageRecord> {
-    let secs = msg.timestamp_unix_ms.div_euclid(1000);
-    let timestamp = format_utc_timestamp(secs).with_context(|| {
+    let timestamp = format_utc_timestamp(msg.timestamp_unix_ms).with_context(|| {
         format!(
             "unrepresentable timestamp_unix_ms {}",
             msg.timestamp_unix_ms
@@ -403,7 +405,7 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
     let edited_at = version
         .edited_at_unix_ms
         .map(|ms| {
-            format_utc_timestamp(ms.div_euclid(1000))
+            format_utc_timestamp(ms)
                 .with_context(|| format!("unrepresentable edited_at_unix_ms {ms}"))
         })
         .transpose()?;
@@ -499,14 +501,17 @@ fn tapback_from_reaction(reaction: &Reaction) -> TapbackRecord {
     }
 }
 
-/// The UTC RFC 3339 string (`Z` suffix) for a Unix timestamp, or `None` when
-/// it cannot be represented. The server stores the instant and nothing about
-/// where the phone was; the account's time zone turns it into a clock reading.
-fn format_utc_timestamp(secs: i64) -> Option<String> {
+/// The UTC RFC 3339 string for a Unix time in milliseconds, or `None` when it
+/// cannot be represented. It always has three fractional digits and a `Z`
+/// suffix (`2015-03-12T18:04:22.000Z` for a whole second), so every stored
+/// time has one form and sorts as text in time order. The server stores the
+/// instant and nothing about where the phone was; the account's time zone
+/// turns it into a clock reading.
+fn format_utc_timestamp(ms: i64) -> Option<String> {
     Some(
-        Utc.timestamp_opt(secs, 0)
+        Utc.timestamp_millis_opt(ms)
             .single()?
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
     )
 }
 
