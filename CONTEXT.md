@@ -69,6 +69,8 @@ usually holds no text for it, so it is shown as an empty muted bubble that
 reads "Unsent". It is kept apart from Deleted in the source app, because the
 sender took the message back for everyone rather than a person deleting
 their own copy. `unsent:yes` or `unsent:no` narrows a search to or away from it.
+Search finds it by what it shows, so a word of the text it hides does not
+find it, even when an earlier backup held that text.
 _Avoid_: Retracted, Recalled, Deleted
 
 **Earlier version**:

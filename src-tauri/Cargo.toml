@@ -47,6 +47,16 @@ message-crate-serve-protocol = { path = "../crates/libs/serve-protocol" }
 # renamed onto the file the person chose (`commands::download`).
 tempfile = "3"
 
+# `killpg`, to kill the server the app started with every process the server
+# started (`local_server::process_tree`).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The Job Object the server the app started runs in, so its processes end
+# with it (`local_server::process_tree`).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+
 [dev-dependencies]
 # `testutil` builds the sample conversation the Export Directory tests write.
 message-ir = { path = "../crates/libs/ir", features = ["testutil"] }
