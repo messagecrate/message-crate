@@ -39,6 +39,23 @@ released versions carry their date on the heading.
   copy hidden as a duplicate counts for the copy shown. The web app shows
   no reply count, so nothing changes on screen.
 
+### Fixes
+
+#### Importing
+
+- 2026-10-05: **A WhatsApp import from Android that fills the disk holding
+  the Scratch Directory stops with the free-space sentence.** The encrypted
+  WhatsApp backup is decrypted into the Scratch Directory, and its decrypted
+  size isn't known until it is written, so no check can measure it first.
+  When that disk filled, the run stopped with `wtsexporter`'s own error. It
+  now stops with "Not enough space on the disk that holds the Scratch
+  Directory", the sentence every other free-space check gives, whichever
+  language Windows is set to and whether the disk was full before
+  `wtsexporter` started or filled while it ran. The part already written is
+  deleted with the rest of the run's working files, as it was before. The
+  WhatsApp guide says the decrypted database can run to several GB and where
+  it is written.
+
 ### Upgrading
 
 - The database format changed. **An existing Message Crate is rebuilt empty
