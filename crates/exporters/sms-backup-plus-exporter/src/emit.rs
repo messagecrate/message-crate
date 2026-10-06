@@ -11,8 +11,8 @@ use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat,
-    RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, LogSink,
+    OutputFormat, RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -680,14 +680,14 @@ impl<'a> EmlIngest<'a> {
             ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
             ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(
-                "file",
+                ItemKind::File,
                 path,
                 &format!("could not be read and was left out: {reason}"),
             ),
             ParsedEmlKind::ParseError { path, reason } => {
                 self.report.bump(SKIPPED_PARSE_ERROR, 1);
                 self.report.error(
-                    "file",
+                    ItemKind::File,
                     path,
                     &format!("could not be read as a mail and was left out: {reason}"),
                 );

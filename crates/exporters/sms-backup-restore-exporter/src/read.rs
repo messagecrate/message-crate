@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    CancelFlag, Counter, DUPLICATES_DROPPED, LogSink, MediaConfig, ProgressSink,
+    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, discover_files, document_messages, error_and_note_lines, is_cancelled, item_line,
+    check_cancel, discover_files, document_messages, import_error_lines, is_cancelled, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -109,7 +109,7 @@ impl ReadError {
 
     /// What happened to the file, worded to follow it, in the words every
     /// run gives it.
-    pub fn what(&self) -> String {
+    pub fn what_happened(&self) -> String {
         format!("could not be read in full: {}", self.reason)
     }
 }
@@ -118,7 +118,11 @@ impl ReadError {
 /// log gives it under the Import Errors heading.
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&item_line("file", &self.file, &self.what()))
+        f.write_str(&item_line(
+            ItemKind::File,
+            &self.file,
+            &self.what_happened(),
+        ))
     }
 }
 
@@ -168,12 +172,11 @@ impl ReadReport {
     /// line has the words an import's summary gives the same count or
     /// error.
     pub fn log_lines(&self) -> Vec<String> {
-        let no_notes: [String; 0] = [];
         self.counts()
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .map(|(counter, count)| counter.line(count))
-            .chain(error_and_note_lines(&self.errors, &no_notes))
+            .chain(import_error_lines(&self.errors))
             .collect()
     }
 }

@@ -5,8 +5,8 @@ use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, DUPLICATES_DROPPED, ExportReport, ExportTransforms, IssueSink, OutputFormat,
-    SKIPPED_INVALID_DATE, unreadable_parts_note,
+    CancelFlag, DUPLICATES_DROPPED, ExportReport, ExportTransforms, IssueSink, ItemKind,
+    OutputFormat, SKIPPED_INVALID_DATE, unreadable_parts_note,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
@@ -28,7 +28,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         ..ExportReport::with_issues(issues.cloned())
     };
     for error in &report.errors {
-        out.error("file", &error.file, &error.what());
+        out.error(ItemKind::File, &error.file, &error.what_happened());
     }
     // The invalid dates and the repeated copies have fields of their own;
     // every other count goes to `extra` in the order Convert's log gives it.

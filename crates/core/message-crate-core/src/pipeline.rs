@@ -7,7 +7,7 @@
 use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
-    DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
+    DUPLICATES_DROPPED, ItemKind, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
     count_of_files, error_and_note_lines, item_line, item_reason,
 };
 use anyhow::{Context, bail};
@@ -140,8 +140,8 @@ pub fn unreadable_parts_note(n: u64) -> String {
 }
 
 /// What an exporter says happened to a CSV it cannot read, before the
-/// parser's own words, as the `what` of an [`ExportReport::error`] whose
-/// noun is `CSV`.
+/// parser's own words, as the `what_happened` of an [`ExportReport::error`]
+/// of [`ItemKind::Csv`].
 pub const CSV_NOT_READ: &str = "could not be read and was left out";
 
 /// The [`RunIssue::step`] of a row an exporter records while it reads the
@@ -243,24 +243,24 @@ impl ExportReport {
         }
     }
 
-    /// Record that the run could not read `item`, a `noun` such as `file`,
-    /// and `what` happened to it, worded to follow the item: its
+    /// Record that the run could not read `item`, of `kind`, and what
+    /// happened to it, `what_happened` worded to follow the item: its
     /// [`item_line`] in `errors`, and an Import Error with its
     /// [`item_reason`] sent to `issues` at once.
-    pub fn error(&mut self, noun: &str, item: impl Into<String>, what: &str) {
+    pub fn error(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
         let item = item.into();
-        self.errors.push(item_line(noun, &item, what));
-        self.send("error", item, item_reason(noun, what));
+        self.errors.push(item_line(kind, &item, what_happened));
+        self.send("error", item, item_reason(kind, what_happened));
     }
 
-    /// Record something the run did with `item`, a `noun` such as
-    /// `picture`, that is worth knowing but did not fail, `what` worded to
-    /// follow the item: its [`item_line`] in `notes`, and a note with its
-    /// [`item_reason`] sent to `issues` at once.
-    pub fn note(&mut self, noun: &str, item: impl Into<String>, what: &str) {
+    /// Record something the run did with `item`, of `kind`, that is worth
+    /// knowing but did not fail, `what_happened` worded to follow the item:
+    /// its [`item_line`] in `notes`, and a note with its [`item_reason`]
+    /// sent to `issues` at once.
+    pub fn note(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
         let item = item.into();
-        self.notes.push(item_line(noun, &item, what));
-        self.send(NOTE, item, item_reason(noun, what));
+        self.notes.push(item_line(kind, &item, what_happened));
+        self.send(NOTE, item, item_reason(kind, what_happened));
     }
 
     /// Count `by` under `counter` for one item the run kept with a caveat,
@@ -513,9 +513,9 @@ mod tests {
         let mut report = ExportReport::with_issues(Some(IssueSink::new(move |issue| {
             sink.lock().unwrap().push(issue);
         })));
-        report.note("picture", "a.jpg", "is named by 2 rows");
+        report.note(ItemKind::Picture, "a.jpg", "is named by 2 rows");
         report.error(
-            "CSV",
+            ItemKind::Csv,
             "b.csv",
             "could not be read and was left out: cut off",
         );
