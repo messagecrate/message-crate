@@ -584,15 +584,19 @@ function buildFixtureLines(): string[] {
 
   // A Messages search with words only Messages takes, as the Conversations
   // list sends it once `dropTokens` leaves them out (#1561): what is left
-  // must still parse there. The Messages list sends the same search as typed,
-  // so it must parse there whole: `deleted:` and `unsent:` are one word for
-  // each mark (#1935).
+  // must still parse there. The searches with `deleted:` and `unsent:`, one
+  // word for each mark (#1935), also go to the Messages list as typed, so the
+  // server's fixture test parses both words there.
   const messagesOnly = new Set(["from", "to", "in", "attachments", "deleted", "unsent"]);
-  for (const typed of [
+  const markSearches = [
     "deleted:yes dinner",
     "dinner -unsent:yes",
     "(deleted:yes or unsent:yes) dinner",
     "deleted:no unsent:no or dinner",
+  ];
+  for (const typed of markSearches) addLines(lines, typed, ["messages"]);
+  for (const typed of [
+    ...markSearches,
     "from:me dinner",
     "dinner -to:me",
     "from:me or dinner",
@@ -604,7 +608,6 @@ function buildFixtureLines(): string[] {
   ]) {
     const marked = fieldTokens(typed).filter((t) => messagesOnly.has(t.word));
     addLines(lines, dropTokens(typed, marked), ["conversations"]);
-    addLines(lines, typed, ["messages"]);
   }
 
   return [...lines].sort();
