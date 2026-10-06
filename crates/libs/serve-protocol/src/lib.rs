@@ -38,4 +38,9 @@ pub const EXIT_WITH_PARENT_ARG: &str = "exit-with-parent";
 /// whose parent ends gets a new parent, and nothing tells it so, which is why
 /// the server asks. On Windows the server waits on the parent's process
 /// handle, which is signalled the moment the parent ends.
+///
+/// The server reads it, and its tests hold it to it. It is part of the
+/// interface because it is how long the server of a crashed app may still
+/// answer: an app started again within it finds that server, uses it, and
+/// starts its own once its next check of the address finds it gone.
 pub const PARENT_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);

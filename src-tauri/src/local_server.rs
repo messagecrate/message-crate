@@ -31,8 +31,12 @@
 //! app starts it with `--exit-with-parent` and this app's process id, and the
 //! server stops once that process is gone, the way it stops on Ctrl-C or
 //! SIGTERM: ffmpeg stopped and the work in flight finished (#1934). It checks
-//! every few seconds on Unix and waits on the app's process handle on
-//! Windows.
+//! every two seconds on Unix (`PARENT_CHECK_INTERVAL`) and waits on the app's
+//! process handle on Windows. An app started again before that server is gone
+//! finds it answering and uses it. The screens ask for the state every three
+//! seconds while it is ready (`READY_POLL_MS` in
+//! `web/src/lib/useLocalServer.ts`), and the check that finds the address
+//! free starts the app's own.
 //!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
