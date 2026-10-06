@@ -516,6 +516,25 @@ mod with_a_script {
     /// open for writing, and until it runs its own program, running the
     /// script fails with "Text file busy". So the script is run once with
     /// `ready`, which only exits, until that works.
+    fn script(dir: &Path, body: &str) -> PathBuf {
+        let path = dir.join("fake-server");
+        std::fs::write(
+            &path,
+            format!("#!/bin/sh\n[ \"$1\" = ready ] && exit 0\n{body}\n"),
+        )
+        .unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Command::new(&path).arg("ready").status().is_err() {
+            assert!(
+                Instant::now() < deadline,
+                "the script never became runnable"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        path
+    }
+
     /// The process id a script wrote to `started`, once it is there.
     fn started_process(started: &Path) -> libc::pid_t {
         let deadline = Instant::now() + Duration::from_secs(20);
@@ -536,7 +555,7 @@ mod with_a_script {
     /// process reaps nothing never does, so a zombie counts as ended. One
     /// that is still running at the end is killed here, so the test leaves
     /// nothing running.
-    fn ends(pid: libc::pid_t) -> bool {
+    fn ends_or_is_killed(pid: libc::pid_t) -> bool {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             // SAFETY: signal 0 checks the process exists and sends nothing.
@@ -563,25 +582,6 @@ mod with_a_script {
             stat.rsplit_once(')')
                 .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z'))
         })
-    }
-
-    fn script(dir: &Path, body: &str) -> PathBuf {
-        let path = dir.join("fake-server");
-        std::fs::write(
-            &path,
-            format!("#!/bin/sh\n[ \"$1\" = ready ] && exit 0\n{body}\n"),
-        )
-        .unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while Command::new(&path).arg("ready").status().is_err() {
-            assert!(
-                Instant::now() < deadline,
-                "the script never became runnable"
-            );
-            thread::sleep(Duration::from_millis(20));
-        }
-        path
     }
 
     #[test]
@@ -682,7 +682,10 @@ mod with_a_script {
 
         server.stop();
 
-        assert!(ends(pid), "the server's own process outlived the server");
+        assert!(
+            ends_or_is_killed(pid),
+            "the server's own process outlived the server"
+        );
     }
 
     #[test]
@@ -705,7 +708,7 @@ mod with_a_script {
         let pid = started_process(&started);
 
         assert!(
-            ends(pid),
+            ends_or_is_killed(pid),
             "the server's own process outlived the server's exit"
         );
         assert!(matches!(settled(&server), Status::Failed { .. }));
