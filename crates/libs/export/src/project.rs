@@ -27,7 +27,7 @@ pub fn build_document(
     seed: &Message,
     messages: Vec<IrMessage>,
 ) -> ConversationDocument {
-    // The server says whether the conversation is a group; the pull does
+    // The server says whether the conversation is a group; the Export Run does
     // not read `conversation_type` to decide it again. It reads it only to
     // tell a conversation of orphaned messages from a one-to-one
     // conversation, as the API type says: written back as one-to-one, its
@@ -370,7 +370,7 @@ mod tests {
     /// builds the `message_crate_api_types` shapes in Rust, which is what let
     /// three of them drift away from what the server sends without the
     /// compiler or the suite noticing: `handle: String` rejected `"handle": null` and aborted every
-    /// pull of a conversation holding an address-less participant, and
+    /// Export Run of a conversation holding an address-less participant, and
     /// `conversation.service` read a field the server has never sent, so every
     /// pulled message came out `IrService::Unknown`.
     const EXPORT_PAGE_JSON: &str = r#"{
@@ -520,7 +520,7 @@ mod tests {
         );
     }
 
-    /// The message a reply quotes comes through the pull into the message's
+    /// The message a reply quotes comes through the Export Run into the message's
     /// `reply_to`, and the stored reactions into the message's `reactions`, each
     /// under the person who reacted.
     #[test]

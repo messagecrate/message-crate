@@ -108,7 +108,7 @@ The disk that holds the Export Directory needs room for a second copy of the exp
 A directory chosen under **Save to** gets the result instead, and the export's directory in the Export Directory holds only the JSON Lines copy while the conversion runs.
 
 A JSON Lines export writes straight into the chosen directory.
-It also keeps a file named `.message-crate-pull-state.jsonl` there, which records the attachments already fetched from each server and account.
+It also keeps a file named `.message-crate-export-state.jsonl` there, which records the attachments already fetched from each server and account.
 A later JSON Lines export into the same directory, from the same server and account, skips those attachments.
 An export into its own directory in the Export Directory deletes that file when it finishes, since nothing exports into that directory again.
 

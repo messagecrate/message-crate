@@ -2,7 +2,7 @@
 //! conversation, attachments, tapbacks and earlier versions, joined and
 //! grouped.
 //!
-//! The row shapes themselves live in `message-crate-api-types`, where `message-crate-pull`
+//! The row shapes themselves live in `message-crate-api-types`, where `message-crate-export`
 //! reads them from the same definition rather than a hand-written mirror.
 //!
 //! `load_messages` takes an already-compiled `WHERE` fragment and its bound

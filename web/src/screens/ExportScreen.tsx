@@ -17,14 +17,14 @@ import {
   EXPORT_FORMATS,
   type ExportFormat,
   type ExportQueryList,
+  invokeExport,
   invokeFormat,
-  invokePull,
 } from "../lib/tauri";
 
 const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
 
 /**
- * What an export covers. `everything` sends a blank query, which message-crate-pull
+ * What an export covers. `everything` sends a blank query, which message-crate-export
  * reads as the whole account; `search` sends the text of the query box.
  */
 type ExportScope = "everything" | "search";
@@ -64,7 +64,7 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Desktop export: `message-crate-pull` downloads the account's conversations as
+ * Desktop export: `message-crate-export` downloads the account's conversations as
  * JSON Lines, and for any other format `message-reexport` rewrites them into
  * the chosen format.
  *
@@ -154,7 +154,7 @@ export default function ExportScreen() {
             const pullInto = (outDir: string) =>
               run(
                 exportCancel.guard(() =>
-                  invokePull({
+                  invokeExport({
                     base_url: getBaseUrl(),
                     token,
                     out_dir: outDir,

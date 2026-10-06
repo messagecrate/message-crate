@@ -251,7 +251,7 @@ const EXERCISED: Record<string, () => unknown> = {
   // Exports
   getExport: () => serverApi.getExport(2),
   createExport: () =>
-    serverApi.createExport({ scope: { kind: "everything" }, tool: "message-crate-pull" }),
+    serverApi.createExport({ scope: { kind: "everything" }, tool: "message-crate-export" }),
   completeExport: () => serverApi.completeExport(2),
   cancelExport: () => serverApi.cancelExport(2),
 

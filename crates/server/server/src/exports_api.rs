@@ -42,7 +42,7 @@ pub(crate) struct OwnerExportRun {
     id: i64,
     /// The form of the scope the run asked for.
     scope_kind: ExportScopeKind,
-    /// Exporting tool, e.g. `message-crate-pull`, when the client named one.
+    /// Exporting tool, e.g. `message-crate-export`, when the client named one.
     tool: Option<String>,
     /// Lifecycle status.
     status: ExportStatus,
@@ -228,7 +228,7 @@ pub async fn scope_filter(
 pub(crate) struct CreateExportRequest {
     /// What to export.
     pub(crate) scope: ExportScope,
-    /// Client/tool name recorded on the run, e.g. `message-crate-pull`.
+    /// Client/tool name recorded on the run, e.g. `message-crate-export`.
     #[serde(default)]
     pub(crate) tool: Option<String>,
 }

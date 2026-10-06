@@ -30,7 +30,7 @@ fn part_path(dest: &Path, sha256: &str) -> PathBuf {
 /// file ([`part_path`]), with [`message_ir::write_atomic_via`]: `write` fills
 /// the temporary file, which is synced and renamed onto `dest` only when
 /// `write` succeeds, and removed when it fails. A synced rename matters,
-/// because the pull journal records the Asset next, and a later Export Run
+/// because the export journal records the Asset next, and a later Export Run
 /// skips an Asset the journal names whose file exists.
 ///
 /// # Errors

@@ -260,7 +260,7 @@ impl ExportDirectories {
 
     /// Finish the directory `dir` after its Export or Convert succeeded: move
     /// the converted files up out of [`CONVERTING`], delete the JSON Lines it
-    /// pulled and the pull's journal, and delete the directory when nothing is
+    /// pulled and the export journal, and delete the directory when nothing is
     /// left in it because the result went elsewhere. Returns the directory
     /// when the result is in it.
     ///
@@ -301,7 +301,7 @@ impl ExportDirectories {
         }
         // The journal lets a later pull into the same directory skip what it
         // downloaded. Nothing pulls into this directory again.
-        let journal = dir.join(message_crate_pull::PULL_JOURNAL_NAME);
+        let journal = dir.join(message_crate_export::EXPORT_JOURNAL_NAME);
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;
         }

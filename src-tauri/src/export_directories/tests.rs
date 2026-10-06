@@ -33,7 +33,7 @@ fn pull_into(dir: &Path) {
     sink.write_document(message_ir::testutil::sample_document("hello export"))
         .unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
-    std::fs::write(dir.join(message_crate_pull::PULL_JOURNAL_NAME), "{}\n").unwrap();
+    std::fs::write(dir.join(message_crate_export::EXPORT_JOURNAL_NAME), "{}\n").unwrap();
 }
 
 /// Convert `input` into `output` as CSV, as Export's format step does.
@@ -86,7 +86,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
     assert!(
         !left.iter().any(|name| name == PULLED
             || name == CONVERTING
-            || name == message_crate_pull::PULL_JOURNAL_NAME
+            || name == message_crate_export::EXPORT_JOURNAL_NAME
             || name.ends_with(".jsonl")),
         "only the result is left: {left:?}"
     );
@@ -112,7 +112,7 @@ fn a_json_lines_export_keeps_its_files_and_drops_the_pull_journal() {
     assert!(
         !left
             .iter()
-            .any(|name| name == message_crate_pull::PULL_JOURNAL_NAME),
+            .any(|name| name == message_crate_export::EXPORT_JOURNAL_NAME),
         "{left:?}"
     );
 }

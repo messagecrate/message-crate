@@ -1,4 +1,4 @@
-//! Mock server tests for one pull: login, the Export Run it records, two
+//! Mock server tests for one Export: login, the Export Run it records, two
 //! pages of messages, Asset fetches, the journal a second run reads, and
 //! the progress a caller sees.
 //!
@@ -7,7 +7,7 @@
 //! `POST /v1/exports/{id}/complete` or `/cancel`, and `GET /v1/assets/{sha256}`
 //! — with the JSON the server serializes (`message-crate-api-types`,
 //! `docs/src/assets/openapi.json`). Every request derives from
-//! `PullConfig::base_url`, so the mock's address is the only seam.
+//! `ExportConfig::base_url`, so the mock's address is the only seam.
 
 use std::collections::HashSet;
 use std::fs;
@@ -16,8 +16,8 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
-use message_crate_pull::{
-    ExportQueryList, ProgressEvent, PullConfig, PullJournalState, PullReport, journal, run,
+use message_crate_export::{
+    ExportConfig, ExportJournalState, ExportQueryList, ExportReport, ProgressEvent, journal, run,
 };
 use message_ir::{Deletion, EarlierVersion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
@@ -33,7 +33,7 @@ const PHOTO_SHA: &str = "be04c407026cf352d54a051993ef2fec8153cc554f8ff7c697b225c
 const MENU_BYTES: &[u8] = b"%PDF-1.4 menu";
 /// 9 bytes.
 const PHOTO_BYTES: &[u8] = b"PNG photo";
-/// The file a pull of `+15555550101` from `sms-backup-restore` writes.
+/// The file an Export Run of `+15555550101` from `sms-backup-restore` writes.
 const CONVERSATION_FILE: &str = "+15555550101__sms-backup-restore.jsonl";
 /// The id the mock server gives every run it records.
 const EXPORT_ID: i64 = 7;
@@ -49,7 +49,7 @@ fn menu_attachment(path: Value) -> Value {
     })
 }
 
-/// The photo attachment: no `path`, so the pull files it under its fingerprint.
+/// The photo attachment: no `path`, so the Export Run files it under its fingerprint.
 fn photo_attachment() -> Value {
     json!({
         "path": null,
@@ -108,7 +108,7 @@ fn export_run(scope: Value, status: &str) -> Value {
     json!({
         "id": EXPORT_ID,
         "scope": scope,
-        "tool": "message-crate-pull",
+        "tool": "message-crate-export",
         "status": status,
         "started_at": "2026-09-08T12:00:00Z",
         "finished_at": if status == "running" { Value::Null } else { json!("2026-09-08T12:00:09Z") },
@@ -129,9 +129,9 @@ fn mock_auth(server: &MockServer) -> httpmock::Mock<'_> {
     })
 }
 
-/// `POST /v1/exports` for exactly `scope`, recorded as `message-crate-pull`'s run.
+/// `POST /v1/exports` for exactly `scope`, recorded as `message-crate-export`'s run.
 fn mock_create<'a>(server: &'a MockServer, scope: Value) -> httpmock::Mock<'a> {
-    let body = json!({ "scope": scope.clone(), "tool": "message-crate-pull" });
+    let body = json!({ "scope": scope.clone(), "tool": "message-crate-export" });
     server.mock(move |when, then| {
         when.method(POST)
             .path("/v1/exports")
@@ -245,10 +245,10 @@ fn part_files_in(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A pull of every message into `out_dir`: two messages a page, one fetch
+/// An Export Run of every message into `out_dir`: two messages a page, one fetch
 /// worker so the counts in the log are fixed.
-fn config(out_dir: &Path, base_url: String) -> PullConfig {
-    PullConfig {
+fn config(out_dir: &Path, base_url: String) -> ExportConfig {
+    ExportConfig {
         out_dir: out_dir.to_path_buf(),
         base_url,
         token: "mc_test".into(),
@@ -264,7 +264,7 @@ fn config(out_dir: &Path, base_url: String) -> PullConfig {
 /// The journal a run against `server` wrote in `out_dir` for `alice`. The
 /// run writes every line itself, so the test fails on any line
 /// `journal::load` could not read.
-fn load_journal(out_dir: &Path, server: &MockServer) -> PullJournalState {
+fn load_journal(out_dir: &Path, server: &MockServer) -> ExportJournalState {
     let mut unreadable = Vec::new();
     let state = journal::load(
         &journal::journal_path(out_dir),
@@ -277,8 +277,8 @@ fn load_journal(out_dir: &Path, server: &MockServer) -> PullJournalState {
 }
 
 /// The report `run` returns for the three-message fixture.
-fn report_for(out_dir: &Path, fetched: u64, kept: u64) -> PullReport {
-    PullReport {
+fn report_for(out_dir: &Path, fetched: u64, kept: u64) -> ExportReport {
+    ExportReport {
         account: 1,
         export_id: EXPORT_ID,
         query: String::new(),
@@ -292,7 +292,7 @@ fn report_for(out_dir: &Path, fetched: u64, kept: u64) -> PullReport {
 }
 
 #[test]
-fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_across_two_pages() {
+fn an_export_records_one_run_and_writes_the_conversation_and_every_asset_once_across_two_pages() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
@@ -555,7 +555,7 @@ fn a_second_run_over_the_same_directory_fetches_nothing_it_already_has() {
     assert_eq!(report, report_for(&out, 0, 2));
     assert_eq!(menu.calls(), 1);
     assert_eq!(photo.calls(), 1);
-    // Every pull is its own run, whether or not it fetches anything.
+    // Every Export is its own Export Run, whether or not it fetches anything.
     assert_eq!(create.calls(), 2);
     assert_eq!(complete.calls(), 2);
     assert_eq!(
@@ -571,7 +571,7 @@ fn a_second_run_over_the_same_directory_fetches_nothing_it_already_has() {
     );
 }
 
-/// A line of the pull-state file the Export cannot read is named in the
+/// A line of the export-state file the Export cannot read is named in the
 /// Export's log, by its line in the file, and costs no fetch: the Assets it
 /// might have recorded are on disk and are kept (#1910).
 #[test]
@@ -647,7 +647,7 @@ fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
 }
 
 /// A run that stopped after writing its Assets but before recording them in
-/// the pull-state file leaves files the next run keeps without fetching. The
+/// the export-state file leaves files the next run keeps without fetching. The
 /// "Fetching" line counts each of them as already on disk, as the fetch does,
 /// so it agrees with the "Fetched" line after it, and the "Fetched" line
 /// counts only the bytes this run fetched.
@@ -694,8 +694,8 @@ fn a_file_on_disk_the_journal_does_not_list_is_kept_and_counted_as_on_disk() {
 }
 
 /// With every Asset already on disk, a run logs no "Fetching" or "Fetched"
-/// line whether or not the pull-state file lists the Assets, because what is
-/// on disk, not the pull-state file, decides what is fetched.
+/// line whether or not the export-state file lists the Assets, because what is
+/// on disk, not the export-state file, decides what is fetched.
 #[test]
 fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() {
     let server = MockServer::start();
@@ -742,7 +742,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     let (first, _second) = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
     let out = dir.path().join("pulled");
-    let cfg = PullConfig {
+    let cfg = ExportConfig {
         cancel: Some(Arc::new(AtomicBool::new(true))),
         ..config(&out, server.base_url())
     };
@@ -827,7 +827,7 @@ fn two_groups_with_one_title_are_both_written() {
         .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            // The pull's own journal is a hidden JSONL file beside them.
+            // The Export Run's own journal is a hidden JSONL file beside them.
             let name = e.file_name().to_string_lossy().to_string();
             name.ends_with(".jsonl") && !name.starts_with('.')
         })
@@ -856,7 +856,7 @@ fn skipping_attachments_writes_messages_without_files_or_fetches() {
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
     let out = dir.path().join("pulled");
-    let cfg = PullConfig {
+    let cfg = ExportConfig {
         skip_attachments: true,
         ..config(&out, server.base_url())
     };
@@ -886,7 +886,7 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
     let out = dir.path().join("pulled");
-    let cfg = PullConfig {
+    let cfg = ExportConfig {
         query: " from:sam ".into(),
         ..config(&out, server.base_url())
     };
@@ -944,7 +944,7 @@ fn a_query_for_the_conversations_list_names_that_list_in_the_scope() {
     let _pages = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
     let out = dir.path().join("pulled");
-    let cfg = PullConfig {
+    let cfg = ExportConfig {
         query: "messages:>100".into(),
         list: ExportQueryList::Conversations,
         skip_attachments: true,
@@ -1073,7 +1073,7 @@ fn a_scope_the_server_refuses_fails_the_run_with_the_servers_sentence() {
     let (first, _second) = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
     let out = dir.path().join("pulled");
-    let cfg = PullConfig {
+    let cfg = ExportConfig {
         query: "wibble:yes".into(),
         ..config(&out, server.base_url())
     };
@@ -1134,11 +1134,11 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
 fn a_blank_token_or_output_directory_is_refused_before_login() {
     let dir = tempdir().unwrap();
     let base_url = "http://127.0.0.1:1".to_string();
-    let blank_token = PullConfig {
+    let blank_token = ExportConfig {
         token: "  ".into(),
         ..config(dir.path(), base_url.clone())
     };
-    let blank_out_dir = PullConfig {
+    let blank_out_dir = ExportConfig {
         out_dir: Path::new("").to_path_buf(),
         ..config(dir.path(), base_url)
     };
@@ -1176,9 +1176,9 @@ fn a_refused_session_says_to_log_in_again() {
 
 /// Staging names a file by date and fingerprint, so one menu sent on two days
 /// has two paths on the server. The menu is fetched once, and every path a
-/// message names exists after the pull holding the menu's bytes.
+/// message names exists after the Export Run holding the menu's bytes.
 #[test]
-fn every_path_a_message_names_exists_after_a_pull() {
+fn every_path_a_message_names_exists_after_an_export() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (_create, _complete) = mock_run(&server);
@@ -1216,7 +1216,7 @@ fn every_path_a_message_names_exists_after_a_pull() {
         assert_eq!(
             fs::read(out.join(rel)).ok().as_deref(),
             Some(MENU_BYTES),
-            "message {} names {rel}, which the pull never wrote",
+            "message {} names {rel}, which the Export Run never wrote",
             msg.guid
         );
     }

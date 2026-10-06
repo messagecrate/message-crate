@@ -23,7 +23,7 @@ flowchart LR
 
 ## How chats come back out
 
-Export copies chats from a running server into a new directory of the same chat files. In the desktop app this is the **Export** screen, which uses the `message-crate-pull` library.
+Export copies chats from a running server into a new directory of the same chat files. In the desktop app this is the **Export** screen, which uses the `message-crate-export` library.
 
 ```mermaid
 flowchart LR
@@ -75,5 +75,5 @@ These do not read a phone backup. They load or save the chat-file directory, or 
 | Library | What it does |
 |---------|----------------|
 | `message-crate-push` | Loads a chat-file directory into a running server. Used by **Import**. |
-| `message-crate-pull` | Writes a chat-file directory from a running server. Used by **Export**. |
+| `message-crate-export` | Writes a chat-file directory from a running server. Used by **Export**. |
 | `message-reexport` | Turns an existing Message Crate export directory into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |

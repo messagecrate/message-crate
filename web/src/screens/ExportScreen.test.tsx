@@ -8,7 +8,7 @@ import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
 
-const invokePull = vi.hoisted(() => vi.fn());
+const invokeExport = vi.hoisted(() => vi.fn());
 const invokeFormat = vi.hoisted(() => vi.fn());
 const invokeFinishExportDir = vi.hoisted(() => vi.fn());
 const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
@@ -24,7 +24,7 @@ vi.mock("../lib/tauri", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/tauri")>();
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
-    invokePull: (...args: unknown[]) => invokePull(...args),
+    invokeExport: (...args: unknown[]) => invokeExport(...args),
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
     invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
     invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
@@ -111,10 +111,10 @@ describe("ExportScreen", () => {
   it("pulls straight into the chosen directory for JSON Lines", async () => {
     await exportTo("/home/demo/out");
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // Everything is the scope the screen opens in without a query, and it
-    // sends a blank query, which message-crate-pull reads as the whole account.
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
+    // sends a blank query, which message-crate-export reads as the whole account.
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
     // JSONL is what pull already writes, so there is nothing to convert. The
     // export's own directory is finished, which deletes it when it is empty.
     expect(invokeFormat).not.toHaveBeenCalled();
@@ -128,9 +128,9 @@ describe("ExportScreen", () => {
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl", "");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
     expect(await screen.findByText(/Export complete/)).toHaveTextContent(
       `Export complete. JSON Lines (.jsonl) saved to ${EXPORT_DIR.dir}.`,
@@ -146,7 +146,7 @@ describe("ExportScreen", () => {
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.pulled });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.pulled });
     // The conversion may not write into the directory that holds its input,
     // so it writes beside it and the finish moves the result up.
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({
@@ -164,7 +164,7 @@ describe("ExportScreen", () => {
     await exportAs("/home/demo/out", "CSV (.csv)");
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: pulled });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ out_dir: pulled });
     expect(invokeFormat.mock.calls[0][0]).toEqual({
       input_dir: pulled,
       output_dir: "/home/demo/out",
@@ -176,7 +176,7 @@ describe("ExportScreen", () => {
 
   it("hands the conversion the time the Export Run started, before the pull", async () => {
     let pulled = 0;
-    invokePull.mockImplementation(async () => {
+    invokeExport.mockImplementation(async () => {
       pulled = Date.now();
     });
     const before = Date.now();
@@ -198,7 +198,7 @@ describe("ExportScreen", () => {
       await screen.findByText("/home/demo holds the Export Directory, where the export works."),
     ).toBeTruthy();
     expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "/home/demo");
-    expect(invokePull).not.toHaveBeenCalled();
+    expect(invokeExport).not.toHaveBeenCalled();
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
@@ -293,7 +293,7 @@ describe("ExportScreen", () => {
 
     // The pull has ended and the format step has not started.
     await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
-    expect(invokePull).toHaveBeenCalledTimes(1);
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeFormat).not.toHaveBeenCalled();
     expect(currentDesktopJob()).toBe("Export");
     expect(convert).toBeDisabled();
@@ -344,7 +344,7 @@ describe("ExportScreen", () => {
     releasePull();
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokePull).toHaveBeenCalledTimes(1);
+    expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeCreateExportDir).toHaveBeenCalledTimes(1);
   });
 
@@ -368,10 +368,10 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // A search typed here, with no hand-off, is for the Messages list.
     expect(screen.getByRole("button", { name: /Search in/ })).toHaveTextContent("Messages");
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "in:#19,#22", list: "messages" });
   });
 
   it("opens in Search with the query it was given, and sends it", async () => {
@@ -391,9 +391,9 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
     // Sent as a Messages query, the server would refuse `messages:` (#959).
-    expect(invokePull.mock.calls[0][0]).toMatchObject({
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({
       query: "messages:>100 tag:Work",
       list: "conversations",
     });
@@ -409,12 +409,12 @@ describe("ExportScreen", () => {
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
+    await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
+    expect(invokeExport.mock.calls[0][0]).toMatchObject({ query: "tag:Work", list: "messages" });
   });
 
   it("will not export a Search scope with a blank query", async () => {
-    // message-crate-pull reads a blank query as the whole account, which is not what
+    // message-crate-export reads a blank query as the whole account, which is not what
     // someone who chose Search and left the box empty asked for.
     const user = setupUser();
     renderScreen("from:me");

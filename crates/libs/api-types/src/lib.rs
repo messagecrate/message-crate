@@ -2,15 +2,15 @@
 //! server that writes them and the client crates that read them.
 //!
 //! Two crates sit on either side of these shapes: `message-crate-server`
-//! serializes them, and `message-crate-pull` deserializes them on its way to
+//! serializes them, and `message-crate-export` deserializes them on its way to
 //! `message-ir`. While each kept its own struct, the two could disagree
-//! silently and did, three times: `message-crate-pull` declared a
+//! silently and did, three times: `message-crate-export` declared a
 //! participant's address a `String` after the server started sending `null`
 //! for a participant a backup named without an address, kept
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
 //! those was a pull that failed at runtime, or quietly produced worse data,
-//! with nothing in either crate's tests to catch it — `message-crate-pull`'s
+//! with nothing in either crate's tests to catch it — `message-crate-export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.
 //!
@@ -310,7 +310,7 @@ api_shape! {
         pub id: i64,
         /// What the run asked for, as given.
         pub scope: ExportScope,
-        /// Exporting tool, e.g. `message-crate-pull`, when the client named one.
+        /// Exporting tool, e.g. `message-crate-export`, when the client named one.
         pub tool: Option<String>,
         /// Lifecycle status.
         pub status: ExportStatus,

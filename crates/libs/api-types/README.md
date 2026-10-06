@@ -29,7 +29,7 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 ## Docs
 
 This crate is a library shared by the server, `message-crate-push`,
-`message-crate-pull`, and `message-crate-http`. It builds no binary.
+`message-crate-export`, and `message-crate-http`. It builds no binary.
 
 ## License
 
