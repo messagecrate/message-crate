@@ -33,11 +33,11 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-05: **A message's reply count is counted when it is read.** The
-  HTTP API's `reply_count` is the number of replies shown that quote the
-  message, so a reply set aside as a duplicate no longer counts, and a reply
-  that quotes a copy set aside as a duplicate counts for the copy shown. The
-  web app shows no reply count, so nothing changes on screen.
+- 2026-10-05: **A message's reply count is counted when it is read.** It is
+  the number of replies Message Crate shows that quote the message, so a
+  reply set aside as a duplicate no longer counts, and a reply that quotes a
+  copy set aside as a duplicate counts for the copy shown. The web app shows
+  no reply count, so nothing changes on screen.
 
 ### Upgrading
 
