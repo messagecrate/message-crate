@@ -58,8 +58,8 @@ _Avoid_: Text, Post, Item, Row
 A mark on a Message the person had deleted in the app it came from before
 the backup was made, while the backup still held it. The message is kept,
 shown muted with its text where the backup has it, and labelled with the
-source, for example "Deleted in WhatsApp"; search finds it, and
-`deleted:yes` or `deleted:no` narrows to or away from it. It is a different
+source, for example "Deleted in WhatsApp". Search finds it.
+`deleted:yes` or `deleted:no` narrows a search to or away from it. It is a different
 thing from the Trash, which is what a person removes inside Message Crate.
 _Avoid_: Trashed, Removed, Deleted on the phone
 
