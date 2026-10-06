@@ -18,11 +18,8 @@ describe("resultsView", () => {
 });
 
 describe("pickedMessageSort", () => {
-  it("reads the route's spelling, and nothing else", () => {
-    expect(pickedMessageSort(params("sort=relevance"))).toEqual({
-      sort: "relevance",
-      order: "desc",
-    });
+  it("reads a Date order in the route's spelling, and nothing else", () => {
+    expect(pickedMessageSort(params("sort=relevance"))).toBeNull();
     expect(pickedMessageSort(params("sort=date"))).toEqual({ sort: "date", order: "asc" });
     expect(pickedMessageSort(params("sort=-date"))).toEqual({ sort: "date", order: "desc" });
     expect(pickedMessageSort(params("sort=colour"))).toBeNull();

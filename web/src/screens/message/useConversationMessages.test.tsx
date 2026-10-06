@@ -53,6 +53,9 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** What `GET /v1/messages` says of a Find search: newest first, as Find asks. */
+const FIND_SEARCH = { sort: "-date", terms: [] };
+
 type MessagePage = { items: Message[]; total: number; limit: number; offset: number };
 function page(items: Message[]): MessagePage {
   return { items, total: items.length, limit: 50, offset: 0 };
@@ -215,6 +218,7 @@ describe("useConversationMessages", () => {
     })) as unknown as typeof listConversationMessages);
     // The newest match is found only by its earlier version; the older one by its text.
     searchMessages.mockResolvedValue({
+      search: FIND_SEARCH,
       items: [
         {
           ...message(60),
@@ -259,6 +263,7 @@ describe("useConversationMessages", () => {
     });
     // `pizz` finds message 60 only by its first version; `pizza tonight` by its second.
     searchMessages.mockImplementation((async ({ q }: { q?: string }) => ({
+      search: FIND_SEARCH,
       items: [
         {
           ...message(60),
@@ -296,6 +301,7 @@ describe("useConversationMessages", () => {
       offset: 0,
     })) as unknown as typeof listConversationMessages);
     searchMessages.mockResolvedValue({
+      search: FIND_SEARCH,
       items: [
         {
           ...message(60),
@@ -353,7 +359,13 @@ describe("useConversationMessages", () => {
       limit: 50,
       offset: params.around === undefined ? 98 : 0,
     })) as unknown as typeof listConversationMessages);
-    searchMessages.mockResolvedValue({ items: [message(3)], total: 40, limit: 1, offset: 0 });
+    searchMessages.mockResolvedValue({
+      search: FIND_SEARCH,
+      items: [message(3)],
+      total: 40,
+      limit: 1,
+      offset: 0,
+    });
 
     const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -381,6 +393,7 @@ describe("useConversationMessages", () => {
       offset: 0,
     })) as unknown as typeof listConversationMessages);
     searchMessages.mockResolvedValue({
+      search: FIND_SEARCH,
       items: [message(60), message(20)],
       total: 2,
       limit: 50,
@@ -430,6 +443,7 @@ describe("useConversationMessages", () => {
       page([message(params.around ?? matches)])) as unknown as typeof listConversationMessages);
     // The server pages the matches 50 at a time, newest first, and counts all of them.
     searchMessages.mockImplementation(async ({ offset = 0, limit = 50 }) => ({
+      search: FIND_SEARCH,
       items: Array.from({ length: Math.max(0, Math.min(limit, matches - offset)) }, (_, i) =>
         message(matches - offset - i),
       ),

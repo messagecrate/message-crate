@@ -541,8 +541,10 @@ export type MessagesListParams = {
   offset?: number;
   limit?: number;
   /**
-   * `date` (oldest first, the default), `-date`, or `relevance`: best match
-   * first, which needs a free-text word in `q` (`hasFreeText`).
+   * `date` (oldest first), `-date`, or `relevance`: best match first, which
+   * needs a free-text word in `q`. Left out, the server picks: `relevance`
+   * when `q` has a free-text word and `-date` when it has none, and the
+   * page's `search` says which it applied.
    */
   sort?: "date" | "-date" | "relevance";
 };
@@ -555,8 +557,11 @@ export type MessagesListParams = {
 export function listMessages(
   params: MessagesListParams,
   opts?: RequestOptions,
-): Promise<Schema["Page_Message"]> {
-  return apiClient.get<Schema["Page_Message"]>(withQuery("/v1/messages", query(params)), opts);
+): Promise<Schema["ListMessagesResponse"]> {
+  return apiClient.get<Schema["ListMessagesResponse"]>(
+    withQuery("/v1/messages", query(params)),
+    opts,
+  );
 }
 
 /** Every source a conversation's messages came from. */

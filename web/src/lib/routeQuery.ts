@@ -161,17 +161,26 @@ export type OffsetPage<T> = {
  */
 const NO_PAGES: readonly unknown[] = [];
 
-/** How a screen loads one page. */
-export type PagedFetchPage<T> = (args: {
+/**
+ * How a screen loads one page. A route that answers more than the rows and
+ * the total, as the Messages list answers its `search`, names the rest as `E`.
+ */
+export type PagedFetchPage<T, E extends object = object> = (args: {
   limit: number;
   offset: number;
   signal: AbortSignal;
-}) => Promise<OffsetPage<T>>;
+}) => Promise<OffsetPage<T> & E>;
 
 /** What a long list needs to render itself while it fills. */
-export type PagedListResult<T> = {
+export type PagedListResult<T, E extends object = object> = {
   items: T[];
   total: number;
+  /**
+   * The latest page the server answered, or null before the first. A screen
+   * reads from it what the route says beside the rows, such as the order the
+   * Messages list applied.
+   */
+  lastPage: (OffsetPage<T> & E) | null;
   /** No page has arrived yet: the list has nothing to show. */
   loading: boolean;
   /** The first page is being fetched again behind rows already on screen. */
@@ -222,9 +231,9 @@ function distinctRows<T extends { id: string | number }>(pages: readonly OffsetP
  * and another removed between two fetches leaves the total the same, and a
  * row skipped that way stays missing until the list is next fetched.
  */
-export function useRoutePagedList<T extends { id: string | number }>(
+export function useRoutePagedList<T extends { id: string | number }, E extends object = object>(
   key: RouteQueryKey,
-  fetchPage: PagedFetchPage<T>,
+  fetchPage: PagedFetchPage<T, E>,
   opts?: {
     firstPageSize?: number;
     fillPageSize?: number;
@@ -236,7 +245,7 @@ export function useRoutePagedList<T extends { id: string | number }>(
     /** False holds the list back, as `enabled` does on `useQuery`. */
     enabled?: boolean;
   },
-): PagedListResult<T> {
+): PagedListResult<T, E> {
   const account = useAccountScope();
   const firstPageSize = opts?.firstPageSize ?? PAGE_SIZE_FIRST;
   const fillPageSize = opts?.fillPageSize ?? PAGE_SIZE_FILL;
@@ -249,13 +258,8 @@ export function useRoutePagedList<T extends { id: string | number }>(
   const keyText = JSON.stringify(queryKey);
   const largePagesFor = useRef<string | null>(null);
 
-  const query = useInfiniteQuery<
-    OffsetPage<T>,
-    Error,
-    InfiniteData<OffsetPage<T>>,
-    unknown[],
-    number
-  >({
+  type P = OffsetPage<T> & E;
+  const query = useInfiniteQuery<P, Error, InfiniteData<P>, unknown[], number>({
     queryKey,
     enabled: opts?.enabled ?? true,
     initialPageParam: 0,
@@ -277,7 +281,7 @@ export function useRoutePagedList<T extends { id: string | number }>(
     },
   });
 
-  const pages = query.data?.pages ?? (NO_PAGES as OffsetPage<T>[]);
+  const pages = query.data?.pages ?? (NO_PAGES as P[]);
   // A new array every render defeats every memo downstream (the tag menu and
   // its effect included), so this is the one place that must not recompute
   // unless the query actually produced new pages.
@@ -294,6 +298,7 @@ export function useRoutePagedList<T extends { id: string | number }>(
   return {
     items,
     total: pages[pages.length - 1]?.total ?? 0,
+    lastPage: pages[pages.length - 1] ?? null,
     loading: query.isPending,
     // A refetch of what is already on screen, as opposed to a first load or a
     // page being appended.

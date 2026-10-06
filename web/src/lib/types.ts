@@ -31,6 +31,15 @@ export type MessageTapback = Schema["Tapback"];
  * same row shape the Export routes return, since one loader serves both. */
 export type Message = Schema["Message"];
 
+/**
+ * A Messages search as the server read it: the order `GET /v1/messages`
+ * applied and the free-text terms it ranks by, which the Messages list bolds.
+ */
+export type MessageSearch = Schema["MessageSearch"];
+
+/** One free-text term the server ranks a Messages search by: a word or a phrase. */
+export type FreeTextTerm = Schema["FreeTextTerm"];
+
 export type AttachmentMediaMode = "copy" | "convert" | "compress" | "skip";
 
 export interface ExtractConfig {
