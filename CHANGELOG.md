@@ -59,6 +59,12 @@ released versions carry their date on the heading.
   in the background, converting attachments, until the computer restarted.
   It now notices within two seconds that the app is gone and stops the way
   it does on a normal stop, finishing what it was answering first.
+- 2026-10-05: **Closing the desktop app stops a video conversion its Message
+  Crate was running.** The app stopped its Message Crate, but a video it was
+  converting went on converting in the background until it was done, and
+  the result was thrown away. The conversion now stops with the Message
+  Crate. On Windows the same happens when the app crashes, so there the
+  Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
 

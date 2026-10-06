@@ -61,7 +61,7 @@ The server ends one of two ways.
 - **The app closes normally.** The app kills the server. Its database
   survives that, and the only work a kill interrupts is an import the closing
   app was running. The kill does not reach an ffmpeg the server runs; #1737
-  is about ending that too.
+  is about ending that too. (Superseded on 2026-10-05; see the note below.)
 - **The app is gone without closing**, because it crashed or was killed. The
   app starts the server with `--exit-with-parent` and the app's process id,
   so the server notices and stops itself, the way it stops on Ctrl-C or
@@ -77,3 +77,18 @@ are always the same version, since they are built together.
 
 The server program is unsigned, like the app (#1019). ffmpeg is not shipped
 (#1017); the server does without it when it is missing.
+
+## Note, 2026-10-05: the kill takes the server's process tree
+
+The kill now reaches the processes the server started, ffmpeg among them
+(#1737). On Unix the app starts the server as the leader of a new process
+group and kills the group. On Windows it puts the server in a Job Object set
+to kill every process in it when the job's last handle closes, and kills the
+job. The server is still killed, not asked.
+
+The Job Object also changes the crash case on Windows: when the app is gone,
+the system closes its handle to the job, which kills the server and its
+ffmpeg at once, usually before the server's own wait on the app's process
+handle stops it. A Windows server whose app crashed therefore ends the way a
+closed app's server does, without finishing the work in flight. On Unix a
+crash is unchanged.
