@@ -7,6 +7,7 @@ import type { AccountImportRun } from "./storageUtils";
 import {
   formatBytes,
   formatImportDate,
+  importBackup,
   importStatusLabel,
   sectionHint,
   sectionTitle,
@@ -109,6 +110,7 @@ export default function ImportDetailPanel({
               <dt className="text-muted">Issues</dt>
               <dd className="mt-1">{selectedImport.issue_count.toLocaleString()}</dd>
             </div>
+            <ImportBackupDetail run={selectedImport} />
           </dl>
           <ImportSummaryPanel summary={selectedImportSummary} />
           <div className="mt-4">
@@ -128,6 +130,27 @@ export default function ImportDetailPanel({
           </div>
         </>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The backup the run read, beside when that backup was made, so two imports of
+ * one phone can be told apart. The owner's view of another account's run
+ * carries neither, and shows nothing here.
+ */
+function ImportBackupDetail({ run }: { run: AccountImportRun }) {
+  const backup = importBackup(run);
+  if (!backup) return null;
+  return (
+    <div className="sm:col-span-2 lg:col-span-3">
+      <dt className="text-muted">Backup</dt>
+      <dd className="mt-1 break-all">{backup.file ?? "Not recorded"}</dd>
+      <dd className="mt-1">
+        {backup.takenAt
+          ? `Made ${formatImportDate(backup.takenAt)}`
+          : "The backup does not say when it was made"}
+      </dd>
     </div>
   );
 }

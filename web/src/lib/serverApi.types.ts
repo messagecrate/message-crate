@@ -3058,6 +3058,12 @@ export interface components {
              */
             attachments_ms: number | null;
             /**
+             * @description When the backup the run read was made, UTC: the newest date its
+             *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
+             *     a file that names one is imported, and for a run whose files name none.
+             */
+            backup_taken_at: string | null;
+            /**
              * Format: int64
              * @description Bytes uploaded so far.
              */
@@ -3288,6 +3294,13 @@ export interface components {
         Message: {
             /** @description Attachments on this message. */
             attachments: components["schemas"]["Attachment"][];
+            /**
+             * @description When the backup that gave the message its mark and text was made,
+             *     RFC 3339 in UTC with a `Z` suffix; `null` when the conversation
+             *     file did not say. Between two copies of one message from one
+             *     source, the copy from the later backup decides.
+             */
+            backup_taken_at: string | null;
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
             /**
@@ -4205,6 +4218,12 @@ export interface components {
                  */
                 attachments_ms: number | null;
                 /**
+                 * @description When the backup the run read was made, UTC: the newest date its
+                 *     conversation files name (`export.backup_taken_at_unix_ms`). Null until
+                 *     a file that names one is imported, and for a run whose files name none.
+                 */
+                backup_taken_at: string | null;
+                /**
                  * Format: int64
                  * @description Bytes uploaded so far.
                  */
@@ -4341,6 +4360,13 @@ export interface components {
             items: {
                 /** @description Attachments on this message. */
                 attachments: components["schemas"]["Attachment"][];
+                /**
+                 * @description When the backup that gave the message its mark and text was made,
+                 *     RFC 3339 in UTC with a `Z` suffix; `null` when the conversation
+                 *     file did not say. Between two copies of one message from one
+                 *     source, the copy from the later backup decides.
+                 */
+                backup_taken_at: string | null;
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
                 /**

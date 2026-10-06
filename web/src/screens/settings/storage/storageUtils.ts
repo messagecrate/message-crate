@@ -92,6 +92,24 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
  */
 export type AccountImportRun = Schema["AccountImportRun"];
 
+/**
+ * The backup an account's own Import Run read: the file the desktop app
+ * recorded for it, and when the backup was made, each null when the run does
+ * not say. Null for the owner's view of another account's run, which carries
+ * neither.
+ */
+export function importBackup(
+  run: AccountImportRun,
+): { file: string | null; takenAt: string | null } | null {
+  if (!("backup_taken_at" in run)) return null;
+  const fingerprint = run.source_fingerprint;
+  const path =
+    fingerprint && typeof fingerprint === "object" && "path" in fingerprint
+      ? fingerprint.path
+      : null;
+  return { file: typeof path === "string" && path ? path : null, takenAt: run.backup_taken_at };
+}
+
 /** Human-readable file size (for example "1.2 MB"). */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

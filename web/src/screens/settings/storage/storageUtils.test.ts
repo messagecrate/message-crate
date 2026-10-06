@@ -5,6 +5,7 @@ import {
   describeExportScope,
   formatBytes,
   formatImportDate,
+  importBackup,
   importStatusLabel,
   toImportSummaryView,
 } from "./storageUtils";
@@ -35,6 +36,7 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     form: null,
     source_fingerprint: null,
     source_identities: null,
+    backup_taken_at: null,
     summary: {},
     issue_count: 0,
     note_count: 0,
@@ -215,5 +217,49 @@ describe("toImportSummaryView for the owner", () => {
     expect(view.messagesParsed).toBe(12);
     expect(view.messagesInserted).toBe(10);
     expect(view.issues).toEqual([]);
+  });
+});
+
+describe("importBackup", () => {
+  it("reads the backup's file and when it was made from the account's own run", () => {
+    expect(
+      importBackup(
+        accountImportRun({
+          source_fingerprint: { path: "/backups/iPhone/00008110", size: 12, mtime_ms: 1 },
+          backup_taken_at: "2026-09-30T18:45:12Z",
+        }),
+      ),
+    ).toEqual({ file: "/backups/iPhone/00008110", takenAt: "2026-09-30T18:45:12Z" });
+  });
+
+  it("says nothing it was not told", () => {
+    expect(importBackup(accountImportRun())).toEqual({ file: null, takenAt: null });
+  });
+
+  it("gives the owner nothing of another account's backup", () => {
+    expect(
+      importBackup({
+        id: 1,
+        source: "imessage-ios",
+        mode: "append",
+        status: "completed",
+        tool: null,
+        started_at: "2026-08-11T12:00:00Z",
+        finished_at: null,
+        message_count: 10,
+        attachment_count: 0,
+        bytes_uploaded: 0,
+        duration_ms: null,
+        parse_ms: null,
+        attachments_ms: null,
+        prepare_ms: null,
+        upload_ms: null,
+        counts: {},
+        issue_count: 0,
+        note_count: 0,
+        contacts_new: 0,
+        contacts_changed: 0,
+      }),
+    ).toBeNull();
   });
 });
