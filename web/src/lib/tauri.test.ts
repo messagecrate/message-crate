@@ -206,7 +206,7 @@ describe("awaitTauriJob", () => {
     let seenWhileRunning: string | null = null;
     const done = awaitTauriJob("Export", async () => {
       seenWhileRunning = currentDesktopJob();
-      queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Pull complete" }));
+      queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Export complete" }));
     });
     await done;
     expect(seenWhileRunning).toBe("Export");
