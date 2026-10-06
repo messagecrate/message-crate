@@ -7,8 +7,8 @@
 use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
-    DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
-    count_of_files, error_line, note_line,
+    DUPLICATES_DROPPED, ItemKind, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
+    count_of_files, error_and_note_lines, item_line, item_reason,
 };
 use anyhow::{Context, bail};
 use media::MediaReport;
@@ -139,9 +139,10 @@ pub fn unreadable_parts_note(n: u64) -> String {
     }
 }
 
-/// The reason an exporter gives for a CSV it cannot read, before the
-/// parser's own words.
-pub const CSV_NOT_READ: &str = "This CSV could not be read and was left out";
+/// What an exporter says happened to a CSV it cannot read, before the
+/// parser's own words, as the `what_happened` of an [`ExportReport::error`]
+/// of [`ItemKind::Csv`].
+pub const CSV_NOT_READ: &str = "could not be read and was left out";
 
 /// The [`RunIssue::step`] of a row an exporter records while it reads the
 /// backup.
@@ -213,11 +214,14 @@ pub struct ExportReport {
     pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
     pub obfuscated_docs: u64,
-    /// Human-readable lines about what failed (capped by each exporter).
+    /// What failed, one sentence for each item that names it, such as an
+    /// [`crate::item_line`] (capped by each exporter). The summary gives
+    /// them under the Import Errors heading.
     pub errors: Vec<String>,
-    /// Human-readable lines about what the run did that is worth knowing
-    /// but did not fail, such as a choice it made between two rows. Shown
-    /// apart from `errors`, so a note never reads as a failure.
+    /// What the run did that is worth knowing but did not fail, such as a
+    /// choice it made between two rows, one sentence for each item that
+    /// names it. The summary gives them under a heading of their own, apart
+    /// from `errors`, so a note never reads as a failure.
     pub notes: Vec<String>,
     /// Per-exporter extension counters, each with the words its log line
     /// uses, in the order the run first counted them, so the summary gives
@@ -239,20 +243,24 @@ impl ExportReport {
         }
     }
 
-    /// Record that the run could not read `item` and why: a line in
-    /// `errors`, and an Import Error sent to `issues` at once.
-    pub fn error(&mut self, item: impl Into<String>, reason: impl Into<String>) {
-        let (item, reason) = (item.into(), reason.into());
-        self.errors.push(format!("{item}: {reason}"));
-        self.send("error", item, reason);
+    /// Record that the run could not read `item`, of `kind`, and what
+    /// happened to it, `what_happened` worded to follow the item: its
+    /// [`item_line`] in `errors`, and an Import Error with its
+    /// [`item_reason`] sent to `issues` at once.
+    pub fn error(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
+        let item = item.into();
+        self.errors.push(item_line(kind, &item, what_happened));
+        self.send("error", item, item_reason(kind, what_happened));
     }
 
-    /// Record something the run did with `item` that is worth knowing but
-    /// did not fail: a line in `notes`, and a note sent to `issues` at once.
-    pub fn note(&mut self, item: impl Into<String>, text: impl Into<String>) {
-        let (item, text) = (item.into(), text.into());
-        self.notes.push(format!("{item}: {text}"));
-        self.send(NOTE, item, text);
+    /// Record something the run did with `item`, of `kind`, that is worth
+    /// knowing but did not fail, `what_happened` worded to follow the item:
+    /// its [`item_line`] in `notes`, and a note with its [`item_reason`]
+    /// sent to `issues` at once.
+    pub fn note(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
+        let item = item.into();
+        self.notes.push(item_line(kind, &item, what_happened));
+        self.send(NOTE, item, item_reason(kind, what_happened));
     }
 
     /// Count `by` under `counter` for one item the run kept with a caveat,
@@ -342,8 +350,8 @@ impl ExportReport {
 
     /// Append the summary lines to `out`: where the export went, then each
     /// resume, skip, duplicate, attachment, and extension count that is not
-    /// zero, each in its [`Counter`]'s words, then the notes, then the
-    /// errors.
+    /// zero, each in its [`Counter`]'s words, then the Import Errors and
+    /// the notes, each under its heading ([`error_and_note_lines`]).
     pub fn summary_lines(
         &self,
         format: OutputFormat,
@@ -366,11 +374,8 @@ impl ExportReport {
                 out.push(format!("  {}", counter.line(count)));
             }
         }
-        for note in &self.notes {
-            out.push(format!("  {}", note_line(note)));
-        }
-        for err in &self.errors {
-            out.push(format!("  {}", error_line(err)));
+        for line in error_and_note_lines(&self.errors, &self.notes) {
+            out.push(format!("  {line}"));
         }
     }
 
@@ -497,23 +502,54 @@ mod tests {
         );
     }
 
-    /// A note is printed as a note, apart from the errors, so a run that did
-    /// what it says never reads as a failure (#1414).
+    /// A note is printed under its own heading, apart from the Import
+    /// Errors, so a run that did what it says never reads as a failure
+    /// (#1414). Each is a sentence naming its item, and the Import Run gets
+    /// the item and the same words said of "this" item (#1920).
     #[test]
     fn summary_lines_print_notes_apart_from_errors() {
-        let report = ExportReport {
-            notes: vec!["a.jpg: 2 rows name this picture".into()],
-            errors: vec!["b.csv: unreadable".into()],
-            ..ExportReport::default()
-        };
+        let rows = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let sink = Arc::clone(&rows);
+        let mut report = ExportReport::with_issues(Some(IssueSink::new(move |issue| {
+            sink.lock().unwrap().push(issue);
+        })));
+        report.note(ItemKind::Picture, "a.jpg", "is named by 2 rows");
+        report.error(
+            ItemKind::Csv,
+            "b.csv",
+            "could not be read and was left out: cut off",
+        );
         let mut lines = Vec::new();
         report.summary_lines(OutputFormat::Jsonl, Path::new("out"), &mut lines);
         assert_eq!(
             lines,
             [
                 "Wrote jsonl export under out",
-                "  note: a.jpg: 2 rows name this picture",
-                "  error: b.csv: unreadable",
+                "  Import Errors",
+                "    The CSV b.csv could not be read and was left out: cut off",
+                "  Notes",
+                "    The picture a.jpg is named by 2 rows",
+            ]
+        );
+        let rows: Vec<(String, String, String)> = rows
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|i| (i.kind.clone(), i.item.clone(), i.reason.clone()))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "note".into(),
+                    "a.jpg".into(),
+                    "This picture is named by 2 rows".into()
+                ),
+                (
+                    "error".into(),
+                    "b.csv".into(),
+                    "This CSV could not be read and was left out: cut off".into()
+                ),
             ]
         );
     }
