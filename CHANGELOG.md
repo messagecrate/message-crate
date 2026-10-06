@@ -46,6 +46,15 @@ released versions carry their date on the heading.
 
 ### Fixes
 
+#### Desktop app
+
+- 2026-10-05: **The Message Crate the desktop app started stops when the app
+  crashes.** Closing the app has always stopped it. When the app crashed or
+  was ended from the task manager instead, its Message Crate went on running
+  in the background, converting attachments, until the computer restarted.
+  It now notices within two seconds that the app is gone and stops the way
+  it does on a normal stop, finishing what it was answering first.
+
 #### Importing
 
 - 2026-10-05: **A WhatsApp import from Android that fills the disk holding

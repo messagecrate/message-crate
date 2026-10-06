@@ -250,6 +250,13 @@ pub struct ServeArgs {
     /// own origins are always allowed
     #[arg(long = "cors-origin", value_name = "ORIGIN")]
     pub cors_origins: Vec<String>,
+
+    /// Stop, as on Ctrl-C or SIGTERM, once the process with this id is gone.
+    /// The desktop app passes its own id, so a server it started does not
+    /// outlive a crash of the app. Without it the server runs until it is
+    /// stopped
+    #[arg(long = message_crate_serve_protocol::EXIT_WITH_PARENT_ARG, value_name = "PID")]
+    pub exit_with_parent: Option<u32>,
 }
 
 /// Options shared by `dump-openapi`, `dump-cli-docs` and `dump-error-docs`.
@@ -661,9 +668,10 @@ async fn run_create_database(args: CreateDatabaseArgs) -> Result<()> {
 
 /// Start the HTTP server with the config.
 async fn run_serve(args: ServeArgs) -> Result<()> {
+    let exit_with_parent = args.exit_with_parent;
     let cfg = serve_config(args)?;
     let _ = cfg.require_server()?;
-    crate::server::run(cfg).await
+    crate::server::run(cfg, exit_with_parent).await
 }
 
 /// The config `serve` runs on: the directory `--data-dir` names, or else the
