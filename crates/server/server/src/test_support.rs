@@ -837,6 +837,8 @@ pub struct MessageRow<'a> {
     pub guid: Option<String>,
     /// RFC 3339 in UTC to the millisecond, as the importer writes it.
     pub timestamp: &'a str,
+    /// `messages.time_precision`.
+    pub time_precision: message_ir::TimePrecision,
     /// Whether the account sent it.
     pub is_from_me: bool,
     /// `messages.sender_handle_id`.
@@ -880,6 +882,7 @@ impl MessageRow<'_> {
             source: "imessage",
             guid: Some(unique_guid()),
             timestamp: "2020-01-01T00:00:00.000Z",
+            time_precision: message_ir::TimePrecision::Milliseconds,
             is_from_me: false,
             sender_handle_id: None,
             owner_handle_id: None,
@@ -925,10 +928,11 @@ impl MessageRow<'_> {
                 id, conversation_id, account_id, source, guid, timestamp, is_from_me,
                 sender_handle_id, owner_handle_id, service, subject, body,
                 is_announcement, is_reply, reply_to_guid, reply_to_part,
-                deletion, sort_order, content_key, duplicate_of, import_id
+                deletion, sort_order, content_key, duplicate_of, import_id,
+                time_precision
              ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
              ) RETURNING id",
         )
         .bind(self.id)
@@ -952,6 +956,7 @@ impl MessageRow<'_> {
         .bind(self.content_key)
         .bind(self.duplicate_of)
         .bind(self.import_id)
+        .bind(self.time_precision.as_str())
         .fetch_one(&mut **tx)
         .await
     }

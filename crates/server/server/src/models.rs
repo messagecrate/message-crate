@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use message_ir::{
     ConversationHeader, Deletion, EarlierVersion, HandleService, HandleType, IrAttachment,
-    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo,
+    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
 use phone::Handle;
@@ -99,6 +99,9 @@ pub struct MessageRecord {
     /// with three fractional digits and a `Z` suffix
     /// (`2015-03-12T18:04:22.250Z`).
     pub timestamp: String,
+    /// Whether the source recorded `timestamp` to the millisecond or in
+    /// whole seconds, as the conversation file says.
+    pub time_precision: TimePrecision,
     /// True for messages sent by the account owner.
     pub is_from_me: bool,
     /// Sender handle for incoming messages: the address, or the name when the
@@ -396,6 +399,7 @@ fn message_from_ir(
         guid: msg.guid.clone(),
         line,
         timestamp,
+        time_precision: msg.time_precision,
         is_from_me,
         sender: sender.as_ref().map(|(value, _)| value.clone()),
         sender_handle_type: sender.and_then(|(_, kind)| kind),
@@ -826,7 +830,7 @@ mod tests {
             .participant("+15555550101", Some("Sam"))
             .to_string();
         // The timestamp is the input under test, so the line stays written out.
-        let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
+        let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
         let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
         match failure {
             ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
@@ -845,7 +849,7 @@ mod tests {
         // The guids are the input under test, so the lines stay written out.
         let msg = |guid: &str| {
             format!(
-                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
+                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"time_precision":"milliseconds","direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
             )
         };
         let lines = [header.to_string(), msg("g1"), msg(""), msg("   ")];

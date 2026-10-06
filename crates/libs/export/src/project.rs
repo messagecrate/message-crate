@@ -11,6 +11,7 @@ use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
     IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
+    TimePrecision,
 };
 use serde_json::json;
 
@@ -143,6 +144,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     Ok(IrMessage {
         guid: msg.guid.clone(),
         timestamp_unix_ms,
+        time_precision: time_precision_from_api(msg.time_precision),
         direction,
         service,
         message_kind,
@@ -188,6 +190,14 @@ fn earlier_version_from_api(
 }
 
 /// The mark a server message carries, as the conversation file writes it.
+/// The precision the server stored, as the conversation file writes it.
+fn time_precision_from_api(precision: message_crate_api_types::TimePrecision) -> TimePrecision {
+    match precision {
+        message_crate_api_types::TimePrecision::Seconds => TimePrecision::Seconds,
+        message_crate_api_types::TimePrecision::Milliseconds => TimePrecision::Milliseconds,
+    }
+}
+
 fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
     match deletion {
         message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
@@ -399,6 +409,7 @@ mod tests {
           "service": "iMessage",
           "guid": "3A9E-0001",
           "timestamp": "2015-03-12T18:05:22Z",
+          "time_precision": "milliseconds",
           "sort_order": 0,
           "is_from_me": false,
           "sender": "+15555550100",
@@ -742,6 +753,36 @@ mod tests {
         assert!(ir.imessage.is_none());
     }
 
+    /// The conversation file says the precision the server stored, so a
+    /// whole-second message is written back as whole seconds and a
+    /// millisecond time that ends in `.000` as milliseconds.
+    #[test]
+    fn a_message_keeps_the_precision_the_server_stored() {
+        let participant = Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        };
+        let mut msg = seed_message_with_participant(participant);
+        msg.timestamp = "2015-03-12T18:05:22.000Z".into();
+        for (stored, written) in [
+            (
+                message_crate_api_types::TimePrecision::Seconds,
+                TimePrecision::Seconds,
+            ),
+            (
+                message_crate_api_types::TimePrecision::Milliseconds,
+                TimePrecision::Milliseconds,
+            ),
+        ] {
+            msg.time_precision = stored;
+            let ir = to_ir_message(&msg, false).unwrap();
+            assert_eq!(ir.timestamp_unix_ms, 1_426_183_522_000);
+            assert_eq!(ir.time_precision, written);
+        }
+    }
+
     #[test]
     fn maps_basic_message() {
         let msg = Message {
@@ -750,6 +791,7 @@ mod tests {
             service: Some("iMessage".into()),
             guid: "g1".into(),
             timestamp: "2015-03-12T18:05:22Z".into(),
+            time_precision: message_crate_api_types::TimePrecision::Milliseconds,
             is_from_me: false,
             sender: Some("+1".into()),
             owner: None,
@@ -907,6 +949,7 @@ mod tests {
             service: Some("iMessage".into()),
             guid: "g1".into(),
             timestamp: "2015-03-12T18:05:22Z".into(),
+            time_precision: message_crate_api_types::TimePrecision::Milliseconds,
             is_from_me: false,
             sender: Some("+1".into()),
             owner: None,

@@ -1001,6 +1001,7 @@ async fn insert_message_rows(
             source: staged_source.source,
             guid: &row.msg.guid,
             timestamp: &row.msg.timestamp,
+            time_precision: row.msg.time_precision,
             is_from_me: row.msg.is_from_me as i64,
             sender_handle_id: row.sender_handle_id,
             owner_handle_id: row.owner_handle_id,

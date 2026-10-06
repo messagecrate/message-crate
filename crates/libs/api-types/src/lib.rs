@@ -380,6 +380,10 @@ api_shape! {
         /// (`Account.time_zone`); the database stores nothing
         /// about where the phone was.
         pub timestamp: String,
+        /// Whether the source recorded `timestamp` to the millisecond or in
+        /// whole seconds. A `timestamp` ending in `.000` is a whole second
+        /// only when this says `seconds`.
+        pub time_precision: TimePrecision,
         /// Ordering key within the conversation.
         pub sort_order: i64,
         /// True for messages sent by the account owner.
@@ -467,6 +471,35 @@ api_shape! {
         /// version holds a free-text word of the query: the version a search
         /// found the message by. False everywhere else.
         pub matched: bool,
+    }
+}
+
+/// How finely the source recorded a message's time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum TimePrecision {
+    /// Whole seconds: the source records no milliseconds, and the time's
+    /// milliseconds are `.000`.
+    Seconds,
+    /// Milliseconds, as the phone stored them; they can be `.000` too.
+    Milliseconds,
+}
+
+impl TimePrecision {
+    /// The precision as the wire and the database spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Milliseconds => "milliseconds",
+        }
+    }
+
+    /// Read a sent or stored value; anything else names no precision.
+    pub fn parse(value: &str) -> Option<Self> {
+        [Self::Seconds, Self::Milliseconds]
+            .into_iter()
+            .find(|p| p.as_str() == value)
     }
 }
 
@@ -612,6 +645,7 @@ mod tests {
             service: None,
             guid: "g1".into(),
             timestamp: "2024-01-01T00:00:00.000Z".into(),
+            time_precision: TimePrecision::Seconds,
             sort_order: 0,
             is_from_me: false,
             sender: None,
@@ -725,6 +759,8 @@ mod tests {
         assert_eq!(read.attachments.len(), 1);
         assert_eq!(read.tapbacks[0].kind, "loved");
         assert_eq!(written["deletion"], "deleted_in_source_app");
+        assert_eq!(written["time_precision"], "seconds");
+        assert_eq!(read.time_precision, TimePrecision::Seconds);
         assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
         assert_eq!(read.earlier_versions[0].text, "helo");
         assert_eq!(

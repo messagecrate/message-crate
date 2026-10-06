@@ -175,6 +175,13 @@ impl MessageLine {
         self
     }
 
+    /// From a source that records whole seconds: `time_precision` is
+    /// `seconds`. The time stays as it was.
+    pub fn whole_seconds(mut self) -> Self {
+        self.0.time_precision = message_ir::TimePrecision::Seconds;
+        self
+    }
+
     /// Sent by the account holder.
     pub fn outgoing(mut self) -> Self {
         self.0.direction = message_ir::IrDirection::Outgoing;

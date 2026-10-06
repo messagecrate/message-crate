@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     -- The instant the message was sent, in the form messages.timestamp holds:
     -- RFC 3339 in UTC to the millisecond (2015-03-12T18:04:22.250Z).
     timestamp TEXT NOT NULL,
+    -- Whether the source recorded timestamp to the millisecond or in whole
+    -- seconds, as messages.time_precision.
+    time_precision TEXT NOT NULL CHECK (time_precision IN ('seconds', 'milliseconds')),
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,
     -- Sender identity handle id; NULL when unknown.

@@ -203,6 +203,8 @@ pub struct StagingMessage<'a> {
     pub guid: &'a str,
     /// RFC 3339 UTC instant the message was sent.
     pub timestamp: &'a str,
+    /// Whether the source recorded `timestamp` to the millisecond.
+    pub time_precision: message_ir::TimePrecision,
     /// 1 when the account holder sent it.
     pub is_from_me: i64,
     /// Sender's handle id; `None` when unknown.
@@ -344,7 +346,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
-const MESSAGE_BIND_COLUMNS: usize = 19;
+const MESSAGE_BIND_COLUMNS: usize = 20;
 const ATTACHMENT_BIND_COLUMNS: usize = ATTACHMENT_COLUMNS.len();
 const TAPBACK_BIND_COLUMNS: usize = TAPBACK_COLUMNS.len();
 const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
@@ -369,7 +371,7 @@ pub async fn insert_messages(
     let sql = format!(
         r"
         INSERT INTO staging_messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
             reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
         ) VALUES {}
@@ -386,6 +388,7 @@ pub async fn insert_messages(
             .bind(row.source)
             .bind(row.guid)
             .bind(row.timestamp)
+            .bind(row.time_precision.as_str())
             .bind(row.is_from_me)
             .bind(row.sender_handle_id)
             .bind(row.owner_handle_id)
@@ -1072,12 +1075,13 @@ pub async fn staged_message_id_bounds(
 /// the production ids follow it, which the id-map zip relies on.
 const INSERT_MESSAGES_FROM_STAGING: &str = r"
         INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
             reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
         )
         SELECT
-            cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.is_from_me,
+            cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.time_precision,
+            sm.is_from_me,
             sm.sender_handle_id, sm.owner_handle_id, sm.service, sm.subject, sm.body, sm.is_announcement, sm.is_reply,
             sm.reply_to_guid, sm.reply_to_part, sm.deletion, sm.sort_order, sm.import_id,
             sm.backup_taken_at
