@@ -405,6 +405,7 @@ mod tests {
             reactions: vec![],
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         });

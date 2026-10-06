@@ -96,6 +96,7 @@ When the backup doesn't hold it, Import uses **WhatsApp phone number** under **P
 - A run can't be cancelled while `wtsexporter` is working, or while an encrypted iPhone backup is being decrypted. It ends when that step finishes.
 - Using files from two different backups together fails, because a key decrypts only the backup it was made with.
 - Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the chat with that person and is imported.
+- A quoted reply is linked to the message it quotes only when that message is in the same chat of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message. Linking also needs a `wtsexporter` that records the quoted message's whole id. Only Message Crate's fork, [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), records it, on its `main` branch, and no release of it does yet. With any other `wtsexporter`, every reply names no message.
 - Channel posts aren't imported, because a Channel is a one-way feed from a publisher that nobody can write back to. The run summary counts them, as in `Skipped 3 channel posts`.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).

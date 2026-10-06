@@ -420,6 +420,7 @@ fn message_to_ir(
         reactions: record.reactions,
         deletion: record.deletion,
         edits: record.edits,
+        reply_to: record.reply_to,
         imessage: record.imessage.map(imessage_to_ir),
         source: None,
     };
@@ -429,10 +430,6 @@ fn message_to_ir(
 /// The Apple-specific fields, field for field.
 fn imessage_to_ir(fields: ImessageRecord) -> IrImessage {
     IrImessage {
-        is_reply: fields.is_reply,
-        in_reply_to_guid: fields.in_reply_to_guid,
-        thread_originator_part: fields.thread_originator_part,
-        num_replies: fields.num_replies,
         send_effect: fields.send_effect,
         shared_location: fields.shared_location,
         announcement: fields.announcement,
@@ -1038,6 +1035,7 @@ mod tests {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             owner_identity: "+15555550100".into(),
             owner_display_name: None,
             imessage: None,
@@ -1052,10 +1050,6 @@ mod tests {
         let json = |value: &str| Some(serde_json::json!([value]));
         let text = |value: &str| Some(value.to_string());
         let record = ImessageRecord {
-            is_reply: true,
-            in_reply_to_guid: text("parent"),
-            thread_originator_part: Some(1),
-            num_replies: Some(2),
             send_effect: text("Slam"),
             shared_location: text("started"),
             announcement: text("renamed"),
@@ -1078,9 +1072,14 @@ mod tests {
 
         let mut with_fields = message_record("+15555550122", "g1", false);
         with_fields.imessage = Some(ImessageRecord {
-            is_reply: true,
+            send_effect: text("Slam"),
             ..ImessageRecord::default()
         });
+        let reply_to = message_ir::ReplyTo {
+            guid: text("parent"),
+            part_index: Some(1),
+        };
+        with_fields.reply_to = Some(reply_to.clone());
         let reaction = message_ir::Reaction {
             part_index: 1,
             kind: "emoji".into(),
@@ -1107,7 +1106,16 @@ mod tests {
             [earlier],
             "the reader's earlier versions as they are"
         );
-        assert!(message.imessage.is_some_and(|fields| fields.is_reply));
+        assert_eq!(
+            message.reply_to,
+            Some(reply_to),
+            "the reader's reply link as it is"
+        );
+        assert!(
+            message
+                .imessage
+                .is_some_and(|fields| fields.send_effect.as_deref() == Some("Slam"))
+        );
     }
 
     #[test]
@@ -1264,6 +1272,7 @@ mod tests {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         }

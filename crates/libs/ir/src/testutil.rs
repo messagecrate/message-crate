@@ -3,7 +3,7 @@
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
     ExportMeta, HandleType, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, IrSource, Reaction, SCHEMA_VERSION,
+    IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -46,6 +46,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             reactions: vec![],
             deletion: None,
             edits: vec![],
+            reply_to: None,
             imessage: None,
             source: Some(IrSource {
                 android_type: Some(1),
@@ -140,11 +141,11 @@ pub fn sample_imessage_document() -> ConversationDocument {
                         edited_at_unix_ms: None,
                     },
                 ],
+                reply_to: Some(ReplyTo {
+                    guid: Some("parent-guid-1111".into()),
+                    part_index: Some(0),
+                }),
                 imessage: Some(IrImessage {
-                    is_reply: true,
-                    in_reply_to_guid: Some("parent-guid-1111".into()),
-                    thread_originator_part: Some(0),
-                    num_replies: Some(2),
                     send_effect: Some("Sent with Balloons".into()),
                     parts: Some(json!([{"index": 0, "kind": "run", "text": "hello imessage"}])),
                     ..IrImessage::default()
@@ -166,12 +167,12 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 reactions: vec![],
                 deletion: None,
                 edits: vec![],
+                reply_to: None,
                 imessage: Some(IrImessage {
                     associated_guid: Some("parent-guid-1111".into()),
                     associated_part: Some(0),
                     tapback_kind: Some("loved".into()),
                     tapback_action: Some("add".into()),
-                    in_reply_to_guid: Some("parent-guid-1111".into()),
                     ..IrImessage::default()
                 }),
                 source: None,

@@ -74,7 +74,10 @@ use serde_json::Value;
 /// such message was in one `individual` conversation named `orphaned`.
 /// 12: [`Request::BackupDomain`] answers [`Event::BackupDomainSize`] and waits
 /// for [`Request::DecryptDomain`] before it decrypts.
-pub const PROTOCOL_VERSION: u32 = 12;
+/// 13: a reply carries [`Message::reply_to`], a [`ReplyTo`] naming the
+/// message it quotes and the part, and `Imessage::is_reply`,
+/// `in_reply_to_guid`, `thread_originator_part` and `num_replies` are gone.
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -388,6 +391,9 @@ pub struct Message {
     /// The earlier versions of an edited message, oldest first within each
     /// part; empty for a message never edited. `text` is the final version.
     pub edits: Vec<EarlierVersion>,
+    /// The message this one replies to, for a reply in a thread; `None` for
+    /// a message that is not a reply. A tapback is never a reply.
+    pub reply_to: Option<ReplyTo>,
     /// The owner's address on this row (`destination_caller_id` through
     /// [`bare_address`]), or empty when the row carries none.
     pub owner_identity: String,
@@ -402,14 +408,6 @@ pub struct Message {
 /// Everything Apple-specific the core message fields do not carry.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Imessage {
-    /// A reply inside a thread.
-    pub is_reply: bool,
-    /// The message replied to, or reacted to.
-    pub in_reply_to_guid: Option<String>,
-    /// Part index within the thread originator.
-    pub thread_originator_part: Option<u32>,
-    /// How many replies this message has.
-    pub num_replies: Option<u32>,
     /// A send effect's label.
     pub send_effect: Option<String>,
     /// A shared-location label.
@@ -516,6 +514,25 @@ pub struct EarlierVersion {
     /// a later one. `None` when the source does not record it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub edited_at_unix_ms: Option<i64>,
+}
+
+/// The message a reply quotes. A message that carries one is a reply,
+/// whether or not the quoted message can be named.
+///
+/// Every source that records replies writes the same shape, so the type is
+/// defined here beside [`Reaction`] and `message-ir` re-exports it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplyTo {
+    /// The quoted message's GUID, as the source names it; `None` when the
+    /// source names none. A named message can still be missing from the
+    /// export: Apple Messages names a thread's originator even when it was
+    /// deleted before the backup was made, so the backup does not hold it,
+    /// and an export with a date range can leave it out. WhatsApp names one
+    /// only when it is in the same chat.
+    pub guid: Option<String>,
+    /// The part of the quoted message the reply answers; 0 for the first or
+    /// only part. `None` when the source does not record one.
+    pub part_index: Option<u32>,
 }
 
 /// One attachment's metadata and where its bytes are.

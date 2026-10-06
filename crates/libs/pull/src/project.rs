@@ -10,7 +10,7 @@ use chrono::{DateTime, NaiveDateTime};
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, SCHEMA_VERSION,
+    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -103,13 +103,11 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .collect::<Vec<_>>()
     };
 
+    let reply_to = msg.reply_to.as_ref().map(|reply_to| ReplyTo {
+        guid: reply_to.guid.clone(),
+        part_index: reply_to.part_index.and_then(|n| u32::try_from(n).ok()),
+    });
     let imessage = IrImessage {
-        is_reply: msg.is_reply,
-        in_reply_to_guid: msg.thread_originator_guid.clone(),
-        thread_originator_part: msg
-            .thread_originator_part
-            .and_then(|n| u32::try_from(n).ok()),
-        num_replies: u32::try_from(msg.num_replies).ok().filter(|&n| n > 0),
         // An announcement with no text carries no information, so drop it.
         announcement: msg
             .is_announcement
@@ -144,6 +142,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .map(earlier_version_from_api)
             .collect::<Result<_>>()
             .with_context(|| format!("message {} earlier versions", msg.id))?,
+        reply_to,
         imessage: imessage.into_option(),
         source: IrSource {
             android_type: None,
@@ -388,10 +387,8 @@ mod tests {
           "subject": null,
           "text": "dinner at seven?",
           "is_announcement": false,
-          "is_reply": false,
-          "thread_originator_guid": null,
-          "thread_originator_part": null,
-          "num_replies": 0,
+          "reply_to": null,
+          "reply_count": 0,
           "conversation": {
             "id": 9,
             "chat_identifier": "chat9000",
@@ -523,11 +520,11 @@ mod tests {
         );
     }
 
-    /// Reply threading comes through the pull into the message's iMessage
-    /// fields, and the stored reactions into the message's `reactions`, each
+    /// The message a reply quotes comes through the pull into the message's
+    /// `reply_to`, and the stored reactions into the message's `reactions`, each
     /// under the person who reacted.
     #[test]
-    fn a_reply_with_reactions_keeps_its_threading_and_reactions() {
+    fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
         let mut msg = seed_message_with_participant(Participant {
             identity: Some("+1".into()),
             name: "Sam".into(),
@@ -535,10 +532,10 @@ mod tests {
             contact_id: None,
         });
         msg.timestamp = "1426183522250".into();
-        msg.is_reply = true;
-        msg.thread_originator_guid = Some("origin-guid".into());
-        msg.thread_originator_part = Some(2);
-        msg.num_replies = 3;
+        msg.reply_to = Some(message_crate_api_types::ReplyTo {
+            guid: Some("origin-guid".into()),
+            part_index: Some(2),
+        });
         msg.tapbacks = vec![
             Tapback {
                 part_index: 0,
@@ -559,12 +556,17 @@ mod tests {
         let ir = to_ir_message(&msg, false).unwrap();
 
         assert_eq!(ir.timestamp_unix_ms, 1_426_183_522_250);
-        let imessage = ir.imessage.expect("reply fields make an iMessage block");
-        assert!(imessage.is_reply);
-        assert_eq!(imessage.in_reply_to_guid.as_deref(), Some("origin-guid"));
-        assert_eq!(imessage.thread_originator_part, Some(2));
-        assert_eq!(imessage.num_replies, Some(3));
-        assert_eq!(imessage.announcement, None);
+        assert_eq!(
+            ir.reply_to,
+            Some(ReplyTo {
+                guid: Some("origin-guid".into()),
+                part_index: Some(2),
+            })
+        );
+        assert!(
+            ir.imessage.is_none(),
+            "a reply alone makes no iMessage block"
+        );
         assert_eq!(
             ir.reactions,
             [
@@ -702,10 +704,8 @@ mod tests {
             subject: None,
             text: Some("hi".into()),
             is_announcement: false,
-            is_reply: false,
-            thread_originator_guid: None,
-            thread_originator_part: None,
-            num_replies: 0,
+            reply_to: None,
+            reply_count: 0,
             sort_order: 0,
             conversation: MessageConversation {
                 id: 9,
@@ -860,10 +860,8 @@ mod tests {
             subject: None,
             text: Some("hi".into()),
             is_announcement: false,
-            is_reply: false,
-            thread_originator_guid: None,
-            thread_originator_part: None,
-            num_replies: 0,
+            reply_to: None,
+            reply_count: 0,
             sort_order: 0,
             conversation: MessageConversation {
                 id: 9,

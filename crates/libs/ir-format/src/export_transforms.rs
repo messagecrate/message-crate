@@ -171,11 +171,14 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> Renamed
 
 /// Every message id a reply or a tapback in the document names.
 fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<Item = &mut String> {
-    doc.messages
-        .iter_mut()
-        .filter_map(|m| m.imessage.as_mut())
-        .flat_map(|im| [&mut im.in_reply_to_guid, &mut im.associated_guid])
-        .flatten()
+    doc.messages.iter_mut().flat_map(|m| {
+        let reply = m.reply_to.as_mut().and_then(|r| r.guid.as_mut());
+        let tapback = m
+            .imessage
+            .as_mut()
+            .and_then(|im| im.associated_guid.as_mut());
+        reply.into_iter().chain(tapback)
+    })
 }
 
 /// Obfuscate the iMessage extension's announcement.

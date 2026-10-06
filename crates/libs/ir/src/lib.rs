@@ -36,9 +36,9 @@ pub use identity::{
     one_copy_per_message,
 };
 pub use projection::{
-    ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit, default_participants,
-    display_names_for_handles, ensure_conversation, message_time, pending_to_document,
-    prepare_conversation,
+    PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
+    default_participants, display_names_for_handles, ensure_conversation, message_time,
+    pending_to_document, prepare_conversation,
 };
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
@@ -78,6 +78,29 @@ pub use imessage_reader_protocol::Deletion;
 /// file carries.
 pub use imessage_reader_protocol::EarlierVersion;
 
+/// The message a reply quotes: its guid when the source names it, and the
+/// part replied to when the source records one. A message
+/// with one is a reply even when the quoted message cannot be named.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader writes it in the shape the conversation
+/// file carries.
+pub use imessage_reader_protocol::ReplyTo;
+
+/// The reply a flat record describes, from its reply mark and the quoted
+/// message's guid and part, as the CSV `is_reply`, `reply_to_guid` and
+/// `reply_to_part` cells and the `X-ME-Is-Reply` and `X-ME-Reply-To-*` mail
+/// headers carry it. A record that names a quoted guid is a reply even
+/// without its mark; one with neither is not a reply.
+#[must_use]
+pub fn reply_to_from_mark(
+    is_reply: bool,
+    guid: Option<String>,
+    part_index: Option<u32>,
+) -> Option<ReplyTo> {
+    (is_reply || guid.is_some()).then_some(ReplyTo { guid, part_index })
+}
+
 /// The mark a text field holds, as the CSV `deletion` cell and the
 /// `X-ME-Deletion` mail header write it: blank for no mark, else
 /// [`Deletion::as_str`]'s text.
@@ -115,7 +138,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -478,6 +501,12 @@ pub struct IrMessage {
     /// file, for a message never edited or a source that records no edits.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edits: Vec<EarlierVersion>,
+    /// The message this one replies to; `None`, and left out of the file,
+    /// for a message that is not a reply or a source that records no
+    /// replies. [`ReplyTo::guid`] is the quoted message's GUID when the
+    /// source names it, which does not promise the message is in the export.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<ReplyTo>,
     /// Apple extensions; `None` for non-iMessage messages.
     pub imessage: Option<IrImessage>,
     /// Vendor leftovers (Android type code and raw fields).
@@ -617,14 +646,6 @@ impl IrSource {
 /// iMessage extensions. Nested Apple blobs remain JSON values (not strings).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IrImessage {
-    /// This message is a reply to an earlier message.
-    pub is_reply: bool,
-    /// GUID of the message this replies to.
-    pub in_reply_to_guid: Option<String>,
-    /// Part index of the thread originator.
-    pub thread_originator_part: Option<u32>,
-    /// Number of replies under this message.
-    pub num_replies: Option<u32>,
     /// iMessage send effect (e.g. `slam`).
     pub send_effect: Option<String>,
     /// Shared-location payload.
@@ -654,13 +675,9 @@ pub struct IrImessage {
 }
 
 impl IrImessage {
-    /// True when every field is unset (`None` or `false`).
+    /// True when every field is unset (`None`).
     pub fn is_empty(&self) -> bool {
-        !self.is_reply
-            && self.in_reply_to_guid.is_none()
-            && self.thread_originator_part.is_none()
-            && self.num_replies.is_none()
-            && self.send_effect.is_none()
+        self.send_effect.is_none()
             && self.shared_location.is_none()
             && self.announcement.is_none()
             && self.read_receipt_rfc3339.is_none()

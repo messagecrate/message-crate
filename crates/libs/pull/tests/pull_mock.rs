@@ -84,10 +84,8 @@ fn message(
         "subject": null,
         "text": text,
         "is_announcement": false,
-        "is_reply": false,
-        "thread_originator_guid": null,
-        "thread_originator_part": null,
-        "num_replies": 0,
+        "reply_to": null,
+        "reply_count": 0,
         "conversation": {
             "id": 9,
             "chat_identifier": "+15555550101",

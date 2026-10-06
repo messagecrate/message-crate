@@ -393,14 +393,15 @@ api_shape! {
         pub text: Option<String>,
         /// True for group announcements.
         pub is_announcement: bool,
-        /// True when part of a reply thread.
-        pub is_reply: bool,
-        /// GUID of the message this replies to.
-        pub thread_originator_guid: Option<String>,
-        /// Part index of the originator (for tapbacks).
-        pub thread_originator_part: Option<i64>,
-        /// Replies in this thread.
-        pub num_replies: i64,
+        /// The message this one replies to; `null` for a message that is not
+        /// a reply.
+        pub reply_to: Option<ReplyTo>,
+        /// How many replies quote this message, counted when read: each reply
+        /// shown whose `reply_to.guid` names this message, or a copy of it
+        /// hidden as a duplicate, counted once. A reply hidden as a duplicate
+        /// counts as the message it is shown as. A reply in a trashed
+        /// conversation counts only for a message in a trashed conversation.
+        pub reply_count: i64,
         /// The conversation this message belongs to.
         pub conversation: MessageConversation,
         /// Attachments on this message.
@@ -422,6 +423,21 @@ api_shape! {
         /// that hold a free-text word of it carry `matched`. False for a hit
         /// its final text matches, and on every other route.
         pub matched_earlier_version: bool,
+    }
+}
+
+api_shape! {
+    /// The message a reply quotes. A message that carries one is a reply,
+    /// whether or not the quoted message could be named.
+    pub struct ReplyTo {
+        /// The quoted message's `guid`, as the backup named it; `null` when
+        /// it named none. A named message can still be missing from this
+        /// Message Crate, for example one deleted before the backup was
+        /// made, so the backup does not hold it, while its reply was kept.
+        pub guid: Option<String>,
+        /// The part of the quoted message the reply answers; 0 for the first
+        /// or only part. `null` when the source does not record one.
+        pub part_index: Option<i64>,
     }
 }
 
@@ -588,10 +604,8 @@ mod tests {
             subject: None,
             text: None,
             is_announcement: false,
-            is_reply: false,
-            thread_originator_guid: None,
-            thread_originator_part: None,
-            num_replies: 0,
+            reply_to: None,
+            reply_count: 0,
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),

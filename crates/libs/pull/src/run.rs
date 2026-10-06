@@ -977,8 +977,7 @@ mod asset_ref_tests {
             "sort_order": 0,
             "is_from_me": false,
             "is_announcement": false,
-            "is_reply": false,
-            "num_replies": 0,
+            "reply_count": 0,
             "conversation": {
                 "id": 9,
                 "chat_identifier": "+15555550101",

@@ -77,13 +77,7 @@ fn imessage_bag_restores_mail_extension_headers() {
 
     let reply = &mail_messages[0];
     let reply_im = reply.message.imessage.as_ref().unwrap();
-    assert!(reply_im.is_reply);
-    assert_eq!(
-        reply_im.in_reply_to_guid.as_deref(),
-        Some("parent-guid-1111")
-    );
-    assert_eq!(reply_im.thread_originator_part, Some(0));
-    assert_eq!(reply_im.num_replies, Some(2));
+    assert_eq!(reply.message.reply_to, doc.messages[0].reply_to);
     assert_eq!(reply_im.send_effect.as_deref(), Some("Sent with Balloons"));
     assert_eq!(reply.message.reactions, doc.messages[0].reactions);
     assert_eq!(reply.message.reactions[0].kind, "loved");
@@ -131,7 +125,7 @@ fn unified_csv_headers_for_all_sources() {
     assert!(csv.contains("hello imessage"));
     assert!(csv.contains("Loved a message"));
     assert!(csv.contains("Sent with Balloons"));
-    assert!(csv.contains("true")); // is_reply
+    assert!(csv.contains("true,parent-guid-1111,0,")); // is_reply, reply_to_guid, reply_to_part
     assert!(csv.contains("loved"));
     assert!(csv.contains("+15555550100")); // outgoing sender / owner
 
@@ -252,6 +246,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         reactions: vec![],
         deletion: None,
         edits: Vec::new(),
+        reply_to: None,
         imessage: Some(IrImessage {
             parts: Some(json!([
                 {"index": 0, "kind": "run", "text": "hello"},
@@ -481,23 +476,23 @@ fn jsonl_refuses_a_version_3_file_by_name() {
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
 }
 
-/// A version-8 file puts every orphaned message in one `individual`
-/// conversation named `orphaned`; version 9 gives them conversations of
-/// type `orphaned`. The reader refuses it by its version rather than reading
-/// that conversation as one with a person named "orphaned".
+/// A version-9 file keeps a reply's link in the Apple extension's
+/// `is_reply` and `in_reply_to_guid`; version 10 keeps it in the message's
+/// own `reply_to`. The reader refuses it by its version rather than reading
+/// the reply as a plain message.
 #[test]
-fn jsonl_refuses_a_version_8_file_by_name() {
+fn jsonl_refuses_a_version_9_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("v8.jsonl");
+    let path = tmp.path().join("v9.jsonl");
     fs::write(
         &path,
         concat!(
-            r#"{"schema_version":8,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
-            r#""conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"#,
+            r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
+            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[],"#,
             r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
             "\n",
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,
-            r#""imessage":null,"source":null}"#,
+            r#""imessage":{"is_reply":true,"in_reply_to_guid":"g0"},"source":null}"#,
             "\n",
         ),
     )
@@ -506,11 +501,11 @@ fn jsonl_refuses_a_version_8_file_by_name() {
     let refusal = err
         .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
-    assert_eq!(refusal.found, 8);
+    assert_eq!(refusal.found, 9);
     assert_eq!(
         refusal.to_string(),
         format!(
-            "This file is schema version 8; Message Crate reads version {}",
+            "This file is schema version 9; Message Crate reads version {}",
             message_ir::SCHEMA_VERSION
         )
     );

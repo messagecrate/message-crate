@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{
     Deletion, EarlierVersion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
-    IrSource, Reaction,
+    IrSource, Reaction, ReplyTo,
 };
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -60,6 +60,15 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             hn::EARLIER_IS_DELETED
         );
     }
+    if let Some(earlier) = hn::EARLIER_REPLY_HEADERS
+        .iter()
+        .find(|name| headers.get_first_header(name).is_some())
+    {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept a reply's link in \
+             {earlier}. Export the backup again"
+        );
+    }
     if headers.get_first_header(hn::EARLIER_X_ME_EDITS).is_some() {
         bail!(
             "This mail was written by an earlier Message Crate, which kept the edit history in {}. \
@@ -105,6 +114,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let reactions = parse_reactions(headers)?;
     let deletion = parse_deletion(headers)?;
     let edits = parse_earlier_versions(headers)?;
+    let reply_to = parse_reply_to(headers);
 
     let source = {
         let android_type =
@@ -123,10 +133,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let imessage = {
         let bag = IrImessage {
-            is_reply: header_bool(headers, hn::IS_REPLY),
-            in_reply_to_guid: optional_header(headers, hn::THREAD_ORIGINATOR_GUID),
-            thread_originator_part: header_u32(headers, hn::THREAD_ORIGINATOR_PART),
-            num_replies: header_u32(headers, hn::NUM_REPLIES),
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
@@ -172,11 +178,22 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             reactions,
             deletion,
             edits,
+            reply_to,
             imessage,
             source,
         },
         attachments,
     })
+}
+
+/// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
+/// headers; `None` for a mail that is not a reply.
+fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
+    message_ir::reply_to_from_mark(
+        header_bool(headers, hn::IS_REPLY),
+        optional_header(headers, hn::REPLY_TO_GUID),
+        header_u32(headers, hn::REPLY_TO_PART),
+    )
 }
 
 /// The JSON in header `name`, or `None` when the header is absent.
@@ -468,6 +485,7 @@ mod tests {
                 reactions: Vec::new(),
                 deletion: None,
                 edits: Vec::new(),
+                reply_to: None,
                 imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
@@ -530,11 +548,11 @@ mod tests {
                 edited_at_unix_ms: None,
             },
         ];
+        let reply_to = ReplyTo {
+            guid: Some("parent-guid-1111".into()),
+            part_index: Some(1),
+        };
         let imessage = message_ir::IrImessage {
-            is_reply: true,
-            in_reply_to_guid: Some("parent-guid-1111".into()),
-            thread_originator_part: Some(1),
-            num_replies: Some(3),
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -584,6 +602,7 @@ mod tests {
                 reactions: reactions.clone(),
                 deletion: Some(message_ir::Deletion::Unsent),
                 edits: edits.clone(),
+                reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
                     android_type: Some(1),
@@ -643,6 +662,8 @@ mod tests {
             parsed.message.edits, edits,
             "each earlier version keeps its part, text and time"
         );
+
+        assert_eq!(parsed.message.reply_to, Some(reply_to));
 
         // The whole extension bag must survive field for field.
         let parsed_bag = parsed.message.imessage.as_ref().expect("imessage bag");
@@ -708,6 +729,7 @@ mod tests {
                 reactions: Vec::new(),
                 deletion: None,
                 edits: Vec::new(),
+                reply_to: None,
                 imessage: None,
                 source: None,
             },

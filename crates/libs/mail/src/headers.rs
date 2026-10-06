@@ -61,14 +61,21 @@ pub(crate) const SUBJECT: &str = "X-ME-Subject";
 pub(crate) const ANDROID_TYPE: &str = "X-ME-Android-Type";
 /// Vendor source fields as JSON.
 pub(crate) const SOURCE_FIELDS: &str = "X-ME-Source-Fields";
-/// iMessage reply flag.
+/// `true` on a reply, whether or not the message it quotes is named.
 pub(crate) const IS_REPLY: &str = "X-ME-Is-Reply";
-/// Thread originator guid (reply parent).
-pub(crate) const THREAD_ORIGINATOR_GUID: &str = "X-ME-Thread-Originator-Guid";
-/// Thread originator part index.
-pub(crate) const THREAD_ORIGINATOR_PART: &str = "X-ME-Thread-Originator-Part";
-/// Reply count.
-pub(crate) const NUM_REPLIES: &str = "X-ME-Num-Replies";
+/// The guid of the message a reply quotes, when that message is in the same
+/// export.
+pub(crate) const REPLY_TO_GUID: &str = "X-ME-Reply-To-Guid";
+/// The part of the quoted message a reply answers.
+pub(crate) const REPLY_TO_PART: &str = "X-ME-Reply-To-Part";
+/// The headers an earlier Message Crate kept a reply's link and the reply
+/// count in. The reader refuses a mail that carries one: nothing reads them,
+/// so the mail would lose the message its reply quotes.
+pub(crate) const EARLIER_REPLY_HEADERS: &[&str] = &[
+    "X-ME-Thread-Originator-Guid",
+    "X-ME-Thread-Originator-Part",
+    "X-ME-Num-Replies",
+];
 /// Send effect name.
 pub(crate) const SEND_EFFECT: &str = "X-ME-Send-Effect";
 /// Shared location payload.

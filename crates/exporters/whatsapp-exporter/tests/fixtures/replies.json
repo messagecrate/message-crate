@@ -1,0 +1,109 @@
+{
+  "15555550122@s.whatsapp.net": {
+    "name": "Sam Example",
+    "type": "ios",
+    "messages": {
+      "1001": {
+        "from_me": false,
+        "timestamp": 1609459200,
+        "time": "00:00",
+        "key_id": "3EB0A1B2C3D4E5F6A",
+        "full_key_id": "3EB0A1B2C3D4E5F6A7B8C9D0E1F2A3B4",
+        "data": "Lunch on Friday?",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {}
+      },
+      "1002": {
+        "from_me": false,
+        "timestamp": 1609459260,
+        "time": "00:01",
+        "key_id": "3EB0A1B2C3D4E5F6A",
+        "full_key_id": "3EB0A1B2C3D4E5F6A00000000000FFFF",
+        "data": "Or Saturday",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {}
+      },
+      "1003": {
+        "from_me": true,
+        "timestamp": 1609459320,
+        "time": "00:02",
+        "key_id": "5F1D2E3C4B5A69788",
+        "full_key_id": "5F1D2E3C4B5A6978877665544",
+        "data": "Saturday works",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": "3EB0A1B2C3D4E5F6A",
+        "reply_key_id": "3EB0A1B2C3D4E5F6A00000000000FFFF",
+        "reactions": {}
+      },
+      "1004": {
+        "from_me": false,
+        "timestamp": 1609459380,
+        "time": "00:03",
+        "key_id": "7A8B9C0D1E2F3A4B5",
+        "full_key_id": "7A8B9C0D1E2F3A4B5C6D7E8F",
+        "data": "About that photo from last year",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": "99AA88BB77CC66DD5",
+        "reply_key_id": "99AA88BB77CC66DD55EE44FF",
+        "reactions": {}
+      },
+      "1005": {
+        "from_me": true,
+        "timestamp": 1609459440,
+        "time": "00:04",
+        "key_id": "ABCDEF01234567890",
+        "full_key_id": null,
+        "data": "From an older export",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": "3EB0A1B2C3D4E5F6A",
+        "reactions": {}
+      }
+    }
+  },
+  "15555550133@s.whatsapp.net": {
+    "name": "Ada Example",
+    "type": "ios",
+    "messages": {
+      "2001": {
+        "from_me": true,
+        "timestamp": 1609459500,
+        "time": "00:05",
+        "key_id": "C0FFEE00112233445",
+        "full_key_id": "C0FFEE0011223344556677",
+        "data": "Did Sam say Saturday?",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": "3EB0A1B2C3D4E5F6A",
+        "reply_key_id": "3EB0A1B2C3D4E5F6A7B8C9D0E1F2A3B4",
+        "reactions": {}
+      }
+    }
+  }
+}
