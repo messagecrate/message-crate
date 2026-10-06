@@ -95,6 +95,7 @@ import { mediaJobVerb } from "./reviewForecast";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  isStagingRowOfConversation,
   issueRequests,
   issuesToDiscard,
   notesToDiscard,
@@ -662,11 +663,11 @@ function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
  * the window had received: each stage sends its issues the moment it
  * records them, Staging says when it has written each conversation, and the
  * Upload says when it has sent each one, so a crash loses only what arrived
- * while the last write was on its way to disk. The record is the one a pause now would leave (`recordToCarry`): an
- * Upload's rows about a conversation not yet on the server wait apart, as do
- * Staging's rows about a conversation not yet written, and an earlier
- * pause's rows about a conversation this part has since sent, or written,
- * go.
+ * while the last write was on its way to disk. The record is the one a
+ * pause now would leave (`recordToCarry`): an Upload's rows about a
+ * conversation not yet on the server wait apart, as do Staging's rows about
+ * a conversation not yet written, and an earlier pause's rows about a
+ * conversation this part has since sent, or written, go.
  */
 async function saveCarriedRecord(
   report: UploadFinishedReport | null = null,
@@ -811,7 +812,7 @@ function recordFileDone(event: ImportFileDoneEvent): void {
 function recordFileWritten(event: ImportFileWrittenEvent): void {
   scratch.staged.set(event.file, event.status);
   const about = (issue: ImportIssue) =>
-    issue.stage === "staging" && issue.conversation === event.file;
+    isStagingRowOfConversation(issue) && issue.conversation === event.file;
   if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
     void saveCarriedRecord();
   }

@@ -258,7 +258,7 @@ function partConversations(part: RunPart): PartConversations {
  * written without reading it again, so it reports such a row again only
  * while the conversation is not yet written.
  */
-function isStagingRowOfConversation(
+export function isStagingRowOfConversation(
   issue: ImportIssue,
 ): issue is ImportIssue & { conversation: string } {
   return issue.stage === "staging" && issue.conversation != null;
