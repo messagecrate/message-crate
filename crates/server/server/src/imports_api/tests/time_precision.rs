@@ -142,3 +142,35 @@ async fn each_precision_is_kept_through_import_the_api_and_an_export_run() {
     .await;
     assert_eq!(precisions(&exported), expected, "{exported}");
 }
+
+/// A whole-second copy and a millisecond copy that ends in `.000` have one
+/// guid, so they are one stored message. It says `milliseconds` whichever
+/// copy came first, in two imports or in one: the source did record the
+/// time to the millisecond.
+#[tokio::test]
+async fn one_message_held_at_whole_seconds_and_at_000_milliseconds_says_milliseconds() {
+    let line = |whole: bool| {
+        let line = message_line("g-same", "On my way").at(SECOND);
+        let line = if whole { line.whole_seconds() } else { line };
+        line.sms().sender("+15555550123")
+    };
+    let header =
+        conversation_header("sms-backup-plus", "+15555550123").participant("+15555550123", None);
+    let file = |whole: bool| format!("{header}\n{}\n", line(whole));
+    let both = |first: bool| format!("{header}\n{}\n{}\n", line(first), line(!first));
+    for (label, imports) in [
+        ("whole second first, two imports", vec![file(true), file(false)]),
+        ("milliseconds first, two imports", vec![file(false), file(true)]),
+        ("whole second first, one import", vec![both(true)]),
+        ("milliseconds first, one import", vec![both(false)]),
+    ] {
+        let (state, _fixture, token) = importer().await;
+        for body in imports {
+            import_with_dedupe(&state, &token, "sms-backup-plus", body).await;
+        }
+        let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+        let items = page["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1, "{label}: {page}");
+        assert_eq!(items[0]["time_precision"], "milliseconds", "{label}");
+    }
+}

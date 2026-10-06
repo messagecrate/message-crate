@@ -913,7 +913,8 @@ async fn flush_staging_message_chunk(
 /// neither (#1741, #1804). When either has no date, or the two dates are
 /// equal ([`db_staging::later_backup`]), the copy gives its text and
 /// earlier versions when it records a later edit, and its mark when it
-/// carries one. One import of two backups then stores
+/// carries one. A copy whose time has milliseconds marks the staged message
+/// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import of two backups then stores
 /// what two separate imports of them store, in either file order (#1806,
 /// #1837).
 async fn add_staged_copy(
@@ -929,6 +930,7 @@ async fn add_staged_copy(
         && row.msg.tapbacks.is_empty()
         && row.msg.deletion.is_none()
         && staged_source.backup_taken_at.is_none()
+        && row.msg.time_precision == message_ir::TimePrecision::Seconds
     {
         return Ok(());
     }
@@ -940,6 +942,9 @@ async fn add_staged_copy(
     let staged = db_staging::staged_message_id(tx, key)
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
+    if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
+        db_staging::add_staged_copy_milliseconds(tx, staged).await?;
+    }
     let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
     match db_staging::later_backup(staged_source.backup_taken_at, held_backup.as_deref()) {
         BackupOrder::Later(copy_backup) => {

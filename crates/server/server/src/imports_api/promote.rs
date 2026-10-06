@@ -279,6 +279,7 @@ impl Promote<'_> {
 
         let phase = Self::begin("Recording which backup each changed message came from…");
         let dated = staging::promote_backup_dates(self.tx).await?;
+        staging::promote_time_precision(self.tx).await?;
         self.done(
             phase,
             words(
