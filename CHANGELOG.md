@@ -70,6 +70,16 @@ released versions carry their date on the heading.
   the conversation again. An Error about a conversation written before the
   stop stays, because the resumed Staging does not read it again.
 
+#### Search
+
+- 2026-10-05: **A search no longer finds an Unsent message by the text it
+  hides.** An Unsent message reads "Unsent" and nothing else, but when an
+  earlier import stored it with its text, a search for a word of that text,
+  or of an attachment's file name, still listed it, with nothing on the row
+  to say why. A search now finds a message by what it shows: `unsent:yes`,
+  `from:`, the conversation and the date still find an Unsent message, and a
+  message Deleted in the source app is still found by its text.
+
 ### Upgrading
 
 - The database format changed. **An existing Message Crate is rebuilt empty
