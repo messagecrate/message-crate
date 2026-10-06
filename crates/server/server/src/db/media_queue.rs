@@ -62,6 +62,20 @@ pub async fn first(conn: &mut SqliteConnection) -> Result<Option<QueuedAsset>, s
     .await
 }
 
+/// Every queued Asset, oldest first.
+///
+/// # Errors
+///
+/// Returns a database error when the query fails.
+pub async fn all(conn: &mut SqliteConnection) -> Result<Vec<QueuedAsset>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT account_id, sha256, rowid FROM media_queue
+         ORDER BY queued_at, rowid",
+    )
+    .fetch_all(&mut *conn)
+    .await
+}
+
 /// Take `asset` off the queue, unless it was queued again since it was
 /// read.
 ///

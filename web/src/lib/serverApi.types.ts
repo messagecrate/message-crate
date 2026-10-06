@@ -1840,6 +1840,14 @@ export interface components {
             /** @description Content fingerprint of the stored bytes. */
             sha256: string | null;
             /**
+             * @description True when every browser shows the original as it is, so a viewer
+             *     opens the original. False when it needs the preview instead, and
+             *     until the server has looked at the file after its import. The
+             *     server decides it once, reading an MP4's video codec, and this is
+             *     the one place a client reads the decision.
+             */
+            shown_as_is: boolean;
+            /**
              * @description MIME type of the attachment's thumbnail, once the server has made
              *     it; `null` until then. The thumbnail's bytes are at
              *     `/v1/assets/{sha256}/thumbnail`.

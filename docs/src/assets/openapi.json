@@ -13198,6 +13198,7 @@
         "description": "One attachment of an exported message.",
         "required": [
           "is_sticker",
+          "shown_as_is",
           "mime_type",
           "missing_reason",
           "original_name",
@@ -13253,6 +13254,10 @@
               "null"
             ],
             "description": "Content fingerprint of the stored bytes."
+          },
+          "shown_as_is": {
+            "type": "boolean",
+            "description": "True when every browser shows the original as it is, so a viewer\nopens the original. False when it needs the preview instead, and\nuntil the server has looked at the file after its import. The\nserver decides it once, reading an MP4's video codec, and this is\nthe one place a client reads the decision."
           },
           "thumbnail_mime_type": {
             "type": [

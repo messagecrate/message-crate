@@ -303,6 +303,73 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
     });
 }
 
+/// Whether the original is shown as it is, as the conversation answers it
+/// for the attachment stored under `sha256`.
+fn shown_as_is(attachments: &[serde_json::Value], sha256: &str) -> serde_json::Value {
+    attachments
+        .iter()
+        .find(|attachment| attachment["sha256"] == sha256)
+        .unwrap_or_else(|| panic!("no attachment {sha256} in {attachments:?}"))["shown_as_is"]
+        .clone()
+}
+
+/// The pass decides whether every browser shows each original as it is
+/// (`docs/architecture/media.md`, rule 2), and the conversation answers it
+/// in `shown_as_is`, so the web app never repeats the list of types and a
+/// read never runs ffprobe. A PNG and an H.264 MP4 are shown as they are. A
+/// HEVC video is not, in an `.mp4` as in a `.mov`, because only the file can
+/// tell its codec, and each gets a Preview. Until the pass has looked at a
+/// file, nothing says it is shown as it is.
+#[test]
+fn the_pass_decides_which_originals_are_shown_as_they_are() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let files: Vec<(&str, &str, Vec<u8>)> = [
+            ("photo.png", "image/png"),
+            ("h264.mp4", "video/mp4"),
+            ("hevc.mov", "video/quicktime"),
+            ("hevc.mp4", "video/mp4"),
+        ]
+        .into_iter()
+        .map(|(name, mime)| (name, mime, fixture_bytes(name)))
+        .collect();
+        let (shas, conversation_id) = import_files(&fixture, &alice, &files).await;
+
+        let before = attachments(state, &alice, conversation_id).await;
+        for sha in &shas {
+            assert_eq!(
+                shown_as_is(&before, sha),
+                serde_json::json!(false),
+                "nothing is decided before the pass: {before:?}"
+            );
+        }
+
+        work_through(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
+
+        let after = attachments(state, &alice, conversation_id).await;
+        let decided = shas
+            .iter()
+            .map(|sha| shown_as_is(&after, sha))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decided,
+            [true, true, false, false].map(serde_json::Value::Bool),
+            "the PNG and the H.264 MP4 are shown as they are, the HEVC .mov and .mp4 are not: {after:?}"
+        );
+        let hevc_mp4 = after
+            .iter()
+            .find(|attachment| attachment["sha256"] == shas[3].as_str())
+            .unwrap();
+        assert_eq!(
+            hevc_mp4["preview_mime_type"], "video/mp4",
+            "a HEVC MP4 gets a Preview: {hevc_mp4}"
+        );
+    });
+}
+
 /// The queue is a table, so what a stopped server left in it is worked on
 /// when the server starts again: a new state over the same database, whose
 /// pass starts with the queue as it was.
@@ -338,8 +405,11 @@ fn a_server_started_again_works_through_what_was_queued() {
 }
 
 /// Without ffmpeg nothing can be made, so the pass leaves the queue as it
-/// is, for a server that finds ffmpeg later. The tools are hidden outside
-/// any `await`, which Clippy's `await_holding_lock` refuses.
+/// is, for a server that finds ffmpeg later. What needs no ffprobe is
+/// decided all the same, so a photo opens as it is on a server that cannot
+/// convert. An MP4's codec cannot be read without ffprobe, so nothing says
+/// it is shown as it is yet. The tools are hidden outside any `await`,
+/// which Clippy's `await_holding_lock` refuses.
 #[test]
 fn without_ffmpeg_the_queue_waits() {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -347,7 +417,7 @@ fn without_ffmpeg_the_queue_waits() {
         .build()
         .unwrap();
     let (fixture, alice) = runtime.block_on(fixture_with_account());
-    runtime.block_on(import_three(&fixture, &alice));
+    let imported = runtime.block_on(import_three(&fixture, &alice));
     let state = &fixture.state;
 
     let made = {
@@ -359,6 +429,15 @@ fn without_ffmpeg_the_queue_waits() {
 
     assert_eq!(made, ProcessAssetsStats::default());
     assert_eq!(runtime.block_on(queued(state)), 3);
+    let after = runtime.block_on(attachments(state, &alice, imported.conversation_id));
+    assert_eq!(
+        shown_as_is(&after, &imported.photo),
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        shown_as_is(&after, &imported.h264),
+        serde_json::json!(false)
+    );
 }
 
 /// An Import Run that ends while the pass works on one of its Assets queues

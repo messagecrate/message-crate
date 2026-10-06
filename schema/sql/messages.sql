@@ -162,6 +162,12 @@ CREATE TABLE IF NOT EXISTS attachments (
     derived_assets_path TEXT,
     -- MIME type of the derivative file.
     derived_mime_type TEXT,
+    -- 1 when every browser shows the stored original as it is, so a viewer
+    -- opens it and it gets no Preview (`media::browser_shows`,
+    -- `docs/architecture/media.md` rule 2). The server's media pass decides
+    -- it, and only an MP4 is opened to read its codec. 0 when it is not
+    -- shown as it is, and until the pass has looked at the file.
+    shown_as_is INTEGER NOT NULL DEFAULT 0 CHECK (shown_as_is IN (0, 1)),
     -- SHA-256 hex of the Thumbnail: a small JPEG of an image, or a video's
     -- first frame. NULL until the server has made it.
     thumbnail_sha256 TEXT,

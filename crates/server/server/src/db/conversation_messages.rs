@@ -550,7 +550,7 @@ async fn load_attachments(
         |placeholders| {
             format!(
                 "SELECT message_id, path, original_name, mime_type, sha256, is_sticker, transcription,
-                    missing_reason, derived_mime_type, thumbnail_mime_type
+                    missing_reason, derived_mime_type, thumbnail_mime_type, shown_as_is
              FROM attachments
              WHERE message_id IN ({placeholders})
              ORDER BY message_id, id"
@@ -567,6 +567,9 @@ async fn load_attachments(
                     is_sticker: row.try_get::<i64, _>(5)? != 0,
                     transcription: row.try_get(6)?,
                     missing_reason: row.try_get(7)?,
+                    // Decided by the media pass and stored, so a read never
+                    // runs ffprobe.
+                    shown_as_is: row.try_get::<i64, _>(10)? != 0,
                     preview_mime_type: row.try_get(8)?,
                     thumbnail_mime_type: row.try_get(9)?,
                 },
