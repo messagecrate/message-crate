@@ -1,6 +1,6 @@
 //! The shared blocking HTTP session and the `GET /v1/session` login call.
 //!
-//! `message-crate-push` and `message-crate-pull` both talk to the server through one
+//! `message-crate-push` and `message-crate-export` both talk to the server through one
 //! [`HttpSession`]. The session owns base-URL trimming and bearer-header
 //! construction so no caller formats `Authorization` by hand.
 

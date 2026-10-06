@@ -14279,7 +14279,7 @@
               "string",
               "null"
             ],
-            "description": "Client/tool name recorded on the run, e.g. `message-crate-pull`."
+            "description": "Client/tool name recorded on the run, e.g. `message-crate-export`."
           }
         }
       },
@@ -14773,7 +14773,7 @@
               "string",
               "null"
             ],
-            "description": "Exporting tool, e.g. `message-crate-pull`, when the client named one."
+            "description": "Exporting tool, e.g. `message-crate-export`, when the client named one."
           },
           "total_bytes": {
             "type": "integer",
@@ -16061,7 +16061,7 @@
               "string",
               "null"
             ],
-            "description": "Exporting tool, e.g. `message-crate-pull`, when the client named one."
+            "description": "Exporting tool, e.g. `message-crate-export`, when the client named one."
           },
           "total_bytes": {
             "type": "integer",
@@ -17264,7 +17264,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Exporting tool, e.g. `message-crate-pull`, when the client named one."
+                  "description": "Exporting tool, e.g. `message-crate-export`, when the client named one."
                 },
                 "total_bytes": {
                   "type": "integer",
@@ -18099,7 +18099,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Exporting tool, e.g. `message-crate-pull`, when the client named one."
+                  "description": "Exporting tool, e.g. `message-crate-export`, when the client named one."
                 },
                 "total_bytes": {
                   "type": "integer",

@@ -2413,7 +2413,7 @@ export interface components {
         CreateExportRequest: {
             /** @description What to export. */
             scope: components["schemas"]["ExportScope"];
-            /** @description Client/tool name recorded on the run, e.g. `message-crate-pull`. */
+            /** @description Client/tool name recorded on the run, e.g. `message-crate-export`. */
             tool?: string | null;
         };
         /** @description Import result: the import counts plus optional dedupe counts. */
@@ -2725,7 +2725,7 @@ export interface components {
             started_at: string;
             /** @description Lifecycle status. */
             status: components["schemas"]["ExportStatus"];
-            /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
+            /** @description Exporting tool, e.g. `message-crate-export`, when the client named one. */
             tool: string | null;
             /**
              * Format: int64
@@ -3523,7 +3523,7 @@ export interface components {
             started_at: string;
             /** @description Lifecycle status. */
             status: components["schemas"]["ExportStatus"];
-            /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
+            /** @description Exporting tool, e.g. `message-crate-export`, when the client named one. */
             tool: string | null;
             /**
              * Format: int64
@@ -4123,7 +4123,7 @@ export interface components {
                 started_at: string;
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ExportStatus"];
-                /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
+                /** @description Exporting tool, e.g. `message-crate-export`, when the client named one. */
                 tool: string | null;
                 /**
                  * Format: int64
@@ -4555,7 +4555,7 @@ export interface components {
                 started_at: string;
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ExportStatus"];
-                /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
+                /** @description Exporting tool, e.g. `message-crate-export`, when the client named one. */
                 tool: string | null;
                 /**
                  * Format: int64

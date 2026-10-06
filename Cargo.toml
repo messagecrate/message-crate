@@ -32,7 +32,7 @@ members = [
     "crates/helpers/imessage-reader",
     "crates/core/message-crate-core",
     "crates/libs/push",
-    "crates/libs/pull",
+    "crates/libs/export",
     "crates/server/demo-seed",
     "crates/server/server",
 ]

@@ -24,7 +24,7 @@ pub enum JobName {
     Media,
     /// The `upload` command: the Upload Stage of an Import Run.
     Upload,
-    /// The `pull` command, and the `format` command when it is the second
+    /// The `export` command, and the `format` command when it is the second
     /// step of an Export.
     Export,
     /// The `format` command started from Settings → Convert.

@@ -69,6 +69,8 @@ usually holds no text for it, so it is shown as an empty muted bubble that
 reads "Unsent". It is kept apart from Deleted in the source app, because the
 sender took the message back for everyone rather than a person deleting
 their own copy. `unsent:yes` or `unsent:no` narrows a search to or away from it.
+Search finds it by what it shows, so a word of the text it hides does not
+find it, even when an earlier backup held that text.
 _Avoid_: Retracted, Recalled, Deleted
 
 **Earlier version**:
@@ -489,7 +491,7 @@ chosen, gets a directory of its own, named for what it is, when it started
 and its format, such as `export-2026-10-04-1430-mbox`. That directory is
 where the result lands unless the person chose another destination. While
 the run goes, it also holds the in-between files, such as the JSON Lines an
-Export pulls before converting them; they are deleted when the run
+Export writes before converting them; they are deleted when the run
 finishes, leaving only the result. A run that fails or is cancelled deletes
 its directory, and the app deletes one it did not see to its end the next
 time it starts. Message Crate never deletes a finished export from it. It belongs in the Message

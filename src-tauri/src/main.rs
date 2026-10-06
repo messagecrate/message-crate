@@ -76,7 +76,7 @@ fn main() {
             commands::local_server::set_open_to_network,
             commands::local_server::open_data_directory,
             commands::upload::upload,
-            commands::pull::pull,
+            commands::export::export,
             commands::exports::export_directory,
             commands::exports::create_export_dir,
             commands::exports::finish_export_dir,

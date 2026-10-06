@@ -1,4 +1,4 @@
-# message-crate-pull
+# message-crate-export
 
 Export messages from a running server into a local JSON Lines directory (`*.jsonl` plus `attachments/`), fetching each Asset the messages' attachments name.
 
@@ -7,7 +7,7 @@ The desktop app's **Export** screen uses this crate as a library, with the logge
 ## Build and test
 
 ```bash
-cargo test -p message-crate-pull
+cargo test -p message-crate-export
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).

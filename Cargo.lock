@@ -1926,22 +1926,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-http"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "httpmock",
- "message-crate-api-types",
- "rcgen",
- "reqwest",
- "rustls",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "message-crate-pull"
+name = "message-crate-export"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1960,6 +1945,21 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+]
+
+[[package]]
+name = "message-crate-http"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "httpmock",
+ "message-crate-api-types",
+ "rcgen",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 //! Shared scaffolding for the background job commands (`extract`, `format`,
-//! `pull`, `upload`, `transcode_staging`).
+//! `export`, `upload`, `transcode_staging`).
 //!
 //! One job runs at a time in this process. Every job reports on the same
 //! `extract:*` events, which do not say which job sent them, so a second job
