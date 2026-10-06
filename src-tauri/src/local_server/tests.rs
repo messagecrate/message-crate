@@ -516,6 +516,55 @@ mod with_a_script {
     /// open for writing, and until it runs its own program, running the
     /// script fails with "Text file busy". So the script is run once with
     /// `ready`, which only exits, until that works.
+    /// The process id a script wrote to `started`, once it is there.
+    fn started_process(started: &Path) -> libc::pid_t {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Ok(text) = std::fs::read_to_string(started) {
+                return text.trim().parse().unwrap();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the server never started its process"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Whether process `pid` ends within ten seconds. A killed process is a
+    /// zombie until the system reaps it, which a container whose first
+    /// process reaps nothing never does, so a zombie counts as ended. One
+    /// that is still running at the end is killed here, so the test leaves
+    /// nothing running.
+    fn ends(pid: libc::pid_t) -> bool {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            // SAFETY: signal 0 checks the process exists and sends nothing.
+            let exists = unsafe { libc::kill(pid, 0) } == 0;
+            if !exists || is_zombie(pid) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                // SAFETY: ends the test's own process, which outlived the
+                // server.
+                unsafe { libc::kill(pid, libc::SIGKILL) };
+                return false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Whether `pid` is a zombie: state `Z` in `/proc/<pid>/stat` on Linux.
+    /// Other systems have no `/proc`, so a zombie there counts as running.
+    fn is_zombie(pid: libc::pid_t) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            // The state follows the command name, which is in parentheses
+            // and may itself hold spaces or parentheses.
+            stat.rsplit_once(')')
+                .is_some_and(|(_, rest)| rest.trim_start().starts_with('Z'))
+        })
+    }
+
     fn script(dir: &Path, body: &str) -> PathBuf {
         let path = dir.join("fake-server");
         std::fs::write(
@@ -629,39 +678,11 @@ mod with_a_script {
 
         let server = LocalServer::default();
         server.ensure_started(launch);
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let pid: libc::pid_t = loop {
-            if let Ok(text) = std::fs::read_to_string(&started) {
-                break text.trim().parse().unwrap();
-            }
-            assert!(
-                Instant::now() < deadline,
-                "the server never started its process"
-            );
-            thread::sleep(Duration::from_millis(20));
-        };
+        let pid = started_process(&started);
 
         server.stop();
 
-        // The kill reaches the process at once, but it is a zombie until the
-        // system reaps it, so it is given a while to go. One that outlives
-        // the server is ended here, so the test leaves nothing running.
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let ended = loop {
-            // SAFETY: signal 0 checks the process exists and sends nothing.
-            if unsafe { libc::kill(pid, 0) } != 0 {
-                break true;
-            }
-            if Instant::now() >= deadline {
-                break false;
-            }
-            thread::sleep(Duration::from_millis(20));
-        };
-        if !ended {
-            // SAFETY: ends the test's own `sleep`, which outlived the server.
-            unsafe { libc::kill(pid, libc::SIGKILL) };
-        }
-        assert!(ended, "the server's own process outlived the server");
+        assert!(ends(pid), "the server's own process outlived the server");
     }
 
     #[test]
