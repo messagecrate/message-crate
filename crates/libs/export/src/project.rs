@@ -24,8 +24,8 @@ pub fn conversation_key(msg: &Message) -> String {
 /// Build one conversation document from a seed message and the mapped rows.
 ///
 /// The document's backup date is the seed's `backup_taken_at`, which the
-/// Export Run sets to the newest of the conversation's messages
-/// ([`newest_backup_taken_at`]), or none when no message has one.
+/// Export Run keeps only while every message of the conversation has the
+/// same one ([`common_backup_taken_at`]), and none otherwise.
 pub fn build_document(
     source: &str,
     seed: &Message,
@@ -85,13 +85,17 @@ pub fn build_document(
     }
 }
 
-/// Keep on `seed` the newer of its own `backup_taken_at` and `msg`'s, so
-/// the conversation file says the newest backup any of its messages came
-/// from. Every stored time has one fixed RFC 3339 form, so the greater
-/// string is the later instant.
-pub fn newest_backup_taken_at(seed: &mut Message, msg: &Message) {
-    if msg.backup_taken_at > seed.backup_taken_at {
-        seed.backup_taken_at.clone_from(&msg.backup_taken_at);
+/// Clear `seed`'s `backup_taken_at` when `msg`'s differs from it, so the
+/// conversation file names a backup date only when every message of the
+/// conversation came from that one backup. The file carries one date for
+/// all its messages, and any one date would be wrong for some of them when
+/// they differ: the newest would make a message decided by an older backup
+/// win over a backup made between the two, and would date a message that
+/// had none. With no date, an import of the file keeps the rules for files
+/// without one.
+pub fn common_backup_taken_at(seed: &mut Message, msg: &Message) {
+    if msg.backup_taken_at != seed.backup_taken_at {
+        seed.backup_taken_at = None;
     }
 }
 
@@ -635,35 +639,47 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
-    /// The file says the newest backup any of the conversation's messages
-    /// came from, and nothing when none of them says.
+    /// The file says the backup its messages came from when they all came
+    /// from one, and nothing when any two differ or none says.
     #[test]
-    fn a_document_says_the_newest_backup_its_messages_came_from() {
+    fn a_document_says_its_backup_only_when_every_message_came_from_it() {
         let participant = || Participant {
             identity: Some("+1".into()),
             name: "Sam".into(),
             service: None,
             contact_id: None,
         };
-        let mut seed = seed_message_with_participant(participant());
-        assert_eq!(
-            build_document("imessage", &seed, vec![])
+        let backup_of = |seed: &Message| {
+            build_document("imessage", seed, vec![])
                 .export
-                .backup_taken_at_unix_ms,
-            None
-        );
+                .backup_taken_at_unix_ms
+        };
+        let dated = |at: Option<&str>| {
+            let mut msg = seed_message_with_participant(participant());
+            msg.backup_taken_at = at.map(str::to_string);
+            msg
+        };
+        let later = Some("2026-09-30T18:45:12Z");
+        let earlier = Some("2026-09-01T10:00:00Z");
 
-        seed.backup_taken_at = Some("2026-09-01T10:00:00Z".into());
-        let mut newer = seed_message_with_participant(participant());
-        newer.backup_taken_at = Some("2026-09-30T18:45:12Z".into());
-        let undated = seed_message_with_participant(participant());
-        newest_backup_taken_at(&mut seed, &newer);
-        newest_backup_taken_at(&mut seed, &undated);
+        assert_eq!(backup_of(&dated(None)), None);
+
+        let mut seed = dated(later);
+        common_backup_taken_at(&mut seed, &dated(later));
+        assert_eq!(backup_of(&seed), Some(1_790_793_912_000));
+
+        let mut seed = dated(earlier);
+        common_backup_taken_at(&mut seed, &dated(later));
+        common_backup_taken_at(&mut seed, &dated(None));
+        assert_eq!(backup_of(&seed), None, "two backups: no one date is right");
+
+        let mut seed = dated(later);
+        common_backup_taken_at(&mut seed, &dated(None));
+        common_backup_taken_at(&mut seed, &dated(later));
         assert_eq!(
-            build_document("imessage", &seed, vec![])
-                .export
-                .backup_taken_at_unix_ms,
-            Some(1_790_793_912_000)
+            backup_of(&seed),
+            None,
+            "a message without a date stays without one"
         );
     }
 

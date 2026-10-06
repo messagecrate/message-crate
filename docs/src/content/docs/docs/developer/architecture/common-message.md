@@ -110,7 +110,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | SMS Backup & Restore | The root element's `backup_date` attribute; a file without one is dated by its modification time. A conversation read from two files is as new as the newer |
 | iMazing | The export date: the newest modification time of the CSV files iMazing wrote |
 | OpenExtract, GO SMS Pro, SMS Backup+ | The newest modification time of the files read, because none of them records a date of its own |
-| An Export Run of the server | The newest backup date of the conversation's messages |
+| An Export Run of the server | The backup date of the conversation's messages when they all have the same one, else `null`, because one date for messages from two backups would be wrong for some of them |
 
 The import reads it to decide between two copies of one message from one source. The copy from the later backup gives the message its deletion mark, mark or no mark, and its text and earlier versions, in one import in either file order and across imports in either order. A copy from an earlier backup changes neither. The server keeps the date to the second. A file that says nothing, or two copies whose dates are the same second, keep the rules for files without a date: a mark adds and is never cleared, and an edit counts as later when its newest earlier version is newer. Attachments and reactions add from either copy.
 
