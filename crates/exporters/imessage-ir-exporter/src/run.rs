@@ -136,9 +136,11 @@ impl ExportOptions {
     }
 
     /// When the Messages data was backed up, in Unix milliseconds: an
-    /// iPhone backup's `Manifest.plist` date, or a Mac `chat.db`'s
-    /// modification time, the last time Messages wrote it. `None` when
-    /// neither can be read.
+    /// iPhone backup's `Manifest.plist` date, or the last time Messages
+    /// wrote a Mac's `chat.db`: the newest modification time of `chat.db`
+    /// and its `-wal` and `-shm` files, because Messages keeps the database
+    /// in write-ahead mode and new rows reach `chat.db` itself only at a
+    /// checkpoint. `None` when neither can be read.
     pub fn backup_taken_at_unix_ms(&self) -> Option<i64> {
         backup_taken_at_unix_ms(&self.source)
     }
@@ -148,7 +150,19 @@ impl ExportOptions {
 pub(crate) fn backup_taken_at_unix_ms(source: &Source) -> Option<i64> {
     match source.platform {
         Platform::Ios => ios_backup::ios_backup_date_unix_ms(&source.db_path),
-        Platform::MacOs => message_crate_core::file_modified_unix_ms(&source.db_path),
+        Platform::MacOs => {
+            let sidecar = |suffix: &str| {
+                let mut name = source.db_path.clone().into_os_string();
+                name.push(suffix);
+                std::path::PathBuf::from(name)
+            };
+            let (wal, shm) = (sidecar("-wal"), sidecar("-shm"));
+            message_crate_core::newest_file_modified_unix_ms([
+                source.db_path.as_path(),
+                wal.as_path(),
+                shm.as_path(),
+            ])
+        }
     }
 }
 

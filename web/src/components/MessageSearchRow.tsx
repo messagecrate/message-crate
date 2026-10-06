@@ -1,12 +1,11 @@
 import type { ReactNode } from "react";
 import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
-import type { FreeTextTerm } from "../lib/freeTextTerms";
 import { type MatchRange, snippet } from "../lib/messageMatch";
 import { messageConversationName, messageRowText, messageSenderName } from "../lib/messageRowText";
 import { useTimeZone } from "../lib/timeZone";
 import { listRowDivider } from "../lib/tw";
-import type { Message } from "../lib/types";
+import type { FreeTextTerm, Message } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
 import PlainButton from "./PlainButton";
 

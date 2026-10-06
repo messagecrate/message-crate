@@ -10209,8 +10209,8 @@
         "tags": [
           "Messages"
         ],
-        "summary": "Messages matching `q`, oldest first unless `sort` says otherwise: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.",
-        "description": "`sort=relevance` puts the best match first, ranked by the full-text\nindex's `bm25()` on the query's free-text words: the words not behind `-`\nor `not`. A query with no such word has nothing to rank by, and\n`relevance` is then `validation-failed`. Ties, and a message found only by\nan attachment's file name, which the index does not rank, follow by date,\nnewest first.",
+        "summary": "Messages matching `q`: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.",
+        "description": "With no `sort`, the best match comes first when `q` has a free-text word\nto rank by, and the newest message first when it has none. The page's\n`search` says which order it applied and which terms it ranks by, so a\nclient never parses `q` itself.\n\n`sort=relevance` puts the best match first, ranked by the full-text\nindex's `bm25()` on the query's free-text words: the words not behind `-`\nor `not`. A query with no such word has nothing to rank by, and\n`relevance` is then `validation-failed`. Ties, and a message found only by\nan attachment's file name, which the index does not rank, follow by date,\nnewest first.",
         "operationId": "list_messages",
         "parameters": [
           {
@@ -10245,7 +10245,7 @@
           {
             "name": "sort",
             "in": "query",
-            "description": "`date`, `-date` or `relevance` (best match first; needs a free-text word in `q`). Default `date`, oldest first.",
+            "description": "`date`, `-date` or `relevance` (best match first; needs a free-text word in `q`). Default `relevance` when `q` has a free-text word, and `-date`, newest first, when it has none.",
             "required": false,
             "schema": {
               "type": "string"
@@ -10258,7 +10258,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_Message"
+                  "$ref": "#/components/schemas/ListMessagesResponse"
                 }
               }
             }
@@ -14916,6 +14916,24 @@
           }
         }
       },
+      "FreeTextTerm": {
+        "type": "object",
+        "description": "One free-text term of a search: a word, or a quoted phrase.",
+        "required": [
+          "text",
+          "prefix"
+        ],
+        "properties": {
+          "prefix": {
+            "type": "boolean",
+            "description": "True when the word ended in `*` and matches any word it begins; the\n`*` is not in `text`. Always false for a phrase."
+          },
+          "text": {
+            "type": "string",
+            "description": "The word, or the phrase without its quotes, as typed."
+          }
+        }
+      },
       "GetAddressBookRequest": {
         "type": "object",
         "description": "Which contacts `POST /v1/contacts/address-book` writes: the Contacts\nlist's search and its checked rows.",
@@ -15580,6 +15598,46 @@
           }
         }
       },
+      "ListMessagesResponse": {
+        "type": "object",
+        "description": "One page of the Messages list and how the server read its search: the\nfour keys of every page, and `search`, the one key a page carries beside\nthem (`docs/architecture/http-api.md`, \"Lists\").",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "search"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            },
+            "description": "The rows on this page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size used.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Page offset used.",
+            "minimum": 0
+          },
+          "search": {
+            "$ref": "#/components/schemas/MessageSearch",
+            "description": "How the server read `q` and `sort`: the order it applied and the\nfree-text terms it ranks by. It describes the query, not the rows, so\nevery page of one query carries the same value."
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows matching the query across every page.",
+            "minimum": 0
+          }
+        }
+      },
       "ListUnmatchedIdentitiesRequest": {
         "type": "object",
         "description": "Body for `POST /v1/contacts/unmatched-identities`.",
@@ -15915,6 +15973,27 @@
               "$ref": "#/components/schemas/Participant"
             },
             "description": "Participants of the conversation."
+          }
+        }
+      },
+      "MessageSearch": {
+        "type": "object",
+        "description": "A Messages search as the server read it.",
+        "required": [
+          "sort",
+          "terms"
+        ],
+        "properties": {
+          "sort": {
+            "type": "string",
+            "description": "The order the page is in, spelled as `sort` takes it: the `sort` the\nrequest named, or with none, `relevance` when `terms` is not empty and\n`-date` (newest first) when it is."
+          },
+          "terms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FreeTextTerm"
+            },
+            "description": "The free-text terms the search ranks by, in the order they were typed:\nevery word and quoted phrase of `q` that is not a field word and not\nbehind `-` or `not`, alone or in a negated group. Empty when `q` has\nnone, and then `relevance` is refused."
           }
         }
       },

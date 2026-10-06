@@ -695,7 +695,7 @@ mod tests {
                 edited_at: Some("2023-12-31T23:59:00Z".into()),
                 matched: false,
             }],
-            backup_taken_at: Some("2024-01-02T08:00:00Z".into()),
+            backup_taken_at: Some("2024-01-02T08:00:00.000Z".into()),
             matched_earlier_version: false,
         };
 

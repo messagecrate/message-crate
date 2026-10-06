@@ -98,6 +98,10 @@ async fn promote_fts_indexing_covers_only_rows_inserted_by_this_promotion() {
             staging_id INTEGER PRIMARY KEY,
             prod_id INTEGER NOT NULL
         );
+        CREATE TEMP TABLE _promote_mark_map (
+            staging_id INTEGER PRIMARY KEY,
+            prod_id INTEGER NOT NULL
+        );
         INSERT INTO _promote_msg_map (staging_id, prod_id) VALUES (1, 10), (2, 11), (3, 11);
         ",
     )
@@ -170,6 +174,10 @@ async fn promote_fts_indexing_reindexes_an_existing_message_that_gained_an_attac
             prod_id INTEGER NOT NULL
         );
         CREATE TEMP TABLE _promote_edit_map (
+            staging_id INTEGER PRIMARY KEY,
+            prod_id INTEGER NOT NULL
+        );
+        CREATE TEMP TABLE _promote_mark_map (
             staging_id INTEGER PRIMARY KEY,
             prod_id INTEGER NOT NULL
         );

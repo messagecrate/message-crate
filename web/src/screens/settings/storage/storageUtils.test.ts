@@ -226,10 +226,10 @@ describe("importBackup", () => {
       importBackup(
         accountImportRun({
           source_fingerprint: { path: "/backups/iPhone/00008110", size: 12, mtime_ms: 1 },
-          backup_taken_at: "2026-09-30T18:45:12Z",
+          backup_taken_at: "2026-09-30T18:45:12.000Z",
         }),
       ),
-    ).toEqual({ file: "/backups/iPhone/00008110", takenAt: "2026-09-30T18:45:12Z" });
+    ).toEqual({ file: "/backups/iPhone/00008110", takenAt: "2026-09-30T18:45:12.000Z" });
   });
 
   it("says nothing it was not told", () => {

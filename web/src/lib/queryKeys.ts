@@ -82,7 +82,8 @@ export const keys = {
   },
   /**
    * The Messages list: the messages a search matches across every
-   * conversation, `GET /v1/messages`, one entry per query and sort.
+   * conversation, `GET /v1/messages`, one entry per query and sort. The
+   * sort is `""` when the person picked none and the server picks it.
    */
   messages: {
     all: ["messages"] as const,

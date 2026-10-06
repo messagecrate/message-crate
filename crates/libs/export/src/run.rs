@@ -17,7 +17,7 @@ use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
 use crate::project::{
-    ExportPath, build_document, conversation_key, export_path, newest_backup_taken_at,
+    ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
     to_ir_message,
 };
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
@@ -504,7 +504,7 @@ impl<'a> Export<'a> {
                     .entry(conversation_key(&msg))
                     // Keep first message as seed for conversation metadata.
                     .or_insert_with(|| (msg.clone(), Vec::new()));
-                newest_backup_taken_at(seed, &msg);
+                common_backup_taken_at(seed, &msg);
                 messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {

@@ -264,6 +264,29 @@ below). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
 
+The Messages list, `GET /v1/messages`, is the one page with a key beside the
+four: `search`, which says how the server read the request. `search.sort` is
+the order the page is in, spelled as the `sort` parameter takes it, and
+`search.terms` holds the free-text terms the query ranks by, each a `text` and
+whether it is a `prefix`. The key describes the query, not the rows, so every
+page of one query carries the same value.
+Why: with no `sort`, the server picks the order from the query, best match
+first when it has a free-text term and newest first when it has none
+(`docs/architecture/search.md`), and the web app shows that order in its sort
+menu and draws the terms in bold. Only the module that parses the search
+language knows which words those are
+(`docs/adr/0004-one-search-language-compiled-in-one-module.md`). The web app
+once read them from `q` with a parser of its own, a second copy of the
+grammar that nothing held to the first (#1538).
+Rejected: a route of its own that reads a query and answers its terms. A
+query is not a resource, and every new search would wait for that answer
+before it could ask for its first page in the right order.
+
+`openapi/document_rules.rs` names the route and its schema,
+`ListMessagesResponse`, and fails any other page with a key beyond the four.
+It knows a page by its four keys, not by its name, so a page under a new
+name is held to the same rule.
+
 A `POST` that reads the rows its body names — contact summaries, unmatched
 identities — answers the whole of that body as one page and takes no `offset`
 or `limit`: `total` is the row count, `limit` is the cap the body is held to,
@@ -585,6 +608,11 @@ What each reaches:
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
+  The times are the run's own, when it started and ended; the owner reads
+  nothing of the backup an import read, neither the file the desktop app
+  recorded (`source_fingerprint`) nor when the backup was made
+  (`backup_taken_at`), because both say when and from what the account's
+  phone was backed up.
   Why: a staging summary lists the addresses of everyone in the backup, an
   issue names its conversation's file, a note names a file or an address, and
   an export's query is a search over

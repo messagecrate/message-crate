@@ -12,8 +12,8 @@ use crate::db::handles::{
     HandleIdCache, handle_type_on, upsert_handle_row, upsert_handle_row_cached,
 };
 use crate::db::staging::{
-    self as db_staging, StagedCopy, StagingAttachment, StagingConversation, StagingEarlierVersion,
-    StagingMessage, StagingMessageKey, StagingTapback,
+    self as db_staging, BackupOrder, StagedCopy, StagingAttachment, StagingConversation,
+    StagingEarlierVersion, StagingMessage, StagingMessageKey, StagingTapback,
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
@@ -909,10 +909,11 @@ async fn flush_staging_message_chunk(
 /// `db::staging::write_edit_map`): the attachments and reactions the staged
 /// message does not hold yet, and its mark and text as follows. When both
 /// backups have a date, a copy from a later backup gives its text, earlier
-/// versions and mark, mark or no mark, and one from an earlier or the same
-/// backup gives neither (#1741, #1804). When either has no date, the copy
-/// gives its text and earlier versions when it records a later edit, and
-/// its mark when it carries one. One import of two backups then stores
+/// versions and mark, mark or no mark, and one from an earlier backup gives
+/// neither (#1741, #1804). When either has no date, or the two dates are
+/// equal ([`db_staging::later_backup`]), the copy gives its text and
+/// earlier versions when it records a later edit, and its mark when it
+/// carries one. One import of two backups then stores
 /// what two separate imports of them store, in either file order (#1806,
 /// #1837).
 async fn add_staged_copy(
@@ -940,23 +941,22 @@ async fn add_staged_copy(
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
     let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
-    match (staged_source.backup_taken_at, held_backup.as_deref()) {
-        (Some(copy_backup), Some(held_backup)) => {
-            if copy_backup > held_backup {
-                db_staging::take_staged_copy_from_later_backup(
-                    tx,
-                    staged,
-                    &StagedCopy {
-                        body: row.body.as_deref(),
-                        deletion: row.msg.deletion,
-                        versions: &row.msg.earlier_versions,
-                        backup_taken_at: copy_backup,
-                    },
-                )
-                .await?;
-            }
+    match db_staging::later_backup(staged_source.backup_taken_at, held_backup.as_deref()) {
+        BackupOrder::Later(copy_backup) => {
+            db_staging::take_staged_copy_from_later_backup(
+                tx,
+                staged,
+                &StagedCopy {
+                    body: row.body.as_deref(),
+                    deletion: row.msg.deletion,
+                    versions: &row.msg.earlier_versions,
+                    backup_taken_at: copy_backup,
+                },
+            )
+            .await?;
         }
-        _ => {
+        BackupOrder::Earlier => {}
+        BackupOrder::Undecided => {
             if !row.msg.earlier_versions.is_empty() {
                 db_staging::take_later_staged_copy(
                     tx,

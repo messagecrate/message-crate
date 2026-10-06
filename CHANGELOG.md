@@ -32,9 +32,9 @@ released versions carry their date on the heading.
   hides the whole-second copy and shows the message at its time to the
   millisecond. A time to the millisecond that ends in `.000` counts as
   milliseconds. CSV exports carry it in a `time_precision` column, and mail
-  exports in an `X-ME-Time-Precision` header. A message file at the
-  previous schema version, 11, is refused, and the backup must be exported
-  again with this build.
+  exports in an `X-ME-Time-Precision` header. Message files exported
+  before they said whether each time has milliseconds are refused, and the
+  backup must be exported again with this build.
 - 2026-10-05: **The newer backup decides when a message changed between two
   backups of one phone.** Every message file now says when its backup was
   made: an iPhone backup's own date, the date an SMS Backup & Restore file
@@ -46,8 +46,8 @@ released versions carry their date on the heading.
   and a message unsent after the older backup reads as unsent. An older
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
-  A message file at the previous schema version, 10, is refused, and the
-  backup must be exported again with this build.
+  Message files exported before they said when their backup was made are
+  refused, and the backup must be exported again with this build.
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -72,7 +72,17 @@ released versions carry their date on the heading.
   is a sentence that names the item, such as "The file sms-2.xml could not
   be read in full: …", where it was `error: sms-2.xml: This file could not
   be read in full: …` before.
-
+- 2026-10-05: **The server picks the order of the Messages list.** With no
+  `sort`, `GET /v1/messages` now puts the best match first when the search
+  has a free-text word to rank by, and the newest message first when it has
+  none. It used to list the oldest first. Each page says which order it
+  applied and which words it ranks by, in a new `search` key beside `items`,
+  and the web app reads both from there: the sort menu offers Relevance only
+  when words came back, and the list draws those words in bold. Nothing
+  changes on screen, except that a search the web app and the server once
+  read differently now shows the server's reading. Picking Relevance now
+  leaves `sort` out of the address, so the next search starts in the
+  server's order.
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a
@@ -178,19 +188,17 @@ released versions carry their date on the heading.
   in place of `num_replies`.
 - A Saved Search that uses `deleted:yes` finds fewer messages than before:
   it leaves unsent messages out. Add `or unsent:yes` to it to find both.
-- Message files at schema version 10, exported before they said when their
-  backup was made, are refused when you import or convert them. Export the
-  backup again with this build. A program that reads the HTTP API finds the
-  backup's date in a message's `backup_taken_at` and an Import Run's
-  `backup_taken_at`.
 - If you have a program that reads messages from the HTTP API, a message's
   `timestamp` and an earlier version's `edited_at` now carry three digits of
   milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
-- Message files at schema version 11, exported before each message said
-  whether its time has milliseconds, are refused when you import or convert
-  them. Export the backup again with this build. A program that reads the
-  HTTP API finds it in a message's `time_precision`, `seconds` or
-  `milliseconds`.
+- Message files exported before they said when their backup was made are
+  refused when you import or convert them. Export the backup again with
+  this build. A program that reads the HTTP API finds the backup's date in
+  a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
+- Message files exported before each message said whether its time has
+  milliseconds are refused when you import or convert them. Export the
+  backup again with this build. A program that reads the HTTP API finds it
+  in a message's `time_precision`, `seconds` or `milliseconds`.
 
 ## [0.10.1] - 2026-10-05
 

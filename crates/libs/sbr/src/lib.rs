@@ -67,6 +67,7 @@ pub struct SbrBackupWriter {
     body: BufWriter<File>,
     count: u64,
     characters_left_out: u64,
+    backup_date_unix_ms: Option<i64>,
 }
 
 impl SbrBackupWriter {
@@ -94,6 +95,7 @@ impl SbrBackupWriter {
             body,
             count: 0,
             characters_left_out: 0,
+            backup_date_unix_ms: None,
         })
     }
 
@@ -105,6 +107,15 @@ impl SbrBackupWriter {
     /// Characters left out so far because XML 1.0 cannot carry them.
     pub fn characters_left_out(&self) -> u64 {
         self.characters_left_out
+    }
+
+    /// Note when the backup of messages written to this file was made, in
+    /// Unix milliseconds. The file's root `backup_date` says the newest date
+    /// noted, as the reader dates a conversation read from two files by the
+    /// newer, and is left out when none was noted. Without it, the reader
+    /// would date the file by when it was written.
+    pub fn note_backup_date(&mut self, unix_ms: Option<i64>) {
+        self.backup_date_unix_ms = self.backup_date_unix_ms.max(unix_ms);
     }
 
     /// Serialize one SMS/MMS element into the sidecar body file and increment
@@ -130,7 +141,8 @@ impl SbrBackupWriter {
         Ok(())
     }
 
-    /// Finalize `count`, close `</smses>`, and replace `path`.
+    /// Finalize `count` and `backup_date`, close `</smses>`, and replace
+    /// `path`.
     ///
     /// # Errors
     ///
@@ -154,7 +166,11 @@ impl SbrBackupWriter {
                 out,
                 r"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>"
             )?;
-            writeln!(out, r#"<smses count="{}">"#, self.count)?;
+            let backup_date = self
+                .backup_date_unix_ms
+                .map(|date| format!(r#" backup_date="{date}""#))
+                .unwrap_or_default();
+            writeln!(out, r#"<smses count="{}"{backup_date}>"#, self.count)?;
             // Every element written to the body ends with a line break, so
             // the closing tag starts a line of its own.
             io::copy(&mut body, &mut out)

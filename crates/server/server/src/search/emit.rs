@@ -56,30 +56,30 @@ pub(crate) fn compile(
     account_id: i64,
     zone: chrono_tz::Tz,
 ) -> Result<Filter, QueryError> {
-    let rank_query = match (list, expr) {
-        (ListKind::Messages, Some(expr)) => fts::rank_query(&expr.positive_text_terms()),
-        _ => None,
+    let ranked_terms: Vec<TextTerm> = match (list, expr) {
+        (ListKind::Messages, Some(expr)) => {
+            expr.positive_text_terms().into_iter().cloned().collect()
+        }
+        _ => Vec::new(),
     };
     let (where_sql, params) = compile_where(list, expr, account_id, zone, true)?;
+    let mut filter = Filter {
+        where_sql,
+        params,
+        ranked_terms,
+        final_text: None,
+        earlier_version_match: None,
+    };
     // Only a free-text word that is not negated can find a message by an
     // earlier version alone: a negated one only leaves messages out, and
     // reading earlier versions too leaves out more, never adds.
-    let final_text = match rank_query {
-        Some(_) => Some(compile_where(list, expr, account_id, zone, false)?),
-        None => None,
-    };
-    let earlier_version_match = rank_query.as_deref().map(|query| {
+    if let Some(query) = filter.rank_query() {
+        filter.final_text = Some(compile_where(list, expr, account_id, zone, false)?);
         let mut out = Sql::default();
-        fts::version_ids_matching(&mut out, query);
-        (out.text, out.params)
-    });
-    Ok(Filter {
-        where_sql,
-        params,
-        rank_query,
-        final_text,
-        earlier_version_match,
-    })
+        fts::version_ids_matching(&mut out, &query);
+        filter.earlier_version_match = Some((out.text, out.params));
+    }
+    Ok(filter)
 }
 
 /// The WHERE fragment and its values for `expr` on `list`, its free-text
