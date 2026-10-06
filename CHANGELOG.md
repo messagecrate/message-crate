@@ -25,12 +25,12 @@ released versions carry their date on the heading.
   millisecond shows once.** Every message file now says whether each
   message's time has milliseconds or only whole seconds, as its backup app
   recorded it. iMazing, OpenExtract, GO SMS Pro's PDU files and SMS Backup+
-  mails without an `X-smssync-date` record whole seconds; the other sources
+  mails that record no milliseconds record whole seconds; the other sources
   record milliseconds. When one backup app holds a message twice, once to
-  the second and once to the millisecond, such as an SMS Backup+ mail timed
-  by its `Date` header and one timed by `X-smssync-date`, hiding duplicates
-  hides the whole-second copy and shows the message at its time to the
-  millisecond. A time to the millisecond that ends in `.000` counts as
+  the second and once to the millisecond, such as two SMS Backup+ mails of
+  one message, one timed to the second and one to the millisecond, hiding
+  duplicates hides the whole-second copy and shows the message at its time
+  to the millisecond. A time to the millisecond that ends in `.000` counts as
   milliseconds. CSV exports carry it in a `time_precision` column, and mail
   exports in an `X-ME-Time-Precision` header. Message files exported
   before they said whether each time has milliseconds are refused, and the
