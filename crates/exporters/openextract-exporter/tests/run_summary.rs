@@ -87,6 +87,7 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
             step: "parse".into(),
             item: format!("{} (Mystery Person)", input.join("all_conversations.csv").display()),
             reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),
+            conversation: None,
         }]
     );
 }

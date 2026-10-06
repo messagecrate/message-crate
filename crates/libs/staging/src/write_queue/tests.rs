@@ -68,7 +68,7 @@ fn drain(
         dir,
         units,
         options,
-        &mut load_attachment_source,
+        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         None,
         None,
         None,
@@ -140,7 +140,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
     };
     drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
 
-    let mut never = |_: &mut AttachmentSource| -> Result<Option<Vec<u8>>, LoadError> {
+    let mut never = |_: &str, _: &mut AttachmentSource| -> Result<Option<Vec<u8>>, LoadError> {
         panic!("a skipped unit must not load anything")
     };
     let report = drain_write_queue_with_loader(
@@ -309,7 +309,7 @@ fn progress_lines_cover_all_units_with_global_counts() {
         &out,
         units,
         &options(MediaMode::Clone, false),
-        &mut load_attachment_source,
+        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Some(&sink),
         None,
         None,
@@ -451,7 +451,7 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
             &out,
             units,
             &options,
-            &mut load_attachment_source,
+            &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
             None,
             Some(&sink),
             None,
@@ -716,7 +716,7 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
         &out,
         build(),
         &options(MediaMode::Clone, true),
-        &mut load_attachment_source,
+        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         None,
         Some(&sink),
         None,
@@ -1068,4 +1068,111 @@ fn a_missing_attachment_is_not_counted_against_the_disk() {
 
     let result = drain(tmp.path(), vec![unit], &options(MediaMode::Clone, false));
     assert!(result.is_ok(), "refused: {:?}", result.err());
+}
+
+/// The conversation files in `dir`, by name, sorted.
+fn conversation_files(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".jsonl"))
+        .collect();
+    names.sort();
+    names
+}
+
+/// The `FileWritten` events among `events`, as (file, status).
+fn files_written(events: &[ProgressEvent]) -> Vec<(String, WriteStatus)> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            ProgressEvent::FileWritten { file, status } => Some((file.clone(), *status)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A resumed Staging skips a conversation already written without reading
+/// its attachments again, so a row recorded while it was written is never
+/// reported again. The window tells such rows apart by the conversation
+/// file each names: the loader is told which file it loads for, and the
+/// drain says which files it wrote and which it skipped, by the name the
+/// Upload gives each file (#1688).
+#[test]
+fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    let unit = |n: u32, bytes: &[u8]| {
+        unit_from(
+            doc_with(&test_number(n), 1),
+            vec![AttachmentSource::Bytes(bytes.to_vec())],
+        )
+    };
+    drain(&out, vec![unit(6, b"a")], &options(MediaMode::Clone, false)).unwrap();
+    let first = conversation_files(&out);
+    assert_eq!(first.len(), 1);
+
+    let loaded_for = RefCell::new(Vec::<String>::new());
+    let mut load = |conversation: &str, source: &mut AttachmentSource| {
+        loaded_for.borrow_mut().push(conversation.to_string());
+        load_attachment_source(source)
+    };
+    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+    let sink_seen = Arc::clone(&seen);
+    let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+    drain_write_queue_with_loader(
+        &out,
+        vec![unit(6, b"a"), unit(7, b"b")],
+        &options(MediaMode::Clone, true),
+        &mut load,
+        None,
+        Some(&sink),
+        None,
+    )
+    .unwrap();
+
+    let second: Vec<String> = conversation_files(&out)
+        .into_iter()
+        .filter(|name| !first.contains(name))
+        .collect();
+    assert_eq!(second.len(), 1);
+    assert_eq!(*loaded_for.borrow(), second, "only the unit written loads");
+    assert_eq!(
+        files_written(&seen.lock().unwrap()),
+        [
+            (first[0].clone(), WriteStatus::Skipped),
+            (second[0].clone(), WriteStatus::Written)
+        ]
+    );
+}
+
+/// The parallel drain names each conversation file it writes too.
+#[test]
+fn a_parallel_drain_names_each_conversation_file_it_writes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    let units: Vec<_> = (1..=3)
+        .map(|i| {
+            unit_from(
+                doc_with(&test_number(i), 1),
+                vec![AttachmentSource::Bytes(b"x".to_vec())],
+            )
+        })
+        .collect();
+    let mut options = options(MediaMode::Clone, false);
+    options.writer_count = 2;
+    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+    let sink_seen = Arc::clone(&seen);
+    let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+
+    drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
+
+    let mut done = files_written(&seen.lock().unwrap());
+    done.sort_by(|a, b| a.0.cmp(&b.0));
+    let written: Vec<(String, WriteStatus)> = conversation_files(&out)
+        .into_iter()
+        .map(|name| (name, WriteStatus::Written))
+        .collect();
+    assert_eq!(done, written);
 }

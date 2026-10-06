@@ -70,6 +70,7 @@ fn a_live_photo_video_two_rows_name_is_a_note_naming_the_picture() {
             step: "parse".into(),
             item: picture.display().to_string(),
             reason: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV".into(),
+            conversation: None,
         }]
     );
 }
@@ -104,6 +105,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
             step: "parse".into(),
             item: format!("{csv} (Mystery Person)"),
             reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),
+            conversation: None,
         }]
     );
 }
@@ -123,6 +125,7 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
             step: "parse".into(),
             item: format!("{csv} (Carol Silent)"),
             reason: "The group's name lists this member, but no message gives their phone number or email address, so they are kept by name.".into(),
+            conversation: None,
         }]
     );
 }

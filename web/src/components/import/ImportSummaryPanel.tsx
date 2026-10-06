@@ -11,9 +11,9 @@ export type ImportIssue = {
   item: string;
   reason: string;
   /**
-   * The conversation file an Upload row is about (`ImportIssueEvent`). The
-   * run record keeps it to tell which rows a resumed Upload reports again;
-   * the server is never sent it.
+   * The conversation file an Upload or Staging row is about
+   * (`ImportIssueEvent`). The run record keeps it to tell which rows a
+   * resumed Upload or Staging reports again; the server is never sent it.
    */
   conversation?: string;
 };

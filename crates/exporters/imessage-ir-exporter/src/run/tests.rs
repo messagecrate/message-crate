@@ -686,7 +686,16 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         "{:#?}",
         result.messages
     );
-    // The Import Run lists the video, and only the video, as an issue.
+    // The Import Run lists the video, and only the video, as an issue, under
+    // the conversation file it was recorded while writing, so a resumed
+    // Staging that writes that file again retires the row (#1688).
+    let written: Vec<String> = fs::read_dir(&config.output)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".jsonl"))
+        .collect();
+    assert_eq!(written.len(), 1, "{written:?}");
     assert_eq!(
         *issues.lock().unwrap(),
         [message_crate_core::RunIssue {
@@ -695,6 +704,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: write the decrypted file: No space left on device"
                 .into(),
+            conversation: Some(written[0].clone()),
         }]
     );
 }
