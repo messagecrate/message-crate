@@ -489,7 +489,7 @@ chosen, gets a directory of its own, named for what it is, when it started
 and its format, such as `export-2026-10-04-1430-mbox`. That directory is
 where the result lands unless the person chose another destination. While
 the run goes, it also holds the in-between files, such as the JSON Lines an
-Export fetches before converting them; they are deleted when the run
+Export writes before converting them; they are deleted when the run
 finishes, leaving only the result. A run that fails or is cancelled deletes
 its directory, and the app deletes one it did not see to its end the next
 time it starts. Message Crate never deletes a finished export from it. It belongs in the Message

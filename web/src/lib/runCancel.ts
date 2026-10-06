@@ -8,7 +8,7 @@ import { invokeCancel } from "./tauri";
 export const CANCELLED_MESSAGE = "cancelled";
 
 /**
- * The Cancel of one run of desktop jobs: an Import Run, or an export's fetch
+ * The Cancel of one run of desktop jobs: an Import Run, or an Export's export step
  * and conversion.
  *
  * The desktop side stops only the job that is running, and each job command

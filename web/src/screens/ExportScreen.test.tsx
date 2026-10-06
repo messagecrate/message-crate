@@ -108,7 +108,7 @@ async function exportAs(directory: string, formatLabel: string) {
 }
 
 describe("ExportScreen", () => {
-  it("fetches straight into the chosen directory for JSON Lines", async () => {
+  it("exports straight into the chosen directory for JSON Lines", async () => {
     await exportTo("/home/demo/out");
 
     await waitFor(() => expect(invokeExport).toHaveBeenCalledTimes(1));
@@ -122,7 +122,7 @@ describe("ExportScreen", () => {
     expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
-  it("fetches JSON Lines into its own directory in the Export Directory when no directory is chosen", async () => {
+  it("exports JSON Lines into its own directory in the Export Directory when no directory is chosen", async () => {
     const user = setupUser();
     renderScreen();
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
@@ -159,7 +159,7 @@ describe("ExportScreen", () => {
     );
   });
 
-  it("fetches into the export's own directory and converts into the chosen directory for CSV", async () => {
+  it("exports into the export's own directory and converts into the chosen directory for CSV", async () => {
     const exported = EXPORT_DIR.exported;
     await exportAs("/home/demo/out", "CSV (.csv)");
 
@@ -174,10 +174,10 @@ describe("ExportScreen", () => {
     });
   });
 
-  it("hands the conversion the time the Export Run started, before the fetch", async () => {
-    let fetched = 0;
+  it("hands the conversion the time the Export Run started, before the export step", async () => {
+    let exportStepAt = 0;
     invokeExport.mockImplementation(async () => {
-      fetched = Date.now();
+      exportStepAt = Date.now();
     });
     const before = Date.now();
     await exportAs("/home/demo/out", "CSV (.csv)");
@@ -185,7 +185,7 @@ describe("ExportScreen", () => {
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     const started = invokeFormat.mock.calls[0][0].run_started_ms as number;
     expect(started).toBeGreaterThanOrEqual(before);
-    expect(started).toBeLessThanOrEqual(fetched);
+    expect(started).toBeLessThanOrEqual(exportStepAt);
   });
 
   it("starts nothing when the desktop refuses Save to for holding the Export Directory", async () => {
@@ -214,7 +214,7 @@ describe("ExportScreen", () => {
     // disk, in a directory the person never chose and will not think to look in.
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "fetched" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async () => {
       throw new Error("unsupported output format");
@@ -227,7 +227,7 @@ describe("ExportScreen", () => {
     expect(await screen.findByText("unsupported output format")).toBeTruthy();
   });
 
-  it("does not start the conversion when Cancel is pressed after the fetch finished", async () => {
+  it("does not start the conversion when Cancel is pressed after the export step finished", async () => {
     // A Cancel sent while no job runs stops nothing, and invokeFormat starts
     // its job with a cancel flag of its own, so the screen must not start it.
     let releaseFormat: () => void = () => {};
@@ -236,7 +236,7 @@ describe("ExportScreen", () => {
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "fetched" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
@@ -253,8 +253,8 @@ describe("ExportScreen", () => {
     expect(invokeFormat).not.toHaveBeenCalled();
   });
 
-  it("keeps Convert off between the fetch and the format step, and lets it start once the export ends", async () => {
-    // Each job holds the desktop only while it runs; between the fetch and the
+  it("keeps Convert off between the export step and the format step, and lets it start once the export ends", async () => {
+    // Each job holds the desktop only while it runs; between the export step and the
     // format step the desktop has nothing running, so a Convert started there
     // would make it refuse the format step (#1407).
     let releaseFormat: () => void = () => {};
@@ -263,7 +263,7 @@ describe("ExportScreen", () => {
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
-      return { summary: "fetched" };
+      return { summary: "exported" };
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
@@ -291,7 +291,7 @@ describe("ExportScreen", () => {
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    // The fetch has ended and the format step has not started.
+    // The export step has ended and the format step has not started.
     await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
     expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeFormat).not.toHaveBeenCalled();
@@ -317,13 +317,13 @@ describe("ExportScreen", () => {
 
   it("ignores a second Export while one is already under way", async () => {
     // The desktop backend runs one job at a time (src-tauri/src/commands/jobs.rs),
-    // and between the fetch and the conversion it has nothing running to refuse.
-    let releaseFetch: () => void = () => {};
-    const fetchStarted = new Promise<void>((resolve) => {
-      releaseFetch = resolve;
+    // and between the export step and the conversion it has nothing running to refuse.
+    let releaseExport: () => void = () => {};
+    const exportStarted = new Promise<void>((resolve) => {
+      releaseExport = resolve;
     });
     invokeCreateExportDir.mockImplementation(async () => {
-      await fetchStarted;
+      await exportStarted;
       return EXPORT_DIR;
     });
 
@@ -341,7 +341,7 @@ describe("ExportScreen", () => {
     // itself 80 ms later. On a busy machine that lands after the first export
     // has ended and the button is live again, and starts a second one.
     fireEvent.click(exportButton);
-    releaseFetch();
+    releaseExport();
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     expect(invokeExport).toHaveBeenCalledTimes(1);
@@ -453,19 +453,19 @@ describe("ExportScreen", () => {
   });
 
   it("locks the directory field while an export runs", async () => {
-    let releaseFetch: () => void = () => {};
-    const fetchHeld = new Promise<void>((resolve) => {
-      releaseFetch = resolve;
+    let releaseExport: () => void = () => {};
+    const exportHeld = new Promise<void>((resolve) => {
+      releaseExport = resolve;
     });
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
-      await fetchHeld;
+      await exportHeld;
       await invokeFn();
-      return { summary: "fetched" };
+      return { summary: "exported" };
     });
 
     await exportTo("/a");
     expect(screen.getByPlaceholderText("The Export Directory")).toBeDisabled();
-    releaseFetch();
+    releaseExport();
     await screen.findByText(/Export complete/);
     expect(screen.getByPlaceholderText("The Export Directory")).toBeEnabled();
   });
