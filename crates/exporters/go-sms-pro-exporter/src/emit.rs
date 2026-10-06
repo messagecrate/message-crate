@@ -535,8 +535,9 @@ impl Ingest<'_> {
             Ok(parsed) => parsed,
             Err(err) => {
                 self.report.error(
+                    "file",
                     xml_path.display().to_string(),
-                    format!("This file could not be read and was left out: {err:#}"),
+                    &format!("could not be read and was left out: {err:#}"),
                 );
                 return;
             }
@@ -589,8 +590,9 @@ impl Ingest<'_> {
             Err(err) => {
                 self.report.bump(SKIPPED_UNPARSEABLE_PDU, 1);
                 self.report.error(
+                    "MMS",
                     pdu_path.display().to_string(),
-                    format!("This MMS could not be read and was left out: {err}"),
+                    &format!("could not be read and was left out: {err}"),
                 );
                 return Ok(());
             }

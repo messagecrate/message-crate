@@ -279,11 +279,13 @@ fn a_pdu_that_breaks_the_mms_rules_is_counted_and_named() {
         "{report:?}"
     );
     assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    // A sentence that names the MMS by its file (#1920).
     assert!(
-        report.errors[0].ends_with(
-            "I_1609459200_1_0.pdu: This MMS could not be read and was left out: malformed PDU: \
-             expected unknown header field code at byte 2"
-        ),
+        report.errors[0].starts_with("The MMS ")
+            && report.errors[0].ends_with(
+                "I_1609459200_1_0.pdu could not be read and was left out: malformed PDU: \
+                 expected unknown header field code at byte 2"
+            ),
         "{}",
         report.errors[0]
     );

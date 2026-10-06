@@ -38,6 +38,14 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-05: **A run's log lists its Import Errors and notes under
+  headings.** The summary at the end of an import or a Convert gives its
+  Import Errors under an "Import Errors" heading and its notes under a
+  "Notes" heading, and leaves out a heading with nothing under it. Each line
+  is a sentence that names the item, such as "The file sms-2.xml could not
+  be read in full: …", where it was `error: sms-2.xml: This file could not
+  be read in full: …` before.
+
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a

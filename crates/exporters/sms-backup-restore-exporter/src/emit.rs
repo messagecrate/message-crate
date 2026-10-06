@@ -28,7 +28,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         ..ExportReport::with_issues(issues.cloned())
     };
     for error in &report.errors {
-        out.error(&error.file, error.explanation());
+        out.error("file", &error.file, &error.what());
     }
     // The invalid dates and the repeated copies have fields of their own;
     // every other count goes to `extra` in the order Convert's log gives it.
