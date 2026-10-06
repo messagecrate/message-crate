@@ -15711,6 +15711,7 @@
           "source",
           "guid",
           "timestamp",
+          "time_precision",
           "sort_order",
           "is_from_me",
           "is_announcement",
@@ -15853,6 +15854,10 @@
               "null"
             ],
             "description": "Body text, when present."
+          },
+          "time_precision": {
+            "$ref": "#/components/schemas/TimePrecision",
+            "description": "Whether the source recorded `timestamp` to the millisecond or in\nwhole seconds. A `timestamp` ending in `.000` is a whole second\nonly when this says `seconds`."
           },
           "timestamp": {
             "type": "string",
@@ -17754,6 +17759,7 @@
                 "source",
                 "guid",
                 "timestamp",
+                "time_precision",
                 "sort_order",
                 "is_from_me",
                 "is_announcement",
@@ -17896,6 +17902,10 @@
                     "null"
                   ],
                   "description": "Body text, when present."
+                },
+                "time_precision": {
+                  "$ref": "#/components/schemas/TimePrecision",
+                  "description": "Whether the source recorded `timestamp` to the millisecond or in\nwhole seconds. A `timestamp` ending in `.000` is a whole second\nonly when this says `seconds`."
                 },
                 "timestamp": {
                   "type": "string",
@@ -18891,6 +18901,14 @@
             "description": "The identity that reacted, for incoming reactions."
           }
         }
+      },
+      "TimePrecision": {
+        "type": "string",
+        "description": "How finely the source recorded a message's time.",
+        "enum": [
+          "seconds",
+          "milliseconds"
+        ]
       },
       "TopAttachment": {
         "type": "object",

@@ -3380,6 +3380,12 @@ export interface components {
             /** @description Body text, when present. */
             text: string | null;
             /**
+             * @description Whether the source recorded `timestamp` to the millisecond or in
+             *     whole seconds. A `timestamp` ending in `.000` is a whole second
+             *     only when this says `seconds`.
+             */
+            time_precision: components["schemas"]["TimePrecision"];
+            /**
              * @description The instant the message was sent, to the millisecond: RFC 3339
              *     in UTC with three fractional digits and a `Z` suffix
              *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
@@ -4449,6 +4455,12 @@ export interface components {
                 /** @description Body text, when present. */
                 text: string | null;
                 /**
+                 * @description Whether the source recorded `timestamp` to the millisecond or in
+                 *     whole seconds. A `timestamp` ending in `.000` is a whole second
+                 *     only when this says `seconds`.
+                 */
+                time_precision: components["schemas"]["TimePrecision"];
+                /**
                  * @description The instant the message was sent, to the millisecond: RFC 3339
                  *     in UTC with three fractional digits and a `Z` suffix
                  *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
@@ -5041,6 +5053,11 @@ export interface components {
             /** @description The identity that reacted, for incoming reactions. */
             sender: string | null;
         };
+        /**
+         * @description How finely the source recorded a message's time.
+         * @enum {string}
+         */
+        TimePrecision: "seconds" | "milliseconds";
         /** @description One of an account's largest attachments by byte size. */
         TopAttachment: {
             /** @description Raw text of the identity that keys the conversation. */

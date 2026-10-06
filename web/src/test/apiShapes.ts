@@ -45,6 +45,7 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
     service: null,
     guid: "g1",
     timestamp: "2026-08-11T15:04:00Z",
+    time_precision: "milliseconds",
     sort_order: 0,
     is_from_me: false,
     is_announcement: false,
