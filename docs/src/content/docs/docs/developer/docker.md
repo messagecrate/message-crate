@@ -161,7 +161,8 @@ On a `v*` tag, the **Docker image** job in `.github/workflows/ci.yml` runs after
 - `bitrealm/message-crate:<version>` — for example `0.10.0`, with no `v`
 - `bitrealm/message-crate:<major>.<minor>` — for example `0.8`
 - `bitrealm/message-crate:latest`
-- `bitrealm/message-crate:sha-<commit>`
+
+A release never pushes `sha-<commit>`. That tag belongs to the manual run below, so it always names an image that reports the commit in its Build.
 
 The same job can push an image without a release. Start the CI workflow by hand on any branch with **push_docker_image** ticked:
 
