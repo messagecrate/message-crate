@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
     ConversationHeader, Deletion, EarlierVersion, HandleService, HandleType, IrAttachment,
-    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, check_schema_version_in_json,
-    nonempty, trimmed,
+    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo,
+    check_schema_version_in_json, nonempty, trimmed,
 };
 use phone::Handle;
 use serde_json::Value;
@@ -119,13 +119,9 @@ pub struct MessageRecord {
     pub attachments: Vec<AttachmentRecord>,
     /// Reactions on this message.
     pub tapbacks: Vec<TapbackRecord>,
-    /// True for a reply, whether or not the message it quotes is named.
-    pub is_reply: bool,
-    /// The guid of the message a reply quotes, when that message was in the
-    /// same export.
-    pub reply_to_guid: Option<String>,
-    /// The part of the quoted message a reply answers.
-    pub reply_to_part: Option<i64>,
+    /// The message a reply quotes; `None` for a message that is not a reply.
+    /// An empty guid is read as none.
+    pub reply_to: Option<ReplyTo>,
     /// Deleted in the source app or Unsent; `None` for neither.
     pub deletion: Option<Deletion>,
     /// The earlier versions of an edited message, in the order the file
@@ -392,17 +388,10 @@ fn message_from_ir(
         announcement: im.and_then(|i| i.announcement.clone()),
         attachments: msg.attachments.iter().map(attachment_from_ir).collect(),
         tapbacks,
-        is_reply: msg.reply_to.is_some(),
-        reply_to_guid: msg
-            .reply_to
-            .as_ref()
-            .and_then(|r| r.guid.as_deref())
-            .and_then(nonempty),
-        reply_to_part: msg
-            .reply_to
-            .as_ref()
-            .and_then(|r| r.part_index)
-            .map(i64::from),
+        reply_to: msg.reply_to.as_ref().map(|r| ReplyTo {
+            guid: r.guid.as_deref().and_then(nonempty),
+            part_index: r.part_index,
+        }),
         deletion: msg.deletion,
         earlier_versions,
     })
@@ -553,7 +542,7 @@ mod tests {
                 assert_eq!(m.service.as_deref(), Some("sms"));
                 assert_eq!(m.sender_handle_type, Some(HandleType::Phone));
                 assert!(m.tapbacks.is_empty());
-                assert!(!m.is_reply);
+                assert!(m.reply_to.is_none());
             }
             _ => panic!("expected message"),
         }

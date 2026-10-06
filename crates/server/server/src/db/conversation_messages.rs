@@ -51,9 +51,7 @@ struct RawRow {
     subject: Option<String>,
     body: Option<String>,
     is_announcement: bool,
-    is_reply: bool,
-    reply_to_guid: Option<String>,
-    reply_to_part: Option<i64>,
+    reply_to: Option<ReplyTo>,
     reply_count: i64,
     deletion: Option<String>,
     chat_identifier: String,
@@ -473,9 +471,14 @@ async fn fetch_message_page(
                 subject: row.try_get(9)?,
                 body: row.try_get(10)?,
                 is_announcement: row.try_get::<i64, _>(11)? != 0,
-                is_reply: row.try_get::<i64, _>(12)? != 0,
-                reply_to_guid: row.try_get(13)?,
-                reply_to_part: row.try_get(14)?,
+                reply_to: if row.try_get::<i64, _>(12)? != 0 {
+                    Some(ReplyTo {
+                        guid: row.try_get(13)?,
+                        part_index: row.try_get(14)?,
+                    })
+                } else {
+                    None
+                },
                 reply_count: row.try_get(15)?,
                 chat_identifier: row.try_get(16)?,
                 conversation_type: row.try_get(17)?,
@@ -514,10 +517,7 @@ async fn fetch_message_page(
                 subject: r.subject,
                 text: r.body,
                 is_announcement: r.is_announcement,
-                reply_to: r.is_reply.then_some(ReplyTo {
-                    guid: r.reply_to_guid,
-                    part_index: r.reply_to_part,
-                }),
+                reply_to: r.reply_to,
                 reply_count: r.reply_count,
                 conversation: MessageConversation {
                     id: r.conversation_id,
