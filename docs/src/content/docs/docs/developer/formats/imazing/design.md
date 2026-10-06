@@ -44,7 +44,7 @@ Discovery walks the selected path recursively without following directory symbol
   A Live Photo's video (`.mov` beside a `.jpg` or `.jpeg` a Messages Image row names) becomes the second
   attachment of that row's message, named as the row's picture with the video's extension.
   When two rows name the picture, the first in CSV order takes the video, and the report names the
-  picture in a note, which the run's summary lines print as `note:`, apart from its errors.
+  picture in a note, which the run's summary lists under its Notes heading, apart from its Import Errors.
   The report counts the videos as `live_photo_videos`.
   In a directory that also holds a WhatsApp CSV, any other file no row names may be WhatsApp's, so it is
   neither counted nor imported.

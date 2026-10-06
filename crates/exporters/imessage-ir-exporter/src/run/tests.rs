@@ -670,11 +670,19 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         "{:#?}",
         result.messages
     );
-    assert!(
-        result
-            .messages
-            .iter()
-            .any(|line| line.contains("IMG_0001.MOV") && line.contains("No space left on device")),
+    // The summary names the video in a sentence under the Import Errors
+    // heading (#1920).
+    let heading = result
+        .messages
+        .iter()
+        .position(|line| line == "  Import Errors")
+        .unwrap_or_else(|| panic!("no Import Errors heading in {:#?}", result.messages));
+    assert_eq!(
+        result.messages[heading + 1..],
+        [
+            "    The attachment /backup/IMG_0001.MOV could not be decrypted: write the decrypted \
+             file: No space left on device"
+        ],
         "{:#?}",
         result.messages
     );
@@ -702,7 +710,8 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
             kind: "error".into(),
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
-            reason: "could not be decrypted: write the decrypted file: No space left on device"
+            reason: "This attachment could not be decrypted: write the decrypted file: No space \
+                     left on device"
                 .into(),
             conversation: Some(written[0].clone()),
         }]
