@@ -195,12 +195,45 @@ pub const MESSAGE_LIST_SORT_KEYS: [(&str, MessageListSort); 2] = [
     ("relevance", MessageListSort::Relevance),
 ];
 
-/// Oldest first, as [`DEFAULT_MESSAGE_SORT`] reads a conversation when `sort`
-/// is absent.
-pub const DEFAULT_MESSAGE_LIST_SORT: [SortKey<MessageListSort>; 1] = [SortKey {
-    key: MessageListSort::Date,
-    direction: Direction::Asc,
-}];
+/// The order the Messages list applies when the request names no `sort`:
+/// best match first when the query has a free-text word to rank by
+/// (`ranked`), and newest first otherwise. A search with words is looking for
+/// the messages that hold them, and one with only field words is browsing,
+/// where the latest messages come first (#1538).
+#[must_use]
+pub fn default_message_list_sort(ranked: bool) -> [SortKey<MessageListSort>; 1] {
+    if ranked {
+        [SortKey {
+            key: MessageListSort::Relevance,
+            direction: Direction::Asc,
+        }]
+    } else {
+        [SortKey {
+            key: MessageListSort::Date,
+            direction: Direction::Desc,
+        }]
+    }
+}
+
+/// `order` spelled as `sort=` takes it: `relevance`, `date`, `-date`, or
+/// keys joined by commas, such as `relevance,-date`.
+#[must_use]
+pub fn message_list_sort_text(order: &[SortKey<MessageListSort>]) -> String {
+    order
+        .iter()
+        .map(|k| {
+            let name = MESSAGE_LIST_SORT_KEYS
+                .iter()
+                .find(|(_, key)| *key == k.key)
+                .map_or("", |(name, _)| *name);
+            match k.direction {
+                Direction::Asc => name.to_string(),
+                Direction::Desc => format!("-{name}"),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
 /// The join a relevance order ranks by: every message the rank query
 /// matches, with its `bm25()`, keyed by message id. Its one `?` is the rank

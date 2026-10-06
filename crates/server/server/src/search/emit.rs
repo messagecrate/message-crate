@@ -56,10 +56,13 @@ pub(crate) fn compile(
     account_id: i64,
     zone: chrono_tz::Tz,
 ) -> Result<Filter, QueryError> {
-    let rank_query = match (list, expr) {
-        (ListKind::Messages, Some(expr)) => fts::rank_query(&expr.positive_text_terms()),
-        _ => None,
+    let ranked_terms: Vec<TextTerm> = match (list, expr) {
+        (ListKind::Messages, Some(expr)) => {
+            expr.positive_text_terms().into_iter().cloned().collect()
+        }
+        _ => Vec::new(),
     };
+    let rank_query = fts::rank_query(&ranked_terms.iter().collect::<Vec<_>>());
     let (where_sql, params) = compile_where(list, expr, account_id, zone, true)?;
     // Only a free-text word that is not negated can find a message by an
     // earlier version alone: a negated one only leaves messages out, and
@@ -77,6 +80,7 @@ pub(crate) fn compile(
         where_sql,
         params,
         rank_query,
+        ranked_terms,
         final_text,
         earlier_version_match,
     })

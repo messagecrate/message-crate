@@ -88,6 +88,7 @@ pub struct Filter {
     where_sql: String,
     params: Vec<SqlParam>,
     rank_query: Option<String>,
+    ranked_terms: Vec<parse::TextTerm>,
     final_text: Option<(String, Vec<SqlParam>)>,
     earlier_version_match: Option<(String, Vec<SqlParam>)>,
 }
@@ -109,6 +110,14 @@ impl Filter {
     /// other lists, and for a query with no such word.
     pub fn rank_query(&self) -> Option<&str> {
         self.rank_query.as_deref()
+    }
+
+    /// The free-text terms [`Self::rank_query`] is built from, in the order
+    /// they were typed: every one not behind `-` or `not`, alone or in a
+    /// negated group (`Expr::positive_text_terms`). Empty exactly when
+    /// `rank_query` is `None`.
+    pub(crate) fn ranked_terms(&self) -> &[parse::TextTerm] {
+        &self.ranked_terms
     }
 
     /// A `SELECT` of the ids of the earlier versions that hold one of the
@@ -182,6 +191,7 @@ pub fn compile_messages_of_conversations(req: CompileRequest<'_>) -> Result<Filt
         ),
         params,
         rank_query: None,
+        ranked_terms: Vec::new(),
         final_text: None,
         earlier_version_match: None,
     })
