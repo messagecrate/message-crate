@@ -459,8 +459,8 @@ fn sender_identity(
 /// A message carries only the sender's address, never its type. Staging uses
 /// the type the participant with the same address has, and this one only
 /// when the header lists no such participant, and then only within what the
-/// message's service and transport carry (`db::handles::handle_type_on`): an
-/// address with an `@` on WhatsApp or over SMS is `other`. It is
+/// message's service carries (`db::handles::handle_type_on`): an address
+/// with an `@` on WhatsApp is `other`. It is
 /// [`Handle::parse`], the one rule for what an address looks like: a
 /// contact's number is a phone number on a service the model does not know
 /// too, such as a message Apple Messages sent by satellite (#1144).

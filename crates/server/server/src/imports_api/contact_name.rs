@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use message_ir::{HandleService, HandleType, IrService, trimmed};
+use message_ir::{HandleService, HandleType, trimmed};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
@@ -99,7 +99,7 @@ pub(super) fn count_other_identity(
     }
 }
 
-/// What one message says about who sent it. Its own type because these five
+/// What one message says about who sent it. Its own type because these four
 /// facts travel together and come from the message, while the connection,
 /// handle cache, account and counts around them belong to the import run.
 pub(super) struct IncomingSender<'a> {
@@ -113,11 +113,7 @@ pub(super) struct IncomingSender<'a> {
     /// Either way the service has the last word ([`handle_type_on`]).
     pub handle_type: Option<HandleType>,
     /// Service the message arrived on: `phone` or `whatsapp`.
-    pub platform: HandleService,
-    /// The message's transport when it decides the type (SMS carries no
-    /// email address), `None` when the type is already settled, as for a
-    /// sender the header names.
-    pub transport: Option<IrService>,
+    pub service: HandleService,
 }
 
 /// True when `address`, read as `handle_type`, is one of the account's
@@ -150,19 +146,14 @@ pub(super) async fn resolve_incoming_sender_handle(
     let Some(address) = sender.address.and_then(trimmed) else {
         return Ok(None);
     };
-    let handle_type = handle_type_on(
-        address,
-        sender.handle_type,
-        sender.platform,
-        sender.transport,
-    );
+    let handle_type = handle_type_on(address, sender.handle_type, sender.service);
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
         cache,
         account_id,
         address,
         handle_type,
-        Some(sender.platform.as_str()),
+        Some(sender.service.as_str()),
     )
     .await?;
     if flagged {

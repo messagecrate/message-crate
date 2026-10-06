@@ -586,11 +586,11 @@ async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
     );
 }
 
-/// A sender the header does not list is typed by the address alone: a phone
-/// number is a `phone` identity whatever service the message came over. It
-/// was `other` on any service but SMS, iMessage, WhatsApp and RCS (#1144).
+/// A phone number is a `phone` identity whatever service the message came
+/// over, a sender the header does not list included. It was `other` on any
+/// service but SMS, iMessage, WhatsApp and RCS (#1144).
 #[tokio::test]
-async fn a_sender_who_is_not_a_participant_is_typed_by_the_address_not_the_service() {
+async fn a_phone_number_sender_is_phone_on_any_service() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000005")
@@ -698,22 +698,32 @@ async fn an_import_writes_no_email_identity_on_whatsapp() {
     assert_eq!(whatsapp, 6, "the group, four people and the holder");
 }
 
-/// A sender the header does not list, writing over SMS from an address with
-/// an `@`, as an email-to-text gateway does: SMS carries phone numbers only,
-/// so the sender is `other`, never an email identity on Text Message (#1671).
+/// On Text Message an address has one type whichever transport carried it,
+/// because SMS and iMessage share the one `phone` service. An address with an
+/// `@` that is a participant in one conversation and an unlisted SMS sender
+/// in a group is one identity on one contact. Typed by the message's
+/// transport, the SMS sender became a second identity on a new contact with
+/// no name, as #1144 did for a phone number.
 #[tokio::test]
-async fn an_sms_sender_with_an_at_is_other() {
+async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = conversation_header("sms-backup-restore", "chat1000000007")
+    let one_to_one = conversation_header("sms-backup-restore", "alerts@example.com")
+        .participant("alerts@example.com", Some("Alerts"))
+        .line()
+        + &incoming("g-at-im-1", "alerts@example.com");
+    let group = conversation_header("sms-backup-restore", "chat1000000007")
         .group()
         .typed_participant("+15555550156", None, HandleType::Phone)
         .line()
-        + &message_line("g-sms-at-1", "hi")
+        + &message_line("g-at-sms-1", "hi")
             .sms()
             .sender("alerts@example.com")
             .line();
-    import_one(&mut conn, "chat1000000007.jsonl", &body)
+    import_one(&mut conn, "alerts@example.com.jsonl", &one_to_one)
+        .await
+        .unwrap();
+    import_one(&mut conn, "chat1000000007.jsonl", &group)
         .await
         .unwrap();
 
@@ -721,7 +731,7 @@ async fn an_sms_sender_with_an_at_is_other() {
         handle_types(&mut conn).await,
         [
             ("+15555550156".to_string(), "phone".to_string()),
-            ("alerts@example.com".to_string(), "other".to_string()),
+            ("alerts@example.com".to_string(), "email".to_string()),
             ("chat1000000007".to_string(), "other".to_string()),
         ]
     );

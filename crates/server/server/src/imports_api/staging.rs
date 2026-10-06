@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use message_ir::{HandleService, HandleType, IrService, nonempty, trimmed};
+use message_ir::{HandleService, HandleType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
@@ -252,9 +252,9 @@ pub(super) struct StagingInserts {
     import_id: Option<i64>,
     handles: HandleIdCache,
     /// Handle ids of the account holder's own addresses met in this run, by
-    /// address, platform and type. Apart from `handles`, whose entries each
-    /// have a contact: an owner's handle never gets one (ADR-0015).
-    owners: HashMap<(String, String, HandleType), i64>,
+    /// address and service. Apart from `handles`, whose entries each have a
+    /// contact: an owner's handle never gets one (ADR-0015).
+    owners: HashMap<(String, String), i64>,
     /// The account's identities, as `(normalized address, handle type)`.
     /// A participant at one of them is the holder, who is never a
     /// participant (ADR-0015, #1093).
@@ -476,9 +476,7 @@ impl FileStaging<'_> {
             header_types
                 .get(conversation.chat_identifier.trim())
                 .copied()
-                .unwrap_or_else(|| {
-                    handle_type_on(&conversation.chat_identifier, None, platform, None)
-                })
+                .unwrap_or_else(|| handle_type_on(&conversation.chat_identifier, None, platform))
         } else {
             HandleType::Other
         };
@@ -617,7 +615,7 @@ fn header_handle_types(
         .map(|(handle, _, handle_type)| {
             (
                 handle.trim().to_string(),
-                handle_type_on(handle, *handle_type, platform, None),
+                handle_type_on(handle, *handle_type, platform),
             )
         })
         .collect()
@@ -684,9 +682,7 @@ async fn insert_participant(
     counts: &mut ImportCounts,
 ) -> Result<()> {
     // The source's type, else the shape, within what the service carries.
-    // The header says nothing of the transport: iMessage shares the phone
-    // service with SMS and reaches an email address.
-    let handle_type = handle_type_on(&handle, handle_type, platform, None);
+    let handle_type = handle_type_on(&handle, handle_type, platform);
     // The account holder is never a participant: a member at one of the
     // account's identities gets no handle, contact or participant row. The
     // exporters drop the addresses their backup names as the owner's; this
@@ -733,7 +729,7 @@ async fn insert_participant(
 /// order, counting up from `first_sort_order`. A sender the header names as a
 /// participant takes the participant's type, so the sender and the
 /// participant are one identity; any other sender's type is its address's
-/// shape, within what its message's service and transport carry.
+/// shape, within what its message's service carries.
 ///
 /// # Errors
 ///
@@ -754,16 +750,10 @@ async fn resolve_message_rows(
         } else {
             clean_body(msg.text.as_deref())
         };
-        let sender_platform = msg
+        let sender_service = msg
             .service
             .as_deref()
             .map_or(platform, HandleService::parse);
-        let transport = msg.service.as_deref().map(IrService::parse);
-        let header_type = msg
-            .sender
-            .as_deref()
-            .and_then(|address| header_types.get(address.trim()))
-            .copied();
         let sender_handle_id = resolve_incoming_sender_handle(
             tx,
             &mut stmts.handles,
@@ -773,29 +763,25 @@ async fn resolve_message_rows(
             IncomingSender {
                 is_from_me: msg.is_from_me,
                 address: msg.sender.as_deref(),
-                handle_type: header_type.or(msg.sender_handle_type),
-                platform: sender_platform,
-                // A participant's type is settled; only an unlisted sender's
-                // depends on its message's transport.
-                transport: if header_type.is_some() {
-                    None
-                } else {
-                    transport
-                },
+                handle_type: msg
+                    .sender
+                    .as_deref()
+                    .and_then(|address| header_types.get(address.trim()))
+                    .copied()
+                    .or(msg.sender_handle_type),
+                service: sender_service,
             },
             counts,
         )
         .await?;
         let owner_handle_id =
-            resolve_owner_handle(tx, stmts, msg.owner.as_deref(), sender_platform, transport)
-                .await?;
+            resolve_owner_handle(tx, stmts, msg.owner.as_deref(), sender_service).await?;
         rows.push(PendingStagingMessage {
             msg,
             attachments,
             sender_handle_id,
             owner_handle_id,
-            sender_platform,
-            transport,
+            sender_service,
             body,
             sort_order,
         });
@@ -815,18 +801,12 @@ async fn resolve_owner_handle(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     address: Option<&str>,
-    platform: HandleService,
-    transport: Option<IrService>,
+    service: HandleService,
 ) -> Result<Option<i64>> {
     let Some(address) = address else {
         return Ok(None);
     };
-    let handle_type = handle_type_on(address, None, platform, transport);
-    let key = (
-        address.to_string(),
-        platform.as_str().to_string(),
-        handle_type,
-    );
+    let key = (address.to_string(), service.as_str().to_string());
     if let Some(&id) = stmts.owners.get(&key) {
         return Ok(Some(id));
     }
@@ -834,8 +814,8 @@ async fn resolve_owner_handle(
         tx,
         stmts.account_id,
         address,
-        handle_type,
-        Some(platform.as_str()),
+        handle_type_on(address, None, service),
+        Some(service.as_str()),
     )
     .await?;
     stmts.owners.insert(key, id);
@@ -847,10 +827,7 @@ struct PendingStagingMessage {
     attachments: Vec<PreparedAttachment>,
     sender_handle_id: Option<i64>,
     owner_handle_id: Option<i64>,
-    sender_platform: HandleService,
-    /// The message's transport (`sms`, `imessage`, `whatsapp`, …), when it
-    /// names one.
-    transport: Option<IrService>,
+    sender_service: HandleService,
     body: Option<String>,
     sort_order: i64,
 }
@@ -1060,8 +1037,7 @@ async fn tapback_row(
             is_from_me: tap.is_from_me,
             address: tap.sender.as_deref(),
             handle_type: None,
-            platform: row.sender_platform,
-            transport: row.transport,
+            service: row.sender_service,
         },
         counts,
     )
