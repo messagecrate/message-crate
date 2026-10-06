@@ -524,7 +524,7 @@ mod tests {
     /// `reply_to`, and the stored reactions into the message's `reactions`, each
     /// under the person who reacted.
     #[test]
-    fn a_reply_with_reactions_keeps_its_threading_and_reactions() {
+    fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
         let mut msg = seed_message_with_participant(Participant {
             identity: Some("+1".into()),
             name: "Sam".into(),
