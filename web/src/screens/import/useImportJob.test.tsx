@@ -1290,8 +1290,15 @@ describe("useImportJob wiring", () => {
   });
 
   describe("an earlier part's Staging row about one conversation (#1688)", () => {
-    // Part 1 recorded p.jpg as not decrypted while it wrote c.jsonl, and
-    // stopped before c.jsonl was written to the end.
+    // Part 1 records p.jpg as not decrypted while it writes c.jsonl, and the
+    // app closes before c.jsonl is written to the end.
+    const notDecryptedEvent: ImportIssueEvent = {
+      kind: "error",
+      step: "attachments",
+      item: "Library/SMS/Attachments/p.jpg",
+      reason: "could not be decrypted: No space left on device",
+      conversation: "c.jsonl",
+    };
     const notDecrypted = {
       kind: "error",
       stage: "staging",
@@ -1299,6 +1306,39 @@ describe("useImportJob wiring", () => {
       reason: "could not be decrypted: No space left on device",
       conversation: "c.jsonl",
     };
+
+    /**
+     * Part 1: a Staging that records the row and is still writing c.jsonl
+     * when the app closes. Returns the record the run directory held then.
+     */
+    async function firstPartThatCloses(): Promise<Record<string, unknown>> {
+      const seen: { record?: Record<string, unknown> } = {};
+      runMock.mockReset();
+      runMock.mockImplementationOnce(
+        async (
+          fn: () => Promise<unknown>,
+          _onLog?: (line: string) => void,
+          _onProgress?: (event: ImportProgressEvent) => void,
+          onIssue?: (event: ImportIssueEvent) => void,
+        ) => {
+          await fn();
+          onIssue?.(notDecryptedEvent);
+          await waitFor(() => {
+            const last = saveRunRecordMock.mock.lastCall?.[0] as
+              | { record: Record<string, unknown> }
+              | undefined;
+            expect(last).toBeDefined();
+            seen.record = last?.record;
+          });
+          return EXTRACT_RESULT;
+        },
+      );
+      const { result, unmount } = renderHook(() => useImportJob());
+      await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+      unmount();
+      expect(seen.record).toBeDefined();
+      return seen.record ?? {};
+    }
 
     /** A resumed Staging that finishes c.jsonl as `status` says. */
     function stagingThatFinishes(status: "written" | "skipped") {
@@ -1317,7 +1357,14 @@ describe("useImportJob wiring", () => {
     }
 
     async function resumeAndComplete(status: "written" | "skipped") {
-      readRunRecordMock.mockResolvedValue({ issues: [], lastStopIssues: [notDecrypted] });
+      const leftByPart1 = await firstPartThatCloses();
+      // The row waits apart: c.jsonl was not written when the app closed.
+      expect(leftByPart1).toEqual(
+        expect.objectContaining({ issues: [], lastStopIssues: [notDecrypted] }),
+      );
+      resetImportRun();
+      completeImportMock.mockClear();
+      readRunRecordMock.mockResolvedValue(leftByPart1);
       runMock.mockReset();
       runMock.mockImplementationOnce(stagingThatFinishes(status));
       runMock.mockImplementationOnce(
