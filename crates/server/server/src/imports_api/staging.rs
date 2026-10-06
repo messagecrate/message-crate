@@ -903,22 +903,20 @@ async fn flush_staging_message_chunk(
     Ok(())
 }
 
-/// Give the message staged under `row`'s guid what `row`, another copy of
-/// it from the same import, adds, by the rules a later import of the copy
-/// would follow (`db::staging::promote_deletion_marks`,
+/// Give the message staged under `row`'s guid what `row`, another copy of it
+/// from the same import, adds, by the rules a later import of the copy would
+/// follow (`db::staging::promote_deletion_marks`,
 /// `db::staging::write_edit_map`): the attachments and reactions the staged
 /// message does not hold yet, and its mark and text as follows. When both
 /// backups have a date, a copy from a later backup gives its text, earlier
 /// versions and mark, mark or no mark, and one from an earlier backup gives
 /// neither (#1741, #1804). When either has no date, or the two dates are
-/// equal ([`db_staging::later_backup`]), the copy gives its text and
-/// earlier versions when it records a later edit, and its mark when it
-/// carries one. A copy at the staged message's time that has milliseconds
-/// marks it `milliseconds`
-/// ([`db_staging::add_staged_copy_milliseconds`]). One import of two
-/// backups then stores
-/// what two separate imports of them store, in either file order (#1806,
-/// #1837).
+/// equal ([`db_staging::later_backup`]), the copy gives its text and earlier
+/// versions when it records a later edit, and its mark when it carries one.
+/// A copy at the staged message's time that has milliseconds marks it
+/// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import
+/// of two backups then stores what two separate imports of them store, in
+/// either file order (#1806, #1837).
 async fn add_staged_copy(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,

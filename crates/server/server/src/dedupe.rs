@@ -619,18 +619,17 @@ async fn flag_exact_content_key_dupes(
 /// The `(loser, winner)` pairs of the messages that share one content key.
 ///
 /// A whole-second message whose own source also holds a message of the same
-/// key with milliseconds is first set aside as that message's twin: the
-/// key is taken at whole seconds, so the two match in everything else and
-/// fall in the same second, and the source recorded the message twice, once
+/// key with milliseconds is first set aside as that message's twin: the key
+/// is taken at whole seconds, so the two match in everything else and fall
+/// in the same second, and the source recorded the message twice, once
 /// without its milliseconds (an SMS Backup+ mail timed by its `Date` header
 /// beside one timed by `X-smssync-date`). The rest are flagged by
 /// [`exact_group_flags`] when two or more sources hold them, and each twin
 /// is hidden under the rest's winner, which is always shown, so the message
 /// is shown once. It keeps its milliseconds unless another source's copy
 /// wins the cross-source comparison, as one whole-second source imported
-/// first does. A source that holds the
-/// message only in whole seconds keeps every copy, as one that holds it
-/// only with milliseconds does.
+/// first does. A source that holds the message only in whole seconds keeps
+/// every copy, as one that holds it only with milliseconds does.
 fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
     let with_milliseconds: HashSet<String> = cands
         .iter()

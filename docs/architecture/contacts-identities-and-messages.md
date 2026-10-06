@@ -447,25 +447,25 @@ dedupe ([#1805](https://github.com/messagecrate/message-crate/issues/1805)).
 millisecond twin.** Each message says whether its source recorded its time to
 the millisecond or in whole seconds (`time_precision` in the conversation
 file, `messages.time_precision`). The dedupe hides a whole-second message as
-the duplicate of a message from the same source that matches it in
-everything else and has milliseconds in the same second, so the message is
-shown once. It is shown with its milliseconds unless another source holds it
-too and that source's copy wins the cross-source comparison (`pick_winner`,
-which ranks by attachments and then import order, not precision). The content key stays at whole seconds,
-so the two share a key, and the exact pass sets the whole-second copy aside
-before it compares sources (`content_key_group_flags` in `dedupe.rs`). A
-source that holds a message only in whole seconds, or only with
-milliseconds, keeps every copy, as before. The flag decides, never the time:
-a millisecond time that ends in `.000` is not a whole second. A whole-second
-copy and a millisecond copy whose time ends in `.000` have one guid, so they
-are one stored message, and it says `milliseconds` whichever copy came first,
-in one import or across several (`promote_time_precision` and
-`add_staged_copy_milliseconds` in `db/staging.rs`). Why: one
-source can record one message twice, once without its milliseconds (an SMS
-Backup+ mail timed by its `Date` header beside one timed by
-`X-smssync-date`), and the two copies have different guids, which are made
-at milliseconds, so both reach the database; without the flag, a copy that
-landed on `.000` could not be told from a copy that never had milliseconds
+the duplicate of a message from the same source that matches it in everything
+else and has milliseconds in the same second, so the message is shown once. It
+is shown with its milliseconds unless another source holds it too and that
+source's copy wins the cross-source comparison (`pick_winner`, which ranks by
+attachments and then import order, not precision). The content key stays at
+whole seconds, so the two share a key, and the exact pass sets the
+whole-second copy aside before it compares sources (`content_key_group_flags`
+in `dedupe.rs`). A source that holds a message only in whole seconds, or only
+with milliseconds, keeps every copy, as before. The flag decides, never the
+time: a millisecond time that ends in `.000` is not a whole second. A
+whole-second copy and a millisecond copy whose time ends in `.000` have one
+guid, so they are one stored message, and it says `milliseconds` whichever
+copy came first, in one import or across several (`promote_time_precision` and
+`add_staged_copy_milliseconds` in `db/staging.rs`). Why: one source can record
+one message twice, once without its milliseconds (an SMS Backup+ mail timed by
+its `Date` header beside one timed by `X-smssync-date`), and the two copies
+have different guids, which are made at milliseconds, so both reach the
+database; without the flag, a copy that landed on `.000` could not be told
+from a copy that never had milliseconds
 ([#1096](https://github.com/messagecrate/message-crate/issues/1096),
 [#1923](https://github.com/messagecrate/message-crate/issues/1923)).
 
