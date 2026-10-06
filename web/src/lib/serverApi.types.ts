@@ -1192,8 +1192,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Messages matching `q`, oldest first unless `sort` says otherwise: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.
-         * @description `sort=relevance` puts the best match first, ranked by the full-text
+         * Messages matching `q`: the same rows an Export Run with a `query` scope would hand over, behind a logged-in session with the list defaults and the list's offset ceiling.
+         * @description With no `sort`, the best match comes first when `q` has a free-text word
+         *     to rank by, and the newest message first when it has none. The page's
+         *     `search` says which order it applied and which terms it ranks by, so a
+         *     client never parses `q` itself.
+         *
+         *     `sort=relevance` puts the best match first, ranked by the full-text
          *     index's `bm25()` on the query's free-text words: the words not behind `-`
          *     or `not`. A query with no such word has nothing to rank by, and
          *     `relevance` is then `validation-failed`. Ties, and a message found only by
@@ -2650,8 +2655,8 @@ export interface components {
         /** @description One earlier version of one part of an edited message. */
         EarlierVersion: {
             /**
-             * @description When this version was written: RFC 3339 in UTC with a `Z` suffix,
-             *     as `Message.timestamp`. The original's is when it was sent, a
+             * @description When this version was written, to the millisecond in the form
+             *     `Message.timestamp` takes. The original's is when it was sent, a
              *     later version's is when the edit that wrote it was made. `None`
              *     when the source does not record it.
              */
@@ -2791,6 +2796,16 @@ export interface components {
             values: string[];
             /** @description The spelling, without the colon. */
             word: string;
+        };
+        /** @description One free-text term of a search: a word, or a quoted phrase. */
+        FreeTextTerm: {
+            /**
+             * @description True when the word ended in `*` and matches any word it begins; the
+             *     `*` is not in `text`. Always false for a phrase.
+             */
+            prefix: boolean;
+            /** @description The word, or the phrase without its quotes, as typed. */
+            text: string;
         };
         /**
          * @description Which contacts `POST /v1/contacts/address-book` writes: the Contacts
@@ -3214,6 +3229,30 @@ export interface components {
             /** @description The most lines this page could hold. */
             limit: number;
         };
+        /**
+         * @description One page of the Messages list and how the server read its search: the
+         *     four keys of every page, and `search`, the one key a page carries beside
+         *     them (`docs/architecture/http-api.md`, "Lists").
+         */
+        ListMessagesResponse: {
+            /** @description The rows on this page. */
+            items: components["schemas"]["Message"][];
+            /** @description Page size used. */
+            limit: number;
+            /** @description Page offset used. */
+            offset: number;
+            /**
+             * @description How the server read `q` and `sort`: the order it applied and the
+             *     free-text terms it ranks by. It describes the query, not the rows, so
+             *     every page of one query carries the same value.
+             */
+            search: components["schemas"]["MessageSearch"];
+            /**
+             * Format: int64
+             * @description Rows matching the query across every page.
+             */
+            total: number;
+        };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
             /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
@@ -3380,8 +3419,11 @@ export interface components {
             /** @description Body text, when present. */
             text: string | null;
             /**
-             * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
-             *     suffix. A caller shows it in the account's time zone
+             * @description The instant the message was sent, to the millisecond: RFC 3339
+             *     in UTC with three fractional digits and a `Z` suffix
+             *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
+             *     whole seconds). Messages are listed in the order of this time. A
+             *     caller shows it in the account's time zone
              *     (`Account.time_zone`); the database stores nothing
              *     about where the phone was.
              */
@@ -3424,6 +3466,22 @@ export interface components {
             label: string | null;
             /** @description Participants of the conversation. */
             participants: components["schemas"]["Participant"][];
+        };
+        /** @description A Messages search as the server read it. */
+        MessageSearch: {
+            /**
+             * @description The order the page is in, spelled as `sort` takes it: the `sort` the
+             *     request named, or with none, `relevance` when `terms` is not empty and
+             *     `-date` (newest first) when it is.
+             */
+            sort: string;
+            /**
+             * @description The free-text terms the search ranks by, in the order they were typed:
+             *     every word and quoted phrase of `q` that is not a field word and not
+             *     behind `-` or `not`, alone or in a negated group. Empty when `q` has
+             *     none, and then `relevance` is refused.
+             */
+            terms: components["schemas"]["FreeTextTerm"][];
         };
         /** @description One Contact Group or Message Tag: its id and name. */
         NamedSet: {
@@ -4446,8 +4504,11 @@ export interface components {
                 /** @description Body text, when present. */
                 text: string | null;
                 /**
-                 * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
-                 *     suffix. A caller shows it in the account's time zone
+                 * @description The instant the message was sent, to the millisecond: RFC 3339
+                 *     in UTC with three fractional digits and a `Z` suffix
+                 *     (`2015-03-12T18:04:22.250Z`; `.000` when the source records
+                 *     whole seconds). Messages are listed in the order of this time. A
+                 *     caller shows it in the account's time zone
                  *     (`Account.time_zone`); the database stores nothing
                  *     about where the phone was.
                  */
@@ -11937,7 +11998,7 @@ export interface operations {
                 limit?: number;
                 /** @description Page offset, max 50000 */
                 offset?: number;
-                /** @description `date`, `-date` or `relevance` (best match first; needs a free-text word in `q`). Default `date`, oldest first. */
+                /** @description `date`, `-date` or `relevance` (best match first; needs a free-text word in `q`). Default `relevance` when `q` has a free-text word, and `-date`, newest first, when it has none. */
                 sort?: string;
             };
             header?: never;
@@ -11952,7 +12013,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_Message"];
+                    "application/json": components["schemas"]["ListMessagesResponse"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */

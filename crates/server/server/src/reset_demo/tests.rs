@@ -1140,7 +1140,7 @@ async fn seed_reset_test_account(conn: &mut SqliteConnection, account_id: i64, g
     .expect("insert reset test conversation");
     MessageRow {
         guid: Some(guid.into()),
-        timestamp: "2026-01-01T00:00:00Z",
+        timestamp: "2026-01-01T00:00:00.000Z",
         body: Some("keep me"),
         ..MessageRow::new(account_id, conversation_id)
     }
@@ -1909,7 +1909,7 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     MessageRow {
         source: "whatsapp",
         guid: Some("previous-demo-message".into()),
-        timestamp: "2026-01-01T00:00:00Z",
+        timestamp: "2026-01-01T00:00:00.000Z",
         body: Some("from the previous demo"),
         ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)
     }
@@ -2705,7 +2705,7 @@ async fn seed_bulky_demo(db: &Path) {
         MessageRow {
             source: "whatsapp",
             guid: Some(format!("previous-{i}")),
-            timestamp: "2026-01-01T00:00:00Z",
+            timestamp: "2026-01-01T00:00:00.000Z",
             body: Some(&body),
             sort_order: i,
             ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)
@@ -2852,7 +2852,7 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
         MessageRow {
             source: "sms",
             guid: Some(guid.into()),
-            timestamp: "2026-01-01T00:00:00Z",
+            timestamp: "2026-01-01T00:00:00.000Z",
             body: Some("hello"),
             duplicate_of,
             ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)

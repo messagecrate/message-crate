@@ -445,7 +445,7 @@ impl<'a> World<'a> {
                 source_file: "seed.jsonl",
                 messages: &[SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-01T00:00:00Z",
+                    timestamp: "2020-01-01T00:00:00.000Z",
                     is_from_me: true,
                     body: "hello",
                 }],

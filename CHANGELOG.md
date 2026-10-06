@@ -58,7 +58,17 @@ released versions carry their date on the heading.
   is a sentence that names the item, such as "The file sms-2.xml could not
   be read in full: …", where it was `error: sms-2.xml: This file could not
   be read in full: …` before.
-
+- 2026-10-05: **The server picks the order of the Messages list.** With no
+  `sort`, `GET /v1/messages` now puts the best match first when the search
+  has a free-text word to rank by, and the newest message first when it has
+  none. It used to list the oldest first. Each page says which order it
+  applied and which words it ranks by, in a new `search` key beside `items`,
+  and the web app reads both from there: the sort menu offers Relevance only
+  when words came back, and the list draws those words in bold. Nothing
+  changes on screen, except that a search the web app and the server once
+  read differently now shows the server's reading. Picking Relevance now
+  leaves `sort` out of the address, so the next search starts in the
+  server's order.
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a
@@ -126,7 +136,7 @@ released versions carry their date on the heading.
   email address on Text Message is still an email address, because iMessage
   reaches one.
 
-#### Search
+#### Browsing and search
 
 - 2026-10-05: **A search no longer finds an Unsent message by the text it
   hides.** An Unsent message reads "Unsent" and nothing else, but when an
@@ -136,6 +146,16 @@ released versions carry their date on the heading.
   the same. A search now finds a message by what it shows: `unsent:yes`,
   `from:`, the conversation and the date still find an Unsent message, and a
   message Deleted in the source app is still found by its text.
+
+- 2026-10-05: **A message keeps the milliseconds of its time.** Message
+  Crate kept a message's time to the whole second and dropped the
+  milliseconds that WhatsApp, Apple Messages and SMS Backup & Restore
+  record. Two messages sent within one second could then show
+  in the wrong order. The time is now kept to the millisecond, a
+  conversation lists its messages in the order they were sent, and an
+  export written from Message Crate keeps the milliseconds too. A backup
+  that records whole seconds, such as iMazing or OpenExtract, lists the
+  messages of one second in the order the backup gives them, as before.
 
 ### Upgrading
 
@@ -154,6 +174,9 @@ released versions carry their date on the heading.
   in place of `num_replies`.
 - A Saved Search that uses `deleted:yes` finds fewer messages than before:
   it leaves unsent messages out. Add `or unsent:yes` to it to find both.
+- If you have a program that reads messages from the HTTP API, a message's
+  `timestamp` and an earlier version's `edited_at` now carry three digits of
+  milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
 - Message files exported before they said when their backup was made are
   refused when you import or convert them. Export the backup again with
   this build. A program that reads the HTTP API finds the backup's date in

@@ -56,8 +56,11 @@ CREATE TABLE IF NOT EXISTS messages (
     -- Source-native message id; used for exact dedupe with source. The import
     -- refuses a message without one.
     guid TEXT NOT NULL CHECK (guid != ''),
-    -- The instant the message was sent, RFC 3339 in UTC with a Z suffix. Shown, searched
-    -- and filed by day and year in the account's time zone (accounts.time_zone).
+    -- The instant the message was sent, to the millisecond: RFC 3339 in UTC
+    -- with three fractional digits and a Z suffix (2015-03-12T18:04:22.250Z;
+    -- .000 for a source that records whole seconds). One fixed form, so the
+    -- text sorts in time order and lists order by it. Shown, searched and
+    -- filed by day and year in the account's time zone (accounts.time_zone).
     timestamp TEXT NOT NULL,
     -- 1 = sent by the account holder; 0 = received from someone else.
     is_from_me INTEGER NOT NULL,
@@ -237,8 +240,8 @@ CREATE TABLE IF NOT EXISTS message_versions (
     part_index INTEGER NOT NULL DEFAULT 0,
     -- The part's text in this version.
     text TEXT NOT NULL,
-    -- When this version was written, RFC 3339 in UTC with a Z suffix, as
-    -- messages.timestamp: the send time for the original, the edit's time for
+    -- When this version was written, to the millisecond in the form
+    -- messages.timestamp holds: the send time for the original, the edit's time for
     -- a later one. NULL when the source does not record it.
     edited_at TEXT
 );

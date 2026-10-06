@@ -98,7 +98,7 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-06-01T12:00:00Z",
+        timestamp: "2024-06-01T12:00:00.000Z",
         body: Some("hello"),
         ..MessageRow::new(account, 1)
     }
@@ -189,7 +189,7 @@ async fn list_conversations_finds_a_handle_across_platforms() {
     .unwrap();
     MessageRow {
         source: "whatsapp",
-        timestamp: "2024-08-01T12:00:00Z",
+        timestamp: "2024-08-01T12:00:00.000Z",
         body: Some("wa hello"),
         ..MessageRow::new(account, 10)
     }
@@ -251,7 +251,7 @@ async fn list_conversations_sorts_by_date_or_message_count() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00Z",
+        timestamp: "2024-07-01T12:00:00.000Z",
         body: Some("newest"),
         ..MessageRow::new(account, 2)
     }
@@ -349,7 +349,7 @@ async fn list_conversations_paginates() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00Z",
+        timestamp: "2024-07-01T12:00:00.000Z",
         body: Some("later"),
         ..MessageRow::new(account, 2)
     }
@@ -490,7 +490,7 @@ async fn list_conversations_filters_by_contact_and_type() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-08-01T12:00:00Z",
+        timestamp: "2024-08-01T12:00:00.000Z",
         body: Some("group"),
         ..MessageRow::new(account, 9)
     }
@@ -521,7 +521,7 @@ async fn list_conversations_filters_by_contact_and_type() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-09-01T12:00:00Z",
+        timestamp: "2024-09-01T12:00:00.000Z",
         body: Some("hi group"),
         ..MessageRow::new(account, 3)
     }
@@ -689,7 +689,7 @@ async fn list_conversations_filters_by_participant_count() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-10-01T12:00:00Z",
+        timestamp: "2024-10-01T12:00:00.000Z",
         body: Some("hi"),
         ..MessageRow::new(account, 10)
     }
@@ -764,7 +764,7 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-11-01T12:00:00Z",
+        timestamp: "2024-11-01T12:00:00.000Z",
         body: Some("hi trio"),
         ..MessageRow::new(account, 20)
     }
@@ -865,7 +865,7 @@ async fn list_conversations_filters_by_import_id() {
     .unwrap();
 
     MessageRow {
-        timestamp: "2024-06-01T12:00:00Z",
+        timestamp: "2024-06-01T12:00:00.000Z",
         body: Some("hello"),
         import_id: Some(import_a),
         ..MessageRow::new(account, 1)
@@ -873,7 +873,7 @@ async fn list_conversations_filters_by_import_id() {
     .insert(&mut conn)
     .await;
     MessageRow {
-        timestamp: "2024-07-01T12:00:00Z",
+        timestamp: "2024-07-01T12:00:00.000Z",
         body: Some("later"),
         import_id: Some(import_b),
         ..MessageRow::new(account, 2)
@@ -994,7 +994,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
 
     // Conversation 4 keeps a real message, and it belongs to the import.
     let winner_id = MessageRow {
-        timestamp: "2024-05-01T12:00:00Z",
+        timestamp: "2024-05-01T12:00:00.000Z",
         body: Some("canonical"),
         import_id: Some(import_a),
         ..MessageRow::new(account, 4)
@@ -1005,7 +1005,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     // Conversation 3's only message is a duplicate, so its last_message_at
     // is NULL even though its timestamp is the later of the two.
     MessageRow {
-        timestamp: "2024-06-01T12:00:00Z",
+        timestamp: "2024-06-01T12:00:00.000Z",
         body: Some("dup"),
         import_id: Some(import_a),
         duplicate_of: Some(winner_id),
@@ -1208,7 +1208,7 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     .await
     .unwrap();
     let winner_id = MessageRow {
-        timestamp: "2024-05-01T12:00:00Z",
+        timestamp: "2024-05-01T12:00:00.000Z",
         body: Some("canonical"),
         ..MessageRow::new(account, 4)
     }
@@ -1217,7 +1217,7 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
 
     // Only message in conversation 3 from import A is a duplicate.
     MessageRow {
-        timestamp: "2024-06-01T12:00:00Z",
+        timestamp: "2024-06-01T12:00:00.000Z",
         body: Some("dup"),
         import_id: Some(import_a),
         duplicate_of: Some(winner_id),
@@ -1279,7 +1279,7 @@ async fn the_conversation_list_labels_each_thread_by_its_sources() {
     let (fixture, user) = fixture_with_account().await;
     let message = |source| SeedMessage {
         source,
-        timestamp: "2024-01-01T00:00:00Z",
+        timestamp: "2024-01-01T00:00:00.000Z",
         is_from_me: true,
         body: "hi",
     };
@@ -1450,7 +1450,7 @@ async fn conversation_detail_shows_no_chat_id_as_a_group_participant() {
             source_file: "_import.jsonl",
             messages: &[crate::test_support::SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00Z",
+                timestamp: "2024-02-01T10:00:00.000Z",
                 is_from_me: false,
                 body: "hello all",
             }],
@@ -1841,7 +1841,7 @@ async fn conversation_delete_removes_files_only_the_deleted_conversation_used() 
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-02T00:00:00Z",
+                timestamp: "2020-01-02T00:00:00.000Z",
                 is_from_me: false,
                 body: "hi",
             }],
@@ -2062,7 +2062,7 @@ async fn conversation_messages_say_which_were_sent_and_which_received() {
     )
     .await;
     MessageRow {
-        timestamp: "2024-01-02T00:00:00Z",
+        timestamp: "2024-01-02T00:00:00.000Z",
         body: Some("received"),
         ..MessageRow::new(user.account_id, conversation_id)
     }
@@ -2181,7 +2181,7 @@ async fn insert_many_messages(
     for i in 0..count {
         let body = format!("msg{i}");
         MessageRow {
-            timestamp: "2024-01-01T00:00:00Z",
+            timestamp: "2024-01-01T00:00:00.000Z",
             is_from_me: true,
             sort_order: i,
             body: Some(&body),
@@ -2411,7 +2411,7 @@ async fn a_page_starts_at_one_place_beside_a_message_of_this_conversation() {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00Z",
+                timestamp: "2020-01-01T00:00:00.000Z",
                 is_from_me: true,
                 body: "elsewhere",
             }],
@@ -2737,7 +2737,7 @@ async fn the_list_labels_a_group_with_its_trimmed_title_and_a_blank_title_with_n
     let (fixture, alice) = fixture_with_account().await;
     let message = SeedMessage {
         source: "imessage",
-        timestamp: "2024-01-01T10:00:00Z",
+        timestamp: "2024-01-01T10:00:00.000Z",
         is_from_me: false,
         body: "hello",
     };

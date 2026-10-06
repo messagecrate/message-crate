@@ -1237,16 +1237,15 @@ pub async fn write_message_map(
 /// the two are equal. NULL means the dates cannot decide, and the caller
 /// falls back on the rule for files without a date. Equal dates are the
 /// same backup read again, where that rule changes nothing because the two
-/// copies agree, or two reads of one Mac's `chat.db` within one second,
-/// where it adds a mark and takes a later edit as it would with no dates.
+/// copies agree, or two reads of one Mac's `chat.db` that Messages did
+/// not write between, where it adds a mark and takes a later edit as it would with no dates.
 /// The one rule for which of two copies of a message from one source is
 /// the later backup, for a stored message ([`promote_deletion_marks`],
 /// [`write_edit_map`]) and, in Rust ([`later_backup`]), for two copies
 /// staged in one import (`imports_api::staging`).
 ///
-/// Both dates have one fixed whole-second UTC form
-/// (`models::conversation_from_ir`), so the text orders as the time, and
-/// two backups are told apart to the second.
+/// Both dates have the one text form of a stored time, to the millisecond
+/// (`models::utc_timestamp_text`), so the text orders as the time.
 fn later_backup_sql(staged: &str, held: &str) -> String {
     format!(
         "CASE WHEN {staged} IS NOT NULL AND {held} IS NOT NULL AND {staged} <> {held} \
@@ -1376,8 +1375,8 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
 /// later (#1804). The rule is used only where one of the two backups has no
 /// date; where both have one, [`later_backup_sql`] decides instead.
 ///
-/// `edited_at` is one fixed whole-second UTC form on both sides
-/// (`models::earlier_version_from_ir`), so the text orders as the time.
+/// `edited_at` has the one text form of a stored time on both sides
+/// (`models::utc_timestamp_text`), so the text orders as the time.
 fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> String {
     format!(
         "CASE \

@@ -1,4 +1,4 @@
-import type { FreeTextTerm } from "./freeTextTerms";
+import type { FreeTextTerm } from "./types";
 
 /** A matched span of a string: start inclusive, end exclusive, in UTF-16 units. */
 export type MatchRange = [number, number];

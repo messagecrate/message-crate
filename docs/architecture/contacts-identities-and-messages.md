@@ -397,7 +397,7 @@ of a group, or one chat id written two ways, merges into the conversation
 already there. The merged conversation keeps the group title of the copy whose
 latest message is later. A copy with no title never clears a title, and when
 both copies' latest messages share one time, the title already stored stays.
-Times are compared to the second, the precision a message's time is stored at.
+Times are compared to the millisecond, the precision a message's time is stored at.
 The conversation stores the latest message time of the copy that gave its
 title (`group_title_at`), and an incoming copy is compared with that, not with
 the whole conversation: an untitled copy whose messages end last would
@@ -423,8 +423,8 @@ the backup that decided the stored copy. When both copies have a date, the
 copy from the later backup gives the message its deletion mark, mark or no
 mark, and its text and earlier versions, whatever the versions' times say; a
 copy from an earlier backup changes neither. The duplicate flag follows the
-text, because the dedupe compares the text. The date is kept to the second,
-the form every stored time takes. When either copy has no date, or the two
+text, because the dedupe compares the text. The date is kept to the
+millisecond, the form every stored time takes. When either copy has no date, or the two
 dates are equal, nothing says which backup is newer, so the rules for files
 without one hold: a copy with a mark adds it and one without leaves the mark held,
 and a copy takes the text when its newest earlier version is newer

@@ -106,9 +106,9 @@ async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Held; 4]
 }
 
 /// The stored date of [`LATER_BACKUP`], in the form a timestamp takes.
-const LATER_BACKUP_AT: &str = "2026-09-30T18:45:12Z";
+const LATER_BACKUP_AT: &str = "2026-09-30T18:45:12.000Z";
 /// The stored date of [`EARLIER_BACKUP`].
-const EARLIER_BACKUP_AT: &str = "2026-09-01T10:00:00Z";
+const EARLIER_BACKUP_AT: &str = "2026-09-01T10:00:00.000Z";
 
 /// Backup A marks the message Deleted in the source app; backup B, made
 /// later, after the person recovered it, does not. Whichever is imported
@@ -197,7 +197,7 @@ async fn a_later_backup_that_clears_an_unsent_mark_makes_the_text_searchable() {
 }
 
 /// Two files with the same backup date, as two reads of one Mac's
-/// `chat.db` within one second give: the date cannot say which is newer,
+/// `chat.db` that Messages did not write between give: the date cannot say which is newer,
 /// so the rules for files without one hold, and the mark one of them
 /// carries is added in every order rather than lost to the other.
 #[tokio::test]

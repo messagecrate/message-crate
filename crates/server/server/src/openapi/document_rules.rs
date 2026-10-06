@@ -46,6 +46,32 @@ const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{par
 /// The four keys of every page.
 const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
 
+/// The one page with a key beside the four, and the one route that answers
+/// it: `GET /v1/messages` says how it read its search in `search`
+/// (`docs/architecture/http-api.md`, "Lists"). Named here, route and schema
+/// both. Any other schema with the four keys is a page too, whatever its
+/// name ([`page_schemas`]), so a second page with a fifth key fails the
+/// rules.
+struct PageException {
+    method: &'static str,
+    path: &'static str,
+    schema: &'static str,
+    key: &'static str,
+}
+
+const PAGE_EXCEPTION: PageException = PageException {
+    method: "get",
+    path: "/v1/messages",
+    schema: "ListMessagesResponse",
+    key: "search",
+};
+
+impl PageException {
+    fn is(&self, op: &Operation) -> bool {
+        op.method == self.method && op.path == self.path
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn every_operation_keeps_the_rules_the_document_can_show() {
     let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
@@ -185,6 +211,24 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
             .map(|field| format!("{field} is optional in a success answer")),
     );
 
+    // The exception is checked by its route as well as its schema: the
+    // route must answer it, and no other route may.
+    let answered = schema_named(&spec["responses"]["200"]["content"]["application/json"]["schema"]);
+    if PAGE_EXCEPTION.is(op) && answered != Some(PAGE_EXCEPTION.schema) {
+        broken.push(format!(
+            "the page with a fifth key is {}, and this route answers {answered:?}",
+            PAGE_EXCEPTION.schema
+        ));
+    }
+    if !PAGE_EXCEPTION.is(op) && answered == Some(PAGE_EXCEPTION.schema) {
+        broken.push(format!(
+            "answers {}, the page only {} {} may answer",
+            PAGE_EXCEPTION.schema,
+            PAGE_EXCEPTION.method.to_uppercase(),
+            PAGE_EXCEPTION.path
+        ));
+    }
+
     for page in page_schemas(doc, spec) {
         let required: BTreeSet<&str> = page["required"]
             .as_array()
@@ -192,10 +236,24 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
             .flatten()
             .filter_map(Value::as_str)
             .collect();
-        for key in PAGE_KEYS {
+        let properties: BTreeSet<&str> = page["properties"]
+            .as_object()
+            .into_iter()
+            .flat_map(|p| p.keys().map(String::as_str))
+            .collect();
+        let mut keys: BTreeSet<&str> = PAGE_KEYS.into_iter().collect();
+        if PAGE_EXCEPTION.is(op) {
+            keys.insert(PAGE_EXCEPTION.key);
+        }
+        for key in &keys {
             if !required.contains(key) {
                 broken.push(format!("the page it answers has no required {key}"));
             }
+        }
+        for key in properties.difference(&keys) {
+            broken.push(format!(
+                "the page it answers has {key} beside its four keys (\"Lists\")"
+            ));
         }
         // A POST that reads the rows its body names answers the whole body
         // as one page, and takes no paging ("Lists").
@@ -887,7 +945,9 @@ fn is_kebab(segment: &str) -> bool {
 
 /// The page schemas a `200` answers: the page it names, or each page of a
 /// choice between pages, as an account's history answers the account in
-/// full and the owner without content. Empty when it answers no page.
+/// full and the owner without content. A schema is a page by its name or by
+/// its shape ([`is_page`]), so a page under a name that does not start with
+/// `Page_` is still held to the page rules. Empty when it answers no page.
 fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
     let schemas = &doc["components"]["schemas"];
     let Some(name) =
@@ -895,7 +955,7 @@ fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
     else {
         return Vec::new();
     };
-    if name.starts_with("Page_") {
+    if is_page(name, &schemas[name]) {
         return vec![&schemas[name]];
     }
     let choices: Vec<&str> = schemas[name]["oneOf"]
@@ -904,11 +964,21 @@ fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
         .flatten()
         .filter_map(schema_named)
         .collect();
-    if !choices.is_empty() && choices.iter().all(|c| c.starts_with("Page_")) {
+    if !choices.is_empty() && choices.iter().all(|c| is_page(c, &schemas[*c])) {
         choices.into_iter().map(|c| &schemas[c]).collect()
     } else {
         Vec::new()
     }
+}
+
+/// Whether the schema `name` is a page: `Page<T>`'s own schemas by their
+/// `Page_` name, so one that lost a key still fails the page rules, and any
+/// other schema with all four [`PAGE_KEYS`] among its properties.
+fn is_page(name: &str, schema: &Value) -> bool {
+    name.starts_with("Page_")
+        || PAGE_KEYS
+            .iter()
+            .all(|key| schema["properties"].get(*key).is_some())
 }
 
 /// What the operation says about its `offset`.

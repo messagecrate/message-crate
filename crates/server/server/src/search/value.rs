@@ -59,20 +59,20 @@ pub(crate) enum Value {
 }
 
 /// The instant `day` begins in `zone`, as the RFC 3339 UTC text the server
-/// stores (`2024-01-01T05:00:00Z`), so a day or a year in the account's time
+/// stores (`2024-01-01T05:00:00.000Z`), so a day or a year in the account's time
 /// zone compares against `messages.timestamp` as text. A day whose midnight
 /// falls in a daylight-saving gap starts at the first instant after the gap.
 /// A day the zone skipped whole (Pacific/Apia, 30 December 2011) starts where
 /// the next day starts, so it holds no instant.
 ///
 /// `None` when the instant falls after year 9999: RFC 3339 text for it has a
-/// sign and five digits (`+10000-01-01T00:00:00Z`), and `+` sorts before
+/// sign and five digits (`+10000-01-01T00:00:00.000Z`), and `+` sorts before
 /// every digit, so as text it would come before every stored timestamp
 /// instead of after them all.
 pub(crate) fn utc_instant(zone: chrono_tz::Tz, day: NaiveDate) -> Option<String> {
     let midnight = day.and_hms_opt(0, 0, 0).expect("midnight is a valid time");
     let instant = first_instant_at_or_after(zone, midnight);
-    (instant.year() <= 9999).then(|| instant.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    (instant.year() <= 9999).then(|| crate::models::utc_timestamp_text(instant))
 }
 
 /// The first instant whose clock reading in `zone` is `local` or later.
@@ -85,11 +85,14 @@ fn first_instant_at_or_after(zone: chrono_tz::Tz, local: NaiveDateTime) -> DateT
     // Every UTC offset is shorter than a day, so a day before `local` read as
     // UTC the clock shows an earlier time, and a day after it a later one.
     // The gap's end lies between. A binary search over whole seconds finds
-    // it, because every transition falls on a whole second.
+    // it, because every transition falls on a whole second. Each step is a
+    // whole number of seconds, so the instant found has no fraction of a
+    // second: halving an odd number of seconds once left one, and the
+    // millisecond text the day's start is compared in would carry it.
     let mut before = local.and_utc() - Duration::days(1);
     let mut after = local.and_utc() + Duration::days(1);
     while after - before > Duration::seconds(1) {
-        let mid = before + (after - before) / 2;
+        let mid = before + Duration::seconds((after - before).num_seconds() / 2);
         if mid.with_timezone(&zone).naive_local() >= local {
             after = mid;
         } else {
@@ -481,19 +484,19 @@ mod tests {
         let zone = chrono_tz::Pacific::Apia;
         assert_eq!(
             utc_instant(zone, d(2011, 12, 29)).as_deref(),
-            Some("2011-12-29T10:00:00Z")
+            Some("2011-12-29T10:00:00.000Z")
         );
         assert_eq!(
             utc_instant(zone, d(2011, 12, 30)).as_deref(),
-            Some("2011-12-30T10:00:00Z")
+            Some("2011-12-30T10:00:00.000Z")
         );
         assert_eq!(
             utc_instant(zone, d(2011, 12, 31)).as_deref(),
-            Some("2011-12-30T10:00:00Z")
+            Some("2011-12-30T10:00:00.000Z")
         );
         assert_eq!(
             utc_instant(zone, d(2012, 1, 1)).as_deref(),
-            Some("2011-12-31T10:00:00Z")
+            Some("2011-12-31T10:00:00.000Z")
         );
     }
 
@@ -520,7 +523,7 @@ mod tests {
     fn a_midnight_in_a_one_hour_gap_starts_the_day_after_the_gap() {
         assert_eq!(
             utc_instant(chrono_tz::America::Sao_Paulo, d(2018, 11, 4)).as_deref(),
-            Some("2018-11-04T03:00:00Z")
+            Some("2018-11-04T03:00:00.000Z")
         );
     }
 }
