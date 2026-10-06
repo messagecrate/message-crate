@@ -544,34 +544,36 @@ async fn a_deleted_and_an_unsent_message_are_returned_with_their_mark() {
     );
 }
 
-/// `deleted:yes` narrows the list to the messages carrying either mark and
-/// `deleted:no` to the rest; together they split it.
+/// Each mark has its own word (#1935): `deleted:yes` is the message marked
+/// Deleted in the source app and leaves the Unsent one out, `unsent:yes` is
+/// the Unsent one, and each word's `no` is the rest. A search for both marks
+/// writes both words.
 #[tokio::test]
-async fn deleted_yes_and_no_split_the_messages_by_their_mark() {
+async fn deleted_and_unsent_each_find_only_their_own_mark() {
     let (fixture, alice) = fixture_with_account().await;
     import_deletions(&fixture, alice.account_id).await;
 
-    let marked: serde_json::Value = get_json(
-        &fixture.state,
-        "/v1/messages?q=deleted%3Ayes&sort=date",
-        &alice.token,
-    )
-    .await;
-    assert_eq!(guids(&marked), ["guid-16", "guid-17"], "{marked}");
-    let unmarked: serde_json::Value = get_json(
-        &fixture.state,
-        "/v1/messages?q=deleted%3Ano&sort=date",
-        &alice.token,
-    )
-    .await;
-    assert_eq!(guids(&unmarked), ["guid-18"], "{unmarked}");
-    let negated: serde_json::Value = get_json(
-        &fixture.state,
-        "/v1/messages?q=-deleted%3Ayes&sort=date",
-        &alice.token,
-    )
-    .await;
-    assert_eq!(guids(&negated), ["guid-18"], "{negated}");
+    for (q, want) in [
+        ("deleted%3Ayes", &["guid-16"][..]),
+        ("deleted%3Ano", &["guid-17", "guid-18"][..]),
+        ("-deleted%3Ayes", &["guid-17", "guid-18"][..]),
+        ("unsent%3Ayes", &["guid-17"][..]),
+        ("unsent%3Ano", &["guid-16", "guid-18"][..]),
+        ("-unsent%3Ayes", &["guid-16", "guid-18"][..]),
+        (
+            "deleted%3Ayes%20or%20unsent%3Ayes",
+            &["guid-16", "guid-17"][..],
+        ),
+        ("deleted%3Ano%20unsent%3Ano", &["guid-18"][..]),
+    ] {
+        let page: serde_json::Value = get_json(
+            &fixture.state,
+            &format!("/v1/messages?q={q}&sort=date"),
+            &alice.token,
+        )
+        .await;
+        assert_eq!(guids(&page), want, "{q}: {page}");
+    }
     let found: serde_json::Value = get_json(
         &fixture.state,
         "/v1/messages?q=delete&sort=date",

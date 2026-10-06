@@ -15736,7 +15736,7 @@
                 "type": "null"
               }
             ],
-            "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+            "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way. The search word `deleted:` narrows to\nor away from the first mark, and `unsent:` the second."
           },
           "earlier_versions": {
             "type": "array",
@@ -17763,7 +17763,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+                  "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way. The search word `deleted:` narrows to\nor away from the first mark, and `unsent:` the second."
                 },
                 "earlier_versions": {
                   "type": "array",

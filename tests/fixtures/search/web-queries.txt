@@ -79,8 +79,18 @@ conversations	trashed:yes (identity:"Book Club" first-message:<2022-01-01 messag
 conversations	trashed:yes (identity:"Say ""Hi""" service:whatsapp)
 conversations	with:#42
 conversations	with:#7
+messages	(attachments:>1) or (to:#4 and dinner)
+messages	(deleted:yes or unsent:yes) dinner
+messages	-(from:me) dinner
+messages	deleted:no unsent:no or dinner
+messages	deleted:yes dinner
+messages	dinner -to:me
+messages	dinner -unsent:yes
+messages	dinner or not from:me
 messages	from:#42
 messages	from:#7
+messages	from:me dinner
+messages	from:me or dinner
 messages	group:"#3"
 messages	group:"Book Club"
 messages	group:"Family (close)"
@@ -97,8 +107,10 @@ messages	identity:"Smith,Jones"
 messages	identity:"Work*"
 messages	identity:"x)"
 messages	identity:Ana
+messages	kind:group (from:me or in:#3) dinner
 messages	tag:"#3"
 messages	tag:"Book Club"
+messages	tag:"Book Club" (from:me)
 messages	tag:"Family (close)"
 messages	tag:"Say ""Hi"""
 messages	tag:"Smith,Jones"

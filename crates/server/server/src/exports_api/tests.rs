@@ -229,13 +229,15 @@ async fn a_conversations_query_with_a_message_count_exports_those_whole_conversa
         matches!(err, ApiError::SearchQueryInvalid { .. }),
         "{err:?}"
     );
-    let err = page(&mut conn, 101, &conversations_query("from:me"), 100, 0)
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, ApiError::SearchQueryInvalid { .. }),
-        "{err:?}"
-    );
+    for words in ["from:me", "deleted:yes", "unsent:yes"] {
+        let err = page(&mut conn, 101, &conversations_query(words), 100, 0)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, ApiError::SearchQueryInvalid { .. }),
+            "{words}: {err:?}"
+        );
+    }
 
     // A blank query is the `everything` form on either list.
     let err = page(&mut conn, 101, &conversations_query("  "), 100, 0)
