@@ -11,8 +11,8 @@ use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat,
-    RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, LogSink,
+    OutputFormat, RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -397,7 +397,7 @@ impl Verbose<'_> {
         }
     }
 
-    /// List the first twenty error lines from the report, and how many more there were.
+    /// List the first twenty Import Errors from the report, and how many more there were.
     fn errors(self, report: &ExportReport) {
         if !self.enabled || report.errors.is_empty() {
             return;
@@ -406,7 +406,7 @@ impl Verbose<'_> {
             self.log,
             format!(
                 "{}:",
-                count_of(report.errors.len() as u64, "error", "errors")
+                count_of(report.errors.len() as u64, "Import Error", "Import Errors")
             ),
         );
         for err in report.errors.iter().take(20) {
@@ -680,14 +680,16 @@ impl<'a> EmlIngest<'a> {
             ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
             ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(
+                ItemKind::File,
                 path,
-                format!("This file could not be read and was left out: {reason}"),
+                &format!("could not be read and was left out: {reason}"),
             ),
             ParsedEmlKind::ParseError { path, reason } => {
                 self.report.bump(SKIPPED_PARSE_ERROR, 1);
                 self.report.error(
+                    ItemKind::File,
                     path,
-                    format!("This file could not be read as a mail and was left out: {reason}"),
+                    &format!("could not be read as a mail and was left out: {reason}"),
                 );
             }
         }

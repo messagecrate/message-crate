@@ -287,9 +287,8 @@ impl ContactEditor<'_> {
     ///
     /// A row the account already holds for the address on `platform` is
     /// taken as it is, with the type its import gave it: a WhatsApp internal
-    /// id such as `123456789012345@lid` is `other` there, while
-    /// [`handles::handle_type_of`] would call it an email address. A new row
-    /// is typed by the address alone, never by the service (#1432).
+    /// id such as `123456789012345@lid` is `other` there, as every import
+    /// types it (#1671). A new row is typed by the address alone (#1432).
     ///
     /// # Errors
     ///

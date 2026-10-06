@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    CancelFlag, Counter, DUPLICATES_DROPPED, LogSink, MediaConfig, ProgressSink,
+    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, discover_files, document_messages, error_line, is_cancelled,
+    check_cancel, discover_files, document_messages, import_error_lines, is_cancelled, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -107,16 +107,22 @@ impl ReadError {
         }
     }
 
-    /// What happened to the file, in the words every run gives it.
-    pub fn explanation(&self) -> String {
-        format!("This file could not be read in full: {}", self.reason)
+    /// What happened to the file, worded to follow it, in the words every
+    /// run gives it.
+    pub fn what_happened(&self) -> String {
+        format!("could not be read in full: {}", self.reason)
     }
 }
 
-/// The file, then its [`ReadError::explanation`], as the log gives it.
+/// The sentence that names the file and says what happened to it, as the
+/// log gives it under the Import Errors heading.
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.file, self.explanation())
+        f.write_str(&item_line(
+            ItemKind::File,
+            &self.file,
+            &self.what_happened(),
+        ))
     }
 }
 
@@ -161,15 +167,16 @@ impl ReadReport {
     }
 
     /// One log line for each count the read reports, leaving out the ones
-    /// it found none of, then one line for every error, so a person can tell
-    /// what did not come across. Each line has the words an import's summary
-    /// gives the same count.
+    /// it found none of, then a sentence for every error under the Import
+    /// Errors heading, so a person can tell what did not come across. Each
+    /// line has the words an import's summary gives the same count or
+    /// error.
     pub fn log_lines(&self) -> Vec<String> {
         self.counts()
             .into_iter()
             .filter(|(_, count)| *count > 0)
             .map(|(counter, count)| counter.line(count))
-            .chain(self.errors.iter().map(error_line))
+            .chain(import_error_lines(&self.errors))
             .collect()
     }
 }

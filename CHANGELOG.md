@@ -38,6 +38,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-05: **A run's log lists its Import Errors and notes under
+  headings.** The summary at the end of an import or a Convert gives its
+  Import Errors under an "Import Errors" heading and its notes under a
+  "Notes" heading, and leaves out a heading with nothing under it. Each line
+  is a sentence that names the item, such as "The file sms-2.xml could not
+  be read in full: …", where it was `error: sms-2.xml: This file could not
+  be read in full: …` before.
 - 2026-10-05: **The server picks the order of the Messages list.** With no
   `sort`, `GET /v1/messages` now puts the best match first when the search
   has a plain word to rank by, and the newest message first when it has
@@ -49,6 +56,7 @@ released versions carry their date on the heading.
   read differently now shows the server's reading. Picking Relevance now
   leaves `sort` out of the address, so the next search starts in the
   server's order.
+
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a
@@ -94,6 +102,15 @@ released versions carry their date on the heading.
   until its conversation is written, and goes when a resumed Staging writes
   the conversation again. An Error about a conversation written before the
   stop stays, because the resumed Staging does not read it again.
+
+- 2026-10-05: **An import no longer stores a WhatsApp id as an email
+  address.** A WhatsApp file that named a person by an internal id such as
+  `123456789012345@lid` and gave it no type stored that id as an email
+  identity, so the identities list called it `email`. An import now stores
+  every address with an `@` on WhatsApp as `other`, wherever it appears: the
+  chat, its members, the senders, the reactions and your own address. An
+  email address on Text Message is still an email address, because iMessage
+  reaches one.
 
 ### Upgrading
 
