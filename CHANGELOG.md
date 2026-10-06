@@ -85,9 +85,8 @@ released versions carry their date on the heading.
   identity, so the identities list called it `email`. An import now stores
   every address with an `@` on WhatsApp as `other`, wherever it appears: the
   chat, its members, the senders, the reactions and your own address. An
-  address with an `@` that sends a text over SMS or RCS, as an email-to-text
-  gateway does, is `other` too. An email address that sends an iMessage is
-  still an email address.
+  email address on Text Message is still an email address, because iMessage
+  reaches one.
 
 ### Upgrading
 
