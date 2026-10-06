@@ -12,6 +12,11 @@
 //!   system closes the handle when the app ends any other way, so a crashed
 //!   app ends the server and its ffmpeg too.
 //!
+//! A server that exits on its own, such as one that crashes, takes its
+//! processes with it as well. On Unix the app kills the group once it finds
+//! the server exited, before reaping it, while the server's process id still
+//! names the group. On Windows closing the job does it.
+//!
 //! On Windows the server is put in the job just after it starts. It starts
 //! nothing in that moment: ffmpeg runs only for media work, after the server
 //! listens.
@@ -65,9 +70,40 @@ impl ServerProcess {
         self.child.id()
     }
 
-    /// Whether the server has exited, without waiting.
+    /// Whether the server has exited, without waiting. A server found
+    /// exited takes every process it started with it, so an ffmpeg it left
+    /// behind ends too. On Windows the job does that when this
+    /// `ServerProcess` is dropped.
     pub(super) fn try_wait(&mut self) -> io::Result<Option<ExitStatus>> {
+        #[cfg(unix)]
+        if self.exited_unreaped() {
+            // The server is not reaped yet, so its process id still names
+            // its group.
+            self.kill_tree();
+        }
         self.child.try_wait()
+    }
+
+    /// Whether the server has exited and is not reaped yet.
+    #[cfg(unix)]
+    fn exited_unreaped(&self) -> bool {
+        // `id_t` is the `u32` `Child::id` gives, on Linux and macOS alike.
+        let pid: libc::id_t = self.child.id();
+        // SAFETY: a `siginfo_t` of zeros is valid, and `si_pid` stays 0
+        // when no process has exited.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` is a `siginfo_t` the call may write. `WNOWAIT`
+        // leaves the server unreaped, and `WNOHANG` returns at once.
+        let found = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid,
+                &raw mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        // SAFETY: `info` was written by `waitid`, or is still zeros.
+        found == 0 && unsafe { info.si_pid() } != 0
     }
 
     /// Kill the server and every process it started, then wait for the

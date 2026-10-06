@@ -686,6 +686,32 @@ mod with_a_script {
     }
 
     #[test]
+    fn a_server_that_exits_on_its_own_takes_its_processes_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let started = dir.path().join("started");
+        // Starts a process of its own, the way the server starts ffmpeg,
+        // writes down its id, and exits without it.
+        let program = script(
+            dir.path(),
+            &format!(
+                "sleep 600 &\necho $! > {}.part\nmv {0}.part {0}\nexit 3",
+                started.display()
+            ),
+        );
+        let launch = launch_at(free_address(), &program, dir.path());
+
+        let server = LocalServer::default();
+        server.ensure_started(launch);
+        let pid = started_process(&started);
+
+        assert!(
+            ends(pid),
+            "the server's own process outlived the server's exit"
+        );
+        assert!(matches!(settled(&server), Status::Failed { .. }));
+    }
+
+    #[test]
     fn turning_the_network_setting_off_during_a_start_is_applied() {
         let dir = tempfile::tempdir().unwrap();
         let binds = dir.path().join("binds");
