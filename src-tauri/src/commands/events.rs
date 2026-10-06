@@ -4,7 +4,7 @@
 //! Tauri because it is not serializable. These structs match the TypeScript
 //! types in `web/src/lib/types.ts`.
 
-use message_crate_core::{IssueSink, ProgressEvent, RunIssue};
+use message_crate_core::{IssueSink, ProgressEvent, ProgressSink, RunIssue, WriteStatus};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -18,6 +18,9 @@ pub const ISSUE: &str = "extract:issue";
 /// The Upload finished with one conversation file. Payload:
 /// [`ExtractFileDoneEvent`].
 pub const FILE_DONE: &str = "extract:file-done";
+/// Staging's write queue finished with one conversation file. Payload:
+/// [`ExtractFileWrittenEvent`].
+pub const FILE_WRITTEN: &str = "extract:file-written";
 /// The job finished. Payload: the summary line or JSON the screen shows.
 pub const FINISHED: &str = "extract:finished";
 /// The job failed before it could finish. Payload: [`ExtractErrorEvent`].
@@ -44,8 +47,28 @@ pub fn issue_sink(app: &AppHandle) -> IssueSink {
     IssueSink::new(move |issue| emit(&app, ISSUE, ExtractIssueEvent::from(&issue)))
 }
 
+/// A progress sink that sends each count to the window as
+/// `extract:progress`, and each conversation file the write queue finishes
+/// as `extract:file-written`.
+pub fn progress_sink(app: &AppHandle) -> ProgressSink {
+    let app = app.clone();
+    ProgressSink::new(move |event| match WindowEvent::from(event) {
+        WindowEvent::Progress(progress) => emit(&app, PROGRESS, progress),
+        WindowEvent::FileWritten(written) => emit(&app, FILE_WRITTEN, written),
+    })
+}
+
+/// What one of the exporters' progress events becomes in the window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowEvent {
+    /// A count for the progress bar (`extract:progress`).
+    Progress(ExtractProgressEvent),
+    /// A conversation file the write queue finished (`extract:file-written`).
+    FileWritten(ExtractFileWrittenEvent),
+}
+
 /// Progress numbers the UI uses to update the progress bar.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExtractProgressEvent {
     /// Current pipeline stage: `setup`, `parse`, `attachments`, `prepare`,
     /// `check`, `media`, or `upload`.
@@ -81,28 +104,33 @@ impl ExtractProgressEvent {
 
 /// The exporters' typed progress event, in the shape the UI listens for.
 /// The stage name becomes `step`; byte counts ride along on `attachments`
-/// and the setup label rides along as `status`.
-impl From<ProgressEvent> for ExtractProgressEvent {
+/// and the setup label rides along as `status`. A finished conversation
+/// file is not a count, and goes to its own event.
+impl From<ProgressEvent> for WindowEvent {
     fn from(event: ProgressEvent) -> Self {
-        match event {
-            ProgressEvent::Setup { label, step, total } => Self {
+        let counts = ExtractProgressEvent::counts;
+        Self::Progress(match event {
+            ProgressEvent::Setup { label, step, total } => ExtractProgressEvent {
                 status: Some(label),
-                ..Self::counts("setup", step, total)
+                ..counts("setup", step, total)
             },
-            ProgressEvent::Parse { done, total } => Self::counts("parse", done, total),
+            ProgressEvent::Parse { done, total } => counts("parse", done, total),
             ProgressEvent::Attachments {
                 done,
                 total,
                 bytes_done,
                 bytes_total,
-            } => Self {
+            } => ExtractProgressEvent {
                 bytes_done: Some(bytes_done),
                 bytes_total: Some(bytes_total),
-                ..Self::counts("attachments", done, total)
+                ..counts("attachments", done, total)
             },
-            ProgressEvent::Prepare { done, total } => Self::counts("prepare", done, total),
-            ProgressEvent::Media { done, total } => Self::counts("media", done, total),
-        }
+            ProgressEvent::Prepare { done, total } => counts("prepare", done, total),
+            ProgressEvent::Media { done, total } => counts("media", done, total),
+            ProgressEvent::FileWritten { file, status } => {
+                return Self::FileWritten(ExtractFileWrittenEvent { file, status });
+            }
+        })
     }
 }
 
@@ -119,9 +147,10 @@ pub struct ExtractIssueEvent {
     pub item: String,
     /// Why, in one sentence.
     pub reason: String,
-    /// The conversation file an Upload row is about, which tells the window
-    /// whether a resumed Upload reports the row again. Left out of the JSON
-    /// for the other stages' rows.
+    /// The conversation file an Upload row, or a Staging row recorded while
+    /// the write queue wrote that file, is about, which tells the window
+    /// whether a resumed Upload or Staging reports the row again. Left out
+    /// of the JSON for every other row.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation: Option<String>,
 }
@@ -133,7 +162,7 @@ impl From<&RunIssue> for ExtractIssueEvent {
             step: issue.step.clone(),
             item: issue.item.clone(),
             reason: issue.reason.clone(),
-            conversation: None,
+            conversation: issue.conversation.clone(),
         }
     }
 }
@@ -149,6 +178,29 @@ pub struct ExtractFileDoneEvent {
     /// `ok` (sent now), `skipped` (an earlier part of the run sent it), or
     /// `failed`.
     pub status: String,
+}
+
+/// Staging's write queue finished with one conversation file. Matches
+/// `ImportFileWrittenEvent` in `web/src/lib/types.ts`. The window keeps a
+/// Staging row about a conversation apart until its file is written, and
+/// drops an earlier part's row about a file this Staging wrote again
+/// (#1688).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ExtractFileWrittenEvent {
+    /// The conversation file, as Staging's issue rows and the Upload name it.
+    pub file: String,
+    /// What the write queue did with the file: `written` or `skipped`, as
+    /// `ImportFileWrittenEvent.status` names it.
+    #[serde(serialize_with = "write_status")]
+    pub status: WriteStatus,
+}
+
+/// A [`WriteStatus`] as the window names it.
+fn write_status<S: serde::Serializer>(status: &WriteStatus, out: S) -> Result<S::Ok, S::Error> {
+    out.serialize_str(match status {
+        WriteStatus::Written => "written",
+        WriteStatus::Skipped => "skipped",
+    })
 }
 
 /// Failure details for the `extract:error` event.
@@ -194,9 +246,17 @@ mod tests {
         );
     }
 
+    /// The window's progress payload for one of the counting events.
+    fn progress(event: ProgressEvent) -> ExtractProgressEvent {
+        match WindowEvent::from(event) {
+            WindowEvent::Progress(progress) => progress,
+            other => panic!("not a count: {other:?}"),
+        }
+    }
+
     #[test]
     fn typed_events_map_onto_the_ui_steps() {
-        let setup = ExtractProgressEvent::from(ProgressEvent::Setup {
+        let setup = progress(ProgressEvent::Setup {
             label: "Deriving backup keys".into(),
             step: 1,
             total: 5,
@@ -206,7 +266,7 @@ mod tests {
         assert_eq!(setup.status.as_deref(), Some("Deriving backup keys"));
         assert_eq!(setup.bytes_done, None);
 
-        let parse = ExtractProgressEvent::from(ProgressEvent::Parse {
+        let parse = progress(ProgressEvent::Parse {
             done: 500,
             total: 12_345,
         });
@@ -214,7 +274,7 @@ mod tests {
         assert_eq!((parse.done, parse.total), (500, 12_345));
         assert_eq!(parse.status, None);
 
-        let attachments = ExtractProgressEvent::from(ProgressEvent::Attachments {
+        let attachments = progress(ProgressEvent::Attachments {
             done: 2,
             total: 3,
             bytes_done: 100,
@@ -225,26 +285,61 @@ mod tests {
         assert_eq!(attachments.bytes_done, Some(100));
         assert_eq!(attachments.bytes_total, Some(500));
 
-        let prepare = ExtractProgressEvent::from(ProgressEvent::Prepare { done: 2, total: 3 });
+        let prepare = progress(ProgressEvent::Prepare { done: 2, total: 3 });
         assert_eq!(prepare.step, "prepare");
         assert_eq!((prepare.done, prepare.total), (2, 3));
 
-        let media = ExtractProgressEvent::from(ProgressEvent::Media { done: 1, total: 4 });
+        let media = progress(ProgressEvent::Media { done: 1, total: 4 });
         assert_eq!(media.step, "media");
         assert_eq!((media.done, media.total), (1, 4));
     }
 
     #[test]
     fn serialized_event_omits_absent_fields() {
-        let json = serde_json::to_value(ExtractProgressEvent::from(ProgressEvent::Prepare {
-            done: 0,
-            total: 3,
-        }))
-        .unwrap();
+        let json =
+            serde_json::to_value(progress(ProgressEvent::Prepare { done: 0, total: 3 })).unwrap();
         assert_eq!(
             json,
             serde_json::json!({ "step": "prepare", "done": 0, "total": 3 })
         );
+    }
+
+    /// A conversation file the write queue finished reaches the window as
+    /// its own event, which says whether it was written now (#1688).
+    #[test]
+    fn a_finished_conversation_file_is_sent_apart_from_the_counts() {
+        for (written, status) in [
+            (WriteStatus::Written, "written"),
+            (WriteStatus::Skipped, "skipped"),
+        ] {
+            let event = WindowEvent::from(ProgressEvent::FileWritten {
+                file: "c.jsonl".into(),
+                status: written,
+            });
+            let WindowEvent::FileWritten(written) = event else {
+                panic!("not a finished file: {event:?}");
+            };
+            assert_eq!(
+                serde_json::to_value(written).unwrap(),
+                serde_json::json!({ "file": "c.jsonl", "status": status })
+            );
+        }
+    }
+
+    /// A Staging row names the conversation file it was recorded while
+    /// writing, so the window can tell whether a resumed Staging reports
+    /// it again (#1688).
+    #[test]
+    fn a_staging_row_keeps_its_conversation() {
+        let json = serde_json::to_value(ExtractIssueEvent::from(&RunIssue {
+            kind: "error".into(),
+            step: "attachments".into(),
+            item: "/backup/IMG_0001.MOV".into(),
+            reason: "could not be decrypted: No space left on device".into(),
+            conversation: Some("c.jsonl".into()),
+        }))
+        .unwrap();
+        assert_eq!(json["conversation"], "c.jsonl");
     }
 
     /// An exporter's issue reaches the screen in the shape the upload's
@@ -256,6 +351,7 @@ mod tests {
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
+            conversation: None,
         }))
         .unwrap();
         assert_eq!(

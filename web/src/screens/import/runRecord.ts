@@ -1,7 +1,7 @@
 import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
 import type { UploadFinishedReport } from "../../lib/tauri";
-import type { ConversationStatus } from "../../lib/types";
+import type { ConversationStatus, StagedStatus } from "../../lib/types";
 
 /**
  * What an Import Run has recorded so far, across every part it ran in.
@@ -22,10 +22,11 @@ export type RunRecord = {
   issues: ImportIssue[];
   /**
    * The issues `issues` leaves out because a resume may report them again
-   * (an Upload's rows about a conversation not yet on the server) or because
-   * they explain the latest stop (`recordToCarry`). A resume carries them
-   * only once their conversation is on the server. A Discard sends them,
-   * since a discarded run is never resumed (`issuesToDiscard`).
+   * (an Upload's rows about a conversation not yet on the server, and a
+   * Staging row about a conversation not yet written) or because they
+   * explain the latest stop (`recordToCarry`). A resume carries them only
+   * once their conversation is on the server, or written. A Discard sends
+   * them, since a discarded run is never resumed (`issuesToDiscard`).
    */
   lastStopIssues?: ImportIssue[];
   /**
@@ -136,6 +137,11 @@ export type RunPart = {
    * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
    */
   conversations: ReadonlyMap<string, ConversationStatus>;
+  /**
+   * What this part's Staging said of each conversation file it finished so
+   * far (`extract:file-written`), by file: `written` or `skipped`.
+   */
+  staged: ReadonlyMap<string, StagedStatus>;
   /** This part's Upload report, when it ran an Upload that reported. */
   report: UploadFinishedReport | null;
 };
@@ -233,25 +239,80 @@ function isOnServer(status: ConversationStatus | undefined): boolean {
   return status === "ok" || status === "skipped";
 }
 
+/** What this part said of the conversations its rows are about. */
+type PartConversations = {
+  /** By its Upload (`conversationStatuses`). */
+  uploaded: ReadonlyMap<string, ConversationStatus>;
+  /** By its Staging (`RunPart.staged`). */
+  staged: ReadonlyMap<string, StagedStatus>;
+};
+
+function partConversations(part: RunPart): PartConversations {
+  return { uploaded: conversationStatuses(part), staged: part.staged };
+}
+
 /**
- * Sort an earlier pause's rows by what this part's Upload said of their
- * conversation. A row about a whole conversation this Upload reported on is
+ * A Staging row about one conversation: one the exporter recorded while the
+ * write queue wrote that conversation, such as an attachment the iPhone
+ * exporter could not decrypt. A resumed Staging skips a conversation already
+ * written without reading it again, so it reports such a row again only
+ * while the conversation is not yet written.
+ */
+export function isStagingRowOfConversation(
+  issue: ImportIssue,
+): issue is ImportIssue & { conversation: string } {
+  return issue.stage === "staging" && issue.conversation != null;
+}
+
+/**
+ * Whether a row this part reported may be reported again by a resume, and
+ * so waits apart: a Staging row about a conversation this part's Staging has
+ * not yet written, or an Upload row about a conversation not yet on the
+ * server.
+ */
+function waits(issue: ImportIssue, part: PartConversations): boolean {
+  if (issue.conversation == null) return false;
+  if (isStagingRowOfConversation(issue)) return !part.staged.has(issue.conversation);
+  return !isOnServer(part.uploaded.get(issue.conversation));
+}
+
+/**
+ * Sort an earlier pause's rows by what this part said of their
+ * conversation.
+ *
+ * A Staging row goes once this part's Staging wrote its conversation
+ * (`written`): that Staging read the conversation again and reported its
+ * rows afresh. A Staging row about a conversation this part's Staging
+ * skipped (`skipped`) is true and final, and is promoted, since no later
+ * Staging reads that conversation again. Nothing the Upload says changes a
+ * Staging row.
+ *
+ * An Upload row about a whole conversation this Upload reported on is
  * stale, and goes: this Upload reports that conversation itself. A
  * conversation this Upload sent (`ok`) was read again, so its other earlier
  * rows were reported afresh, and go. Those of a conversation an earlier
- * part sent (`skipped`) are true and final, and are promoted. The rest
- * still wait: a `failed` conversation may have failed before it was read,
- * and rows this part reported again are merged with them (`mergeIssues`).
+ * part sent (`skipped`) are true and final, and are promoted.
+ *
+ * The rest still wait: a `failed` conversation may have failed before it
+ * was read, and rows this part reported again are merged with them
+ * (`mergeIssues`).
  */
 function sortEarlierStop(
   carried: RunRecord,
-  statuses: ReadonlyMap<string, ConversationStatus>,
+  part: PartConversations,
 ): { promoted: ImportIssue[]; waiting: ImportIssue[] } {
   const promoted: ImportIssue[] = [];
   const waiting: ImportIssue[] = [];
   for (const issue of carried.lastStopIssues ?? []) {
     if (isRunError(issue)) continue;
-    const status = issue.conversation == null ? undefined : statuses.get(issue.conversation);
+    if (isStagingRowOfConversation(issue)) {
+      const staged = part.staged.get(issue.conversation);
+      if (staged === "written") continue;
+      if (staged === "skipped") promoted.push(issue);
+      else waiting.push(issue);
+      continue;
+    }
+    const status = issue.conversation == null ? undefined : part.uploaded.get(issue.conversation);
     const wholeConversation = issue.item === issue.conversation;
     if (status === "ok" || (wholeConversation && status != null)) continue;
     if (status === "skipped") promoted.push(issue);
@@ -267,7 +328,7 @@ function sortEarlierStop(
  * that completes is never resumed.
  */
 export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
-  const { promoted, waiting } = sortEarlierStop(carried, conversationStatuses(part));
+  const { promoted, waiting } = sortEarlierStop(carried, partConversations(part));
   return combine(carried, part, [...promoted, ...waiting]);
 }
 
@@ -302,24 +363,26 @@ function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): Run
  * when a part stops, and while a stage runs, as each issue arrives, so an
  * app that closes mid-stage leaves it in the run directory.
  *
- * Two kinds of issue are left out of its `issues`, and kept in
+ * Three kinds of issue are left out of its `issues`, and kept in
  * `lastStopIssues` for a Discard instead. An Upload's row about a
  * conversation not yet on the server is left out, because a resumed Upload
  * reads that conversation again and reports it afresh; it moves to `issues`
- * once its conversation is sent. The run-level error a stage records when
- * it stops (item `Import`) is left out because it explains the stop, not
- * the run. An earlier stop's rows are sorted as `sortEarlierStop` says.
+ * once its conversation is sent. A Staging row about a conversation not yet
+ * written is left out for the same reason, and moves to `issues` once the
+ * write queue writes that conversation (#1688). The run-level error a stage
+ * records when it stops (item `Import`) is left out because it explains the
+ * stop, not the run. An earlier stop's rows are sorted as `sortEarlierStop`
+ * says.
  */
 export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
-  const statuses = conversationStatuses(part);
-  const waits = (issue: ImportIssue) =>
-    issue.conversation != null && !isOnServer(statuses.get(issue.conversation));
+  const conversations = partConversations(part);
+  const waitsNow = (issue: ImportIssue) => waits(issue, conversations);
   const rows = part.issues.filter((issue) => !isRunError(issue));
-  const { promoted, waiting } = sortEarlierStop(carried, statuses);
+  const { promoted, waiting } = sortEarlierStop(carried, conversations);
   return {
-    ...combine(carried, { ...part, issues: rows.filter((issue) => !waits(issue)) }, promoted),
+    ...combine(carried, { ...part, issues: rows.filter((issue) => !waitsNow(issue)) }, promoted),
     lastStopIssues: [
-      ...mergeIssues(waiting, rows.filter(waits)),
+      ...mergeIssues(waiting, rows.filter(waitsNow)),
       ...part.issues.filter(isRunError),
     ],
   };
@@ -363,7 +426,7 @@ export function notesToDiscard(record: RunRecord): ImportNote[] {
 
 /**
  * The issues as the server takes them, without the conversation an Upload
- * row names for the record's own use.
+ * or Staging row names for the record's own use.
  */
 export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
   return issues.map(({ kind, stage, item, reason }) => ({ kind, stage, item, reason }));
