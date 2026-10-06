@@ -5,7 +5,7 @@
 //! it started and the format it writes: `export-2026-10-04-1430-mbox`. It is
 //! where the result lands unless the person chose another destination, and it
 //! is where an Export keeps its in-between files while it runs: the JSON Lines
-//! it pulls from the server before converting them ([`PULLED`]), and the
+//! it exports from the server before converting them ([`EXPORTED`]), and the
 //! converted files while they are written ([`CONVERTING`]), since a conversion
 //! may not write into a directory that holds its input.
 //! [`ExportDirectories::finish`] moves the result up and deletes the
@@ -35,8 +35,8 @@ use std::sync::Mutex;
 pub const EXPORT_DIRECTORY_NAME: &str = "exports";
 
 /// The directory inside an Export's directory that holds the JSON Lines it
-/// pulled, while it converts them.
-pub const PULLED: &str = ".pulled";
+/// exported, while it converts them.
+pub const EXPORTED: &str = ".exported";
 
 /// The directory inside an Export's directory that the conversion writes
 /// into, before [`ExportDirectories::finish`] moves its files up.
@@ -84,8 +84,8 @@ pub struct ExportDir {
     /// The directory, where the result lands unless another destination is
     /// chosen.
     pub dir: String,
-    /// Where an Export pulls its JSON Lines to before converting them.
-    pub pulled: String,
+    /// Where an Export writes its JSON Lines before converting them.
+    pub exported: String,
     /// Where an Export's conversion writes when the result lands in `dir`.
     pub converting: String,
 }
@@ -195,7 +195,7 @@ impl ExportDirectories {
         };
         self.running_markers().insert(dir.clone(), marker);
         Ok(ExportDir {
-            pulled: dir.join(PULLED).display().to_string(),
+            exported: dir.join(EXPORTED).display().to_string(),
             converting: dir.join(CONVERTING).display().to_string(),
             dir: dir.display().to_string(),
         })
@@ -260,7 +260,7 @@ impl ExportDirectories {
 
     /// Finish the directory `dir` after its Export or Convert succeeded: move
     /// the converted files up out of [`CONVERTING`], delete the JSON Lines it
-    /// pulled and the export journal, and delete the directory when nothing is
+    /// exported and the export journal, and delete the directory when nothing is
     /// left in it because the result went elsewhere. Returns the directory
     /// when the result is in it.
     ///
@@ -295,12 +295,12 @@ impl ExportDirectories {
                 path.display()
             )
         };
-        let pulled = dir.join(PULLED);
-        if pulled.exists() {
-            std::fs::remove_dir_all(&pulled).map_err(|e| left_over(&pulled, e))?;
+        let exported = dir.join(EXPORTED);
+        if exported.exists() {
+            std::fs::remove_dir_all(&exported).map_err(|e| left_over(&exported, e))?;
         }
-        // The journal lets a later pull into the same directory skip what it
-        // downloaded. Nothing pulls into this directory again.
+        // The journal lets a later Export into the same directory skip what it
+        // fetched. Nothing exports into this directory again.
         let journal = dir.join(message_crate_export::EXPORT_JOURNAL_NAME);
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;

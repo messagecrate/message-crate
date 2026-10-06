@@ -328,8 +328,8 @@ export type ExportFormat = (typeof EXPORT_FORMATS)[number]["id"];
 export interface ExportDir {
   /** Where the result lands unless another destination is chosen. */
   dir: string;
-  /** Where an Export pulls its JSON Lines before converting them. */
-  pulled: string;
+  /** Where an Export writes its JSON Lines before converting them. */
+  exported: string;
   /** Where an Export's conversion writes when the result lands in `dir`. */
   converting: string;
 }
