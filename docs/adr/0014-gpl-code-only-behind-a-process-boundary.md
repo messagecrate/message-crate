@@ -150,7 +150,9 @@ included, links the protocol crate. `Deletion`, a message's mark as Deleted
 in the source app or Unsent, lives beside it for the same reason (#1643) and
 is re-exported as `message_ir::Deletion`. `EarlierVersion`, one earlier
 version of an edited message, lives there too for the same reason (#1644) and
-is re-exported as `message_ir::EarlierVersion`. That carries no GPL code with it: the
+is re-exported as `message_ir::EarlierVersion`. `ReplyTo`, the message a
+reply quotes, lives there too for the same reason (#1645) and is re-exported
+as `message_ir::ReplyTo`. That carries no GPL code with it: the
 protocol crate depends on `serde` and `serde_json` alone.
 
 `crates/helpers/chat-db-fixture` writes the small `chat.db` both sides test

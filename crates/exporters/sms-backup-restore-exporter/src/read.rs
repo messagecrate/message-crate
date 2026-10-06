@@ -650,6 +650,7 @@ fn ir_message(
         reactions: Vec::new(),
         deletion: None,
         edits: Vec::new(),
+        reply_to: None,
         imessage: None,
         source: IrSource {
             android_type: message.android_type.trim().parse().ok(),

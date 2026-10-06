@@ -292,7 +292,7 @@ fn a_message_keeps_its_apple_fields_in_the_document() {
         fields.parts,
         Some(serde_json::json!([{ "index": 0, "kind": "run", "text": "Nice" }]))
     );
-    assert!(!fields.is_reply);
+    assert_eq!(nice.reply_to, None);
 }
 
 /// A CSV export writes one file per conversation and copies the photo

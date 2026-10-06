@@ -852,12 +852,10 @@ pub struct MessageRow<'a> {
     pub is_announcement: bool,
     /// `messages.is_reply`.
     pub is_reply: bool,
-    /// `messages.thread_originator_guid`.
-    pub thread_originator_guid: Option<&'a str>,
-    /// `messages.thread_originator_part`.
-    pub thread_originator_part: Option<i64>,
-    /// `messages.num_replies`.
-    pub num_replies: i64,
+    /// `messages.reply_to_guid`.
+    pub reply_to_guid: Option<&'a str>,
+    /// `messages.reply_to_part`.
+    pub reply_to_part: Option<i64>,
     /// `messages.deletion`.
     pub deletion: Option<message_ir::Deletion>,
     /// `messages.sort_order`.
@@ -889,9 +887,8 @@ impl MessageRow<'_> {
             body: None,
             is_announcement: false,
             is_reply: false,
-            thread_originator_guid: None,
-            thread_originator_part: None,
-            num_replies: 0,
+            reply_to_guid: None,
+            reply_to_part: None,
             deletion: None,
             sort_order: 0,
             content_key: None,
@@ -926,11 +923,11 @@ impl MessageRow<'_> {
             "INSERT INTO messages (
                 id, conversation_id, account_id, source, guid, timestamp, is_from_me,
                 sender_handle_id, owner_handle_id, service, subject, body,
-                is_announcement, is_reply, thread_originator_guid, thread_originator_part,
-                num_replies, deletion, sort_order, content_key, duplicate_of, import_id
+                is_announcement, is_reply, reply_to_guid, reply_to_part,
+                deletion, sort_order, content_key, duplicate_of, import_id
              ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
+                $13, $14, $15, $16, $17, $18, $19, $20, $21
              ) RETURNING id",
         )
         .bind(self.id)
@@ -947,9 +944,8 @@ impl MessageRow<'_> {
         .bind(self.body)
         .bind(self.is_announcement)
         .bind(self.is_reply)
-        .bind(self.thread_originator_guid)
-        .bind(self.thread_originator_part)
-        .bind(self.num_replies)
+        .bind(self.reply_to_guid)
+        .bind(self.reply_to_part)
         .bind(self.deletion.map(message_ir::Deletion::as_str))
         .bind(self.sort_order)
         .bind(self.content_key)

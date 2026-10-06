@@ -32,7 +32,7 @@ password when the backup is encrypted.
 
 What comes back, one JSON object per line, in this order:
 
-1. `{"event":"source","protocol_version":11,"encrypted":false}` once.
+1. `{"event":"source","protocol_version":13,"encrypted":false}` once.
 2. Any number of `log`, `progress`, `conversation`, and `message` lines,
    interleaved. Each `conversation` names a chat and its participants (a
    message in no chat is in its sender's `orphaned` conversation, keyed

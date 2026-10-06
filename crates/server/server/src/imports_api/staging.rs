@@ -952,10 +952,14 @@ async fn insert_message_rows(
             subject: row.msg.subject.as_deref(),
             body: row.body.as_deref(),
             is_announcement: row.msg.is_announcement as i64,
-            is_reply: row.msg.is_reply as i64,
-            thread_originator_guid: row.msg.thread_originator_guid.as_deref(),
-            thread_originator_part: row.msg.thread_originator_part,
-            num_replies: row.msg.num_replies,
+            is_reply: i64::from(row.msg.reply_to.is_some()),
+            reply_to_guid: row.msg.reply_to.as_ref().and_then(|r| r.guid.as_deref()),
+            reply_to_part: row
+                .msg
+                .reply_to
+                .as_ref()
+                .and_then(|r| r.part_index)
+                .map(i64::from),
             deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,

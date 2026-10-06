@@ -18,7 +18,7 @@ use sqlx::SqliteConnection;
 use sqlx::{Executor, Row};
 
 pub use message_crate_api_types::{
-    Attachment, Deletion, EarlierVersion, Message, MessageConversation, Tapback,
+    Attachment, Deletion, EarlierVersion, Message, MessageConversation, ReplyTo, Tapback,
 };
 
 use crate::db::conversations::is_group_type;
@@ -51,16 +51,46 @@ struct RawRow {
     subject: Option<String>,
     body: Option<String>,
     is_announcement: bool,
-    is_reply: bool,
-    thread_originator_guid: Option<String>,
-    thread_originator_part: Option<i64>,
-    num_replies: i64,
+    reply_to: Option<ReplyTo>,
+    reply_count: i64,
     deletion: Option<String>,
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
     label: Option<String>,
 }
+
+/// A message's reply count: the replies shown that quote `m`, counted when
+/// read rather than stored.
+///
+/// A reply names the copy it quotes by that copy's own (account, source,
+/// guid), as `ix_messages_reply_to` keys it. Dedupe can hide that copy under
+/// `m`, the copy of another source imported first, while the reply, which
+/// has no other copy, stays shown; so the replies of every copy hidden under
+/// `m` count for `m` too. A reply hidden under another message counts as the
+/// message it is shown as, and once however many of its copies quote `m`.
+/// A reply in a trashed conversation counts only for a message in a trashed
+/// conversation, the rule `earlier_versions_holder_sql` follows: a person
+/// who trashed the conversation holding the reply does not open it from a
+/// message they kept.
+const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
+       quoted(id) AS ( \
+         SELECT m.id \
+         UNION SELECT q.id FROM messages q JOIN quoted ON q.duplicate_of = quoted.id), \
+       shown(id) AS ( \
+         SELECT r.id FROM quoted JOIN messages qm ON qm.id = quoted.id \
+           JOIN messages r ON r.account_id = qm.account_id AND r.source = qm.source \
+                          AND r.reply_to_guid = qm.guid \
+         UNION SELECT t.duplicate_of FROM shown JOIN messages t ON t.id = shown.id \
+               WHERE t.duplicate_of IS NOT NULL) \
+     SELECT COUNT(*) FROM shown JOIN messages sm ON sm.id = shown.id \
+     WHERE sm.duplicate_of IS NULL \
+       AND (NOT EXISTS (SELECT 1 FROM trashed_conversations rtc \
+                        WHERE rtc.account_id = sm.account_id \
+                          AND rtc.conversation_id = sm.conversation_id) \
+            OR EXISTS (SELECT 1 FROM trashed_conversations mtc \
+                       WHERE mtc.account_id = m.account_id \
+                         AND mtc.conversation_id = m.conversation_id))";
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
 /// these joins are here for the SELECT list, which reports the conversation
@@ -400,14 +430,15 @@ fn message_page_sql(
     let sql = format!(
         "SELECT m.id, m.conversation_id, m.source, m.service, m.guid, m.timestamp,
                 m.sort_order, m.is_from_me, hs.raw AS sender, m.subject, m.body,
-                m.is_announcement, m.is_reply, m.thread_originator_guid,
-                m.thread_originator_part, m.num_replies,
+                m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
+                ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
                 ho.raw AS owner, {label} AS label, m.deletion
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
-        label = crate::db::conversations::conversation_title_sql("c")
+        label = crate::db::conversations::conversation_title_sql("c"),
+        reply_count = REPLY_COUNT_SQL,
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -440,10 +471,15 @@ async fn fetch_message_page(
                 subject: row.try_get(9)?,
                 body: row.try_get(10)?,
                 is_announcement: row.try_get::<i64, _>(11)? != 0,
-                is_reply: row.try_get::<i64, _>(12)? != 0,
-                thread_originator_guid: row.try_get(13)?,
-                thread_originator_part: row.try_get(14)?,
-                num_replies: row.try_get(15)?,
+                reply_to: if row.try_get::<i64, _>(12)? != 0 {
+                    Some(ReplyTo {
+                        guid: row.try_get(13)?,
+                        part_index: row.try_get(14)?,
+                    })
+                } else {
+                    None
+                },
+                reply_count: row.try_get(15)?,
                 chat_identifier: row.try_get(16)?,
                 conversation_type: row.try_get(17)?,
                 group_title: row.try_get(18)?,
@@ -481,10 +517,8 @@ async fn fetch_message_page(
                 subject: r.subject,
                 text: r.body,
                 is_announcement: r.is_announcement,
-                is_reply: r.is_reply,
-                thread_originator_guid: r.thread_originator_guid,
-                thread_originator_part: r.thread_originator_part,
-                num_replies: r.num_replies,
+                reply_to: r.reply_to,
+                reply_count: r.reply_count,
                 conversation: MessageConversation {
                     id: r.conversation_id,
                     chat_identifier: r.chat_identifier,

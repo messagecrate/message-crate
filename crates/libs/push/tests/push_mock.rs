@@ -61,6 +61,7 @@ fn sample_doc() -> ConversationDocument {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         }],

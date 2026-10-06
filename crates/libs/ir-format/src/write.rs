@@ -37,6 +37,9 @@ pub const CSV_HEADERS: &[&str] = &[
     "reactions_json",
     "deletion",
     "earlier_versions_json",
+    "is_reply",
+    "reply_to_guid",
+    "reply_to_part",
     "message_kind",
     "export_source",
     "export_tool",
@@ -51,10 +54,6 @@ pub const CSV_HEADERS: &[&str] = &[
     "shared_location",
     "is_announcement",
     "announcement",
-    "is_reply",
-    "thread_originator_guid",
-    "thread_originator_part",
-    "num_replies",
     "parts_json",
     "app_json",
     "balloon_bundle_id",
@@ -242,6 +241,7 @@ struct MessageCells {
     attachments_json: String,
     reactions_json: String,
     earlier_versions_json: String,
+    reply_to_part: String,
     android_type: String,
     source_fields_json: String,
     imessage: ImessageCells,
@@ -282,6 +282,7 @@ impl MessageCells {
             } else {
                 json_cell(&msg.edits)
             },
+            reply_to_part: number_cell(msg.reply_to.as_ref().and_then(|r| r.part_index)),
             android_type: msg
                 .source
                 .as_ref()
@@ -307,10 +308,6 @@ struct ImessageCells {
     send_effect: String,
     shared_location: String,
     announcement: String,
-    is_reply: bool,
-    thread_originator_guid: String,
-    thread_originator_part: String,
-    num_replies: String,
     parts_json: String,
     app_json: String,
     balloon_bundle_id: String,
@@ -337,10 +334,6 @@ impl ImessageCells {
             send_effect: text_cell(im.send_effect.as_deref()),
             shared_location: text_cell(im.shared_location.as_deref()),
             announcement: text_cell(im.announcement.as_deref()),
-            is_reply: im.is_reply,
-            thread_originator_guid: text_cell(im.in_reply_to_guid.as_deref()),
-            thread_originator_part: number_cell(im.thread_originator_part),
-            num_replies: number_cell(im.num_replies),
             parts_json: parts_cell_for_csv(text, im.parts.as_ref()),
             app_json: value_cell(im.app.as_ref()),
             balloon_bundle_id: text_cell(im.balloon_bundle_id.as_deref()),
@@ -375,7 +368,7 @@ fn csv_record<'a>(
     participants_json: &'a str,
     msg: &'a IrMessage,
     cells: &'a MessageCells,
-) -> [&'a str; 47] {
+) -> [&'a str; 46] {
     let im = &cells.imessage;
     [
         doc.conversation.chat_identifier.as_str(),
@@ -398,6 +391,12 @@ fn csv_record<'a>(
         cells.reactions_json.as_str(),
         msg.deletion.map_or("", Deletion::as_str),
         cells.earlier_versions_json.as_str(),
+        bool_cell(msg.reply_to.is_some()),
+        msg.reply_to
+            .as_ref()
+            .and_then(|r| r.guid.as_deref())
+            .unwrap_or(""),
+        cells.reply_to_part.as_str(),
         msg.message_kind.as_str(),
         doc.export.source.as_str(),
         doc.export.tool.as_str(),
@@ -412,10 +411,6 @@ fn csv_record<'a>(
         im.shared_location.as_str(),
         bool_cell(msg.message_kind == IrMessageKind::Announcement),
         im.announcement.as_str(),
-        bool_cell(im.is_reply),
-        im.thread_originator_guid.as_str(),
-        im.thread_originator_part.as_str(),
-        im.num_replies.as_str(),
         im.parts_json.as_str(),
         im.app_json.as_str(),
         im.balloon_bundle_id.as_str(),

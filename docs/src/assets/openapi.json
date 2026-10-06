@@ -15701,8 +15701,7 @@
           "sort_order",
           "is_from_me",
           "is_announcement",
-          "is_reply",
-          "num_replies",
+          "reply_count",
           "conversation",
           "attachments",
           "tapbacks",
@@ -15710,12 +15709,11 @@
           "matched_earlier_version",
           "deletion",
           "owner",
+          "reply_to",
           "sender",
           "service",
           "subject",
-          "text",
-          "thread_originator_guid",
-          "thread_originator_part"
+          "text"
         ],
         "properties": {
           "attachments": {
@@ -15764,18 +15762,9 @@
             "type": "boolean",
             "description": "True for messages sent by the account owner."
           },
-          "is_reply": {
-            "type": "boolean",
-            "description": "True when part of a reply thread."
-          },
           "matched_earlier_version": {
             "type": "boolean",
             "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
-          },
-          "num_replies": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Replies in this thread."
           },
           "owner": {
             "type": [
@@ -15783,6 +15772,22 @@
               "null"
             ],
             "description": "The account holder's own address on this message: the one it was\nsent from, or the one it was received at. `None` when the backup\nnamed no owner."
+          },
+          "reply_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many replies quote this message, counted when read: each reply\nshown whose `reply_to.guid` names this message, or a copy of it\nhidden as a duplicate, counted once. A reply hidden as a duplicate\ncounts as the message it is shown as. A reply in a trashed\nconversation counts only for a message in a trashed conversation."
+          },
+          "reply_to": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ReplyTo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The message this one replies to; `null` for a message that is not\na reply."
           },
           "sender": {
             "type": [
@@ -15827,21 +15832,6 @@
               "null"
             ],
             "description": "Body text, when present."
-          },
-          "thread_originator_guid": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "GUID of the message this replies to."
-          },
-          "thread_originator_part": {
-            "type": [
-              "integer",
-              "null"
-            ],
-            "format": "int64",
-            "description": "Part index of the originator (for tapbacks)."
           },
           "timestamp": {
             "type": "string",
@@ -17738,8 +17728,7 @@
                 "sort_order",
                 "is_from_me",
                 "is_announcement",
-                "is_reply",
-                "num_replies",
+                "reply_count",
                 "conversation",
                 "attachments",
                 "tapbacks",
@@ -17747,12 +17736,11 @@
                 "matched_earlier_version",
                 "deletion",
                 "owner",
+                "reply_to",
                 "sender",
                 "service",
                 "subject",
-                "text",
-                "thread_originator_guid",
-                "thread_originator_part"
+                "text"
               ],
               "properties": {
                 "attachments": {
@@ -17801,18 +17789,9 @@
                   "type": "boolean",
                   "description": "True for messages sent by the account owner."
                 },
-                "is_reply": {
-                  "type": "boolean",
-                  "description": "True when part of a reply thread."
-                },
                 "matched_earlier_version": {
                   "type": "boolean",
                   "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
-                },
-                "num_replies": {
-                  "type": "integer",
-                  "format": "int64",
-                  "description": "Replies in this thread."
                 },
                 "owner": {
                   "type": [
@@ -17820,6 +17799,22 @@
                     "null"
                   ],
                   "description": "The account holder's own address on this message: the one it was\nsent from, or the one it was received at. `None` when the backup\nnamed no owner."
+                },
+                "reply_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many replies quote this message, counted when read: each reply\nshown whose `reply_to.guid` names this message, or a copy of it\nhidden as a duplicate, counted once. A reply hidden as a duplicate\ncounts as the message it is shown as. A reply in a trashed\nconversation counts only for a message in a trashed conversation."
+                },
+                "reply_to": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ReplyTo"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The message this one replies to; `null` for a message that is not\na reply."
                 },
                 "sender": {
                   "type": [
@@ -17864,21 +17859,6 @@
                     "null"
                   ],
                   "description": "Body text, when present."
-                },
-                "thread_originator_guid": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "GUID of the message this replies to."
-                },
-                "thread_originator_part": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ],
-                  "format": "int64",
-                  "description": "Part index of the originator (for tapbacks)."
                 },
                 "timestamp": {
                   "type": "string",
@@ -18603,6 +18583,31 @@
           "size": {
             "$ref": "#/components/schemas/DemoDataSize",
             "description": "How much Demo Data to build."
+          }
+        }
+      },
+      "ReplyTo": {
+        "type": "object",
+        "description": "The message a reply quotes. A message that carries one is a reply,\nwhether or not the quoted message could be named.",
+        "required": [
+          "guid",
+          "part_index"
+        ],
+        "properties": {
+          "guid": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The quoted message's `guid`, as the backup named it; `null` when\nit named none. A named message can still be missing from this\nMessage Crate, for example one deleted before the backup was\nmade, so the backup does not hold it, while its reply was kept."
+          },
+          "part_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The part of the quoted message the reply answers; 0 for the first\nor only part. `null` when the source does not record one."
           }
         }
       },

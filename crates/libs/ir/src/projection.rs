@@ -2,16 +2,17 @@
 //!
 //! Every exporter used to carry its own copy of this loop. The skeleton —
 //! participants with the single-peer fallback, owner sender handling,
-//! sent/received tallying, the dedupe step, GUID derivation, and document
-//! assembly — lives here once; the genuine per-exporter deltas (vendor
-//! `source` fields, service selection, attachment digests and vendor keys,
-//! attachment mapping) are supplied through [`ProjectionHooks`].
+//! sent/received tallying, the dedupe step, GUID derivation, linking each
+//! reply to the message it quotes, and document assembly — lives here once;
+//! the genuine per-exporter deltas (vendor `source` fields, service
+//! selection, attachment digests and vendor keys, reply keys, attachment
+//! mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, HandleType,
     IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
     IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, PendingAttachment,
-    PendingConversation, PendingMessage, SCHEMA_VERSION, TimePrecision, format_local_ts,
+    PendingConversation, PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
     one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -66,6 +67,16 @@ pub struct ProjectionTally {
     pub duplicates: u64,
 }
 
+/// What a staged message says about the message it quotes, for a source that
+/// records replies by the quoted message's own key.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PendingReply {
+    /// The quoted message's key, compared with each message's
+    /// [`ProjectionHooks::reply_key`] in the same conversation; `None` when
+    /// the source names no key.
+    pub quoted_key: Option<String>,
+}
+
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
 ///
 /// Only [`export`](Self::export), [`service`](Self::service), and
@@ -102,6 +113,20 @@ pub trait ProjectionHooks {
     /// the [`MessageGuid`], and two copies with different ones are two
     /// messages. The default has none.
     fn vendor_key(&self, _msg: &PendingMessage) -> Option<String> {
+        None
+    }
+
+    /// The key a reply names to quote this message. The default has none.
+    fn reply_key(&self, _msg: &PendingMessage) -> Option<String> {
+        None
+    }
+
+    /// `Some` when the message is a reply, naming the message it quotes. The
+    /// projection links it to the one message of the conversation whose
+    /// [`reply_key`](Self::reply_key) equals [`PendingReply::quoted_key`];
+    /// with no such message, or more than one, the reply stays a reply with
+    /// no link. The default records no replies.
+    fn reply(&self, _msg: &PendingMessage) -> Option<PendingReply> {
         None
     }
 
@@ -246,6 +271,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 
     let mut tally = ProjectionTally::default();
     let mut messages = Vec::with_capacity(convo.messages.len());
+    let mut replies: Vec<(usize, PendingReply)> = Vec::new();
+    let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
     for ((msg, p), kept) in convo.messages.iter().zip(&prepared).zip(kept) {
         let Some(timestamp_unix_ms) = kept else {
             tally.duplicates += 1;
@@ -269,6 +296,16 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             vendor_key: p.vendor_key.as_deref(),
         })
         .into_string();
+        if let Some(key) = hooks.reply_key(msg) {
+            // A key two kept messages share names neither of them.
+            guid_by_reply_key
+                .entry(key)
+                .and_modify(|guid| *guid = None)
+                .or_insert_with(|| Some(guid.clone()));
+        }
+        if let Some(reply) = hooks.reply(msg) {
+            replies.push((messages.len(), reply));
+        }
 
         let outgoing = role == ProjectedRole::Outgoing;
         let (sender_identity, sender_display_name) = if outgoing {
@@ -304,8 +341,22 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             deletion: None,
             // Nor an edited message's earlier versions.
             edits: Vec::new(),
+            // Linked below, once every guid is known.
+            reply_to: None,
             imessage: None,
             source: hooks.source(convo, msg).into_option(),
+        });
+    }
+    for (index, reply) in replies {
+        let guid = reply
+            .quoted_key
+            .as_ref()
+            .and_then(|key| guid_by_reply_key.get(key).cloned().flatten());
+        // No source that stages its rows here records the part a reply
+        // answers.
+        messages[index].reply_to = Some(ReplyTo {
+            guid,
+            part_index: None,
         });
     }
 
@@ -491,6 +542,84 @@ mod tests {
             attachments: Vec::new(),
             extra: BTreeMap::new(),
         }
+    }
+
+    /// Hooks that read a message's key from its `key` extra and a reply's
+    /// quoted key from its `quotes` extra, as a source keyed like WhatsApp
+    /// would.
+    struct KeyedHooks;
+
+    impl ProjectionHooks for KeyedHooks {
+        fn export(&self) -> ExportMeta {
+            TestHooks.export()
+        }
+
+        fn service(&self, _msg: &PendingMessage) -> IrService {
+            IrService::Whatsapp
+        }
+
+        fn source(&self, _convo: &PendingConversation, _msg: &PendingMessage) -> IrSource {
+            IrSource::default()
+        }
+
+        fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
+            crate::trimmed(msg.extra_str("key")).map(str::to_string)
+        }
+
+        fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
+            msg.extra.get("quotes").map(|quoted| PendingReply {
+                quoted_key: crate::trimmed(quoted).map(str::to_string),
+            })
+        }
+    }
+
+    fn keyed(secs: i64, text: &str, key: &str, quotes: Option<&str>) -> PendingMessage {
+        let mut m = msg(secs, false, text);
+        m.extra.insert("key".into(), key.into());
+        if let Some(quoted) = quotes {
+            m.extra.insert("quotes".into(), quoted.into());
+        }
+        m
+    }
+
+    /// A reply links to the one message whose key it names. A key no
+    /// message has, a key two messages share, and a reply that names no key
+    /// leave a reply with no link; a message that is not a reply has none.
+    #[test]
+    fn a_reply_links_only_to_the_one_message_with_its_key() {
+        let mut convo =
+            PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
+        convo.messages = vec![
+            keyed(1_609_459_200, "quoted", "K1", None),
+            keyed(1_609_459_201, "twin a", "K2", None),
+            keyed(1_609_459_202, "twin b", "K2", None),
+            keyed(1_609_459_203, "links", "K3", Some("K1")),
+            keyed(1_609_459_204, "absent", "K4", Some("K9")),
+            keyed(1_609_459_205, "ambiguous", "K5", Some("K2")),
+            keyed(1_609_459_206, "no key", "K6", Some("")),
+        ];
+
+        let (doc, _) = pending_to_document("+15555550122", &convo, &KeyedHooks);
+        let reply_of = |text: &str| {
+            doc.messages
+                .iter()
+                .find(|m| m.text == text)
+                .unwrap()
+                .reply_to
+                .clone()
+        };
+        let unlinked = Some(ReplyTo::default());
+        assert_eq!(reply_of("quoted"), None);
+        assert_eq!(
+            reply_of("links"),
+            Some(ReplyTo {
+                guid: Some(doc.messages[0].guid.clone()),
+                part_index: None,
+            })
+        );
+        assert_eq!(reply_of("absent"), unlinked);
+        assert_eq!(reply_of("ambiguous"), unlinked);
+        assert_eq!(reply_of("no key"), unlinked);
     }
 
     #[test]

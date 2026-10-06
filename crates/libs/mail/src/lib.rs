@@ -3,8 +3,9 @@
 //! Layout and headers follow the [mail archive format](https://messagecrate.app/docs/developer/formats/mail-archive/).
 //! The usual layout is one directory of `.eml` files per conversation.
 //! [`write_mail_package`] writes **mboxrd** mailboxes for clients that prefer
-//! a single file. SMS/MMS fill the core fields. iMessage also sets reply,
-//! tapback, balloon, parts, and edits extension fields.
+//! a single file. SMS/MMS fill the core fields, and a reply from any source
+//! carries the reply headers. iMessage also sets tapback, balloon, parts, and
+//! edits extension fields.
 
 mod headers;
 mod parse;
@@ -748,6 +749,7 @@ fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
         .date(Date::new(date_secs))
         .message_id(message_id);
     builder = conversation_headers(builder, msg);
+    builder = reply_headers(builder, msg);
     builder = imessage_headers(builder, msg);
     builder = attachment_meta_header(builder, msg);
     let text = text_body_part(&msg.message.text);
@@ -945,26 +947,35 @@ fn conversation_headers<'m>(
     )
 }
 
-/// The headers only iMessage rows carry: reply threading, effects, edits,
-/// the reaction a tapback row is, and app balloons. Rows from other services add nothing here.
+/// The reply headers: `X-ME-Is-Reply` on every reply, and for one whose
+/// quoted message is named, its guid and the standard `In-Reply-To` and
+/// `References`, so a mail client threads the two when both are exported.
+fn reply_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
+    let Some(reply_to) = msg.message.reply_to.as_ref() else {
+        return builder;
+    };
+    let mut builder = x_me_header(builder, headers::IS_REPLY, "true");
+    if let Some(guid) = reply_to.guid.as_deref().filter(|s| !s.is_empty()) {
+        let mid = message_id(guid, message_id_domain(msg));
+        builder = builder.in_reply_to(mid.clone()).references(mid);
+        builder = x_me_header(builder, headers::REPLY_TO_GUID, guid);
+    }
+    opt_header(
+        builder,
+        headers::REPLY_TO_PART,
+        reply_to.part_index.map(|p| p.to_string()).as_deref(),
+    )
+}
+
+/// The headers only iMessage rows carry: effects, the reaction a tapback row
+/// is, and app balloons. Rows from other services add nothing here.
 fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
     let Some(im) = msg.im() else {
         return builder;
     };
-    let mut builder = opt_header(builder, headers::IS_REPLY, im.is_reply.then_some("true"));
-    if let Some(guid) = im.in_reply_to_guid.as_deref().filter(|s| !s.is_empty()) {
-        let mid = message_id(guid, message_id_domain(msg));
-        builder = builder.in_reply_to(mid.clone()).references(mid);
-        builder = x_me_header(builder, headers::THREAD_ORIGINATOR_GUID, guid);
-    }
     optional_headers(
         builder,
         [
-            (
-                headers::THREAD_ORIGINATOR_PART,
-                im.thread_originator_part.map(|p| p.to_string()),
-            ),
-            (headers::NUM_REPLIES, im.num_replies.map(|n| n.to_string())),
             (headers::SEND_EFFECT, im.send_effect.clone()),
             (headers::SHARED_LOCATION, im.shared_location.clone()),
             (headers::ANNOUNCEMENT, im.announcement.clone()),

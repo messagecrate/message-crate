@@ -229,13 +229,14 @@ Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https
 | Header | Role |
 |--------|------|
 | `Message-ID` | `<{apple-guid}@imessage.local>` |
-| `In-Reply-To` / `References` | Originator `Message-ID` |
-| `X-ME-Is-Reply` | `true` |
-| `X-ME-Thread-Originator-Guid` | Apple guid of thread root |
-| `X-ME-Thread-Originator-Part` | Part index within multipart bubble |
-| `X-ME-Num-Replies` | On originator when known |
+| `In-Reply-To` / `References` | The quoted message's `Message-ID`, when the source names it |
+| `X-ME-Is-Reply` | `true` on every reply |
+| `X-ME-Reply-To-Guid` | The quoted message's guid, when the source names it |
+| `X-ME-Reply-To-Part` | The part of the quoted message the reply answers |
 
-Ordinary SMS leaves reply headers unset (no fake threads).
+The reply headers come from the common message's `reply_to`, so every source that records replies writes them, WhatsApp included. A reply whose quoted message is not in the export carries `X-ME-Is-Reply` alone. A message that is not a reply carries none (no fake threads). No reply count is written: the server counts a message's replies when it reads it.
+
+A mail with `X-ME-Thread-Originator-Guid`, `X-ME-Thread-Originator-Part` or `X-ME-Num-Replies`, which an earlier Message Crate wrote, is refused: nothing reads those headers now, so the reply would lose the message it quotes.
 
 ### Reactions
 
@@ -356,7 +357,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `earlier_versions_json` | `X-ME-Earlier-Versions` |
 | `parts_json` / `app_json` | `X-ME-Parts` / `X-ME-App` |
 | `send_effect` | `X-ME-Send-Effect` |
-| `thread_originator_*` | `In-Reply-To` + `X-ME-Thread-*` |
+| `is_reply` / `reply_to_guid` / `reply_to_part` | `X-ME-Is-Reply` / `X-ME-Reply-To-Guid` + `In-Reply-To` / `X-ME-Reply-To-Part` |
 
 ## Implementation notes
 

@@ -3309,8 +3309,6 @@ export interface components {
             is_announcement: boolean;
             /** @description True for messages sent by the account owner. */
             is_from_me: boolean;
-            /** @description True when part of a reply thread. */
-            is_reply: boolean;
             /**
              * @description True in a Messages search answer (`GET /v1/messages` with `q`)
              *     when the message is a hit only because of its earlier versions:
@@ -3320,16 +3318,25 @@ export interface components {
              */
             matched_earlier_version: boolean;
             /**
-             * Format: int64
-             * @description Replies in this thread.
-             */
-            num_replies: number;
-            /**
              * @description The account holder's own address on this message: the one it was
              *     sent from, or the one it was received at. `None` when the backup
              *     named no owner.
              */
             owner: string | null;
+            /**
+             * Format: int64
+             * @description How many replies quote this message, counted when read: each reply
+             *     shown whose `reply_to.guid` names this message, or a copy of it
+             *     hidden as a duplicate, counted once. A reply hidden as a duplicate
+             *     counts as the message it is shown as. A reply in a trashed
+             *     conversation counts only for a message in a trashed conversation.
+             */
+            reply_count: number;
+            /**
+             * @description The message this one replies to; `null` for a message that is not
+             *     a reply.
+             */
+            reply_to: components["schemas"]["ReplyTo"] | null;
             /** @description The sender's identity, for incoming messages. */
             sender: string | null;
             /**
@@ -3350,13 +3357,6 @@ export interface components {
             tapbacks: components["schemas"]["Tapback"][];
             /** @description Body text, when present. */
             text: string | null;
-            /** @description GUID of the message this replies to. */
-            thread_originator_guid: string | null;
-            /**
-             * Format: int64
-             * @description Part index of the originator (for tapbacks).
-             */
-            thread_originator_part: number | null;
             /**
              * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
              *     suffix. A caller shows it in the account's time zone
@@ -4361,8 +4361,6 @@ export interface components {
                 is_announcement: boolean;
                 /** @description True for messages sent by the account owner. */
                 is_from_me: boolean;
-                /** @description True when part of a reply thread. */
-                is_reply: boolean;
                 /**
                  * @description True in a Messages search answer (`GET /v1/messages` with `q`)
                  *     when the message is a hit only because of its earlier versions:
@@ -4372,16 +4370,25 @@ export interface components {
                  */
                 matched_earlier_version: boolean;
                 /**
-                 * Format: int64
-                 * @description Replies in this thread.
-                 */
-                num_replies: number;
-                /**
                  * @description The account holder's own address on this message: the one it was
                  *     sent from, or the one it was received at. `None` when the backup
                  *     named no owner.
                  */
                 owner: string | null;
+                /**
+                 * Format: int64
+                 * @description How many replies quote this message, counted when read: each reply
+                 *     shown whose `reply_to.guid` names this message, or a copy of it
+                 *     hidden as a duplicate, counted once. A reply hidden as a duplicate
+                 *     counts as the message it is shown as. A reply in a trashed
+                 *     conversation counts only for a message in a trashed conversation.
+                 */
+                reply_count: number;
+                /**
+                 * @description The message this one replies to; `null` for a message that is not
+                 *     a reply.
+                 */
+                reply_to: components["schemas"]["ReplyTo"] | null;
                 /** @description The sender's identity, for incoming messages. */
                 sender: string | null;
                 /**
@@ -4402,13 +4409,6 @@ export interface components {
                 tapbacks: components["schemas"]["Tapback"][];
                 /** @description Body text, when present. */
                 text: string | null;
-                /** @description GUID of the message this replies to. */
-                thread_originator_guid: string | null;
-                /**
-                 * Format: int64
-                 * @description Part index of the originator (for tapbacks).
-                 */
-                thread_originator_part: number | null;
                 /**
                  * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
                  *     suffix. A caller shows it in the account's time zone
@@ -4819,6 +4819,25 @@ export interface components {
         ReplaceDemoAccountRequest: {
             /** @description How much Demo Data to build. */
             size: components["schemas"]["DemoDataSize"];
+        };
+        /**
+         * @description The message a reply quotes. A message that carries one is a reply,
+         *     whether or not the quoted message could be named.
+         */
+        ReplyTo: {
+            /**
+             * @description The quoted message's `guid`, as the backup named it; `null` when
+             *     it named none. A named message can still be missing from this
+             *     Message Crate, for example one deleted before the backup was
+             *     made, so the backup does not hold it, while its reply was kept.
+             */
+            guid: string | null;
+            /**
+             * Format: int64
+             * @description The part of the quoted message the reply answers; 0 for the first
+             *     or only part. `null` when the source does not record one.
+             */
+            part_index: number | null;
         };
         /**
          * @description What started a run: a Session or an API token.

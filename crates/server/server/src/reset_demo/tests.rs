@@ -1465,10 +1465,7 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
                     .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
                 contents.messages += 1;
                 contents.tapbacks += message.reactions.len();
-                let Some(im) = message.imessage.as_ref() else {
-                    continue;
-                };
-                if im.is_reply {
+                if message.reply_to.is_some() {
                     contents.replies += 1;
                 }
             }
@@ -1576,7 +1573,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
            AND NOT EXISTS (
              SELECT 1 FROM messages o
              WHERE o.conversation_id = r.conversation_id
-               AND o.guid = r.thread_originator_guid
+               AND o.guid = r.reply_to_guid
            )",
     )
     .await;

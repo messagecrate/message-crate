@@ -25,7 +25,7 @@ use imessage_database::{
 };
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, ORPHANED_CONVERSATION_TYPE, Participant, Progress, Reaction,
+    Message as MessageRecord, ORPHANED_CONVERSATION_TYPE, Participant, Progress, Reaction, ReplyTo,
     bare_address, orphaned_chat_id,
 };
 use serde_json::Value;
@@ -477,6 +477,7 @@ fn build_record(
         .as_ref()
         .map(|edited| build_earlier_versions(edited, session.offset))
         .unwrap_or_default();
+    let reply_to = reply_to(message, row.tapback.as_ref());
     let imessage = imessage_fields(session, message, row, &parts);
 
     let record = MessageRecord {
@@ -493,6 +494,7 @@ fn build_record(
         reactions,
         deletion,
         edits,
+        reply_to,
         owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
@@ -667,42 +669,20 @@ fn with_send_effect(text: String, effect: Option<&str>) -> String {
     }
 }
 
-/// Reply threading for a row.
-struct ThreadFields {
-    /// A reply in a thread (never true for a tapback).
-    is_reply: bool,
-    /// The message replied to: the reacted-to message for a tapback, else
-    /// the thread originator.
-    in_reply_to_guid: Option<String>,
-    /// Part index within the thread originator.
-    thread_originator_part: Option<u32>,
-}
-
-/// Where a row points: a tapback at the message it reacts to, any other
-/// reply at its thread originator, everything else nowhere.
-fn thread_fields(message: &Message, tapback: Option<&TapbackFields>) -> ThreadFields {
-    if let Some(tapback) = tapback {
-        return ThreadFields {
-            is_reply: false,
-            in_reply_to_guid: tapback.associated_guid.clone(),
-            thread_originator_part: None,
-        };
+/// The message a row replies to: its thread originator and the part, for a
+/// reply in a thread. A tapback is never a reply; the message it reacts to
+/// is in its own fields.
+fn reply_to(message: &Message, tapback: Option<&TapbackFields>) -> Option<ReplyTo> {
+    if tapback.is_some() || !message.is_reply() {
+        return None;
     }
-    if !message.is_reply() {
-        return ThreadFields {
-            is_reply: false,
-            in_reply_to_guid: None,
-            thread_originator_part: None,
-        };
-    }
-    ThreadFields {
-        is_reply: true,
-        in_reply_to_guid: message.thread_originator_guid.clone(),
-        thread_originator_part: message
+    Some(ReplyTo {
+        guid: trimmed(message.thread_originator_guid.clone()),
+        part_index: message
             .thread_originator_part
             .as_deref()
             .and_then(parse_thread_part),
-    }
+    })
 }
 
 /// Everything Apple-specific the core message fields do not carry. Blank
@@ -713,14 +693,9 @@ fn imessage_fields(
     row: RowKind,
     parts: &[crate::fields::PartRecord],
 ) -> ImessageRecord {
-    let thread = thread_fields(message, row.tapback.as_ref());
     let read_receipt = read_receipt_rfc3339(message, session.offset);
     let tapback = row.tapback.as_ref();
     ImessageRecord {
-        is_reply: thread.is_reply,
-        in_reply_to_guid: trimmed(thread.in_reply_to_guid),
-        thread_originator_part: thread.thread_originator_part,
-        num_replies: (message.num_replies > 0).then_some(message.num_replies as u32),
         send_effect: trimmed(row.send_effect),
         shared_location: trimmed(row.shared_location),
         announcement: trimmed(row.announcement),
@@ -739,11 +714,7 @@ fn imessage_fields(
 
 /// Whether every Apple-specific field is empty, so the record can be dropped.
 fn is_empty(fields: &ImessageRecord) -> bool {
-    !fields.is_reply
-        && fields.in_reply_to_guid.is_none()
-        && fields.thread_originator_part.is_none()
-        && fields.num_replies.is_none()
-        && fields.send_effect.is_none()
+    fields.send_effect.is_none()
         && fields.shared_location.is_none()
         && fields.announcement.is_none()
         && fields.read_receipt_rfc3339.is_none()
@@ -807,7 +778,7 @@ mod tests {
     fn empty_fields_are_dropped() {
         assert!(is_empty(&ImessageRecord::default()));
         let fields = ImessageRecord {
-            is_reply: true,
+            send_effect: Some("Slam".to_string()),
             ..ImessageRecord::default()
         };
         assert!(!is_empty(&fields));
@@ -838,16 +809,17 @@ mod tests {
         let session = fixture.session();
         let mut message = FixtureDb::messages(&session).remove(1);
 
-        let plain = thread_fields(&message, None);
-        assert!(!plain.is_reply);
-        assert_eq!(plain.in_reply_to_guid, None);
+        assert_eq!(reply_to(&message, None), None);
 
         message.thread_originator_guid = Some("guid-1".to_string());
         message.thread_originator_part = Some("0/1".to_string());
-        let reply = thread_fields(&message, None);
-        assert!(reply.is_reply);
-        assert_eq!(reply.in_reply_to_guid.as_deref(), Some("guid-1"));
-        assert_eq!(reply.thread_originator_part, Some(0));
+        assert_eq!(
+            reply_to(&message, None),
+            Some(ReplyTo {
+                guid: Some("guid-1".to_string()),
+                part_index: Some(0),
+            })
+        );
 
         let tapback = TapbackFields {
             kind: "loved",
@@ -858,9 +830,12 @@ mod tests {
         };
         assert_eq!(tapback.message_kind(), "tapback");
         assert_eq!(tapback.text(), "Loved a message");
-        let pointed = thread_fields(&message, Some(&tapback));
-        assert!(!pointed.is_reply, "a tapback is never a reply");
-        assert_eq!(pointed.in_reply_to_guid.as_deref(), Some("guid-1"));
+        assert_eq!(
+            reply_to(&message, Some(&tapback)),
+            None,
+            "a tapback is never a reply"
+        );
+        assert_eq!(tapback.associated_guid.as_deref(), Some("guid-1"));
     }
 
     /// A poll is exported; a vote on it and a row that adds an option are
@@ -971,7 +946,7 @@ mod tests {
             fields.parts,
             Some(serde_json::json!([{ "index": 0, "kind": "run", "text": "Nice" }]))
         );
-        assert!(!fields.is_reply);
+        assert_eq!(reply.reply_to, None);
         assert_eq!(fields.tapback_kind, None);
         assert_eq!(fields.app, None);
         assert!(reply.attachments.is_empty());
@@ -1174,26 +1149,33 @@ mod tests {
     }
 
     /// Fields a row carries through to its record: the subject when it has
-    /// one, the reply count on a thread's first message, and MMS for a
+    /// one, the message a reply in a thread answers, and MMS for a
     /// non-iMessage row with an attachment.
     #[test]
-    fn a_record_keeps_the_subject_the_reply_count_and_the_mms_kind() {
+    fn a_record_keeps_the_subject_the_reply_link_and_the_mms_kind() {
         let fixture = FixtureDb::write();
         let session = fixture.session();
 
         let mut messages = FixtureDb::messages(&session);
         let mut reply = messages.remove(1);
         reply.subject = Some("Plans".to_string());
-        reply.num_replies = 3;
+        reply.thread_originator_guid = Some("guid-1".to_string());
+        reply.thread_originator_part = Some("1/2".to_string());
         let (_, record) = build_record(&session, &reply).unwrap();
         assert_eq!(record.subject.as_deref(), Some("Plans"));
-        assert_eq!(record.imessage.unwrap().num_replies, Some(3));
+        assert_eq!(
+            record.reply_to,
+            Some(ReplyTo {
+                guid: Some("guid-1".to_string()),
+                part_index: Some(1),
+            })
+        );
 
         reply.subject = Some(String::new());
-        reply.num_replies = 0;
+        reply.thread_originator_guid = None;
         let (_, record) = build_record(&session, &reply).unwrap();
         assert_eq!(record.subject, None);
-        assert_eq!(record.imessage.unwrap().num_replies, None);
+        assert_eq!(record.reply_to, None);
 
         reply.service = Some("SMS".to_string());
         let (_, record) = build_record(&session, &reply).unwrap();

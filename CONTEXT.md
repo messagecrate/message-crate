@@ -91,6 +91,15 @@ recipient", as "Ada · Missing recipient"; the holder's is titled "Unknown
 recipient".
 _Avoid_: Stray, Unfiled, Lost message
 
+**Reply**:
+A Message that quotes an earlier one, and names it when the source records
+which: an Apple Messages reply in a thread names the thread's first message
+and the part it answers, and a WhatsApp quoted reply names the message of
+the same chat it quotes. A reply whose quoted message cannot be named is
+still a reply. A message's reply count is the replies shown that quote it,
+or a copy of it hidden as a duplicate.
+_Avoid_: Thread reply, Thread originator, In reply to
+
 **Asset**:
 The bytes of one attachment, stored once and named by the hash of its
 contents, so the same file sent in ten messages is one asset. An asset is
