@@ -14,11 +14,11 @@ export type MessageSortParam = NonNullable<MessagesListParams["sort"]>;
  * The `sort` value for each choice, read both ways: Relevance has one order,
  * and Date one value per order.
  */
-const SORT_PARAMS: Readonly<Record<"relevance" | SortOrder, MessageSortParam>> = {
+const SORT_PARAMS = {
   relevance: "relevance",
   asc: "date",
   desc: "-date",
-};
+} as const satisfies Readonly<Record<"relevance" | SortOrder, MessageSortParam>>;
 
 /** The `sort` parameter `GET /v1/messages` takes for `s`. */
 export function messageSortParam(s: MessageSearchSort): MessageSortParam {
@@ -47,7 +47,6 @@ export function messageSortFromParam(param: string | null): MessageSearchSort | 
  * server's order". A kept `relevance` would follow the person to their next
  * search, and the server refuses it for a search with no free-text word.
  */
-export function pickedSortParam(s: MessageSearchSort): "date" | "-date" | null {
-  if (s.sort === "relevance") return null;
-  return s.order === "asc" ? "date" : "-date";
+export function pickedSortParam(s: MessageSearchSort): (typeof SORT_PARAMS)[SortOrder] | null {
+  return s.sort === "relevance" ? null : SORT_PARAMS[s.order];
 }
