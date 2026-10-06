@@ -585,7 +585,7 @@ struct Inner {
     /// Whether the start under way creates the database.
     first_time: bool,
     /// The server this app started, while it runs.
-    child: Option<ServerProcess>,
+    server: Option<ServerProcess>,
     /// The threads reading that server's output.
     readers: Vec<JoinHandle<()>>,
     /// That server's last output lines.
@@ -640,8 +640,8 @@ impl Inner {
     fn kill(&mut self) {
         self.generation += 1;
         self.readers.clear();
-        if let Some(child) = self.child.take() {
-            child.kill();
+        if let Some(server) = self.server.take() {
+            server.kill();
         }
     }
 }
@@ -660,7 +660,7 @@ impl Default for LocalServer {
                 state: State::default(),
                 launch: None,
                 first_time: false,
-                child: None,
+                server: None,
                 readers: Vec::new(),
                 output: Output::default(),
                 listened: Arc::default(),
@@ -803,9 +803,9 @@ impl LocalServer {
         inner.first_time = launch.is_first_start();
         let output = Output::default();
         let listened = Arc::new(AtomicBool::new(false));
-        let (child, readers) = spawn_server(&launch, &output, &listened)?;
+        let (server, readers) = spawn_server(&launch, &output, &listened)?;
         inner.generation += 1;
-        inner.child = Some(child);
+        inner.server = Some(server);
         inner.readers = readers;
         inner.output = output;
         inner.listened = listened;
@@ -827,13 +827,13 @@ impl LocalServer {
                     return;
                 }
                 // `Some(code)` once the server has exited.
-                let exited = match inner.child.as_mut().map(ServerProcess::try_wait) {
+                let exited = match inner.server.as_mut().map(ServerProcess::try_wait) {
                     Some(Ok(None)) => None,
                     Some(Ok(Some(status))) => Some(status.code()),
                     None | Some(Err(_)) => Some(None),
                 };
                 if let Some(code) = exited {
-                    inner.child = None;
+                    inner.server = None;
                     let readers = std::mem::take(&mut inner.readers);
                     let output = Arc::clone(&inner.output);
                     drop(inner);

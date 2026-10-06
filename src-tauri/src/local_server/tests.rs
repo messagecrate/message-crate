@@ -240,7 +240,7 @@ fn ticking_the_network_setting_on_another_address_starts_no_server() {
     assert_eq!(server.set_open_to_network(true), Status::Idle);
     thread::sleep(POLL_INTERVAL * 2);
     assert_eq!(server.status(), Status::Idle);
-    assert!(server.lock().child.is_none());
+    assert!(server.lock().server.is_none());
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn a_message_crate_already_answering_is_used_and_nothing_is_started() {
             started_by_app: false
         }
     );
-    assert!(server.lock().child.is_none());
+    assert!(server.lock().server.is_none());
 }
 
 #[test]
@@ -596,8 +596,8 @@ mod with_a_script {
         // the process to exist.
         let deadline = Instant::now() + Duration::from_secs(20);
         let pid = loop {
-            if let Some(child) = server.lock().child.as_ref() {
-                break child.id();
+            if let Some(process) = server.lock().server.as_ref() {
+                break process.id();
             }
             assert!(Instant::now() < deadline, "the server was never started");
             thread::sleep(Duration::from_millis(20));
@@ -605,7 +605,7 @@ mod with_a_script {
 
         server.stop();
 
-        assert!(server.lock().child.is_none());
+        assert!(server.lock().server.is_none());
         // `stop` waited for the process, so its id is no longer a process.
         assert!(!Path::new(&format!("/proc/{pid}")).exists() || !cfg!(target_os = "linux"));
         // The start that was waiting on it now reports the failure.
@@ -680,7 +680,7 @@ mod with_a_script {
             ..launch_at(address, &program, dir.path())
         });
         let deadline = Instant::now() + Duration::from_secs(20);
-        while server.lock().child.is_none() {
+        while server.lock().server.is_none() {
             assert!(Instant::now() < deadline, "the server was never started");
             thread::sleep(Duration::from_millis(20));
         }
