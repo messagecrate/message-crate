@@ -323,7 +323,7 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
         .export
         .backup_taken_at_unix_ms
         .map(|ms| {
-            format_utc_timestamp(ms.div_euclid(1000))
+            format_utc_timestamp(ms)
                 .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
         })
         .transpose()?;

@@ -106,9 +106,9 @@ async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Held; 4]
 }
 
 /// The stored date of [`LATER_BACKUP`], in the form a timestamp takes.
-const LATER_BACKUP_AT: &str = "2026-09-30T18:45:12Z";
+const LATER_BACKUP_AT: &str = "2026-09-30T18:45:12.000Z";
 /// The stored date of [`EARLIER_BACKUP`].
-const EARLIER_BACKUP_AT: &str = "2026-09-01T10:00:00Z";
+const EARLIER_BACKUP_AT: &str = "2026-09-01T10:00:00.000Z";
 
 /// Backup A marks the message Deleted in the source app; backup B, made
 /// later, after the person recovered it, does not. Whichever is imported
