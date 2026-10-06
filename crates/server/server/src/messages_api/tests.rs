@@ -101,20 +101,22 @@ async fn the_messages_route_is_a_page_across_every_conversation() {
     assert_eq!(page["limit"], serde_json::json!(40));
     assert_eq!(page["offset"], serde_json::json!(0));
     assert_eq!(page["items"].as_array().unwrap().len(), 3);
-    // `docs/architecture/http-api.md`: a list is {items, total, limit, offset} and nothing else.
+    // `docs/architecture/http-api.md`, "Lists": a list is {items, total,
+    // limit, offset}, and the Messages list adds `search`, its one exception.
     let keys: Vec<&str> = page
         .as_object()
         .unwrap()
         .keys()
         .map(String::as_str)
         .collect();
-    assert_eq!(keys, ["items", "limit", "offset", "total"]);
+    assert_eq!(keys, ["items", "limit", "offset", "search", "total"]);
 }
 
 #[tokio::test]
 async fn a_page_across_two_conversations_names_each_conversations_own_participants() {
     let (fixture, alice, direct, group) = seeded().await;
-    let page: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
 
     let handles: Vec<(i64, &str)> = page["items"]
         .as_array()
@@ -1968,6 +1970,102 @@ async fn relevance_ranks_by_the_positive_words_only() {
     .await;
     assert_eq!(page["total"], serde_json::json!(3), "{page}");
     assert_eq!(texts(&page)[0], "the dentist moved it", "{page}");
+}
+
+/// With no `sort`, a search with a free-text word puts the best match first
+/// and says so, and a search with only field words lists the newest message
+/// first and says so (#1538). The client reads the order back rather than
+/// parsing `q` to guess it.
+#[tokio::test]
+async fn with_no_sort_the_server_picks_the_order_and_reports_it() {
+    let (fixture, alice) = seeded_for_relevance().await;
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?q=dentist", &alice.token).await;
+    assert_eq!(
+        texts(&page),
+        [
+            "dentist dentist dentist",
+            "the dentist moved it",
+            "after work I will call the office of the dentist about next week",
+        ],
+        "{page}"
+    );
+    assert_eq!(
+        page["search"],
+        serde_json::json!({"sort": "relevance", "terms": [{"text": "dentist", "prefix": false}]})
+    );
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?q=date%3A2024", &alice.token).await;
+    assert_eq!(
+        texts(&page),
+        [
+            "nothing to see",
+            "the dentist moved it",
+            "after work I will call the office of the dentist about next week",
+            "dentist dentist dentist",
+        ],
+        "{page}"
+    );
+    assert_eq!(
+        page["search"],
+        serde_json::json!({"sort": "-date", "terms": []})
+    );
+}
+
+/// A `sort` the request names is applied as it is, and reported in the
+/// spelling `sort` takes, keys and signs included.
+#[tokio::test]
+async fn a_named_sort_is_applied_and_reported() {
+    let (fixture, alice) = seeded_for_relevance().await;
+    for (sort, reported) in [
+        ("date", "date"),
+        ("-DATE", "-date"),
+        ("relevance,date", "relevance,date"),
+    ] {
+        let page: serde_json::Value = get_json(
+            &fixture.state,
+            &format!("/v1/messages?q=dentist&sort={sort}"),
+            &alice.token,
+        )
+        .await;
+        assert_eq!(
+            page["search"]["sort"],
+            serde_json::json!(reported),
+            "{sort}: {page}"
+        );
+    }
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=dentist&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(texts(&page)[0], "dentist dentist dentist", "{page}");
+}
+
+/// The terms a search ranks by are the free-text words and phrases a match
+/// must or may have, in the order typed: a word behind `-` or `not`, a word
+/// in a negated group, and a field word's value are none of them. A prefix
+/// keeps its `*` as a flag, and a phrase comes back without its quotes.
+#[tokio::test]
+async fn the_page_names_the_terms_the_search_ranks_by() {
+    let (fixture, alice) = seeded_for_relevance().await;
+    // dentist -office not moved -("next week" or call) body:work date:2024
+    // "the dentist" or den*
+    let q = "dentist%20-office%20not%20moved%20-(%22next%20week%22%20or%20call)%20body%3Awork%20date%3A2024%20%22the%20dentist%22%20or%20den*";
+    let page: serde_json::Value =
+        get_json(&fixture.state, &format!("/v1/messages?q={q}"), &alice.token).await;
+    assert_eq!(
+        page["search"]["terms"],
+        serde_json::json!([
+            {"text": "dentist", "prefix": false},
+            {"text": "the dentist", "prefix": false},
+            {"text": "den", "prefix": true},
+        ]),
+        "{page}"
+    );
+    assert_eq!(page["search"]["sort"], serde_json::json!("relevance"));
 }
 
 /// Relevance has one direction, best match first: `-relevance` would list the

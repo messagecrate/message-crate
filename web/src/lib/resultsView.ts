@@ -47,9 +47,15 @@ export function resultsView(params: URLSearchParams): ResultsView {
   return params.get(VIEW_PARAM) === "messages" ? "messages" : "conversations";
 }
 
-/** The sort the person picked in the Messages list, or null for the default. */
+/**
+ * The sort the person picked in the Messages list, or null for the server's
+ * own order. Only a Date order is a pick (`pickedSortParam`), so `relevance`
+ * in the address reads as no pick, and the server ranks the search when it
+ * has a free-text word to rank by.
+ */
 export function pickedMessageSort(params: URLSearchParams): MessageSearchSort | null {
-  return messageSortFromParam(params.get(MESSAGE_SORT_PARAM));
+  const picked = messageSortFromParam(params.get(MESSAGE_SORT_PARAM));
+  return picked?.sort === "date" ? picked : null;
 }
 
 /** The Message Tag `params` lists by on `/messages/:id`, or null for none. */

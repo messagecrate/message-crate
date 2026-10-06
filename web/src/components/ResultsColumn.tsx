@@ -1,7 +1,7 @@
 import { type Key, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { matchedVersionIndexes } from "../lib/earlierVersionMatch";
-import { messageSortParam } from "../lib/messageSearchSort";
+import { pickedSortParam } from "../lib/messageSearchSort";
 import {
   AT_PARAM,
   MATCHED_PARAM,
@@ -129,7 +129,7 @@ export default function ResultsColumn({
         <MessageSearchList
           query={searchTyped ? listQuery : ""}
           sortPick={pickedMessageSort(searchParams)}
-          onSortPick={(next) => setParam(MESSAGE_SORT_PARAM, messageSortParam(next))}
+          onSortPick={(next) => setParam(MESSAGE_SORT_PARAM, pickedSortParam(next) ?? "")}
           selectedId={openedAt(searchParams)}
           onSelect={(message) =>
             // `q` stays what the person typed, and the tag rides beside it,

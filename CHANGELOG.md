@@ -45,7 +45,17 @@ released versions carry their date on the heading.
   is a sentence that names the item, such as "The file sms-2.xml could not
   be read in full: …", where it was `error: sms-2.xml: This file could not
   be read in full: …` before.
-
+- 2026-10-05: **The server picks the order of the Messages list.** With no
+  `sort`, `GET /v1/messages` now puts the best match first when the search
+  has a free-text word to rank by, and the newest message first when it has
+  none. It used to list the oldest first. Each page says which order it
+  applied and which words it ranks by, in a new `search` key beside `items`,
+  and the web app reads both from there: the sort menu offers Relevance only
+  when words came back, and the list draws those words in bold. Nothing
+  changes on screen, except that a search the web app and the server once
+  read differently now shows the server's reading. Picking Relevance now
+  leaves `sort` out of the address, so the next search starts in the
+  server's order.
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a

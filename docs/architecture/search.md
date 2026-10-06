@@ -71,6 +71,17 @@ Each rule holds on every list, and each has its reason.
   Why: a word that only excludes says nothing about how well a message
   matches, and a silent fallback to date would show an order the person did
   not pick.
+- **With no `sort`, the server picks the Messages list's order.** A query
+  with a positive free-text word is ranked best match first, and a query
+  with none, field words only or nothing, lists the newest message first.
+  Every page says which order it applied and which terms it ranks by, in
+  `search` (`docs/architecture/http-api.md`, "Lists"), from
+  `Expr::positive_text_terms`. A `sort` the request names is applied as it
+  is. Why: a search for words is looking for the messages that hold them,
+  and a search by fields alone is browsing, where the latest come first. The
+  choice depends on which words rank, which only this module knows, so the
+  server makes it and the client reads it back rather than parsing `q`
+  itself (#1538).
 - **Compile is pure.** Compiling reads no database and no clock. Anything that
   needs a lookup (the last Import Run, a Contact Group by name) is a subquery,
   and today's date and the account's time zone are inputs. Why: the same
