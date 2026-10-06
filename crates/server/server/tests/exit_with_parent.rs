@@ -31,18 +31,24 @@ use message_crate_serve_protocol::{EXIT_WITH_PARENT_ARG, PARENT_CHECK_INTERVAL};
 
 use common::{WAIT, empty_message_crate, listening_address};
 
-/// How long a server on an empty database may take to stop once it has
-/// noticed its parent is gone: no request is in flight and no media pass
-/// runs, so this is the time to drain nothing and exit, with room for a
-/// slow CI runner. It is shorter than [`PARENT_CHECK_INTERVAL`], so a server
-/// that missed a check fails the test.
-const STOP_ALLOWANCE: Duration = Duration::from_millis(1500);
+/// How long after a check the server may take to log that the stop begins.
+/// It is a quarter of [`PARENT_CHECK_INTERVAL`], so a server that missed a
+/// check fails the test.
+const NOTICE_SLACK: Duration = Duration::from_millis(500);
 
-/// The lines the server writes to its log on a stop it was asked for: as the
-/// stop begins, before it tells the media pass to stop ffmpeg, and as the
-/// last thing `serve` does, once the requests in flight and ffmpeg have
-/// stopped.
-const STOP_LINES: [&str; 2] = ["The server is shutting down", "The server has stopped"];
+/// How long a server on an empty database may take to exit once its stop
+/// began: no request is in flight and no media pass runs, so this is the
+/// time to drain nothing and exit, with room for a loaded CI runner.
+const STOP_ALLOWANCE: Duration = Duration::from_secs(10);
+
+/// The line the server writes to its log as a stop it was asked for begins,
+/// before it tells the media pass to stop ffmpeg.
+const SHUTTING_DOWN_LINE: &str = "The server is shutting down";
+
+/// The line the server writes to its log as the last thing `serve` does
+/// after a stop it was asked for, once the requests in flight and ffmpeg
+/// have stopped.
+const STOPPED_LINE: &str = "The server has stopped";
 
 /// The shell standing in for the app, and the server it started.
 struct Started {
@@ -195,6 +201,19 @@ kill $copier"#
         }
         log
     }
+
+    /// Whether the server's log holds `line` by `deadline`.
+    fn logged_by(&self, line: &str, deadline: Instant) -> bool {
+        loop {
+            if self.log().contains(line) {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
 }
 
 #[test]
@@ -204,20 +223,24 @@ fn a_server_told_to_exit_with_its_parent_stops_once_the_parent_is_gone() {
 
     let parent_ended = started.end_parent();
 
+    // The stop begins at the first check after the parent ended.
     assert!(
-        started.exited_by(parent_ended + PARENT_CHECK_INTERVAL + STOP_ALLOWANCE),
-        "the server kept running {:?} after its parent was gone",
-        PARENT_CHECK_INTERVAL + STOP_ALLOWANCE
+        started.logged_by(
+            SHUTTING_DOWN_LINE,
+            parent_ended + PARENT_CHECK_INTERVAL + NOTICE_SLACK
+        ),
+        "the server had not begun to stop {:?} after its parent was gone:\n{}",
+        PARENT_CHECK_INTERVAL + NOTICE_SLACK,
+        started.log()
     );
-    // It stopped the way Ctrl-C stops it, not by a panic on the standard
-    // error the parent took with it.
+    assert!(
+        started.exited_by(Instant::now() + STOP_ALLOWANCE),
+        "the server kept running {STOP_ALLOWANCE:?} after its stop began"
+    );
+    // It stopped the way Ctrl-C stops it, to the end, not by a panic on the
+    // standard error the parent took with it.
     let log = started.log();
-    for line in STOP_LINES {
-        assert!(
-            log.contains(line),
-            "no {line:?} in the server's log:\n{log}"
-        );
-    }
+    assert!(log.contains(STOPPED_LINE), "the server's log:\n{log}");
 }
 
 #[test]
@@ -227,11 +250,16 @@ fn a_server_started_without_the_flag_keeps_running_when_its_parent_is_gone() {
 
     let parent_ended = started.end_parent();
 
-    // Twice the interval a watching server checks at, and the time it takes
-    // to stop: a server that watched would be gone by now.
+    // Twice the interval a watching server checks at: one that watched would
+    // have begun to stop by now.
     assert!(
-        !started.exited_by(parent_ended + 2 * PARENT_CHECK_INTERVAL + STOP_ALLOWANCE),
+        !started.exited_by(parent_ended + 2 * PARENT_CHECK_INTERVAL + NOTICE_SLACK),
         "the server stopped on its own"
+    );
+    let log = started.log();
+    assert!(
+        !log.contains(SHUTTING_DOWN_LINE),
+        "the server's log:\n{log}"
     );
     assert!(
         TcpStream::connect_timeout(&address, Duration::from_secs(2)).is_ok(),

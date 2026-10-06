@@ -92,15 +92,15 @@ pub fn empty_message_crate(root: &Path) -> (PathBuf, PathBuf) {
     (data_dir, static_dir)
 }
 
-/// The address a line of the server's output names, when it is the
-/// listening line. Fails the test when the listening line names no address.
+/// The address a line of the server's output names, when it is a listening
+/// line that names one. A listening line without an address is passed over
+/// like any other line, and the caller's report of every line it saw shows
+/// it.
 pub fn listening_address(line: &str) -> Option<SocketAddr> {
-    let url = line.strip_prefix(LISTENING_LINE)?;
-    Some(
-        url.strip_prefix("http://")
-            .and_then(|address| address.parse().ok())
-            .unwrap_or_else(|| panic!("the listening line names no address: {line}")),
-    )
+    line.strip_prefix(LISTENING_LINE)?
+        .strip_prefix("http://")?
+        .parse()
+        .ok()
 }
 
 /// `serve` as the desktop app starts it, on port 0. The server binds the

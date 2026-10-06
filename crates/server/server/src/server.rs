@@ -39,6 +39,18 @@ use crate::keyed_locks::KeyedLocks;
 use crate::open_db::OpenDb;
 use crate::problem::{Problem, ProblemType};
 
+/// Write a line to standard error as `eprintln!` does, except that a failed
+/// write is dropped rather than panicking. The desktop app reads `serve`'s
+/// standard error through a pipe, and an app that crashes takes the pipe's
+/// read end with it, so a write can fail at any point until the server
+/// notices the app is gone (#1934).
+macro_rules! say {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 /// What a Bearer credential is allowed to do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthCapability {
@@ -1337,7 +1349,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
             crate::logging::log_dir(&cfg.paths.data_dir).display()
         ))
     })?;
-    eprintln!("The server's log is in {}", log.dir().display());
+    say!("The server's log is in {}", log.dir().display());
     let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then
@@ -1352,13 +1364,13 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         .fetch_one(&opened.db)
         .await
         .unwrap_or_else(|_| "unknown".into());
-    eprintln!(
+    say!(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
     let state = AppState::new(opened, server.asset_part_size);
     if crate::server_api::recover_stopped_demo_build(&state).await? {
-        eprintln!(
+        say!(
             "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
         );
     }
@@ -1370,7 +1382,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;
-    eprintln!(
+    say!(
         "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
         upload_limits.max_bytes / message_ir::MIB,
         upload_limits.part_size as u64 / message_ir::MIB
@@ -1386,12 +1398,12 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
         })?;
     // The address the listener holds, not the one it was given, so a bind to
     // port 0 names the port the operating system chose.
-    eprintln!(
+    say!(
         "{}http://{}",
         message_crate_serve_protocol::LISTENING_LINE,
         listener.local_addr()?
     );
-    eprintln!(
+    say!(
         "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
     let on_signal = {
@@ -1470,7 +1482,7 @@ pub(crate) async fn stop_requested() {
             // Without a SIGTERM handler the process still stops on SIGTERM,
             // only without draining; Ctrl-C keeps working.
             Err(e) => {
-                eprintln!(
+                say!(
                     "SIGTERM cannot be caught, so it ends this process at once, without finishing the work in progress: {e}"
                 );
                 std::future::pending::<()>().await;
