@@ -448,8 +448,9 @@ impl Ingest {
             Ok(rows) => rows,
             Err(e) => {
                 self.report.error(
+                    message_crate_core::ItemKind::Csv,
                     discovered.path.display().to_string(),
-                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
+                    &format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
                 );
                 return Ok(());
             }
@@ -790,9 +791,10 @@ impl Ingest {
         let first = &self.claims[rows[0]];
         if rows.len() > 1 {
             self.report.note(
+                message_crate_core::ItemKind::Picture,
                 picture.display().to_string(),
-                format!(
-                    "{} rows name this picture; its Live Photo video goes to the first of them in the CSV",
+                &format!(
+                    "is named by {} rows. Its Live Photo video goes to the first of them in the CSV",
                     rows.len()
                 ),
             );

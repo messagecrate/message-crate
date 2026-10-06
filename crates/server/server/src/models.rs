@@ -474,15 +474,16 @@ fn sender_identity(
     Some((name, Some(HandleType::Other)))
 }
 
-/// The type of a sender's identity, read from the address alone.
+/// The shape of a sender's address, read from the address alone.
 ///
 /// A message carries only the sender's address, never its type. Staging uses
-/// the type the header gives the participant with the same address, and this
-/// one only when the header lists no such participant. It is
-/// [`Handle::parse`], the one rule for what an address is, and it does not
-/// read the message's service: a contact's number is a phone number on a
-/// service the model does not know too, such as a message Apple Messages sent
-/// by satellite (#1144).
+/// the type the participant with the same address has, and this one only
+/// when the header lists no such participant, and then only within what the
+/// message's service carries (`db::handles::handle_type_on`): an address
+/// with an `@` on WhatsApp is `other`. It is
+/// [`Handle::parse`], the one rule for what an address looks like: a
+/// contact's number is a phone number on a service the model does not know
+/// too, such as a message Apple Messages sent by satellite (#1144).
 fn sender_handle_type(sender_identity: Option<&str>) -> Option<HandleType> {
     sender_identity.and_then(Handle::parse).map(|h| h.kind())
 }

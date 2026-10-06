@@ -769,7 +769,7 @@ async fn api_token(fixture: &TestFixture, user: &RegisteredAccount, can_export: 
         &fixture.state,
         &format!("/v1/accounts/{}/api-tokens", user.account_id),
         &user.token,
-        json!({ "label": "pull", "can_import": false, "can_export": can_export }),
+        json!({ "label": "export", "can_import": false, "can_export": can_export }),
     )
     .await;
     created["token"].as_str().unwrap().to_string()
@@ -1309,7 +1309,7 @@ async fn an_export_token_reads_messages_only_through_a_run() {
 /// landing while a run is being read.
 /// Each message of a run carries the account holder's own address the server
 /// stores for it (`messages.owner_handle_id`), and none when it stores none.
-/// Without it a pull writes no owner, and an import of that export files no
+/// Without it an Export writes no owner, and an import of that export files no
 /// message under the holder's addresses (#1098).
 #[tokio::test]
 async fn a_run_returns_the_owner_address_of_each_message() {

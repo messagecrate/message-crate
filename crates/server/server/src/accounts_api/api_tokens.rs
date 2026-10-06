@@ -405,7 +405,7 @@ mod tests {
             &state,
             &tokens,
             &alice.token,
-            serde_json::json!({ "label": "pull", "can_import": false }),
+            serde_json::json!({ "label": "export", "can_import": false }),
         )
         .await;
 
@@ -518,7 +518,7 @@ mod tests {
             &state,
             &alices,
             &alice.token,
-            serde_json::json!({ "label": "pull", "can_import": false }),
+            serde_json::json!({ "label": "export", "can_import": false }),
         )
         .await;
         // Use the token once, so it has a last use to show.
@@ -531,7 +531,7 @@ mod tests {
         let listed: serde_json::Value = get_json(&state, &alices, &owner.token).await;
         let item = &listed["items"][0];
         assert_eq!(item["id"], created["id"], "{listed}");
-        assert_eq!(item["label"], "pull", "{listed}");
+        assert_eq!(item["label"], "export", "{listed}");
         assert_eq!(item["can_import"], false, "{listed}");
         assert_eq!(item["can_export"], true, "{listed}");
         assert_eq!(item["created_at"], created["created_at"], "{listed}");
@@ -716,7 +716,7 @@ mod tests {
             &state,
             &format!("/v1/accounts/{}/api-tokens", alice.account_id),
             &alice.token,
-            serde_json::json!({ "label": "pull" }),
+            serde_json::json!({ "label": "export" }),
         )
         .await;
         assert_eq!(created["can_export"], true);
@@ -787,7 +787,7 @@ mod tests {
             &fixture.state,
             &collection,
             &alice.token,
-            serde_json::json!({ "label": "pull" }),
+            serde_json::json!({ "label": "export" }),
         )
         .await;
         assert_eq!(created["can_export"], true, "{created}");

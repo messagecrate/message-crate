@@ -9,7 +9,7 @@
 //! for a participant a backup named without an address, kept
 //! `#[serde(default)]` on a field the server had removed, and read a
 //! `service` off the conversation the server has never sent there. Each of
-//! those was a pull that failed at runtime, or quietly produced worse data,
+//! those was an Export that failed at runtime, or quietly produced worse data,
 //! with nothing in either crate's tests to catch it — `message-crate-export`'s
 //! "real export page" was a JSON literal it wrote itself, so it agreed with
 //! whatever the mirror said.

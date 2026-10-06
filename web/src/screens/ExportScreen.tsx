@@ -71,7 +71,7 @@ function formatLabel(id: ExportFormat): string {
  * Every export gets a directory of its own in the Export Directory, named for
  * when it started and its format (`export-2026-10-04-1430-mbox`). The result
  * lands there unless the person chose another directory under **Save to**.
- * The JSON Lines a non-JSONL export pulls wait in that directory while they
+ * The JSON Lines a non-JSONL export writes wait in that directory while they
  * are converted, since `message-reexport` refuses to write into a directory
  * that holds its input, and the conversion writes beside them. When the export
  * finishes, the desktop deletes the JSON Lines and moves the result up, so the
@@ -105,7 +105,7 @@ export default function ExportScreen() {
   const [log, setLog] = useState<string[]>([]);
   // `running` only turns true once a job starts, which leaves two windows
   // where the Export button would be live mid-export: while the export's
-  // directory is made, and between the pull and the conversion. The desktop
+  // directory is made, and between the export step and the conversion. The desktop
   // refuses a second job while one runs (`jobs.rs`), but between two jobs it
   // has nothing to refuse. This covers the whole run.
   const [busy, setBusy] = useState(false);
@@ -114,7 +114,7 @@ export default function ExportScreen() {
   const { running, finished, run } = useTauriJob<{ savePath: string; format: ExportFormat }>({
     job: "Export",
   });
-  // The Cancel of the export under way. A Cancel pressed after the pull and
+  // The Cancel of the export under way. A Cancel pressed after the export step and
   // before the conversion starts must stop the conversion, and the desktop
   // alone would not: with no job running, its Cancel stops nothing, and
   // `format` starts with a cancel flag of its own.
@@ -131,7 +131,7 @@ export default function ExportScreen() {
       return;
     }
     setBusy(true);
-    // The export holds the desktop from its pull to the end of its format
+    // The export holds the desktop from its export step to the end of its format
     // step. Each job holds it too, but only while it runs, which would leave
     // a gap between the two where Settings → Convert could start a job the
     // desktop then runs instead of the format step (#1407).
@@ -151,7 +151,7 @@ export default function ExportScreen() {
           chosen,
           async (exportDir) => {
             const request = { savePath: chosen || exportDir.dir, format };
-            const pullInto = (outDir: string) =>
+            const exportInto = (outDir: string) =>
               run(
                 exportCancel.guard(() =>
                   invokeExport({
@@ -167,14 +167,14 @@ export default function ExportScreen() {
                 { onLog: appendLog },
               );
             if (format === "jsonl") {
-              await pullInto(chosen || exportDir.dir);
+              await exportInto(chosen || exportDir.dir);
               return;
             }
-            await pullInto(exportDir.pulled);
+            await exportInto(exportDir.exported);
             await run(
               exportCancel.guard(() =>
                 invokeFormat({
-                  input_dir: exportDir.pulled,
+                  input_dir: exportDir.exported,
                   output_dir: chosen || exportDir.converting,
                   output_format: format,
                   started_from: "export",
@@ -220,7 +220,7 @@ export default function ExportScreen() {
       }
       success={
         // `busy` hides it from the moment the next export starts, and between
-        // the pull and the conversion, when the pull alone has finished.
+        // the export step and the conversion, when the export step alone has finished.
         finished && !busy && !error ? (
           <div className="mt-4 rounded-md bg-ok-soft-bg p-4 text-[0.875rem]">
             Export complete. {formatLabel(finished.format)} saved to {finished.savePath}.

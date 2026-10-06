@@ -7,7 +7,7 @@ use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, OutputFormat,
     SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, prepare_outputs, project_conversation,
 };
 use message_ir::{
@@ -543,8 +543,9 @@ impl Ingest<'_> {
             Ok(parsed) => parsed,
             Err(err) => {
                 self.report.error(
+                    ItemKind::File,
                     xml_path.display().to_string(),
-                    format!("This file could not be read and was left out: {err:#}"),
+                    &format!("could not be read and was left out: {err:#}"),
                 );
                 return;
             }
@@ -597,8 +598,9 @@ impl Ingest<'_> {
             Err(err) => {
                 self.report.bump(SKIPPED_UNPARSEABLE_PDU, 1);
                 self.report.error(
+                    ItemKind::Mms,
                     pdu_path.display().to_string(),
-                    format!("This MMS could not be read and was left out: {err}"),
+                    &format!("could not be read and was left out: {err}"),
                 );
                 return Ok(());
             }

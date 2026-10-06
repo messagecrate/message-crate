@@ -156,7 +156,7 @@ pub fn unreadable_line_reason(error: &serde_json::Error) -> String {
 /// them.
 ///
 /// Unreadable lines are skipped silently during the read, in the push journal
-/// and the pull journal alike.
+/// and the export journal alike.
 ///
 /// # Errors
 ///

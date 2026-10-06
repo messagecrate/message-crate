@@ -201,8 +201,9 @@ impl Ingest {
             Ok(rows) => rows,
             Err(e) => {
                 self.report.error(
+                    message_crate_core::ItemKind::Csv,
                     path.display().to_string(),
-                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
+                    &format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
                 );
                 return;
             }

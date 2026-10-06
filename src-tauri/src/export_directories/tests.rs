@@ -6,7 +6,7 @@ use message_crate_core::{
 };
 use message_ir_format::{EXPORT_SENTINEL, FormatSink};
 
-use super::{CONVERTING, EXPORT_DIRECTORY_NAME, ExportDirectories, ExportKind, PULLED, sweep};
+use super::{CONVERTING, EXPORT_DIRECTORY_NAME, EXPORTED, ExportDirectories, ExportKind, sweep};
 
 /// An Export Directory in its own temporary app-data directory.
 fn exports() -> (tempfile::TempDir, ExportDirectories) {
@@ -25,8 +25,8 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
-/// Write one conversation into `dir` as JSON Lines, as a pull does.
-fn pull_into(dir: &Path) {
+/// Write one conversation into `dir` as JSON Lines, as an Export does.
+fn export_into(dir: &Path) {
     std::fs::create_dir_all(dir).unwrap();
     message_ir_format::mark_export_directory(dir).unwrap();
     let mut sink = FormatSink::open(dir, OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
@@ -73,9 +73,9 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
             .join("export-2026-10-04-1430-csv")
     );
 
-    pull_into(Path::new(&made.pulled));
+    export_into(Path::new(&made.exported));
     convert(
-        Path::new(&made.pulled),
+        Path::new(&made.exported),
         Path::new(&made.converting),
         &app_data.path().join("scratch"),
     );
@@ -84,7 +84,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
     assert_eq!(finished.as_deref(), Some(dir.as_path()));
     let left = names(&dir);
     assert!(
-        !left.iter().any(|name| name == PULLED
+        !left.iter().any(|name| name == EXPORTED
             || name == CONVERTING
             || name == message_crate_export::EXPORT_JOURNAL_NAME
             || name.ends_with(".jsonl")),
@@ -98,12 +98,12 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
 }
 
 #[test]
-fn a_json_lines_export_keeps_its_files_and_drops_the_pull_journal() {
+fn a_json_lines_export_keeps_its_files_and_drops_the_export_journal() {
     let (_app_data, exports) = exports();
     let made = exports
         .create(ExportKind::Export, "jsonl", "2026-10-04-1430", None)
         .unwrap();
-    pull_into(Path::new(&made.dir));
+    export_into(Path::new(&made.dir));
 
     exports.finish(&made.dir).unwrap();
 
@@ -124,9 +124,9 @@ fn an_export_to_another_destination_leaves_no_directory_behind() {
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
     let chosen = app_data.path().join("chosen");
-    pull_into(Path::new(&made.pulled));
+    export_into(Path::new(&made.exported));
     convert(
-        Path::new(&made.pulled),
+        Path::new(&made.exported),
         &chosen,
         &app_data.path().join("scratch"),
     );
@@ -242,11 +242,11 @@ fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
     let interrupted = exports
         .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
         .unwrap();
-    pull_into(Path::new(&interrupted.pulled));
+    export_into(Path::new(&interrupted.exported));
     let finished = exports
         .create(ExportKind::Export, "jsonl", "2026-10-04-1430", None)
         .unwrap();
-    pull_into(Path::new(&finished.dir));
+    export_into(Path::new(&finished.dir));
     exports.finish(&finished.dir).unwrap();
     // The app quits mid-export: its hold on the marker ends with it.
     drop(exports);
@@ -307,7 +307,7 @@ fn a_finished_run_is_never_swept_even_with_files_left_in_it() {
     std::fs::write(Path::new(&made.converting).join("a.csv"), "x").unwrap();
     exports.finish(&made.dir).unwrap();
     // Something the finish could not delete, as an open file on Windows.
-    std::fs::create_dir_all(&made.pulled).unwrap();
+    std::fs::create_dir_all(&made.exported).unwrap();
 
     sweep(exports.root());
 

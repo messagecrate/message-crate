@@ -121,22 +121,53 @@ person two contacts
 
 **A chat handle's type comes from the header, not its shape.** A group's chat
 handle is stored with the type `other`, whatever it looks like. A one-to-one
-chat handle takes the type the header gives the participant with the same
-address, and so does a message sender that is a participant;
-`phone::Handle::parse` decides only when no participant has it. Why: the
-exporter knows what its source's ids are, and the address alone does not. A WhatsApp group id
+chat handle takes the type the participant with the same address has, and so
+does a message sender that is a participant. The service and the shape decide
+only when no participant has it (below). Why: the exporter knows what its
+source's ids are, and the address alone does not. A WhatsApp group id
 (`120363042@g.us`) and an internal WhatsApp id (`123456@lid`) both hold an
-`@`, and typed by shape each became an email identity that reaches nobody
+`@`, and typed by shape alone each was stored as an email identity that
+reaches nobody
 ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
 
-**A sender's type never depends on the message's service.** A sender the
-header does not list is typed by `phone::Handle::parse` alone, the rule
-below. A phone number is a phone number on any service, including one the
-model does not know. Why: identities of one address are linked as siblings
-only when their types are equal. A number typed `other` because its message
-came over an unknown service, such as Apple Messages by satellite, became a
-second identity on a new contact with no name, and the real contact's counts
-left the message out
+**An identity's type is decided by its service first and its shape second.**
+Each service says which types it can carry, and within those the shape
+(`phone::Handle::parse`) picks one. WhatsApp carries phone numbers and its own
+internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`. The
+`phone` service carries phone numbers and email addresses, because iMessage
+reaches an email address. A shape the service cannot carry is never that
+type: an address with an `@` on WhatsApp is not an email address, however it
+looks, and an import stores it as `other`. An import applies the rule to every
+address it meets: a chat handle, a participant, a sender, a reaction's sender
+and the holder's own address (`db/handles.rs`, `handle_type_on`). A type the
+file states is held to it too. Why: the service knows what it can carry, and
+the address alone does not. Typed by shape alone, a WhatsApp participant the
+file left untyped, such as `123456789012345@lid`, was stored as an email
+identity on WhatsApp, which no WhatsApp identity can be, and the identities
+list named it `email`
+([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
+
+Does an address with an `@` that sends over SMS become an email identity?
+
+Yes, for now. Text Message over SMS or RCS carries phone numbers only, but
+SMS and iMessage share the one `phone` service, and an address has one type
+on one service. Typing it by the message's transport made one address two
+identities, `email` from iMessage or from a header and `other` from an SMS
+message, and identities of one address are linked only when their types are
+equal. How the `phone` service holds the SMS rule is open
+([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
+Whether the file's type is needed at all, once service and shape decide, is
+[#1933](https://github.com/messagecrate/message-crate/issues/1933).
+
+**A phone number's type never depends on the message's service.** The service
+only takes away a type it cannot carry, the email address; it never makes a
+phone number anything else. A phone number is a phone number on any service,
+including one the model does not know, and a sender the header does not list
+over such a service is typed by its shape. Why: identities of one address are
+linked as siblings only when their types are equal. A number typed `other`
+because its message came over an unknown service, such as Apple Messages by
+satellite, became a second identity on a new contact with no name, and the
+real contact's counts left the message out
 ([#1144](https://github.com/messagecrate/message-crate/issues/1144)).
 
 **One number is one person on every service.** iMessage, SMS, MMS and RCS are
@@ -172,22 +203,27 @@ key names nobody, or names the wrong person. Stripping the `+` first once filed
 `+65 5555 0100` under the US number `+16555550100`.
 
 **An address is classified once, from the value the backup wrote.**
-`phone::Handle::parse` decides what an address is before anything else
-touches it: one with `@` is an email address, one written as a number is a
-phone number keyed as above, and anything else, such as `AMAZON`, is a
-sender name and becomes an identity of type `other`. The SMS exporters
-carry the `Handle` from there to the sender, the participants and the owner.
+`phone::Handle::parse` decides what an address looks like before anything
+else touches it: one with `@` is shaped as an email address, one written as a
+number is a phone number keyed as above, and anything else, such as `AMAZON`,
+is a sender name and becomes an identity of type `other`. The service then
+keeps the shape's type or, for an `@` address it cannot carry, makes it
+`other` (above). The SMS exporters carry the `Handle` from there to the
+sender, the participants and the owner.
 Why: the SMS exporters once stripped every address to its digits first, so
 `john1985@example.com` became the phone identity `1985` and a message from
 `AMAZON` was dropped.
 
-**The server types an address by `phone::Handle::parse` alone.** A chat
-handle, a participant or a sender whose source gave no type, an owner
+**The server reads an address's shape by `phone::Handle::parse` alone.** A
+chat handle, a participant or a sender whose source gave no type, an owner
 address, an identifier checked before an import, an identity a person adds
-or swaps in on a contact, and one an account adds to its own profile are all
-typed by it, and none by the service. A contact edit that names an address
-the account already holds on that service takes that row as it is, so a
-WhatsApp internal id the import stored as `other` stays `other`.
+or swaps in on a contact, and one an account adds to its own profile all take
+their shape from it, and no second rule reads the characters. An import then
+holds the shape to its service (above). A contact edit and the account's
+profile refuse an email address on WhatsApp instead (below). A contact edit
+that names an address the account already holds on that service takes that
+row as it is, so a WhatsApp internal id the import stored as `other` stays
+`other`.
 Why: identities of one address are linked only when their types are equal.
 A second rule that read characters typed `tel:+15555550157` as `other` and
 the same number as a sender as `phone`, and one that read the service typed
@@ -598,6 +634,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
+| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs` |
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
 | Making, naming, and replacing a contact during import | `crates/server/server/src/imports_api/contact_name.rs` |
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
