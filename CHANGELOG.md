@@ -30,6 +30,11 @@ released versions carry their date on the heading.
   which only Message Crate's fork of WhatsApp Chat Exporter does, on its
   `main` branch and in no release yet; a backup read by any other gives
   replies with no link.
+- 2026-10-05: **Search finds unsent messages on their own.** On Messages,
+  `unsent:yes` lists the messages their sender unsent, and `unsent:no`
+  leaves them out. `deleted:yes` now lists only the messages deleted in the
+  app they came from, and no longer brings unsent ones with them. A search
+  for both writes both words, as `deleted:yes or unsent:yes`.
 
 ### Design
 
@@ -71,6 +76,8 @@ released versions carry their date on the heading.
   in place of `is_reply`, `thread_originator_guid` and
   `thread_originator_part`, and a message's reply count from `reply_count`
   in place of `num_replies`.
+- A Saved Search that uses `deleted:yes` finds fewer messages than before:
+  it leaves unsent messages out. Add `or unsent:yes` to it to find both.
 
 ## [0.10.1] - 2026-10-05
 

@@ -27,7 +27,7 @@ It opens at the newest message, and scrolling up loads older ones. **Jump to** g
 The search box at the top takes plain words, and words with a meaning of their own.
 `attachment:any` narrows the list to conversations that hold a photo, video, or file.
 `name:Carolyn` narrows it to conversations with someone of that name.
-With **Messages** picked above the list, `deleted:yes` lists the messages marked deleted in Apple Messages or unsent, drawn as faded bubbles with a dashed outline ([Deleted and unsent messages](/docs/user/features/messages/browse/#deleted-and-unsent-messages)).
+With **Messages** picked above the list, `deleted:yes` lists the messages marked deleted in Apple Messages and `unsent:yes` the ones their sender unsent, both drawn as faded bubbles with a dashed outline ([Deleted and unsent messages](/docs/user/features/messages/browse/#deleted-and-unsent-messages)).
 A few Apple Messages messages were edited, and **Edited** under one opens its earlier versions ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
 [Search](/docs/user/features/messages/search/) lists every search word.
 

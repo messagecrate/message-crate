@@ -158,7 +158,7 @@ plus the keywords its registry entry lists.
 | Name | a name, `pre*`, `#id`, and the word's keywords | `#id` is that row by id, unquoted. `group:` and `tag:` match a name equal to the text, case-insensitively. Their `pre*` matches the start of the name or of any word in it, so `group:Club*` finds "Book Club". An account has few Contact Groups and Message Tags, so a match on the start of any word is what a person wants. `in:` matches a title or identity that contains the text, and its `pre*` matches the start of either or of any word in it. `import:` takes only `#id` and `last`. |
 | Person | a name, an identity, `pre*`, `#id`, `me` where listed | `#id` is a contact: one of their identities, or a participant linked to them. Text is contained in an identity's raw or normalized form, in the name of the contact linked to it, or in a participant's name; `pre*` matches the start of any of those instead. |
 | Choice | one of the word's fixed values | That value, compared case-insensitively. |
-| Flag | `yes`, `no`, and `any` where listed | `trashed:` and `deleted:`. |
+| Flag | `yes`, `no`, and `any` where listed | `trashed:`, `deleted:` and `unsent:`. |
 | Date | a span, with `>`, `>=`, `<`, `<=`, or `a..b` | See below. |
 | Count | a whole number, with `=`, `>`, `>=`, `<`, `<=`, or `a..b` | A bare number is equality. A range is inclusive at both ends. |
 | Size | `500k`, `1M`, `2G`, or bytes, with the Count comparisons | 1024-based units, a trailing `b` allowed, decimals rounded to whole bytes. |
@@ -530,7 +530,13 @@ Count.
 Flag: `yes`, `no`. No list leaves a marked message out, so the word lifts no
 default and takes no `any`: a search without it already sees every message.
 
-- **Messages**: `yes` is a message marked Deleted in the source app or Unsent, `no` one with neither mark. A message with no mark is `no`, so `deleted:yes` and `-deleted:yes` split the list. Why one word for both marks: either way the message's content is gone in the app it came from, and a person looking for what was taken away wants both (#1143).
+- **Messages**: `yes` is a message marked Deleted in the source app, `no` one without that mark, an Unsent message included. A message with no mark is `no`, so `deleted:yes` and `-deleted:yes` split the list. Why a word for each mark: CONTEXT.md keeps Deleted in the source app and Unsent apart and the screens draw them differently, so a search that blurred them was the one place the two read as one, and Unsent messages alone could not be found (#1935). A search for either mark writes both words, as `deleted:yes or unsent:yes`.
+
+### `unsent:`
+
+Flag: `yes`, `no`, for the same reason as `deleted:`.
+
+- **Messages**: `yes` is a message marked Unsent, `no` one without that mark. A message with no mark is `no`, so `unsent:yes` and `-unsent:yes` split the list.
 
 ### `trashed:`
 
