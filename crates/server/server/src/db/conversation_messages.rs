@@ -189,10 +189,24 @@ pub enum MessageListSort {
     Relevance,
 }
 
+impl MessageListSort {
+    /// The key as `sort=` spells it.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Date => "date",
+            Self::Relevance => "relevance",
+        }
+    }
+}
+
 /// The Messages list's keys, as `sort=` spells them.
 pub const MESSAGE_LIST_SORT_KEYS: [(&str, MessageListSort); 2] = [
-    ("date", MessageListSort::Date),
-    ("relevance", MessageListSort::Relevance),
+    (MessageListSort::Date.name(), MessageListSort::Date),
+    (
+        MessageListSort::Relevance.name(),
+        MessageListSort::Relevance,
+    ),
 ];
 
 /// The order the Messages list applies when the request names no `sort`:
@@ -221,16 +235,9 @@ pub fn default_message_list_sort(ranked: bool) -> [SortKey<MessageListSort>; 1] 
 pub fn message_list_sort_text(order: &[SortKey<MessageListSort>]) -> String {
     order
         .iter()
-        .map(|k| {
-            let name = MESSAGE_LIST_SORT_KEYS
-                .iter()
-                .find(|(_, key)| *key == k.key)
-                .map(|(name, _)| *name)
-                .expect("MESSAGE_LIST_SORT_KEYS names every MessageListSort key");
-            match k.direction {
-                Direction::Asc => name.to_string(),
-                Direction::Desc => format!("-{name}"),
-            }
+        .map(|k| match k.direction {
+            Direction::Asc => k.key.name().to_string(),
+            Direction::Desc => format!("-{}", k.key.name()),
         })
         .collect::<Vec<_>>()
         .join(",")
