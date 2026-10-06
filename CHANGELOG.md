@@ -56,7 +56,6 @@ released versions carry their date on the heading.
   read differently now shows the server's reading. Picking Relevance now
   leaves `sort` out of the address, so the next search starts in the
   server's order.
-
 - 2026-10-05: **A message's reply count is counted when it is read.** It is
   the number of replies Message Crate shows that quote the message, so a
   reply hidden as a duplicate no longer counts, and a reply that quotes a
