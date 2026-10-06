@@ -12,7 +12,10 @@
 //!
 //! Without ffmpeg the pass makes nothing and leaves the queue as it is, so
 //! the Assets are worked on once ffmpeg is there: at the next start, or
-//! after the next Import Run.
+//! after the next Import Run. With ffmpeg or without, the pass records
+//! whether each newly queued original is shown as it is before its next
+//! conversion ([`crate::process_assets::decide_shown_as_is`]), so a photo
+//! opens without waiting for the videos queued before it.
 //!
 //! When the server stops, [`MediaQueue::stop`] kills the ffmpeg the pass
 //! runs and waits for the pass to end. The Asset it was working on stays
@@ -181,6 +184,49 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
     );
 }
 
+/// Record whether every browser shows each original queued in a row after
+/// `after` as it is, until `stop` is set, leaving the queue as it is, and
+/// answer the last row decided. Only an MP4 is opened, by ffprobe, which is
+/// quick, and without ffprobe an MP4 is left as it was. An Asset whose rows
+/// cannot be written is logged, counted in `stats.not_decided`, and left for
+/// its turn in the pass, which records it again.
+///
+/// # Errors
+///
+/// Returns an error when the queue cannot be read.
+async fn decide_queued(
+    pool: &SqlitePool,
+    cfg: &Config,
+    stop: &AtomicBool,
+    after: i64,
+    stats: &mut ProcessAssetsStats,
+) -> Result<i64> {
+    let mut decided = after;
+    for asset in media_queue::queued_after(&mut *pool.acquire().await?, after).await? {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        if let Err(error) = crate::process_assets::decide_shown_as_is(
+            cfg,
+            pool,
+            asset.account_id,
+            Some(&asset.sha256),
+        )
+        .await
+        {
+            stats.not_decided += 1;
+            tracing::warn!(
+                account_id = asset.account_id,
+                sha256 = asset.sha256,
+                error = format!("{error:#}"),
+                "Whether an Asset is shown as it is could not be recorded"
+            );
+        }
+        decided = asset.rowid;
+    }
+    Ok(decided)
+}
+
 /// Make the Thumbnail and Preview of every queued Asset, oldest first, until
 /// the queue is empty or `stop` is set, and answer what was made. Each Asset
 /// leaves the queue once it is processed, whether or not every version could
@@ -188,6 +234,12 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
 /// Asset queued again while it was worked on stays queued, and so does the
 /// one being worked on when `stop` is set. Without ffmpeg nothing is made
 /// and the queue is left as it is.
+///
+/// Before each conversion, the pass records whether every browser shows each
+/// original queued since it last looked as it is ([`decide_queued`]), so a
+/// photo opens at once rather than after the videos queued before it, a
+/// photo an Import Run queues while the pass works included, and on a
+/// server without ffmpeg.
 ///
 /// A connection is taken for each query and given back after it, so the
 /// pass holds none of the pool's connections while ffmpeg runs.
@@ -206,6 +258,7 @@ pub(crate) async fn work_through(
     if waiting == 0 {
         return Ok(stats);
     }
+    let mut decided = decide_queued(pool, cfg, stop, 0, &mut stats).await?;
     if !media::ffmpeg_available() {
         tracing::warn!(
             waiting,
@@ -217,6 +270,9 @@ pub(crate) async fn work_through(
     while !stop.load(Ordering::Relaxed)
         && let Some(asset) = media_queue::first(&mut *pool.acquire().await?).await?
     {
+        // An Import Run that ended while the last Asset was converted
+        // queued more, behind the videos already waiting.
+        decided = decide_queued(pool, cfg, stop, decided, &mut stats).await?;
         let done = crate::process_assets::process_one_asset(
             cfg,
             pool,
@@ -260,6 +316,7 @@ pub(crate) async fn work_through(
             not_made = stats.not_made,
             not_removed = stats.not_removed,
             not_dropped = stats.not_dropped,
+            not_decided = stats.not_decided,
             "The queued Assets are done"
         );
     }

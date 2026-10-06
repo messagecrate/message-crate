@@ -45,7 +45,7 @@ fn menu_attachment(path: Value) -> Value {
         "original_name": "menu.pdf",
         "mime_type": "application/pdf",
         "sha256": MENU_SHA,
-        "is_sticker": false
+        "is_sticker": false, "shown_as_is": false
     })
 }
 
@@ -56,7 +56,7 @@ fn photo_attachment() -> Value {
         "original_name": "photo.png",
         "mime_type": "image/png",
         "sha256": PHOTO_SHA,
-        "is_sticker": false
+        "is_sticker": false, "shown_as_is": false
     })
 }
 
@@ -384,7 +384,7 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
                     "path": climbing,
                     "original_name": "escape.pdf",
                     "mime_type": "application/pdf",
-                    "is_sticker": false
+                    "is_sticker": false, "shown_as_is": false
                 }])
             )],
             "total": 1,
@@ -452,7 +452,7 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
                         "original_name": "photo.png",
                         "mime_type": "image/png",
                         "sha256": PHOTO_SHA,
-                        "is_sticker": false
+                        "is_sticker": false, "shown_as_is": false
                     }])
                 )
             ],

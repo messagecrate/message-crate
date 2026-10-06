@@ -8,35 +8,10 @@ export type AttachmentKind = "image" | "video" | "audio" | "file";
 
 /**
  * Which version opens an attachment in full (`docs/architecture/media.md`,
- * rule 2): the original, the Preview, or neither, when the attachment is of
- * a type browsers often cannot show and the server has not made its Preview
- * yet.
+ * rule 2): the original, the Preview, or neither, when the original is not
+ * one every browser shows and the server has not made its Preview yet.
  */
 export type FullVersion = "original" | "preview" | "none";
-
-/**
- * The types every browser shows as they are, the list the server's
- * `media::browser_shows` holds. An MP4 is here by its type alone: the server
- * also reads its video codec and makes a Preview of a HEVC one, and an
- * attachment with a Preview opens the Preview.
- */
-const SHOWN_AS_IS = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "audio/mpeg",
-  "video/mp4",
-]);
-
-/** Other spellings of a type, read as its usual one. */
-const ALIASES: Record<string, string> = {
-  "image/jpg": "image/jpeg",
-  "image/pjpeg": "image/jpeg",
-  "audio/mp3": "audio/mpeg",
-  "audio/x-mp3": "audio/mpeg",
-  "audio/x-mpeg": "audio/mpeg",
-};
 
 /** Types by a file name's extension, for an attachment the import named no type for. */
 const BY_EXTENSION: Record<string, string> = {
@@ -76,9 +51,9 @@ function extensionType(name: string | null | undefined): string | null {
  * which has no extension: the type the import declared, then the extension
  * of the name the export gave the file, then of its path in the export.
  */
-export function mediaType(attachment: MessageAttachment): string | null {
+function mediaType(attachment: MessageAttachment): string | null {
   const declared = attachment.mime_type?.split(";")[0].trim().toLowerCase();
-  if (declared) return ALIASES[declared] ?? declared;
+  if (declared) return declared;
   return extensionType(attachment.original_name) ?? extensionType(attachment.path);
 }
 
@@ -92,14 +67,15 @@ export function attachmentKind(attachment: MessageAttachment): AttachmentKind {
 }
 
 /**
- * Which version opens the attachment, decided by its type before any byte is
- * fetched, never by a load that failed: the Preview when the server made one,
- * the original when every browser shows its type, and none when neither.
+ * Which version opens the attachment, decided before any byte is fetched,
+ * never by a load that failed. The server decides whether every browser shows
+ * the original as it is, reading an MP4's codec where the type cannot tell,
+ * and answers it in `shown_as_is`: the original when it does, else the
+ * Preview when the server made one, and none when neither.
  */
 export function fullVersion(attachment: MessageAttachment): FullVersion {
-  if (attachment.preview_mime_type) return "preview";
-  const type = mediaType(attachment);
-  return type && SHOWN_AS_IS.has(type) ? "original" : "none";
+  if (attachment.shown_as_is) return "original";
+  return attachment.preview_mime_type ? "preview" : "none";
 }
 
 /** The name a person knows the attachment by: the export's name, else its path's last part. */

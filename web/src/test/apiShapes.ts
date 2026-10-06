@@ -7,7 +7,10 @@ import type { components } from "../lib/serverApi.types";
 
 type Schema = components["schemas"];
 
-/** An attachment with every field `null` and `is_sticker` false. */
+/**
+ * An attachment with every field `null`, and `is_sticker` and `shown_as_is`
+ * false, as the server answers one it has not yet looked at.
+ */
 export function attachment(fields: Partial<Schema["Attachment"]> = {}): Schema["Attachment"] {
   return {
     is_sticker: false,
@@ -17,6 +20,7 @@ export function attachment(fields: Partial<Schema["Attachment"]> = {}): Schema["
     path: null,
     preview_mime_type: null,
     sha256: null,
+    shown_as_is: false,
     thumbnail_mime_type: null,
     transcription: null,
     ...fields,

@@ -407,7 +407,7 @@ mod tests {
               "original_name": "menu.pdf",
               "mime_type": "application/pdf",
               "sha256": "ab",
-              "is_sticker": false,
+              "is_sticker": false, "shown_as_is": false,
               "transcription": null
             }
           ],
@@ -604,8 +604,10 @@ mod tests {
         let plain = to_ir_message(&sms, false).unwrap();
         assert_eq!(plain.message_kind, IrMessageKind::Sms);
 
-        let file: Attachment =
-            serde_json::from_value(json!({ "sha256": "ab", "is_sticker": false })).unwrap();
+        let file: Attachment = serde_json::from_value(
+            json!({ "sha256": "ab", "is_sticker": false, "shown_as_is": false }),
+        )
+        .unwrap();
         sms.attachments = vec![file.clone(), file.clone(), file];
         let with_files = to_ir_message(&sms, false).unwrap();
         assert_eq!(with_files.message_kind, IrMessageKind::Mms);

@@ -81,6 +81,9 @@ pub struct ProcessAssetsStats {
     pub not_removed: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
     pub not_dropped: u64,
+    /// Originals whose shown-as-is decision (`attachments.shown_as_is`)
+    /// could not be recorded.
+    pub not_decided: u64,
 }
 
 impl ProcessAssetsStats {
@@ -96,6 +99,7 @@ impl ProcessAssetsStats {
         self.not_made += other.not_made;
         self.not_removed += other.not_removed;
         self.not_dropped += other.not_dropped;
+        self.not_decided += other.not_decided;
     }
 
     /// Count what processing one original did.
@@ -116,6 +120,9 @@ impl ProcessAssetsStats {
         self.shared += outcome.shared;
         if outcome.not_made.is_some() {
             self.not_made += 1;
+        }
+        if outcome.not_decided.is_some() {
+            self.not_decided += 1;
         }
         self.not_dropped += outcome.not_dropped.len() as u64;
         if outcome.left_as_it_was() {
@@ -154,6 +161,13 @@ impl ProcessAssetsStats {
                 self.not_dropped,
                 "1 damaged Preview or Thumbnail that could not be dropped",
                 "{n} damaged Previews or Thumbnails that could not be dropped",
+            ));
+        }
+        if self.not_decided > 0 {
+            failures.push(words(
+                self.not_decided,
+                "1 original whose shown-as-is decision could not be recorded",
+                "{n} originals whose shown-as-is decisions could not be recorded",
             ));
         }
         failures
@@ -202,6 +216,72 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
         row.mime_type.as_deref(),
         &row.name_hints(),
     )
+}
+
+/// Whether every browser shows `row`'s original, stored under `assets_dir`,
+/// as it is ([`media::browser_shows`]): the decision that both spares it a
+/// Preview and is answered as the `/v1` Attachment's `shown_as_is`. An
+/// incomplete `.part` original is never handed to ffprobe, and is not.
+/// `None` when nothing can be known, as for an MP4 while ffprobe is
+/// missing, so a decision an earlier pass recorded stays.
+fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
+    if is_part_path(&row.assets_path) {
+        return Some(false);
+    }
+    media::browser_shows(
+        &assets_dir.join(&row.assets_path),
+        media_type(row).as_deref(),
+    )
+}
+
+/// Record `decided` on every row of `account_id`'s original `sha256`, the
+/// one write of the decision. `None` writes nothing.
+///
+/// # Errors
+///
+/// Returns an error when the rows cannot be written.
+async fn record_decision_if_known(
+    db: &SqlitePool,
+    account_id: i64,
+    sha256: &str,
+    decided: Option<bool>,
+) -> Result<()> {
+    if let Some(shown) = decided {
+        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, sha256, shown)
+            .await
+            .context("record whether it is shown as it is")?;
+    }
+    Ok(())
+}
+
+/// Decide whether every browser shows each original of `account_id` as it
+/// is, the one `only` names or every one, and record it on its rows, without
+/// making anything. The server's pass does this for each newly queued Asset
+/// before its next conversion, and a Demo Account build without ffmpeg does
+/// it for the account, so a photo opens at once rather than after the videos
+/// queued before it, and on a server that cannot convert.
+///
+/// # Errors
+///
+/// Returns an error when the rows cannot be read or written.
+pub(crate) async fn decide_shown_as_is(
+    cfg: &Config,
+    db: &SqlitePool,
+    account_id: i64,
+    only: Option<&str>,
+) -> Result<()> {
+    let assets_dir = cfg.paths.assets_dir_for_account(account_id);
+    let rows = versions_db::stored_originals(&mut *db.acquire().await?, account_id, only).await?;
+    // Rows come one per original and stored path; an original stored under
+    // two paths is decided once.
+    let mut decided = std::collections::HashSet::new();
+    for row in &rows {
+        if decided.insert(row.sha256.as_str()) {
+            record_decision_if_known(db, account_id, &row.sha256, shown_as_is(&assets_dir, row))
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 /// Make the versions of every stored original of the account `opts` names,
@@ -404,6 +484,8 @@ struct Outcome {
     not_made: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
+    /// Why whether the original is shown as it is could not be recorded.
+    not_decided: Option<anyhow::Error>,
 }
 
 impl Outcome {
@@ -427,6 +509,7 @@ impl Outcome {
                     .and_then(|removal| removal.as_ref().err()),
             )
             .chain(&self.not_dropped)
+            .chain(&self.not_decided)
     }
 
     /// Nothing was written, removed, dropped or shared, and nothing
@@ -596,11 +679,22 @@ impl<'a> AccountPass<'a> {
                 &self.converted_dir,
             )
         };
+        let decided = shown_as_is(&self.assets_dir, row);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
-            browser_shows: media::browser_shows(&source_path, media_type(row).as_deref()),
+            browser_shows: decided.unwrap_or(false),
+        };
+        // The decision is stored whatever the options leave alone, so the
+        // `/v1` Attachment answers it without running ffprobe on a read. A
+        // dry run writes nothing.
+        let not_decided = if self.opts.dry_run {
+            None
+        } else {
+            record_decision_if_known(db, self.account_id, &row.sha256, decided)
+                .await
+                .err()
         };
         let versions = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => {
@@ -610,13 +704,22 @@ impl<'a> AccountPass<'a> {
                         Ok(false) => None,
                         Err(err) => Some(Err(err)),
                     },
+                    not_decided,
                     ..Outcome::default()
                 };
             }
-            Plan::Skip(_) => return Outcome::default(),
+            Plan::Skip(_) => {
+                return Outcome {
+                    not_decided,
+                    ..Outcome::default()
+                };
+            }
             Plan::Versions(versions) => versions,
         };
-        let mut outcome = Outcome::default();
+        let mut outcome = Outcome {
+            not_decided,
+            ..Outcome::default()
+        };
         let mut not_made = Vec::new();
         for (version, need) in [
             (Version::Thumbnail, versions.thumbnail),

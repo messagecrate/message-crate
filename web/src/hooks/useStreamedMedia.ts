@@ -19,16 +19,16 @@ export const CANNOT_PLAY_HERE = "This browser cannot play the file. Download it 
 /**
  * A video or recording that streams once play is pressed
  * (`docs/architecture/media.md`, rules 1, 2 and 5). `play` makes a Media
- * Link; `src` is then its URL for the original or the Preview, as the type
- * decides, for a `<video>` or `<audio>` that loads it a range at a time.
+ * Link; `src` is then its URL for the original or the Preview, as the
+ * server's `shown_as_is` decides, for a `<video>` or `<audio>` that loads it
+ * a range at a time.
  *
  * A Media Link ends after an hour, or sooner when the Session ends, and the
  * element's next range then fails as a network error. `onMediaError` puts
  * the play button back for that, so pressing it makes a new link rather than
  * leaving a dead player. Any other error means the browser cannot play the
- * file itself, such as a HEVC MP4 whose Preview is not made yet, and a new
- * link would fail the same way, so the player says so and leaves the
- * download.
+ * file itself, such as a damaged one, and a new link would fail the same
+ * way, so the player says so and leaves the download.
  */
 export function useStreamedMedia(attachment: MessageAttachment) {
   const version = fullVersion(attachment);

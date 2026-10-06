@@ -542,6 +542,12 @@ api_shape! {
         pub transcription: Option<String>,
         /// Why the file is missing, when it is.
         pub missing_reason: Option<String>,
+        /// True when every browser shows the original as it is, so a viewer
+        /// opens the original. False when it needs the preview instead, and
+        /// until the server has looked at the file after its import. The
+        /// server decides it once, reading an MP4's video codec, and this is
+        /// the one place a client reads the decision.
+        pub shown_as_is: bool,
         /// MIME type of the attachment's preview, when it has one. The
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
         pub preview_mime_type: Option<String>,
@@ -629,6 +635,7 @@ mod tests {
                 is_sticker: false,
                 transcription: None,
                 missing_reason: None,
+                shown_as_is: false,
                 preview_mime_type: None,
                 thumbnail_mime_type: None,
             }],
@@ -684,6 +691,7 @@ mod tests {
                 "is_sticker": false,
                 "transcription": null,
                 "missing_reason": null,
+                "shown_as_is": false,
                 "preview_mime_type": null,
                 "thumbnail_mime_type": null,
             }),

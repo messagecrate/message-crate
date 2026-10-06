@@ -155,13 +155,15 @@ async fn dedupe_and_process_assets(
         let mut conn = db.acquire().await?;
         dedupe::dedupe_cross_source(&mut conn, account_id, None, 2).await?
     };
-    // Demo Data holds only formats every browser shows as they are, so the
-    // preview pass is an improvement and not a need. Without ffmpeg it would
-    // fail once per attachment; say so once instead (#1018).
+    // Without ffmpeg the preview pass would fail once per attachment; say so
+    // once instead (#1018). Whether each original is shown as it is needs no
+    // ffmpeg for anything but an MP4, and the viewer opens an original only
+    // when its rows say so, so that is still recorded.
     if !media::ffmpeg_available() {
         println!(
             "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails"
         );
+        process_assets::decide_shown_as_is(cfg, db, account_id, None).await?;
         return Ok((dedupe_stats, process_assets::ProcessAssetsStats::default()));
     }
     println!("Making the Demo Account's Previews and Thumbnails");
