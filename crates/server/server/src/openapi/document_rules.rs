@@ -945,10 +945,9 @@ fn is_kebab(segment: &str) -> bool {
 
 /// The page schemas a `200` answers: the page it names, or each page of a
 /// choice between pages, as an account's history answers the account in
-/// full and the owner without content. A schema is a page by its shape,
-/// whatever its name: it has all four [`PAGE_KEYS`], so a page under a name
-/// that does not start with `Page_` is still held to the page rules. Empty
-/// when it answers no page.
+/// full and the owner without content. A schema is a page by its name or by
+/// its shape ([`is_page`]), so a page under a name that does not start with
+/// `Page_` is still held to the page rules. Empty when it answers no page.
 fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
     let schemas = &doc["components"]["schemas"];
     let Some(name) =
@@ -956,29 +955,30 @@ fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
     else {
         return Vec::new();
     };
-    if is_page(&schemas[name]) {
+    if is_page(name, &schemas[name]) {
         return vec![&schemas[name]];
     }
-    let choices: Vec<&Value> = schemas[name]["oneOf"]
+    let choices: Vec<&str> = schemas[name]["oneOf"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(schema_named)
-        .map(|c| &schemas[c])
         .collect();
-    if !choices.is_empty() && choices.iter().all(|c| is_page(c)) {
-        choices
+    if !choices.is_empty() && choices.iter().all(|c| is_page(c, &schemas[*c])) {
+        choices.into_iter().map(|c| &schemas[c]).collect()
     } else {
         Vec::new()
     }
 }
 
-/// Whether `schema` has the shape of a page: all four [`PAGE_KEYS`] among
-/// its properties.
-fn is_page(schema: &Value) -> bool {
-    PAGE_KEYS
-        .iter()
-        .all(|key| schema["properties"].get(*key).is_some())
+/// Whether the schema `name` is a page: `Page<T>`'s own schemas by their
+/// `Page_` name, so one that lost a key still fails the page rules, and any
+/// other schema with all four [`PAGE_KEYS`] among its properties.
+fn is_page(name: &str, schema: &Value) -> bool {
+    name.starts_with("Page_")
+        || PAGE_KEYS
+            .iter()
+            .all(|key| schema["properties"].get(*key).is_some())
 }
 
 /// What the operation says about its `offset`.
