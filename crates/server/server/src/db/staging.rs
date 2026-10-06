@@ -1238,7 +1238,8 @@ pub async fn write_message_map(
 /// falls back on the rule for files without a date. Equal dates are the
 /// same backup read again, where that rule changes nothing because the two
 /// copies agree, or two reads of one Mac's `chat.db` that Messages did
-/// not write between, where it adds a mark and takes a later edit as it would with no dates.
+/// not write between, where it adds a mark and takes a later edit as it
+/// would with no dates.
 /// The one rule for which of two copies of a message from one source is
 /// the later backup, for a stored message ([`promote_deletion_marks`],
 /// [`write_edit_map`]) and, in Rust ([`later_backup`]), for two copies

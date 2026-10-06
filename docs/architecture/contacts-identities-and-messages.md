@@ -424,10 +424,11 @@ copy from the later backup gives the message its deletion mark, mark or no
 mark, and its text and earlier versions, whatever the versions' times say; a
 copy from an earlier backup changes neither. The duplicate flag follows the
 text, because the dedupe compares the text. The date is kept to the
-millisecond, the form every stored time takes. When either copy has no date, or the two
-dates are equal, nothing says which backup is newer, so the rules for files
-without one hold: a copy with a mark adds it and one without leaves the mark held,
-and a copy takes the text when its newest earlier version is newer
+millisecond, the form every stored time takes. When either copy has no date,
+or the two dates are equal, nothing says which backup is newer, so the rules
+for files without one hold: a copy with a mark adds it and one without leaves
+the mark held, and a copy takes the text when its newest earlier version is
+newer
 (`later_edit_sql` in `db/staging.rs`). Attachments and reactions add from
 either copy, because a backup that lacks one does not say it is gone. The
 rule is the same in one import as across several, in any file order

@@ -659,8 +659,8 @@ mod tests {
             msg.backup_taken_at = at.map(str::to_string);
             msg
         };
-        let later = Some("2026-09-30T18:45:12Z");
-        let earlier = Some("2026-09-01T10:00:00Z");
+        let later = Some("2026-09-30T18:45:12.000Z");
+        let earlier = Some("2026-09-01T10:00:00.000Z");
 
         assert_eq!(backup_of(&dated(None)), None);
 

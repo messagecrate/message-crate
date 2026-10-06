@@ -174,7 +174,7 @@ describe("Import history", () => {
       contacts_changed: 0,
       issues: [],
       source_fingerprint: { path: "/backups/iPhone/00008110", size: 12, mtime_ms: 1 },
-      backup_taken_at: "2026-09-30T18:45:12Z",
+      backup_taken_at: "2026-09-30T18:45:12.000Z",
     });
     const user = setupUser();
     renderWithProviders(<StorageSection />);
