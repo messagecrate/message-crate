@@ -297,6 +297,10 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         // file-name match makes any part of a file name findable, and the
         // earlier versions' own index finds a word an edit took out.
         //
+        // An Unsent message shows neither its text nor its attachments, so
+        // the index holds no row for it and the file-name match skips it
+        // (#1758). Its earlier versions are shown, so they still find it.
+        //
         // A version finds each message that shows it: the message holding
         // it, and each message its `duplicate_of` chain leads to whose
         // holder it is (`earlier_versions_holder_sql`, #1757). Asking the
@@ -310,7 +314,11 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         ListKind::Messages => {
             out.push("m.id IN (");
             fts::matching_ids(out, term);
-            out.push(" UNION ALL SELECT a.message_id FROM attachments a WHERE ");
+            out.push(
+                " UNION ALL SELECT a.message_id FROM attachments a \
+                 JOIN messages am ON am.id = a.message_id \
+                 WHERE am.deletion IS NOT 'unsent' AND ",
+            );
             free_text_match(out, "coalesce(a.original_name, '')", term);
             if ctx.earlier_versions {
                 out.push(&format!(

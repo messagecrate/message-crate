@@ -634,6 +634,65 @@ async fn messages_fts_stays_in_sync() {
     tx.commit().await.unwrap();
 }
 
+/// The sync triggers give an Unsent message no index row, as the promotion
+/// does (#1758): not when it is written Unsent, not when an attachment is
+/// added to it or transcribed, and not after the mark is set on a message
+/// that had a row. Taking the mark off writes the row again, attachment
+/// text included.
+#[tokio::test]
+async fn messages_fts_holds_no_row_for_an_unsent_message() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let conversation_id: i64 =
+        sqlx::query_scalar("SELECT id FROM conversations WHERE account_id = $1")
+            .bind(A1)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let unsent = MessageRow {
+        source: "sms",
+        guid: Some("g-unsent".into()),
+        body: Some("lighthouse"),
+        deletion: Some(message_ir::Deletion::Unsent),
+        ..MessageRow::new(A1, conversation_id)
+    }
+    .insert_in(&mut tx)
+    .await;
+    sqlx::query("INSERT INTO attachments (message_id, original_name) VALUES ($1, 'harbour.png')")
+        .bind(unsent)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE attachments SET transcription = 'beacon' WHERE message_id = $1")
+        .bind(unsent)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    for term in ["lighthouse", "harbour", "beacon"] {
+        assert_eq!(fts_hits(&mut tx, term).await, 0, "{term}");
+    }
+
+    sqlx::query("UPDATE messages SET deletion = NULL WHERE id = $1")
+        .bind(unsent)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    for term in ["lighthouse", "harbour", "beacon"] {
+        assert_eq!(fts_hits(&mut tx, term).await, 1, "{term}");
+    }
+
+    sqlx::query("UPDATE messages SET deletion = 'unsent' WHERE id = $1")
+        .bind(unsent)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    for term in ["lighthouse", "harbour", "beacon"] {
+        assert_eq!(fts_term_entries(&mut tx, term).await, 0, "{term}");
+    }
+    tx.commit().await.unwrap();
+}
+
 /// How many index entries `term` has, read from the index itself. `MATCH`
 /// only answers for rows the index still counts as present, so it cannot
 /// show a term left behind under a deleted row.

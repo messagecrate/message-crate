@@ -4,9 +4,14 @@
 -- again whole. messages_fts is a contentless-delete table (fts_virtual.sql):
 -- DELETE by rowid removes every term the row indexed, attachment terms
 -- included, without being told what they were.
+--
+-- An Unsent message has no index row. It reads "Unsent" and nothing else,
+-- and a search finds a message by what it shows, so a word of the text or
+-- file names it hides must not find it (#1758). Marking a message Unsent
+-- removes its row, and taking the mark off writes it again.
 CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
     INSERT INTO messages_fts(rowid, body, subject, attachment_text)
-    VALUES (
+    SELECT
         new.id,
         coalesce(new.body, ''),
         coalesce(new.subject, ''),
@@ -21,17 +26,17 @@ CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
             FROM attachments
             WHERE message_id = new.id
         )
-    );
+    WHERE new.deletion IS NOT 'unsent';
 END;
 
 CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid = old.id;
 END;
 
-CREATE TRIGGER messages_fts_au AFTER UPDATE OF body, subject ON messages BEGIN
+CREATE TRIGGER messages_fts_au AFTER UPDATE OF body, subject, deletion ON messages BEGIN
     DELETE FROM messages_fts WHERE rowid = old.id;
     INSERT INTO messages_fts(rowid, body, subject, attachment_text)
-    VALUES (
+    SELECT
         new.id,
         coalesce(new.body, ''),
         coalesce(new.subject, ''),
@@ -46,7 +51,7 @@ CREATE TRIGGER messages_fts_au AFTER UPDATE OF body, subject ON messages BEGIN
             FROM attachments
             WHERE message_id = new.id
         )
-    );
+    WHERE new.deletion IS NOT 'unsent';
 END;
 
 CREATE TRIGGER attachments_fts_ai AFTER INSERT ON attachments BEGIN
@@ -67,7 +72,7 @@ CREATE TRIGGER attachments_fts_ai AFTER INSERT ON attachments BEGIN
             FROM attachments a
             WHERE a.message_id = m.id
         )
-    FROM messages m WHERE m.id = new.message_id;
+    FROM messages m WHERE m.id = new.message_id AND m.deletion IS NOT 'unsent';
 END;
 
 CREATE TRIGGER attachments_fts_ad AFTER DELETE ON attachments BEGIN
@@ -88,7 +93,7 @@ CREATE TRIGGER attachments_fts_ad AFTER DELETE ON attachments BEGIN
             FROM attachments a
             WHERE a.message_id = m.id
         )
-    FROM messages m WHERE m.id = old.message_id;
+    FROM messages m WHERE m.id = old.message_id AND m.deletion IS NOT 'unsent';
 END;
 
 CREATE TRIGGER attachments_fts_au AFTER UPDATE OF original_name, transcription ON attachments BEGIN
@@ -109,7 +114,7 @@ CREATE TRIGGER attachments_fts_au AFTER UPDATE OF original_name, transcription O
             FROM attachments a
             WHERE a.message_id = m.id
         )
-    FROM messages m WHERE m.id = new.message_id;
+    FROM messages m WHERE m.id = new.message_id AND m.deletion IS NOT 'unsent';
 END;
 
 -- Keep message_versions_fts in step with message_versions: one index row per

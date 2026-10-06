@@ -390,7 +390,15 @@ pub(crate) async fn create_messages_secondary_indexes(conn: &mut SqliteConnectio
 /// existed before the attachments were promoted, names those messages: an
 /// attachment above it was inserted by this promotion. The same goes for an
 /// existing message that took a later edit, which `_promote_edit_map`
-/// names: its index row holds the text the edit replaced.
+/// names: its index row holds the text the edit replaced, and for an
+/// existing message a staged row marks, whose mark
+/// `staging::promote_deletion_marks` may have changed.
+///
+/// An Unsent message is given no index row, as the sync triggers give it
+/// none (`fts_triggers_create.sql`): it shows none of its text, so a word of
+/// that text must not find it (#1758). A stored message this promotion marks
+/// Unsent loses its row here, and one whose Unsent mark becomes Deleted in
+/// the source app is written again.
 pub(crate) async fn index_messages_fts_from_promote_map(
     conn: &mut SqliteConnection,
     min_new_message_id: i64,
@@ -404,6 +412,10 @@ pub(crate) async fn index_messages_fts_from_promote_map(
             WHERE id > $2 AND message_id <= $1
             UNION
             SELECT prod_id FROM _promote_edit_map
+            UNION
+            SELECT pm.prod_id FROM _promote_msg_map pm
+            JOIN staging_messages sm ON sm.id = pm.staging_id
+            WHERE sm.deletion IS NOT NULL AND pm.prod_id <= $1
         )
         ",
     )
@@ -432,8 +444,13 @@ pub(crate) async fn index_messages_fts_from_promote_map(
             SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1
             UNION
             SELECT prod_id FROM _promote_edit_map
+            UNION
+            SELECT pm.prod_id FROM _promote_msg_map pm
+            JOIN staging_messages sm ON sm.id = pm.staging_id
+            WHERE sm.deletion IS NOT NULL AND pm.prod_id <= $1
         ) mm
         JOIN messages m ON m.id = mm.prod_id
+        WHERE m.deletion IS NOT 'unsent'
         ",
     )
     .bind(min_new_message_id)
