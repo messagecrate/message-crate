@@ -902,7 +902,7 @@ mod out_dir_tests {
         // clean an exported directory, so an export that staged into one would
         // leave the run directory behind.
         let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("pulled");
+        let out = dir.path().join("exported");
 
         prepare_out_dir(&out, false).unwrap();
 
@@ -926,7 +926,7 @@ mod out_dir_tests {
     fn runs_again_over_a_directory_it_already_prepared() {
         // A second export into the same directory is a later Export Run over it.
         let dir = tempfile::tempdir().unwrap();
-        let out = dir.path().join("pulled");
+        let out = dir.path().join("exported");
 
         prepare_out_dir(&out, false).unwrap();
         prepare_out_dir(&out, false).unwrap();

@@ -300,7 +300,7 @@ fn an_export_records_one_run_and_writes_the_conversation_and_every_asset_once_ac
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     let report = run(&config(&out, server.base_url()), None).unwrap();
 
@@ -371,7 +371,7 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
     let _auth = mock_auth(&server);
     let (_create, complete) = mock_run(&server);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let climbing = "../escape.pdf";
     let _page = server.mock(|when, then| {
         when.method(GET)
@@ -432,7 +432,7 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
     let _auth = mock_auth(&server);
     let (_create, complete) = mock_run(&server);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let climbing = "../escape.pdf";
     let absolute = dir.path().join("absolute.png").display().to_string();
     let page = server.mock(|when, then| {
@@ -517,7 +517,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
     let _menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -538,7 +538,7 @@ fn a_second_run_over_the_same_directory_fetches_nothing_it_already_has() {
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = config(&out, server.base_url());
     run(&cfg, None).unwrap();
 
@@ -583,7 +583,7 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_exports_log() {
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = config(&out, server.base_url());
     run(&cfg, None).unwrap();
     let path = journal::journal_path(&out);
@@ -630,7 +630,7 @@ fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = config(&out, server.base_url());
     run(&cfg, None).unwrap();
     fs::remove_file(out.join("attachments/menu.pdf")).unwrap();
@@ -660,7 +660,7 @@ fn a_file_on_disk_the_journal_does_not_list_is_kept_and_counted_as_on_disk() {
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = config(&out, server.base_url());
     run(&cfg, None).unwrap();
     fs::remove_file(journal::journal_path(&out)).unwrap();
@@ -705,7 +705,7 @@ fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() 
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = config(&out, server.base_url());
     run(&cfg, None).unwrap();
     fs::remove_file(journal::journal_path(&out)).unwrap();
@@ -741,7 +741,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     let cancel = mock_cancel(&server);
     let (first, _second) = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = ExportConfig {
         cancel: Some(Arc::new(AtomicBool::new(true))),
         ..config(&out, server.base_url())
@@ -773,7 +773,7 @@ fn a_source_name_with_spaces_and_brackets_becomes_a_file_safe_suffix() {
     let _menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -819,7 +819,7 @@ fn two_groups_with_one_title_are_both_written() {
         }));
     });
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -855,7 +855,7 @@ fn skipping_attachments_writes_messages_without_files_or_fetches() {
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = ExportConfig {
         skip_attachments: true,
         ..config(&out, server.base_url())
@@ -885,7 +885,7 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
     let _menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = ExportConfig {
         query: " from:sam ".into(),
         ..config(&out, server.base_url())
@@ -943,7 +943,7 @@ fn a_query_for_the_conversations_list_names_that_list_in_the_scope() {
     let complete = mock_complete(&server);
     let _pages = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = ExportConfig {
         query: "messages:>100".into(),
         list: ExportQueryList::Conversations,
@@ -982,7 +982,7 @@ fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server(
     });
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     let error = run(&config(&out, server.base_url()), None).unwrap_err();
 
@@ -1018,7 +1018,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         b"<html><body>Sign in to continue</body></html>",
     );
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     let error = run(&config(&out, server.base_url()), None).unwrap_err();
 
@@ -1072,7 +1072,7 @@ fn a_scope_the_server_refuses_fails_the_run_with_the_servers_sentence() {
     });
     let (first, _second) = mock_pages(&server, "sms-backup-restore");
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
     let cfg = ExportConfig {
         query: "wibble:yes".into(),
         ..config(&out, server.base_url())
@@ -1112,7 +1112,7 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
     let _menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let _photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     let mut events = Vec::new();
     {
@@ -1205,7 +1205,7 @@ fn every_path_a_message_names_exists_after_an_export() {
     });
     let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -1227,7 +1227,7 @@ fn every_path_a_message_names_exists_after_an_export() {
 /// serializes them, is written with both in its `reactions`, each under the
 /// person who reacted, in the shape an import reads back.
 #[test]
-fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
+fn an_exported_message_keeps_its_reactions_under_each_reactor() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -1255,7 +1255,7 @@ fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
         }));
     });
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -1300,7 +1300,7 @@ fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
 /// are written with `deletion` set to the same mark, and left out for the
 /// last, in the shape an import reads back.
 #[test]
-fn a_pulled_message_keeps_its_deletion_mark() {
+fn an_exported_message_keeps_its_deletion_mark() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -1354,7 +1354,7 @@ fn a_pulled_message_keeps_its_deletion_mark() {
         }));
     });
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 
@@ -1384,7 +1384,7 @@ fn a_pulled_message_keeps_its_deletion_mark() {
 /// returns is written in the message's `edits` with its part, text and time,
 /// in the server's order, and the file reads back as the same versions.
 #[test]
-fn a_pulled_message_keeps_its_earlier_versions() {
+fn an_exported_message_keeps_its_earlier_versions() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -1412,7 +1412,7 @@ fn a_pulled_message_keeps_its_earlier_versions() {
         }));
     });
     let dir = tempdir().unwrap();
-    let out = dir.path().join("pulled");
+    let out = dir.path().join("exported");
 
     run(&config(&out, server.base_url()), None).unwrap();
 

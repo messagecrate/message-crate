@@ -379,7 +379,7 @@ async fn export_token(
         state,
         &format!("/v1/accounts/{}/api-tokens", account.account_id),
         &account.token,
-        serde_json::json!({ "label": "pull", "can_import": false, "can_export": true }),
+        serde_json::json!({ "label": "export", "can_import": false, "can_export": true }),
     )
     .await;
     (

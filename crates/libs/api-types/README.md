@@ -6,7 +6,7 @@ that writes them and the client crates that read them: `Message`,
 
 Two crates sit on either side of these shapes. While each kept its own copy,
 the two could disagree silently, and did — three defects shipped that way, each
-a pull that failed at runtime or quietly produced worse data. One definition
+an Export that failed at runtime or quietly produced worse data. One definition
 makes the compiler the check instead.
 
 `skip_serializing_if` and `default` come as a pair here and only as a pair: a

@@ -372,7 +372,7 @@ mod tests {
     /// compiler or the suite noticing: `handle: String` rejected `"handle": null` and aborted every
     /// Export Run of a conversation holding an address-less participant, and
     /// `conversation.service` read a field the server has never sent, so every
-    /// pulled message came out `IrService::Unknown`.
+    /// exported message came out `IrService::Unknown`.
     const EXPORT_PAGE_JSON: &str = r#"{
       "items": [
         {
@@ -644,8 +644,8 @@ mod tests {
         );
     }
 
-    /// A conversation of orphaned messages is pulled as one, so importing
-    /// the pulled file again does not make its key a person (#1095).
+    /// A conversation of orphaned messages is exported as one, so importing
+    /// the exported file again does not make its key a person (#1095).
     #[test]
     fn a_document_of_orphaned_messages_stays_orphaned() {
         let mut seed = seed_message_with_participant(Participant {
