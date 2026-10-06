@@ -22,6 +22,10 @@ pub fn conversation_key(msg: &Message) -> String {
 }
 
 /// Build one conversation document from a seed message and the mapped rows.
+///
+/// The document's backup date is the seed's `backup_taken_at`, which the
+/// Export Run sets to the newest of the conversation's messages
+/// ([`newest_backup_taken_at`]), or none when no message has one.
 pub fn build_document(
     source: &str,
     seed: &Message,
@@ -59,6 +63,10 @@ pub fn build_document(
             tool_version: env!("CARGO_PKG_VERSION").into(),
             owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
+            backup_taken_at_unix_ms: seed
+                .backup_taken_at
+                .as_deref()
+                .and_then(|at| parse_timestamp_unix_ms(at).ok()),
         },
         conversation: ConversationMeta {
             chat_identifier: seed.conversation.chat_identifier.clone(),
@@ -74,6 +82,16 @@ pub fn build_document(
         },
         messages,
         packaging_stem_suffix: None,
+    }
+}
+
+/// Keep on `seed` the newer of its own `backup_taken_at` and `msg`'s, so
+/// the conversation file says the newest backup any of its messages came
+/// from. Every stored time has one fixed RFC 3339 form, so the greater
+/// string is the later instant.
+pub fn newest_backup_taken_at(seed: &mut Message, msg: &Message) {
+    if msg.backup_taken_at > seed.backup_taken_at {
+        seed.backup_taken_at.clone_from(&msg.backup_taken_at);
     }
 }
 
@@ -617,6 +635,38 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
+    /// The file says the newest backup any of the conversation's messages
+    /// came from, and nothing when none of them says.
+    #[test]
+    fn a_document_says_the_newest_backup_its_messages_came_from() {
+        let participant = || Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        };
+        let mut seed = seed_message_with_participant(participant());
+        assert_eq!(
+            build_document("imessage", &seed, vec![])
+                .export
+                .backup_taken_at_unix_ms,
+            None
+        );
+
+        seed.backup_taken_at = Some("2026-09-01T10:00:00Z".into());
+        let mut newer = seed_message_with_participant(participant());
+        newer.backup_taken_at = Some("2026-09-30T18:45:12Z".into());
+        let undated = seed_message_with_participant(participant());
+        newest_backup_taken_at(&mut seed, &newer);
+        newest_backup_taken_at(&mut seed, &undated);
+        assert_eq!(
+            build_document("imessage", &seed, vec![])
+                .export
+                .backup_taken_at_unix_ms,
+            Some(1_790_793_912_000)
+        );
+    }
+
     /// Whether the conversation is a group comes from the server's
     /// `is_group`, never from reading `conversation_type` again.
     #[test]
@@ -727,6 +777,7 @@ mod tests {
             tapbacks: vec![],
             deletion: None,
             earlier_versions: Vec::new(),
+            backup_taken_at: None,
             matched_earlier_version: false,
         };
         let ir = to_ir_message(&msg, false).unwrap();
@@ -878,6 +929,7 @@ mod tests {
             tapbacks: vec![],
             deletion: None,
             earlier_versions: Vec::new(),
+            backup_taken_at: None,
             matched_earlier_version: false,
         }
     }

@@ -12,7 +12,7 @@ use crate::db::handles::{
     HandleIdCache, handle_type_of, upsert_handle_row, upsert_handle_row_cached,
 };
 use crate::db::staging::{
-    self as db_staging, StagingAttachment, StagingConversation, StagingEarlierVersion,
+    self as db_staging, StagedCopy, StagingAttachment, StagingConversation, StagingEarlierVersion,
     StagingMessage, StagingMessageKey, StagingTapback,
 };
 use crate::import_media;
@@ -367,6 +367,9 @@ struct StagedConversation {
     group_title: Option<String>,
     participants: Vec<StagedParticipant>,
     source: String,
+    /// When the backup the file was read from was made, in the form a
+    /// message's timestamp takes; `None` when the file does not say.
+    backup_taken_at: Option<String>,
 }
 
 impl StagedConversation {
@@ -384,6 +387,7 @@ impl StagedConversation {
                 .map(|p| (p.handle, p.name_alias, p.handle_type))
                 .collect(),
             source,
+            backup_taken_at: record.backup_taken_at,
         }
     }
 }
@@ -546,6 +550,12 @@ impl FileStaging<'_> {
         )
         .await?;
         counts.conversations = 1;
+        if let (Some(import_id), Some(backup_taken_at)) = (
+            self.stmts.import_id,
+            conversation.backup_taken_at.as_deref(),
+        ) {
+            crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
+        }
 
         for participant in conversation.participants {
             insert_participant(
@@ -589,8 +599,11 @@ impl FileStaging<'_> {
                 self.tx,
                 self.stmts,
                 &mut counts,
-                conversation_id,
-                &conversation.source,
+                StagedSource {
+                    conversation_id,
+                    source: &conversation.source,
+                    backup_taken_at: conversation.backup_taken_at.as_deref(),
+                },
                 self.opts.assets_dir,
                 chunk,
             )
@@ -821,21 +834,29 @@ struct PendingStagingMessage {
     sort_order: i64,
 }
 
+/// Where one conversation's message rows are staged from: its staging
+/// conversation, its source, and when its backup was made.
+#[derive(Clone, Copy)]
+struct StagedSource<'a> {
+    conversation_id: i64,
+    source: &'a str,
+    backup_taken_at: Option<&'a str>,
+}
+
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
 /// and earlier versions keyed by the ids returned.
 async fn flush_staging_message_chunk(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     counts: &mut ImportCounts,
-    conversation_id: i64,
-    source: &str,
+    staged_source: StagedSource<'_>,
     assets_dir: &Path,
     chunk: &[PendingStagingMessage],
 ) -> Result<()> {
     if chunk.is_empty() {
         return Ok(());
     }
-    let mut by_sort = insert_message_rows(tx, stmts, conversation_id, source, chunk).await?;
+    let mut by_sort = insert_message_rows(tx, stmts, staged_source, chunk).await?;
 
     let mut att_rows = Vec::new();
     let mut tap_rows = Vec::new();
@@ -872,47 +893,78 @@ async fn flush_staging_message_chunk(
     counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     db_staging::insert_earlier_versions(tx, &version_rows).await?;
     for row in copies {
-        add_staged_copy(tx, stmts, counts, source, assets_dir, row).await?;
+        add_staged_copy(tx, stmts, counts, staged_source, assets_dir, row).await?;
     }
     Ok(())
 }
 
 /// Give the message staged under `row`'s guid what `row`, another copy of
-/// it from the same import, adds: its text and earlier versions when it
-/// records a later edit, and the attachments and reactions the staged
-/// message does not hold yet. One import of two backups then stores what
-/// two separate imports of them store (#1806, #1837). The copy's deletion
-/// mark is not taken (#1741).
+/// it from the same import, adds, by the rules a later import of the copy
+/// would follow (`db::staging::promote_deletion_marks`,
+/// `db::staging::write_edit_map`): the attachments and reactions the staged
+/// message does not hold yet, and its mark and text as follows. When both
+/// backups have a date, a copy from a later backup gives its text, earlier
+/// versions and mark, mark or no mark, and one from an earlier or the same
+/// backup gives neither (#1741, #1804). When either has no date, the copy
+/// gives its text and earlier versions when it records a later edit, and
+/// its mark when it carries one. One import of two backups then stores
+/// what two separate imports of them store, in either file order (#1806,
+/// #1837).
 async fn add_staged_copy(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     counts: &mut ImportCounts,
-    source: &str,
+    staged_source: StagedSource<'_>,
     assets_dir: &Path,
     row: &PendingStagingMessage,
 ) -> Result<()> {
     if row.msg.earlier_versions.is_empty()
         && row.attachments.is_empty()
         && row.msg.tapbacks.is_empty()
+        && row.msg.deletion.is_none()
+        && staged_source.backup_taken_at.is_none()
     {
         return Ok(());
     }
     let key = StagingMessageKey {
         account_id: stmts.account_id,
-        source,
+        source: staged_source.source,
         guid: &row.msg.guid,
     };
     let staged = db_staging::staged_message_id(tx, key)
         .await?
         .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
-    if !row.msg.earlier_versions.is_empty() {
-        db_staging::take_later_staged_copy(
-            tx,
-            staged,
-            row.body.as_deref(),
-            &row.msg.earlier_versions,
-        )
-        .await?;
+    let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
+    match (staged_source.backup_taken_at, held_backup.as_deref()) {
+        (Some(copy_backup), Some(held_backup)) => {
+            if copy_backup > held_backup {
+                db_staging::take_staged_copy_from_later_backup(
+                    tx,
+                    staged,
+                    &StagedCopy {
+                        body: row.body.as_deref(),
+                        deletion: row.msg.deletion,
+                        versions: &row.msg.earlier_versions,
+                        backup_taken_at: copy_backup,
+                    },
+                )
+                .await?;
+            }
+        }
+        _ => {
+            if !row.msg.earlier_versions.is_empty() {
+                db_staging::take_later_staged_copy(
+                    tx,
+                    staged,
+                    row.body.as_deref(),
+                    &row.msg.earlier_versions,
+                )
+                .await?;
+            }
+            if let Some(deletion) = row.msg.deletion {
+                db_staging::add_staged_copy_mark(tx, staged, deletion).await?;
+            }
+        }
     }
     let att_rows: Vec<StagingAttachment> = row
         .attachments
@@ -933,16 +985,15 @@ async fn add_staged_copy(
 async fn insert_message_rows(
     tx: &mut SqliteConnection,
     stmts: &StagingInserts,
-    conversation_id: i64,
-    source: &str,
+    staged_source: StagedSource<'_>,
     chunk: &[PendingStagingMessage],
 ) -> Result<HashMap<i64, i64>> {
     let rows: Vec<StagingMessage<'_>> = chunk
         .iter()
         .map(|row| StagingMessage {
-            conversation_id,
+            conversation_id: staged_source.conversation_id,
             account_id: stmts.account_id,
-            source,
+            source: staged_source.source,
             guid: &row.msg.guid,
             timestamp: &row.msg.timestamp,
             is_from_me: row.msg.is_from_me as i64,
@@ -963,6 +1014,7 @@ async fn insert_message_rows(
             deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,
+            backup_taken_at: staged_source.backup_taken_at,
         })
         .collect();
     db_staging::insert_messages(tx, &rows).await

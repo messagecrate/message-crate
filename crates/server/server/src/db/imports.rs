@@ -200,6 +200,9 @@ pub struct ImportRow {
     pub source_fingerprint: Option<String>,
     /// Addresses the backup's device sent from (JSON array).
     pub source_identities: Option<String>,
+    /// When the backup the run read was made: the newest its conversation
+    /// files name, in the form a message's timestamp takes.
+    pub backup_taken_at: Option<String>,
 }
 
 /// Outcome fields written when a run completes.
@@ -448,7 +451,7 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, started_at, \
      finished_at, message_count, attachment_count, bytes_uploaded, duration_ms, parse_ms, \
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, run_dir, device_id, \
-     form_json, source_fingerprint, source_identities, dedupe";
+     form_json, source_fingerprint, source_identities, dedupe, backup_taken_at";
 
 /// Map one `imports` row by column position.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
@@ -491,7 +494,32 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
         source_fingerprint: row.try_get(21)?,
         source_identities: row.try_get(22)?,
         dedupe: row.try_get::<i64, _>(23)? != 0,
+        backup_taken_at: row.try_get(24)?,
     })
+}
+
+/// Record on the run `import_id` that one of its conversation files was read
+/// from a backup made at `backup_taken_at`, in the form a message's timestamp
+/// takes. The run keeps the newest such date, so a run that read two backups
+/// shows the later.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn note_backup_taken_at(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+    backup_taken_at: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE imports SET backup_taken_at = $2
+         WHERE id = $1 AND (backup_taken_at IS NULL OR backup_taken_at < $2)",
+    )
+    .bind(import_id)
+    .bind(backup_taken_at)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
 
 /// Load an import row owned by `account_id`, or error.
@@ -1238,7 +1266,8 @@ pub async fn detach_from_account(
     .await?;
     sqlx::query(
         "UPDATE imports SET username = $2, deletion_entry_id = $3, form_json = NULL, run_dir = NULL,
-                source_fingerprint = NULL, source_identities = NULL, summary_json = NULL
+                source_fingerprint = NULL, source_identities = NULL, summary_json = NULL,
+                backup_taken_at = NULL
          WHERE account_id = $1",
     )
     .bind(account_id)

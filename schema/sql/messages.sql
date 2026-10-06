@@ -94,7 +94,13 @@ CREATE TABLE IF NOT EXISTS messages (
     -- Points at the kept message when this row is a flagged duplicate.
     duplicate_of INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     -- Import run that inserted this row (`imports.id`).
-    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    -- When the backup that gave the message its deletion mark and text was
+    -- made, in the form timestamp holds; NULL when its file did not say. A
+    -- later import's copy from a later backup replaces both; one from an
+    -- earlier backup changes neither
+    -- (docs/architecture/contacts-identities-and-messages.md).
+    backup_taken_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_messages_conversation_timestamp

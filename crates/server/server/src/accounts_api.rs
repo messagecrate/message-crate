@@ -1301,9 +1301,9 @@ pub(crate) enum AccountImportRuns {
 #[serde(untagged)]
 pub(crate) enum AccountImportRun {
     /// The account's own run.
-    Own(ImportRun),
+    Own(Box<ImportRun>),
     /// Another account's run, as the owner reads it.
-    Owner(OwnerImportRun),
+    Owner(Box<OwnerImportRun>),
 }
 
 /// An account's Export Runs as its reader may see them: in full for the
@@ -1382,10 +1382,10 @@ pub(crate) async fn get_account_import(
             .await
             .map_err(ApiError::from)?;
         let run = crate::imports_api::owner_import_run(&mut conn, row).await?;
-        return Ok(Json(AccountImportRun::Owner(run)));
+        return Ok(Json(AccountImportRun::Owner(Box::new(run))));
     }
     let run = crate::imports_api::full_import_run(&mut conn, target, import_id).await?;
-    Ok(Json(AccountImportRun::Own(run)))
+    Ok(Json(AccountImportRun::Own(Box::new(run))))
 }
 
 /// An account's Export Runs as a page, newest first unless `sort` says

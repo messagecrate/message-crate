@@ -418,6 +418,11 @@ api_shape! {
         /// each part; `text` is the final version. Empty for a message never
         /// edited, or from a source that records no edits.
         pub earlier_versions: Vec<EarlierVersion>,
+        /// When the backup that gave the message its mark and text was made,
+        /// RFC 3339 in UTC with a `Z` suffix; `null` when the conversation
+        /// file did not say. Between two copies of one message from one
+        /// source, the copy from the later backup decides.
+        pub backup_taken_at: Option<String>,
         /// True in a Messages search answer (`GET /v1/messages` with `q`)
         /// when the message is a hit only because of its earlier versions:
         /// its final text alone does not match the query, and the versions
@@ -653,6 +658,7 @@ mod tests {
                 edited_at: Some("2023-12-31T23:59:00Z".into()),
                 matched: false,
             }],
+            backup_taken_at: Some("2024-01-02T08:00:00Z".into()),
             matched_earlier_version: false,
         };
 

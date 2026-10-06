@@ -1,0 +1,483 @@
+//! Two copies of one message from one source, from two backups of one
+//! phone: the copy from the later backup decides the message's mark and
+//! text, in one import in either file order and across imports in either
+//! order (#1924, #1741, #1804). A file without a backup date keeps the
+//! rules for files without one: marks add, and edits compare their times.
+
+use super::*;
+
+/// The earlier backup of the phone: 2026-09-01T10:00:00Z.
+const EARLIER_BACKUP: i64 = 1_788_256_800_000;
+/// The later backup of the phone: 2026-09-30T18:45:12Z.
+const LATER_BACKUP: i64 = 1_790_793_912_000;
+
+/// One backup's copy of the message `g-backup`.
+struct Copy<'a> {
+    /// When the backup was made, or `None` for a file that does not say.
+    backup: Option<i64>,
+    text: &'a str,
+    versions: &'a [EarlierVersion],
+    deletion: Option<Deletion>,
+}
+
+/// A conversation file holding `copy` as the one message `g-backup`,
+/// written to `name` under `dir`.
+fn backup_file(dir: &Path, name: &str, copy: &Copy<'_>) -> PathBuf {
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+    let header = match copy.backup {
+        Some(ms) => header.backup_taken_at(ms),
+        None => header,
+    };
+    let line = copy.versions.iter().cloned().fold(
+        message_line("g-backup", copy.text).sender("+15555550123"),
+        MessageLine::edit,
+    );
+    let line = match copy.deletion {
+        Some(deletion) => line.deletion(deletion),
+        None => line,
+    };
+    write_jsonl(dir, name, &format!("{header}\n{line}\n"))
+}
+
+/// What the server holds of `g-backup`: its text, its mark, its earlier
+/// versions as `(part_index, text)`, and its backup's date.
+#[derive(Debug, PartialEq)]
+struct Held {
+    text: String,
+    deletion: Option<String>,
+    versions: Vec<(i64, String)>,
+    backup_taken_at: Option<String>,
+}
+
+/// The [`Held`] of `g-backup` in the database at `db`.
+async fn held(db: &Path) -> Held {
+    let (_pool, mut conn) = open_verify(db).await;
+    let (text, deletion, backup_taken_at): (String, Option<String>, Option<String>) =
+        sqlx::query_as(
+            "SELECT body, deletion, backup_taken_at FROM messages WHERE guid = 'g-backup'",
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    let versions = sqlx::query_as(
+        "SELECT v.part_index, v.text FROM message_versions v
+         JOIN messages m ON m.id = v.message_id
+         WHERE m.guid = 'g-backup' ORDER BY v.id",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    Held {
+        text,
+        deletion,
+        versions,
+        backup_taken_at,
+    }
+}
+
+/// Import `files` into `db` in one import, appending to what it holds.
+async fn import(db: &Path, assets: &Path, root: &Path, files: &[PathBuf]) {
+    import_jsonl_files(db, files, &edit_options(assets, root, false))
+        .await
+        .unwrap();
+}
+
+/// What `files` give `g-backup`: imported in one import in the order
+/// given, in one import in the other order, one import after another in
+/// the order given, and one after another in the other order. The four
+/// must agree, so each is returned to compare.
+async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Held; 4] {
+    let assets = tmp.join("assets");
+    let [a, b] = files;
+    let mut out = Vec::new();
+    for (name, batches) in [
+        ("together", vec![vec![a.clone(), b.clone()]]),
+        ("together-reversed", vec![vec![b.clone(), a.clone()]]),
+        ("apart", vec![vec![a.clone()], vec![b.clone()]]),
+        ("apart-reversed", vec![vec![b.clone()], vec![a.clone()]]),
+    ] {
+        let db = tmp.join(format!("{label}-{name}.db"));
+        for batch in batches {
+            import(&db, &assets, tmp, &batch).await;
+        }
+        out.push(held(&db).await);
+    }
+    out.try_into().unwrap()
+}
+
+/// The stored date of [`LATER_BACKUP`], in the form a timestamp takes.
+const LATER_BACKUP_AT: &str = "2026-09-30T18:45:12Z";
+/// The stored date of [`EARLIER_BACKUP`].
+const EARLIER_BACKUP_AT: &str = "2026-09-01T10:00:00Z";
+
+/// Backup A marks the message Deleted in the source app; backup B, made
+/// later, after the person recovered it, does not. Whichever is imported
+/// first, and whether the two arrive in one import or two, the message
+/// is unmarked, and swapping the dates keeps the mark.
+#[tokio::test]
+async fn the_later_backup_decides_the_deletion_mark_in_every_order() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: i64, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup: Some(backup),
+                text: "recovered later",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let marked = file(
+        "marked-earlier.jsonl",
+        EARLIER_BACKUP,
+        Some(Deletion::DeletedInSourceApp),
+    );
+    let recovered = file("recovered-later.jsonl", LATER_BACKUP, None);
+    for held in every_order(tmp.path(), "recovered", [&marked, &recovered]).await {
+        assert_eq!(held.deletion, None, "{held:?}");
+        assert_eq!(held.backup_taken_at.as_deref(), Some(LATER_BACKUP_AT));
+    }
+
+    let marked = file(
+        "marked-later.jsonl",
+        LATER_BACKUP,
+        Some(Deletion::DeletedInSourceApp),
+    );
+    let unmarked = file("unmarked-earlier.jsonl", EARLIER_BACKUP, None);
+    for held in every_order(tmp.path(), "deleted", [&unmarked, &marked]).await {
+        assert_eq!(
+            held.deletion.as_deref(),
+            Some("deleted_in_source_app"),
+            "{held:?}"
+        );
+        assert_eq!(held.backup_taken_at.as_deref(), Some(LATER_BACKUP_AT));
+    }
+}
+
+/// The scenario of #1804: backup A lists part 1's earlier versions
+/// [x@t0, y@t100]; backup B, made later, after part 1 was unsent (which
+/// drops its versions) and part 0 was edited, lists part 0's [a@t0] only.
+/// B's newest version is older than A's, so the version times say A is
+/// later; the backups' dates say B, and B's text and versions are kept in
+/// every order. With the dates swapped, A's are.
+#[tokio::test]
+async fn the_later_backup_decides_the_text_whatever_the_version_times_say() {
+    let tmp = TempDir::new().unwrap();
+    let t0 = 1_426_183_462_000;
+    let a_versions = [edit_version(1, "x", t0), edit_version(1, "y", t0 + 100_000)];
+    let b_versions = [edit_version(0, "a", t0)];
+    let a = |backup| Copy {
+        backup: Some(backup),
+        text: "a z",
+        versions: &a_versions,
+        deletion: None,
+    };
+    let b = |backup| Copy {
+        backup: Some(backup),
+        text: "b",
+        versions: &b_versions,
+        deletion: None,
+    };
+
+    let a_earlier = backup_file(tmp.path(), "a-earlier.jsonl", &a(EARLIER_BACKUP));
+    let b_later = backup_file(tmp.path(), "b-later.jsonl", &b(LATER_BACKUP));
+    for held in every_order(tmp.path(), "b-later", [&a_earlier, &b_later]).await {
+        assert_eq!(
+            held,
+            Held {
+                text: "b".into(),
+                deletion: None,
+                versions: vec![(0, "a".into())],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            }
+        );
+    }
+
+    let a_later = backup_file(tmp.path(), "a-later.jsonl", &a(LATER_BACKUP));
+    let b_earlier = backup_file(tmp.path(), "b-earlier.jsonl", &b(EARLIER_BACKUP));
+    for held in every_order(tmp.path(), "a-later", [&a_later, &b_earlier]).await {
+        assert_eq!(
+            held,
+            Held {
+                text: "a z".into(),
+                deletion: None,
+                versions: vec![(1, "x".into()), (1, "y".into())],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            }
+        );
+    }
+}
+
+/// An append of the older backup after the newer one changes nothing:
+/// not the mark, not the text, not the earlier versions, not the date,
+/// even though the older copy carries a mark and lists more versions.
+#[tokio::test]
+async fn an_append_of_the_older_backup_after_the_newer_changes_nothing() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let db = tmp.path().join("messagecrate.db");
+    let t0 = 1_426_183_462_000;
+    let newer = backup_file(
+        tmp.path(),
+        "newer.jsonl",
+        &Copy {
+            backup: Some(LATER_BACKUP),
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: None,
+        },
+    );
+    let older = backup_file(
+        tmp.path(),
+        "older.jsonl",
+        &Copy {
+            backup: Some(EARLIER_BACKUP),
+            text: "see you at eight",
+            versions: &[
+                edit_version(0, "see you at six", t0),
+                edit_version(0, "see you at seven", t0 + 60_000),
+            ],
+            deletion: Some(Deletion::Unsent),
+        },
+    );
+    import(&db, &assets, tmp.path(), std::slice::from_ref(&newer)).await;
+    let before = held(&db).await;
+    assert_eq!(before.text, "see you at seven");
+    import(&db, &assets, tmp.path(), &[older]).await;
+    assert_eq!(held(&db).await, before);
+}
+
+/// Where either file has no backup date, the rules for files without one
+/// hold. In one import, a second file's mark is added and its edit is
+/// taken when its versions are newer; across imports, a file without the
+/// mark leaves it, and a stored message from an undated file keeps no date
+/// when a dated file later gives it nothing.
+#[tokio::test]
+async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
+    let tmp = TempDir::new().unwrap();
+    let t0 = 1_426_183_462_000;
+    let unmarked_undated = backup_file(
+        tmp.path(),
+        "unmarked-undated.jsonl",
+        &Copy {
+            backup: None,
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: None,
+        },
+    );
+    let marked_dated = backup_file(
+        tmp.path(),
+        "marked-dated.jsonl",
+        &Copy {
+            backup: Some(EARLIER_BACKUP),
+            text: "see you at six",
+            versions: &[],
+            deletion: Some(Deletion::Unsent),
+        },
+    );
+    // Undated against dated: the mark adds, and the copy with the later edit
+    // keeps its text, whichever is the dated one.
+    for held in every_order(tmp.path(), "mixed", [&unmarked_undated, &marked_dated]).await {
+        assert_eq!(held.deletion.as_deref(), Some("unsent"), "{held:?}");
+        assert_eq!(held.text, "see you at seven", "{held:?}");
+        assert_eq!(held.versions, vec![(0, "see you at six".into())]);
+    }
+
+    // Both undated, the mark in the second file of one import: the mark
+    // adds rather than being lost to the copy staged first.
+    let marked_undated = backup_file(
+        tmp.path(),
+        "marked-undated.jsonl",
+        &Copy {
+            backup: None,
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: Some(Deletion::DeletedInSourceApp),
+        },
+    );
+    for held in every_order(tmp.path(), "undated", [&unmarked_undated, &marked_undated]).await {
+        assert_eq!(
+            held.deletion.as_deref(),
+            Some("deleted_in_source_app"),
+            "{held:?}"
+        );
+        assert_eq!(held.backup_taken_at, None);
+    }
+}
+
+/// Two backups in one import give the message the later backup's text, and
+/// so the later backup's duplicate flag: with another source holding the
+/// later text, the dedupe hides one of the two, in either file order, and
+/// with the earlier text winning it would hide neither. The earlier backup's
+/// newest earlier version is the newer one, so the version times alone pick
+/// the earlier text.
+#[tokio::test]
+async fn the_later_backup_decides_the_duplicate_flag() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let t0 = 1_426_183_462_000;
+    let earlier = backup_file(
+        tmp.path(),
+        "earlier.jsonl",
+        &Copy {
+            backup: Some(EARLIER_BACKUP),
+            text: "see you at six",
+            versions: &[edit_version(1, "bring cake", t0 + 100_000)],
+            deletion: None,
+        },
+    );
+    let later = backup_file(
+        tmp.path(),
+        "later.jsonl",
+        &Copy {
+            backup: Some(LATER_BACKUP),
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: None,
+        },
+    );
+    let header =
+        conversation_header("sms-backup-restore", "+15555550123").participant("+15555550123", None);
+    let sms = write_jsonl(
+        tmp.path(),
+        "sms.jsonl",
+        &format!(
+            "{header}\n{}\n",
+            message_line("g-sms", "see you at seven")
+                .sender("+15555550123")
+                .sms()
+        ),
+    );
+    for (name, files) in [
+        ("earlier-first.db", [earlier.clone(), later.clone()]),
+        ("later-first.db", [later.clone(), earlier.clone()]),
+    ] {
+        let db = tmp.path().join(name);
+        let options = edit_options(&assets, tmp.path(), true);
+        import_jsonl_files(&db, &files, &options).await.unwrap();
+        let sms_options = ImportOptions::fixed(FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: tmp.path(),
+            mode: ImportMode::Append,
+            source: "sms-backup-restore",
+            account_id: TEST_ACCOUNT,
+            fill_content_keys: true,
+            import_id: None,
+        });
+        import_jsonl_files(&db, std::slice::from_ref(&sms), &sms_options)
+            .await
+            .unwrap();
+        let (_pool, mut conn) = open_verify(&db).await;
+        crate::dedupe::dedupe_cross_source(&mut conn, TEST_ACCOUNT, None, 2)
+            .await
+            .unwrap();
+        let hidden: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE duplicate_of IS NOT NULL")
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(
+            hidden, 1,
+            "{name}: the two copies of the later text are one"
+        );
+    }
+}
+
+/// The Import Run says when the backup it read was made: the newest date
+/// its files name, as `backup_taken_at`, and null for a run whose files
+/// name none.
+#[tokio::test]
+async fn the_import_run_says_when_its_backup_was_made() {
+    let (state, _fixture, token) = importer().await;
+    let batch = |backup: Option<i64>, guid: &str| {
+        let header =
+            conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+        let header = match backup {
+            Some(ms) => header.backup_taken_at(ms),
+            None => header,
+        };
+        format!(
+            "{header}\n{}\n",
+            message_line(guid, "hello").sender("+15555550123")
+        )
+    };
+    let run = |body: Vec<String>| {
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            let (_, created): (String, serde_json::Value) = post_created_json(
+                &state,
+                "/v1/imports",
+                &token,
+                serde_json::json!({ "source": "imessage", "mode": "append" }),
+            )
+            .await;
+            let id = created["id"].as_i64().unwrap();
+            assert_eq!(created["backup_taken_at"], serde_json::Value::Null);
+            for body in body {
+                let (status, text) = crate::test_support::post_raw(
+                    &state,
+                    &format!("/v1/imports/{id}/batches"),
+                    &token,
+                    "application/jsonl",
+                    body,
+                )
+                .await;
+                assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+            }
+            let read: serde_json::Value =
+                get_json(&state, &format!("/v1/imports/{id}"), &token).await;
+            let _: serde_json::Value = post_json(
+                &state,
+                &format!("/v1/imports/{id}/complete"),
+                &token,
+                serde_json::json!({ "status": "completed" }),
+            )
+            .await;
+            read["backup_taken_at"].clone()
+        }
+    };
+    assert_eq!(
+        run(vec![
+            batch(Some(LATER_BACKUP), "g-1"),
+            batch(Some(EARLIER_BACKUP), "g-2"),
+            batch(None, "g-3"),
+        ])
+        .await,
+        serde_json::json!(LATER_BACKUP_AT)
+    );
+    assert_eq!(
+        run(vec![batch(Some(EARLIER_BACKUP), "g-4")]).await,
+        serde_json::json!(EARLIER_BACKUP_AT)
+    );
+    assert_eq!(run(vec![batch(None, "g-5")]).await, serde_json::Value::Null);
+}
+
+/// A message read back through the API carries the date of the backup that
+/// decided it, which an Export Run writes back into the conversation file.
+#[tokio::test]
+async fn a_message_read_back_carries_its_backup_date() {
+    let (state, _fixture, token) = importer().await;
+    let header = conversation_header("imessage", "+15555550123")
+        .participant("+15555550123", None)
+        .backup_taken_at(LATER_BACKUP);
+    import_one_batch(
+        &state,
+        &token,
+        "imessage",
+        "append",
+        format!(
+            "{header}\n{}\n",
+            message_line("g-read", "hello").sender("+15555550123")
+        ),
+    )
+    .await;
+    let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+    assert_eq!(
+        page["items"][0]["backup_taken_at"],
+        serde_json::json!(LATER_BACKUP_AT)
+    );
+}

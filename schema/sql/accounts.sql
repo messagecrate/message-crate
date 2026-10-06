@@ -219,7 +219,11 @@ CREATE TABLE IF NOT EXISTS imports (
     -- Addresses the backup's device sent from (JSON array), read by the
     -- client before parsing. Lets a resumed Staging Review show the identity
     -- list without re-reading the backup.
-    source_identities TEXT
+    source_identities TEXT,
+    -- When the backup the run read was made, in the form messages.timestamp
+    -- holds: the newest its conversation files name. NULL until a file that
+    -- says is imported, and for a run whose files say nothing.
+    backup_taken_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_imports_account_started

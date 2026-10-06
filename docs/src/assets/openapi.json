@@ -15308,6 +15308,7 @@
           "contacts_new",
           "contacts_changed",
           "attachments_ms",
+          "backup_taken_at",
           "device_id",
           "duration_ms",
           "finished_at",
@@ -15331,6 +15332,13 @@
             ],
             "format": "int64",
             "description": "Time spent on attachments, when finished."
+          },
+          "backup_taken_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
           },
           "bytes_uploaded": {
             "type": "integer",
@@ -15712,6 +15720,7 @@
           "tapbacks",
           "earlier_versions",
           "matched_earlier_version",
+          "backup_taken_at",
           "deletion",
           "owner",
           "reply_to",
@@ -15727,6 +15736,13 @@
               "$ref": "#/components/schemas/Attachment"
             },
             "description": "Attachments on this message."
+          },
+          "backup_taken_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
           },
           "conversation": {
             "$ref": "#/components/schemas/MessageConversation",
@@ -17459,6 +17475,7 @@
                 "contacts_new",
                 "contacts_changed",
                 "attachments_ms",
+                "backup_taken_at",
                 "device_id",
                 "duration_ms",
                 "finished_at",
@@ -17482,6 +17499,13 @@
                   ],
                   "format": "int64",
                   "description": "Time spent on attachments, when finished."
+                },
+                "backup_taken_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "When the backup the run read was made, UTC: the newest date its\nconversation files name (`export.backup_taken_at_unix_ms`). Null until\na file that names one is imported, and for a run whose files name none."
                 },
                 "bytes_uploaded": {
                   "type": "integer",
@@ -17739,6 +17763,7 @@
                 "tapbacks",
                 "earlier_versions",
                 "matched_earlier_version",
+                "backup_taken_at",
                 "deletion",
                 "owner",
                 "reply_to",
@@ -17754,6 +17779,13 @@
                     "$ref": "#/components/schemas/Attachment"
                   },
                   "description": "Attachments on this message."
+                },
+                "backup_taken_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
                 },
                 "conversation": {
                   "$ref": "#/components/schemas/MessageConversation",
