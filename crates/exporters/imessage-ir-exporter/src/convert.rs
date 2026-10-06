@@ -509,19 +509,46 @@ impl NotDecrypted {
     const REASONS_NAMED: usize = 5;
 
     /// Note one attachment the program could not decrypt, and say why.
-    fn record(&mut self, options: &ExportOptions, path: &Path, reason: String) {
-        self.note(options, path, format!("could not be decrypted: {reason}"));
+    /// `conversation` names the conversation file the attachment's
+    /// conversation is written to, when the write queue writes it.
+    fn record(
+        &mut self,
+        options: &ExportOptions,
+        conversation: Option<&str>,
+        path: &Path,
+        reason: String,
+    ) {
+        self.note(
+            options,
+            conversation,
+            path,
+            format!("could not be decrypted: {reason}"),
+        );
     }
 
     /// Note one attachment and what happened to it, `what` following
     /// "Attachment <path> ", on the log and to the issue sink as it happens.
-    fn note(&mut self, options: &ExportOptions, path: &Path, what: String) {
+    ///
+    /// The row names `conversation`, the conversation file the write queue
+    /// is writing, because a resumed Staging skips that file once it is
+    /// written and never reads the attachment again: the desktop app keeps
+    /// the row apart until the file is written, and drops it when a resumed
+    /// Staging writes the file instead (#1688). `None` outside the write
+    /// queue, which no Import Run resumes.
+    fn note(
+        &mut self,
+        options: &ExportOptions,
+        conversation: Option<&str>,
+        path: &Path,
+        what: String,
+    ) {
         options.emit_log(format!("Attachment {} {what}", path.display()));
         options.emit_issue(RunIssue {
             kind: "error".into(),
             step: "attachments".into(),
             item: path.display().to_string(),
             reason: what.clone(),
+            conversation: conversation.map(str::to_string),
         });
         self.0.push((path.to_path_buf(), what));
     }
@@ -543,7 +570,8 @@ impl NotDecrypted {
 /// Read one attachment's bytes: through the program for an encrypted backup,
 /// straight from disk otherwise. Empty bytes mean the file is not there, and
 /// the reason is already on the log; an attachment the program could not
-/// decrypt is also noted in `not_decrypted`.
+/// decrypt is also noted in `not_decrypted`, under `conversation`, the
+/// conversation file the write queue is writing, if it is.
 ///
 /// # Errors
 ///
@@ -554,6 +582,7 @@ fn read_attachment(
     helper: &mut Helper,
     options: &ExportOptions,
     encrypted: bool,
+    conversation: Option<&str>,
     path: &Path,
     not_decrypted: &mut NotDecrypted,
 ) -> Result<Vec<u8>, LoadError> {
@@ -565,7 +594,7 @@ fn read_attachment(
             AttachmentFile::Ready { path } => path,
             AttachmentFile::Missing => return Ok(Vec::new()),
             AttachmentFile::Failed { reason } => {
-                not_decrypted.record(options, path, reason);
+                not_decrypted.record(options, conversation, path, reason);
                 return Ok(Vec::new());
             }
         };
@@ -580,6 +609,7 @@ fn read_attachment(
         return Ok(bytes.unwrap_or_else(|e| {
             not_decrypted.note(
                 options,
+                conversation,
                 path,
                 format!(
                     "was decrypted, but its copy at {} could not be read: {e}",
@@ -617,7 +647,7 @@ fn embed_attachment_bytes(
                 options.check_cancel()?;
                 let bytes = match loads.next() {
                     Some(AttachmentLoad::Path { path, .. }) => {
-                        read_attachment(helper, options, encrypted, &path, not_decrypted)?
+                        read_attachment(helper, options, encrypted, None, &path, not_decrypted)?
                     }
                     Some(AttachmentLoad::Bytes(bytes)) => bytes,
                     Some(AttachmentLoad::Missing) | None => Vec::new(),
@@ -766,9 +796,16 @@ fn drain_conversations(
         // The program decrypts one file at a time over one pipe, so the
         // drain runs on one writer. Decrypt-bound throughput would not have
         // parallelized well anyway.
-        let mut load = |source: &mut AttachmentSource| match source {
+        let mut load = |conversation: &str, source: &mut AttachmentSource| match source {
             AttachmentSource::Path(path) => {
-                let bytes = read_attachment(helper, options, true, path, not_decrypted)?;
+                let bytes = read_attachment(
+                    helper,
+                    options,
+                    true,
+                    Some(conversation),
+                    path,
+                    not_decrypted,
+                )?;
                 Ok((!bytes.is_empty()).then_some(bytes))
             }
             other => message_staging::load_attachment_source(other),
@@ -857,6 +894,7 @@ fn stage_attachments(
                         &mut helper.borrow_mut(),
                         options,
                         encrypted,
+                        None,
                         path,
                         not_decrypted,
                     )?;
@@ -933,7 +971,12 @@ mod tests {
         }));
 
         let mut not_decrypted = NotDecrypted::default();
-        not_decrypted.record(&options, Path::new("Library/SMS/a.jpg"), "bad key".into());
+        not_decrypted.record(
+            &options,
+            None,
+            Path::new("Library/SMS/a.jpg"),
+            "bad key".into(),
+        );
 
         assert_eq!(
             *lines.lock().unwrap(),

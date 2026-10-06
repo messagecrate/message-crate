@@ -103,6 +103,15 @@ pub struct RunIssue {
     pub item: String,
     /// Why, in one sentence; for a note, what the run did.
     pub reason: String,
+    /// The conversation file the row is about, by the name the write queue
+    /// announces it with ([`crate::ProgressEvent::FileWritten`]), for a row
+    /// recorded while the write queue writes that conversation. A resumed
+    /// Staging skips a conversation already written without reading it
+    /// again, so such a row is reported again only while its conversation
+    /// is not yet written. `None` for every other row, such as one recorded
+    /// while the run reads the backup, which every resumed run reads again
+    /// in full (#1688).
+    pub conversation: Option<String>,
 }
 
 /// The [`RunIssue::kind`] of a note: something the run did with an item that
@@ -275,6 +284,7 @@ impl ExportReport {
                 step: READ_STEP.into(),
                 item,
                 reason,
+                conversation: None,
             },
         );
     }

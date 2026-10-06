@@ -9,6 +9,13 @@
 //! whose conversation file it finds written to the end, and rewrites one
 //! whose file is empty or cut off.
 //!
+//! A skipped unit's attachments are not read again, so a row an exporter's
+//! loader recorded about one of them is never reported again. The loader is
+//! told which conversation file it loads for, so such a row names it, and
+//! the drain announces each file it writes or skips
+//! ([`ProgressEvent::FileWritten`]): the desktop app keeps a row apart until
+//! its conversation is written (#1688).
+//!
 //! Writers never transcode. Convert and compress stage the originals here and
 //! run afterwards, on their own and resumable, through [`transcode_staged`].
 //!
@@ -27,7 +34,7 @@ use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
-    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
+    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink, WriteStatus,
     attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
@@ -264,8 +271,28 @@ impl AttachmentTotals {
 /// What one unit did. Byte and file counts travel through the progress
 /// callback instead, into the drain's [`AttachmentTotals`].
 struct UnitOutcome {
+    /// The unit's conversation file, by name ([`conversation_file_name`]).
+    file: String,
     written: bool,
     attachments_saved: usize,
+}
+
+impl UnitOutcome {
+    /// Say that the drain finished with this unit's conversation file
+    /// ([`ProgressEvent::FileWritten`]).
+    fn announce(&self, progress: Option<&ProgressSink>) {
+        emit_progress(
+            progress,
+            ProgressEvent::FileWritten {
+                file: self.file.clone(),
+                status: if self.written {
+                    WriteStatus::Written
+                } else {
+                    WriteStatus::Skipped
+                },
+            },
+        );
+    }
 }
 
 /// A byte count as a signed number, for the difference between two of them.
@@ -275,9 +302,11 @@ fn signed(bytes: u64) -> i64 {
 
 /// Loads one attachment's bytes by source; `Ok(None)` or
 /// [`LoadError::Unreadable`] marks it missing, and [`LoadError::Fatal`]
-/// stops the drain.
+/// stops the drain. The first argument is the name of the conversation file
+/// the attachment's conversation is written to ([`ProgressEvent::FileWritten`]),
+/// for a row the loader records about the attachment to name (#1688).
 pub type AttachmentLoader<'a> =
-    dyn FnMut(&mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
+    dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
 /// Drain `units` with a caller-supplied loader.
 ///
@@ -328,6 +357,7 @@ pub fn drain_write_queue_with_loader(
         } else {
             report.conversations_skipped += 1;
         }
+        outcome.announce(progress);
         emit_progress(
             progress,
             ProgressEvent::Prepare {
@@ -416,7 +446,14 @@ pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> S
 
 /// The conversation file a unit is written to.
 fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
-    output_dir.join(format!("{}.jsonl", doc.filename_stem()))
+    output_dir.join(conversation_file_name(doc))
+}
+
+/// The name of the conversation file a unit is written to, without its
+/// directory: the name the Upload gives the file, and the one
+/// [`ProgressEvent::FileWritten`] and a loader's rows name it by.
+fn conversation_file_name(doc: &ConversationDocument) -> String {
+    format!("{}.jsonl", doc.filename_stem())
 }
 
 /// Whether a resumed run skips this conversation: an earlier run wrote its
@@ -525,7 +562,7 @@ pub fn drain_write_queue(
                     let Some(unit) = queue.lock().expect("write queue lock").pop_front() else {
                         return;
                     };
-                    let mut load = |source: &mut AttachmentSource| {
+                    let mut load = |_: &str, source: &mut AttachmentSource| {
                         // Name the file before the failure turns into a chip:
                         // otherwise a systemic problem (a revoked permission, a
                         // failing disk) reads as a run's worth of unexplained
@@ -557,6 +594,7 @@ pub fn drain_write_queue(
                             } else {
                                 skipped.fetch_add(1, Ordering::Relaxed);
                             }
+                            outcome.announce(progress);
                             let mut finished = units_done.lock().expect("write queue units done");
                             *finished += 1;
                             emit_progress(
@@ -747,7 +785,8 @@ fn write_one_unit(
     let attachment_count = attachments.len();
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
-    let path = conversation_file(output_dir, &doc);
+    let file = conversation_file_name(&doc);
+    let path = output_dir.join(&file);
     if written_by_an_earlier_run(output_dir, &doc, options.resume) {
         // Count its attachments and their bytes as done — progress describes
         // the whole import, not just this run's share of it — and load
@@ -758,6 +797,7 @@ fn write_one_unit(
             bytes_total_change: 0,
         });
         return Ok(UnitOutcome {
+            file,
             written: false,
             attachments_saved: 0,
         });
@@ -807,7 +847,7 @@ fn write_one_unit(
                 compress: options.compress.clone(),
             },
             |i| match sources.get_mut(i) {
-                Some(source) => load(source),
+                Some(source) => load(&file, source),
                 None => Ok(None),
             },
             |p| {
@@ -846,6 +886,7 @@ fn write_one_unit(
         .with_context(|| format!("write {}", path.display()))?;
 
     Ok(UnitOutcome {
+        file,
         written: true,
         attachments_saved,
     })

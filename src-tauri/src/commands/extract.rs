@@ -3,8 +3,10 @@
 //! `extract` starts the selected exporter on a background thread and returns
 //! immediately. Progress is sent back as Tauri events:
 //! `extract:log` (one human-readable log line), `extract:progress` (one
-//! typed [`ExtractProgressEvent`], mapped from the exporter's
-//! `ProgressEvent`), `extract:issue` (one row for the Import Run's record,
+//! typed [`ExtractProgressEvent`](events::ExtractProgressEvent), mapped from
+//! the exporter's `ProgressEvent`), `extract:file-written` (one
+//! conversation file the write queue finished, from the same
+//! `ProgressEvent`s), `extract:issue` (one row for the Import Run's record,
 //! sent the moment the exporter records it), `extract:finished` (a summary
 //! string or JSON object), and `extract:error` ([`ExtractErrorEvent`]).
 //!
@@ -18,7 +20,7 @@ use std::sync::{Arc, Mutex};
 use media::{CompressOptions, MaxResolution};
 use message_crate_core::{
     ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, LogSink, OutputFormat,
-    ProgressSink, RunResult, SourceConfig, WhatsappPlatform,
+    RunResult, SourceConfig, WhatsappPlatform,
 };
 use message_staging::TranscodeOptions;
 
@@ -32,7 +34,6 @@ use sms_backup_restore_exporter::run as run_sms_restore;
 use whatsapp_exporter::run as run_whatsapp;
 
 use super::events;
-use super::events::ExtractProgressEvent;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
 use super::paths::{logs_dir, scratch_dir};
@@ -206,14 +207,7 @@ pub fn extract(
     config.log = Some(LogSink::new(move |line: &str| {
         events::log_to_run(&log_app, &sink_log, line.to_string());
     }));
-    let progress_app = app_handle.clone();
-    config.progress = Some(ProgressSink::new(move |event| {
-        events::emit(
-            &progress_app,
-            events::PROGRESS,
-            ExtractProgressEvent::from(event),
-        );
-    }));
+    config.progress = Some(events::progress_sink(&app_handle));
     config.issues = Some(events::issue_sink(&app_handle));
 
     spawn_job(app, job, move || {

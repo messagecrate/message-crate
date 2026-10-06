@@ -238,6 +238,7 @@ fn note(item: &str, text: &str) -> RunIssue {
         step: "parse".into(),
         item: item.into(),
         reason: text.into(),
+        conversation: None,
     }
 }
 

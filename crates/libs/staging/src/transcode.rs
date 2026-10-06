@@ -862,6 +862,8 @@ fn media_issue(
         step: "media".into(),
         item: format!("{conversation}:{item_rel}"),
         reason: format!("{name} {what}"),
+        // Media rows are settled by a `resolved` row, not by their conversation.
+        conversation: None,
     }
 }
 

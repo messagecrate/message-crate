@@ -109,10 +109,12 @@ export interface ImportIssueEvent {
   item: string;
   reason: string;
   /**
-   * The conversation file an Upload row is about; it is the `item` too when
-   * the row is about the whole conversation. A resumed Upload reads again
-   * only the conversations not yet on the server, so this says which rows a
-   * resume reports again. Absent on the other stages' rows.
+   * The conversation file the row is about. An Upload row has it, and it is
+   * the `item` too when the row is about the whole conversation: a resumed
+   * Upload reads again only the conversations not yet on the server. A
+   * Staging row recorded while Staging writes a conversation has it too: a
+   * resumed Staging reads again only the conversations not yet written. So
+   * this says which rows a resume reports again. Absent on every other row.
    */
   conversation?: string;
 }
@@ -132,3 +134,17 @@ export interface ImportFileDoneEvent {
  * or `cancelled` from its report, for one a stop left unsent.
  */
 export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";
+
+/**
+ * Staging's write queue finished with one conversation file
+ * (`extract:file-written`): `written` wrote it now, `skipped` found an
+ * earlier part of the run had written it to the end and did not read it
+ * again.
+ */
+export interface ImportFileWrittenEvent {
+  file: string;
+  status: "written" | "skipped";
+}
+
+/** What Staging said of one conversation file: an `ImportFileWrittenEvent` status. */
+export type StagedStatus = ImportFileWrittenEvent["status"];
