@@ -1962,8 +1962,7 @@ mod kind_words {
     /// one person's and the one that names nobody, and `kind:direct` and
     /// `kind:group` list neither (#1095). On Contacts it finds the person, the
     /// participant of their orphaned conversation. Their keys are no text to
-    /// match, though every title now says "Orphaned" (#1778); their titles
-    /// are.
+    /// match; their titles are, and every title says "Orphaned" (#1778).
     #[tokio::test]
     async fn kind_orphaned_is_neither_direct_nor_group() {
         let (pool, _dir, f) = seeded().await;

@@ -440,7 +440,7 @@ Name, `none`.
 
 Choice: `direct`, `group`, `orphaned`.
 
-- **Contacts**: one of the contact's conversations is of this kind. The sender of orphaned messages is the participant of their orphaned conversation, so `kind:orphaned` finds them.
+- **Contacts**: one of the contact's conversations is of this kind. The person an orphaned conversation names is its participant, so `kind:orphaned` finds them.
 - **Conversations**: `direct` is a one-to-one conversation, one with a single other person; `group` is a group conversation, one the source app keeps as a group; `orphaned` is a conversation of Orphaned messages, which is neither (#1095). Each conversation is of exactly one kind, so `kind:direct` and `kind:group` never list an orphaned one.
 - **Messages**: the message's conversation is.
 

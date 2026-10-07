@@ -1328,13 +1328,17 @@ mod tests {
             if let Some(handle_id) = handle_id {
                 message.handle_id = Some(handle_id);
             }
-            resolve_context(&session, &message).conversation
+            resolve_context(&session, &message)
         };
 
-        // Message 2 is sent; handle 2 is Robin at FRIEND_EMAIL.
-        let sent_to_robin = orphaned(1, Some(2));
+        // Message 2 is sent; handle 2 is Robin at FRIEND_EMAIL. Reading the
+        // handle places the row with Robin without making Robin its sender.
+        let sent = orphaned(1, Some(2));
+        assert!(sent.is_from_me);
+        assert_eq!(sent.sender_identity, None);
+        let sent_to_robin = sent.conversation;
         // Message 3 is received from Robin.
-        let from_robin = orphaned(2, None);
+        let from_robin = orphaned(2, None).conversation;
         for robin in [&sent_to_robin, &from_robin] {
             assert_eq!(robin.chat_identifier, format!("orphaned:{FRIEND_EMAIL}"));
             assert_eq!(robin.conversation_type, "orphaned");
@@ -1344,15 +1348,17 @@ mod tests {
 
         // Message 2 sent with handle 0, message 9 received with handle 0,
         // and message 11 received from the owner's own handle.
-        for nobody in [orphaned(1, None), orphaned(8, None), orphaned(10, None)] {
+        for nobody in [orphaned(1, None), orphaned(8, None), orphaned(10, None)]
+            .map(|context| context.conversation)
+        {
             assert_eq!(nobody.chat_identifier, "orphaned:");
             assert_eq!(nobody.conversation_type, "orphaned");
             assert!(nobody.participants.is_empty());
         }
     }
 
-    /// A row whose chat is gone lands in its sender's orphaned conversation,
-    /// and one whose service is unknown is SMS or MMS by its attachments.
+    /// A row whose chat is gone lands in the orphaned conversation of the
+    /// person it names, and one whose service is unknown is SMS or MMS by its attachments.
     #[test]
     fn an_orphaned_row_and_a_non_imessage_row_are_classified() {
         let fixture = FixtureDb::write();

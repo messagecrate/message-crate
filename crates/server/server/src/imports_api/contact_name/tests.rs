@@ -368,15 +368,11 @@ async fn assert_imported_as_three_orphaned_conversations(
 
     assert_eq!(
         listed_conversations(conn, account_id, "kind:orphaned").await,
-        [
-            (Some("Ada · Orphaned"), vec!["+15555550154"]),
-            (Some("Bob · Orphaned"), vec!["+15555550155"]),
-            (Some("Orphaned · Unknown person"), vec![]),
-        ]
-        .map(|(label, people)| (
-            label.map(str::to_string),
-            people.into_iter().map(str::to_string).collect::<Vec<_>>()
-        ))
+        expected_orphaned([
+            ("Ada · Orphaned", "+15555550154"),
+            ("Bob · Orphaned", "+15555550155"),
+            ("Orphaned · Unknown person", ""),
+        ])
     );
     assert_eq!(
         listed_conversations(conn, account_id, "kind:direct").await,
@@ -387,6 +383,22 @@ async fn assert_imported_as_three_orphaned_conversations(
         listed_conversations(conn, account_id, "kind:group").await,
         []
     );
+}
+
+/// The three orphaned conversations as `listed_conversations` gives them:
+/// each a title and its one person's identity, or no identity for the
+/// conversation that names nobody.
+fn expected_orphaned(people: [(&str, &str); 3]) -> [(Option<String>, Vec<String>); 3] {
+    people.map(|(label, person)| {
+        (
+            Some(label.to_string()),
+            if person.is_empty() {
+                vec![]
+            } else {
+                vec![person.to_string()]
+            },
+        )
+    })
 }
 
 /// The conversations `q` lists, as (title, participant identities), by title.
@@ -525,7 +537,7 @@ async fn orphaned_messages_make_one_conversation_per_person_and_one_naming_nobod
 
 /// The same backup through the HTTP batch path, where every file is
 /// `_import.jsonl`, imports the same way: no conversation key becomes a
-/// person, and reading an orphaned conversation shows its sender alone
+/// person, and reading an orphaned conversation shows its person alone
 /// (#1169, S1-2).
 #[tokio::test]
 async fn the_orphaned_conversation_over_http_is_not_a_person() {
@@ -576,7 +588,7 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
             ("Bob · Orphaned", "+15555550155"),
         ]
         .map(|(label, people)| (label.to_string(), people.to_string())),
-        "reading each orphaned conversation shows its sender alone, and no key"
+        "reading each orphaned conversation shows its person alone, and no key"
     );
 }
 
@@ -592,21 +604,9 @@ async fn an_orphaned_title_follows_its_person_s_contact_name() {
         &[("backup.jsonl", backup_with_orphaned_messages())],
     )
     .await;
-    let titles = |people: [(&str, &str); 3]| {
-        people.map(|(label, person)| {
-            (
-                Some(label.to_string()),
-                if person.is_empty() {
-                    vec![]
-                } else {
-                    vec![person.to_string()]
-                },
-            )
-        })
-    };
     assert_eq!(
         listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
-        titles([
+        expected_orphaned([
             ("Ada · Orphaned", "+15555550154"),
             ("Bob · Orphaned", "+15555550155"),
             ("Orphaned · Unknown person", ""),
@@ -626,7 +626,7 @@ async fn an_orphaned_title_follows_its_person_s_contact_name() {
     .unwrap();
     assert_eq!(
         listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
-        titles([
+        expected_orphaned([
             ("Ada Lovelace · Orphaned", "+15555550154"),
             ("Bob · Orphaned", "+15555550155"),
             ("Orphaned · Unknown person", ""),
