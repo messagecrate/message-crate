@@ -28,7 +28,21 @@
     "messages_fts",
     "account_handles",
     "handles",
-    "account_session_tokens"
+    "account_session_tokens",
+    "audit_entries",
+    "demo_account_build",
+    "export_messages",
+    "exports",
+    "import_contacts",
+    "import_notes",
+    "message_versions",
+    "message_versions_fts",
+    "message_versions_fts_config",
+    "message_versions_fts_data",
+    "message_versions_fts_docsize",
+    "message_versions_fts_idx",
+    "server_settings",
+    "staging_message_versions"
   ],
   "indexes": [
     "ix_imports_account_started",
@@ -57,7 +71,21 @@
     "ix_handles_normalized",
     "ix_participants_handle_id",
     "ix_account_api_tokens_account",
-    "ux_imports_active_account"
+    "ux_imports_active_account",
+    "ix_audit_entries_account_at",
+    "ix_audit_entries_at",
+    "ix_audit_entries_deletion",
+    "ix_audit_entries_session",
+    "ix_export_messages_message",
+    "ix_exports_account_started",
+    "ix_import_contacts_contact",
+    "ix_import_notes_import",
+    "ix_message_versions_message_id",
+    "ix_messages_account_timestamp",
+    "ix_messages_owner_handle_id",
+    "ix_messages_reply_to",
+    "ix_messages_sender_timestamp",
+    "ix_staging_message_versions_message_id"
   ],
   "triggers": [
     "messages_fts_ai",
@@ -65,7 +93,10 @@
     "messages_fts_au",
     "attachments_fts_ai",
     "attachments_fts_ad",
-    "attachments_fts_au"
+    "attachments_fts_au",
+    "message_versions_fts_ad",
+    "message_versions_fts_ai",
+    "message_versions_fts_au"
   ],
   "metadata": [
     "messages_fts_triggers_v1"

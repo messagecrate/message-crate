@@ -6,7 +6,7 @@ import Database from "better-sqlite3";
 
 import { ensureVaultSchema } from "./vaultSchema";
 
-const ACCOUNT_ID = "11111111-1111-1111-1111-111111111111";
+const ACCOUNT_ID = 101;
 
 function columns(db: Database.Database, table: string): string[] {
   return (
@@ -53,15 +53,22 @@ describe("fresh vault schema", () => {
     assert.deepEqual(columns(db, "accounts"), [
       "id",
       "username",
-      "read_only",
       "password_hash",
       "preferred_name",
-      "hanko_user_id",
+      "time_zone",
+      "disabled",
+      "must_set_up_profile",
+      "can_import",
+      "can_export",
+      "can_delete",
+      "last_login_at",
     ]);
     assert.deepEqual(columns(db, "contacts"), [
       "id",
       "account_id",
       "preferred_name",
+      "origin",
+      "created_at",
       "last_modified",
     ]);
     assert.deepEqual(columns(db, "handles"), [
@@ -72,6 +79,9 @@ describe("fresh vault schema", () => {
       "normalized_note",
       "handle_type",
       "service",
+      "origin",
+      "created_at",
+      "last_modified",
     ]);
     for (const column of ["account_id", "source", "content_key", "duplicate_of"]) {
       assert.ok(columns(db, "messages").includes(column));
@@ -101,20 +111,6 @@ describe("fresh vault schema", () => {
     }
 
     ensureVaultSchema(db);
-    db.close();
-  });
-
-  it("defaults fresh accounts to writable", () => {
-    const db = new Database(":memory:");
-    ensureVaultSchema(db);
-    db.prepare(`INSERT INTO accounts (id, username) VALUES (?, ?)`).run(
-      ACCOUNT_ID,
-      "fresh",
-    );
-    const row = db
-      .prepare(`SELECT read_only FROM accounts WHERE id = ?`)
-      .get(ACCOUNT_ID) as { read_only: number };
-    assert.equal(row.read_only, 0);
     db.close();
   });
 
@@ -149,9 +145,9 @@ describe("fresh vault schema", () => {
     const message = db
       .prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body
-         ) VALUES (?, ?, 'sms', 'g1', '2020-01-01T00:00:00Z', 0, 0, ?)`,
+         ) VALUES (?, ?, 'sms', 'g1', '2020-01-01T00:00:00Z', 'seconds', 0, 0, ?)`,
       )
       .run(conversationId, ACCOUNT_ID, "hello vault");
     db.prepare(

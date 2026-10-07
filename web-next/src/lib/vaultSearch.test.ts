@@ -59,14 +59,14 @@ describe("vault search + FTS", () => {
       const insertConv = db.prepare(
         `INSERT INTO conversations (
            account_id, chat_handle_id, conversation_type,
-           group_title, exported_at, source_file
-         ) VALUES (?, ?, 'individual', NULL, NULL, 't.json')`,
+           group_title, source_file
+         ) VALUES (?, ?, 'individual', NULL, 't.json')`,
       );
       const insertMsg = db.prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body, subject
-         ) VALUES (?, ?, 'imessage', ?, ?, 0, 0, ?, NULL)`,
+         ) VALUES (?, ?, 'imessage', ?, ?, 'seconds', 0, 0, ?, NULL)`,
       );
       const insertContact = db.prepare(
         `INSERT INTO contacts (account_id, preferred_name) VALUES (?, ?)`,
@@ -207,8 +207,8 @@ describe("vault search + FTS", () => {
           .prepare(
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
-               group_title, exported_at, source_file
-             ) VALUES (?, ?, 'group', 'Kumquat Crew', NULL, 't.json')`,
+               group_title, source_file
+             ) VALUES (?, ?, 'group', 'Kumquat Crew', 't.json')`,
           )
           .run(accountId, resolveHandle("chat-kumquat", "other")).lastInsertRowid,
       );

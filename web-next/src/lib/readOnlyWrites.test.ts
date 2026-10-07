@@ -70,8 +70,8 @@ describe("read-only web vault mutations", () => {
         .prepare(
           `INSERT INTO conversations (
              account_id, chat_handle_id, conversation_type,
-             group_title, exported_at, source_file
-           ) VALUES (?, ?, 'group', 'Friends', NULL, 't.json')`,
+             group_title, source_file
+           ) VALUES (?, ?, 'group', 'Friends', 't.json')`,
         )
         .run(accountId, handleId);
       return Number(result.lastInsertRowid);
