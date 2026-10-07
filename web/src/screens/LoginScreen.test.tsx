@@ -198,22 +198,26 @@ describe("LoginScreen", () => {
     expect(screen.queryByRole("button", { name: "Explore Demo Account" })).not.toBeInTheDocument();
   });
 
-  it("names the product and reports the connection as one word", async () => {
+  it("names the product and the server the card is connected to", async () => {
     stubServer();
     renderScreen();
 
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    // A blank address is the website's own origin, named by host and port.
+    const origin = new URL(window.location.origin);
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      new RegExp(`^Connected to ${origin.hostname}:${origin.port || "80"}$`),
+    );
     expect(screen.getByRole("heading", { name: "Message Crate" })).toBeInTheDocument();
     expect(setServer).toHaveBeenCalledWith("");
   });
 
-  it("never shows the server's host address", async () => {
+  it("names a server on another computer by host and port, without the scheme", async () => {
+    authState.serverUrl = "http://192.168.1.20:9000";
     stubServer();
     renderScreen();
 
-    await screen.findByText("Connected");
-    expect(screen.queryByText(/127\.0\.0\.1/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/localhost/)).not.toBeInTheDocument();
+    expect(await screen.findByText("Connected to 192.168.1.20:9000")).toBeInTheDocument();
+    expect(screen.queryByText(/http:\/\/192\.168\.1\.20/)).not.toBeInTheDocument();
   });
 
   it("keeps both tabs, Login first", async () => {
@@ -270,7 +274,7 @@ describe("LoginScreen", () => {
     stubNoServer();
     renderScreen();
 
-    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect(await screen.findByText(/^Disconnected from /)).toBeInTheDocument();
     // The address field belongs to the settings screen now, not the card.
     expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
   });
@@ -281,7 +285,7 @@ describe("LoginScreen", () => {
     stubNoServer();
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
     expect(screen.queryByTestId("auth-form-skeleton")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log in" })).toBeDisabled();
     // No server has said it takes new accounts, so the card does not offer one.
@@ -293,7 +297,7 @@ describe("LoginScreen", () => {
     serveAt(() => "silent");
     renderScreen();
 
-    await screen.findByText("Connecting");
+    await screen.findByText(/^Connecting to /);
     expect(screen.getByTestId("auth-form-skeleton")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Log in" })).not.toBeInTheDocument();
   });
@@ -306,7 +310,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    expect(await screen.findByText("Connecting")).toBeInTheDocument();
+    expect(await screen.findByText(/^Connecting to /)).toBeInTheDocument();
     const link = screen.getByRole("button", { name: "Change server address" });
     expect(link).toBeEnabled();
 
@@ -318,7 +322,7 @@ describe("LoginScreen", () => {
     stubNoServer();
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
     expect(screen.getByRole("button", { name: "Change server address" })).toBeEnabled();
   });
 
@@ -332,7 +336,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    await screen.findByText("Connected");
+    await screen.findByText(/^Connected to /);
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -347,7 +351,7 @@ describe("LoginScreen", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 600));
     });
-    expect(screen.getByRole("status")).toHaveTextContent("Connected");
+    expect(screen.getByRole("status")).toHaveTextContent("Connected to crate-a.example:8080");
     expect(screen.getByRole("button", { name: "Log in" })).toBeEnabled();
     expect(setServer).not.toHaveBeenCalledWith(B);
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith(B);
@@ -360,7 +364,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -380,7 +384,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    await screen.findByText("Connected");
+    await screen.findByText(/^Connected to /);
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     const field = screen.getByRole("textbox", { name: "Address" });
@@ -448,7 +452,7 @@ describe("LoginScreen", () => {
     await fill(user, field, "http://127.0.0.1:9999");
     await user.click(screen.getByRole("button", { name: "Test" }));
 
-    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect(await screen.findByText(/^Disconnected from /)).toBeInTheDocument();
     // Testing does not commit the address: the card is still connected behind.
     expect(setServer).not.toHaveBeenCalledWith("http://127.0.0.1:9999");
   });
@@ -469,10 +473,10 @@ describe("LoginScreen", () => {
     await fill(user, field, "http://127.0.0.1:9999");
     // Typed but never tried: the card is still connected behind this screen,
     // but not to what is in the box.
-    expect(screen.getByRole("status")).toHaveTextContent("Not tested");
+    expect(screen.getByRole("status")).toHaveTextContent("Not tested: 127.0.0.1:9999");
 
     await user.click(screen.getByRole("button", { name: "Test" }));
-    expect(await screen.findByText("Disconnected")).toBeInTheDocument();
+    expect(await screen.findByText("Disconnected from 127.0.0.1:9999")).toBeInTheDocument();
 
     // Editing after a failed test clears that answer without inventing a
     // better one. A green here would say the typed address works.
@@ -485,7 +489,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
     await user.click(screen.getByRole("button", { name: "Change server address" }));
 
     // Only the address being typed answers healthy — the disconnected card's
@@ -530,7 +534,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
-    expect(await screen.findByText("Connecting")).toBeInTheDocument();
+    expect(await screen.findByText(/^Connecting to /)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
@@ -564,14 +568,14 @@ describe("LoginScreen", () => {
     serveAt(() => (healthy ? { state: "open" } : "down"));
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
 
     healthy = true;
 
     expect(
       await screen.findByRole("tab", { name: "Login" }, { timeout: 3000 }),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
   });
 
   it("tries the saved login again once the server is healthy again", async () => {
@@ -580,7 +584,7 @@ describe("LoginScreen", () => {
     retrySavedLogin.mockClear();
     renderScreen();
 
-    await screen.findByText("Disconnected");
+    await screen.findByText(/^Disconnected from /);
     expect(retrySavedLogin).not.toHaveBeenCalled();
 
     healthy = true;
@@ -822,7 +826,7 @@ describe("LoginScreen", () => {
     await waitFor(() => expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080"), {
       timeout: 3000,
     });
-    expect(await screen.findByText("Connected")).toBeInTheDocument();
+    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith("http://crate.example:8080");
   });
 
