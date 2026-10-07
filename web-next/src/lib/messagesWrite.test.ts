@@ -58,8 +58,8 @@ describe("deleteAllMessagesForAccount", () => {
           .prepare(
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
-               group_title, exported_at, source_file
-             ) VALUES (?, ?, 'individual', NULL, NULL, 'test.json')`,
+               group_title, source_file
+             ) VALUES (?, ?, 'individual', NULL, 'test.json')`,
           )
           .run(accountId, handleId).lastInsertRowid,
       );
@@ -67,10 +67,10 @@ describe("deleteAllMessagesForAccount", () => {
         db
           .prepare(
             `INSERT INTO messages (
-               conversation_id, account_id, source, guid, timestamp,
+               conversation_id, account_id, source, guid, timestamp, time_precision,
                is_from_me, sort_order, body, subject
              ) VALUES (?, ?, 'imessage', 'delete-attachment-guid',
-                       '2025-01-01T00:00:00Z', 0, 0, 'photo', NULL)`,
+                       '2025-01-01T00:00:00Z', 'seconds', 0, 0, 'photo', NULL)`,
           )
           .run(conversationId, accountId).lastInsertRowid,
       );

@@ -3,7 +3,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { setContactsLabelMembership } from "@/lib/contactsWrite";
-import { mutationErrorStatus } from "@/lib/owner";
 import { NextResponse } from "next/server";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
@@ -44,7 +43,7 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : "update failed";
     return NextResponse.json(
       { error: message },
-      { status: mutationErrorStatus(message, 500) },
+      { status: 500 },
     );
   }
 }

@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import { listContacts } from "./contactsRead";
 import { ensureUnknownContacts } from "./contactsWrite";
 import { dbPath } from "./paths";
@@ -33,16 +33,15 @@ describe("unknown contact backfill", () => {
       phone: OWNER_PHONE,
     });
     accountId = account.id;
-    saveAccount(accountId, { read_only: false });
 
     const db = new Database(dbPath());
     try {
       ensureVaultSchema(db);
       const insertMsg = db.prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body, subject
-         ) VALUES (?, ?, 'imessage', ?, ?, 0, 0, ?, NULL)`,
+         ) VALUES (?, ?, 'imessage', ?, ?, 'seconds', 0, 0, ?, NULL)`,
       );
       const resolveHandle = (raw: string, handleType = "phone"): number => {
         db.prepare(
@@ -65,8 +64,8 @@ describe("unknown contact backfill", () => {
           .prepare(
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
-               group_title, exported_at, source_file
-             ) VALUES (?, ?, 'group', 'Crew', NULL, 't.json')`,
+               group_title, source_file
+             ) VALUES (?, ?, 'group', 'Crew', 't.json')`,
           )
           .run(accountId, resolveHandle("chat-crew", "other")).lastInsertRowid,
       );
@@ -85,8 +84,8 @@ describe("unknown contact backfill", () => {
           .prepare(
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
-               group_title, exported_at, source_file
-             ) VALUES (?, ?, 'individual', NULL, NULL, 't.json')`,
+               group_title, source_file
+             ) VALUES (?, ?, 'individual', NULL, 't.json')`,
           )
           .run(accountId, resolveHandle(DIRECT_PHONE)).lastInsertRowid,
       );

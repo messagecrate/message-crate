@@ -3,49 +3,40 @@ import { describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { setMessageTrashInDb } from "./messageTrashWrite";
+import { ensureVaultSchema } from "./vaultSchema";
+
+const ACCOUNT_A = "101";
 
 function testDb(): Database.Database {
   const db = new Database(":memory:");
+  ensureVaultSchema(db);
   db.exec(`
-    CREATE TABLE accounts (id TEXT PRIMARY KEY);
-    CREATE TABLE conversations (
-      id INTEGER PRIMARY KEY,
-      account_id TEXT NOT NULL,
-      conversation_type TEXT NOT NULL
-    );
-    CREATE TABLE contacts (
-      id INTEGER PRIMARY KEY,
-      account_id TEXT NOT NULL
-    );
-    CREATE TABLE contact_handles (
-      account_id TEXT NOT NULL,
-      handle TEXT NOT NULL,
-      contact_id INTEGER NOT NULL,
-      PRIMARY KEY (account_id, handle)
-    );
-    CREATE TABLE trashed_handles (
-      account_id TEXT NOT NULL,
-      handle TEXT NOT NULL,
-      trashed_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (account_id, handle)
-    );
-    CREATE TABLE trashed_conversations (
-      account_id TEXT NOT NULL,
-      conversation_id INTEGER NOT NULL,
-      trashed_at TEXT NOT NULL DEFAULT (datetime('now')),
-      PRIMARY KEY (account_id, conversation_id)
-    );
-    INSERT INTO accounts (id) VALUES ('account-a'), ('account-b');
-    INSERT INTO contacts (id, account_id) VALUES (10, 'account-a');
-    INSERT INTO contact_handles (account_id, handle, contact_id)
-      VALUES ('account-a', '+15555550123', 10);
-    INSERT INTO conversations (id, account_id, conversation_type)
+    INSERT INTO accounts (id, username) VALUES (101, 'a'), (102, 'b');
+    INSERT INTO handles (id, account_id, raw, normalized, handle_type, service)
       VALUES
-        (20, 'account-a', 'group'),
-        (21, 'account-a', 'individual'),
-        (30, 'account-b', 'group');
+        (1, 101, '+15555550123', '+15555550123', 'phone', 'phone'),
+        (2, 101, 'chat-group', 'chat-group', 'other', 'phone'),
+        (3, 102, 'chat-other', 'chat-other', 'other', 'phone'),
+        (4, 101, '+15555550199', '+15555550199', 'phone', 'phone');
+    INSERT INTO contacts (id, account_id, preferred_name) VALUES (10, 101, 'Pat');
+    INSERT INTO contact_handles (account_id, handle_id, contact_id)
+      VALUES (101, 1, 10);
+    INSERT INTO conversations (id, account_id, chat_handle_id, conversation_type, source_file)
+      VALUES
+        (20, 101, 2, 'group', 't.json'),
+        (21, 101, 1, 'individual', 't.json'),
+        (30, 102, 3, 'group', 't.json');
   `);
   return db;
+}
+
+function trashedConversationIds(db: Database.Database): number[] {
+  return db
+    .prepare(
+      `SELECT conversation_id FROM trashed_conversations ORDER BY conversation_id`,
+    )
+    .pluck()
+    .all() as number[];
 }
 
 describe("mixed message trash writes", () => {
@@ -56,7 +47,7 @@ describe("mixed message trash writes", () => {
         handles: [" +15555550123 ", "+15555550123"],
         conversationIds: [20, 20],
       };
-      const trashed = setMessageTrashInDb(db, targets, true, "account-a");
+      const trashed = setMessageTrashInDb(db, targets, true, ACCOUNT_A);
       assert.deepEqual(trashed, {
         handles: ["+15555550123"],
         conversationIds: [20],
@@ -70,37 +61,12 @@ describe("mixed message trash writes", () => {
         ).n,
         1,
       );
-      assert.equal(
-        (
-          db.prepare(`SELECT COUNT(*) AS n FROM trashed_handles`).get() as {
-            n: number;
-          }
-        ).n,
-        1,
-      );
-      assert.equal(
-        (
-          db
-            .prepare(`SELECT COUNT(*) AS n FROM trashed_conversations`)
-            .get() as { n: number }
-        ).n,
-        1,
-      );
+      // The handle's 1:1 conversation (21) and the group (20) are in the trash.
+      assert.deepEqual(trashedConversationIds(db), [20, 21]);
 
-      const restored = setMessageTrashInDb(db, targets, false, "account-a");
+      const restored = setMessageTrashInDb(db, targets, false, ACCOUNT_A);
       assert.equal(restored.count, 2);
-      assert.equal(
-        (
-          db
-            .prepare(
-              `SELECT
-                 (SELECT COUNT(*) FROM trashed_handles) +
-                 (SELECT COUNT(*) FROM trashed_conversations) AS n`,
-            )
-            .get() as { n: number }
-        ).n,
-        0,
-      );
+      assert.deepEqual(trashedConversationIds(db), []);
     } finally {
       db.close();
     }
@@ -118,26 +84,33 @@ describe("mixed message trash writes", () => {
               conversationIds: [21, 30],
             },
             true,
-            "account-a",
+            ACCOUNT_A,
           ),
         /group conversation 21 not found/,
       );
-      assert.equal(
-        (
-          db.prepare(`SELECT COUNT(*) AS n FROM trashed_handles`).get() as {
-            n: number;
-          }
-        ).n,
-        0,
+      assert.deepEqual(trashedConversationIds(db), []);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses the whole batch when a handle has no 1:1 conversation", () => {
+    const db = testDb();
+    try {
+      assert.throws(
+        () =>
+          setMessageTrashInDb(
+            db,
+            {
+              handles: ["+15555550123", "+15555550199"],
+              conversationIds: [20],
+            },
+            true,
+            ACCOUNT_A,
+          ),
+        /nothing to trash: no one-to-one conversation for \+15555550199/,
       );
-      assert.equal(
-        (
-          db
-            .prepare(`SELECT COUNT(*) AS n FROM trashed_conversations`)
-            .get() as { n: number }
-        ).n,
-        0,
-      );
+      assert.deepEqual(trashedConversationIds(db), []);
     } finally {
       db.close();
     }

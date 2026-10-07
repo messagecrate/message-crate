@@ -27,7 +27,6 @@ export function BrowseContactList({
   onToggleSelectAll,
   onNewContact,
   onImportVcf,
-  vaultReadOnly = false,
   labelsMenu,
   onEdit,
   editDisabled = false,
@@ -55,7 +54,6 @@ export function BrowseContactList({
   onNewContact: (anchorEl: HTMLElement) => void;
   /** Upload a .vcf and import contacts (Contacts section). */
   onImportVcf?: (file: File) => Promise<void>;
-  vaultReadOnly?: boolean;
   /** Icon-only LabelsMenu element rendered first in the toolbar cluster. */
   labelsMenu?: ReactNode;
   onEdit?: (anchorEl: HTMLElement) => void;
@@ -178,9 +176,9 @@ export function BrowseContactList({
           </span>
         </label>
         <div className="flex shrink-0 items-center gap-1.5 overflow-visible">
-          {!vaultReadOnly && labelsMenu}
+          {labelsMenu}
           <SortByMenu sort={sort} order={sortOrder} onChange={onSortChange} />
-          <ListHistoryMenu items={vaultReadOnly ? [] : menuItems} />
+          <ListHistoryMenu items={menuItems} />
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">

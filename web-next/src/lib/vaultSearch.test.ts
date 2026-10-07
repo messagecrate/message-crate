@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import { resetDb } from "./dbCore";
 import {
   searchConversationMatches,
@@ -35,9 +35,6 @@ describe("vault search + FTS", () => {
       phone: "+15555550100",
     });
     accountId = account.id;
-    assert.equal(account.read_only, false);
-    const locked = saveAccount(accountId, { read_only: true });
-    assert.equal(locked.read_only, true);
 
     const db = new Database(dbPath());
     try {
@@ -59,14 +56,14 @@ describe("vault search + FTS", () => {
       const insertConv = db.prepare(
         `INSERT INTO conversations (
            account_id, chat_handle_id, conversation_type,
-           group_title, exported_at, source_file
-         ) VALUES (?, ?, 'individual', NULL, NULL, 't.json')`,
+           group_title, source_file
+         ) VALUES (?, ?, 'individual', NULL, 't.json')`,
       );
       const insertMsg = db.prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body, subject
-         ) VALUES (?, ?, 'imessage', ?, ?, 0, 0, ?, NULL)`,
+         ) VALUES (?, ?, 'imessage', ?, ?, 'seconds', 0, 0, ?, NULL)`,
       );
       const insertContact = db.prepare(
         `INSERT INTO contacts (account_id, preferred_name) VALUES (?, ?)`,
@@ -84,19 +81,19 @@ describe("vault search + FTS", () => {
       };
       const addToLabel = (contactId: number, label: string) => {
         db.prepare(
-          `INSERT OR IGNORE INTO contact_labels (account_id, name) VALUES (?, ?)`,
+          `INSERT OR IGNORE INTO contact_groups (account_id, name) VALUES (?, ?)`,
         ).run(accountId, label);
         const labelId = Number(
           (
             db
               .prepare(
-                `SELECT id FROM contact_labels WHERE account_id = ? AND name = ?`,
+                `SELECT id FROM contact_groups WHERE account_id = ? AND name = ?`,
               )
               .get(accountId, label) as { id: number }
           ).id,
         );
         db.prepare(
-          `INSERT OR IGNORE INTO contact_label_members (contact_id, label_id)
+          `INSERT OR IGNORE INTO contact_group_members (contact_id, group_id)
            VALUES (?, ?)`,
         ).run(contactId, labelId);
       };
@@ -207,8 +204,8 @@ describe("vault search + FTS", () => {
           .prepare(
             `INSERT INTO conversations (
                account_id, chat_handle_id, conversation_type,
-               group_title, exported_at, source_file
-             ) VALUES (?, ?, 'group', 'Kumquat Crew', NULL, 't.json')`,
+               group_title, source_file
+             ) VALUES (?, ?, 'group', 'Kumquat Crew', 't.json')`,
           )
           .run(accountId, resolveHandle("chat-kumquat", "other")).lastInsertRowid,
       );
@@ -338,14 +335,6 @@ describe("vault search + FTS", () => {
 
       const small = searchVault("smaller:1K filetype:document");
       assert.equal(small.totalConversations, 0);
-    });
-  });
-
-  it("still searches after unlocking", () => {
-    saveAccount(accountId, { read_only: false });
-    runWithAccount(accountId, () => {
-      const result = searchVault("pineapple");
-      assert.ok(result.totalConversations >= 1);
     });
   });
 

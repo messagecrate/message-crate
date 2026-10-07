@@ -7,7 +7,6 @@ import {
   trashMessageThreads,
   type MessageTrashTargets,
 } from "@/lib/messageTrashWrite";
-import { mutationErrorStatus } from "@/lib/owner";
 import { NextResponse } from "next/server";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
@@ -77,10 +76,7 @@ async function mutate(req: Request, restore: boolean): Promise<NextResponse> {
     return NextResponse.json(
       { error: message },
       {
-        status: mutationErrorStatus(
-          message,
-          message.includes("not found") ? 404 : 400,
-        ),
+        status: message.includes("not found") ? 404 : 400,
       },
     );
   }

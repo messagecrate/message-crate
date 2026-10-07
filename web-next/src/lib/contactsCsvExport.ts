@@ -42,8 +42,8 @@ export function exportContactsCsvFromDb(
        ORDER BY h.raw`,
     );
     const labelStmt = db.prepare(
-      `SELECT cl.name FROM contact_label_members clm
-       JOIN contact_labels cl ON cl.id = clm.label_id
+      `SELECT cl.name FROM contact_group_members clm
+       JOIN contact_groups cl ON cl.id = clm.group_id
        WHERE clm.contact_id = ? AND cl.account_id = ?
        ORDER BY cl.name COLLATE NOCASE`,
     );

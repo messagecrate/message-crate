@@ -4,7 +4,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
 export const runtime = "nodejs";
@@ -49,16 +48,13 @@ export async function POST(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "merge failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found") ||
-        message.includes("cannot merge") ||
-        message.includes("only nameless") ||
-        message.includes("must have a name") ||
-        message.includes("already belongs")
-        ? 400
-        : 500,
-    );
+    const status = message.includes("not found") ||
+      message.includes("cannot merge") ||
+      message.includes("only nameless") ||
+      message.includes("must have a name") ||
+      message.includes("already belongs")
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

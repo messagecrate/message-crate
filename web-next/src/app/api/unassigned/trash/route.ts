@@ -10,7 +10,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { isHandleType } from "../../contacts/handles-body";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
@@ -67,7 +66,7 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : "trash failed";
     return NextResponse.json(
       { error: message },
-      { status: mutationErrorStatus(message, 400) },
+      { status: 400 },
     );
   }
 }
@@ -112,7 +111,7 @@ export async function DELETE(req: Request) {
           : "restore failed";
     return NextResponse.json(
       { error: message },
-      { status: mutationErrorStatus(message, 400) },
+      { status: 400 },
     );
   }
 }

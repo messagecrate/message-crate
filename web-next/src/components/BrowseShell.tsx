@@ -22,12 +22,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { useVaultReadOnly } from "./useVaultReadOnly";
 import { useVaultSearch } from "./useVaultSearch";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { SearchConversationHit, SearchMessageHit } from "@/lib/search";
 import { parseSearchQuery } from "@/lib/searchQuery";
-import { settingsLinkFromLocation } from "@/lib/settingsNav";
 import { isDeletionUiBlocked, isDeletionUiEnabled } from "@/lib/v1Capabilities";
 import { ThreadFindBar } from "./ThreadFindBar";
 import { useThreadFind } from "./useThreadFind";
@@ -120,7 +118,6 @@ export function BrowseShell({
   allLabels?: string[];
   initialContactId: number | null;
 }) {
-  const vaultReadOnly = useVaultReadOnly() === true;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -564,11 +561,6 @@ export function BrowseShell({
     );
     setActiveThread("search-selection");
   }, [selectedSearchGroups]);
-
-  const unlockVaultToEdit = useCallback(() => {
-    setCtxMenu(null);
-    router.push(settingsLinkFromLocation(pathname, searchParams));
-  }, [router, pathname, searchParams]);
 
   const { sorted, grouped } = useBrowseContactListView({
     sortedRaw,
@@ -1202,7 +1194,6 @@ export function BrowseShell({
   }, [contactSection]);
 
   const participantForm = useParticipantContactForm({
-    vaultReadOnly,
     knownLabels: allLabels,
     createDefaults,
     setStatus: setStatusMsg,
@@ -1366,11 +1357,10 @@ export function BrowseShell({
 
   const onContactNameClick = useCallback(
     (anchorRect: DOMRect) => {
-      if (vaultReadOnly || saving || contactSaving || formOpen) return;
+      if (saving || contactSaving || formOpen) return;
       beginContactEdit(contactFormAnchorFromRect(anchorRect));
     },
     [
-      vaultReadOnly,
       saving,
       contactSaving,
       formOpen,
@@ -1403,10 +1393,9 @@ export function BrowseShell({
 
   const openCreateContactInPlace = useCallback(
     (handle: string, anchor: ContactFormAnchor) => {
-      if (vaultReadOnly) return;
       participantForm.openCreateContactWithHandle(handle, anchor);
     },
-    [vaultReadOnly, participantForm.openCreateContactWithHandle],
+    [participantForm.openCreateContactWithHandle],
   );
 
   const canDelete =
@@ -1416,7 +1405,7 @@ export function BrowseShell({
 
   const executeSearchMessageTrash = useCallback(async () => {
     if (isDeletionUiBlocked()) return;
-    if (selectedSearchGroups.length === 0 || vaultReadOnly) return;
+    if (selectedSearchGroups.length === 0) return;
     const directGroups = selectedSearchGroups.filter(
       (group) => group.conversationType === "individual",
     );
@@ -1481,7 +1470,6 @@ export function BrowseShell({
     }
   }, [
     selectedSearchGroups,
-    vaultReadOnly,
     pushHistory,
     vaultSearch,
     router,
@@ -1686,7 +1674,7 @@ export function BrowseShell({
 
   const runMergeInto = useCallback(
     async (intoId: number) => {
-      if (mergeFromId == null || vaultReadOnly || isDeletionUiBlocked()) return;
+      if (mergeFromId == null || isDeletionUiBlocked()) return;
       setSaving(true);
       try {
         const res = await fetch("/api/contacts/merge", {
@@ -1716,7 +1704,6 @@ export function BrowseShell({
     },
     [
       mergeFromId,
-      vaultReadOnly,
       queueStatusMessage,
       selectContact,
       router,
@@ -1906,11 +1893,10 @@ export function BrowseShell({
 
   const onGroupParticipantClick = useCallback(
     (participant: GroupParticipant, anchorRect: DOMRect) => {
-      if (vaultReadOnly || saving || contactSaving) return;
+      if (saving || contactSaving) return;
       participantForm.onParticipantClick(participant, anchorRect);
     },
     [
-      vaultReadOnly,
       saving,
       contactSaving,
       participantForm.onParticipantClick,
@@ -1925,7 +1911,6 @@ export function BrowseShell({
 
   const onImportVcf = useCallback(
     async (file: File) => {
-      if (vaultReadOnly) return;
       const body = new FormData();
       body.set("file", file);
       body.set("mode", "preview");
@@ -1946,7 +1931,7 @@ export function BrowseShell({
         );
       }
     },
-    [vaultReadOnly, queueStatusMessage],
+    [queueStatusMessage],
   );
 
   const onExportContactsCsv = useCallback(() => {
@@ -1962,7 +1947,7 @@ export function BrowseShell({
 
   const onConfirmVcfImport = useCallback(
     async (mappings: VcfCategoryMapping[]) => {
-      if (!vcfPreview || vaultReadOnly) return;
+      if (!vcfPreview) return;
       setVcfCommitting(true);
       const body = new FormData();
       body.set("file", vcfPreview.file);
@@ -2009,7 +1994,7 @@ export function BrowseShell({
         setVcfCommitting(false);
       }
     },
-    [vcfPreview, vaultReadOnly, queueStatusMessage, router],
+    [vcfPreview, queueStatusMessage, router],
   );
 
   const groupTrashTargets = useCallback(
@@ -2042,7 +2027,6 @@ export function BrowseShell({
 
   const canTrashGroups =
     isDeletionUiEnabled() &&
-    !vaultReadOnly &&
     (hasGroupSelection || selectedGroupConversationId != null);
 
   const browseGroupTrash = useMemo(
@@ -2146,9 +2130,8 @@ export function BrowseShell({
               contactFormAnchorFromRect(el.getBoundingClientRect()),
             )
           }
-          onImportVcf={vaultReadOnly ? undefined : onImportVcf}
+          onImportVcf={onImportVcf}
           onExportContactsCsv={onExportContactsCsv}
-          vaultReadOnly={vaultReadOnly}
           onLabels={(el) => {
             const rect = el.getBoundingClientRect();
             setToolbarLabelsPos({
@@ -2342,7 +2325,6 @@ export function BrowseShell({
           onSearchContactContextMenu={openContactCtxMenu}
           onSearchResultContextMenu={openSearchResultCtxMenu}
           onDeleteSearchResults={() => void executeSearchMessageTrash()}
-          onUnlockVault={unlockVaultToEdit}
           onDirectClick={openDirectThread}
           directActive={activeThread === "dm"}
           emptyGroupsLabel={
@@ -2366,7 +2348,6 @@ export function BrowseShell({
           paneStorageKey={paneStorageKey}
           detail={detail}
           groupThread={groupThread}
-          vaultReadOnly={vaultReadOnly}
           statusMsg={statusMsg}
           contactId={contactId}
           activeThread={activeThread}
@@ -2477,7 +2458,6 @@ export function BrowseShell({
               : undefined
           }
           onParticipantClick={onGroupParticipantClick}
-          vaultReadOnly={vaultReadOnly}
         />
       </Panel>
     </Group>
@@ -2485,7 +2465,6 @@ export function BrowseShell({
       <BrowseContactCtxMenu
         menuRef={ctxMenuRef}
         ctxMenu={ctxMenu}
-        vaultReadOnly={vaultReadOnly}
         saving={saving}
         groupTrashSaving={groupTrashSaving}
         hasSelection={hasSelection}
@@ -2511,7 +2490,6 @@ export function BrowseShell({
         onLabelsEnter={openCtxLabels}
         onLabelsLeave={scheduleCloseLabelsPanel}
         onDelete={onCtxDelete}
-        onUnlockVault={unlockVaultToEdit}
       />
     )}
     {searchResultCtxMenu && (
@@ -2520,10 +2498,8 @@ export function BrowseShell({
         x={searchResultCtxMenu.x}
         y={searchResultCtxMenu.y}
         count={selectedSearchResultKeys.size}
-        vaultReadOnly={vaultReadOnly}
         saving={saving}
         onDelete={() => void executeSearchMessageTrash()}
-        onUnlockVault={unlockVaultToEdit}
       />
     )}
     {mergeFromId != null && mergePos && (

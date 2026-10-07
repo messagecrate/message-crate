@@ -43,10 +43,7 @@ export type SettingsAccount = {
   username: string;
   emails: Array<{ email: string; isPrimary: boolean }>;
   noPassword: boolean;
-  hankoLinked: boolean;
-  hideLocalPassword: boolean;
   hasApiToken: boolean;
-  readOnly: boolean;
   isDemo: boolean;
   isAdmin: boolean;
   preferredName: string | null;
@@ -61,10 +58,7 @@ export async function settingsAccount(): Promise<SettingsAccount> {
     username: profile.username,
     emails: profile.emails.map((email, i) => ({ email, isPrimary: i === 0 })),
     noPassword: false,
-    hankoLinked: false,
-    hideLocalPassword: false,
     hasApiToken: false,
-    readOnly: false,
     isDemo: profile.is_demo,
     isAdmin: profile.is_admin,
     preferredName: profile.preferred_name ?? null,

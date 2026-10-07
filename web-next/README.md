@@ -61,6 +61,6 @@ The SQL implementation the app used before (`src/lib/*Read.ts`, `dbCore.ts`,
 in the tree and no longer called from the read path. Undo and redo are not
 features of this app; the history engine under `src/components/history/`
 is unwired. Screens whose data the API does not expose (transcoded media,
-display preferences, unassigned handles, contact CSV export, demo reset,
-Hanko login) show a "no /v1 route" notice or answer 501. The gap list lives in
+display preferences, unassigned handles, contact CSV export, demo reset)
+show a "no /v1 route" notice or answer 501. The gap list lives in
 the repository's issue tracker.
