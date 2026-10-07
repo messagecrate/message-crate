@@ -18,7 +18,6 @@ import {
 } from "./reservedLabels";
 import {
   assertNotOwnerHandle,
-  assertVaultWritable,
   ownerHandleMatcher,
 } from "./owner";
 import {
@@ -113,7 +112,6 @@ function contactHasName(contact: ContactDetail): boolean {
 
 /** Insert a new contact in SQLite; returns the contact. */
 export function createContact(input: ContactCreate): ContactDetail {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const preferredName = resolvePreferredName(input);
   if (!preferredName) {
@@ -175,7 +173,7 @@ export function createContact(input: ContactCreate): ContactDetail {
 
       if (labels.length > 0) {
         const insertMember = writeDb.prepare(
-          `INSERT OR IGNORE INTO contact_label_members (contact_id, label_id) VALUES (?, ?)`,
+          `INSERT OR IGNORE INTO contact_group_members (contact_id, group_id) VALUES (?, ?)`,
         );
         for (const name of labels) {
           const groupId = ensureLabelId(writeDb, name, accountId);
@@ -204,10 +202,10 @@ function ensureLabelId(
 ): number {
   assertAllowedLabelName(name);
   db.prepare(
-    `INSERT OR IGNORE INTO contact_labels (account_id, name) VALUES (?, ?)`,
+    `INSERT OR IGNORE INTO contact_groups (account_id, name) VALUES (?, ?)`,
   ).run(accountId, name);
   const row = db
-    .prepare(`SELECT id FROM contact_labels WHERE account_id = ? AND name = ?`)
+    .prepare(`SELECT id FROM contact_groups WHERE account_id = ? AND name = ?`)
     .get(accountId, name) as { id: number } | undefined;
   if (!row) throw new Error(`failed to ensure label ${name}`);
   return row.id;
@@ -219,7 +217,7 @@ function findLabelId(
   accountId: string,
 ): number | null {
   const row = db
-    .prepare(`SELECT id FROM contact_labels WHERE account_id = ? AND name = ?`)
+    .prepare(`SELECT id FROM contact_groups WHERE account_id = ? AND name = ?`)
     .get(accountId, name) as { id: number } | undefined;
   return row?.id ?? null;
 }
@@ -230,7 +228,6 @@ export function setContactsLabelMembership(
   name: string,
   enable: boolean,
 ): number {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const ids = [
     ...new Set(contactIds.filter((id) => Number.isFinite(id) && id > 0)),
@@ -253,15 +250,15 @@ export function setContactsLabelMembership(
         : findLabelId(writeDb, label, accountId);
       if (labelId == null) return;
       const insert = writeDb.prepare(
-        `INSERT OR IGNORE INTO contact_label_members (contact_id, label_id)
+        `INSERT OR IGNORE INTO contact_group_members (contact_id, group_id)
          SELECT id, ? FROM contacts WHERE id = ? AND account_id = ?`,
       );
       const remove = writeDb.prepare(
-        `DELETE FROM contact_label_members
-         WHERE contact_id = ? AND label_id = ?
+        `DELETE FROM contact_group_members
+         WHERE contact_id = ? AND group_id = ?
            AND EXISTS (
              SELECT 1 FROM contacts
-             WHERE contacts.id = contact_label_members.contact_id
+             WHERE contacts.id = contact_group_members.contact_id
                AND contacts.account_id = ?
            )`,
       );
@@ -287,7 +284,6 @@ export function setContactsLabelMembership(
 
 
 export function createLabel(name: string): string {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("name required");
@@ -297,14 +293,14 @@ export function createLabel(name: string): string {
   try {
     const existing = writeDb
       .prepare(
-        `SELECT name FROM contact_labels WHERE account_id = ? AND name = ? COLLATE NOCASE`,
+        `SELECT name FROM contact_groups WHERE account_id = ? AND name = ? COLLATE NOCASE`,
       )
       .get(accountId, trimmed) as { name: string } | undefined;
     if (existing) {
       throw new Error("label already exists");
     }
     writeDb
-      .prepare(`INSERT INTO contact_labels (account_id, name) VALUES (?, ?)`)
+      .prepare(`INSERT INTO contact_groups (account_id, name) VALUES (?, ?)`)
       .run(accountId, trimmed);
   } finally {
     writeDb.close();
@@ -315,7 +311,6 @@ export function createLabel(name: string): string {
 }
 
 export function renameLabel(from: string, to: string): string {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const oldName = from.trim();
   const newName = to.trim();
@@ -333,14 +328,14 @@ export function renameLabel(from: string, to: string): string {
 
     const clash = writeDb
       .prepare(
-        `SELECT id FROM contact_labels
+        `SELECT id FROM contact_groups
          WHERE account_id = ? AND name = ? COLLATE NOCASE AND id != ?`,
       )
       .get(accountId, newName, id) as { id: number } | undefined;
     if (clash) throw new Error("label already exists");
 
     writeDb
-      .prepare(`UPDATE contact_labels SET name = ? WHERE id = ? AND account_id = ?`)
+      .prepare(`UPDATE contact_groups SET name = ? WHERE id = ? AND account_id = ?`)
       .run(newName, id, accountId);
   } finally {
     writeDb.close();
@@ -351,7 +346,6 @@ export function renameLabel(from: string, to: string): string {
 }
 
 export function deleteLabel(name: string): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("name required");
@@ -361,10 +355,10 @@ export function deleteLabel(name: string): void {
     const id = findLabelId(writeDb, trimmed, accountId);
     if (id == null) throw new Error("label not found");
     writeDb
-      .prepare(`DELETE FROM contact_label_members WHERE label_id = ?`)
+      .prepare(`DELETE FROM contact_group_members WHERE group_id = ?`)
       .run(id);
     writeDb
-      .prepare(`DELETE FROM contact_labels WHERE id = ? AND account_id = ?`)
+      .prepare(`DELETE FROM contact_groups WHERE id = ? AND account_id = ?`)
       .run(id, accountId);
   } finally {
     writeDb.close();
@@ -489,7 +483,6 @@ export function patchContact(
   id: number,
   patch: ContactPatch,
 ): ContactDetail {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const existing = getContact(id);
   if (!existing) {
@@ -560,10 +553,10 @@ export function patchContact(
 
       if (patch.labels) {
         writeDb
-          .prepare(`DELETE FROM contact_label_members WHERE contact_id = ?`)
+          .prepare(`DELETE FROM contact_group_members WHERE contact_id = ?`)
           .run(id);
         const insert = writeDb.prepare(
-          `INSERT OR IGNORE INTO contact_label_members (contact_id, label_id) VALUES (?, ?)`,
+          `INSERT OR IGNORE INTO contact_group_members (contact_id, group_id) VALUES (?, ?)`,
         );
         for (const name of labels) {
           const groupId = ensureLabelId(writeDb, name, accountId);
@@ -600,7 +593,6 @@ export function addHandleToContact(
   raw: string,
   handleType?: HandleType,
 ): ContactDetail {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const existing = getContact(id);
   if (!existing) throw new Error("contact not found");
@@ -652,7 +644,6 @@ export function removeHandleFromContact(
   raw: string,
   handleType?: HandleType,
 ): ContactDetail {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const existing = getContact(id);
   if (!existing) throw new Error("contact not found");
@@ -693,7 +684,6 @@ export function restoreLabel(
   name: string,
   memberContactIds: number[],
 ): string {
-  assertVaultWritable();
   const trimmed = name.trim();
   if (!trimmed) throw new Error("name required");
   assertAllowedLabelName(trimmed);
@@ -721,7 +711,6 @@ export function restoreLabel(
  */
 export function ensureUnknownContacts(): number {
   try {
-    assertVaultWritable();
   } catch {
     return 0;
   }
@@ -801,7 +790,6 @@ export function ensureUnknownContacts(): number {
  * are re-pointed at the target contact.
  */
 export function mergeContacts(fromId: number, intoId: number): ContactDetail {
-  assertVaultWritable();
   if (fromId === intoId) throw new Error("cannot merge a contact into itself");
 
   const source = getContact(fromId);
@@ -845,21 +833,10 @@ export function mergeContacts(fromId: number, intoId: number): ContactDetail {
           )
           .run(intoId, accountId, handle.handle_id, fromId);
       }
-      // Participants pointing at the source contact follow the merge; any
-      // unassigned participant of a moved handle is claimed by the target.
+      // Participants follow the merge on their own: a participant names a
+      // handle, and the moved contact_handles rows say whose it is.
       writeDb
-        .prepare(`UPDATE participants SET contact_id = ? WHERE contact_id = ?`)
-        .run(intoId, fromId);
-      for (const handle of sourceHandles) {
-        writeDb
-          .prepare(
-            `UPDATE participants SET contact_id = ?
-             WHERE handle_id = ? AND (contact_id IS NULL OR contact_id = ?)`,
-          )
-          .run(intoId, handle.handle_id, fromId);
-      }
-      writeDb
-        .prepare(`DELETE FROM contact_label_members WHERE contact_id = ?`)
+        .prepare(`DELETE FROM contact_group_members WHERE contact_id = ?`)
         .run(fromId);
       writeDb
         .prepare(`DELETE FROM contacts WHERE id = ? AND account_id = ?`)
@@ -880,7 +857,6 @@ export function mergeContacts(fromId: number, intoId: number): ContactDetail {
 
 /** Delete contacts from SQLite. */
 export function deleteContacts(ids: number[]): number {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))];
   if (unique.length === 0) return 0;

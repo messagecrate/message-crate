@@ -4,7 +4,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { parseHandlesBody } from "./handles-body";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
@@ -72,12 +71,9 @@ export async function POST(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "create failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("required") || message.includes("already belongs")
-        ? 400
-        : 500,
-    );
+    const status = message.includes("required") || message.includes("already belongs")
+      ? 400
+      : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -109,10 +105,7 @@ export async function DELETE(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "delete failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found") ? 404 : 500,
-    );
+    const status = message.includes("not found") ? 404 : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

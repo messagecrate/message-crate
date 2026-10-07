@@ -46,7 +46,8 @@ function localDayEndExclusiveUtc(yyyyMmDd: string): string {
   return new Date(y!, m! - 1, d! + 1, 0, 0, 0, 0).toISOString();
 }
 
-const MSG_TS = `coalesce(nullif(m.timestamp_utc, ''), m.timestamp)`;
+/** A message's instant (`messages.timestamp`, UTC). */
+const MSG_TS = `m.timestamp`;
 
 /** SQL CASE mapping attachment MIME → filetype category. */
 const ATTACHMENT_CATEGORY_SQL = `
@@ -569,12 +570,6 @@ function buildSearchFilters(
     `NOT EXISTS (
        SELECT 1 FROM trashed_conversations tc
        WHERE tc.account_id = c.account_id AND tc.conversation_id = c.id
-     )`,
-  );
-  where.push(
-    `NOT EXISTS (
-       SELECT 1 FROM trashed_handles th
-       WHERE th.account_id = c.account_id AND th.handle_id = c.chat_handle_id
      )`,
   );
 
@@ -1385,10 +1380,6 @@ export function searchVaultContacts(
          AND NOT EXISTS (
            SELECT 1 FROM trashed_conversations tc
            WHERE tc.account_id = c.account_id AND tc.conversation_id = c.id
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM trashed_handles th
-           WHERE th.account_id = c.account_id AND th.handle_id = c.chat_handle_id
          )`,
     )
     .all(accountId, ...pageIds) as Array<{

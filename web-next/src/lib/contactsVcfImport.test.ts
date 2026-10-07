@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import {
   commitContactsFromVcf,
   previewContactsFromVcf,
@@ -33,7 +33,6 @@ describe("contactsVcfImport preview/commit", () => {
       phone: "+15555550127",
     });
     accountId = account.id;
-    saveAccount(accountId, { read_only: false });
 
     const other = await createAccount({
       username: `vcf_other_${Date.now()}`,
@@ -41,7 +40,6 @@ describe("contactsVcfImport preview/commit", () => {
       phone: "+15555550128",
     });
     otherAccountId = other.id;
-    saveAccount(otherAccountId, { read_only: false });
 
     seedMessage(accountId, "+15555550117");
     seedMessage(otherAccountId, "+15555550120");

@@ -6,22 +6,26 @@ import Database from "better-sqlite3";
 import { accountDataDir } from "./paths";
 import { hashPassword, passwordsMatch, validatePasswordPlaintext } from "./password";
 import { createAccountProfile } from "./accountProfile";
+import { resolveHandleId } from "./handlesWrite";
 import { openWritableVaultDb } from "./vaultSchema";
 
 export const INVALID_CREDENTIALS = "Invalid user ID or password";
 
+/**
+ * An email address that means “you” in messages: an `account_handles` row
+ * pointing at an email handle. Not used for sign-in.
+ */
 export type AccountEmail = {
   email: string;
-  is_primary: boolean;
 };
 
 export type Account = {
+  /** `accounts.id`, an integer, as a string. */
   id: string;
   /** Sign-in user ID (stored as `accounts.username`). */
   username: string;
   /** Optional email handles used to recognize “you” in messages — not for login. */
   emails: AccountEmail[];
-  read_only: boolean;
 };
 
 export type AccountSummary = {
@@ -30,29 +34,25 @@ export type AccountSummary = {
 };
 
 type AccountRow = {
-  id: string;
+  id: number;
   username: string;
-  read_only: number;
 };
 
-type AccountEmailRow = {
-  email: string;
-  is_primary: number;
-};
+/** How long a session token lasts, as the server's `SESSION_TTL_SECS` has it. */
+const SESSION_TTL_SECS = 30 * 24 * 60 * 60;
+
+/** Ids below this belong to accounts the server makes itself (owner, demo). */
+const FIRST_GENERATED_ACCOUNT_ID = 100;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function rowToAccount(row: AccountRow, emails: AccountEmailRow[]): Account {
+function rowToAccount(row: AccountRow, emails: AccountEmail[]): Account {
   return {
-    id: row.id,
+    id: String(row.id),
     username: row.username,
-    emails: emails.map((entry) => ({
-      email: entry.email,
-      is_primary: entry.is_primary === 1,
-    })),
-    read_only: row.read_only === 1,
+    emails,
   };
 }
 
@@ -65,12 +65,6 @@ function friendlyDbError(err: unknown): Error {
   if (message.includes("UNIQUE constraint failed: accounts.username")) {
     return new Error("That user ID is already taken.");
   }
-  if (message.includes("UNIQUE constraint failed: account_emails.email")) {
-    return new Error("That email is already used by another account.");
-  }
-  if (message.includes("UNIQUE constraint failed: accounts.hanko_user_id")) {
-    return new Error("That Hanko identity is already linked to an account.");
-  }
   if (err instanceof Error) return err;
   return new Error(message);
 }
@@ -78,16 +72,13 @@ function friendlyDbError(err: unknown): Error {
 function findAccountIdByUsername(db: Database.Database, username: string): string | null {
   const row = db
     .prepare(`SELECT id FROM accounts WHERE username = ? COLLATE NOCASE`)
-    .get(username) as { id: string } | undefined;
-  return row?.id ?? null;
+    .get(username) as { id: number } | undefined;
+  return row ? String(row.id) : null;
 }
 
 /** Optional email handles for message recognition (not sign-in). */
 function validateEmails(emails: AccountEmail[]): AccountEmail[] {
-  const normalized = emails.map((entry) => ({
-    email: entry.email.trim(),
-    is_primary: false,
-  }));
+  const normalized = emails.map((entry) => ({ email: entry.email.trim() }));
 
   if (normalized.some((entry) => !entry.email)) {
     throw new Error("email addresses cannot be empty");
@@ -105,36 +96,53 @@ function validateEmails(emails: AccountEmail[]): AccountEmail[] {
   return normalized;
 }
 
-function readAccountEmails(db: Database.Database, accountId: string): AccountEmailRow[] {
+function readAccountEmails(db: Database.Database, accountId: string): AccountEmail[] {
   return db
     .prepare(
-      `SELECT email, is_primary
-       FROM account_emails
-       WHERE account_id = ?
-       ORDER BY is_primary DESC, email COLLATE NOCASE`,
+      `SELECT h.raw AS email
+       FROM account_handles ah
+       JOIN handles h ON h.id = ah.handle_id
+       WHERE ah.account_id = ? AND h.handle_type = 'email'
+       ORDER BY h.raw COLLATE NOCASE`,
     )
-    .all(accountId) as AccountEmailRow[];
+    .all(accountId) as AccountEmail[];
 }
 
+/** Replace the account's email handles; its phone handles stay as they are. */
 function writeAccountEmails(
   db: Database.Database,
   accountId: string,
   emails: AccountEmail[],
 ): void {
-  db.prepare(`DELETE FROM account_emails WHERE account_id = ?`).run(accountId);
+  db.prepare(
+    `DELETE FROM account_handles
+     WHERE account_id = ?
+       AND handle_id IN (SELECT id FROM handles WHERE handle_type = 'email')`,
+  ).run(accountId);
   const insert = db.prepare(
-    `INSERT INTO account_emails (account_id, email, is_primary)
-     VALUES (?, ?, ?)`,
+    `INSERT OR IGNORE INTO account_handles (account_id, handle_id) VALUES (?, ?)`,
   );
   for (const entry of emails) {
-    insert.run(accountId, entry.email, entry.is_primary ? 1 : 0);
+    insert.run(accountId, resolveHandleId(db, accountId, entry.email, "email"));
   }
 }
 
 function getAccountRow(db: Database.Database, accountId: string): AccountRow | undefined {
   return db
-    .prepare(`SELECT id, username, read_only FROM accounts WHERE id = ?`)
+    .prepare(`SELECT id, username FROM accounts WHERE id = ?`)
     .get(accountId) as AccountRow | undefined;
+}
+
+/**
+ * The id a new account takes: the next one above both the reserved range and
+ * the highest id the table has ever held (`sqlite_sequence`, kept because the
+ * column is AUTOINCREMENT), so a deleted account's id is never reused.
+ */
+function nextAccountId(db: Database.Database): number {
+  const row = db
+    .prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'accounts'`)
+    .get() as { seq: number } | undefined;
+  return Math.max(row?.seq ?? 0, FIRST_GENERATED_ACCOUNT_ID - 1) + 1;
 }
 
 const API_TOKEN_ALPHANUM =
@@ -176,14 +184,16 @@ export function rotateAccountApiToken(accountId: string): string {
     if (!row) throw new Error("account not found");
     const token = generateApiToken();
     const tokenHash = hashApiToken(token);
-    const createdAt = new Date().toISOString();
+    const createdAt = Math.floor(Date.now() / 1000);
+    const expiresAt = createdAt + SESSION_TTL_SECS;
     db.prepare(
-      `INSERT INTO account_session_tokens (account_id, token_hash, created_at)
-       VALUES (?, ?, ?)
+      `INSERT INTO account_session_tokens (account_id, token_hash, created_at, expires_at)
+       VALUES (?, ?, ?, ?)
        ON CONFLICT(account_id) DO UPDATE SET
          token_hash = excluded.token_hash,
-         created_at = excluded.created_at`,
-    ).run(accountId, tokenHash, createdAt);
+         created_at = excluded.created_at,
+         expires_at = excluded.expires_at`,
+    ).run(accountId, tokenHash, String(createdAt), String(expiresAt));
     return token;
   } finally {
     db.close();
@@ -247,113 +257,6 @@ export function accountHasNoPassword(accountId: string): boolean {
   }
 }
 
-/** True when the account is linked to a Hanko identity. */
-export function accountHasHankoLink(accountId: string): boolean {
-  const db = openDb();
-  try {
-    const row = db
-      .prepare(`SELECT hanko_user_id FROM accounts WHERE id = ?`)
-      .get(accountId) as { hanko_user_id: string | null } | undefined;
-    return Boolean(row?.hanko_user_id?.trim());
-  } finally {
-    db.close();
-  }
-}
-
-export function findAccountByHankoUserId(hankoUserId: string): Account | null {
-  const trimmed = hankoUserId.trim();
-  if (!trimmed) return null;
-  const db = openDb();
-  try {
-    const row = db
-      .prepare(
-        `SELECT id, username, read_only FROM accounts WHERE hanko_user_id = ?`,
-      )
-      .get(trimmed) as AccountRow | undefined;
-    if (!row) return null;
-    const emails = readAccountEmails(db, row.id);
-    return rowToAccount(row, emails);
-  } finally {
-    db.close();
-  }
-}
-
-function allocateHankoUsername(
-  db: Database.Database,
-  email: string | null | undefined,
-  hankoUserId: string,
-): string {
-  const localPart = email?.split("@")[0]?.trim() ?? "";
-  const sanitized = localPart
-    .replace(/[^a-zA-Z0-9._-]/g, "")
-    .slice(0, 32);
-  const base =
-    sanitized ||
-    `user_${hankoUserId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12) || crypto.randomUUID().slice(0, 8)}`;
-
-  if (!findAccountIdByUsername(db, base)) return base;
-  for (let i = 2; i < 1000; i++) {
-    const candidate = `${base}_${i}`;
-    if (!findAccountIdByUsername(db, candidate)) return candidate;
-  }
-  return `user_${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
-}
-
-/**
- * Create a passwordless vault account linked to a Hanko user id.
- * Preferred name / phone are filled later via onboarding.
- */
-export function createHankoLinkedAccount(input: {
-  hankoUserId: string;
-  email?: string | null;
-}): Account {
-  const hankoUserId = input.hankoUserId.trim();
-  if (!hankoUserId) throw new Error("hanko user id is required");
-
-  const db = openDb();
-  try {
-    const existing = db
-      .prepare(`SELECT id FROM accounts WHERE hanko_user_id = ?`)
-      .get(hankoUserId) as { id: string } | undefined;
-    if (existing) {
-      const row = getAccountRow(db, existing.id);
-      if (!row) throw new Error("account not found");
-      return rowToAccount(row, readAccountEmails(db, existing.id));
-    }
-
-    const id = crypto.randomUUID();
-    const username = allocateHankoUsername(db, input.email, hankoUserId);
-    const email =
-      typeof input.email === "string" && input.email.trim()
-        ? normalizeEmail(input.email)
-        : null;
-
-    try {
-      db.prepare(
-        `INSERT INTO accounts (id, username, read_only, password_hash, hanko_user_id)
-         VALUES (?, ?, 0, NULL, ?)`,
-      ).run(id, username, hankoUserId);
-      if (email) {
-        db.prepare(
-          `INSERT INTO account_emails (account_id, email, is_primary)
-           VALUES (?, ?, 1)`,
-        ).run(id, email);
-      }
-    } catch (err) {
-      throw friendlyDbError(err);
-    }
-
-    return {
-      id,
-      username,
-      emails: email ? [{ email, is_primary: true }] : [],
-      read_only: false,
-    };
-  } finally {
-    db.close();
-  }
-}
-
 /** Replace an account password, or pass null to enable passwordless sign-in. */
 export async function setAccountPassword(
   accountId: string,
@@ -399,7 +302,7 @@ export async function authenticateAccount(
   try {
     const row = db
       .prepare(
-        `SELECT id, username, read_only, password_hash
+        `SELECT id, username, password_hash
          FROM accounts WHERE username = ? COLLATE NOCASE`,
       )
       .get(trimmed) as
@@ -410,7 +313,7 @@ export async function authenticateAccount(
     const ok = await passwordsMatch(row.password_hash, password);
     if (!ok) return null;
 
-    const emails = readAccountEmails(db, row.id);
+    const emails = readAccountEmails(db, String(row.id));
     return rowToAccount(row, emails);
   } finally {
     db.close();
@@ -450,12 +353,12 @@ export async function createAccount(input: {
       throw new Error("That user ID is already taken.");
     }
 
-    const id = crypto.randomUUID();
+    const id = String(nextAccountId(db));
 
     try {
       db.prepare(
-        `INSERT INTO accounts (id, username, read_only, password_hash)
-         VALUES (?, ?, 0, ?)`,
+        `INSERT INTO accounts (id, username, password_hash)
+         VALUES (?, ?, ?)`,
       ).run(id, username, passwordHash);
       createAccountProfile(db, id, {
         preferred_name: preferredName,
@@ -469,7 +372,6 @@ export async function createAccount(input: {
       id,
       username,
       emails: [],
-      read_only: false,
     };
   } finally {
     db.close();
@@ -478,7 +380,7 @@ export async function createAccount(input: {
 
 export function saveAccount(
   accountId: string,
-  patch: Partial<Pick<Account, "username" | "read_only" | "emails">>,
+  patch: Partial<Pick<Account, "username" | "emails">>,
 ): Account {
   const db = openDb();
   try {
@@ -496,16 +398,16 @@ export function saveAccount(
       id: accountId,
       username: patch.username?.trim() || current.username,
       emails: nextEmails,
-      read_only: patch.read_only ?? current.read_only,
     };
 
     if (!next.username) {
       throw new Error("user ID is required");
     }
 
-    db.prepare(
-      `UPDATE accounts SET username = ?, read_only = ? WHERE id = ?`,
-    ).run(next.username, next.read_only ? 1 : 0, accountId);
+    db.prepare(`UPDATE accounts SET username = ? WHERE id = ?`).run(
+      next.username,
+      accountId,
+    );
 
     writeAccountEmails(db, accountId, next.emails);
     return next;

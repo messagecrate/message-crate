@@ -8,7 +8,6 @@ import {
   hasDuplicateOfColumn,
   hasTrashedContactsTable,
   hasTrashedConversationsTable,
-  hasTrashedHandlesTable,
   notTrashedHandleSql,
   preferredHandleOf,
   preferredHandleTypeOf,
@@ -30,13 +29,13 @@ import type {
   YearThread,
 } from "./types";
 
-/** Contact labels (GUI "Labels"). Stored in SQLite `contact_labels` / `contact_label_members`. */
+/** Contact labels (GUI "Labels"). Stored in SQLite `contact_groups` / `contact_group_members`. */
 export function listLabels(): string[] {
   const accountId = currentAccountId();
   const db = getDb();
   const rows = db
     .prepare(
-      `SELECT name FROM contact_labels
+      `SELECT name FROM contact_groups
        WHERE account_id = ?
        ORDER BY name COLLATE NOCASE`,
     )
@@ -55,8 +54,8 @@ export function listLabelMemberContactIds(name: string): number[] {
   const rows = db
     .prepare(
       `SELECT clm.contact_id AS contact_id
-       FROM contact_label_members clm
-       JOIN contact_labels cl ON cl.id = clm.label_id
+       FROM contact_group_members clm
+       JOIN contact_groups cl ON cl.id = clm.group_id
        WHERE cl.name = ? COLLATE NOCASE AND cl.account_id = ?
        ORDER BY clm.contact_id`,
     )
@@ -137,8 +136,8 @@ function sectionQueryBody(
     return {
       fromWhere: `
         FROM contacts c
-        JOIN contact_label_members clm ON clm.contact_id = c.id
-        JOIN contact_labels cl ON cl.id = clm.label_id AND cl.name = ?
+        JOIN contact_group_members clm ON clm.contact_id = c.id
+        JOIN contact_groups cl ON cl.id = clm.group_id AND cl.name = ?
         WHERE c.account_id = ?
           ${notTrashed}
       `,
@@ -172,7 +171,7 @@ function sectionQueryBody(
           WHERE c.account_id = ?
             ${notTrashed}
             AND NOT EXISTS (
-              SELECT 1 FROM contact_label_members clm WHERE clm.contact_id = c.id
+              SELECT 1 FROM contact_group_members clm WHERE clm.contact_id = c.id
             )
         `,
         params: [accountId],
@@ -246,8 +245,8 @@ function contactListItems(rows: ContactRow[]): ContactListItem[] {
   const groupRows = db
     .prepare(
       `SELECT clm.contact_id AS contact_id, cl.name AS name
-       FROM contact_label_members clm
-       JOIN contact_labels cl ON cl.id = clm.label_id
+       FROM contact_group_members clm
+       JOIN contact_groups cl ON cl.id = clm.group_id
        WHERE cl.account_id = ?
        ORDER BY cl.name COLLATE NOCASE`,
     )
@@ -337,8 +336,8 @@ export function getContact(id: number): ContactDetail | null {
 
   const labels = db
     .prepare(
-      `SELECT cl.name FROM contact_label_members clm
-       JOIN contact_labels cl ON cl.id = clm.label_id
+      `SELECT cl.name FROM contact_group_members clm
+       JOIN contact_groups cl ON cl.id = clm.group_id
        WHERE clm.contact_id = ? AND cl.account_id = ?
        ORDER BY cl.name COLLATE NOCASE`,
     )
@@ -429,13 +428,13 @@ function contactIndividualConversationIds(
   const placeholders = handleIds.map(() => "?").join(",");
   const trashFilter = opts?.includeTrashed
     ? ""
-    : notTrashedHandleSql("chat_handle_id", "account_id");
+    : notTrashedHandleSql("cv.chat_handle_id", "cv.account_id");
   return (
     db
       .prepare(
-        `SELECT id FROM conversations
-         WHERE account_id = ?
-           AND conversation_type = 'individual' AND chat_handle_id IN (${placeholders})
+        `SELECT cv.id FROM conversations cv
+         WHERE cv.account_id = ?
+           AND cv.conversation_type = 'individual' AND cv.chat_handle_id IN (${placeholders})
            ${trashFilter}`,
       )
       .all(accountId, ...handleIds) as Array<{ id: number }>
@@ -675,8 +674,8 @@ export function loadContactThreadsPage(
   const labels = (
     db
       .prepare(
-        `SELECT cl.name FROM contact_label_members clm
-         JOIN contact_labels cl ON cl.id = clm.label_id
+        `SELECT cl.name FROM contact_group_members clm
+         JOIN contact_groups cl ON cl.id = clm.group_id
          WHERE clm.contact_id = ? AND cl.account_id = ?
          ORDER BY cl.name COLLATE NOCASE`,
       )
@@ -895,13 +894,12 @@ export function listTrashedContacts(): TrashedContactItem[] {
 }
 
 /**
- * Trashed 1:1 handles that still belong to a live (non-trashed) contact —
+ * Handles whose 1:1 conversation is trashed and that still belong to a live (non-trashed) contact —
  * "delete messages only".
  */
 export function listTrashedContactMessages(): TrashedContactMessagesItem[] {
   const accountId = currentAccountId();
   const db = getDb();
-  if (!hasTrashedHandlesTable(db)) return [];
   const hideDupes = hasDuplicateOfColumn() ? " AND m.duplicate_of IS NULL" : "";
   const notTrashedContact = hasTrashedContactsTable(db)
     ? `AND NOT EXISTS (
@@ -916,14 +914,14 @@ export function listTrashedContactMessages(): TrashedContactMessagesItem[] {
               c.preferred_name AS preferred_name,
               MAX(th.trashed_at) AS trashed_at,
               COUNT(m.id) AS message_count
-       FROM trashed_handles th
-       JOIN handles thh ON thh.id = th.handle_id
-       JOIN contact_handles cp ON cp.handle_id = th.handle_id AND cp.account_id = th.account_id
-       JOIN contacts c ON c.id = cp.contact_id AND c.account_id = cp.account_id
+       FROM trashed_conversations th
        JOIN conversations cv
-         ON cv.chat_handle_id = th.handle_id
+         ON cv.id = th.conversation_id
         AND cv.conversation_type = 'individual'
         AND cv.account_id = th.account_id
+       JOIN handles thh ON thh.id = cv.chat_handle_id
+       JOIN contact_handles cp ON cp.handle_id = cv.chat_handle_id AND cp.account_id = th.account_id
+       JOIN contacts c ON c.id = cp.contact_id AND c.account_id = cp.account_id
        JOIN messages m ON m.conversation_id = cv.id
        WHERE th.account_id = ? ${notTrashedContact}${hideDupes}
        GROUP BY cp.contact_id, thh.raw, c.preferred_name

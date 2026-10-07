@@ -5,7 +5,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import { parseCsvLine } from "./contactsCsv";
 import { exportContactsCsvFromDb } from "./contactsCsvExport";
 import { createContact } from "./contactsWrite";
@@ -26,7 +26,6 @@ describe("exportContactsCsvFromDb", () => {
       phone: "+15555550143",
     });
     accountId = account.id;
-    saveAccount(accountId, { read_only: false });
   });
 
   after(() => {

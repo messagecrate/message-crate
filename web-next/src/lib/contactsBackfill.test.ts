@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import { listContacts } from "./contactsRead";
 import { ensureUnknownContacts } from "./contactsWrite";
 import { dbPath } from "./paths";
@@ -33,7 +33,6 @@ describe("unknown contact backfill", () => {
       phone: OWNER_PHONE,
     });
     accountId = account.id;
-    saveAccount(accountId, { read_only: false });
 
     const db = new Database(dbPath());
     try {

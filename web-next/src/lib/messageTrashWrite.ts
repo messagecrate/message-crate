@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 
 import { currentAccountId } from "./accountScope";
 import { resetDb } from "./dbCore";
-import { assertVaultWritable } from "./owner";
+import { clearTrashedHandles, trashHandlesInDb } from "./handlesWrite";
 import { openWritableVaultDb } from "./vaultSchema";
 
 export type MessageTrashTargets = {
@@ -26,8 +26,9 @@ function normalizeTargets(targets: MessageTrashTargets): MessageTrashTargets {
 }
 
 /**
- * Write direct-handle and group-conversation trash markers atomically.
- * Direct handles remain assigned to their contacts.
+ * Trash or restore direct threads (named by handle, written as the handle's
+ * 1:1 conversation) and group conversations atomically. Direct handles remain
+ * assigned to their contacts.
  */
 export function setMessageTrashInDb(
   db: Database.Database,
@@ -52,35 +53,23 @@ export function setMessageTrashInDb(
         }
       }
 
-      const trashHandle = db.prepare(
-        `INSERT INTO trashed_handles (account_id, handle, trashed_at)
-         VALUES (?, ?, datetime('now'))
-         ON CONFLICT(account_id, handle) DO UPDATE SET trashed_at = excluded.trashed_at`,
-      );
       const trashConversation = db.prepare(
         `INSERT INTO trashed_conversations (account_id, conversation_id, trashed_at)
          VALUES (?, ?, datetime('now'))
          ON CONFLICT(account_id, conversation_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
       );
-      for (const handle of normalized.handles) {
-        trashHandle.run(accountId, handle);
-      }
+      trashHandlesInDb(db, normalized.handles, accountId);
       for (const conversationId of normalized.conversationIds) {
         trashConversation.run(accountId, conversationId);
       }
       return;
     }
 
-    const restoreHandle = db.prepare(
-      `DELETE FROM trashed_handles WHERE account_id = ? AND handle = ?`,
-    );
     const restoreConversation = db.prepare(
       `DELETE FROM trashed_conversations
        WHERE account_id = ? AND conversation_id = ?`,
     );
-    for (const handle of normalized.handles) {
-      restoreHandle.run(accountId, handle);
-    }
+    clearTrashedHandles(db, normalized.handles, accountId);
     for (const conversationId of normalized.conversationIds) {
       restoreConversation.run(accountId, conversationId);
     }
@@ -97,7 +86,6 @@ function writeMessageTrash(
   targets: MessageTrashTargets,
   trashed: boolean,
 ): MessageTrashWriteResult {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const writeDb = openWritableVaultDb();
   try {

@@ -7,7 +7,6 @@ import {
   phoneReviewNote,
   type HandleType,
 } from "./handleKind";
-import { assertVaultWritable } from "./owner";
 import { openWritableVaultDb } from "./vaultSchema";
 
 /**
@@ -68,23 +67,30 @@ export function handleIdForRaw(
   return row?.id ?? null;
 }
 
-/** Remove handles from trash (e.g. after assigning to a contact). */
+/**
+ * A handle has no trash of its own: what goes in the trash is the handle's
+ * 1:1 conversation (`trashed_conversations`), as on the server.
+ */
+export const INDIVIDUAL_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
+   WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`;
+
+/** Take these handles' 1:1 conversations out of the trash (e.g. after assigning to a contact). */
 export function clearTrashedHandles(
   db: Database.Database,
   handles: string[],
   accountId: string = currentAccountId(),
 ): void {
-  const ids = handleIdsForRaws(db, accountId, handles);
-  if (ids.length === 0) return;
-  const placeholders = ids.map(() => "?").join(",");
-  db.prepare(
-    `DELETE FROM trashed_handles
-     WHERE account_id = ? AND handle_id IN (${placeholders})`,
-  ).run(accountId, ...ids);
+  const restore = db.prepare(
+    `DELETE FROM trashed_conversations
+     WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+  );
+  for (const handleId of handleIdsForRaws(db, accountId, handles)) {
+    restore.run(accountId, accountId, handleId);
+  }
 }
 
 /**
- * Upsert handles into trashed_handles (owned or unassigned).
+ * Put these handles' 1:1 conversations in the trash (owned or unassigned).
  * `handleType` applies to every handle in the batch when given; otherwise each
  * handle's type is inferred from its raw shape.
  */
@@ -97,20 +103,20 @@ export function trashHandlesInDb(
   const trimmed = [...new Set(handles.map((h) => h.trim()).filter(Boolean))];
   if (trimmed.length === 0) return;
   const upsert = db.prepare(
-    `INSERT INTO trashed_handles (account_id, handle_id, trashed_at)
-     VALUES (?, ?, datetime('now'))
-     ON CONFLICT(account_id, handle_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
+    `INSERT INTO trashed_conversations (account_id, conversation_id, trashed_at)
+     SELECT ?, id, datetime('now') FROM (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})
+     WHERE true
+     ON CONFLICT(account_id, conversation_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
   );
   for (const handle of trimmed) {
     const type = handleType ?? inferHandleType(handle);
     const handleId = resolveHandleId(db, accountId, handle, type);
-    upsert.run(accountId, handleId);
+    upsert.run(accountId, accountId, handleId);
   }
 }
 
-/** Move a handle into Trash (may still belong to a contact). */
+/** Move a handle's 1:1 conversation into Trash (the handle may still belong to a contact). */
 export function trashHandle(handle: string, handleType?: HandleType): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const trimmed = handle.trim();
   if (!trimmed) throw new Error("handle required");
@@ -124,9 +130,8 @@ export function trashHandle(handle: string, handleType?: HandleType): void {
   resetDb();
 }
 
-/** Restore a handle from Trash. */
+/** Restore a handle's 1:1 conversation from Trash. */
 export function restoreHandle(handle: string, handleType?: HandleType): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const trimmed = handle.trim();
   if (!trimmed) throw new Error("handle required");
@@ -136,8 +141,11 @@ export function restoreHandle(handle: string, handleType?: HandleType): void {
     const handleId = handleIdForRaw(writeDb, accountId, trimmed, handleType);
     if (handleId != null) {
       writeDb
-        .prepare(`DELETE FROM trashed_handles WHERE account_id = ? AND handle_id = ?`)
-        .run(accountId, handleId);
+        .prepare(
+          `DELETE FROM trashed_conversations
+           WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+        )
+        .run(accountId, accountId, handleId);
     }
   } finally {
     writeDb.close();
@@ -146,15 +154,14 @@ export function restoreHandle(handle: string, handleType?: HandleType): void {
 }
 
 /**
- * Permanently remove a trashed handle: deletes its 1:1 conversation (cascades
- * messages/attachments) and removes the trash entry. Contact ownership is OK
+ * Permanently remove a handle's trashed 1:1 conversation (cascades
+ * messages/attachments) and its trash entry. Contact ownership is OK
  * (messages-only trash for a live contact).
  */
 export function permanentlyDeleteHandle(
   handle: string,
   handleType?: HandleType,
 ): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   const trimmed = handle.trim();
   if (!trimmed) throw new Error("handle required");
@@ -165,26 +172,32 @@ export function permanentlyDeleteHandle(
     if (handleId == null) {
       throw new Error("handle is not in trash");
     }
-    const trashed = writeDb
-      .prepare(
-        `SELECT 1 AS ok FROM trashed_handles WHERE account_id = ? AND handle_id = ?`,
-      )
-      .get(accountId, handleId) as { ok: number } | undefined;
-    if (!trashed) {
+    const trashedIds = (
+      writeDb
+        .prepare(
+          `SELECT tc.conversation_id AS id
+           FROM trashed_conversations tc
+           WHERE tc.account_id = ?
+             AND tc.conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+        )
+        .all(accountId, accountId, handleId) as Array<{ id: number }>
+    ).map((row) => row.id);
+    if (trashedIds.length === 0) {
       throw new Error("handle is not in trash");
     }
 
     writeDb.pragma("foreign_keys = ON");
+    const deleteConversation = writeDb.prepare(
+      `DELETE FROM conversations WHERE account_id = ? AND id = ?`,
+    );
+    const deleteTrashEntry = writeDb.prepare(
+      `DELETE FROM trashed_conversations WHERE account_id = ? AND conversation_id = ?`,
+    );
     const tx = writeDb.transaction(() => {
-      writeDb
-        .prepare(
-          `DELETE FROM conversations
-           WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`,
-        )
-        .run(accountId, handleId);
-      writeDb
-        .prepare(`DELETE FROM trashed_handles WHERE account_id = ? AND handle_id = ?`)
-        .run(accountId, handleId);
+      for (const id of trashedIds) {
+        deleteConversation.run(accountId, id);
+        deleteTrashEntry.run(accountId, id);
+      }
     });
     tx();
   } finally {

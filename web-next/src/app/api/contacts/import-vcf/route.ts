@@ -8,7 +8,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
 export const runtime = "nodejs";
@@ -159,7 +158,7 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : "import failed";
     return NextResponse.json(
       { error: message },
-      { status: mutationErrorStatus(message, 500) },
+      { status: 500 },
     );
   }
 }

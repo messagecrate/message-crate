@@ -5,7 +5,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
 export const runtime = "nodejs";
@@ -52,10 +51,7 @@ export async function POST(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "create failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("already exists") ? 409 : 400,
-    );
+    const status = message.includes("already exists") ? 409 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -82,14 +78,11 @@ export async function PATCH(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "rename failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found")
-        ? 404
-        : message.includes("already exists")
-          ? 409
-          : 400,
-    );
+    const status = message.includes("not found")
+      ? 404
+      : message.includes("already exists")
+        ? 409
+        : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -116,10 +109,7 @@ export async function DELETE(req: Request) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "delete failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found") ? 404 : 400,
-    );
+    const status = message.includes("not found") ? 404 : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

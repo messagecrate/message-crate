@@ -4,7 +4,6 @@ import {
 } from "@/lib/accountContext";
 import { deleteAllMessagesForAccount } from "@/lib/messagesWrite";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
 export const runtime = "nodejs";
@@ -26,11 +25,9 @@ export async function DELETE() {
   } catch (err) {
     const auth = authError(err);
     if (auth) return auth;
-    const message =
-      err instanceof Error ? err.message : "Couldn’t delete your messages.";
     return NextResponse.json(
       { error: "Couldn’t delete your messages." },
-      { status: mutationErrorStatus(message, 500) },
+      { status: 500 },
     );
   }
 }
