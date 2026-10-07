@@ -17,7 +17,7 @@ import {
   loadAccountProfile,
   saveAccountProfile,
 } from "@/lib/accountProfile";
-import { isDemoAccount } from "@/lib/demoAccount";
+import { DEMO_ACCOUNT_REFUSAL, isDemoAccount } from "@/lib/demoAccount";
 import { validatePasswordPlaintext } from "@/lib/password";
 import { clearAccountCookieOptions } from "@/lib/session";
 import { settingsAccount } from "@/lib/vault/account";
@@ -53,6 +53,10 @@ function parseEmails(body: Record<string, unknown>): AccountEmail[] | undefined 
     emails.push({ email: row.email.trim() });
   }
   return emails;
+}
+
+function demoAccountRefused(): NextResponse {
+  return NextResponse.json({ error: DEMO_ACCOUNT_REFUSAL }, { status: 403 });
 }
 
 function authError(err: unknown): NextResponse | null {
@@ -153,6 +157,12 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: "Nothing to save." }, { status: 400 });
       }
 
+      // The server refuses these changes on the demo account by its id, so
+      // web-next does too, whatever the form sends.
+      if (isDemoAccount(accountId)) {
+        return demoAccountRefused();
+      }
+
       const account =
         patch.username !== undefined || patch.emails !== undefined
           ? saveAccount(accountId, patch)
@@ -223,6 +233,9 @@ export async function DELETE() {
   if (!writesAvailable()) return writesNotAvailable();
   try {
     return await withAccountHandler(async (accountId) => {
+      if (isDemoAccount(accountId)) {
+        return demoAccountRefused();
+      }
       deleteAccount(accountId);
       const store = await cookies();
       store.set(clearAccountCookieOptions());
