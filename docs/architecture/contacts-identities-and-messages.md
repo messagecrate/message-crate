@@ -581,8 +581,8 @@ the backup names its owner, and from this list when it does not, and marks each
 message sent or received accordingly. Linking or removing an identity afterwards
 changes no message already imported. What the product shows beside an account's
 identity, and repeats before it is removed, is the number of messages held at
-that identity, split by direct and group conversation, and the number of
-conversations holding at least one of them. Why: the count says what the person
+that identity, split three ways by direct, group and orphaned conversation,
+and the number of conversations holding at least one of them. Why: the count says what the person
 did at that address, and one conversation that used two of the holder's
 identities counts each message once, under the identity it used. Rejected:
 counting messages the identity sent, because received messages are the holder's
@@ -592,15 +592,28 @@ twice.
 
 **A contact's identity counts the messages the contact sent from it.** Beside
 each of a contact's identities the product shows the first and last message
-sent from it, the number sent from it in direct and in group conversations,
-and the number of conversations the identity takes part in, whoever wrote in
-them. The selection summary for a contact counts the same way across all its
-identities. Why: every count or date of messages about a contact means the
+sent from it, the number sent from it in direct, in group and in orphaned
+conversations, and the number of conversations the identity takes part in,
+whoever wrote in them. The selection summary for a contact counts the same way
+across all its identities, and splits the contact's conversations the same
+three ways. Why: every count or date of messages about a contact means the
 messages the contact sent, the same messages `messages:` and the contact's
 total count on Contacts read, so the identity table, the summary and a search
 give one number for one person. Rejected: counting every message in the
 conversations the identity takes part in, because that counts the holder's own
 replies and every other member of a group as the contact's (#913).
+
+**Every split of a person's conversations or messages by kind is three-way.**
+A contact's conversations, the messages it sent, and the messages held at an
+account's identity are each counted as direct, group and orphaned, and the
+three figures add up to the total. The screens show the orphaned figure only
+when it is not zero, so a person with no orphaned messages sees the two
+figures shown before orphaned conversations existed. Why: a conversation of
+orphaned messages is neither a one-to-one nor a group, so a two-way split
+leaves its messages in neither figure and the figures stop adding up to the
+total. Rejected: folding orphaned conversations into direct or group, because
+that would say a sender's orphaned messages went to one recipient, or to a
+group, when the backup no longer says which (#1782).
 
 **An import never adds an account identity.** A backup that names an owner
 address the account does not have records it on the messages and leaves the

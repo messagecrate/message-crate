@@ -153,6 +153,15 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-07: **A contact's and an identity's counts include orphaned
+  messages.** Since orphaned messages got conversations of their own, the
+  counts that split a person's conversations and messages into direct and
+  group left them out, so the two figures added up to less than the total.
+  A contact, its identities, the selected contacts on Contacts and the
+  identities on Profile now count orphaned conversations and messages as a
+  third figure, and the three add up to the total. The orphaned figure
+  shows only when it is not zero.
+
 - 2026-10-05: **A search no longer finds an Unsent message by the text it
   hides.** An Unsent message reads "Unsent" and nothing else, but when an
   earlier import stored it with its text, a search for a word of that text,

@@ -2088,8 +2088,14 @@ export interface components {
             name: string;
             /**
              * Format: int64
-             * @description Messages the contact sent, in any of its conversations, direct or
-             *     group: the account holder's own messages and other people's messages
+             * @description Conversations of orphaned messages the contact appears in: the three
+             *     conversation counts add up to every conversation the contact is in.
+             */
+            orphaned_conversations: number;
+            /**
+             * Format: int64
+             * @description Messages the contact sent, in any of its conversations, direct,
+             *     group, or orphaned: the account holder's own messages and other people's messages
              *     in a shared group are not counted, and neither are conversations in
              *     the trash or duplicate messages. `messages:` on Contacts counts the
              *     same messages.
@@ -2149,6 +2155,18 @@ export interface components {
             individual_message_count: number;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
+            /**
+             * Format: int64
+             * @description Conversations of orphaned messages the contact is in: the three
+             *     conversation counts add up to every conversation with the contact.
+             */
+            orphaned_conversations: number;
+            /**
+             * Format: int64
+             * @description Messages the contact sent in conversations of orphaned messages: the
+             *     three message counts add up to every message the contact sent.
+             */
+            orphaned_message_count: number;
             /** @description When the contact sent its first message; `null` when it sent none. */
             start_date: string | null;
         };
@@ -2838,7 +2856,7 @@ export interface components {
             address: string;
             /**
              * Format: int64
-             * @description Direct and group conversations: for a contact, those the identity
+             * @description Direct, group, and orphaned conversations: for a contact, those the identity
              *     takes part in, whoever wrote in them; for an account, those holding
              *     at least one of the identity's messages. Trashed conversations are
              *     excluded.
@@ -2857,6 +2875,12 @@ export interface components {
              * @description The identity's messages in group conversations, on the same terms.
              */
             group_messages: number;
+            /**
+             * Format: int64
+             * @description The identity's messages in conversations of orphaned messages, on the
+             *     same terms: the three message counts add up to all of its messages.
+             */
+            orphaned_messages: number;
             /** @description `phone`, `email`, or `whatsapp`. */
             service: string;
             /**
@@ -3932,6 +3956,18 @@ export interface components {
                 individual_message_count: number;
                 /** @description The contact's preferred name; empty when it has none. */
                 name: string;
+                /**
+                 * Format: int64
+                 * @description Conversations of orphaned messages the contact is in: the three
+                 *     conversation counts add up to every conversation with the contact.
+                 */
+                orphaned_conversations: number;
+                /**
+                 * Format: int64
+                 * @description Messages the contact sent in conversations of orphaned messages: the
+                 *     three message counts add up to every message the contact sent.
+                 */
+                orphaned_message_count: number;
                 /** @description When the contact sent its first message; `null` when it sent none. */
                 start_date: string | null;
             }[];
@@ -4199,7 +4235,7 @@ export interface components {
                 address: string;
                 /**
                  * Format: int64
-                 * @description Direct and group conversations: for a contact, those the identity
+                 * @description Direct, group, and orphaned conversations: for a contact, those the identity
                  *     takes part in, whoever wrote in them; for an account, those holding
                  *     at least one of the identity's messages. Trashed conversations are
                  *     excluded.
@@ -4218,6 +4254,12 @@ export interface components {
                  * @description The identity's messages in group conversations, on the same terms.
                  */
                 group_messages: number;
+                /**
+                 * Format: int64
+                 * @description The identity's messages in conversations of orphaned messages, on the
+                 *     same terms: the three message counts add up to all of its messages.
+                 */
+                orphaned_messages: number;
                 /** @description `phone`, `email`, or `whatsapp`. */
                 service: string;
                 /**

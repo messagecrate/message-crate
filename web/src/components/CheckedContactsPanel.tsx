@@ -41,8 +41,10 @@ type ContactSelectionSummary = {
   end_date?: string | null;
   individual_conversations: number;
   group_conversations: number;
+  orphaned_conversations: number;
   individual_message_count: number;
   group_message_count: number;
+  orphaned_message_count: number;
 };
 
 type RowMetrics = {
@@ -87,9 +89,13 @@ type ContactRow = {
 
 function totalsFromSummary(summary: ContactSelectionSummary): ContactTotals {
   return {
-    conversations: summary.individual_conversations + summary.group_conversations,
+    conversations:
+      summary.individual_conversations +
+      summary.group_conversations +
+      summary.orphaned_conversations,
     direct_messages: summary.individual_message_count,
     group_messages: summary.group_message_count,
+    orphaned_messages: summary.orphaned_message_count,
     start_date: summary.start_date ?? null,
     end_date: summary.end_date ?? null,
   };
@@ -118,6 +124,8 @@ function sortValue(row: ContactRow, col: string): string | number {
       return totals?.direct_messages ?? -1;
     case "group_messages":
       return totals?.group_messages ?? -1;
+    case "orphaned_messages":
+      return totals?.orphaned_messages ?? -1;
     default:
       return "";
   }
@@ -187,6 +195,9 @@ export default function CheckedContactsPanel({
       );
     });
   }, [contacts, metrics, sortDescriptor]);
+  // Orphaned messages are rare, so their column appears only when a selected
+  // contact sent some, and a selection without any looks as it did before.
+  const showOrphaned = rows.some((row) => (row.totals?.orphaned_messages ?? 0) > 0);
 
   return (
     <aside
@@ -259,10 +270,17 @@ export default function CheckedContactsPanel({
               <br />
               Messages
             </SortableColumn>
+            {showOrphaned ? (
+              <SortableColumn id="orphaned_messages" widthClass="w-[15%]" align="right">
+                Orphaned
+                <br />
+                Messages
+              </SortableColumn>
+            ) : null}
           </TableHeader>
           <TableBody
             items={rows}
-            dependencies={[sortDescriptor, metrics]}
+            dependencies={[sortDescriptor, metrics, showOrphaned]}
             className="[&_tr]:border-b [&_tr]:border-border"
           >
             {(row) => (
@@ -300,6 +318,13 @@ export default function CheckedContactsPanel({
                     <CountCell value={row.totals?.group_messages ?? 0} />
                   </MetricCell>
                 </Cell>
+                {showOrphaned ? (
+                  <Cell className={tdRightClass}>
+                    <MetricCell loaded={row.totals != null}>
+                      <CountCell value={row.totals?.orphaned_messages ?? 0} />
+                    </MetricCell>
+                  </Cell>
+                ) : null}
               </Row>
             )}
           </TableBody>

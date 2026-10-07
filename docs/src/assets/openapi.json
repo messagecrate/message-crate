@@ -13696,6 +13696,7 @@
           "identities",
           "direct_conversations",
           "group_conversations",
+          "orphaned_conversations",
           "total_messages",
           "last_modified",
           "groups"
@@ -13740,10 +13741,16 @@
             "type": "string",
             "description": "The contact's preferred name; empty when it has none."
           },
+          "orphaned_conversations": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Conversations of orphaned messages the contact appears in: the three\nconversation counts add up to every conversation the contact is in.",
+            "minimum": 0
+          },
           "total_messages": {
             "type": "integer",
             "format": "int64",
-            "description": "Messages the contact sent, in any of its conversations, direct or\ngroup: the account holder's own messages and other people's messages\nin a shared group are not counted, and neither are conversations in\nthe trash or duplicate messages. `messages:` on Contacts counts the\nsame messages.",
+            "description": "Messages the contact sent, in any of its conversations, direct,\ngroup, or orphaned: the account holder's own messages and other people's messages\nin a shared group are not counted, and neither are conversations in\nthe trash or duplicate messages. `messages:` on Contacts counts the\nsame messages.",
             "minimum": 0
           },
           "unknown": {
@@ -13770,8 +13777,10 @@
           "name",
           "individual_conversations",
           "group_conversations",
+          "orphaned_conversations",
           "individual_message_count",
           "group_message_count",
+          "orphaned_message_count",
           "end_date",
           "start_date"
         ],
@@ -13815,6 +13824,18 @@
           "name": {
             "type": "string",
             "description": "The contact's preferred name; empty when it has none."
+          },
+          "orphaned_conversations": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Conversations of orphaned messages the contact is in: the three\nconversation counts add up to every conversation with the contact.",
+            "minimum": 0
+          },
+          "orphaned_message_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages the contact sent in conversations of orphaned messages: the\nthree message counts add up to every message the contact sent.",
+            "minimum": 0
           },
           "start_date": {
             "type": [
@@ -14964,6 +14985,7 @@
           "conversations",
           "direct_messages",
           "group_messages",
+          "orphaned_messages",
           "end_date",
           "start_date"
         ],
@@ -14975,7 +14997,7 @@
           "conversations": {
             "type": "integer",
             "format": "int64",
-            "description": "Direct and group conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
+            "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
             "minimum": 0
           },
           "direct_messages": {
@@ -14995,6 +15017,12 @@
             "type": "integer",
             "format": "int64",
             "description": "The identity's messages in group conversations, on the same terms.",
+            "minimum": 0
+          },
+          "orphaned_messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The identity's messages in conversations of orphaned messages, on the\nsame terms: the three message counts add up to all of its messages.",
             "minimum": 0
           },
           "service": {
@@ -16816,8 +16844,10 @@
                 "name",
                 "individual_conversations",
                 "group_conversations",
+                "orphaned_conversations",
                 "individual_message_count",
                 "group_message_count",
+                "orphaned_message_count",
                 "end_date",
                 "start_date"
               ],
@@ -16861,6 +16891,18 @@
                 "name": {
                   "type": "string",
                   "description": "The contact's preferred name; empty when it has none."
+                },
+                "orphaned_conversations": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Conversations of orphaned messages the contact is in: the three\nconversation counts add up to every conversation with the contact.",
+                  "minimum": 0
+                },
+                "orphaned_message_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Messages the contact sent in conversations of orphaned messages: the\nthree message counts add up to every message the contact sent.",
+                  "minimum": 0
                 },
                 "start_date": {
                   "type": [
@@ -17403,6 +17445,7 @@
                 "conversations",
                 "direct_messages",
                 "group_messages",
+                "orphaned_messages",
                 "end_date",
                 "start_date"
               ],
@@ -17414,7 +17457,7 @@
                 "conversations": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "Direct and group conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
+                  "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
                   "minimum": 0
                 },
                 "direct_messages": {
@@ -17434,6 +17477,12 @@
                   "type": "integer",
                   "format": "int64",
                   "description": "The identity's messages in group conversations, on the same terms.",
+                  "minimum": 0
+                },
+                "orphaned_messages": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The identity's messages in conversations of orphaned messages, on the\nsame terms: the three message counts add up to all of its messages.",
                   "minimum": 0
                 },
                 "service": {

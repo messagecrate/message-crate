@@ -20,6 +20,7 @@ function row(address: string, service: string): ContactHandle {
     conversations: 0,
     direct_messages: 0,
     group_messages: 0,
+    orphaned_messages: 0,
   };
 }
 

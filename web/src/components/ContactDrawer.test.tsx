@@ -59,10 +59,12 @@ function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDeta
         conversations: 4,
         direct_messages: 42,
         group_messages: 7,
+        orphaned_messages: 0,
       },
     ],
     direct_conversations: 3,
     group_conversations: 1,
+    orphaned_conversations: 0,
     total_messages: 49,
     groups: [`Group-${id}`],
     ...overrides,
@@ -169,6 +171,7 @@ describe("ContactDrawer", () => {
           conversations: 7,
           direct_messages: 99,
           group_messages: 11,
+          orphaned_messages: 0,
         },
       ],
     });
@@ -366,6 +369,7 @@ describe("ContactDrawer", () => {
             conversations: 4,
             direct_messages: 42,
             group_messages: 7,
+            orphaned_messages: 0,
           },
         ],
       }),
@@ -416,6 +420,7 @@ describe("ContactDrawer", () => {
             conversations: 4,
             direct_messages: 42,
             group_messages: 7,
+            orphaned_messages: 0,
           },
         ],
       }),
@@ -501,6 +506,7 @@ describe("ContactDrawer", () => {
             conversations: 1,
             direct_messages: 4,
             group_messages: 0,
+            orphaned_messages: 0,
           },
           {
             address: "+15550102",
@@ -510,6 +516,7 @@ describe("ContactDrawer", () => {
             conversations: 2,
             direct_messages: 8,
             group_messages: 0,
+            orphaned_messages: 0,
           },
         ],
       }),
@@ -706,6 +713,7 @@ describe("ContactDrawer", () => {
       conversations: 1,
       direct_messages: 0,
       group_messages: 2,
+      orphaned_messages: 0,
     };
     get.mockResolvedValue(
       detail(1, {
@@ -715,6 +723,7 @@ describe("ContactDrawer", () => {
         ],
         direct_conversations: 0,
         group_conversations: 1,
+        orphaned_conversations: 0,
         total_messages: 4,
       }),
     );

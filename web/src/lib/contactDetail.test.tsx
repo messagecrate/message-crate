@@ -43,6 +43,7 @@ function contact(name: string) {
     groups: ["Family"],
     direct_conversations: 1,
     group_conversations: 0,
+    orphaned_conversations: 0,
     message_count: 3,
   } as unknown as Awaited<ReturnType<typeof getContact>>;
 }

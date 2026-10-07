@@ -17,6 +17,7 @@ const rows: IdentityRow[] = [
     conversations: 2,
     direct_messages: 12,
     group_messages: 30,
+    orphaned_messages: 0,
   },
   {
     address: "someone.with.a.long.address@example.com",
@@ -26,6 +27,7 @@ const rows: IdentityRow[] = [
     conversations: 0,
     direct_messages: 0,
     group_messages: 0,
+    orphaned_messages: 0,
   },
   {
     address: "+15555550100",
@@ -35,6 +37,7 @@ const rows: IdentityRow[] = [
     conversations: 1,
     direct_messages: 3,
     group_messages: 0,
+    orphaned_messages: 0,
   },
 ];
 
@@ -74,6 +77,47 @@ describe("IdentityTable", () => {
     expect(cells[1].textContent).toBe("2020-01-01");
     expect(cells[3].textContent).toBe("2");
     expect(cells[5].textContent).toBe("30");
+  });
+
+  it("shows an Orphaned messages column, summed in the Summary row, when an identity has orphaned messages", () => {
+    const withOrphaned = rows.map((row, i) => (i === 2 ? { ...row, orphaned_messages: 4 } : row));
+    render(
+      inTimeZone(
+        "UTC",
+        <IdentityTable {...dates} rows={withOrphaned} totalConversations={4} onRemove={() => {}} />,
+      ),
+    );
+
+    expect(headers()).toEqual([
+      "Service",
+      "Identity",
+      "First heard from",
+      "Last heard from",
+      "Conversations",
+      "Direct messages",
+      "Group messages",
+      "Orphaned messages",
+      "",
+    ]);
+    const whatsapp = screen
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes("2021-05-05"));
+    expect(whatsapp).toBeDefined();
+    expect(within(whatsapp as HTMLElement).getAllByRole("gridcell")[6].textContent).toBe("4");
+    const summary = screen.getAllByRole("row").at(-1) as HTMLElement;
+    expect(within(summary).getAllByRole("gridcell")[6].textContent).toBe("4");
+  });
+
+  it("leaves the Orphaned messages column out when no identity has orphaned messages", () => {
+    render(
+      inTimeZone(
+        "UTC",
+        <IdentityTable {...dates} rows={rows} totalConversations={3} onRemove={() => {}} />,
+      ),
+    );
+
+    expect(headers()).not.toContain("Orphaned messages");
+    expect(screen.queryByText(/orphaned/i)).toBeNull();
   });
 
   it("puts the sort arrow right after the label and shows it only on the sorted column", async () => {
@@ -212,6 +256,7 @@ describe("IdentityTable dates", () => {
       conversations: 1,
       direct_messages: 1,
       group_messages: 0,
+      orphaned_messages: 0,
     };
     render(
       inTimeZone(

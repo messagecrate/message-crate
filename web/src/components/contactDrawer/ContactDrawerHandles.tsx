@@ -21,6 +21,7 @@ function toIdentityRow(h: ContactHandle): IdentityRow {
     conversations: h.conversations,
     direct_messages: h.direct_messages,
     group_messages: h.group_messages,
+    orphaned_messages: h.orphaned_messages,
   };
 }
 
@@ -42,7 +43,7 @@ export function ContactDrawerHandles({
 }: {
   contactId: string;
   handleRows: ContactDetail["identities"];
-  /** The contact's direct and group conversations, each counted once. */
+  /** The contact's direct, group, and orphaned conversations, each counted once. */
   conversations: number;
   loading: boolean;
   onBrowse?: BrowseFn;

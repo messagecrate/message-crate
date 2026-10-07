@@ -89,7 +89,8 @@ function Heading({
  * like its cells, and the browser lays the columns out: the Identity column
  * takes what is left, never less than a phone number's width, and cuts a
  * long address with an ellipsis. The caller gives the table a scrolling box
- * when its screen can be narrower than the eight columns.
+ * when its screen can be narrower than the eight columns, nine when an
+ * identity has orphaned messages.
  *
  * The two date headings come from the screen, because the dates mean
  * different things: when a contact was heard from at an identity, and when the
@@ -139,6 +140,9 @@ export default function IdentityTable({
     () => (totalConversations === undefined ? null : identityTotals(rows, totalConversations)),
     [rows, totalConversations],
   );
+  // Orphaned messages are rare, so their column appears only when an identity
+  // has some, and a table without any looks as it did before they existed.
+  const showOrphaned = rows.some((row) => row.orphaned_messages > 0);
 
   if (rows.length === 0) {
     return <div className="text-[0.813rem] text-muted">{emptyText}</div>;
@@ -168,6 +172,11 @@ export default function IdentityTable({
       <Cell className={numberCellClass}>
         <Count value={row.group_messages} loading={loading} />
       </Cell>
+      {showOrphaned ? (
+        <Cell className={numberCellClass}>
+          <Count value={row.orphaned_messages} loading={loading} />
+        </Cell>
+      ) : null}
     </>
   );
 
@@ -212,6 +221,15 @@ export default function IdentityTable({
             </Heading>
           )}
         </Column>
+        {showOrphaned ? (
+          <Column id="orphaned_messages" allowsSorting className={`${headerClass} text-right`}>
+            {({ sortDirection }) => (
+              <Heading sortDirection={sortDirection}>
+                Orphaned <span className="block">messages</span>
+              </Heading>
+            )}
+          </Column>
+        ) : null}
         {/* Remove has no heading: each button is named after its identity. */}
         <Column className="w-9 px-1" aria-label="Actions">
           {""}

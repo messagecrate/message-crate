@@ -37,6 +37,7 @@ const identities: Identity[] = [
     conversations: 2,
     direct_messages: 12,
     group_messages: 30,
+    orphaned_messages: 0,
   },
   {
     address: "bob@example.com",
@@ -46,6 +47,7 @@ const identities: Identity[] = [
     conversations: 1,
     direct_messages: 1,
     group_messages: 0,
+    orphaned_messages: 0,
   },
   {
     address: "archer@example.com",
@@ -55,6 +57,7 @@ const identities: Identity[] = [
     conversations: 0,
     direct_messages: 0,
     group_messages: 0,
+    orphaned_messages: 0,
   },
 ];
 

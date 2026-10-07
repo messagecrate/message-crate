@@ -92,8 +92,10 @@ describe("CheckedContactsPanel", () => {
           name: "Ada",
           individual_conversations: 2,
           group_conversations: 1,
+          orphaned_conversations: 0,
           individual_message_count: 314,
           group_message_count: 15,
+          orphaned_message_count: 0,
         },
       ],
     });
@@ -124,6 +126,7 @@ describe("CheckedContactsPanel", () => {
       conversations: 1,
       direct_messages: 0,
       group_messages: 2,
+      orphaned_messages: 0,
     };
     const sam: ContactDetail = {
       id: 1,
@@ -136,6 +139,7 @@ describe("CheckedContactsPanel", () => {
       ],
       direct_conversations: 0,
       group_conversations: 1,
+      orphaned_conversations: 0,
       total_messages: 4,
       groups: [],
     };
