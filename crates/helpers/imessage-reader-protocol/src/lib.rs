@@ -86,16 +86,16 @@ pub const PROTOCOL_VERSION: u32 = 13;
 pub const ORPHANED_CONVERSATION_TYPE: &str = "orphaned";
 
 /// What every orphaned conversation's chat id starts with, so it never
-/// equals the sender's address, which keys their one-to-one conversation.
+/// equals the person's address, which keys their one-to-one conversation.
 pub const ORPHANED_CHAT_ID_PREFIX: &str = "orphaned:";
 
-/// The chat id of the orphaned conversation of `sender`: the orphaned
-/// messages that person sent. `None` for the account holder's, whose
-/// recipient is not recorded: they all sit in one conversation, keyed by the
+/// The chat id of the orphaned conversation of `person`: the orphaned
+/// messages that name that person, sent by them or to them. `None` for the
+/// ones that name nobody: they all sit in one conversation, keyed by the
 /// prefix alone.
 #[must_use]
-pub fn orphaned_chat_id(sender: Option<&str>) -> String {
-    format!("{ORPHANED_CHAT_ID_PREFIX}{}", sender.unwrap_or_default())
+pub fn orphaned_chat_id(person: Option<&str>) -> String {
+    format!("{ORPHANED_CHAT_ID_PREFIX}{}", person.unwrap_or_default())
 }
 
 /// The owner address behind a raw `chat.account_login` or

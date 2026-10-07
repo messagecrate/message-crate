@@ -190,10 +190,10 @@ pub enum IrConversationType {
     /// Chat with multiple peers.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
-    /// conversation they were said in. One sender's sit in a conversation
-    /// with that sender as its only participant, keyed by
-    /// [`orphaned_chat_id`]; the account holder's sit in one with no
-    /// participants. Neither one-to-one nor a group.
+    /// conversation they were said in. The ones that name one person, sent
+    /// by them or to them, sit in a conversation with that person as its only
+    /// participant, keyed by [`orphaned_chat_id`]; the ones that name nobody
+    /// sit in one with no participants. Neither one-to-one nor a group.
     Orphaned,
 }
 
