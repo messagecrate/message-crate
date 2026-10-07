@@ -439,9 +439,24 @@ date says which state is the newer; the message's own times record when it
 was written, not when a part was unsent, so they cannot tell
 ([#1741](https://github.com/messagecrate/message-crate/issues/1741),
 [#1804](https://github.com/messagecrate/message-crate/issues/1804),
-[#1924](https://github.com/messagecrate/message-crate/issues/1924)). An append
-with dedupe off still leaves a changed message's duplicate flag until the next
-dedupe ([#1805](https://github.com/messagecrate/message-crate/issues/1805)).
+[#1924](https://github.com/messagecrate/message-crate/issues/1924)).
+
+**An import that changes a stored message's content puts its duplicate flag
+right, whatever the import's dedupe setting.** A later edit changes a stored
+message's text, and an attachment added or given its file changes what its
+content key hashes, so its duplicate flag can stop matching. The import runs
+the dedupe for those messages inside the import's own write transaction, and
+writes the flags of the messages tied to them: those a changed message hid or
+was hidden behind, before or now, followed to the end
+(`dedupe_changed_messages` in `dedupe.rs`). An import with dedupe on leaves
+this to the full dedupe that follows it. The pass compares only messages with
+a content key, the ones a dedupe has seen, and takes up a changed message only
+when it had one, so a message an import with dedupe off brought stays as it
+came, even when a later import changes it. Why: the dedupe
+setting governs the rows an import brings, and a flag the import itself made
+wrong would hide a message behind a copy whose text no longer matches, where
+no search finds it
+([#1805](https://github.com/messagecrate/message-crate/issues/1805)).
 
 **Within one source, a whole-second message is the duplicate of its
 millisecond twin.** Each message says whether its source recorded its time to

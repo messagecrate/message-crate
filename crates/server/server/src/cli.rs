@@ -138,7 +138,8 @@ pub struct ImportArgs {
     #[arg(long, default_value = "replace")]
     pub mode: ImportMode,
 
-    /// Skip the cross-source soft-dedupe pass after import
+    /// Skip the cross-source soft-dedupe pass after import. The import then
+    /// writes no content keys either; a later full dedupe writes them
     #[arg(long)]
     pub skip_dedupe: bool,
 

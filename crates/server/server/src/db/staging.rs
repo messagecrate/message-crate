@@ -21,6 +21,8 @@ use sqlx::query::Query;
 use sqlx::sqlite::SqliteArguments;
 use sqlx::{Row, Sqlite, SqliteConnection};
 
+use crate::dedupe::HAS_CONTENT_KEY_SQL;
+
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
 
 // ── Staging: what one import writes before promotion ─────────────────────
@@ -792,11 +794,17 @@ pub async fn add_copy_tapbacks(
 // temp tables mapping staging ids to production ids, which the map writers
 // below fill in the order `imports_api::promote` calls them.
 
-/// Create, or empty, a temp table mapping staging ids to production ids.
+/// Create, or empty, a temp table mapping staging ids to production ids,
+/// with the column definitions `extra_columns` after those two.
 /// Two statements on purpose: one prepared statement holds one command.
-async fn reset_id_map(conn: &mut SqliteConnection, table: &str) -> Result<()> {
+async fn reset_id_map(
+    conn: &mut SqliteConnection,
+    table: &str,
+    extra_columns: &[&str],
+) -> Result<()> {
+    let extra: String = extra_columns.iter().map(|c| format!(", {c}")).collect();
     let create = format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL)"
+        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
     );
     sqlx::query(&create).execute(&mut *conn).await?;
     let clear = format!("DELETE FROM {table}");
@@ -893,7 +901,7 @@ pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) 
 ///
 /// Returns an error when a statement fails.
 pub async fn write_conversation_map(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
-    reset_id_map(conn, "_promote_conv_map").await?;
+    reset_id_map(conn, "_promote_conv_map", &[]).await?;
     sqlx::query(
         r"
         INSERT INTO _promote_conv_map (staging_id, prod_id)
@@ -1201,7 +1209,7 @@ pub async fn write_message_map(
     account_id: i64,
     pairs: &HashMap<i64, i64>,
 ) -> Result<()> {
-    reset_id_map(conn, "_promote_msg_map").await?;
+    reset_id_map(conn, "_promote_msg_map", &[]).await?;
     let pairs: Vec<(i64, i64)> = pairs.iter().map(|(&s, &p)| (s, p)).collect();
     for chunk in pairs.chunks(SQLITE_IN_CHUNK) {
         let sql = format!(
@@ -1307,7 +1315,7 @@ pub fn later_backup<'a>(staged: Option<&'a str>, held: Option<&str>) -> BackupOr
 ///
 /// Returns an error when the update fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
-    reset_id_map(conn, "_promote_mark_map").await?;
+    reset_id_map(conn, "_promote_mark_map", &[]).await?;
     let sql = format!(
         r"
         INSERT INTO _promote_mark_map (staging_id, prod_id)
@@ -1448,6 +1456,12 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 /// promotion, those at or below `messages_before`, whose staged row gives
 /// it a later text. Returns how many messages it names.
 ///
+/// Each row says too whether the text itself changes (`body_changed`),
+/// rather than only the earlier versions, and whether the message had a
+/// content key before (`keyed`), because [`promote_later_edits`] clears the
+/// key of a message whose text changes and nothing says afterwards that it
+/// had one. [`stored_messages_with_new_content`] reads both.
+///
 /// When both backups have a date ([`later_backup_sql`]), a staged row from
 /// a later backup gives its text and earlier versions whatever their times
 /// say, when either differs from what the message holds (#1804); one from
@@ -1464,7 +1478,12 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 ///
 /// Returns an error when a statement fails.
 pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -> Result<u64> {
-    reset_id_map(conn, "_promote_edit_map").await?;
+    reset_id_map(
+        conn,
+        "_promote_edit_map",
+        &["body_changed BOOLEAN NOT NULL", "keyed BOOLEAN NOT NULL"],
+    )
+    .await?;
     // A version list as one value, in the order its rows were written, so
     // two lists compare whole.
     let versions = |table: &str, id: &str| {
@@ -1475,13 +1494,15 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
     };
     let sql = format!(
         r"
-        INSERT INTO _promote_edit_map (staging_id, prod_id)
-        SELECT staging_id, prod_id
+        INSERT INTO _promote_edit_map (staging_id, prod_id, body_changed, keyed)
+        SELECT staging_id, prod_id, body_changed, keyed
         FROM (
             SELECT
                 mm.staging_id,
                 mm.prod_id,
                 {later_backup} AS later_backup,
+                sm.body IS NOT m.body AS body_changed,
+                {has_content_key} AS keyed,
                 sm.body IS NOT m.body
                     OR {staged_versions} IS NOT {held_versions} AS differs,
                 sv.message_id IS NOT NULL AS has_versions,
@@ -1510,6 +1531,7 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
         staged_versions = versions("staging_message_versions", "mm.staging_id"),
         held_versions = versions("message_versions", "mm.prod_id"),
         later_edit = later_edit_sql("n", "newest", "held_n", "held_newest"),
+        has_content_key = HAS_CONTENT_KEY_SQL,
     );
     Ok(sqlx::query(&sql)
         .bind(messages_before)
@@ -1530,8 +1552,9 @@ pub struct PromotedEdits {
 /// Give each message `_promote_edit_map` names the text of its staged row,
 /// and delete the earlier versions it held, which
 /// [`promote_earlier_versions`] then replaces with the staged ones. The
-/// content key is cleared, because it hashes the text: the content-key fill
-/// computes it again.
+/// content key of a message whose text changes is cleared, because it
+/// hashes the text: the content-key fill computes it again. A message given
+/// only other earlier versions keeps its key, which does not hash them.
 ///
 /// The versions' search entries are not touched here: the caller removes
 /// them first (`schema::unindex_versions_of_edited_messages`), while the
@@ -1544,8 +1567,8 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
     let messages = sqlx::query(
         r"
         UPDATE messages
-        SET body = sm.body,
-            content_key = NULL
+        SET content_key = CASE WHEN em.body_changed THEN NULL ELSE messages.content_key END,
+            body = sm.body
         FROM _promote_edit_map em
         JOIN staging_messages sm ON sm.id = em.staging_id
         WHERE messages.id = em.prod_id
@@ -1570,11 +1593,13 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// What [`promote_attachments`] did.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PromotedAttachments {
     /// Production rows stored without a file that took the file from a
     /// staged row.
     pub filled: u64,
+    /// The stored messages of those rows, each once.
+    pub filled_messages: Vec<i64>,
     /// New rows inserted.
     pub inserted: u64,
 }
@@ -1705,15 +1730,67 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// Returns an error when a statement fails.
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let filled = sqlx::query(&fill_attachments_sql("attachments", &staged))
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
+    let mut filled_messages: Vec<i64> = sqlx::query_scalar(&format!(
+        "{} RETURNING message_id",
+        fill_attachments_sql("attachments", &staged)
+    ))
+    .fetch_all(&mut *conn)
+    .await?;
+    let filled = filled_messages.len() as u64;
+    filled_messages.sort_unstable();
+    filled_messages.dedup();
     let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
         .execute(&mut *conn)
         .await?
         .rows_affected();
-    Ok(PromotedAttachments { filled, inserted })
+    Ok(PromotedAttachments {
+        filled,
+        filled_messages,
+        inserted,
+    })
+}
+
+/// The messages production held before this promotion, those at or below
+/// `messages_before`, whose content key this promotion changed and that had
+/// one before, sorted: those whose text a later edit changed
+/// (`_promote_edit_map`), those that gained an attachment, one above
+/// `attachments_before`, and those of `filled`, the stored attachments
+/// given their file, which [`PromotedAttachments::filled_messages`] names
+/// because nothing in the row says so afterwards.
+///
+/// A message without a content key is left out: an import with dedupe off
+/// brought it, and no dedupe has compared it. An edit that changes only
+/// the earlier versions is left out too, because the key does not hash
+/// them.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn stored_messages_with_new_content(
+    conn: &mut SqliteConnection,
+    messages_before: i64,
+    attachments_before: i64,
+    filled: &[i64],
+) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(&format!(
+        r"
+        SELECT prod_id FROM _promote_edit_map WHERE body_changed AND keyed
+        UNION
+        SELECT m.id
+        FROM messages m
+        WHERE {HAS_CONTENT_KEY_SQL}
+          AND (
+            m.id IN (SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1)
+            OR m.id IN (SELECT value FROM json_each($3))
+          )
+        ORDER BY 1
+        ",
+    ))
+    .bind(messages_before)
+    .bind(attachments_before)
+    .bind(serde_json::to_string(filled)?)
+    .fetch_all(&mut *conn)
+    .await?)
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any

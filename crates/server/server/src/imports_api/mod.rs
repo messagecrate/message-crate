@@ -67,7 +67,11 @@ pub struct ImportOptions<'a> {
     pub source: &'a str,
     /// Account the import writes into.
     pub account_id: i64,
-    /// Fill missing `content_key` values during promote (needed before cross-source dedupe).
+    /// Fill missing `content_key` values during promote (needed before
+    /// cross-source dedupe). With the fill, promote leaves the duplicate
+    /// flags of the stored messages whose content it changed to the full
+    /// dedupe, [`crate::dedupe::dedupe_cross_source`], which the caller runs
+    /// afterwards; without it, promote puts those flags right itself.
     pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,
@@ -92,7 +96,8 @@ pub struct FixedImportArgs<'a> {
     pub source: &'a str,
     /// Account the import writes into.
     pub account_id: i64,
-    /// Fill missing `content_key` values during promote.
+    /// Fill missing `content_key` values during promote, as
+    /// [`ImportOptions::fill_content_keys`] says.
     pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,
@@ -1798,7 +1803,7 @@ async fn run_import_path(
     .await;
     let counts = import_result?;
     let dedupe_stats = if do_dedupe {
-        Some(dedupe::dedupe_cross_source(&mut conn, account, None, 2).await?)
+        Some(dedupe::dedupe_cross_source(&mut conn, account, None, dedupe::NEAR_WINDOW_SECS).await?)
     } else {
         None
     };
