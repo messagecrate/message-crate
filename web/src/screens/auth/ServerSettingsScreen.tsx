@@ -71,8 +71,8 @@ export default function ServerSettingsScreen({
       </div>
 
       <div className={`mt-3.5 ${authLabel}`}>Connection Status</div>
-      {/* 13px lines the word up with the first character inside the field. */}
-      <ServerStatus state={status} className="pl-[13px]" />
+      {/* 13px lines the status up with the first character inside the field. */}
+      <ServerStatus state={status} address={draft} className="pl-[13px]" />
 
       <div className="mt-6 grid grid-cols-2 gap-2.5">
         <Button variant="secondary" onPress={onCancel}>
