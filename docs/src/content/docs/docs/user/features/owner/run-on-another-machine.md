@@ -63,7 +63,7 @@ With the server elsewhere, the login card reads **Disconnected from 127.0.0.1:80
 3. Select **Test**. **Connection Status** reads **Connecting to 192.168.1.20:8080**, then **Connected to 192.168.1.20:8080** or **Disconnected from 192.168.1.20:8080**. The status names the server by host and port, without `http://`.
 4. Select **Use this address**. The login card returns and reads **Connected to 192.168.1.20:8080**.
 
-**Connection Status** reads **Not tested**, followed by the host and port, for an address that has been typed and not tried yet.
+**Connection Status** reads **Not tested: 192.168.1.20:8080** for an address that has been typed and not tried yet.
 **Use this address** stays unavailable until **Address** holds a different address from the one in use.
 **Cancel** returns to the login card and keeps the old address.
 

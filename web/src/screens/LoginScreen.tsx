@@ -372,7 +372,7 @@ export default function LoginScreen() {
               {localFailed && state !== "connected" ? null : (
                 <ServerStatus
                   state={localStarting && state !== "connected" ? "connecting" : state}
-                  address={target}
+                  address={target || window.location.origin}
                   label={state === "connected" ? undefined : startingLabel(localServer)}
                   className={`${connection.failed ? "mb-2" : "mb-5"} text-center`}
                 />

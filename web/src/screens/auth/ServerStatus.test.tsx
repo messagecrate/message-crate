@@ -22,6 +22,11 @@ describe("ServerStatus", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^Not tested: localhost:8080$/);
   });
 
+  it("stands alone when there is no address to name", () => {
+    render(<ServerStatus state="untested" address="" />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Not tested$/);
+  });
+
   it("shows a starting label as it is given", () => {
     render(
       <ServerStatus
@@ -42,7 +47,7 @@ describe("ServerStatus", () => {
     expect(status).not.toHaveClass("motion-safe:animate-pulse");
   });
 
-  it("colours the word to agree with what it says", () => {
+  it("colours the status to agree with what it says", () => {
     const { rerender } = render(<ServerStatus state="connected" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).toHaveClass("text-ok");
 

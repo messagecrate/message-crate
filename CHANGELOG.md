@@ -103,15 +103,20 @@ released versions carry their date on the heading.
 
 ### Fixes
 
-#### Desktop app
+#### Accounts, Settings and screens
 
 - 2026-10-07: **The login card names the server it is connected to.** The
-  card said only **Connected**, so a person could not tell whether the app was
-  on its own Message Crate or on one on another computer. It now reads
-  **Connected to localhost:8080** or **Connected to 192.168.1.20:9000**: the
-  host and port, without the scheme. Connecting, Disconnected and Not tested
-  name the server the same way, in the browser too, and **Connection Status**
-  on the **Server Address** screen names the address in the field (#1973).
+  card said only **Connected**, so a person could not tell whether the desktop
+  app was on its own Message Crate or on one on another computer. It now reads
+  **Connected to 127.0.0.1:8080** for the app's own, **Connected to
+  localhost:8080** in a browser on the same computer, or **Connected to
+  192.168.1.20:9000** for one elsewhere: the host and port as the address
+  gives them, without the scheme. Connecting, Disconnected and Not tested name
+  the server the same way, and **Connection Status** on the **Server Address**
+  screen names the address in the field (#1973).
+
+#### Desktop app
+
 - 2026-10-05: **The Message Crate the desktop app started stops when the app
   crashes.** Closing the app has always stopped it. When the app crashed or
   was ended from the task manager instead, its Message Crate went on running

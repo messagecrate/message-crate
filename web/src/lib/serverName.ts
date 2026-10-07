@@ -1,21 +1,18 @@
-/** The port a scheme implies when the address leaves it out. */
-const DEFAULT_PORT: Record<string, string> = { "http:": "80", "https:": "443" };
-
 /**
- * How a server address is named to a person: the host and port, without the
- * scheme. The port is always written, because once the scheme is gone nothing
- * else says which default it stood for. A blank address is the website's own
- * origin, as it is for the API client. An address that is not a URL, such as
- * one still being typed, is repeated as it stands, since there is no host to
- * pull out of it.
+ * How a server address is named to a person: the host, the port when the
+ * address names one, and the path when there is one, without the scheme. Text
+ * that is not a URL, such as an address still being typed or one typed
+ * without a scheme (`localhost:8080` parses as a scheme with no host), is
+ * repeated as it stands, since there is no host to pull out of it. A blank
+ * address has no name: the caller decides what a blank means where it is.
  */
 export function serverName(address: string): string {
   const trimmed = address.trim();
-  const absolute = trimmed === "" ? window.location.origin : trimmed;
   try {
-    const url = new URL(absolute);
-    const port = url.port || DEFAULT_PORT[url.protocol] || "";
-    return port ? `${url.hostname}:${port}` : url.hostname;
+    const url = new URL(trimmed);
+    if (url.hostname === "") return trimmed;
+    const path = url.pathname.replace(/\/+$/, "");
+    return `${url.host}${path}`;
   } catch {
     return trimmed;
   }

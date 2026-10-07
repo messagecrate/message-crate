@@ -10,16 +10,19 @@ import { serverName } from "../../lib/serverName";
  */
 export type ServerConnection = "connecting" | "connected" | "disconnected" | "untested";
 
-/**
- * The state's words, finished with the server's name. The preposition is part
- * of each state's wording, which is why this is a function per state rather
- * than one word and a shared suffix.
- */
-const SENTENCE: Record<ServerConnection, (name: string) => string> = {
-  connecting: (name) => `Connecting to ${name}`,
-  connected: (name) => `Connected to ${name}`,
-  disconnected: (name) => `Disconnected from ${name}`,
-  untested: (name) => `Not tested: ${name}`,
+const WORD: Record<ServerConnection, string> = {
+  connecting: "Connecting",
+  connected: "Connected",
+  disconnected: "Disconnected",
+  untested: "Not tested",
+};
+
+/** What joins the state's word to the server's name; each state has its own. */
+const JOIN: Record<ServerConnection, string> = {
+  connecting: " to ",
+  connected: " to ",
+  disconnected: " from ",
+  untested: ": ",
 };
 
 /**
@@ -40,7 +43,11 @@ const TONE: Record<ServerConnection, string> = {
 
 export interface ServerStatusProps {
   state: ServerConnection;
-  /** The address the state is about, as the person entered it or the card resolved it. */
+  /**
+   * The address the state is about, as the person entered it or the card
+   * resolved it. Blank when there is no address to name, as in an emptied
+   * Address field: the state's word then stands alone.
+   */
   address: string;
   /**
    * Words to show in place of the state's own. The desktop app uses it while
@@ -60,13 +67,18 @@ export interface ServerStatusProps {
  * browser's own margins and floats away from the line it belongs under; the
  * gap below is the caller's to set.
  */
+function sentence(state: ServerConnection, address: string): string {
+  const name = serverName(address);
+  return name === "" ? WORD[state] : `${WORD[state]}${JOIN[state]}${name}`;
+}
+
 export default function ServerStatus({ state, address, label, className }: ServerStatusProps) {
   return (
     <p
       role="status"
       className={`m-0 text-[0.813rem] font-medium ${TONE[state]} ${className ?? ""}`}
     >
-      {label ?? SENTENCE[state](serverName(address))}
+      {label ?? sentence(state, address)}
     </p>
   );
 }

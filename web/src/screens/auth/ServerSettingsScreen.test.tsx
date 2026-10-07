@@ -55,6 +55,12 @@ describe("ServerSettingsScreen", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/^Connected to 127\.0\.0\.1:8080$/);
   });
 
+  it("names no server for an emptied field", () => {
+    // A blank field is no address, not the app's own web view.
+    renderScreen({ draft: "", status: "untested" });
+    expect(screen.getByRole("status")).toHaveTextContent(/^Not tested$/);
+  });
+
   it("tests the typed address on the button and on Enter", async () => {
     const user = setupUser();
     const props = renderScreen();
