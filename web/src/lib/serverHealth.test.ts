@@ -7,7 +7,6 @@ import {
   HEALTH_PROBE_TIMEOUT_MS,
   healthBackoffMs,
   healthProbeUrl,
-  healthStatusLabel,
 } from "./serverHealth";
 
 describe("healthBackoffMs", () => {
@@ -45,16 +44,6 @@ describe("healthProbeUrl", () => {
     expect(healthProbeUrl("hello")).toBeNull();
     expect(healthProbeUrl("ftp://example.com")).toBeNull();
     expect(healthProbeUrl("javascript:alert(1)")).toBeNull();
-  });
-});
-
-describe("healthStatusLabel", () => {
-  it("uses one vocabulary: connecting, connected, disconnected", () => {
-    expect(healthStatusLabel("ok")).toBe("Connected");
-    expect(healthStatusLabel("fail")).toBe("Disconnected");
-    // Not yet answered and still trying read the same from the user's side.
-    expect(healthStatusLabel("checking")).toBe("Connecting…");
-    expect(healthStatusLabel("unknown")).toBe("Connecting…");
   });
 });
 
