@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node ./node_modules/tsx/dist/cli.mjs --test src/**/*.test.ts",
+    "test": "node ./node_modules/tsx/dist/cli.mjs --test 'src/**/*.test.ts'",
     "gen:api": "npx --yes openapi-typescript@7.13.0 ../docs/src/assets/openapi.json -o src/lib/vault/types.generated.ts"
   },
   "dependencies": {
