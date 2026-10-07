@@ -56,14 +56,14 @@ The website is served by the server itself, so the browser needs nothing configu
 ## Point the desktop app at it
 
 The desktop app looks for the server at `http://127.0.0.1:8080`, which is its own computer.
-With the server elsewhere, the login card reads **Disconnected**.
+With the server elsewhere, the login card reads **Disconnected from 127.0.0.1:8080**.
 
 1. On the login card, select **Change server address**. The card changes to **Server Address**.
 2. Enter the server's address in **Address**, such as `http://192.168.1.20:8080`. The address must start with `http://` or `https://`.
-3. Select **Test**. **Connection Status** reads **Connecting**, then **Connected** or **Disconnected**.
-4. Select **Use this address**. The login card returns and reads **Connected**.
+3. Select **Test**. **Connection Status** reads **Connecting to 192.168.1.20:8080**, then **Connected to 192.168.1.20:8080** or **Disconnected from 192.168.1.20:8080**. The status names the server by host and port, without `http://`.
+4. Select **Use this address**. The login card returns and reads **Connected to 192.168.1.20:8080**.
 
-**Connection Status** reads **Not tested** for an address that has been typed and not tried yet.
+**Connection Status** reads **Not tested**, followed by the host and port, for an address that has been typed and not tried yet.
 **Use this address** stays unavailable until **Address** holds a different address from the one in use.
 **Cancel** returns to the login card and keeps the old address.
 

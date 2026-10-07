@@ -136,8 +136,8 @@ function TryFailed({
 /**
  * The way into a Message Crate. The card resolves an address on mount and confirms the
  * server is reachable itself, so the only question the old first screen asked —
- * which server — is answered by default, reported as a single word under the
- * product name, and changed on a settings screen when the default is wrong.
+ * which server — is answered by default, reported under the product name as
+ * the state and the server's host and port, and changed on a settings screen when the default is wrong.
  */
 export default function LoginScreen() {
   const { setServer: setAuthServer, serverUrl: savedUrl, retrySavedLogin } = useAuth();
@@ -367,11 +367,12 @@ export default function LoginScreen() {
           ) : (
             <>
               <h1 className={`${authScreenTitle} mb-2`}>Message Crate</h1>
-              {/* A failed start says so in the card itself; the word above it
+              {/* A failed start says so in the card itself; the status above it
                   would only repeat "Disconnected". */}
               {localFailed && state !== "connected" ? null : (
                 <ServerStatus
                   state={localStarting && state !== "connected" ? "connecting" : state}
+                  address={target}
                   label={state === "connected" ? undefined : startingLabel(localServer)}
                   className={`${connection.failed ? "mb-2" : "mb-5"} text-center`}
                 />

@@ -7,22 +7,34 @@ import ServerStatus from "./ServerStatus";
 describe("ServerStatus", () => {
   afterEach(cleanup);
 
-  it("says the state in one word", () => {
-    const { rerender } = render(<ServerStatus state="connecting" />);
-    expect(screen.getByText("Connecting")).toBeInTheDocument();
+  it("names the server it is talking about in every state", () => {
+    const address = "http://localhost:8080";
+    const { rerender } = render(<ServerStatus state="connecting" address={address} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connecting to localhost:8080$/);
 
-    rerender(<ServerStatus state="connected" />);
-    expect(screen.getByText("Connected")).toBeInTheDocument();
+    rerender(<ServerStatus state="connected" address={address} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connected to localhost:8080$/);
 
-    rerender(<ServerStatus state="disconnected" />);
-    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+    rerender(<ServerStatus state="disconnected" address={address} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Disconnected from localhost:8080$/);
 
-    rerender(<ServerStatus state="untested" />);
-    expect(screen.getByText("Not tested")).toBeInTheDocument();
+    rerender(<ServerStatus state="untested" address={address} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Not tested: localhost:8080$/);
+  });
+
+  it("shows a starting label as it is given", () => {
+    render(
+      <ServerStatus
+        state="connecting"
+        address="http://127.0.0.1:8080"
+        label="Starting Message Crate…"
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(/^Starting Message Crate…$/);
   });
 
   it("keeps an untested address out of the answered colours", () => {
-    render(<ServerStatus state="untested" />);
+    render(<ServerStatus state="untested" address="http://localhost:8080" />);
     const status = screen.getByRole("status");
     expect(status).toHaveClass("text-muted");
     expect(status).not.toHaveClass("text-ok");
@@ -31,28 +43,32 @@ describe("ServerStatus", () => {
   });
 
   it("colours the word to agree with what it says", () => {
-    const { rerender } = render(<ServerStatus state="connected" />);
+    const { rerender } = render(<ServerStatus state="connected" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).toHaveClass("text-ok");
 
-    rerender(<ServerStatus state="disconnected" />);
+    rerender(<ServerStatus state="disconnected" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).toHaveClass("text-danger");
   });
 
   it("flashes only while connecting", () => {
-    const { rerender } = render(<ServerStatus state="connecting" />);
+    const { rerender } = render(
+      <ServerStatus state="connecting" address="http://localhost:8080" />,
+    );
     expect(screen.getByRole("status")).toHaveClass("motion-safe:animate-pulse");
 
-    rerender(<ServerStatus state="connected" />);
+    rerender(<ServerStatus state="connected" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).not.toHaveClass("motion-safe:animate-pulse");
   });
 
   it("announces changes to a screen reader", () => {
-    render(<ServerStatus state="connecting" />);
+    render(<ServerStatus state="connecting" address="http://localhost:8080" />);
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
   it("carries a caller's own placement classes", () => {
-    render(<ServerStatus state="connected" className="pl-[13px]" />);
+    render(
+      <ServerStatus state="connected" address="http://localhost:8080" className="pl-[13px]" />,
+    );
     expect(screen.getByRole("status")).toHaveClass("pl-[13px]");
   });
 });

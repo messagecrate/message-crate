@@ -43,9 +43,16 @@ describe("ServerSettingsScreen", () => {
     );
   });
 
-  it("reports the status it is handed", () => {
-    renderScreen({ status: "disconnected" });
-    expect(screen.getByText("Disconnected")).toBeInTheDocument();
+  it("reports the status it is handed, naming the address in the field", () => {
+    renderScreen({ draft: "http://192.168.1.20:9000", status: "disconnected" });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /^Disconnected from 192\.168\.1\.20:9000$/,
+    );
+  });
+
+  it("names the tested address under Connection Status", () => {
+    renderScreen({ draft: "http://127.0.0.1:8080", status: "connected" });
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connected to 127\.0\.0\.1:8080$/);
   });
 
   it("tests the typed address on the button and on Enter", async () => {
