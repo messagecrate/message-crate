@@ -31,7 +31,6 @@ export type ParticipantContactSavedResult = {
 };
 
 export type UseParticipantContactFormOptions = {
-  vaultReadOnly: boolean;
   setStatus?: (message: string | null) => void;
   /** Extra label names always listed in the draft Labels menu (e.g. browse allLabels). */
   knownLabels?: string[];
@@ -81,7 +80,6 @@ export function useParticipantContactForm(
   options: UseParticipantContactFormOptions,
 ): ParticipantContactFormState {
   const {
-    vaultReadOnly,
     setStatus,
     knownLabels = [],
     createDefaults,
@@ -243,7 +241,7 @@ export function useParticipantContactForm(
 
   const onParticipantClick = useCallback(
     (participant: GroupParticipant, anchorRect: DOMRect) => {
-      if (vaultReadOnly || contactSaving || formOpen) return;
+      if (contactSaving || formOpen) return;
       const anchor = contactFormAnchorFromRect(anchorRect);
       if (participant.contactId != null) {
         void openEditContact(participant.contactId, anchor);
@@ -252,7 +250,6 @@ export function useParticipantContactForm(
       openCreateContactWithHandle(participant.handle, anchor);
     },
     [
-      vaultReadOnly,
       contactSaving,
       formOpen,
       openEditContact,

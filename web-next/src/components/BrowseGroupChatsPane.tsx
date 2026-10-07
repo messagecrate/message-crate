@@ -31,7 +31,6 @@ export function BrowseGroupChatsPane({
   onRowClick,
   onTrashMessages,
   trashDisabled = false,
-  vaultReadOnly = false,
   years,
   filterYear,
   onFilterYearChange,
@@ -73,7 +72,6 @@ export function BrowseGroupChatsPane({
   ) => void;
   onTrashMessages?: () => void;
   trashDisabled?: boolean;
-  vaultReadOnly?: boolean;
   years: number[];
   filterYear: number | null;
   onFilterYearChange: (year: number | null) => void;
@@ -149,7 +147,7 @@ export function BrowseGroupChatsPane({
               onChange={onSortChange}
               disabled={items.length === 0}
             />
-            {!vaultReadOnly && onTrashMessages && (
+            {onTrashMessages && (
               <IconHoverTarget label="Delete group messages" placement="bottom">
                 <button
                   type="button"

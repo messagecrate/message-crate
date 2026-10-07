@@ -205,7 +205,6 @@ export function BrowseDetailsInspector({
   onClearGroupSelection,
   onEditContact,
   onParticipantClick,
-  vaultReadOnly = false,
   emptyGuidance = "Select a person or conversation to see contact details, conversation stats, and selection summaries here.",
 }: {
   hasContactSelection: boolean;
@@ -252,7 +251,6 @@ export function BrowseDetailsInspector({
     participant: GroupParticipant,
     anchorRect: DOMRect,
   ) => void;
-  vaultReadOnly?: boolean;
   emptyGuidance?: string;
 }) {
   const { formatDate, formatDateRange } = useDateTimeFormat();
@@ -349,8 +347,7 @@ export function BrowseDetailsInspector({
     const messageCount =
       g?.messageCount ?? groupThreadMeta?.messageCount ?? 0;
     const attachmentCount = groupThreadMeta?.attachmentCount ?? 0;
-    const canEditParticipants =
-      !vaultReadOnly && typeof onParticipantClick === "function";
+    const canEditParticipants = typeof onParticipantClick === "function";
 
     return (
       <InspectorShell title="Conversation">
@@ -470,7 +467,7 @@ export function BrowseDetailsInspector({
             }
           : null;
 
-    const canEdit = !vaultReadOnly && !!onEditContact;
+    const canEdit = !!onEditContact;
 
     return (
       <InspectorShell title="Conversation">
@@ -529,7 +526,7 @@ export function BrowseDetailsInspector({
     const groupCount = c?.groupMessageCount ?? groupChats.length;
     const rangeStart = c?.dateStart ?? null;
     const rangeEnd = c?.dateEnd ?? null;
-    const canEdit = !vaultReadOnly && !!onEditContact;
+    const canEdit = !!onEditContact;
 
     return (
       <InspectorShell title="Contact">

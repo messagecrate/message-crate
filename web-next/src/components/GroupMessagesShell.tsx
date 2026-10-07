@@ -44,7 +44,6 @@ import { usePersistedEnum } from "./usePersistedEnum";
 import { useSourceFilter } from "./SourceFilter";
 import { useThreadMessages } from "./useThreadMessages";
 import { useTrashActions } from "./useTrashActions";
-import { useVaultReadOnly } from "./useVaultReadOnly";
 import { useVaultSearch } from "./useVaultSearch";
 import { ThreadFindBar } from "./ThreadFindBar";
 import { useThreadFind } from "./useThreadFind";
@@ -65,7 +64,6 @@ export function GroupMessagesShell({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const vaultReadOnly = useVaultReadOnly() === true;
   const { push: pushHistory } = useHistory();
   const { sources, source, setSource, sourceQuery } = useSourceFilter();
 
@@ -356,13 +354,9 @@ export function GroupMessagesShell({
     },
   });
 
-  const canTrashGroups =
-    isDeletionUiEnabled() && actionTargets.length > 0 && !vaultReadOnly;
+  const canTrashGroups = isDeletionUiEnabled() && actionTargets.length > 0;
 
-  const participantForm = useParticipantContactForm({
-    vaultReadOnly,
-    setStatus,
-  });
+  const participantForm = useParticipantContactForm({ setStatus });
 
   const selectedGroup = useMemo(
     () =>
@@ -489,7 +483,6 @@ export function GroupMessagesShell({
             trashDisabled={
               !canTrashGroups || saving || participantForm.contactSaving
             }
-            vaultReadOnly={vaultReadOnly}
             years={years}
             filterYear={filterYear}
             onFilterYearChange={setFilterYear}
@@ -585,7 +578,6 @@ export function GroupMessagesShell({
             paneStorageKey="group-messages"
             detail={null}
             groupThread={groupThread}
-            vaultReadOnly={vaultReadOnly}
             statusMsg={status}
             contactId={null}
             activeThread={activeThread}
@@ -650,7 +642,6 @@ export function GroupMessagesShell({
             onClearContactSelection={() => {}}
             onClearGroupSelection={clearGroupSelection}
             onParticipantClick={participantForm.onParticipantClick}
-            vaultReadOnly={vaultReadOnly}
             emptyGuidance="Select a group message to see conversation details."
           />
         </Panel>

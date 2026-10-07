@@ -219,11 +219,11 @@ the list is empty here.
 `src/components/Settings*Form.tsx`, `ThemeSettings.tsx`,
 `DateTimeSettings.tsx`. Four tabs. Account: user ID, change password or sign
 in without one, display name, phone numbers, and a danger zone for deleting
-all messages or the account. Access: a view-only mode that blocks edits while
-browsing, and one API token to generate or delete. Storage: attachment usage,
-import history, and the largest attachments. Appearance: list badge toggles,
-contact initials, light and dark theme with four colour seeds, a share string,
-preset swatches, and date and time formats with custom patterns.
+all messages or the account. Access: one API token to generate or delete.
+Storage: attachment usage, import history, and the largest attachments.
+Appearance: list badge toggles, contact initials, light and dark theme with
+four colour seeds, a share string, preset swatches, and date and time formats
+with custom patterns.
 
 ![Settings, Account](web-next/settings-account.png)
 
@@ -270,7 +270,6 @@ has no such feature.
 | Delete all messages, delete account | yes, with confirmation | yes, with confirmation |
 | API tokens | named tokens with import, export and delete permissions; rename, revoke, one-time reveal | one token: generate, delete, one-time reveal |
 | Administer other users | yes (admins) | — |
-| View-only mode | — | yes |
 | Profile handles | phone, email, WhatsApp; add and remove | phone numbers; add and remove |
 | Address-book file load | Message Crate's own `.csv` from Settings, as Append or Edit; Export on Contacts writes it | `.vcf` with a preview dialog mapping vCard categories to labels |
 | Demo account | password change and deletion disabled | reset-demo entry pointing at the CLI |
@@ -392,7 +391,6 @@ has no such feature.
 | Feature | web | web-next |
 |---|---|---|
 | Undo and redo | — | present in the tree, unwired |
-| Read-only mode | — | yes |
 | Confirmation dialogs | yes | yes |
 | Theme applied before first paint | yes | yes |
 

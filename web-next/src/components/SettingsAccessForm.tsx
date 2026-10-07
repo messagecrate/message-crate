@@ -4,23 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import { ApiTokenRevealDialog } from "./ApiTokenRevealDialog";
 
 type AccessData = {
-  readOnly: boolean;
   hasApiToken: boolean;
   username: string;
 };
 
 export function SettingsAccessForm() {
-  const [readOnly, setReadOnly] = useState(false);
   const [hasApiToken, setHasApiToken] = useState(false);
   const [username, setUsername] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [tokenBusy, setTokenBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
 
   const apply = (json: AccessData) => {
-    setReadOnly(json.readOnly);
     setHasApiToken(json.hasApiToken);
     setUsername(json.username ?? "");
   };
@@ -43,27 +39,6 @@ export function SettingsAccessForm() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const saveReadOnly = async (nextReadOnly: boolean) => {
-    setReadOnly(nextReadOnly);
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/settings/account", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ readOnly: nextReadOnly }),
-      });
-      const json = (await res.json()) as AccessData & { error?: string };
-      if (!res.ok) throw new Error(json.error ?? "Couldn’t save your changes.");
-      apply(json);
-    } catch (err) {
-      setReadOnly(!nextReadOnly);
-      setError(err instanceof Error ? err.message : "Couldn’t save your changes.");
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const generateApiToken = async () => {
     setTokenBusy(true);
@@ -126,31 +101,6 @@ export function SettingsAccessForm() {
     <div className="max-w-xl space-y-10">
       <section>
         <h2 className="text-[12px] font-semibold tracking-wider text-muted uppercase">
-          Browsing access
-        </h2>
-        <p className="mt-1 text-[13px] text-muted">
-          Choose whether messages and contacts can be changed.
-        </p>
-        <label className="mt-4 flex items-start gap-2.5">
-          <input
-            type="checkbox"
-            checked={readOnly}
-            disabled={saving || tokenBusy}
-            onChange={(e) => void saveReadOnly(e.target.checked)}
-            className="mt-0.5 size-4 rounded border-border accent-accent"
-          />
-          <span>
-            <span className="block text-[13px] text-text">View-only mode</span>
-            <span className="block text-[12px] text-muted">
-              Block edits and deletions while browsing. Settings and imports
-              remain available.
-            </span>
-          </span>
-        </label>
-      </section>
-
-      <section>
-        <h2 className="text-[12px] font-semibold tracking-wider text-muted uppercase">
           Message import
         </h2>
         <p className="mt-1 text-[13px] text-muted">
@@ -190,7 +140,7 @@ export function SettingsAccessForm() {
             {hasApiToken ? (
               <button
                 type="button"
-                disabled={tokenBusy || saving}
+                disabled={tokenBusy}
                 onClick={() => void deleteApiToken()}
                 className="shrink-0 rounded-md border border-red-500/40 bg-red-500/15 px-3 py-2 text-[13px] text-red-100 transition-colors hover:bg-red-500/25 disabled:opacity-50"
               >
@@ -199,7 +149,7 @@ export function SettingsAccessForm() {
             ) : (
               <button
                 type="button"
-                disabled={tokenBusy || saving}
+                disabled={tokenBusy}
                 onClick={() => void generateApiToken()}
                 className="shrink-0 rounded-md border border-border bg-elevated px-3 py-2 text-[13px] text-text transition-colors hover:bg-hover disabled:opacity-50"
               >
