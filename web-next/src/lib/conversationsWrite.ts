@@ -1,11 +1,9 @@
 import { currentAccountId } from "./accountScope";
-import { assertVaultWritable } from "./owner";
 import { resetDb } from "./dbCore";
 import { openWritableVaultDb } from "./vaultSchema";
 
 /** Move a group conversation into Trash. */
 export function trashConversation(conversationId: number): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   if (!Number.isFinite(conversationId)) {
     throw new Error("conversationId required");
@@ -37,7 +35,6 @@ export function trashConversation(conversationId: number): void {
 
 /** Restore a group conversation from Trash. */
 export function restoreConversation(conversationId: number): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   if (!Number.isFinite(conversationId)) {
     throw new Error("conversationId required");
@@ -61,7 +58,6 @@ export function restoreConversation(conversationId: number): void {
  * clears the trash entry.
  */
 export function permanentlyDeleteConversation(conversationId: number): void {
-  assertVaultWritable();
   const accountId = currentAccountId();
   if (!Number.isFinite(conversationId)) {
     throw new Error("conversationId required");

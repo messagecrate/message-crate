@@ -1,6 +1,5 @@
 import {
   accountHasApiToken,
-  accountHasHankoLink,
   accountHasNoPassword,
   deleteAccount,
   deleteAccountApiToken,
@@ -18,9 +17,7 @@ import {
   loadAccountProfile,
   saveAccountProfile,
 } from "@/lib/accountProfile";
-import { isHankoAuth } from "@/lib/authMode";
-import { isDemoAccount } from "@/lib/demoAccount";
-import { mutationErrorStatus } from "@/lib/owner";
+import { DEMO_ACCOUNT_REFUSAL, isDemoAccount } from "@/lib/demoAccount";
 import { validatePasswordPlaintext } from "@/lib/password";
 import { clearAccountCookieOptions } from "@/lib/session";
 import { settingsAccount } from "@/lib/vault/account";
@@ -32,19 +29,12 @@ export const runtime = "nodejs";
 
 function accountJson(account: ReturnType<typeof loadAccount>, accountId: string) {
   const profile = loadAccountProfile(accountId);
-  const hankoLinked = accountHasHankoLink(accountId);
   return {
     id: account.id,
     username: account.username,
-    emails: account.emails.map((entry) => ({
-      email: entry.email,
-      isPrimary: entry.is_primary,
-    })),
+    emails: account.emails.map((entry) => ({ email: entry.email })),
     noPassword: accountHasNoPassword(accountId),
-    hankoLinked,
-    hideLocalPassword: isHankoAuth() || hankoLinked,
     hasApiToken: accountHasApiToken(accountId),
-    readOnly: account.read_only,
     isDemo: isDemoAccount(accountId),
     preferredName: profile.preferred_name,
     displayName: profile.display_name,
@@ -60,12 +50,13 @@ function parseEmails(body: Record<string, unknown>): AccountEmail[] | undefined 
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     if (typeof row.email !== "string" || !row.email.trim()) continue;
-    emails.push({
-      email: row.email.trim(),
-      is_primary: row.isPrimary === true,
-    });
+    emails.push({ email: row.email.trim() });
   }
   return emails;
+}
+
+function demoAccountRefused(): NextResponse {
+  return NextResponse.json({ error: DEMO_ACCOUNT_REFUSAL }, { status: 403 });
 }
 
 function authError(err: unknown): NextResponse | null {
@@ -109,16 +100,6 @@ export async function PATCH(req: Request) {
       const clearPassword = body.noPassword === true;
       const password =
         typeof body.password === "string" ? body.password : undefined;
-      const hankoLinked = accountHasHankoLink(accountId);
-      const hideLocalPassword = isHankoAuth() || hankoLinked;
-
-      if (hideLocalPassword && (clearPassword || password !== undefined)) {
-        return NextResponse.json(
-          { error: "Password sign-in is managed by Hanko for this account." },
-          { status: 403 },
-        );
-      }
-
       if (clearPassword && password !== undefined) {
         return NextResponse.json(
           { error: "Choose either a password or passwordless sign-in." },
@@ -149,15 +130,11 @@ export async function PATCH(req: Request) {
 
       const patch: {
         username?: string;
-        read_only?: boolean;
         emails?: AccountEmail[];
       } = {};
 
       if (typeof body.username === "string" && body.username.trim()) {
         patch.username = body.username.trim();
-      }
-      if (typeof body.readOnly === "boolean") {
-        patch.read_only = body.readOnly;
       }
 
       const emails = parseEmails(body);
@@ -172,7 +149,6 @@ export async function PATCH(req: Request) {
 
       if (
         patch.username === undefined &&
-        patch.read_only === undefined &&
         patch.emails === undefined &&
         !hasIdentityPatch &&
         !clearPassword &&
@@ -181,12 +157,14 @@ export async function PATCH(req: Request) {
         return NextResponse.json({ error: "Nothing to save." }, { status: 400 });
       }
 
-      // Settings writes (identity, token, read-only flag) are always allowed.
-      // Read-only mode only blocks browse/GUI vault mutations elsewhere.
+      // The server refuses these changes on the demo account by its id, so
+      // web-next does too, whatever the form sends.
+      if (isDemoAccount(accountId)) {
+        return demoAccountRefused();
+      }
+
       const account =
-        patch.username !== undefined ||
-        patch.read_only !== undefined ||
-        patch.emails !== undefined
+        patch.username !== undefined || patch.emails !== undefined
           ? saveAccount(accountId, patch)
           : loadAccount(accountId);
 
@@ -246,7 +224,7 @@ export async function PATCH(req: Request) {
             : "Couldn’t save your changes.";
     return NextResponse.json(
       { error: userMessage },
-      { status: phoneValidationError ? 400 : mutationErrorStatus(message, 500) },
+      { status: phoneValidationError ? 400 : 500 },
     );
   }
 }
@@ -255,6 +233,9 @@ export async function DELETE() {
   if (!writesAvailable()) return writesNotAvailable();
   try {
     return await withAccountHandler(async (accountId) => {
+      if (isDemoAccount(accountId)) {
+        return demoAccountRefused();
+      }
       deleteAccount(accountId);
       const store = await cookies();
       store.set(clearAccountCookieOptions());
@@ -263,11 +244,9 @@ export async function DELETE() {
   } catch (err) {
     const auth = authError(err);
     if (auth) return auth;
-    const message =
-      err instanceof Error ? err.message : "Couldn’t delete your account.";
     return NextResponse.json(
       { error: "Couldn’t delete your account." },
-      { status: mutationErrorStatus(message, 500) },
+      { status: 500 },
     );
   }
 }

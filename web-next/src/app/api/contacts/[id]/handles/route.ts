@@ -8,7 +8,6 @@ import {
   withAccountHandler,
 } from "@/lib/accountContext";
 import { NextResponse } from "next/server";
-import { mutationErrorStatus } from "@/lib/owner";
 import { isHandleType } from "../../handles-body";
 import { writesAvailable, writesNotAvailable } from "@/lib/vault/writes";
 
@@ -80,14 +79,11 @@ export async function POST(req: Request, { params }: Params) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "update failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found")
-        ? 404
-        : message.includes("already belongs")
-          ? 409
-          : 500,
-    );
+    const status = message.includes("not found")
+      ? 404
+      : message.includes("already belongs")
+        ? 409
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }
@@ -126,14 +122,11 @@ export async function DELETE(req: Request, { params }: Params) {
     const auth = authError(err);
     if (auth) return auth;
     const message = err instanceof Error ? err.message : "update failed";
-    const status = mutationErrorStatus(
-      message,
-      message.includes("not found")
-        ? 404
-        : message.includes("not on contact") || message.includes("cannot remove")
-          ? 400
-          : 500,
-    );
+    const status = message.includes("not found")
+      ? 404
+      : message.includes("not on contact") || message.includes("cannot remove")
+        ? 400
+        : 500;
     return NextResponse.json({ error: message }, { status });
   }
 }

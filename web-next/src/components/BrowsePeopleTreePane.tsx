@@ -28,7 +28,6 @@ import { ListHistoryMenu, type ListHistoryMenuItem } from "./history";
 import { IconHoverTarget } from "./IconHoverLabel";
 import {
   ChevronDownIcon,
-  LockIcon,
   PencilIcon,
   PeopleGroupIcon,
   TrashMessagesIcon,
@@ -78,7 +77,6 @@ export function BrowsePeopleTreePane({
   onNewContact,
   onImportVcf,
   onExportContactsCsv,
-  vaultReadOnly = false,
   onLabels,
   labelsDisabled = false,
   onEdit,
@@ -137,7 +135,6 @@ export function BrowsePeopleTreePane({
   onSearchContactContextMenu,
   onSearchResultContextMenu,
   onDeleteSearchResults,
-  onUnlockVault,
   // Direct
   onDirectClick,
   directActive = false,
@@ -166,8 +163,6 @@ export function BrowsePeopleTreePane({
   onNewContact: (anchorEl: HTMLElement) => void;
   onImportVcf?: (file: File) => Promise<void>;
   onExportContactsCsv?: () => void;
-  vaultReadOnly?: boolean;
-  onUnlockVault?: () => void;
   onLabels?: (anchorEl: HTMLElement) => void;
   labelsDisabled?: boolean;
   onEdit?: (anchorEl: HTMLElement) => void;
@@ -314,29 +309,15 @@ export function BrowsePeopleTreePane({
   };
 
   const menuItems: ListHistoryMenuItem[] = [
-    ...(vaultReadOnly && onUnlockVault
-      ? [
-          {
-            key: "unlock-vault",
-            label: "Unlock vault to edit",
-            icon: <LockIcon className="size-5 shrink-0 opacity-80" />,
-            onClick: () => onUnlockVault(),
-          } satisfies ListHistoryMenuItem,
-        ]
-      : []),
-    ...(!vaultReadOnly
-      ? [
-          {
-            key: "new-contact",
-            label: "New",
-            icon: <NewContactIcon className="size-5 shrink-0 opacity-80" />,
-            onClick: (triggerEl: HTMLElement | null) => {
-              if (triggerEl) onNewContact(triggerEl);
-            },
-          } satisfies ListHistoryMenuItem,
-        ]
-      : []),
-    ...(!vaultReadOnly && onImportVcf
+    {
+      key: "new-contact",
+      label: "New",
+      icon: <NewContactIcon className="size-5 shrink-0 opacity-80" />,
+      onClick: (triggerEl: HTMLElement | null) => {
+        if (triggerEl) onNewContact(triggerEl);
+      },
+    } satisfies ListHistoryMenuItem,
+    ...(onImportVcf
       ? [
           {
             key: "import-vcf",
@@ -359,7 +340,7 @@ export function BrowsePeopleTreePane({
           } satisfies ListHistoryMenuItem,
         ]
       : []),
-    ...(!vaultReadOnly && onEdit
+    ...(onEdit
       ? [
           {
             key: "edit",
@@ -372,7 +353,7 @@ export function BrowsePeopleTreePane({
           } satisfies ListHistoryMenuItem,
         ]
       : []),
-    ...(!vaultReadOnly && onLabels
+    ...(onLabels
       ? [
           {
             key: "labels",
@@ -385,9 +366,7 @@ export function BrowsePeopleTreePane({
           } satisfies ListHistoryMenuItem,
         ]
       : []),
-    ...(!vaultReadOnly &&
-    onTrashMessages &&
-    (hasContactSelection || expandedContactId != null)
+    ...(onTrashMessages && (hasContactSelection || expandedContactId != null)
       ? [
           {
             key: "delete-group-messages",
@@ -401,7 +380,7 @@ export function BrowsePeopleTreePane({
           } satisfies ListHistoryMenuItem,
         ]
       : []),
-    ...(!vaultReadOnly && onTrashContact
+    ...(onTrashContact
       ? [
           {
             key: "delete",
@@ -429,17 +408,7 @@ export function BrowsePeopleTreePane({
   const searchMenuItems: ListHistoryMenuItem[] =
     searchMode === "messages"
       ? [
-          ...(vaultReadOnly && onUnlockVault
-            ? [
-                {
-                  key: "unlock-vault",
-                  label: "Unlock vault to edit",
-                  icon: <LockIcon className="size-5 shrink-0 opacity-80" />,
-                  onClick: () => onUnlockVault(),
-                } satisfies ListHistoryMenuItem,
-              ]
-            : []),
-          ...(!vaultReadOnly && onDeleteSearchResults
+          ...(onDeleteSearchResults
             ? [
                 {
                   key: "delete-search-messages",

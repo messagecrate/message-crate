@@ -6,7 +6,7 @@ import { after, before, describe, it } from "node:test";
 import Database from "better-sqlite3";
 
 import { runWithAccount } from "./accountScope";
-import { createAccount, saveAccount } from "./accounts";
+import { createAccount } from "./accounts";
 import {
   commitContactsFromVcf,
   previewContactsFromVcf,
@@ -33,7 +33,6 @@ describe("contactsVcfImport preview/commit", () => {
       phone: "+15555550127",
     });
     accountId = account.id;
-    saveAccount(accountId, { read_only: false });
 
     const other = await createAccount({
       username: `vcf_other_${Date.now()}`,
@@ -41,7 +40,6 @@ describe("contactsVcfImport preview/commit", () => {
       phone: "+15555550128",
     });
     otherAccountId = other.id;
-    saveAccount(otherAccountId, { read_only: false });
 
     seedMessage(accountId, "+15555550117");
     seedMessage(otherAccountId, "+15555550120");
@@ -75,8 +73,8 @@ describe("contactsVcfImport preview/commit", () => {
         .prepare(
           `INSERT INTO conversations (
              account_id, chat_handle_id, conversation_type,
-             group_title, exported_at, source_file
-           ) VALUES (?, ?, 'individual', NULL, NULL, 't.json')`,
+             group_title, source_file
+           ) VALUES (?, ?, 'individual', NULL, 't.json')`,
         )
         .run(acct, handleId);
       const cid = Number(result.lastInsertRowid);
@@ -86,9 +84,9 @@ describe("contactsVcfImport preview/commit", () => {
       ).run(cid, handleId);
       db.prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body
-         ) VALUES (?, ?, 'sms', ?, '2020-01-01T00:00:00Z', 0, 0, 'hi')`,
+         ) VALUES (?, ?, 'sms', ?, '2020-01-01T00:00:00Z', 'seconds', 0, 0, 'hi')`,
       ).run(cid, acct, `g-${acct}-${phone}`);
     } finally {
       db.close();
@@ -249,8 +247,8 @@ END:VCARD
         .prepare(
           `INSERT INTO conversations (
              account_id, chat_handle_id, conversation_type,
-             group_title, exported_at, source_file
-           ) VALUES (?, ?, 'individual', NULL, NULL, 't.json')`,
+             group_title, source_file
+           ) VALUES (?, ?, 'individual', NULL, 't.json')`,
         )
         .run(accountId, handleId);
       const cid = Number(result.lastInsertRowid);
@@ -260,9 +258,9 @@ END:VCARD
       ).run(cid, handleId);
       db.prepare(
         `INSERT INTO messages (
-           conversation_id, account_id, source, guid, timestamp,
+           conversation_id, account_id, source, guid, timestamp, time_precision,
            is_from_me, sort_order, body
-         ) VALUES (?, ?, 'sms', ?, '2020-01-01T00:00:00Z', 0, 0, 'hi')`,
+         ) VALUES (?, ?, 'sms', ?, '2020-01-01T00:00:00Z', 'seconds', 0, 0, 'hi')`,
       ).run(cid, accountId, `g-${accountId}-trunk-zero`);
     } finally {
       db.close();

@@ -22,9 +22,9 @@ function tableExists(db: Database.Database, name: string): boolean {
 export function ensureVaultSchema(db: Database.Database): void {
   db.exec(`PRAGMA foreign_keys = ON;`);
   db.exec(ACCOUNTS_DDL);
-  // CONTACTS_DDL carries the handles + contact_handles tables; conversations,
-  // participants, and trashed_handles reference handles(id), so it must exist
-  // before MESSAGES_DDL is applied.
+  // CONTACTS_DDL carries the handles + contact_handles tables; conversations
+  // and participants reference handles(id), so it must exist before
+  // MESSAGES_DDL is applied.
   db.exec(CONTACTS_DDL);
   db.exec(MESSAGES_DDL);
   db.exec(STAGING_DDL);

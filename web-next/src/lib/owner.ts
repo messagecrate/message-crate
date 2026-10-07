@@ -12,40 +12,14 @@ export function phoneDigits(handle: string): string {
   return digits;
 }
 
-export const VAULT_READ_ONLY_MESSAGE = "Vault is in read-only mode";
-
-export function isVaultReadOnly(): boolean {
-  return loadAccount(currentAccountId()).read_only;
-}
-
-/** Block browse/GUI vault mutations. Settings account APIs must not call this. */
-export function assertVaultWritable(): void {
-  if (isVaultReadOnly()) {
-    throw new Error(VAULT_READ_ONLY_MESSAGE);
-  }
-}
-
-/** True when an error message indicates the vault is locked for Web UI writes. */
-export function isReadOnlyErrorMessage(message: string): boolean {
-  return message.toLowerCase().includes("read-only");
-}
-
-/** Prefer 403 for read-only vault errors over a route's usual fallback status. */
-export function mutationErrorStatus(
-  message: string,
-  fallback: number = 500,
-): number {
-  return isReadOnlyErrorMessage(message) ? 403 : fallback;
-}
-
 /**
  * Owner-handle predicate that loads the account and owner profile once.
  * Prefer this over calling {@link isOwnerHandle} in a loop: each account read
  * opens its own connection.
  *
- * Owner handles come from `account_handles JOIN handles` (phones, E.164) and
- * `account_emails` (lowercased). Matching is handle-type aware: the candidate
- * is normalized the same way before comparison.
+ * Owner handles come from `account_handles JOIN handles`: phones (E.164) and
+ * email handles (lowercased). Matching is handle-type aware: the candidate is
+ * normalized the same way before comparison.
  */
 export function ownerHandleMatcher(): (handle: string) => boolean {
   const accountId = currentAccountId();

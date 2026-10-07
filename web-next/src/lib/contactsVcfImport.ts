@@ -3,7 +3,6 @@ import { currentAccountId } from "./accountScope";
 import { createContact, patchContact } from "./contactsWrite";
 import { getContact } from "./contactsRead";
 import { dbPath } from "./paths";
-import { assertVaultWritable } from "./owner";
 import { normalizeHandle } from "./handleKind";
 import { isReservedLabelName, reservedLabelError } from "./reservedLabels";
 import { cardToDraft, parseVcfText } from "./vcfParse";
@@ -264,7 +263,6 @@ export function commitContactsFromVcf(
   text: string,
   mappings: VcfCategoryMapping[],
 ): VcfImportSummary {
-  assertVaultWritable();
   validateMappings(mappings);
 
   const accountId = currentAccountId();

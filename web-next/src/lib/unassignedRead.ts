@@ -3,7 +3,7 @@ import {
   getDb,
   hasDuplicateOfColumn,
   hasTrashedConversationsTable,
-  hasTrashedHandlesTable,
+  notTrashedHandleSql,
   resetDb,
   usefulNameAlias,
 } from "./dbCore";
@@ -45,12 +45,7 @@ export type GroupParticipantHandle = {
 export function listUnassignedGroupParticipantHandles(): GroupParticipantHandle[] {
   const accountId = currentAccountId();
   const db = getDb();
-  const trashHandleFilter = hasTrashedHandlesTable(db)
-    ? `AND NOT EXISTS (
-         SELECT 1 FROM trashed_handles th
-         WHERE th.handle_id = p.handle_id AND th.account_id = c.account_id
-       )`
-    : "";
+  const trashHandleFilter = notTrashedHandleSql("p.handle_id", "c.account_id");
   const trashConvFilter = hasTrashedConversationsTable(db)
     ? `AND NOT EXISTS (
          SELECT 1 FROM trashed_conversations tc
@@ -96,26 +91,23 @@ function listHandleSection(section: "unassigned" | "trash"): UnassignedHandle[] 
   const accountId = currentAccountId();
   const db = getDb();
   const hideDupes = hasDuplicateOfColumn() ? " AND m.duplicate_of IS NULL" : "";
-  const hasTrash = hasTrashedHandlesTable(db);
-  if (section === "trash" && !hasTrash) return [];
-
-  const trashFilter = !hasTrash
-    ? ""
-    : section === "trash"
+  // A handle has no trash of its own: its 1:1 conversation `c` does.
+  const trashFilter =
+    section === "trash"
       ? `AND EXISTS (
-           SELECT 1 FROM trashed_handles th
-           WHERE th.handle_id = c.chat_handle_id AND th.account_id = c.account_id
+           SELECT 1 FROM trashed_conversations th
+           WHERE th.conversation_id = c.id AND th.account_id = c.account_id
          )`
       : `AND NOT EXISTS (
-           SELECT 1 FROM trashed_handles th
-           WHERE th.handle_id = c.chat_handle_id AND th.account_id = c.account_id
+           SELECT 1 FROM trashed_conversations th
+           WHERE th.conversation_id = c.id AND th.account_id = c.account_id
          )`;
 
   const trashedAtSelect =
-    section === "trash" && hasTrash
+    section === "trash"
       ? `, (
-           SELECT th.trashed_at FROM trashed_handles th
-           WHERE th.handle_id = c.chat_handle_id AND th.account_id = c.account_id
+           SELECT th.trashed_at FROM trashed_conversations th
+           WHERE th.conversation_id = c.id AND th.account_id = c.account_id
            LIMIT 1
          ) AS trashed_at`
       : `, NULL AS trashed_at`;

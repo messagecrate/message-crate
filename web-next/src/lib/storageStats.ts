@@ -13,7 +13,7 @@ export type {
 export { formatBytes } from "./storageTypes";
 
 function ensureReadableSchema(): void {
-  // Migrate vault_imports / import_id if needed, then reopen readonly cache.
+  // Build the schema if needed, then reopen the readonly cache.
   openWritableVaultDb().close();
   resetDb();
 }
@@ -28,7 +28,7 @@ export function listVaultImports(
     .prepare(
       `SELECT id, source, tool, mode, status, started_at, finished_at,
               message_count, attachment_count, bytes_uploaded
-       FROM vault_imports
+       FROM imports
        WHERE account_id = ?
        ORDER BY started_at DESC, id DESC
        LIMIT ?`,

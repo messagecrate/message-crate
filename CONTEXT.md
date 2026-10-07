@@ -84,13 +84,13 @@ _Avoid_: Revision, Old text, Edit history
 
 **Orphaned message**:
 A Message the backup holds without recording which Conversation it was said
-in. Orphaned messages one person sent sit in a Conversation of their own with
-that person as its only participant, apart from the one-to-one Conversation
-with them; the ones the account holder sent, whose recipient is not recorded,
-sit together in one with no participants. Such a Conversation is neither
-one-to-one nor a group. A person's is titled with their name and "Missing
-recipient", as "Ada · Missing recipient"; the holder's is titled "Unknown
-recipient".
+in. Orphaned messages that name the other person, whether that person sent
+them or the account holder sent them to that person, sit in a Conversation of
+their own with that person as its only participant, apart from the one-to-one
+Conversation with them. The ones that name nobody sit together in one with no
+participants. Such a Conversation is neither one-to-one nor a group. A
+person's is titled with their name and "Orphaned", as "Ada · Orphaned"; the
+one that names nobody is titled "Orphaned · Unknown person".
 _Avoid_: Stray, Unfiled, Lost message
 
 **Reply**:

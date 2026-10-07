@@ -819,9 +819,10 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
 impl<R: Rng> Seeder<'_, R> {
     /// Write orphaned messages, ones the backup holds without recording which
     /// conversation they were said in, as the Apple Messages reader writes
-    /// them: the ones [`ORPHAN_SENDER`] sent in a conversation of their own
-    /// with that sender as its only participant, and the ones the account
-    /// holder sent in one with no participants.
+    /// them: the ones [`ORPHAN_SENDER`] sent and the ones the account holder
+    /// sent them, in a conversation of their own with that person as its only
+    /// participant, and ones the account holder sent with no recipient
+    /// recorded, in one with no participants.
     ///
     /// # Errors
     ///
@@ -829,17 +830,20 @@ impl<R: Rng> Seeder<'_, R> {
     fn orphaned(&mut self, staging: &Path) -> Result<()> {
         let n = self.cfg.edge_cases.orphaned_messages.max(1);
         let timestamps = self.timestamps(n, 2.0, sample_direct_day_burst);
-        let (mut received, mut sent) = (Vec::new(), Vec::new());
+        // Every third message names nobody; the others alternate between
+        // ORPHAN_SENDER's and the holder's to them.
+        let (mut with_person, mut naming_nobody) = (Vec::new(), Vec::new());
         for (i, &ts) in timestamps.iter().enumerate() {
             let guid = format!("orphan-{i}");
-            let from_me = i % 2 == 0;
+            let names_nobody = i % 3 == 2;
+            let from_me = names_nobody || i % 3 == 1;
             let mut msg =
                 self.text_message(&guid, ts, from_me, ORPHAN_SENDER, SourceFlavor::IMessage);
             msg.text = format!("Orphaned message #{i} (no conversation association)");
-            if from_me {
-                sent.push(msg);
+            if names_nobody {
+                naming_nobody.push(msg);
             } else {
-                received.push(msg);
+                with_person.push(msg);
             }
         }
         let sender = IrParticipant {
@@ -848,8 +852,8 @@ impl<R: Rng> Seeder<'_, R> {
             identity_type: None,
         };
         for (file_name, sender, messages) in [
-            ("orphaned-sender.jsonl", Some(sender), received),
-            ("orphaned-holder.jsonl", None, sent),
+            ("orphaned-person.jsonl", Some(sender), with_person),
+            ("orphaned-nobody.jsonl", None, naming_nobody),
         ] {
             if messages.is_empty() {
                 continue;

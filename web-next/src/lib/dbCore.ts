@@ -176,16 +176,6 @@ export function hasTrashedConversationsTable(db: Database.Database): boolean {
   return row.n > 0;
 }
 
-export function hasTrashedHandlesTable(db: Database.Database): boolean {
-  const row = db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM sqlite_master
-       WHERE type = 'table' AND name = 'trashed_handles'`,
-    )
-    .get() as { n: number };
-  return row.n > 0;
-}
-
 export function hasTrashedContactsTable(db: Database.Database): boolean {
   const row = db
     .prepare(
@@ -297,18 +287,20 @@ export function handleIdsForRaws(
 }
 
 /**
- * NOT EXISTS filter: the handle row (by id expression) is not soft-trashed.
+ * NOT EXISTS filter: the handle (by id expression) does not have its 1:1
+ * conversation in the trash. A handle has no trash of its own.
  * `handleIdExpr` and `accountExpr` are SQL expressions from the outer query.
  */
 export function notTrashedHandleSql(
   handleIdExpr: string,
   accountExpr: string,
 ): string {
-  const db = getDb();
-  if (!hasTrashedHandlesTable(db)) return "";
   return `AND NOT EXISTS (
-    SELECT 1 FROM trashed_handles th
-    WHERE th.handle_id = ${handleIdExpr} AND th.account_id = ${accountExpr}
+    SELECT 1 FROM trashed_conversations th
+    JOIN conversations thc ON thc.id = th.conversation_id
+    WHERE thc.conversation_type = 'individual'
+      AND thc.chat_handle_id = ${handleIdExpr}
+      AND th.account_id = ${accountExpr}
   )`;
 }
 

@@ -36,7 +36,6 @@ export function deleteAllMessagesForAccount(accountId: string): DeletedMessagesR
       db
         .prepare(`DELETE FROM trashed_conversations WHERE account_id = ?`)
         .run(accountId);
-      db.prepare(`DELETE FROM trashed_handles WHERE account_id = ?`).run(accountId);
       return { conversations, attachments: attachmentRow.count };
     });
 

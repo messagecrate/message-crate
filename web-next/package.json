@@ -7,12 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node ./node_modules/tsx/dist/cli.mjs --test src/**/*.test.ts",
+    "test": "node ./node_modules/tsx/dist/cli.mjs --test 'src/**/*.test.ts'",
     "gen:api": "npx --yes openapi-typescript@7.13.0 ../docs/src/assets/openapi.json -o src/lib/vault/types.generated.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
-    "@teamhanko/hanko-elements": "^3.0.0",
     "better-sqlite3": "^12.11.1",
     "jose": "^6.2.7",
     "libphonenumber-js": "^1.13.9",

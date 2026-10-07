@@ -11,7 +11,7 @@
 //! `nameless:` for the conversation that names nobody, and `orphaned:` for
 //! a conversation of orphaned messages ([`crate::orphaned_chat_id`]). So a
 //! name can never take a group's key, an address's key, or the key of the
-//! conversation that names nobody, and a sender's orphaned messages never
+//! conversation that names nobody, and a person's orphaned messages never
 //! take the key of their one-to-one conversation.
 
 use crate::IrParticipant;

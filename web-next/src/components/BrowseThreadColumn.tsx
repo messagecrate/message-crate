@@ -19,7 +19,6 @@ export function BrowseThreadColumn({
   paneStorageKey,
   detail,
   groupThread,
-  vaultReadOnly,
   statusMsg,
   contactId,
   activeThread,
@@ -57,7 +56,6 @@ export function BrowseThreadColumn({
   paneStorageKey: string;
   detail: ContactDetail | null;
   groupThread: BrowseGroupThreadMeta | null;
-  vaultReadOnly: boolean;
   statusMsg: string | null;
   contactId: number | null;
   activeThread: string | null;
@@ -132,7 +130,7 @@ export function BrowseThreadColumn({
         <div className="flex min-w-0 flex-1 items-center justify-center">
           {!hasSelection && detail && !groupThread ? (
             <h1 className="truncate text-lg font-semibold tracking-tight text-text">
-              {!vaultReadOnly && onContactNameClick ? (
+              {onContactNameClick ? (
                 <GroupParticipantChip
                   label={detail.displayName || "Contact"}
                   onClick={onContactNameClick}
@@ -178,9 +176,7 @@ export function BrowseThreadColumn({
             threadsReady={threadsReady}
             activeThread={activeThread}
             groupThread={groupThread}
-            onParticipantClick={
-              vaultReadOnly ? undefined : onGroupParticipantClick
-            }
+            onParticipantClick={onGroupParticipantClick}
             hasConversationChoices={hasConversationChoices}
             conversationsPanelCollapsed={false}
             highlightTerms={highlightTerms}

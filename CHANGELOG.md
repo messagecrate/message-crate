@@ -174,6 +174,17 @@ released versions carry their date on the heading.
   email address on Text Message is still an email address, because iMessage
   reaches one.
 
+- 2026-10-07: **Messages you sent to Ada that an Apple Messages backup kept
+  in no conversation sit with the ones she sent.** Such messages sat apart
+  from Ada's, in "Unknown recipient", mixed with everyone else's, though the
+  backup names Ada as their recipient. They now sit in Ada's conversation of
+  orphaned messages, with the ones she sent. That conversation is titled
+  "Ada · Orphaned". Messages that name nobody, ones you sent with no
+  recipient recorded and ones received with no sender or from one of your
+  own addresses, sit in "Orphaned · Unknown person". `kind:orphaned` still
+  finds both kinds, and the word "orphaned" now finds them by their titles
+  too.
+
 #### Browsing and search
 
 - 2026-10-05: **A search no longer finds an Unsent message by the text it

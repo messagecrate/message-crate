@@ -2228,8 +2228,8 @@ export interface components {
              * @description The title the conversation is shown by: for a conversation the account
              *     holder has with themselves, the account's display name or, without
              *     one, the conversation's own address; for one of orphaned messages, its
-             *     sender's name and "Missing recipient", or "Unknown recipient" for the
-             *     account holder's; for any other, the export's title. `null` when
+             *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+             *     one that names nobody; for any other, the export's title. `null` when
              *     there is none, and the conversation goes by its participants.
              */
             label: string | null;
@@ -3465,8 +3465,8 @@ export interface components {
              *     `label` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the
              *     conversation's own address; for one of orphaned messages, its
-             *     sender's name and "Missing recipient", or "Unknown recipient" for
-             *     the account holder's; for any other, the export's title. `null`
+             *     person's name and "Orphaned", or "Orphaned · Unknown person" for
+             *     the one that names nobody; for any other, the export's title. `null`
              *     when there is none, and the conversation goes by its participants.
              */
             label: string | null;
@@ -4047,8 +4047,8 @@ export interface components {
                  * @description The title the conversation is shown by: for a conversation the account
                  *     holder has with themselves, the account's display name or, without
                  *     one, the conversation's own address; for one of orphaned messages, its
-                 *     sender's name and "Missing recipient", or "Unknown recipient" for the
-                 *     account holder's; for any other, the export's title. `null` when
+                 *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+                 *     one that names nobody; for any other, the export's title. `null` when
                  *     there is none, and the conversation goes by its participants.
                  */
                 label: string | null;
