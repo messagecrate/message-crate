@@ -10,7 +10,7 @@
  *   search:contacts  handle:  first:  last:  phone:  is:nofirst  is:nolast
  *   is:nameless (legacy → both nofirst and nolast)
  *   first:/last:/phone:/nofirst/nolast also scope Messages “with person”
- *   within:  people:  -people:  tag:  -tag:  last-contact:  first-contact:  group-count:  message-count:
+ *   within:  last-contact:  first-contact:  group-count:  message-count:
  *   from:  to:  with:  subject:  text:  has:attachment|noattachment
  *   filename:  filetype:  larger:  smaller:  in:  after:  before:  source:
  *   is:group  is:direct
@@ -22,9 +22,7 @@
  * `to:` = addressed to (sent by me to them, or `to:me` = received).
  * `with:` = conversation involves this person (any participant).
  * `in:` = restrict to a conversation (title / handle); `in:trash` ignored.
- * `within:` / `label:` / `people:` = contacts on one label; with a leading `-`,
- * hide threads that involve that label's contacts.
- * `tag:` = threads with this thread tag; `-tag:` = threads without it.
+ * `within:` / `label:` = contacts on one label.
  *
  * `after:` / `before:` accept YYYY, YYYY-MM-DD, or relative `7d` / `1w` / `1m` / `1y`.
  *
@@ -89,12 +87,6 @@ export type ParsedSearchQuery = {
   sort: "date-desc" | "date-asc" | "relevance";
   /** Label whose contacts to search. */
   within: string | null;
-  /** Label whose contacts' threads to hide (`-people:`, `-within:`, `-label:`). */
-  excludePeople: string | null;
-  /** Thread tag the threads must have (`tag:`). */
-  tag: string | null;
-  /** Thread tag the threads must not have (`-tag:`). */
-  excludeTag: string | null;
   /** Contact handle (name or phone number). Legacy combined filter. */
   handle: string | null;
   /** Substring match on contact first name. */
@@ -218,9 +210,6 @@ const EMPTY: ParsedSearchQuery = {
   context: 0,
   sort: "date-desc",
   within: null,
-  excludePeople: null,
-  tag: null,
-  excludeTag: null,
   handle: null,
   firstName: null,
   lastName: null,
@@ -234,11 +223,8 @@ const EMPTY: ParsedSearchQuery = {
   showContact: false,
 };
 
-/** Operators that take a leading `-` to exclude rather than include. */
-const NEGATED_OPERATOR_RE = /^-(within|label|people|tag):(.*)$/i;
-
 const OPERATOR_RE =
-  /^(search|with|from|to|subject|text|has|after|before|source|is|within|label|people|tag|in|show|handle|filename|filetype|larger|smaller|group-count|message-count|group|context|sort|last-contact|first-contact|first|last|phone):(.*)$/i;
+  /^(search|with|from|to|subject|text|has|after|before|source|is|within|label|in|show|handle|filename|filetype|larger|smaller|group-count|message-count|group|context|sort|last-contact|first-contact|first|last|phone):(.*)$/i;
 
 /** Parse `500k` / `1.5M` / `2G` / plain bytes into an integer byte count. */
 export function parseSizeBytes(raw: string): number | null {
@@ -660,17 +646,6 @@ export function parseSearchQuery(input: string): ParsedSearchQuery {
   const ftsLexemes: FtsLex[] = [];
 
   for (const raw of tokenize(input)) {
-    const negated = raw.match(NEGATED_OPERATOR_RE);
-    if (negated) {
-      const op = negated[1]!.toLowerCase();
-      const value = negated[2]!.trim().replace(/^"|"$/g, "");
-      if (value) {
-        if (op === "tag") out.excludeTag = value;
-        else out.excludePeople = value;
-      }
-      continue;
-    }
-
     // Operators bind as global AND filters; free text builds an FTS AST.
     const m = raw.match(OPERATOR_RE);
     if (m) {
@@ -733,11 +708,7 @@ export function parseSearchQuery(input: string): ParsedSearchQuery {
         }
         case "within":
         case "label":
-        case "people":
           out.within = value;
-          break;
-        case "tag":
-          out.tag = value;
           break;
         case "handle":
           out.handle = value;
@@ -1073,9 +1044,6 @@ export function hasSearchCriteria(q: ParsedSearchQuery): boolean {
     !!q.source ||
     !!q.conversationType ||
     !!q.within ||
-    !!q.excludePeople ||
-    !!q.tag ||
-    !!q.excludeTag ||
     !!q.handle ||
     !!q.firstName ||
     !!q.lastName ||

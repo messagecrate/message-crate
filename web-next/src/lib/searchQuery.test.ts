@@ -40,18 +40,6 @@ describe("parseSearchQuery goldens", () => {
     assert.match(parseSearchQuery("after:7d").after ?? "", /^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("reads tag:, -tag:, people: and -people: (not in goldens)", () => {
-    const q = parseSearchQuery('tag:Work -tag:"Book Club" -people:Family dinner');
-    assert.equal(q.tag, "Work");
-    assert.equal(q.excludeTag, "Book Club");
-    assert.equal(q.excludePeople, "Family");
-    assert.equal(q.within, null);
-    assert.deepEqual(q.terms, ["dinner"]);
-    assert.equal(parseSearchQuery("people:Family").within, "Family");
-    assert.equal(parseSearchQuery("-label:Work").excludePeople, "Work");
-    assert.equal(hasSearchCriteria(parseSearchQuery("-tag:Work")), true);
-  });
-
   it("parseSizeBytes accepts fractional megabytes", () => {
     assert.equal(parseSizeBytes("1.5M"), Math.round(1.5 * 1024 * 1024));
   });
