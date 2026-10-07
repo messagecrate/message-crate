@@ -17,9 +17,9 @@ export function phoneDigits(handle: string): string {
  * Prefer this over calling {@link isOwnerHandle} in a loop: each account read
  * opens its own connection.
  *
- * Owner handles come from `account_handles JOIN handles` (phones, E.164) and
- * email handles linked through `account_handles` (lowercased). Matching is handle-type aware: the candidate
- * is normalized the same way before comparison.
+ * Owner handles come from `account_handles JOIN handles`: phones (E.164) and
+ * email handles (lowercased). Matching is handle-type aware: the candidate is
+ * normalized the same way before comparison.
  */
 export function ownerHandleMatcher(): (handle: string) => boolean {
   const accountId = currentAccountId();

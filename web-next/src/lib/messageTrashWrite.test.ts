@@ -16,7 +16,8 @@ function testDb(): Database.Database {
       VALUES
         (1, 101, '+15555550123', '+15555550123', 'phone', 'phone'),
         (2, 101, 'chat-group', 'chat-group', 'other', 'phone'),
-        (3, 102, 'chat-other', 'chat-other', 'other', 'phone');
+        (3, 102, 'chat-other', 'chat-other', 'other', 'phone'),
+        (4, 101, '+15555550199', '+15555550199', 'phone', 'phone');
     INSERT INTO contacts (id, account_id, preferred_name) VALUES (10, 101, 'Pat');
     INSERT INTO contact_handles (account_id, handle_id, contact_id)
       VALUES (101, 1, 10);
@@ -86,6 +87,28 @@ describe("mixed message trash writes", () => {
             ACCOUNT_A,
           ),
         /group conversation 21 not found/,
+      );
+      assert.deepEqual(trashedConversationIds(db), []);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("refuses the whole batch when a handle has no 1:1 conversation", () => {
+    const db = testDb();
+    try {
+      assert.throws(
+        () =>
+          setMessageTrashInDb(
+            db,
+            {
+              handles: ["+15555550123", "+15555550199"],
+              conversationIds: [20],
+            },
+            true,
+            ACCOUNT_A,
+          ),
+        /nothing to trash: no one-to-one conversation for \+15555550199/,
       );
       assert.deepEqual(trashedConversationIds(db), []);
     } finally {

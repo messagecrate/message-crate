@@ -2,7 +2,11 @@ import Database from "better-sqlite3";
 
 import { currentAccountId } from "./accountScope";
 import { resetDb } from "./dbCore";
-import { clearTrashedHandles, trashHandlesInDb } from "./handlesWrite";
+import {
+  clearTrashedHandles,
+  noConversationToTrash,
+  trashHandlesInDb,
+} from "./handlesWrite";
 import { openWritableVaultDb } from "./vaultSchema";
 
 export type MessageTrashTargets = {
@@ -28,7 +32,8 @@ function normalizeTargets(targets: MessageTrashTargets): MessageTrashTargets {
 /**
  * Trash or restore direct threads (named by handle, written as the handle's
  * 1:1 conversation) and group conversations atomically. Direct handles remain
- * assigned to their contacts.
+ * assigned to their contacts. A handle with no 1:1 conversation refuses the
+ * whole batch.
  */
 export function setMessageTrashInDb(
   db: Database.Database,
@@ -58,7 +63,8 @@ export function setMessageTrashInDb(
          VALUES (?, ?, datetime('now'))
          ON CONFLICT(account_id, conversation_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
       );
-      trashHandlesInDb(db, normalized.handles, accountId);
+      const missing = trashHandlesInDb(db, normalized.handles, accountId);
+      if (missing.length > 0) throw noConversationToTrash(missing);
       for (const conversationId of normalized.conversationIds) {
         trashConversation.run(accountId, conversationId);
       }

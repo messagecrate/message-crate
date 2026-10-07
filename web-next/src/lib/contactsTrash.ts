@@ -4,8 +4,9 @@ import { getContact } from "./contactsRead";
 import { resetDb } from "./dbCore";
 import { deleteContacts } from "./contactsWrite";
 import {
-  INDIVIDUAL_CONVERSATIONS_OF_HANDLE,
+  noConversationToTrash,
   trashHandlesInDb,
+  untrashHandleConversations,
 } from "./handlesWrite";
 import { openWritableVaultDb } from "./vaultSchema";
 
@@ -106,7 +107,11 @@ export function trashContactWithMessages(ids: number[]): number {
   return unique.length;
 }
 
-/** Soft-trash the 1:1 conversations of contacts' handles; leave contacts visible. */
+/**
+ * Soft-trash the 1:1 conversations of contacts' handles; leave contacts
+ * visible. Refuses the whole batch when a contact has no 1:1 messages, since
+ * nothing would go in the trash for it.
+ */
 export function trashContactMessagesOnly(ids: number[]): {
   count: number;
   handles: string[];
@@ -122,8 +127,12 @@ export function trashContactMessagesOnly(ids: number[]): {
     const tx = writeDb.transaction(() => {
       for (const id of unique) {
         const next = contactHandlesWithMessages(writeDb, id, accountId);
+        if (next.length === 0) {
+          throw new Error(`contact ${id} has no one-to-one messages to trash`);
+        }
+        const missing = trashHandlesInDb(writeDb, next, accountId);
+        if (missing.length > 0) throw noConversationToTrash(missing);
         handles.push(...next);
-        trashHandlesInDb(writeDb, next, accountId);
       }
     });
     tx();
@@ -145,10 +154,6 @@ export function restoreTrashedContacts(ids: number[]): number {
     const delContact = writeDb.prepare(
       `DELETE FROM trashed_contacts WHERE account_id = ? AND contact_id = ?`,
     );
-    const delHandleConversations = writeDb.prepare(
-      `DELETE FROM trashed_conversations
-       WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
-    );
     const tx = writeDb.transaction(() => {
       for (const id of unique) {
         const trashed = writeDb
@@ -162,7 +167,7 @@ export function restoreTrashedContacts(ids: number[]): number {
         const handleIds = contactHandleIds(writeDb, id, accountId);
         delContact.run(accountId, id);
         for (const handleId of handleIds) {
-          delHandleConversations.run(accountId, accountId, handleId);
+          untrashHandleConversations(writeDb, accountId, handleId);
         }
       }
     });
@@ -190,10 +195,6 @@ export function permanentlyDeleteTrashedContacts(ids: number[]): number {
       `DELETE FROM conversations
        WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`,
     );
-    const delHandleConversationTrash = writeDb.prepare(
-      `DELETE FROM trashed_conversations
-       WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
-    );
     const delContactTrash = writeDb.prepare(
       `DELETE FROM trashed_contacts WHERE account_id = ? AND contact_id = ?`,
     );
@@ -209,7 +210,7 @@ export function permanentlyDeleteTrashedContacts(ids: number[]): number {
         }
         const handleIds = contactHandleIds(writeDb, id, accountId);
         for (const handleId of handleIds) {
-          delHandleConversationTrash.run(accountId, accountId, handleId);
+          untrashHandleConversations(writeDb, accountId, handleId);
           delConv.run(accountId, handleId);
         }
         delContactTrash.run(accountId, id);

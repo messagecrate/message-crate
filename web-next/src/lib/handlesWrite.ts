@@ -71,8 +71,20 @@ export function handleIdForRaw(
  * A handle has no trash of its own: what goes in the trash is the handle's
  * 1:1 conversation (`trashed_conversations`), as on the server.
  */
-export const INDIVIDUAL_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
+const INDIVIDUAL_CONVERSATIONS_OF_HANDLE = `SELECT id FROM conversations
    WHERE account_id = ? AND conversation_type = 'individual' AND chat_handle_id = ?`;
+
+/** Take one handle's 1:1 conversation out of the trash. */
+export function untrashHandleConversations(
+  db: Database.Database,
+  accountId: string,
+  handleId: number,
+): void {
+  db.prepare(
+    `DELETE FROM trashed_conversations
+     WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
+  ).run(accountId, accountId, handleId);
+}
 
 /** Take these handles' 1:1 conversations out of the trash (e.g. after assigning to a contact). */
 export function clearTrashedHandles(
@@ -80,12 +92,8 @@ export function clearTrashedHandles(
   handles: string[],
   accountId: string = currentAccountId(),
 ): void {
-  const restore = db.prepare(
-    `DELETE FROM trashed_conversations
-     WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
-  );
   for (const handleId of handleIdsForRaws(db, accountId, handles)) {
-    restore.run(accountId, accountId, handleId);
+    untrashHandleConversations(db, accountId, handleId);
   }
 }
 
@@ -93,26 +101,43 @@ export function clearTrashedHandles(
  * Put these handles' 1:1 conversations in the trash (owned or unassigned).
  * `handleType` applies to every handle in the batch when given; otherwise each
  * handle's type is inferred from its raw shape.
+ *
+ * Returns the handles that have no 1:1 conversation (a handle seen only in
+ * group chats): nothing was trashed for them, and the caller decides whether
+ * that refuses the request.
  */
 export function trashHandlesInDb(
   db: Database.Database,
   handles: string[],
   accountId: string = currentAccountId(),
   handleType?: HandleType,
-): void {
+): string[] {
   const trimmed = [...new Set(handles.map((h) => h.trim()).filter(Boolean))];
-  if (trimmed.length === 0) return;
+  if (trimmed.length === 0) return [];
+  // `WHERE true` is not a leftover: SQLite needs a WHERE between a SELECT and
+  // ON CONFLICT, or it reads ON as the start of a join constraint.
   const upsert = db.prepare(
     `INSERT INTO trashed_conversations (account_id, conversation_id, trashed_at)
      SELECT ?, id, datetime('now') FROM (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})
      WHERE true
      ON CONFLICT(account_id, conversation_id) DO UPDATE SET trashed_at = excluded.trashed_at`,
   );
+  const nothingToTrash: string[] = [];
   for (const handle of trimmed) {
     const type = handleType ?? inferHandleType(handle);
     const handleId = resolveHandleId(db, accountId, handle, type);
-    upsert.run(accountId, accountId, handleId);
+    if (upsert.run(accountId, accountId, handleId).changes === 0) {
+      nothingToTrash.push(handle);
+    }
   }
+  return nothingToTrash;
+}
+
+/** The error for handles that have no 1:1 conversation to trash. */
+export function noConversationToTrash(handles: string[]): Error {
+  return new Error(
+    `nothing to trash: no one-to-one conversation for ${handles.join(", ")}`,
+  );
 }
 
 /** Move a handle's 1:1 conversation into Trash (the handle may still belong to a contact). */
@@ -123,7 +148,11 @@ export function trashHandle(handle: string, handleType?: HandleType): void {
 
   const writeDb = openWritableVaultDb();
   try {
-    trashHandlesInDb(writeDb, [trimmed], accountId, handleType);
+    const trash = writeDb.transaction(() => {
+      const missing = trashHandlesInDb(writeDb, [trimmed], accountId, handleType);
+      if (missing.length > 0) throw noConversationToTrash(missing);
+    });
+    trash();
   } finally {
     writeDb.close();
   }
@@ -140,12 +169,7 @@ export function restoreHandle(handle: string, handleType?: HandleType): void {
   try {
     const handleId = handleIdForRaw(writeDb, accountId, trimmed, handleType);
     if (handleId != null) {
-      writeDb
-        .prepare(
-          `DELETE FROM trashed_conversations
-           WHERE account_id = ? AND conversation_id IN (${INDIVIDUAL_CONVERSATIONS_OF_HANDLE})`,
-        )
-        .run(accountId, accountId, handleId);
+      untrashHandleConversations(writeDb, accountId, handleId);
     }
   } finally {
     writeDb.close();
