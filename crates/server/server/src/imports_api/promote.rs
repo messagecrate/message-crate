@@ -92,9 +92,39 @@ const PROMOTE_MESSAGE_BATCH: i64 = 50_000;
 /// Below this many staged messages the secondary indexes are cheaper to keep than to rebuild.
 const PROMOTE_INDEX_DROP_MIN_STAGING: i64 = 5_000;
 
+/// What the promotion did to the content of the messages production held
+/// before it, as [`PromotedContent::changed_messages`] reads it.
+struct PromotedContent {
+    /// The highest message id before the promotion: every message at or
+    /// below it was stored already.
+    messages_before: i64,
+    /// The highest attachment id before the promotion: every attachment
+    /// above it is new.
+    attachments_before: i64,
+    /// The stored messages whose stored attachments took their files.
+    filled_messages: Vec<i64>,
+}
+
+impl PromotedContent {
+    /// The stored messages whose content key the promotion changed and that
+    /// had one before, sorted ([`staging::stored_messages_with_new_content`]).
+    async fn changed_messages(&self, conn: &mut SqliteConnection) -> Result<Vec<i64>> {
+        staging::stored_messages_with_new_content(
+            conn,
+            self.messages_before,
+            self.attachments_before,
+            &self.filled_messages,
+        )
+        .await
+    }
+}
+
 impl Promote<'_> {
     /// Every phase, in order: the source wipe in replace mode, then each
     /// table, the search index, and the content keys when asked for.
+    /// Without the content keys, the duplicate flags of the stored messages
+    /// whose content changed are put right; with them, the caller runs the
+    /// full dedupe after the commit, which puts every flag right.
     async fn run(&mut self, wipe_sources: &[String], fill_content_keys: bool) -> Result<()> {
         if self.mode == ImportMode::Replace {
             self.wipe_sources(wipe_sources).await?;
@@ -109,9 +139,14 @@ impl Promote<'_> {
             .await?;
         if fill_content_keys {
             self.fill_content_keys().await?;
-        }
-        self.dedupe_changed_messages(messages_before, attachments_before, filled_messages)
+        } else {
+            self.dedupe_changed_messages(&PromotedContent {
+                messages_before,
+                attachments_before,
+                filled_messages,
+            })
             .await?;
+        }
         Ok(())
     }
 
@@ -536,18 +571,13 @@ impl Promote<'_> {
     /// dedupe setting: the setting governs the rows the import brings, and
     /// a flag the import itself made wrong is put right (#1805). A
     /// promotion that changed no stored message's content runs nothing.
-    async fn dedupe_changed_messages(
-        &mut self,
-        messages_before: i64,
-        attachments_before: i64,
-        filled_messages: Vec<i64>,
-    ) -> Result<()> {
-        let mut changed =
-            staging::stored_messages_with_new_content(self.tx, messages_before, attachments_before)
-                .await?;
-        changed.extend(filled_messages);
-        changed.sort_unstable();
-        changed.dedup();
+    ///
+    /// Only an import that fills no content keys runs this: one that fills
+    /// them is followed by the full dedupe once the caller commits
+    /// ([`crate::dedupe::dedupe_cross_source`]), which would write every
+    /// flag this writes again.
+    async fn dedupe_changed_messages(&mut self, promoted: &PromotedContent) -> Result<()> {
+        let changed = promoted.changed_messages(self.tx).await?;
         if changed.is_empty() {
             return Ok(());
         }

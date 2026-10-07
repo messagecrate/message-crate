@@ -1448,6 +1448,12 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 /// promotion, those at or below `messages_before`, whose staged row gives
 /// it a later text. Returns how many messages it names.
 ///
+/// Each row says too whether the text itself changes (`body_changed`),
+/// rather than only the earlier versions, and whether the message had a
+/// content key before (`keyed`), because [`promote_later_edits`] clears the
+/// key of a message whose text changes and nothing says afterwards that it
+/// had one. [`stored_messages_with_new_content`] reads both.
+///
 /// When both backups have a date ([`later_backup_sql`]), a staged row from
 /// a later backup gives its text and earlier versions whatever their times
 /// say, when either differs from what the message holds (#1804); one from
@@ -1464,7 +1470,17 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 ///
 /// Returns an error when a statement fails.
 pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -> Result<u64> {
-    reset_id_map(conn, "_promote_edit_map").await?;
+    for stmt in [
+        "CREATE TEMP TABLE IF NOT EXISTS _promote_edit_map (
+            staging_id BIGINT PRIMARY KEY,
+            prod_id BIGINT NOT NULL,
+            body_changed BOOLEAN NOT NULL,
+            keyed BOOLEAN NOT NULL
+        )",
+        "DELETE FROM _promote_edit_map",
+    ] {
+        sqlx::query(stmt).execute(&mut *conn).await?;
+    }
     // A version list as one value, in the order its rows were written, so
     // two lists compare whole.
     let versions = |table: &str, id: &str| {
@@ -1475,13 +1491,15 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
     };
     let sql = format!(
         r"
-        INSERT INTO _promote_edit_map (staging_id, prod_id)
-        SELECT staging_id, prod_id
+        INSERT INTO _promote_edit_map (staging_id, prod_id, body_changed, keyed)
+        SELECT staging_id, prod_id, body_changed, keyed
         FROM (
             SELECT
                 mm.staging_id,
                 mm.prod_id,
                 {later_backup} AS later_backup,
+                sm.body IS NOT m.body AS body_changed,
+                m.content_key IS NOT NULL AND m.content_key != '' AS keyed,
                 sm.body IS NOT m.body
                     OR {staged_versions} IS NOT {held_versions} AS differs,
                 sv.message_id IS NOT NULL AS has_versions,
@@ -1530,8 +1548,9 @@ pub struct PromotedEdits {
 /// Give each message `_promote_edit_map` names the text of its staged row,
 /// and delete the earlier versions it held, which
 /// [`promote_earlier_versions`] then replaces with the staged ones. The
-/// content key is cleared, because it hashes the text: the content-key fill
-/// computes it again.
+/// content key of a message whose text changes is cleared, because it
+/// hashes the text: the content-key fill computes it again. A message given
+/// only other earlier versions keeps its key, which does not hash them.
 ///
 /// The versions' search entries are not touched here: the caller removes
 /// them first (`schema::unindex_versions_of_edited_messages`), while the
@@ -1544,8 +1563,8 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
     let messages = sqlx::query(
         r"
         UPDATE messages
-        SET body = sm.body,
-            content_key = NULL
+        SET content_key = CASE WHEN em.body_changed THEN NULL ELSE messages.content_key END,
+            body = sm.body
         FROM _promote_edit_map em
         JOIN staging_messages sm ON sm.id = em.staging_id
         WHERE messages.id = em.prod_id
@@ -1728,11 +1747,17 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// The messages production held before this promotion, those at or below
-/// `messages_before`, whose content it changed: those that took a later
-/// edit (`_promote_edit_map`) and those that gained an attachment, one
-/// above `attachments_before`. A stored attachment given its file is a
-/// change too, which [`PromotedAttachments::filled_messages`] names,
+/// `messages_before`, whose content key this promotion changed and that had
+/// one before, sorted: those whose text a later edit changed
+/// (`_promote_edit_map`), those that gained an attachment, one above
+/// `attachments_before`, and those of `filled`, the stored attachments
+/// given their file, which [`PromotedAttachments::filled_messages`] names
 /// because nothing in the row says so afterwards.
+///
+/// A message without a content key is left out: an import with dedupe off
+/// brought it, and no dedupe has compared it. An edit that changes only
+/// the earlier versions is left out too, because the key does not hash
+/// them.
 ///
 /// # Errors
 ///
@@ -1741,16 +1766,25 @@ pub async fn stored_messages_with_new_content(
     conn: &mut SqliteConnection,
     messages_before: i64,
     attachments_before: i64,
+    filled: &[i64],
 ) -> Result<Vec<i64>> {
     Ok(sqlx::query_scalar(
         r"
-        SELECT prod_id FROM _promote_edit_map
+        SELECT prod_id FROM _promote_edit_map WHERE body_changed AND keyed
         UNION
-        SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1
+        SELECT m.id
+        FROM messages m
+        WHERE m.content_key IS NOT NULL AND m.content_key != ''
+          AND (
+            m.id IN (SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1)
+            OR m.id IN (SELECT value FROM json_each($3))
+          )
+        ORDER BY 1
         ",
     )
     .bind(messages_before)
     .bind(attachments_before)
+    .bind(serde_json::to_string(filled)?)
     .fetch_all(&mut *conn)
     .await?)
 }

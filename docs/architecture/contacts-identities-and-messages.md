@@ -445,11 +445,14 @@ was written, not when a part was unsent, so they cannot tell
 right, whatever the import's dedupe setting.** A later edit changes a stored
 message's text, and an attachment added or given its file changes what its
 content key hashes, so its duplicate flag can stop matching. The import runs
-the dedupe for those messages, in its own transaction, and writes the flags of
-the messages tied to them: those a changed message hid or was hidden behind,
-before or now, followed to the end (`dedupe_changed_messages` in `dedupe.rs`).
-It compares only messages with a content key, the ones a dedupe has seen, so a
-message an import with dedupe off brought stays as it came. Why: the dedupe
+the dedupe for those messages inside the import's own write transaction, and
+writes the flags of the messages tied to them: those a changed message hid or
+was hidden behind, before or now, followed to the end
+(`dedupe_changed_messages` in `dedupe.rs`). An import with dedupe on leaves
+this to the full dedupe that follows it. The pass compares only messages with
+a content key, the ones a dedupe has seen, and takes up a changed message only
+when it had one, so a message an import with dedupe off brought stays as it
+came, even when a later import changes it. Why: the dedupe
 setting governs the rows an import brings, and a flag the import itself made
 wrong would hide a message behind a copy whose text no longer matches, where
 no search finds it

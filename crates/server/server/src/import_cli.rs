@@ -195,7 +195,10 @@ async fn import_under_session(
         mode: opts.mode,
         source: opts.source_override.as_deref().unwrap_or(""),
         account_id,
-        fill_content_keys: true,
+        // The full dedupe after the import computes every content key, so
+        // only an import it does not follow puts the changed messages'
+        // flags right on its own.
+        fill_content_keys: !opts.skip_dedupe,
         import_id: Some(import_run.id),
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,

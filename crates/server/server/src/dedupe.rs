@@ -1,6 +1,6 @@
 //! Cross-source content fingerprint and soft-hide dedupe.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{self, Write};
 use std::time::Instant;
@@ -293,11 +293,13 @@ pub struct ChangedDedupe {
 /// whose flag depends on theirs (#1805).
 ///
 /// The import's dedupe setting governs the rows it brings, so this runs
-/// whatever the setting is. It computes the changed messages' content keys
-/// again, then runs both passes of [`dedupe_cross_source`] over the
-/// messages a dedupe has seen, those with a content key. A message an
-/// import with dedupe off added has none, so it is neither hidden nor a
-/// winner here. Only the flags of the messages tied to a changed one are
+/// whatever the setting is. `changed` names only messages that had a
+/// content key before the import changed them: a message an import with
+/// dedupe off added has none, no dedupe has compared it, and it stays as it
+/// came. This computes the changed messages' content keys again, then runs
+/// both passes of [`dedupe_cross_source`] over the messages a dedupe has
+/// seen, those with a content key, so a message without one is neither
+/// hidden nor a winner here. Only the flags of the messages tied to a changed one are
 /// written: those it was hidden behind or hid, before or now, and the
 /// messages tied to those in turn. Every other flag stays as it is.
 ///
@@ -313,16 +315,14 @@ pub async fn dedupe_changed_messages(
     if changed.is_empty() {
         return Ok(ChangedDedupe::default());
     }
-    fill_id_table(conn, "_dedupe_changed", changed).await?;
+    let changed_json = serde_json::to_string(changed)?;
     sqlx::query(
-        "UPDATE messages SET content_key = NULL WHERE id IN (SELECT id FROM _dedupe_changed)",
+        "UPDATE messages SET content_key = NULL WHERE id IN (SELECT value FROM json_each($1))",
     )
+    .bind(&changed_json)
     .execute(&mut *conn)
     .await?;
-    recompute_content_keys(conn, KeyScope::Changed, account_id).await?;
-    sqlx::query("DROP TABLE IF EXISTS _dedupe_changed")
-        .execute(&mut *conn)
-        .await?;
+    recompute_content_keys(conn, KeyScope::Changed(&changed_json), account_id).await?;
 
     let priority = source_priority_from_db(conn, account_id).await?;
     let prio: HashMap<&str, usize> = priority
@@ -366,15 +366,12 @@ pub async fn dedupe_changed_messages(
         }
     }
     let tied: Vec<i64> = tied.into_iter().collect();
-    fill_id_table(conn, "_dedupe_tied", &tied).await?;
     sqlx::query(
-        "UPDATE messages SET duplicate_of = NULL WHERE id IN (SELECT id FROM _dedupe_tied)",
+        "UPDATE messages SET duplicate_of = NULL WHERE id IN (SELECT value FROM json_each($1))",
     )
+    .bind(serde_json::to_string(&tied)?)
     .execute(&mut *conn)
     .await?;
-    sqlx::query("DROP TABLE IF EXISTS _dedupe_tied")
-        .execute(&mut *conn)
-        .await?;
     if !flags.is_empty() {
         apply_duplicate_flags(conn, "_changed_flags", &flags).await?;
     }
@@ -394,13 +391,13 @@ fn tied_messages(
     changed: &[i64],
     stored: &HashMap<i64, i64>,
     now: &HashMap<i64, i64>,
-) -> std::collections::BTreeSet<i64> {
+) -> BTreeSet<i64> {
     let mut neighbours: HashMap<i64, Vec<i64>> = HashMap::new();
     for (&loser, &winner) in stored.iter().chain(now.iter()) {
         neighbours.entry(loser).or_default().push(winner);
         neighbours.entry(winner).or_default().push(loser);
     }
-    let mut tied: std::collections::BTreeSet<i64> = changed.iter().copied().collect();
+    let mut tied: BTreeSet<i64> = changed.iter().copied().collect();
     let mut queue: Vec<i64> = changed.to_vec();
     while let Some(id) = queue.pop() {
         for &next in neighbours.get(&id).into_iter().flatten() {
@@ -410,29 +407,6 @@ fn tied_messages(
         }
     }
     tied
-}
-
-/// Make the temp table `table` hold exactly the ids `ids`.
-async fn fill_id_table(conn: &mut SqliteConnection, table: &str, ids: &[i64]) -> Result<()> {
-    for stmt in schema::split_ddl(&format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (id BIGINT PRIMARY KEY);
-        DELETE FROM {table};"
-    )) {
-        sqlx::query(&stmt).execute(&mut *conn).await?;
-    }
-    for chunk in ids.chunks(SQLITE_IN_CHUNK) {
-        let placeholders: Vec<String> = (1..=chunk.len()).map(|i| format!("(${i})")).collect();
-        let sql = format!(
-            "INSERT OR IGNORE INTO {table} (id) VALUES {}",
-            placeholders.join(", ")
-        );
-        let mut q = sqlx::query(&sql);
-        for id in chunk {
-            q = q.bind(*id);
-        }
-        q.execute(&mut *conn).await?;
-    }
-    Ok(())
 }
 
 /// Compute `content_key` for production rows that still lack one (after attachments exist).
@@ -489,14 +463,13 @@ async fn insert_content_key_rows(
 /// Which of the account's messages [`recompute_content_keys`] computes a key
 /// for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyScope {
+enum KeyScope<'a> {
     /// Every message, writing only the keys that changed.
     All,
     /// The messages without a key.
     Missing,
-    /// The messages the temp table `_dedupe_changed` names, whose keys the
-    /// caller has cleared.
-    Changed,
+    /// The messages whose ids the JSON array names, writing every key.
+    Changed(&'a str),
 }
 
 /// Compute and store content keys for the account's messages in `scope`.
@@ -507,7 +480,7 @@ enum KeyScope {
 /// Returns an error when a query fails or the hashing task panics.
 async fn recompute_content_keys(
     conn: &mut SqliteConnection,
-    scope: KeyScope,
+    scope: KeyScope<'_>,
     account_id: i64,
 ) -> Result<u64> {
     let Some(inputs) = ContentKeyInputs::load(conn, account_id, scope).await? else {
@@ -582,15 +555,15 @@ impl ContentKeyInputs {
     async fn load(
         conn: &mut SqliteConnection,
         account_id: i64,
-        scope: KeyScope,
+        scope: KeyScope<'_>,
     ) -> Result<Option<Self>> {
         let filter = match scope {
             KeyScope::All => "WHERE c.account_id = $1",
             KeyScope::Missing => {
                 "WHERE (m.content_key IS NULL OR m.content_key = '') AND c.account_id = $1"
             }
-            KeyScope::Changed => {
-                "WHERE m.id IN (SELECT id FROM _dedupe_changed) AND c.account_id = $1"
+            KeyScope::Changed(_) => {
+                "WHERE m.id IN (SELECT value FROM json_each($2)) AND c.account_id = $1"
             }
         };
         let sql = format!(
@@ -607,10 +580,11 @@ impl ContentKeyInputs {
             ",
             sender = sender_for_key_sql(),
         );
-        let rows: Vec<ContentKeyRow> = sqlx::query_as(&sql)
-            .bind(account_id)
-            .fetch_all(&mut *conn)
-            .await?;
+        let mut query = sqlx::query_as(&sql).bind(account_id);
+        if let KeyScope::Changed(ids) = scope {
+            query = query.bind(ids);
+        }
+        let rows: Vec<ContentKeyRow> = query.fetch_all(&mut *conn).await?;
         if rows.is_empty() {
             return Ok(None);
         }

@@ -208,6 +208,10 @@ async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again()
 /// an append with dedupe off. The copy, with the same text and no
 /// attachment, still matches it within the near-time window and stays
 /// hidden, and the message's content key hashes the file it now has.
+///
+/// The duplicate-flag assertions hold without the fix too, because no flag
+/// changes here: only the content key computed again, the last assertion,
+/// fails without it.
 #[tokio::test]
 async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() {
     let (state, _fixture, token) = importer().await;
@@ -304,6 +308,9 @@ async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() 
 
 /// An append with dedupe off that changes no stored message's content runs
 /// no dedupe: a flag the full pass would set stays unset.
+///
+/// A guard, not a test of the fix: it passes without the fix, and fails
+/// when the fix runs a dedupe over the whole account.
 #[tokio::test]
 async fn an_append_with_dedupe_off_that_changes_nothing_stored_runs_no_dedupe() {
     let (state, _fixture, token) = importer().await;
@@ -343,4 +350,53 @@ async fn an_append_with_dedupe_off_that_changes_nothing_stored_runs_no_dedupe() 
     .await;
 
     assert_eq!(hidden_behind(&state, "m-six").await, None);
+}
+
+/// A message an import with dedupe off brought, with no content key, takes
+/// a later edit from another append with dedupe off. Its new text matches
+/// a copy from a source imported with dedupe on, but no dedupe was asked
+/// for its own source, so it stays as it came: shown, without a content
+/// key, and the copy stays shown beside it.
+#[tokio::test]
+async fn an_edit_with_dedupe_off_leaves_a_message_no_dedupe_has_seen_as_it_came() {
+    let (state, _fixture, token) = importer().await;
+    import(
+        &state,
+        &token,
+        "sms",
+        true,
+        &[
+            message_line("n-six", "see you at six"),
+            message_line("n-seven", "see you at seven"),
+        ],
+    )
+    .await;
+    import(
+        &state,
+        &token,
+        "imessage",
+        false,
+        &[message_line("m-six", "see you at six")],
+    )
+    .await;
+    assert_eq!(hidden_behind(&state, "m-six").await, None);
+
+    import(
+        &state,
+        &token,
+        "imessage",
+        false,
+        &[edited("m-six", "see you at seven")],
+    )
+    .await;
+
+    assert_eq!(hidden_behind(&state, "m-six").await, None);
+    assert_eq!(hidden_behind(&state, "n-seven").await, None);
+    let mut conn = state.db.acquire().await.unwrap();
+    let key: Option<String> =
+        sqlx::query_scalar("SELECT content_key FROM messages WHERE guid = 'm-six'")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(key, None, "no dedupe has seen the message");
 }
