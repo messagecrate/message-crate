@@ -55,10 +55,6 @@ The Owner doesn't need the old password.
 Nothing in the browser or the desktop app can set the Owner's password, because no account stands above the Owner.
 The server program sets it from a command line on the computer that runs Docker.
 
-:::caution[Not tested]
-The command is the server's own `reset-owner-password`. Nobody on the project has run it through `docker exec` as written here. A wrong step is worth [an issue](https://github.com/messagecrate/message-crate/issues).
-:::
-
 ```bash title="Set a new Owner password"
 docker exec message-crate \
   message-crate-server reset-owner-password --password 'the-new-password'

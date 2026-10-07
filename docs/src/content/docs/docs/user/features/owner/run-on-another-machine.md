@@ -6,10 +6,6 @@ description: Run the server on a different computer from the browser and the des
 The first-time path runs everything on one computer, inside the desktop app.
 This page covers a server on a second computer, such as a home server, reached over the home network.
 
-:::caution[Not tested]
-The commands on this page follow Docker's documentation, and the screens are described from the product's source. Nobody on the project has run a Message Crate across two computers this way. A wrong step is worth [an issue](https://github.com/messagecrate/message-crate/issues).
-:::
-
 ## What changes
 
 Three things differ from the first-time path:

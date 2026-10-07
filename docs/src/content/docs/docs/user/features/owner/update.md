@@ -18,10 +18,6 @@ For the app's own Message Crate, a copy of the data directory (**Settings → Sy
 
 ## Update a server in Docker
 
-:::caution[Not tested]
-These steps follow Docker's documentation. Nobody on the project has run them. A wrong step is worth [an issue](https://github.com/messagecrate/message-crate/issues).
-:::
-
 The steps match the server started in [Run Message Crate with Docker](/docs/user/features/owner/run-with-docker/): a container named `message-crate` on the volume `message-crate-data`.
 
 `docker stop` and `docker rm` remove the running server.
