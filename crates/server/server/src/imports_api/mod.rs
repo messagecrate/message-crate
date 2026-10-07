@@ -1798,7 +1798,7 @@ async fn run_import_path(
     .await;
     let counts = import_result?;
     let dedupe_stats = if do_dedupe {
-        Some(dedupe::dedupe_cross_source(&mut conn, account, None, 2).await?)
+        Some(dedupe::dedupe_cross_source(&mut conn, account, None, dedupe::NEAR_WINDOW_SECS).await?)
     } else {
         None
     };

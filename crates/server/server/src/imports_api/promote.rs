@@ -102,7 +102,7 @@ impl Promote<'_> {
         self.promote_conversations().await?;
         self.promote_participants().await?;
         let messages_before = self.promote_messages().await?;
-        let attachments_before = self.promote_attachments().await?;
+        let (attachments_before, filled_messages) = self.promote_attachments().await?;
         self.promote_tapbacks().await?;
         let versions_before = self.promote_earlier_versions(messages_before).await?;
         self.index_fts(messages_before, attachments_before, versions_before)
@@ -110,6 +110,8 @@ impl Promote<'_> {
         if fill_content_keys {
             self.fill_content_keys().await?;
         }
+        self.dedupe_changed_messages(messages_before, attachments_before, filled_messages)
+            .await?;
         Ok(())
     }
 
@@ -417,8 +419,9 @@ impl Promote<'_> {
     /// Insert the staged attachments under their production messages.
     /// Returns the highest attachment id that existed before the insert:
     /// every new row lands above it, which is how [`Self::index_fts`] finds
-    /// the existing messages that gained an attachment.
-    async fn promote_attachments(&mut self) -> Result<i64> {
+    /// the existing messages that gained an attachment. Returns too the
+    /// stored messages whose attachment rows took their missing files.
+    async fn promote_attachments(&mut self) -> Result<(i64, Vec<i64>)> {
         let phase = Self::begin("Writing the import's attachments…");
         let attachments_before = staging::max_attachment_id(self.tx).await?;
         let promoted = staging::promote_attachments(self.tx).await?;
@@ -439,7 +442,7 @@ impl Promote<'_> {
                 ),
             ),
         );
-        Ok(attachments_before)
+        Ok((attachments_before, promoted.filled_messages))
     }
 
     /// Insert the staged tapbacks under their production messages.
@@ -522,6 +525,53 @@ impl Promote<'_> {
                 as_count(keys),
                 "1 content key was filled",
                 "{n} content keys were filled",
+            ),
+        );
+        Ok(())
+    }
+
+    /// Put right the duplicate flags of the stored messages whose content
+    /// this promotion changed, and of the messages tied to them
+    /// ([`crate::dedupe::dedupe_changed_messages`]), whatever the import's
+    /// dedupe setting: the setting governs the rows the import brings, and
+    /// a flag the import itself made wrong is put right (#1805). A
+    /// promotion that changed no stored message's content runs nothing.
+    async fn dedupe_changed_messages(
+        &mut self,
+        messages_before: i64,
+        attachments_before: i64,
+        filled_messages: Vec<i64>,
+    ) -> Result<()> {
+        let mut changed =
+            staging::stored_messages_with_new_content(self.tx, messages_before, attachments_before)
+                .await?;
+        changed.extend(filled_messages);
+        changed.sort_unstable();
+        changed.dedup();
+        if changed.is_empty() {
+            return Ok(());
+        }
+        let phase = Self::begin(format_args!(
+            "Checking the duplicates of the {} whose content changed…",
+            words(
+                as_count(changed.len()),
+                "1 stored message",
+                "{n} stored messages"
+            )
+        ));
+        let result = crate::dedupe::dedupe_changed_messages(
+            self.tx,
+            self.account_id,
+            &changed,
+            crate::dedupe::NEAR_WINDOW_SECS,
+        )
+        .await?;
+        self.done(
+            phase,
+            format!(
+                "{} shown again, and {} hidden",
+                words(result.shown, "1 message is", "{n} messages are"),
+                words(result.hidden, "1 is", "{n} are"),
             ),
         );
         Ok(())

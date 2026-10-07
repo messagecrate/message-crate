@@ -1570,11 +1570,13 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// What [`promote_attachments`] did.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PromotedAttachments {
     /// Production rows stored without a file that took the file from a
     /// staged row.
     pub filled: u64,
+    /// The stored messages of those rows, each once.
+    pub filled_messages: Vec<i64>,
     /// New rows inserted.
     pub inserted: u64,
 }
@@ -1705,15 +1707,52 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// Returns an error when a statement fails.
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let filled = sqlx::query(&fill_attachments_sql("attachments", &staged))
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
+    let mut filled_messages: Vec<i64> = sqlx::query_scalar(&format!(
+        "{} RETURNING message_id",
+        fill_attachments_sql("attachments", &staged)
+    ))
+    .fetch_all(&mut *conn)
+    .await?;
+    let filled = filled_messages.len() as u64;
+    filled_messages.sort_unstable();
+    filled_messages.dedup();
     let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
         .execute(&mut *conn)
         .await?
         .rows_affected();
-    Ok(PromotedAttachments { filled, inserted })
+    Ok(PromotedAttachments {
+        filled,
+        filled_messages,
+        inserted,
+    })
+}
+
+/// The messages production held before this promotion, those at or below
+/// `messages_before`, whose content it changed: those that took a later
+/// edit (`_promote_edit_map`) and those that gained an attachment, one
+/// above `attachments_before`. A stored attachment given its file is a
+/// change too, which [`PromotedAttachments::filled_messages`] names,
+/// because nothing in the row says so afterwards.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn stored_messages_with_new_content(
+    conn: &mut SqliteConnection,
+    messages_before: i64,
+    attachments_before: i64,
+) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(
+        r"
+        SELECT prod_id FROM _promote_edit_map
+        UNION
+        SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1
+        ",
+    )
+    .bind(messages_before)
+    .bind(attachments_before)
+    .fetch_all(&mut *conn)
+    .await?)
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any

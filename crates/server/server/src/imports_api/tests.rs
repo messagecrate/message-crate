@@ -5810,4 +5810,5 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
 }
 
 mod backup_dates;
+mod changed_content_dedupe;
 mod time_precision;

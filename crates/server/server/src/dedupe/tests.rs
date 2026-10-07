@@ -1723,13 +1723,14 @@ fn survivor(rows: &HashMap<i64, GenRow>, id: i64, ctx: &str) -> i64 {
 async fn assert_dedupe_invariants(conn: &mut SqliteConnection, ctx: &str) {
     let rows = load_gen_rows(conn).await;
 
-    let expected: HashMap<i64, String> = ContentKeyInputs::load(conn, TEST_ACCOUNT_ID, false)
-        .await
-        .unwrap()
-        .expect("the database has messages")
-        .hash()
-        .into_iter()
-        .collect();
+    let expected: HashMap<i64, String> =
+        ContentKeyInputs::load(conn, TEST_ACCOUNT_ID, KeyScope::All)
+            .await
+            .unwrap()
+            .expect("the database has messages")
+            .hash()
+            .into_iter()
+            .collect();
     for (id, row) in &rows {
         assert_eq!(
             row.content_key.as_deref(),
