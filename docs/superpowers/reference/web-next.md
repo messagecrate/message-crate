@@ -272,7 +272,7 @@ has no such feature.
 | Administer other users | yes (admins) | — |
 | Profile handles | phone, email, WhatsApp; add and remove | phone numbers; add and remove |
 | Address-book file load | Message Crate's own `.csv` from Settings, as Append or Edit; Export on Contacts writes it | `.vcf` with a preview dialog mapping vCard categories to labels |
-| Demo account | password change and deletion disabled | reset-demo entry pointing at the CLI |
+| Demo account | password change and deletion disabled | sign-in, name and phone changes and deletion refused with 403 Forbidden |
 
 ### Navigation and layout
 

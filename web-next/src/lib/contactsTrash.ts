@@ -3,11 +3,7 @@ import { currentAccountId } from "./accountScope";
 import { getContact } from "./contactsRead";
 import { resetDb } from "./dbCore";
 import { deleteContacts } from "./contactsWrite";
-import {
-  noConversationToTrash,
-  trashHandlesInDb,
-  untrashHandleConversations,
-} from "./handlesWrite";
+import { trashHandlesInDb, untrashHandleConversations } from "./handlesWrite";
 import { openWritableVaultDb } from "./vaultSchema";
 
 function contactHandleIds(
@@ -75,7 +71,12 @@ function assertContactsExist(ids: number[]): void {
   }
 }
 
-/** Soft-trash contacts and the 1:1 conversations of all their handles. */
+/**
+ * Soft-trash contacts and the 1:1 conversations of all their handles. A
+ * handle seen only in group chats has no 1:1 conversation to trash; it is
+ * accepted here, unlike in the messages-only paths, because the contact
+ * itself goes to Trash and the request never writes nothing.
+ */
 export function trashContactWithMessages(ids: number[]): number {
   const accountId = currentAccountId();
   const unique = [...new Set(ids.filter((id) => Number.isFinite(id)))];
@@ -130,8 +131,8 @@ export function trashContactMessagesOnly(ids: number[]): {
         if (next.length === 0) {
           throw new Error(`contact ${id} has no one-to-one messages to trash`);
         }
-        const missing = trashHandlesInDb(writeDb, next, accountId);
-        if (missing.length > 0) throw noConversationToTrash(missing);
+        // Every handle here has 1:1 messages, so none is left untrashed.
+        trashHandlesInDb(writeDb, next, accountId);
         handles.push(...next);
       }
     });

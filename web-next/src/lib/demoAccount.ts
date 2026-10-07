@@ -6,7 +6,7 @@ export const DEMO_ACCOUNT_ID = 2;
 
 /** Account ids arrive as strings (session cookie, route params). */
 export function isDemoAccount(accountId: string | number): boolean {
-  return Number(accountId) === DEMO_ACCOUNT_ID;
+  return String(accountId) === String(DEMO_ACCOUNT_ID);
 }
 
 /** The refusal for a change the server never allows on the demo account. */
