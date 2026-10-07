@@ -120,7 +120,7 @@ describe("IdentityTable", () => {
     expect(screen.queryByText(/orphaned/i)).toBeNull();
   });
 
-  it("stops sorting by Orphaned messages when that column goes", async () => {
+  it("suspends a sort by Orphaned messages while that column is gone", async () => {
     const user = setupUser();
     const withOrphaned = rows.map((row, i) => (i === 1 ? { ...row, orphaned_messages: 4 } : row));
     const { rerender } = render(<IdentityTable {...dates} rows={withOrphaned} />);
@@ -138,11 +138,14 @@ describe("IdentityTable", () => {
       "+15555550100",
     ]);
 
-    // When the column comes back, it is not sorted.
+    // When the column comes back, so does the sort the person chose: the
+    // column can go for a moment while figures reload, and that must not undo
+    // their choice.
     rerender(<IdentityTable {...dates} rows={withOrphaned} />);
     expect(
       screen.getByRole("columnheader", { name: /Orphaned messages/ }).getAttribute("aria-sort"),
-    ).toBe("none");
+    ).not.toBe("none");
+    expect(identities()[2]).toBe("someone.with.a.long.address@example.com");
   });
 
   it("puts the sort arrow right after the label and shows it only on the sorted column", async () => {

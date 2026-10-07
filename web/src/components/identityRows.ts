@@ -108,7 +108,7 @@ export function identityTotals(rows: readonly IdentityRow[], conversations: numb
  * before they existed. A row that has not loaded yet (null) has none.
  */
 export function hasOrphanedMessages(
-  rows: readonly ({ orphaned_messages: number } | null | undefined)[],
+  rows: readonly ({ orphaned_messages: number } | null)[],
 ): boolean {
   return rows.some((row) => (row?.orphaned_messages ?? 0) > 0);
 }

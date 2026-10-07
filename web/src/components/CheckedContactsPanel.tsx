@@ -1,13 +1,5 @@
-import { type ReactNode, useMemo, useState } from "react";
-import {
-  Cell,
-  Column,
-  Row,
-  type SortDescriptor,
-  Table,
-  TableBody,
-  TableHeader,
-} from "react-aria-components";
+import { type ReactNode, useMemo } from "react";
+import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
@@ -29,7 +21,8 @@ import {
   thClass,
 } from "./contactDrawer/handleTableStyles";
 import DataCard, { dataCardHeaderRowClass } from "./DataCard";
-import { conversationTotal, hasOrphanedMessages } from "./identityRows";
+import { conversationTotal } from "./identityRows";
+import { useOrphanedColumn } from "./useOrphanedColumn";
 
 type ContactTotals = ReturnType<typeof contactTotals>;
 
@@ -142,7 +135,6 @@ export default function CheckedContactsPanel({
   const zone = useTimeZone();
   const heading =
     contacts.length === 1 ? "1 contact selected" : `${contacts.length} contacts selected`;
-  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | null>(null);
   const ids = useMemo(() => contacts.map((c) => c.id), [contacts]);
   // The figures come from `POST /v1/contacts/summaries`. A contact whose
   // drawer was opened in this session already has its own figures in the
@@ -177,12 +169,11 @@ export default function CheckedContactsPanel({
       }),
     [contacts, metrics],
   );
-  const showOrphaned = hasOrphanedMessages(built.map((row) => row.totals));
-  // A sort by the Orphaned column ends when the column goes, so the rows are
-  // never ordered by a column the table no longer shows.
-  if (!showOrphaned && sortDescriptor?.column === "orphaned_messages") {
-    setSortDescriptor(null);
-  }
+  const {
+    showOrphaned,
+    sort: sortDescriptor,
+    setSort: setSortDescriptor,
+  } = useOrphanedColumn(built.map((row) => row.totals));
 
   const rows = useMemo<ContactRow[]>(() => {
     if (!sortDescriptor?.column) return built;

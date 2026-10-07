@@ -1,26 +1,14 @@
-import { type ReactNode, useMemo, useState } from "react";
-import {
-  Cell,
-  Column,
-  Row,
-  type SortDescriptor,
-  Table,
-  TableBody,
-  TableHeader,
-} from "react-aria-components";
+import { type ReactNode, useMemo } from "react";
+import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatHandleServiceLabel } from "../lib/handleService";
 import { useTimeZone } from "../lib/timeZone";
 import { focusRing } from "../lib/uiStyles";
 import Button from "./Button";
 import { TrashIcon } from "./icons";
-import {
-  hasOrphanedMessages,
-  type IdentityRow,
-  identityTotals,
-  sortIdentityRows,
-} from "./identityRows";
+import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
 import PlainButton from "./PlainButton";
+import { useOrphanedColumn } from "./useOrphanedColumn";
 
 export type { IdentityRow } from "./identityRows";
 
@@ -139,18 +127,12 @@ export default function IdentityTable({
   /** Where a conversation count leads; with none, counts are plain numbers. */
   onBrowse?: (row: IdentityRow) => void;
 }) {
-  const [sort, setSort] = useState<SortDescriptor | null>(null);
+  const { showOrphaned, sort, setSort } = useOrphanedColumn(rows);
   const sorted = useMemo(() => sortIdentityRows(rows, sort), [rows, sort]);
   const summary = useMemo(
     () => (totalConversations === undefined ? null : identityTotals(rows, totalConversations)),
     [rows, totalConversations],
   );
-  const showOrphaned = hasOrphanedMessages(rows);
-  // A sort by the Orphaned column ends when the column goes, so the rows are
-  // never ordered by a column the table no longer shows.
-  if (!showOrphaned && sort?.column === "orphaned_messages") {
-    setSort(null);
-  }
 
   if (rows.length === 0) {
     return <div className="text-[0.813rem] text-muted">{emptyText}</div>;
