@@ -271,22 +271,29 @@ fn outgoing(guid: &str) -> String {
     message_line(guid, "hi").outgoing().to_string()
 }
 
-/// The orphaned messages one sender sent, as the Apple Messages reader
-/// writes them: a conversation of type `orphaned`, keyed `orphaned:` and the
-/// sender's address, with the sender as its only participant.
-fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
-    conversation_header("imessage", &format!("orphaned:{sender}"))
+/// The orphaned messages of one person, as the Apple Messages reader writes
+/// them: a conversation of type `orphaned`, keyed `orphaned:` and the
+/// person's address, with the person as its only participant, holding one
+/// message they sent and one the account holder sent them (#1778).
+fn orphaned_with(person: &str, name: &str, guid: &str) -> String {
+    conversation_header("imessage", &format!("orphaned:{person}"))
         .orphaned()
-        .participant(sender, Some(name))
+        .participant(person, Some(name))
         .line()
-        + &incoming(guid, sender)
+        + &incoming(guid, person)
+        + "\n"
+        + &message_line(&format!("{guid}-sent"), "hi back")
+            .outgoing()
+            .at(1_426_183_463_000)
+            .to_string()
         + "\n"
 }
 
-/// The orphaned messages the account holder sent, which record no
-/// recipient: one conversation of type `orphaned`, keyed `orphaned:`, with no
-/// participants.
-fn unknown_recipient(guids: &[&str]) -> String {
+/// The orphaned messages that name nobody: one conversation of type
+/// `orphaned`, keyed `orphaned:`, with no participants. It holds the ones
+/// the account holder sent with no recipient recorded, and one received
+/// with no sender.
+fn orphaned_naming_nobody(guids: &[&str]) -> String {
     let mut out = conversation_header("imessage", "orphaned:")
         .orphaned()
         .line();
@@ -294,25 +301,29 @@ fn unknown_recipient(guids: &[&str]) -> String {
         out += &outgoing(guid);
         out += "\n";
     }
+    out += &message_line("g-no-sender", "who?")
+        .at(1_426_183_464_000)
+        .to_string();
+    out += "\n";
     out
 }
 
 /// A backup holding Ada's one-to-one conversation and orphaned messages:
-/// one from Ada, one from Bob, and two the account holder sent.
+/// Ada's and Bob's, each one each way, and three that name nobody.
 fn backup_with_orphaned_messages() -> String {
     conversation_header("imessage", "+15555550154")
         .participant("+15555550154", Some("Ada"))
         .line()
         + &incoming("g-ada", "+15555550154")
         + "\n"
-        + &orphaned_from("+15555550154", "Ada", "g-ada-orphaned")
-        + &orphaned_from("+15555550155", "Bob", "g-bob-orphaned")
-        + &unknown_recipient(&["g-mine-1", "g-mine-2"])
+        + &orphaned_with("+15555550154", "Ada", "g-ada-orphaned")
+        + &orphaned_with("+15555550155", "Bob", "g-bob-orphaned")
+        + &orphaned_naming_nobody(&["g-mine-1", "g-mine-2"])
 }
 
 /// What [`backup_with_orphaned_messages`] imports as, by either path: Ada's
 /// one-to-one conversation as it was, and three orphaned conversations, one
-/// for each sender and one for the holder's, which `kind:orphaned` lists and
+/// for each person and one naming nobody, which `kind:orphaned` lists and
 /// `kind:direct` and `kind:group` do not. Only Ada and Bob are people: no
 /// conversation key gets a contact.
 async fn assert_imported_as_three_orphaned_conversations(
@@ -332,9 +343,9 @@ async fn assert_imported_as_three_orphaned_conversations(
     .unwrap();
     let expected = [
         ("+15555550154", "individual", 1),
-        ("orphaned:", "orphaned", 2),
-        ("orphaned:+15555550154", "orphaned", 1),
-        ("orphaned:+15555550155", "orphaned", 1),
+        ("orphaned:", "orphaned", 3),
+        ("orphaned:+15555550154", "orphaned", 2),
+        ("orphaned:+15555550155", "orphaned", 2),
     ]
     .map(|(chat, kind, n)| (chat.to_string(), kind.to_string(), n));
     assert_eq!(conversations, expected);
@@ -352,20 +363,16 @@ async fn assert_imported_as_three_orphaned_conversations(
     assert_eq!(
         linked,
         ["+15555550154", "+15555550155"],
-        "only the senders are people"
+        "only the two people the orphaned messages name are people"
     );
 
     assert_eq!(
         listed_conversations(conn, account_id, "kind:orphaned").await,
-        [
-            (Some("Ada · Missing recipient"), vec!["+15555550154"]),
-            (Some("Bob · Missing recipient"), vec!["+15555550155"]),
-            (Some("Unknown recipient"), vec![]),
-        ]
-        .map(|(label, people)| (
-            label.map(str::to_string),
-            people.into_iter().map(str::to_string).collect::<Vec<_>>()
-        ))
+        expected_orphaned([
+            ("Ada · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
+        ])
     );
     assert_eq!(
         listed_conversations(conn, account_id, "kind:direct").await,
@@ -376,6 +383,18 @@ async fn assert_imported_as_three_orphaned_conversations(
         listed_conversations(conn, account_id, "kind:group").await,
         []
     );
+}
+
+/// The three orphaned conversations as `listed_conversations` gives them:
+/// each a title and its one person's identity, or `None` for the
+/// conversation that names nobody.
+fn expected_orphaned(people: [(&str, Option<&str>); 3]) -> [(Option<String>, Vec<String>); 3] {
+    people.map(|(label, person)| {
+        (
+            Some(label.to_string()),
+            person.into_iter().map(str::to_string).collect(),
+        )
+    })
 }
 
 /// The conversations `q` lists, as (title, participant identities), by title.
@@ -497,11 +516,11 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
     assert_every_met_handle_has_a_live_contact(&mut conn).await;
 }
 
-/// Orphaned messages from two senders make two conversations on the
-/// desktop app's import path, and the holder's a third, as
+/// Orphaned messages of two people make two conversations on the desktop
+/// app's import path, and the ones naming nobody a third, as
 /// [`assert_imported_as_three_orphaned_conversations`] says.
 #[tokio::test]
-async fn orphaned_messages_make_one_conversation_per_sender_and_one_for_the_holder() {
+async fn orphaned_messages_make_one_conversation_per_person_and_one_naming_nobody() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
@@ -514,7 +533,7 @@ async fn orphaned_messages_make_one_conversation_per_sender_and_one_for_the_hold
 
 /// The same backup through the HTTP batch path, where every file is
 /// `_import.jsonl`, imports the same way: no conversation key becomes a
-/// person, and reading an orphaned conversation shows its sender alone
+/// person, and reading an orphaned conversation shows its person alone
 /// (#1169, S1-2).
 #[tokio::test]
 async fn the_orphaned_conversation_over_http_is_not_a_person() {
@@ -560,12 +579,54 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
     assert_eq!(
         read,
         [
-            ("Unknown recipient", ""),
-            ("Ada · Missing recipient", "+15555550154"),
-            ("Bob · Missing recipient", "+15555550155"),
+            ("Orphaned · Unknown person", ""),
+            ("Ada · Orphaned", "+15555550154"),
+            ("Bob · Orphaned", "+15555550155"),
         ]
         .map(|(label, people)| (label.to_string(), people.to_string())),
-        "reading each orphaned conversation shows its sender alone, and no key"
+        "reading each orphaned conversation shows its person alone, and no key"
+    );
+}
+
+/// An orphaned conversation's title is its person's name and "Orphaned",
+/// computed on every read, so renaming the person's contact renames it. The
+/// one that names nobody is "Orphaned · Unknown person" throughout (#1778).
+#[tokio::test]
+async fn an_orphaned_title_follows_its_person_s_contact_name() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    import_files(
+        &mut conn,
+        &[("backup.jsonl", backup_with_orphaned_messages())],
+    )
+    .await;
+    assert_eq!(
+        listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
+        expected_orphaned([
+            ("Ada · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
+        ])
+    );
+
+    sqlx::query(
+        "UPDATE contacts SET preferred_name = 'Ada Lovelace'
+         WHERE account_id = $1 AND id = (
+             SELECT ch.contact_id FROM contact_handles ch
+             JOIN handles h ON h.id = ch.handle_id
+             WHERE ch.account_id = $1 AND h.raw = '+15555550154')",
+    )
+    .bind(TEST_ACCOUNT)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
+        expected_orphaned([
+            ("Ada Lovelace · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
+        ])
     );
 }
 

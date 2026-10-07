@@ -313,12 +313,12 @@ fn guids(doc: &message_ir::ConversationDocument) -> std::collections::BTreeSet<&
 
 /// A per-chat file in which only the owner sent records no recipient, so
 /// its messages are the account holder's orphaned messages and go to
-/// "Unknown recipient": the conversation of type `orphaned` keyed
+/// "Orphaned · Unknown person": the conversation of type `orphaned` keyed
 /// `orphaned:`, with no participants. Two such files share it, and the same
 /// text sent in both in the same second is two messages, never collapsed as
 /// duplicates (#1095).
 #[test]
-fn files_of_only_sent_messages_go_to_unknown_recipient() {
+fn files_of_only_sent_messages_go_to_unknown_person() {
     let sent_only = "Date,Sender,Text,Is From Me,Has Attachments\n\
 2020-01-01T00:00:00+00:00,Me,Happy new year,True,False\n";
     let (report, documents) = convert_to_documents(&[
@@ -335,8 +335,8 @@ fn files_of_only_sent_messages_go_to_unknown_recipient() {
 }
 
 /// Sent rows of the all-conversations CSV that name no recipient go to
-/// "Unknown recipient" too. The same text sent in the same second to three
-/// people is three messages, never collapsed as duplicates, and a second
+/// "Orphaned · Unknown person" too. The same text sent in the same second
+/// to three people is three messages, never collapsed as duplicates, and a second
 /// export of the same rows gives them the same ids, so importing it again
 /// adds nothing (#1095).
 #[test]

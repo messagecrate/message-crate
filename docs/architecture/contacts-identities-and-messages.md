@@ -542,35 +542,43 @@ the note would show twice
 ([#1661](https://github.com/messagecrate/message-crate/issues/1661)).
 
 **Orphaned messages sit in conversations of their own kind.** A backup can hold
-a message without recording which conversation it was said in. The ones one
-person sent sit in a conversation with that person as its only participant,
-apart from the one-to-one conversation with them, titled with the contact's name
-and "Missing recipient". The ones the holder sent have no recorded recipient and
-sit together in one conversation with no participants, titled "Unknown
-recipient". These conversations are neither one-to-one nor a group, and
-`kind:orphaned` lists them, and `kind:direct` and `kind:group` do not. An
-import tags none of them, as it tags no conversation. Why: one conversation holding
-hundreds of people's messages reads as an exchange that never happened, and
-putting them in the one-to-one conversation would claim something the backup
-does not say
-([#1095](https://github.com/messagecrate/message-crate/issues/1095)).
+a message without recording which conversation it was said in. An orphaned
+message that names the other person sits in that person's orphaned
+conversation, whichever way it went: one they sent names them as its sender,
+and one the holder sent names them as its recipient. That person is the
+conversation's only participant, and it stays apart from the one-to-one
+conversation with them. It is titled with the contact's name and "Orphaned", as
+"Ada · Orphaned". An orphaned message that names nobody sits in one
+conversation with no participants, titled "Orphaned · Unknown person": one the
+holder sent with no recipient recorded, and one received with no sender or with
+one of the holder's own addresses as its sender. These conversations are
+neither one-to-one nor a group, and `kind:orphaned` lists them, and
+`kind:direct` and `kind:group` do not. An import tags none of them, as it tags
+no conversation. Why: one conversation holding hundreds of people's messages
+reads as an exchange that never happened, and putting them in the one-to-one
+conversation would claim something the backup does not say
+([#1095](https://github.com/messagecrate/message-crate/issues/1095)). Both
+directions of one person's orphaned messages sit together because the backup
+names that person on both, and a title of "Missing recipient" would be wrong
+for a sent message whose recipient it records
+([#1778](https://github.com/messagecrate/message-crate/issues/1778)).
 
-Each is keyed `orphaned:` and its sender's address, or `orphaned:` alone for
-the holder's (`message_ir::orphaned_chat_id`), so it never takes the key of
-the sender's one-to-one conversation, and its type is `orphaned`. The key is
-the conversation's own and nobody's address: it gets no contact, and search
-reads it as no text, as it does a group's id. The title is computed on every
-read (`db/conversations.rs`, `conversation_title_sql`) from the first
-participant's name as the conversation shows it, so it follows a rename of the
-sender's contact. The Apple Messages Reader writes these conversations for
-messages in no chat. The Reader puts every sent message in the holder's
-conversation. A sent row in a one-to-one chat can still name its recipient in
-`handle_id`. The Reader also puts a received message there when it names no
-sender, or names one of the holder's own addresses, because it has nobody to
-be a participant. Where these two kinds of row belong is open
-([#1778](https://github.com/messagecrate/message-crate/issues/1778)). OpenExtract writes the holder's for a sent row that names
-no recipient, and those rows carry a vendor key so that the same text sent to
-several people in the same second stays several messages.
+Each is keyed `orphaned:` and the person's address, or `orphaned:` alone for
+the one that names nobody (`message_ir::orphaned_chat_id`), so it never takes
+the key of the person's one-to-one conversation, and its type is `orphaned`.
+The key is the conversation's own and nobody's address: it gets no contact,
+and search reads it as no text, as it does a group's id. Every title says
+"Orphaned", so the word `orphaned` finds every one of these conversations by
+its title, while `"orphaned:"` finds none. The title is computed on every read
+(`db/conversations.rs`, `conversation_title_sql`) from the first participant's
+name as the conversation shows it, so it follows a rename of the person's
+contact. The Apple Messages Reader writes these conversations for messages in
+no chat (`emit.rs`, `orphaned_conversation`). It reads the person from the
+row's `handle_id` in both directions: a received row's sender, and a sent
+row's recipient, which Apple records on a one-to-one chat's sent rows and
+leaves 0 on a group's. OpenExtract writes the one that names nobody for a sent
+row that names no recipient, and those rows carry a vendor key so that the
+same text sent to several people in the same second stays several messages.
 
 **An account's own identity means ownership, and its message counts describe the
 messages it holds.** A contact's identity says the person took part; an
