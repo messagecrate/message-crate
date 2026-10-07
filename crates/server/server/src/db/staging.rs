@@ -21,6 +21,8 @@ use sqlx::query::Query;
 use sqlx::sqlite::SqliteArguments;
 use sqlx::{Row, Sqlite, SqliteConnection};
 
+use crate::dedupe::HAS_CONTENT_KEY_SQL;
+
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
 
 // ── Staging: what one import writes before promotion ─────────────────────
@@ -792,11 +794,17 @@ pub async fn add_copy_tapbacks(
 // temp tables mapping staging ids to production ids, which the map writers
 // below fill in the order `imports_api::promote` calls them.
 
-/// Create, or empty, a temp table mapping staging ids to production ids.
+/// Create, or empty, a temp table mapping staging ids to production ids,
+/// with the column definitions `extra_columns` after those two.
 /// Two statements on purpose: one prepared statement holds one command.
-async fn reset_id_map(conn: &mut SqliteConnection, table: &str) -> Result<()> {
+async fn reset_id_map(
+    conn: &mut SqliteConnection,
+    table: &str,
+    extra_columns: &[&str],
+) -> Result<()> {
+    let extra: String = extra_columns.iter().map(|c| format!(", {c}")).collect();
     let create = format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL)"
+        "CREATE TEMP TABLE IF NOT EXISTS {table} (staging_id BIGINT PRIMARY KEY, prod_id BIGINT NOT NULL{extra})"
     );
     sqlx::query(&create).execute(&mut *conn).await?;
     let clear = format!("DELETE FROM {table}");
@@ -893,7 +901,7 @@ pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) 
 ///
 /// Returns an error when a statement fails.
 pub async fn write_conversation_map(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
-    reset_id_map(conn, "_promote_conv_map").await?;
+    reset_id_map(conn, "_promote_conv_map", &[]).await?;
     sqlx::query(
         r"
         INSERT INTO _promote_conv_map (staging_id, prod_id)
@@ -1201,7 +1209,7 @@ pub async fn write_message_map(
     account_id: i64,
     pairs: &HashMap<i64, i64>,
 ) -> Result<()> {
-    reset_id_map(conn, "_promote_msg_map").await?;
+    reset_id_map(conn, "_promote_msg_map", &[]).await?;
     let pairs: Vec<(i64, i64)> = pairs.iter().map(|(&s, &p)| (s, p)).collect();
     for chunk in pairs.chunks(SQLITE_IN_CHUNK) {
         let sql = format!(
@@ -1307,7 +1315,7 @@ pub fn later_backup<'a>(staged: Option<&'a str>, held: Option<&str>) -> BackupOr
 ///
 /// Returns an error when the update fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
-    reset_id_map(conn, "_promote_mark_map").await?;
+    reset_id_map(conn, "_promote_mark_map", &[]).await?;
     let sql = format!(
         r"
         INSERT INTO _promote_mark_map (staging_id, prod_id)
@@ -1470,17 +1478,12 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 ///
 /// Returns an error when a statement fails.
 pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -> Result<u64> {
-    for stmt in [
-        "CREATE TEMP TABLE IF NOT EXISTS _promote_edit_map (
-            staging_id BIGINT PRIMARY KEY,
-            prod_id BIGINT NOT NULL,
-            body_changed BOOLEAN NOT NULL,
-            keyed BOOLEAN NOT NULL
-        )",
-        "DELETE FROM _promote_edit_map",
-    ] {
-        sqlx::query(stmt).execute(&mut *conn).await?;
-    }
+    reset_id_map(
+        conn,
+        "_promote_edit_map",
+        &["body_changed BOOLEAN NOT NULL", "keyed BOOLEAN NOT NULL"],
+    )
+    .await?;
     // A version list as one value, in the order its rows were written, so
     // two lists compare whole.
     let versions = |table: &str, id: &str| {
@@ -1499,7 +1502,7 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
                 mm.prod_id,
                 {later_backup} AS later_backup,
                 sm.body IS NOT m.body AS body_changed,
-                m.content_key IS NOT NULL AND m.content_key != '' AS keyed,
+                {has_content_key} AS keyed,
                 sm.body IS NOT m.body
                     OR {staged_versions} IS NOT {held_versions} AS differs,
                 sv.message_id IS NOT NULL AS has_versions,
@@ -1528,6 +1531,7 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
         staged_versions = versions("staging_message_versions", "mm.staging_id"),
         held_versions = versions("message_versions", "mm.prod_id"),
         later_edit = later_edit_sql("n", "newest", "held_n", "held_newest"),
+        has_content_key = HAS_CONTENT_KEY_SQL,
     );
     Ok(sqlx::query(&sql)
         .bind(messages_before)
@@ -1768,20 +1772,20 @@ pub async fn stored_messages_with_new_content(
     attachments_before: i64,
     filled: &[i64],
 ) -> Result<Vec<i64>> {
-    Ok(sqlx::query_scalar(
+    Ok(sqlx::query_scalar(&format!(
         r"
         SELECT prod_id FROM _promote_edit_map WHERE body_changed AND keyed
         UNION
         SELECT m.id
         FROM messages m
-        WHERE m.content_key IS NOT NULL AND m.content_key != ''
+        WHERE {HAS_CONTENT_KEY_SQL}
           AND (
             m.id IN (SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1)
             OR m.id IN (SELECT value FROM json_each($3))
           )
         ORDER BY 1
         ",
-    )
+    ))
     .bind(messages_before)
     .bind(attachments_before)
     .bind(serde_json::to_string(filled)?)

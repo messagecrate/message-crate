@@ -139,9 +139,9 @@ released versions carry their date on the heading.
   search for its new text found nothing. A copy hidden behind it stayed
   hidden too, though their texts no longer matched. Such an import now checks
   the duplicates of the messages it changed, and of the copies around them,
-  whatever its own setting. The messages it adds stay as they came, and so
-  does a stored message that only imports set not to hide duplicates have
-  brought.
+  whatever its own setting. The messages it adds stay as they came. A stored
+  message that only imports with dedupe off brought stays as it came too,
+  even when a later import changes its text.
 
 - 2026-10-05: **A WhatsApp import from Android that fills the disk holding
   the Scratch Directory stops with the free-space sentence.** The encrypted

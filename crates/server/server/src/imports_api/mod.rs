@@ -68,11 +68,10 @@ pub struct ImportOptions<'a> {
     /// Account the import writes into.
     pub account_id: i64,
     /// Fill missing `content_key` values during promote (needed before
-    /// cross-source dedupe). True only when the caller runs
-    /// [`crate::dedupe::dedupe_cross_source`] after the import: without the
-    /// fill, promote puts right the duplicate flags of the stored messages
-    /// whose content it changed, and with it promote leaves them to that
-    /// pass.
+    /// cross-source dedupe). With the fill, promote leaves the duplicate
+    /// flags of the stored messages whose content it changed to the full
+    /// dedupe, [`crate::dedupe::dedupe_cross_source`], which the caller runs
+    /// afterwards; without it, promote puts those flags right itself.
     pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,

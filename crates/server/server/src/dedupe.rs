@@ -299,9 +299,10 @@ pub struct ChangedDedupe {
 /// came. This computes the changed messages' content keys again, then runs
 /// both passes of [`dedupe_cross_source`] over the messages a dedupe has
 /// seen, those with a content key, so a message without one is neither
-/// hidden nor a winner here. Only the flags of the messages tied to a changed one are
-/// written: those it was hidden behind or hid, before or now, and the
-/// messages tied to those in turn. Every other flag stays as it is.
+/// hidden nor a winner here. Only the flags of the messages tied to a
+/// changed one are written: those it was hidden behind or hid, before or
+/// now, and the messages tied to those in turn. Every other flag stays as
+/// it is.
 ///
 /// # Errors
 ///
@@ -539,6 +540,10 @@ fn sender_for_key_sql() -> String {
     )
 }
 
+/// Whether the message `m` has a content key, as a SQL condition: whether a
+/// dedupe, or an import that filled the keys, has seen it.
+pub(crate) const HAS_CONTENT_KEY_SQL: &str = "m.content_key IS NOT NULL AND m.content_key != ''";
+
 /// Everything the content-key hash reads, loaded in three queries so the
 /// hashing runs off the database thread with no lookups of its own.
 struct ContentKeyInputs {
@@ -728,7 +733,7 @@ async fn exact_flags(
 ) -> Result<(u64, Vec<(i64, i64)>)> {
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    let rows: Vec<(i64, String, String, i64, String)> = sqlx::query_as(
+    let rows: Vec<(i64, String, String, i64, String)> = sqlx::query_as(&format!(
         r"
         SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0), m.time_precision
         FROM messages m
@@ -743,9 +748,9 @@ async fn exact_flags(
             GROUP BY a.message_id
         ) ac ON ac.message_id = m.id
         WHERE c.account_id = $1
-          AND m.content_key IS NOT NULL AND m.content_key != ''
+          AND {HAS_CONTENT_KEY_SQL}
         ",
-    )
+    ))
     .bind(account_id)
     .fetch_all(&mut *conn)
     .await?;
@@ -986,8 +991,8 @@ async fn load_near_rows(
         ",
         sender = sender_for_key_sql(),
         keyed = match rows {
-            NearRows::All => "",
-            NearRows::Keyed => "AND m.content_key IS NOT NULL AND m.content_key != ''",
+            NearRows::All => String::new(),
+            NearRows::Keyed => format!("AND {HAS_CONTENT_KEY_SQL}"),
         },
     );
     let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(&msg_sql)
