@@ -572,22 +572,22 @@ be a participant. Where these two kinds of row belong is open
 no recipient, and those rows carry a vendor key so that the same text sent to
 several people in the same second stays several messages.
 
-**An account's own identity means ownership, and its message counts
-describe the messages it holds.** A contact's identity says the person took
-part; an account's identity (`account_handles`) says the messages sent from or
-received at that address are the account holder's own. Import is where that
-decision is made: the reader takes the holder's addresses from the backup when
-the backup names its owner, and from this list when it does not, and marks each
-message sent or received accordingly. Linking or removing an identity afterwards
-changes no message already imported. What the product shows beside an account's
+**An account's own identity means ownership, and its message counts describe the
+messages it holds.** A contact's identity says the person took part; an
+account's identity (`account_handles`) says the messages sent from or received
+at that address are the account holder's own. Import is where that decision is
+made: the reader takes the holder's addresses from the backup when the backup
+names its owner, and from this list when it does not, and marks each message
+sent or received accordingly. Linking or removing an identity afterwards changes
+no message already imported. What the product shows beside an account's
 identity, and repeats before it is removed, is the number of messages held at
-that identity, split three ways by direct, group and orphaned conversation,
-and the number of conversations holding at least one of them. Why: the count says what the person
-did at that address, and one conversation that used two of the holder's
-identities counts each message once, under the identity it used. Rejected:
-counting messages the identity sent, because received messages are the holder's
-too; and counting every message in a conversation the identity appears in,
-because a conversation that used two identities would count all its messages
+that identity, split three ways by direct, group and orphaned conversation, and
+the number of conversations holding at least one of them. Why: the count says
+what the person did at that address, and one conversation that used two of the
+holder's identities counts each message once, under the identity it used.
+Rejected: counting messages the identity sent, because received messages are the
+holder's too; and counting every message in a conversation the identity appears
+in, because a conversation that used two identities would count all its messages
 twice.
 
 **A contact's identity counts the messages the contact sent from it.** Beside
