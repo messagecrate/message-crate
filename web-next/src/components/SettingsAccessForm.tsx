@@ -1,9 +1,7 @@
 "use client";
 
-import type { AuthMode } from "@/lib/authMode";
 import { useCallback, useEffect, useState } from "react";
 import { ApiTokenRevealDialog } from "./ApiTokenRevealDialog";
-import { HankoProfile } from "./HankoProfile";
 
 type AccessData = {
   readOnly: boolean;
@@ -11,15 +9,7 @@ type AccessData = {
   username: string;
 };
 
-type Props = {
-  authMode?: AuthMode;
-  hankoApiUrl?: string;
-};
-
-export function SettingsAccessForm({
-  authMode = "local",
-  hankoApiUrl = "",
-}: Props) {
+export function SettingsAccessForm() {
   const [readOnly, setReadOnly] = useState(false);
   const [hasApiToken, setHasApiToken] = useState(false);
   const [username, setUsername] = useState("");
@@ -28,8 +18,6 @@ export function SettingsAccessForm({
   const [tokenBusy, setTokenBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revealedToken, setRevealedToken] = useState<string | null>(null);
-
-  const showHankoSignIn = authMode === "hanko" && Boolean(hankoApiUrl);
 
   const apply = (json: AccessData) => {
     setReadOnly(json.readOnly);
@@ -136,21 +124,6 @@ export function SettingsAccessForm({
 
   return (
     <div className="max-w-xl space-y-10">
-      {showHankoSignIn ? (
-        <section>
-          <h2 className="text-[12px] font-semibold tracking-wider text-muted uppercase">
-            Sign-in
-          </h2>
-          <p className="mt-1 text-[13px] text-muted">
-            Add a passkey for faster sign-in, or manage emails linked to this
-            account. Biometric data stays on your devices.
-          </p>
-          <div className="mt-4">
-            <HankoProfile apiUrl={hankoApiUrl} />
-          </div>
-        </section>
-      ) : null}
-
       <section>
         <h2 className="text-[12px] font-semibold tracking-wider text-muted uppercase">
           Browsing access

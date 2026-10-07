@@ -265,7 +265,6 @@ has no such feature.
 | Passwordless login | — | yes |
 | Onboarding profile setup | display name and up to five handles (phone, email, WhatsApp) | display name and phone number |
 | Server address and connection status | address field, test, connected/disconnected line | — (`VAULT_API_URL` at start) |
-| Passkey (Hanko) login | — | present, unwired on this build |
 | Log out | yes | yes |
 | Change password | yes | yes |
 | Delete all messages, delete account | yes, with confirmation | yes, with confirmation |
@@ -472,7 +471,6 @@ September 2026.
    `GET /v1/admin/users` is admin-only; register answers `409 Conflict` for a
    taken name. web-next answers an empty list.
 15.  **Demo reset.** CLI-only by ADR-0001. The title menu never offers it.
-16.  **Hanko passkeys.** No counterpart; the path is unwired.
 
 ### Writes, deferred rather than missing
 

@@ -26,20 +26,6 @@ export function useVaultTitleActions() {
   }, []);
 
   const logout = useCallback(async () => {
-    try {
-      const modeRes = await fetch("/api/auth/mode");
-      const modeJson = (await modeRes.json()) as {
-        authMode?: string;
-        hankoApiUrl?: string;
-      };
-      if (modeJson.authMode === "hanko" && modeJson.hankoApiUrl) {
-        const { Hanko } = await import("@teamhanko/hanko-elements");
-        const hanko = new Hanko(modeJson.hankoApiUrl);
-        await hanko.logout();
-      }
-    } catch {
-      // Best-effort Hanko logout; still clear the vault cookie.
-    }
     await fetch("/api/auth/logout", { method: "POST" });
     window.location.assign("/login");
   }, []);

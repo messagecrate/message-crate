@@ -1,5 +1,4 @@
 import { createAccount } from "@/lib/accounts";
-import { isHankoAuth } from "@/lib/authMode";
 import { accountCookieOptions } from "@/lib/session";
 import { MAX_PASSWORD_LENGTH, validatePasswordPlaintext } from "@/lib/password";
 import { cookies } from "next/headers";
@@ -31,12 +30,6 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   if (!writesAvailable()) return writesNotAvailable();
-  if (isHankoAuth()) {
-    return NextResponse.json(
-      { error: "Local account creation is disabled when VAULT_AUTH=hanko" },
-      { status: 403 },
-    );
-  }
 
   let body: Record<string, unknown>;
   try {

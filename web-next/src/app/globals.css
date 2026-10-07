@@ -162,39 +162,3 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-
-/* Hanko auth / profile widgets — map vault theme tokens (dark/light via data-theme). */
-hanko-auth,
-hanko-profile {
-  --color: var(--text);
-  --color-shade-1: var(--muted);
-  --color-shade-2: var(--border);
-  --brand-color: var(--accent);
-  --brand-color-shade-1: color-mix(in srgb, var(--accent) 80%, white);
-  --brand-contrast-color: var(--sent-text);
-  --background-color: transparent;
-  --error-color: var(--danger);
-  --link-color: var(--accent);
-  --font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-  --font-size: 14px;
-  --font-weight: 400;
-  --border-radius: 0.375rem;
-  --border-style: solid;
-  --border-width: 1px;
-  --container-padding: 0;
-  --container-max-width: 100%;
-  --item-height: 2.5rem;
-}
-
-hanko-auth::part(container),
-hanko-profile::part(container) {
-  border: none;
-  box-shadow: none;
-  background: transparent;
-}
-
-hanko-auth::part(headline1),
-hanko-profile::part(headline1) {
-  /* Vault settings / login already provide section titles. */
-  display: none;
-}

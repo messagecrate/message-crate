@@ -1,5 +1,5 @@
 import { SettingsAccessForm } from "@/components/SettingsAccessForm";
 
 export default function SettingsAccessPage() {
-  return <SettingsAccessForm authMode="local" hankoApiUrl="" />;
+  return <SettingsAccessForm />;
 }
