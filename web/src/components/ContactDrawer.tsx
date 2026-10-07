@@ -13,6 +13,7 @@ import { ContactDrawerHandles } from "./contactDrawer/ContactDrawerHandles";
 import {
   type ContactBrowseKind,
   type ContactPreview,
+  contactConversations,
   previewHandleStubRows,
 } from "./contactDrawer/contactDrawerTypes";
 import { PencilIcon } from "./icons";
@@ -313,9 +314,7 @@ function OneContactDrawer({
         key={contactId}
         contactId={contactId}
         handleRows={handleRows}
-        conversations={
-          detailMatches ? matchedDetail.direct_conversations + matchedDetail.group_conversations : 0
-        }
+        conversations={detailMatches ? contactConversations(matchedDetail) : 0}
         loading={loading}
         onBrowse={onBrowseConversations ? browse : undefined}
         title={

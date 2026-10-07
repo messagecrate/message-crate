@@ -98,8 +98,11 @@ pub struct Contact {
     pub direct_conversations: u64,
     /// Group conversations the contact appears in.
     pub group_conversations: u64,
-    /// Messages the contact sent, in any of its conversations, direct or
-    /// group: the account holder's own messages and other people's messages
+    /// Conversations of orphaned messages the contact appears in: the three
+    /// conversation counts add up to every conversation the contact is in.
+    pub orphaned_conversations: u64,
+    /// Messages the contact sent, in any of its conversations, direct,
+    /// group, or orphaned: the account holder's own messages and other people's messages
     /// in a shared group are not counted, and neither are conversations in
     /// the trash or duplicate messages. `messages:` on Contacts counts the
     /// same messages.
@@ -162,6 +165,7 @@ pub async fn get_contact_detail(
         identities,
         direct_conversations: totals.direct,
         group_conversations: totals.groups,
+        orphaned_conversations: totals.orphaned,
         total_messages: totals.messages,
         last_modified,
         groups: contact_groups,

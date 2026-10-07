@@ -1186,6 +1186,197 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00Z"));
 }
 
+/// Ada is in one one-to-one conversation, one group, and one conversation of
+/// orphaned messages (#1776), and sent one message in each. Every count that
+/// splits her conversations or messages by kind reads 1 / 1 / 1, so the three
+/// figures add up to her totals (#1782).
+#[tokio::test]
+async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
+    let fixture = test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+
+    let mine =
+        account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
+            .await
+            .unwrap();
+    let ada: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Ada') RETURNING id",
+    )
+    .bind(account)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let (ada_phone, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "+15555550123",
+        HandleType::Phone,
+        Some("phone"),
+    )
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO contact_handles (account_id, handle_id, contact_id) VALUES ($1, $2, $3)",
+    )
+    .bind(account)
+    .bind(ada_phone)
+    .bind(ada)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    let (group_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "chat-ada-group",
+        HandleType::Other,
+        None,
+    )
+    .await
+    .unwrap();
+    let (orphaned_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        &message_ir::orphaned_chat_id(Some("+15555550123")),
+        HandleType::Other,
+        None,
+    )
+    .await
+    .unwrap();
+
+    for (id, kind, chat, day) in [
+        (1, "individual", ada_phone, "2024-01-01"),
+        (2, "group", group_chat, "2024-02-01"),
+        (3, "orphaned", orphaned_chat, "2024-03-01"),
+    ] {
+        insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
+        insert_held_message(&mut conn, account, id, day, 0, mine, Some(ada_phone)).await;
+    }
+
+    let detail = get_contact_detail(&mut conn, account, ada)
+        .await
+        .unwrap()
+        .expect("Ada exists");
+    assert_eq!(
+        (
+            detail.direct_conversations,
+            detail.group_conversations,
+            detail.orphaned_conversations
+        ),
+        (1, 1, 1)
+    );
+    assert_eq!(detail.total_messages, 3);
+    let [phone] = detail.identities.as_slice() else {
+        panic!("one identity: {:?}", detail.identities);
+    };
+    assert_eq!(phone.conversations, 3);
+    assert_eq!(
+        (
+            phone.direct_messages,
+            phone.group_messages,
+            phone.orphaned_messages
+        ),
+        (1, 1, 1)
+    );
+
+    let summaries = get_contact_summaries(&mut conn, account, &[ada])
+        .await
+        .unwrap();
+    let [summary] = summaries.as_slice() else {
+        panic!("one summary: {summaries:?}");
+    };
+    assert_eq!(
+        (
+            summary.individual_conversations,
+            summary.group_conversations,
+            summary.orphaned_conversations
+        ),
+        (1, 1, 1)
+    );
+    assert_eq!(
+        (
+            summary.individual_message_count,
+            summary.group_message_count,
+            summary.orphaned_message_count
+        ),
+        (1, 1, 1)
+    );
+}
+
+/// The account holder's messages held in a conversation of orphaned messages
+/// count as orphaned on the holder's identity, beside its one-to-one and
+/// group messages, so the three add up to every message held at it (#1782).
+#[tokio::test]
+async fn the_holders_orphaned_messages_count_as_orphaned() {
+    let fixture = test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+
+    let mine =
+        account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
+            .await
+            .unwrap();
+    let (ada_phone, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "+15555550123",
+        HandleType::Phone,
+        Some("phone"),
+    )
+    .await
+    .unwrap();
+    let (group_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "chat-ada-group",
+        HandleType::Other,
+        None,
+    )
+    .await
+    .unwrap();
+    let (orphaned_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        &message_ir::orphaned_chat_id(None),
+        HandleType::Other,
+        None,
+    )
+    .await
+    .unwrap();
+    // One message in the one-to-one and two in the group, Ada's after the
+    // holder's first. The holder's three orphaned messages sit in the
+    // conversation of orphaned messages that has no sender's address in its
+    // key and no participant (#1776).
+    for (id, kind, chat, count) in [(1, "individual", ada_phone, 1), (2, "group", group_chat, 2)] {
+        insert_conversation(&mut conn, account, id, kind, chat, &[ada_phone], false).await;
+        for minute in 0..count {
+            let sender = (minute > 0).then_some(ada_phone);
+            insert_held_message(&mut conn, account, id, "2024-01-01", minute, mine, sender).await;
+        }
+    }
+    insert_conversation(&mut conn, account, 3, "orphaned", orphaned_chat, &[], false).await;
+    for minute in 0..3 {
+        insert_held_message(&mut conn, account, 3, "2024-01-02", minute, mine, None).await;
+    }
+
+    let own = handles::identities(&mut conn, IdentitiesOf::Account(account))
+        .await
+        .unwrap();
+    let held = own
+        .iter()
+        .find(|identity| identity.address == "+15555550128")
+        .expect("the holder's identity");
+    assert_eq!(held.conversations, 3);
+    assert_eq!(
+        (
+            held.direct_messages,
+            held.group_messages,
+            held.orphaned_messages
+        ),
+        (1, 2, 3)
+    );
+}
+
 #[tokio::test]
 async fn mutate_contact_add_update_remove_handle_and_rename() {
     let fixture = test_fixture().await;

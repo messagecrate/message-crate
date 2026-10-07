@@ -49,6 +49,7 @@ function placeholderRows(profile: AccountProfile): Identity[] {
     conversations: 0,
     direct_messages: 0,
     group_messages: 0,
+    orphaned_messages: 0,
   }));
 }
 

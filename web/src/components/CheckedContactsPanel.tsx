@@ -1,19 +1,12 @@
-import { type ReactNode, useMemo, useState } from "react";
-import {
-  Cell,
-  Column,
-  Row,
-  type SortDescriptor,
-  Table,
-  TableBody,
-  TableHeader,
-} from "react-aria-components";
+import { type ReactNode, useMemo } from "react";
+import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { getContactSummaries } from "../lib/serverApi";
+import type { components } from "../lib/serverApi.types";
 import { useTimeZone } from "../lib/timeZone";
 import Button from "./Button";
 import ContactLabel from "./ContactLabel";
@@ -28,22 +21,15 @@ import {
   thClass,
 } from "./contactDrawer/handleTableStyles";
 import DataCard, { dataCardHeaderRowClass } from "./DataCard";
+import { conversationTotal } from "./identityRows";
+import { useOrphanedColumn } from "./useOrphanedColumn";
 
 type ContactTotals = ReturnType<typeof contactTotals>;
 
 /** Matches `MAX_CONTACT_SUMMARY_IDS` on `POST /v1/contacts/summaries`. */
 const SUMMARY_BATCH_SIZE = 500;
 
-type ContactSelectionSummary = {
-  id: string | number;
-  name: string;
-  start_date?: string | null;
-  end_date?: string | null;
-  individual_conversations: number;
-  group_conversations: number;
-  individual_message_count: number;
-  group_message_count: number;
-};
+type ContactSelectionSummary = components["schemas"]["ContactSelectionSummary"];
 
 type RowMetrics = {
   name: string;
@@ -87,9 +73,14 @@ type ContactRow = {
 
 function totalsFromSummary(summary: ContactSelectionSummary): ContactTotals {
   return {
-    conversations: summary.individual_conversations + summary.group_conversations,
+    conversations: conversationTotal(
+      summary.individual_conversations,
+      summary.group_conversations,
+      summary.orphaned_conversations,
+    ),
     direct_messages: summary.individual_message_count,
     group_messages: summary.group_message_count,
+    orphaned_messages: summary.orphaned_message_count,
     start_date: summary.start_date ?? null,
     end_date: summary.end_date ?? null,
   };
@@ -118,6 +109,8 @@ function sortValue(row: ContactRow, col: string): string | number {
       return totals?.direct_messages ?? -1;
     case "group_messages":
       return totals?.group_messages ?? -1;
+    case "orphaned_messages":
+      return totals?.orphaned_messages ?? -1;
     default:
       return "";
   }
@@ -142,7 +135,6 @@ export default function CheckedContactsPanel({
   const zone = useTimeZone();
   const heading =
     contacts.length === 1 ? "1 contact selected" : `${contacts.length} contacts selected`;
-  const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | null>(null);
   const ids = useMemo(() => contacts.map((c) => c.id), [contacts]);
   // The figures come from `POST /v1/contacts/summaries`. A contact whose
   // drawer was opened in this session already has its own figures in the
@@ -164,16 +156,26 @@ export default function CheckedContactsPanel({
     return { ...merged, ...summaries.data };
   }, [ids, cache, summaries.data]);
 
+  const built = useMemo<ContactRow[]>(
+    () =>
+      contacts.map((c) => {
+        const row = metrics[c.id];
+        return {
+          id: c.id,
+          name: row?.name ?? c.name,
+          addresses: c.addresses,
+          totals: row?.totals ?? null,
+        };
+      }),
+    [contacts, metrics],
+  );
+  const {
+    showOrphaned,
+    sort: sortDescriptor,
+    setSort: setSortDescriptor,
+  } = useOrphanedColumn(built.map((row) => row.totals));
+
   const rows = useMemo<ContactRow[]>(() => {
-    const built = contacts.map((c) => {
-      const row = metrics[c.id];
-      return {
-        id: c.id,
-        name: row?.name ?? c.name,
-        addresses: c.addresses,
-        totals: row?.totals ?? null,
-      };
-    });
     if (!sortDescriptor?.column) return built;
     const col = String(sortDescriptor.column);
     const dir = sortDescriptor.direction === "descending" ? -1 : 1;
@@ -186,7 +188,7 @@ export default function CheckedContactsPanel({
         contactLabelText(b.name, b.addresses),
       );
     });
-  }, [contacts, metrics, sortDescriptor]);
+  }, [built, sortDescriptor]);
 
   return (
     <aside
@@ -259,10 +261,17 @@ export default function CheckedContactsPanel({
               <br />
               Messages
             </SortableColumn>
+            {showOrphaned ? (
+              <SortableColumn id="orphaned_messages" widthClass="w-[15%]" align="right">
+                Orphaned
+                <br />
+                Messages
+              </SortableColumn>
+            ) : null}
           </TableHeader>
           <TableBody
             items={rows}
-            dependencies={[sortDescriptor, metrics]}
+            dependencies={[sortDescriptor, metrics, showOrphaned]}
             className="[&_tr]:border-b [&_tr]:border-border"
           >
             {(row) => (
@@ -300,6 +309,13 @@ export default function CheckedContactsPanel({
                     <CountCell value={row.totals?.group_messages ?? 0} />
                   </MetricCell>
                 </Cell>
+                {showOrphaned ? (
+                  <Cell className={tdRightClass}>
+                    <MetricCell loaded={row.totals != null}>
+                      <CountCell value={row.totals?.orphaned_messages ?? 0} />
+                    </MetricCell>
+                  </Cell>
+                ) : null}
               </Row>
             )}
           </TableBody>

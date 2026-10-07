@@ -17,6 +17,7 @@ const rows: IdentityRow[] = [
     conversations: 2,
     direct_messages: 12,
     group_messages: 30,
+    orphaned_messages: 0,
   },
   {
     address: "someone.with.a.long.address@example.com",
@@ -26,6 +27,7 @@ const rows: IdentityRow[] = [
     conversations: 0,
     direct_messages: 0,
     group_messages: 0,
+    orphaned_messages: 0,
   },
   {
     address: "+15555550100",
@@ -35,6 +37,7 @@ const rows: IdentityRow[] = [
     conversations: 1,
     direct_messages: 3,
     group_messages: 0,
+    orphaned_messages: 0,
   },
 ];
 
@@ -74,6 +77,75 @@ describe("IdentityTable", () => {
     expect(cells[1].textContent).toBe("2020-01-01");
     expect(cells[3].textContent).toBe("2");
     expect(cells[5].textContent).toBe("30");
+  });
+
+  it("shows an Orphaned messages column, summed in the Summary row, when an identity has orphaned messages", () => {
+    const withOrphaned = rows.map((row, i) => (i === 2 ? { ...row, orphaned_messages: 4 } : row));
+    render(
+      inTimeZone(
+        "UTC",
+        <IdentityTable {...dates} rows={withOrphaned} totalConversations={4} onRemove={() => {}} />,
+      ),
+    );
+
+    expect(headers()).toEqual([
+      "Service",
+      "Identity",
+      "First heard from",
+      "Last heard from",
+      "Conversations",
+      "Direct messages",
+      "Group messages",
+      "Orphaned messages",
+      "",
+    ]);
+    const whatsapp = screen
+      .getAllByRole("row")
+      .find((row) => row.textContent?.includes("2021-05-05"));
+    expect(whatsapp).toBeDefined();
+    expect(within(whatsapp as HTMLElement).getAllByRole("gridcell")[6].textContent).toBe("4");
+    const summary = screen.getAllByRole("row").at(-1) as HTMLElement;
+    expect(within(summary).getAllByRole("gridcell")[6].textContent).toBe("4");
+  });
+
+  it("leaves the Orphaned messages column out when no identity has orphaned messages", () => {
+    render(
+      inTimeZone(
+        "UTC",
+        <IdentityTable {...dates} rows={rows} totalConversations={3} onRemove={() => {}} />,
+      ),
+    );
+
+    expect(headers()).not.toContain("Orphaned messages");
+    expect(screen.queryByText(/orphaned/i)).toBeNull();
+  });
+
+  it("suspends a sort by Orphaned messages while that column is gone", async () => {
+    const user = setupUser();
+    const withOrphaned = rows.map((row, i) => (i === 1 ? { ...row, orphaned_messages: 4 } : row));
+    const { rerender } = render(<IdentityTable {...dates} rows={withOrphaned} />);
+
+    await user.click(screen.getByRole("columnheader", { name: /Orphaned messages/ }));
+    expect(identities()[2]).toBe("someone.with.a.long.address@example.com");
+
+    // No identity has orphaned messages any more, so the column goes, and the
+    // rows return to the order the caller gave rather than a hidden column's.
+    rerender(<IdentityTable {...dates} rows={rows} />);
+    expect(headers()).not.toContain("Orphaned messages");
+    expect(identities()).toEqual([
+      "+15555550100",
+      "someone.with.a.long.address@example.com",
+      "+15555550100",
+    ]);
+
+    // When the column comes back, so does the sort the person chose: the
+    // column can go for a moment while figures reload, and that must not undo
+    // their choice.
+    rerender(<IdentityTable {...dates} rows={withOrphaned} />);
+    expect(
+      screen.getByRole("columnheader", { name: /Orphaned messages/ }).getAttribute("aria-sort"),
+    ).not.toBe("none");
+    expect(identities()[2]).toBe("someone.with.a.long.address@example.com");
   });
 
   it("puts the sort arrow right after the label and shows it only on the sorted column", async () => {
@@ -212,6 +284,7 @@ describe("IdentityTable dates", () => {
       conversations: 1,
       direct_messages: 1,
       group_messages: 0,
+      orphaned_messages: 0,
     };
     render(
       inTimeZone(

@@ -2196,7 +2196,8 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
                 "end_date": "2020-02-02T00:00:00.000Z",
                 "conversations": 2,
                 "direct_messages": 2,
-                "group_messages": 2
+                "group_messages": 2,
+                "orphaned_messages": 0
             },
             {
                 "address": "alice@example.com",
@@ -2205,7 +2206,8 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
                 "end_date": "2020-02-03T00:00:00.000Z",
                 "conversations": 1,
                 "direct_messages": 0,
-                "group_messages": 1
+                "group_messages": 1,
+                "orphaned_messages": 0
             }
         ])
     );

@@ -13,10 +13,12 @@ export type IdentityRow = {
   start_date: string | null;
   /** When the newest was sent, or null. */
   end_date: string | null;
-  /** Direct and group conversations the identity takes part in. */
+  /** Direct, group, and orphaned conversations the identity takes part in. */
   conversations: number;
   direct_messages: number;
   group_messages: number;
+  /** Messages in conversations of orphaned messages; the table shows the column only when some row has any. */
+  orphaned_messages: number;
 };
 
 const SORT_COLUMNS = [
@@ -27,6 +29,7 @@ const SORT_COLUMNS = [
   "conversations",
   "direct_messages",
   "group_messages",
+  "orphaned_messages",
 ] as const;
 type SortColumn = (typeof SORT_COLUMNS)[number];
 
@@ -46,6 +49,8 @@ function sortKey(row: IdentityRow, column: SortColumn): string | number {
       return row.direct_messages;
     case "group_messages":
       return row.group_messages;
+    case "orphaned_messages":
+      return row.orphaned_messages;
   }
 }
 
@@ -77,11 +82,13 @@ export function identityTotals(rows: readonly IdentityRow[], conversations: numb
   let end: string | null = null;
   let direct = 0;
   let group = 0;
+  let orphaned = 0;
   for (const row of rows) {
     if (row.start_date && (!start || row.start_date < start)) start = row.start_date;
     if (row.end_date && (!end || row.end_date > end)) end = row.end_date;
     direct += row.direct_messages;
     group += row.group_messages;
+    orphaned += row.orphaned_messages;
   }
   return {
     address: "",
@@ -91,5 +98,25 @@ export function identityTotals(rows: readonly IdentityRow[], conversations: numb
     conversations,
     direct_messages: direct,
     group_messages: group,
+    orphaned_messages: orphaned,
   };
+}
+
+/**
+ * True when some row has orphaned messages. Orphaned messages are rare, so a
+ * table shows their column only then, and a table without any looks as it did
+ * before they existed. A row that has not loaded yet (null) has none.
+ */
+export function hasOrphanedMessages(
+  rows: readonly ({ orphaned_messages: number } | null)[],
+): boolean {
+  return rows.some((row) => (row?.orphaned_messages ?? 0) > 0);
+}
+
+/**
+ * All of a contact's conversations: its direct, group, and orphaned ones. A
+ * conversation is exactly one of the three, so they add up.
+ */
+export function conversationTotal(direct: number, group: number, orphaned: number): number {
+  return direct + group + orphaned;
 }

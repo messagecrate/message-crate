@@ -235,7 +235,7 @@ pub struct Identity {
     pub start_date: Option<String>,
     /// When the newest such message was sent, or null when there is none.
     pub end_date: Option<String>,
-    /// Direct and group conversations: for a contact, those the identity
+    /// Direct, group, and orphaned conversations: for a contact, those the identity
     /// takes part in, whoever wrote in them; for an account, those holding
     /// at least one of the identity's messages. Trashed conversations are
     /// excluded.
@@ -245,6 +245,9 @@ pub struct Identity {
     pub direct_messages: u64,
     /// The identity's messages in group conversations, on the same terms.
     pub group_messages: u64,
+    /// The identity's messages in conversations of orphaned messages, on the
+    /// same terms: the three message counts add up to all of its messages.
+    pub orphaned_messages: u64,
 }
 
 /// Whose identities [`identities`] reads.
@@ -257,12 +260,13 @@ pub enum IdentitiesOf {
 }
 
 /// One row of [`identities`]: address, service, first and last timestamp,
-/// conversation count, direct and group message counts.
+/// conversation count, direct, group, and orphaned message counts.
 type IdentityRow = (
     String,
     String,
     Option<String>,
     Option<String>,
+    i64,
     i64,
     i64,
     i64,
@@ -324,7 +328,8 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
                 (SELECT MAX(m.timestamp) {messages}),
                 {conversations},
                 (SELECT COUNT(*) {messages} AND c.conversation_type = 'individual'),
-                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group')
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'group'),
+                (SELECT COUNT(*) {messages} AND c.conversation_type = 'orphaned')
          FROM linked l
          JOIN handles h ON h.id = l.handle_id
          {scope}
@@ -338,14 +343,17 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
     Ok(rows
         .into_iter()
         .map(
-            |(handle, service, start_date, end_date, conversations, direct, group)| Identity {
-                address: handle,
-                service,
-                start_date,
-                end_date,
-                conversations: conversations.max(0) as u64,
-                direct_messages: direct.max(0) as u64,
-                group_messages: group.max(0) as u64,
+            |(handle, service, start_date, end_date, conversations, direct, group, orphaned)| {
+                Identity {
+                    address: handle,
+                    service,
+                    start_date,
+                    end_date,
+                    conversations: conversations.max(0) as u64,
+                    direct_messages: direct.max(0) as u64,
+                    group_messages: group.max(0) as u64,
+                    orphaned_messages: orphaned.max(0) as u64,
+                }
             },
         )
         .collect())

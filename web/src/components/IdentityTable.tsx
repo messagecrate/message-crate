@@ -1,13 +1,5 @@
-import { type ReactNode, useMemo, useState } from "react";
-import {
-  Cell,
-  Column,
-  Row,
-  type SortDescriptor,
-  Table,
-  TableBody,
-  TableHeader,
-} from "react-aria-components";
+import { type ReactNode, useMemo } from "react";
+import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatHandleServiceLabel } from "../lib/handleService";
 import { useTimeZone } from "../lib/timeZone";
@@ -16,6 +8,7 @@ import Button from "./Button";
 import { TrashIcon } from "./icons";
 import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
 import PlainButton from "./PlainButton";
+import { useOrphanedColumn } from "./useOrphanedColumn";
 
 export type { IdentityRow } from "./identityRows";
 
@@ -89,7 +82,8 @@ function Heading({
  * like its cells, and the browser lays the columns out: the Identity column
  * takes what is left, never less than a phone number's width, and cuts a
  * long address with an ellipsis. The caller gives the table a scrolling box
- * when its screen can be narrower than the eight columns.
+ * when its screen can be narrower than the eight columns, nine when an
+ * identity has orphaned messages.
  *
  * The two date headings come from the screen, because the dates mean
  * different things: when a contact was heard from at an identity, and when the
@@ -133,7 +127,7 @@ export default function IdentityTable({
   /** Where a conversation count leads; with none, counts are plain numbers. */
   onBrowse?: (row: IdentityRow) => void;
 }) {
-  const [sort, setSort] = useState<SortDescriptor | null>(null);
+  const { showOrphaned, sort, setSort } = useOrphanedColumn(rows);
   const sorted = useMemo(() => sortIdentityRows(rows, sort), [rows, sort]);
   const summary = useMemo(
     () => (totalConversations === undefined ? null : identityTotals(rows, totalConversations)),
@@ -168,6 +162,11 @@ export default function IdentityTable({
       <Cell className={numberCellClass}>
         <Count value={row.group_messages} loading={loading} />
       </Cell>
+      {showOrphaned ? (
+        <Cell className={numberCellClass}>
+          <Count value={row.orphaned_messages} loading={loading} />
+        </Cell>
+      ) : null}
     </>
   );
 
@@ -212,6 +211,15 @@ export default function IdentityTable({
             </Heading>
           )}
         </Column>
+        {showOrphaned ? (
+          <Column id="orphaned_messages" allowsSorting className={`${headerClass} text-right`}>
+            {({ sortDirection }) => (
+              <Heading sortDirection={sortDirection}>
+                Orphaned <span className="block">messages</span>
+              </Heading>
+            )}
+          </Column>
+        ) : null}
         {/* Remove has no heading: each button is named after its identity. */}
         <Column className="w-9 px-1" aria-label="Actions">
           {""}

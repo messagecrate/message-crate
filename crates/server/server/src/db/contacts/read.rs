@@ -65,10 +65,16 @@ pub struct ContactSelectionSummary {
     pub individual_conversations: u64,
     /// Group conversations with the contact.
     pub group_conversations: u64,
+    /// Conversations of orphaned messages the contact is in: the three
+    /// conversation counts add up to every conversation with the contact.
+    pub orphaned_conversations: u64,
     /// Messages the contact sent in 1:1 conversations.
     pub individual_message_count: u64,
     /// Messages the contact sent in group conversations.
     pub group_message_count: u64,
+    /// Messages the contact sent in conversations of orphaned messages: the
+    /// three message counts add up to every message the contact sent.
+    pub orphaned_message_count: u64,
 }
 
 /// A contact is linked to a conversation when one of its handles is either
@@ -355,6 +361,8 @@ pub struct ContactTotals {
     pub direct: u64,
     /// Group conversations the contact appears in.
     pub groups: u64,
+    /// Conversations of orphaned messages the contact appears in.
+    pub orphaned: u64,
     /// Messages the contact sent, in any of its conversations.
     pub messages: u64,
 }
@@ -372,7 +380,7 @@ pub async fn contact_totals(
     account_id: i64,
     contact_id: i64,
 ) -> Result<ContactTotals, sqlx::Error> {
-    let (direct, groups, messages): (i64, i64, i64) = sqlx::query_as(&format!(
+    let (direct, groups, orphaned, messages): (i64, i64, i64, i64) = sqlx::query_as(&format!(
         "WITH involved AS (
                SELECT c.id, c.conversation_type
                FROM conversations c
@@ -383,6 +391,7 @@ pub async fn contact_totals(
              SELECT
                (SELECT COUNT(*) FROM involved WHERE conversation_type = 'individual'),
                (SELECT COUNT(*) FROM involved WHERE conversation_type = 'group'),
+               (SELECT COUNT(*) FROM involved WHERE conversation_type = 'orphaned'),
                COALESCE((SELECT (SELECT COUNT(*) {sent})
                          FROM contacts ct WHERE ct.account_id = $1 AND ct.id = $2), 0)",
         involves_contact_sql = involves_contact_sql(),
@@ -396,6 +405,7 @@ pub async fn contact_totals(
     Ok(ContactTotals {
         direct: direct.max(0) as u64,
         groups: groups.max(0) as u64,
+        orphaned: orphaned.max(0) as u64,
         messages: messages.max(0) as u64,
     })
 }
@@ -460,8 +470,11 @@ pub async fn get_contact_summaries(
              WHERE i.contact_id = ct.id AND i.conversation_type = 'individual'),
             (SELECT COUNT(*) FROM involved i
              WHERE i.contact_id = ct.id AND i.conversation_type = 'group'),
+            (SELECT COUNT(*) FROM involved i
+             WHERE i.contact_id = ct.id AND i.conversation_type = 'orphaned'),
             (SELECT COUNT(*) {sent} AND c.conversation_type = 'individual'),
-            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group')
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'group'),
+            (SELECT COUNT(*) {sent} AND c.conversation_type = 'orphaned')
          FROM selected ct",
         sent = contact_sent_messages(TrashScope::LeftOut),
     );
@@ -481,8 +494,10 @@ pub async fn get_contact_summaries(
         end_date,
         individual_conversations,
         group_conversations,
+        orphaned_conversations,
         individual_message_count,
         group_message_count,
+        orphaned_message_count,
     ) in rows
     {
         by_id.insert(
@@ -494,8 +509,10 @@ pub async fn get_contact_summaries(
                 end_date,
                 individual_conversations: individual_conversations.max(0) as u64,
                 group_conversations: group_conversations.max(0) as u64,
+                orphaned_conversations: orphaned_conversations.max(0) as u64,
                 individual_message_count: individual_message_count.max(0) as u64,
                 group_message_count: group_message_count.max(0) as u64,
+                orphaned_message_count: orphaned_message_count.max(0) as u64,
             },
         );
     }
@@ -510,6 +527,8 @@ type ContactSelectionRow = (
     String,
     Option<String>,
     Option<String>,
+    i64,
+    i64,
     i64,
     i64,
     i64,
