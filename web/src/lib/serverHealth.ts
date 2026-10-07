@@ -66,21 +66,3 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
     signal?.removeEventListener("abort", onParentAbort);
   }
 }
-
-export function healthStatusLabel(status: ServerHealthStatus): string {
-  switch (status) {
-    case "ok":
-      return "Connected";
-    case "fail":
-      return "Disconnected";
-    // "No answer yet" and "still trying" are the same thing to a reader, so
-    // both grey states say the same word.
-    case "checking":
-    case "unknown":
-      return "Connecting…";
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
-  }
-}
