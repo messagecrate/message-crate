@@ -156,11 +156,11 @@ released versions carry their date on the heading.
   from Ada's, in "Unknown recipient", mixed with everyone else's, though the
   backup names Ada as their recipient. They now sit in Ada's conversation of
   orphaned messages, with the ones she sent. That conversation is titled
-  "Ada · Orphaned". Messages that
-  name nobody, ones you sent with no recipient recorded and ones received
-  with no sender or from one of your own addresses, sit in "Orphaned ·
-  Unknown person". `kind:orphaned` still finds both kinds, and the word
-  "orphaned" now finds them by their titles too.
+  "Ada · Orphaned". Messages that name nobody, ones you sent with no
+  recipient recorded and ones received with no sender or from one of your
+  own addresses, sit in "Orphaned · Unknown person". `kind:orphaned` still
+  finds both kinds, and the word "orphaned" now finds them by their titles
+  too.
 
 #### Browsing and search
 

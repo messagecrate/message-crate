@@ -1336,6 +1336,7 @@ mod tests {
         let sent = orphaned(1, Some(2));
         assert!(sent.is_from_me);
         assert_eq!(sent.sender_identity, None);
+        assert_eq!(sent.sender_display_name, None);
         let sent_to_robin = sent.conversation;
         // Message 3 is received from Robin.
         let from_robin = orphaned(2, None).conversation;
@@ -1358,7 +1359,8 @@ mod tests {
     }
 
     /// A row whose chat is gone lands in the orphaned conversation of the
-    /// person it names, and one whose service is unknown is SMS or MMS by its attachments.
+    /// person it names, and one whose service is unknown is SMS or MMS by
+    /// its attachments.
     #[test]
     fn an_orphaned_row_and_a_non_imessage_row_are_classified() {
         let fixture = FixtureDb::write();

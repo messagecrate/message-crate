@@ -363,15 +363,15 @@ async fn assert_imported_as_three_orphaned_conversations(
     assert_eq!(
         linked,
         ["+15555550154", "+15555550155"],
-        "only the senders are people"
+        "only the two people the orphaned messages name are people"
     );
 
     assert_eq!(
         listed_conversations(conn, account_id, "kind:orphaned").await,
         expected_orphaned([
-            ("Ada · Orphaned", "+15555550154"),
-            ("Bob · Orphaned", "+15555550155"),
-            ("Orphaned · Unknown person", ""),
+            ("Ada · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
         ])
     );
     assert_eq!(
@@ -386,17 +386,13 @@ async fn assert_imported_as_three_orphaned_conversations(
 }
 
 /// The three orphaned conversations as `listed_conversations` gives them:
-/// each a title and its one person's identity, or no identity for the
+/// each a title and its one person's identity, or `None` for the
 /// conversation that names nobody.
-fn expected_orphaned(people: [(&str, &str); 3]) -> [(Option<String>, Vec<String>); 3] {
+fn expected_orphaned(people: [(&str, Option<&str>); 3]) -> [(Option<String>, Vec<String>); 3] {
     people.map(|(label, person)| {
         (
             Some(label.to_string()),
-            if person.is_empty() {
-                vec![]
-            } else {
-                vec![person.to_string()]
-            },
+            person.into_iter().map(str::to_string).collect(),
         )
     })
 }
@@ -607,9 +603,9 @@ async fn an_orphaned_title_follows_its_person_s_contact_name() {
     assert_eq!(
         listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
         expected_orphaned([
-            ("Ada · Orphaned", "+15555550154"),
-            ("Bob · Orphaned", "+15555550155"),
-            ("Orphaned · Unknown person", ""),
+            ("Ada · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
         ])
     );
 
@@ -627,9 +623,9 @@ async fn an_orphaned_title_follows_its_person_s_contact_name() {
     assert_eq!(
         listed_conversations(&mut conn, TEST_ACCOUNT, "kind:orphaned").await,
         expected_orphaned([
-            ("Ada Lovelace · Orphaned", "+15555550154"),
-            ("Bob · Orphaned", "+15555550155"),
-            ("Orphaned · Unknown person", ""),
+            ("Ada Lovelace · Orphaned", Some("+15555550154")),
+            ("Bob · Orphaned", Some("+15555550155")),
+            ("Orphaned · Unknown person", None),
         ])
     );
 }
