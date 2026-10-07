@@ -8,8 +8,9 @@ describe("serverName", () => {
     expect(serverName("  http://127.0.0.1:8080  ")).toBe("127.0.0.1:8080");
   });
 
-  it("names only the port the address names", () => {
+  it("leaves out the scheme's default port, named or not", () => {
     expect(serverName("http://crate.example.com")).toBe("crate.example.com");
+    expect(serverName("http://crate.example.com:80")).toBe("crate.example.com");
     expect(serverName("https://crate.example.com")).toBe("crate.example.com");
     expect(serverName("https://crate.example.com:8443")).toBe("crate.example.com:8443");
   });

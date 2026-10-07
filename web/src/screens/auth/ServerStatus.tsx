@@ -10,20 +10,20 @@ import { serverName } from "../../lib/serverName";
  */
 export type ServerConnection = "connecting" | "connected" | "disconnected" | "untested";
 
-const WORD: Record<ServerConnection, string> = {
-  connecting: "Connecting",
-  connected: "Connected",
-  disconnected: "Disconnected",
-  untested: "Not tested",
+/** Each state's word, and what joins it to the server's name. */
+const WORDING: Record<ServerConnection, { word: string; join: string }> = {
+  connecting: { word: "Connecting", join: " to " },
+  connected: { word: "Connected", join: " to " },
+  disconnected: { word: "Disconnected", join: " from " },
+  untested: { word: "Not tested", join: ": " },
 };
 
-/** What joins the state's word to the server's name; each state has its own. */
-const JOIN: Record<ServerConnection, string> = {
-  connecting: " to ",
-  connected: " to ",
-  disconnected: " from ",
-  untested: ": ",
-};
+/** The state's word, joined to the server's name when there is one. */
+function sentence(state: ServerConnection, address: string): string {
+  const { word, join } = WORDING[state];
+  const name = serverName(address);
+  return name === "" ? word : `${word}${join}${name}`;
+}
 
 /**
  * The words carry the state on their own — there is no indicator dot. Connecting
@@ -67,11 +67,6 @@ export interface ServerStatusProps {
  * browser's own margins and floats away from the line it belongs under; the
  * gap below is the caller's to set.
  */
-function sentence(state: ServerConnection, address: string): string {
-  const name = serverName(address);
-  return name === "" ? WORD[state] : `${WORD[state]}${JOIN[state]}${name}`;
-}
-
 export default function ServerStatus({ state, address, label, className }: ServerStatusProps) {
   return (
     <p

@@ -1,10 +1,10 @@
 /**
- * How a server address is named to a person: the host, the port when the
- * address names one, and the path when there is one, without the scheme. Text
- * that is not a URL, such as an address still being typed or one typed
- * without a scheme (`localhost:8080` parses as a scheme with no host), is
- * repeated as it stands, since there is no host to pull out of it. A blank
- * address has no name: the caller decides what a blank means where it is.
+ * How a server address is named to a person: the host, the port unless it is
+ * the scheme's default, and the path when there is one, without the scheme.
+ * Text with no host in it, whether it is not a URL at all or was typed
+ * without a scheme (`localhost:8080` parses as the scheme `localhost:` with no
+ * host), is repeated as it stands. A blank address has no name: the caller
+ * decides what a blank means where it is.
  */
 export function serverName(address: string): string {
   const trimmed = address.trim();
