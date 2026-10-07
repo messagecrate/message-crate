@@ -57,7 +57,7 @@ Windows or macOS may ask whether Message Crate may accept network connections wh
 
 ## Check that it worked
 
-The line under the title reads **Connected**, and the card shows a **Create Owner** form and an **Explore Demo Account** button.
+The line under the title reads **Connected to 127.0.0.1:8080**, and the card shows a **Create Owner** form and an **Explore Demo Account** button.
 
 ![The first screen of a new Message Crate: Create Owner, and Explore Demo Account](../../../../../assets/user-guide/login.png)
 

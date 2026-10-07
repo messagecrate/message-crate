@@ -55,7 +55,7 @@ Later starts write nothing and answer at once.
 
 ## Check that it worked
 
-[http://localhost:8080](http://localhost:8080) in a browser shows a card titled **Message Crate**, with the word **Connected**, a **Create Owner** form, and an **Explore Demo Account** button.
+[http://localhost:8080](http://localhost:8080) in a browser shows a card titled **Message Crate**, with the line **Connected to localhost:8080**, a **Create Owner** form, and an **Explore Demo Account** button.
 
 ![The first screen of a new Message Crate: Create Owner, and Explore Demo Account](../../../../../../assets/user-guide/login.png)
 

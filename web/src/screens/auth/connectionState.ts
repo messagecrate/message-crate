@@ -68,7 +68,7 @@ export function connectionReducer(state: Connection, event: ConnectionEvent): Co
   }
 }
 
-/** The one word the card shows: connecting while any address is being asked. */
+/** The state the card shows: connecting while any address is being asked. */
 export function shownState(state: Connection): ServerConnection {
   return state.trying !== null ? "connecting" : state.status;
 }
