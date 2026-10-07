@@ -1959,10 +1959,11 @@ mod kind_words {
     use super::*;
 
     /// `kind:orphaned` lists the conversations that hold orphaned messages,
-    /// one sender's and the account holder's, and `kind:direct` and
-    /// `kind:group` list neither (#1095). On Contacts it finds the sender, the
+    /// one person's and the one that names nobody, and `kind:direct` and
+    /// `kind:group` list neither (#1095). On Contacts it finds the person, the
     /// participant of their orphaned conversation. Their keys are no text to
-    /// match; their titles are.
+    /// match, though every title now says "Orphaned" (#1778); their titles
+    /// are.
     #[tokio::test]
     async fn kind_orphaned_is_neither_direct_nor_group() {
         let (pool, _dir, f) = seeded().await;
@@ -2023,14 +2024,26 @@ mod kind_words {
         );
         assert_eq!(
             run(&mut conn, ListKind::Conversations, "orphaned").await,
-            Vec::<i64>::new(),
-            "a key is not text"
+            sorted(vec![ana_orphaned, unknown]),
+            "the titles say \"Orphaned\""
         );
         assert_eq!(
-            run(&mut conn, ListKind::Conversations, "recipient").await,
-            sorted(vec![ana_orphaned, unknown]),
-            "the titles are"
+            run(&mut conn, ListKind::Conversations, "\"unknown person\"").await,
+            vec![unknown],
+            "the one that names nobody is titled by it"
         );
+        for key in ["\"orphaned:\"", "\"orphaned:+15555550101\""] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, key).await,
+                Vec::<i64>::new(),
+                "{key}: a key is not text"
+            );
+            assert_eq!(
+                run(&mut conn, ListKind::Messages, &format!("in:{key}")).await,
+                Vec::<i64>::new(),
+                "in:{key}: a key is not text"
+            );
+        }
     }
 
     #[tokio::test]

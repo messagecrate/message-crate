@@ -207,29 +207,28 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
     (records, conversation_type)
 }
 
-/// The conversation an orphaned message sits in: the one of the person who
-/// sent it, with that person as its only participant, kept apart from their
+/// The conversation an orphaned message sits in: the one of the person it
+/// names, with that person as its only participant, kept apart from their
 /// one-to-one conversation because the backup does not say the message was
-/// said there. A message the account holder sent records no recipient, so
-/// every such message sits in one conversation with no participants. A
-/// received message that names no sender, or names one of the holder's own
-/// addresses, has nobody to be a participant either, and sits there too.
+/// said there. A received row names its sender, and a sent row names its
+/// recipient in the same `handle_id`, as Apple writes a one-to-one chat's
+/// sent rows, so both directions of one person's orphaned rows sit together.
+/// A row that names nobody, sent with `handle_id` 0 as a group's rows are,
+/// received with no sender, or received from one of the holder's own
+/// addresses, sits in the one conversation with no participants (#1778).
 fn orphaned_conversation(session: &MailSession, message: &Message) -> ConversationRecord {
-    let sender = message
-        .handle_id
-        .filter(|_| !message.is_from_me())
-        .and_then(|handle_id| {
-            let address = session.handle_address(handle_id)?.trim();
-            (!address.is_empty() && !session.is_owner(address)).then(|| Participant {
-                identity: address.to_string(),
-                display_name: session.handle_name(handle_id).map(str::to_string),
-            })
-        });
+    let person = message.handle_id.and_then(|handle_id| {
+        let address = session.handle_address(handle_id)?.trim();
+        (!address.is_empty() && !session.is_owner(address)).then(|| Participant {
+            identity: address.to_string(),
+            display_name: session.handle_name(handle_id).map(str::to_string),
+        })
+    });
     ConversationRecord {
-        chat_identifier: orphaned_chat_id(sender.as_ref().map(|p| p.identity.as_str())),
+        chat_identifier: orphaned_chat_id(person.as_ref().map(|p| p.identity.as_str())),
         conversation_type: ORPHANED_CONVERSATION_TYPE.to_string(),
         group_title: None,
-        participants: sender.into_iter().collect(),
+        participants: person.into_iter().collect(),
     }
 }
 
@@ -400,7 +399,8 @@ struct RowContext {
 
 /// Resolve the conversation and sender a row belongs to. A row in no chat,
 /// or in a chat with no identifier to key it by, is an orphaned message and
-/// lands in its sender's orphaned conversation ([`orphaned_conversation`]).
+/// lands in the orphaned conversation of the person it names
+/// ([`orphaned_conversation`]).
 fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     let conversation = match session.conversation(message) {
         Some(chatroom) if !chatroom.chat_identifier.is_empty() => {
@@ -1270,12 +1270,12 @@ mod tests {
         assert_eq!(reply.imessage.unwrap().read_receipt_rfc3339, None);
     }
 
-    /// Orphaned messages sit in one conversation for each sender, with that
-    /// sender as its only participant, and the account holder's in one with
-    /// nobody. Each is keyed `orphaned:` and the sender's address, so the
-    /// sender's one-to-one conversation stays as it is (#1095).
+    /// Orphaned messages sit in one conversation for each person, with that
+    /// person as its only participant, and sent rows that name nobody in one
+    /// with nobody. Each is keyed `orphaned:` and the person's address, so
+    /// the person's one-to-one conversation stays as it is (#1095).
     #[test]
-    fn orphaned_rows_make_one_conversation_for_each_sender() {
+    fn orphaned_rows_make_one_conversation_for_each_person() {
         let fixture = FixtureDb::write();
         let session = fixture.session_with_contacts();
         let orphaned = |index: usize| {
@@ -1309,6 +1309,46 @@ mod tests {
         let (one_to_one, _) = build_record(&session, &FixtureDb::messages(&session)[0]).unwrap();
         assert_eq!(one_to_one.chat_identifier, FRIEND_PHONE);
         assert_eq!(one_to_one.conversation_type, "individual");
+    }
+
+    /// An orphaned row that names the other person sits in that person's
+    /// orphaned conversation whichever way it went: a sent row names its
+    /// recipient in `handle_id`, as Apple writes a one-to-one chat's sent
+    /// rows. A row that names nobody, sent with `handle_id` 0, received with
+    /// no sender, or received from one of the holder's own addresses, sits
+    /// in the one keyed `orphaned:` alone, with no participants (#1778).
+    #[test]
+    fn orphaned_rows_sit_with_the_person_they_name_in_either_direction() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session_with_contacts();
+        let orphaned = |index: usize, handle_id: Option<i32>| {
+            let mut message = FixtureDb::messages(&session).remove(index);
+            message.chat_id = Some(42);
+            message.deleted_from = None;
+            if let Some(handle_id) = handle_id {
+                message.handle_id = Some(handle_id);
+            }
+            resolve_context(&session, &message).conversation
+        };
+
+        // Message 2 is sent; handle 2 is Robin at FRIEND_EMAIL.
+        let sent_to_robin = orphaned(1, Some(2));
+        // Message 3 is received from Robin.
+        let from_robin = orphaned(2, None);
+        for robin in [&sent_to_robin, &from_robin] {
+            assert_eq!(robin.chat_identifier, format!("orphaned:{FRIEND_EMAIL}"));
+            assert_eq!(robin.conversation_type, "orphaned");
+            assert_eq!(handles_of(&robin.participants), vec![FRIEND_EMAIL]);
+            assert_eq!(robin.participants[0].display_name.as_deref(), Some("Robin"));
+        }
+
+        // Message 2 sent with handle 0, message 9 received with handle 0,
+        // and message 11 received from the owner's own handle.
+        for nobody in [orphaned(1, None), orphaned(8, None), orphaned(10, None)] {
+            assert_eq!(nobody.chat_identifier, "orphaned:");
+            assert_eq!(nobody.conversation_type, "orphaned");
+            assert!(nobody.participants.is_empty());
+        }
     }
 
     /// A row whose chat is gone lands in its sender's orphaned conversation,
