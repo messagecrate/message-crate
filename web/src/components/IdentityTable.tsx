@@ -14,7 +14,12 @@ import { useTimeZone } from "../lib/timeZone";
 import { focusRing } from "../lib/uiStyles";
 import Button from "./Button";
 import { TrashIcon } from "./icons";
-import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
+import {
+  hasOrphanedMessages,
+  type IdentityRow,
+  identityTotals,
+  sortIdentityRows,
+} from "./identityRows";
 import PlainButton from "./PlainButton";
 
 export type { IdentityRow } from "./identityRows";
@@ -140,9 +145,12 @@ export default function IdentityTable({
     () => (totalConversations === undefined ? null : identityTotals(rows, totalConversations)),
     [rows, totalConversations],
   );
-  // Orphaned messages are rare, so their column appears only when an identity
-  // has some, and a table without any looks as it did before they existed.
-  const showOrphaned = rows.some((row) => row.orphaned_messages > 0);
+  const showOrphaned = hasOrphanedMessages(rows);
+  // A sort by the Orphaned column ends when the column goes, so the rows are
+  // never ordered by a column the table no longer shows.
+  if (!showOrphaned && sort?.column === "orphaned_messages") {
+    setSort(null);
+  }
 
   if (rows.length === 0) {
     return <div className="text-[0.813rem] text-muted">{emptyText}</div>;

@@ -51,6 +51,67 @@ describe("CheckedContactsPanel", () => {
     ]);
   });
 
+  it("shows an Orphaned Messages column and counts orphaned conversations when a contact has orphaned messages", async () => {
+    summaries.mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          name: "Ada",
+          individual_conversations: 2,
+          group_conversations: 1,
+          orphaned_conversations: 4,
+          individual_message_count: 314,
+          group_message_count: 15,
+          orphaned_message_count: 9,
+        },
+      ],
+    });
+
+    render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
+
+    await screen.findByText("314");
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
+    expect(headers).toContain("OrphanedMessages");
+    const row = screen.getByRole("rowheader", { name: "Ada" }).closest("[role=row]");
+    const cells = within(row as HTMLElement)
+      .getAllByRole("gridcell")
+      .map((c) => c.textContent);
+    // Conversations: 2 direct + 1 group + 4 orphaned.
+    expect(cells.slice(2)).toEqual(["7", "314", "15", "9"]);
+  });
+
+  it("leaves the Orphaned Messages column out when no contact has orphaned messages", async () => {
+    summaries.mockResolvedValue({
+      items: [
+        {
+          id: 1,
+          name: "Ada",
+          individual_conversations: 2,
+          group_conversations: 1,
+          orphaned_conversations: 0,
+          individual_message_count: 314,
+          group_message_count: 15,
+          orphaned_message_count: 0,
+        },
+      ],
+    });
+
+    render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
+
+    await screen.findByText("314");
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent?.replace(/[▲▼]/g, "").trim());
+    expect(headers).not.toContain("OrphanedMessages");
+    const row = screen.getByRole("rowheader", { name: "Ada" }).closest("[role=row]");
+    const cells = within(row as HTMLElement)
+      .getAllByRole("gridcell")
+      .map((c) => c.textContent);
+    expect(cells.slice(2)).toEqual(["3", "314", "15"]);
+  });
+
   // The app's own :focus-visible outline loses to the outline-none utility, so
   // a sortable header draws the style guide's ring itself.
   it("draws the focus ring on every sortable column header", () => {

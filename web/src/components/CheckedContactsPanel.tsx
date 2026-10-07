@@ -14,6 +14,7 @@ import { contactLabelText } from "../lib/contactLabel";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { getContactSummaries } from "../lib/serverApi";
+import type { components } from "../lib/serverApi.types";
 import { useTimeZone } from "../lib/timeZone";
 import Button from "./Button";
 import ContactLabel from "./ContactLabel";
@@ -28,24 +29,14 @@ import {
   thClass,
 } from "./contactDrawer/handleTableStyles";
 import DataCard, { dataCardHeaderRowClass } from "./DataCard";
+import { conversationTotal, hasOrphanedMessages } from "./identityRows";
 
 type ContactTotals = ReturnType<typeof contactTotals>;
 
 /** Matches `MAX_CONTACT_SUMMARY_IDS` on `POST /v1/contacts/summaries`. */
 const SUMMARY_BATCH_SIZE = 500;
 
-type ContactSelectionSummary = {
-  id: string | number;
-  name: string;
-  start_date?: string | null;
-  end_date?: string | null;
-  individual_conversations: number;
-  group_conversations: number;
-  orphaned_conversations: number;
-  individual_message_count: number;
-  group_message_count: number;
-  orphaned_message_count: number;
-};
+type ContactSelectionSummary = components["schemas"]["ContactSelectionSummary"];
 
 type RowMetrics = {
   name: string;
@@ -89,10 +80,11 @@ type ContactRow = {
 
 function totalsFromSummary(summary: ContactSelectionSummary): ContactTotals {
   return {
-    conversations:
-      summary.individual_conversations +
-      summary.group_conversations +
+    conversations: conversationTotal(
+      summary.individual_conversations,
+      summary.group_conversations,
       summary.orphaned_conversations,
+    ),
     direct_messages: summary.individual_message_count,
     group_messages: summary.group_message_count,
     orphaned_messages: summary.orphaned_message_count,
@@ -172,16 +164,27 @@ export default function CheckedContactsPanel({
     return { ...merged, ...summaries.data };
   }, [ids, cache, summaries.data]);
 
+  const built = useMemo<ContactRow[]>(
+    () =>
+      contacts.map((c) => {
+        const row = metrics[c.id];
+        return {
+          id: c.id,
+          name: row?.name ?? c.name,
+          addresses: c.addresses,
+          totals: row?.totals ?? null,
+        };
+      }),
+    [contacts, metrics],
+  );
+  const showOrphaned = hasOrphanedMessages(built.map((row) => row.totals));
+  // A sort by the Orphaned column ends when the column goes, so the rows are
+  // never ordered by a column the table no longer shows.
+  if (!showOrphaned && sortDescriptor?.column === "orphaned_messages") {
+    setSortDescriptor(null);
+  }
+
   const rows = useMemo<ContactRow[]>(() => {
-    const built = contacts.map((c) => {
-      const row = metrics[c.id];
-      return {
-        id: c.id,
-        name: row?.name ?? c.name,
-        addresses: c.addresses,
-        totals: row?.totals ?? null,
-      };
-    });
     if (!sortDescriptor?.column) return built;
     const col = String(sortDescriptor.column);
     const dir = sortDescriptor.direction === "descending" ? -1 : 1;
@@ -194,10 +197,7 @@ export default function CheckedContactsPanel({
         contactLabelText(b.name, b.addresses),
       );
     });
-  }, [contacts, metrics, sortDescriptor]);
-  // Orphaned messages are rare, so their column appears only when a selected
-  // contact sent some, and a selection without any looks as it did before.
-  const showOrphaned = rows.some((row) => (row.totals?.orphaned_messages ?? 0) > 0);
+  }, [built, sortDescriptor]);
 
   return (
     <aside

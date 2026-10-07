@@ -15,8 +15,8 @@ export function messagesPhrase(identity: Identity): string | null {
   if (identity.group_messages > 0) parts.push(count(identity.group_messages, "group"));
   if (identity.orphaned_messages > 0) parts.push(count(identity.orphaned_messages, "orphaned"));
   if (parts.length === 0) return null;
-  const last = parts.pop();
-  return parts.length === 0 ? (last ?? null) : `${parts.join(", ")} and ${last}`;
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 /** What the confirm dialog says an identity is tied to. */

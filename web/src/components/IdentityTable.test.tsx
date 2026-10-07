@@ -120,6 +120,31 @@ describe("IdentityTable", () => {
     expect(screen.queryByText(/orphaned/i)).toBeNull();
   });
 
+  it("stops sorting by Orphaned messages when that column goes", async () => {
+    const user = setupUser();
+    const withOrphaned = rows.map((row, i) => (i === 1 ? { ...row, orphaned_messages: 4 } : row));
+    const { rerender } = render(<IdentityTable {...dates} rows={withOrphaned} />);
+
+    await user.click(screen.getByRole("columnheader", { name: /Orphaned messages/ }));
+    expect(identities()[2]).toBe("someone.with.a.long.address@example.com");
+
+    // No identity has orphaned messages any more, so the column goes, and the
+    // rows return to the order the caller gave rather than a hidden column's.
+    rerender(<IdentityTable {...dates} rows={rows} />);
+    expect(headers()).not.toContain("Orphaned messages");
+    expect(identities()).toEqual([
+      "+15555550100",
+      "someone.with.a.long.address@example.com",
+      "+15555550100",
+    ]);
+
+    // When the column comes back, it is not sorted.
+    rerender(<IdentityTable {...dates} rows={withOrphaned} />);
+    expect(
+      screen.getByRole("columnheader", { name: /Orphaned messages/ }).getAttribute("aria-sort"),
+    ).toBe("none");
+  });
+
   it("puts the sort arrow right after the label and shows it only on the sorted column", async () => {
     const user = setupUser();
     render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);

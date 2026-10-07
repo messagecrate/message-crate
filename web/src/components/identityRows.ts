@@ -101,3 +101,22 @@ export function identityTotals(rows: readonly IdentityRow[], conversations: numb
     orphaned_messages: orphaned,
   };
 }
+
+/**
+ * True when some row has orphaned messages. Orphaned messages are rare, so a
+ * table shows their column only then, and a table without any looks as it did
+ * before they existed. A row that has not loaded yet (null) has none.
+ */
+export function hasOrphanedMessages(
+  rows: readonly ({ orphaned_messages: number } | null | undefined)[],
+): boolean {
+  return rows.some((row) => (row?.orphaned_messages ?? 0) > 0);
+}
+
+/**
+ * All of a contact's conversations: its direct, group, and orphaned ones. A
+ * conversation is exactly one of the three, so they add up.
+ */
+export function conversationTotal(direct: number, group: number, orphaned: number): number {
+  return direct + group + orphaned;
+}

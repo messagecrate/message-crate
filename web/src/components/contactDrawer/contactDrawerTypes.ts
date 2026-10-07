@@ -1,6 +1,7 @@
 import type { ContactDetail, ContactHandle } from "../../lib/contactDetail";
 import { formatIsoDateOnly } from "../../lib/formatDate";
 import type { ConversationKind } from "../../lib/searchQuery";
+import { conversationTotal } from "../identityRows";
 
 export type { HandleService } from "../../lib/handleService";
 export { formatHandleServiceLabel, inferService } from "../../lib/handleService";
@@ -165,7 +166,11 @@ export function previewHandleStubRows(
 
 /** A contact's conversations: its direct, group, and orphaned ones, which add up to all of them. */
 export function contactConversations(detail: ContactDetail): number {
-  return detail.direct_conversations + detail.group_conversations + detail.orphaned_conversations;
+  return conversationTotal(
+    detail.direct_conversations,
+    detail.group_conversations,
+    detail.orphaned_conversations,
+  );
 }
 
 /**
