@@ -6138,6 +6138,144 @@ async fn removing_an_identity_linked_by_mistake_keeps_the_backups_name() {
     assert_eq!(holder_contact(&fixture).await, Some(contact_id));
 }
 
+/// The holder named `Matt` in the header of a group with Ada and of a
+/// one-to-one conversation with Ada.
+fn holder_listed_with_ada_file() -> String {
+    let message = |guid: &str| {
+        message_line(guid, "hi")
+            .at(1_400_773_262_000)
+            .service(IrService::Whatsapp)
+            .sender("+15555550101")
+            .line()
+    };
+    [
+        conversation_header("whatsapp", "group-1662@g.us")
+            .group()
+            .title("Family")
+            .participant("+15555550199", Some("Matt"))
+            .participant("+15555550101", Some("Ada"))
+            .line(),
+        message("group-hi"),
+        conversation_header("whatsapp", "+15555550101")
+            .participant("+15555550101", Some("Ada"))
+            .participant("+15555550199", Some("Matt"))
+            .line(),
+        message("ada-hi"),
+    ]
+    .concat()
+}
+
+/// Linking the holder's number by mistake sets the holder's participant rows
+/// aside, in a group and in a one-to-one conversation with someone else
+/// alike. Removing it again puts them back with the name the backup gave
+/// (#1662).
+#[tokio::test]
+async fn removing_an_identity_puts_back_the_holder_participants_it_set_aside() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_listed_with_ada_file()).await;
+    let group: i64 =
+        sqlx::query_scalar("SELECT id FROM conversations WHERE group_title = 'Family'")
+            .fetch_one(&mut *fixture.conn().await)
+            .await
+            .unwrap();
+    let with_ada = conversation_at(&fixture, "+15555550101").await;
+    let expected = vec![
+        ("+15555550101".to_string(), Some("Ada".to_string())),
+        ("+15555550199".to_string(), Some("Matt".to_string())),
+    ];
+    assert_eq!(participants_of(&fixture, group).await, expected);
+    assert_eq!(participants_of(&fixture, with_ada).await, expected);
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    assert_eq!(participants_of(&fixture, group).await, expected[..1]);
+    assert_eq!(participants_of(&fixture, with_ada).await, expected[..1]);
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    assert_eq!(participants_of(&fixture, group).await, expected);
+    assert_eq!(participants_of(&fixture, with_ada).await, expected);
+}
+
+/// A group with Ada, where the holder's number `+15555550199` sent a
+/// received row but is not in the header.
+fn holder_sent_in_a_group_file() -> String {
+    let message = |guid: &str, sender: &str| {
+        message_line(guid, "hi")
+            .at(1_400_773_262_000)
+            .service(IrService::Whatsapp)
+            .sender(sender)
+            .line()
+    };
+    [
+        conversation_header("whatsapp", "group-1662@g.us")
+            .group()
+            .title("Family")
+            .participant("+15555550101", Some("Ada"))
+            .line(),
+        message("group-ada", "+15555550101"),
+        message("group-holder", "+15555550199"),
+    ]
+    .concat()
+}
+
+/// A received row the holder's second number sent in a group is no reason
+/// to keep the contact the import made for that number once it is linked:
+/// an import after the link gives such a sender no contact (#1093, #1662).
+#[tokio::test]
+async fn linking_an_identity_deletes_the_contact_of_a_sender_at_it() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_sent_in_a_group_file()).await;
+    assert!(holder_contact(&fixture).await.is_some());
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+
+    assert_eq!(holder_contact(&fixture).await, None);
+    let unknown: serde_json::Value =
+        get_json(&state, "/v1/contacts?q=group%3Aunknown", &token).await;
+    assert!(!unknown.to_string().contains("+15555550199"), "{unknown}");
+}
+
+/// The import run records and the run's Contact Group keep the holder's
+/// contact across a link and an unlink: the contact made at the unlink
+/// takes the run's record and group membership the deleted one had (#1662).
+#[tokio::test]
+async fn removing_an_identity_gives_the_new_contact_the_runs_record_back() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_sent_in_a_group_file()).await;
+    let record = |contact_id: i64| {
+        let fixture = &fixture;
+        async move {
+            let mut conn = fixture.conn().await;
+            let runs: Vec<(i64, String)> = sqlx::query_as(
+                "SELECT import_id, reason FROM import_contacts WHERE contact_id = $1",
+            )
+            .bind(contact_id)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+            let groups: Vec<i64> = sqlx::query_scalar(
+                "SELECT gm.group_id FROM contact_group_members gm
+                 JOIN contact_groups g ON g.id = gm.group_id
+                 WHERE gm.contact_id = $1 AND g.kind = 'import'",
+            )
+            .bind(contact_id)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+            (runs, groups)
+        }
+    };
+    let before = record(holder_contact(&fixture).await.unwrap()).await;
+    assert_eq!(before.0.len(), 1, "{before:?}");
+    assert_eq!(before.1.len(), 1, "{before:?}");
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    assert_eq!(holder_contact(&fixture).await, None);
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    let contact_id = holder_contact(&fixture).await.expect("a contact again");
+    assert_eq!(record(contact_id).await, before);
+}
+
 /// Start an Import Run and complete it with `issues` skips, returning its id.
 async fn run_with_issues(state: &crate::server::AppState, token: &str, issues: usize) -> i64 {
     let (_, created): (String, serde_json::Value) = post_created_json(

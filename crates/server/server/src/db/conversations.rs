@@ -1,8 +1,8 @@
 //! The conversation list and one conversation's summary and sources: what
 //! `GET /v1/conversations`, `GET /v1/conversations/{id}` and its `sources`
 //! read. `conversations_api` answers the routes; the queries live here.
-//! So do the statements that bring the stored participants into line with
-//! the account's identity list (`imports_api::with_yourself`).
+//! So does the list of conversations with yourself that an identity change
+//! measures against (`imports_api::with_yourself`).
 
 use std::collections::{HashMap, HashSet};
 
@@ -479,93 +479,21 @@ pub async fn with_yourself_ids(
     .await?)
 }
 
-/// Delete every participant of the account's conversations, one-to-one and
-/// group alike, that is at one of the account's identities. An import never
-/// writes one (`imports_api::staging`, `insert_participant`, #1093); other
-/// participants stay.
+/// The chat handle of `conversation_id`.
 ///
 /// # Errors
 ///
-/// Returns an error when the statement fails.
-pub async fn drop_identity_participants(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> anyhow::Result<()> {
-    sqlx::query(&format!(
-        "DELETE FROM participants
-         WHERE conversation_id IN (SELECT id FROM conversations WHERE account_id = $1)
-           AND handle_id IN (SELECT h.id FROM handles h
-                             WHERE h.account_id = $1 AND {})",
-        crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
-    .bind(account_id)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
-
-/// The chat handle of `conversation_id`, and the senders of its received
-/// rows that are neither the chat handle nor one of the account's
-/// identities, in id order.
-///
-/// # Errors
-///
-/// Returns an error when a query fails.
-pub async fn chat_handle_and_received_senders(
+/// Returns an error when the query fails.
+pub async fn chat_handle_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> anyhow::Result<(i64, Vec<i64>)> {
-    let chat_handle_id: i64 = sqlx::query_scalar(
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
         "SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2",
     )
     .bind(account_id)
     .bind(conversation_id)
     .fetch_one(&mut *conn)
-    .await?;
-    let senders = sqlx::query_scalar(&format!(
-        "SELECT DISTINCT h.id FROM messages m
-         JOIN handles h ON h.id = m.sender_handle_id
-         WHERE m.conversation_id = $2 AND m.is_from_me = 0 AND h.id <> $3
-           AND NOT {}
-         ORDER BY h.id",
-        crate::db::account_profile::is_account_identity_sql("h", "$1"),
-    ))
-    .bind(account_id)
-    .bind(conversation_id)
-    .bind(chat_handle_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok((chat_handle_id, senders))
-}
-
-/// Make `handle_id` a participant of `conversation_id`, unless it is one
-/// already. Its `name_alias` is the name of the contact on the handle, when
-/// that contact has one: the backup's own name for it is not kept once the
-/// participant is dropped, and the contact's name is where an import put it.
-///
-/// # Errors
-///
-/// Returns an error when the statement fails.
-pub async fn restore_participant(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    conversation_id: i64,
-    handle_id: i64,
-) -> anyhow::Result<()> {
-    sqlx::query(
-        "INSERT INTO participants (conversation_id, handle_id, name_alias)
-         SELECT $2, $3, NULLIF(
-           (SELECT ct.preferred_name FROM contact_handles ch
-            JOIN contacts ct ON ct.id = ch.contact_id AND ct.account_id = ch.account_id
-            WHERE ch.account_id = $1 AND ch.handle_id = $3), '')
-         WHERE true
-         ON CONFLICT (conversation_id, handle_id) DO NOTHING",
-    )
-    .bind(account_id)
-    .bind(conversation_id)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
+    .await?)
 }

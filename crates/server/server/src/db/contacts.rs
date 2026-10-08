@@ -595,14 +595,14 @@ pub async fn delete_contact(
 
 /// The contacts on one of the account's identities that its conversations
 /// point to: a participant at the identity, the chat handle of a
-/// conversation with yourself, or the sender of a received row in one. These
-/// are the contacts an import made for the holder before the identity was
-/// linked (#1662).
+/// conversation with yourself, or the sender of a received row in any
+/// conversation. These are the contacts an import made for the holder before
+/// the identity was linked (#1662).
 ///
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn on_holder_identities_in_conversations(
+pub async fn holder_contacts_in_conversations(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<Vec<i64>> {
@@ -619,9 +619,8 @@ pub async fn on_holder_identities_in_conversations(
                            WHERE c.account_id = $1 AND c.chat_handle_id = h.id
                              AND {with_yourself})
                 OR EXISTS (SELECT 1 FROM messages m
-                           JOIN conversations c ON c.id = m.conversation_id
                            WHERE m.account_id = $1 AND m.sender_handle_id = h.id
-                             AND m.is_from_me = 0 AND {with_yourself}))
+                             AND m.is_from_me = 0))
          ORDER BY ch.contact_id",
         holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
     ))
@@ -631,8 +630,8 @@ pub async fn on_holder_identities_in_conversations(
 }
 
 /// Delete the holder's `contact_id`, with [`delete_contact`], when an import
-/// made it and nobody has touched it since, and nothing outside the
-/// conversations with yourself refers to it. Returns true when it went.
+/// made it and nobody has touched it since, and nothing but the holder's
+/// own rows refers to it. Returns true when it went.
 ///
 /// Untouched means all of these hold:
 ///
@@ -642,9 +641,15 @@ pub async fn on_holder_identities_in_conversations(
 /// - it is not in the Trash, and not in a Contact Group the person made.
 ///
 /// Referred to means an identity on it that is not one of the account's, or
-/// an identity on it that is a participant, a sender or a reactor, or a
-/// one-to-one chat handle, in any conversation not with yourself or in an
-/// import being staged.
+/// an identity on it that is a participant, or a participant or chat handle
+/// in an import being staged. A message or a reaction sent from one of the
+/// account's identities is no reference: an import never gives such a
+/// sender a contact (#1093).
+///
+/// Before the contact goes, its import run records and its import run
+/// Contact Group memberships are set aside under each identity it holds, so
+/// [`take_back_set_aside`] can give them to the contact an identity gets if
+/// it stops being the account's.
 ///
 /// # Errors
 ///
@@ -671,34 +676,71 @@ pub async fn delete_untouched_holder_contact(
                  AND (NOT {holder}
                       OR EXISTS (SELECT 1 FROM participants WHERE handle_id = h.id)
                       OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = h.id)
-                      OR EXISTS (SELECT 1 FROM staging_messages
-                                 WHERE account_id = $1 AND sender_handle_id = h.id)
-                      OR EXISTS (SELECT 1 FROM staging_tapbacks WHERE sender_handle_id = h.id)
                       OR EXISTS (SELECT 1 FROM staging_conversations
-                                 WHERE account_id = $1 AND chat_handle_id = h.id)
-                      OR EXISTS (SELECT 1 FROM messages m
-                                 JOIN conversations c ON c.id = m.conversation_id
-                                 WHERE m.account_id = $1 AND m.sender_handle_id = h.id
-                                   AND NOT {with_yourself})
-                      OR EXISTS (SELECT 1 FROM tapbacks t
-                                 JOIN messages m ON m.id = t.message_id
-                                 JOIN conversations c ON c.id = m.conversation_id
-                                 WHERE t.sender_handle_id = h.id AND NOT {with_yourself})
-                      OR EXISTS (SELECT 1 FROM conversations c
-                                 WHERE c.account_id = $1 AND c.chat_handle_id = h.id
-                                   AND c.conversation_type = 'individual' COLLATE NOCASE
-                                   AND NOT {with_yourself}))))",
+                                 WHERE account_id = $1 AND chat_handle_id = h.id))))",
         holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
-        with_yourself = crate::db::conversations::is_with_yourself_sql("c"),
     ))
     .bind(account_id)
     .bind(contact_id)
     .fetch_one(&mut *conn)
     .await?;
-    if deletable {
-        delete_contact(conn, account_id, contact_id).await?;
+    if !deletable {
+        return Ok(false);
     }
-    Ok(deletable)
+    crate::db::import_contacts::set_aside(conn, account_id, contact_id).await?;
+    sqlx::query(
+        "INSERT INTO contact_group_members_set_aside (group_id, handle_id)
+         SELECT gm.group_id, ch.handle_id
+         FROM contact_group_members gm
+         JOIN contact_groups g ON g.id = gm.group_id AND g.kind = 'import'
+         JOIN contact_handles ch ON ch.contact_id = gm.contact_id AND ch.account_id = $1
+         WHERE gm.contact_id = $2
+         ON CONFLICT (group_id, handle_id) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(contact_id)
+    .execute(&mut *conn)
+    .await?;
+    delete_contact(conn, account_id, contact_id).await?;
+    Ok(true)
+}
+
+/// Give `contact_id` the import run records and import run Contact Group
+/// memberships set aside under `handle_id` when the holder's contact on it
+/// was deleted, and forget them there.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn take_back_set_aside(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+    contact_id: i64,
+) -> Result<()> {
+    crate::db::import_contacts::take_back(conn, account_id, handle_id, contact_id).await?;
+    sqlx::query(
+        "INSERT INTO contact_group_members (contact_id, group_id)
+         SELECT $3, sa.group_id FROM contact_group_members_set_aside sa
+         JOIN contact_groups g ON g.id = sa.group_id AND g.account_id = $1
+         WHERE sa.handle_id = $2
+         ON CONFLICT (contact_id, group_id) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .bind(contact_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query(
+        "DELETE FROM contact_group_members_set_aside
+         WHERE handle_id = $2
+           AND group_id IN (SELECT id FROM contact_groups WHERE account_id = $1)",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
 }
 
 /// The identities `contact_id` holds, in the order they were linked.

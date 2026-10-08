@@ -966,7 +966,7 @@ pub async fn count_staged_participants(
 ///
 /// Returns an error when the statement fails.
 pub async fn promote_participants(conn: &mut SqliteConnection) -> Result<u64> {
-    Ok(sqlx::query(
+    let promoted = sqlx::query(
         r"
         INSERT INTO participants (conversation_id, handle_id, name_alias)
         SELECT cm.prod_id, sp.handle_id, sp.name_alias
@@ -977,7 +977,21 @@ pub async fn promote_participants(conn: &mut SqliteConnection) -> Result<u64> {
     )
     .execute(&mut *conn)
     .await?
-    .rows_affected())
+    .rows_affected();
+    // A participant this run wrote replaces one set aside for the same seat
+    // while its identity was the account's (#1662).
+    sqlx::query(
+        r"
+        DELETE FROM participants_set_aside
+        WHERE EXISTS (SELECT 1 FROM staging_participants sp
+                      JOIN _promote_conv_map cm ON cm.staging_id = sp.conversation_id
+                      WHERE cm.prod_id = participants_set_aside.conversation_id
+                        AND sp.handle_id = participants_set_aside.handle_id)
+        ",
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(promoted)
 }
 
 /// How many messages the account has staged.

@@ -248,3 +248,67 @@ pub async fn contact_ids(conn: &mut SqliteConnection, import_id: i64) -> Result<
 
 #[cfg(test)]
 mod tests;
+
+/// Keep `contact_id`'s import run records in `import_contacts_set_aside`,
+/// under each identity it holds, before the contact is deleted (#1662). The
+/// rows in `import_contacts` go with the contact.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn set_aside(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    contact_id: i64,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO import_contacts_set_aside (import_id, handle_id, reason)
+         SELECT ic.import_id, ch.handle_id, ic.reason
+         FROM import_contacts ic
+         JOIN contact_handles ch ON ch.contact_id = ic.contact_id AND ch.account_id = $1
+         WHERE ic.contact_id = $2
+         ON CONFLICT (import_id, handle_id) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(contact_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// Give `contact_id` the import run records [`set_aside`] kept under
+/// `handle_id`, and forget them there. A run that already records the
+/// contact keeps its own reason.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn take_back(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+    contact_id: i64,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO import_contacts (import_id, contact_id, reason)
+         SELECT sa.import_id, $3, sa.reason FROM import_contacts_set_aside sa
+         JOIN imports i ON i.id = sa.import_id AND i.account_id = $1
+         WHERE sa.handle_id = $2
+         ON CONFLICT (import_id, contact_id) DO NOTHING",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .bind(contact_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query(
+        "DELETE FROM import_contacts_set_aside
+         WHERE handle_id = $2
+           AND import_id IN (SELECT id FROM imports WHERE account_id = $1)",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}

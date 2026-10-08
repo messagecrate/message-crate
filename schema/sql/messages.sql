@@ -43,6 +43,21 @@ CREATE TABLE IF NOT EXISTS participants (
 
 CREATE INDEX IF NOT EXISTS ix_participants_handle_id ON participants (handle_id);
 
+-- A participant set aside because its identity became one of the account's
+-- after the import wrote it. The holder is never a participant, so linking
+-- the identity moves the row here, and removing the identity again moves it
+-- back to `participants` (#1662). A participant an import writes for the
+-- same seat replaces it.
+CREATE TABLE IF NOT EXISTS participants_set_aside (
+    -- Parent conversation (`conversations.id`).
+    conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    -- The identity, one of the account's (`handles.id`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- `participants.name_alias` as it was.
+    name_alias TEXT,
+    PRIMARY KEY (conversation_id, handle_id)
+);
+
 -- One message in a conversation.
 CREATE TABLE IF NOT EXISTS messages (
     -- Surrogate primary key for this message.
