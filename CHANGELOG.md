@@ -95,10 +95,10 @@ released versions carry their date on the heading.
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs
   installed on the computer, else in the app's Tools Directory, and both
-  come from the same one. wtsexporter is found only in the Tools Directory.
-  The Message Crate the app starts looks in the same places, so both convert
-  with the same ffmpeg. **Settings → System → Media** has nothing to type
-  any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
+  from the same place. wtsexporter is found only in the Tools Directory.
+  The Message Crate the app starts looks in the same places, so the app and
+  the Message Crate it starts convert with the same ffmpeg. **Settings →
+  System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
   wtsexporter, where each was found, that it is missing and where to put
   it, or why it is not used. The app does not download the programs yet
   (#1053).
