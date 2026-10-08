@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS server_settings (
     asset_max_bytes BIGINT NOT NULL DEFAULT 536870912
 );
 
+-- Which Message Crate this database is. Exactly one row, written when the
+-- database is made and never changed, so an app tells two Message Crates at
+-- one address apart, or this one from the database it replaced, whose
+-- account and Import Run ids start at the same numbers.
+CREATE TABLE IF NOT EXISTS message_crate (
+    -- Always 1: a database is one Message Crate.
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- The Message Crate's id: 32 random lowercase hexadecimal digits, answered
+    -- by GET /v1/server as `id`.
+    message_crate_id TEXT NOT NULL
+);
+
 -- A Demo Account build that has not finished. A build writes this row before
 -- it writes anything else and removes it after its last write, so a row found
 -- when the server starts is a build the server stopped part-way: the server

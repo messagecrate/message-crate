@@ -254,36 +254,33 @@ fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
-/// Create every table and index required by a current database.
+/// Create every table and index required by a current database, and give a
+/// new database its Message Crate's id ([`message_crate_id`]).
 ///
 /// The database carries the fingerprint in `PRAGMA user_version` and is
-/// rebuilt when it does not match.
+/// rebuilt when it does not match. A rebuilt database is a new Message Crate,
+/// with a new id.
 ///
 /// # Errors
 ///
 /// Returns an error when a DDL statement fails.
 pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
     migrate_schema(conn).await?;
-    // Written once, when the database is made (or rebuilt), and never
-    // changed: what tells this Message Crate from another at the same
-    // address, or from the one this database replaced.
     sqlx::query(
-        "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ($1, lower(hex(randomblob(16))))",
+        "INSERT OR IGNORE INTO message_crate (id, message_crate_id)
+         VALUES (1, lower(hex(randomblob(16))))",
     )
-    .bind(MESSAGE_CRATE_ID_META_KEY)
     .execute(&mut *conn)
     .await?;
     Ok(())
 }
 
-/// The `schema_meta` key of this Message Crate's id ([`message_crate_id`]).
-const MESSAGE_CRATE_ID_META_KEY: &str = "message_crate_id";
-
 /// This Message Crate's id: 32 random hexadecimal digits written when its
-/// database is made. Two Message Crates answering at one address, such as the
-/// desktop app's own server and a Docker one at `127.0.0.1:8080`, or one
-/// rebuilt with `create-database`, have different ids, though their account
-/// and Import Run ids start at the same numbers.
+/// database is made, in the one row of `message_crate`. Two Message Crates
+/// answering at one address, such as the desktop app's own server and a
+/// Docker one at `127.0.0.1:8080`, or one rebuilt with `create-database`,
+/// have different ids, though their account and Import Run ids start at the
+/// same numbers.
 ///
 /// # Errors
 ///
@@ -291,8 +288,7 @@ const MESSAGE_CRATE_ID_META_KEY: &str = "message_crate_id";
 /// [`ensure_schema`] has not run on it.
 pub async fn message_crate_id(conn: &mut SqliteConnection) -> Result<String> {
     Ok(
-        sqlx::query_scalar("SELECT value FROM schema_meta WHERE key = $1")
-            .bind(MESSAGE_CRATE_ID_META_KEY)
+        sqlx::query_scalar("SELECT message_crate_id FROM message_crate WHERE id = 1")
             .fetch_one(&mut *conn)
             .await?,
     )

@@ -101,6 +101,15 @@ account's `account_deleted` row, by which the deleted account is read apart
 from any other account given its username. Refused logins for a username no
 account has are deleted after 90 days; nothing else is.
 
+### `message_crate`
+
+One row naming which Message Crate the database is: `message_crate_id`, 32
+random hexadecimal digits written when the database is made and never
+changed. `GET /v1/server` answers it as `id`. The desktop app writes it into
+each Import Run's log, because two Message Crates can answer at one address
+and a database rebuilt with `create-database` starts its account and Import
+Run ids at the same numbers again.
+
 ### `handles`
 
 One row = one **platform** identity per account: `raw` (as the source wrote
@@ -242,6 +251,7 @@ SQLite, so it is reported once for the whole database and never per account.
 | Reactions | `tapbacks` |
 | A person you named | `contacts` |
 | Web login | `accounts` |
+| Which Message Crate a database is | `message_crate` |
 | Soft-deleted items | `trashed_*` |
 | Import scratch space | `staging_*` |
 | One import attempt, or one export attempt | `imports`, `exports` |
