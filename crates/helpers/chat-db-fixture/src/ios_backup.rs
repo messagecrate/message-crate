@@ -37,6 +37,10 @@ use crate::{PHOTO_BYTES, write_chat_db};
 /// The password the encrypted backup is made with.
 pub const BACKUP_PASSWORD: &str = "fixture-password";
 
+/// The device name `Manifest.plist` gives, unless a test names another
+/// ([`write_messages_backup_named`]).
+pub const DEVICE_NAME: &str = "Fixture iPhone";
+
 /// The domain an iPhone keeps Messages and Contacts in.
 pub const HOME_DOMAIN: &str = "HomeDomain";
 
@@ -140,6 +144,22 @@ pub fn stored_path(root: &Path, domain: &str, relative_path: &str) -> PathBuf {
 ///
 /// Panics when a file cannot be written; a test has nothing better to do.
 pub fn write_messages_backup(root: &Path, encryption: Encryption<'_>) {
+    write_messages_backup_named(root, encryption, DEVICE_NAME);
+}
+
+/// [`write_messages_backup`], with `device_name` as the device's name in
+/// `Manifest.plist`.
+///
+/// The reader logs the name once it has decrypted the Messages and
+/// Contacts databases, before it deletes the decrypted Contacts copy. A
+/// name longer than a pipe holds stops the reader on that log line until
+/// the app reads it, so a test can see both copies in the scratch
+/// directory while the request runs.
+///
+/// # Panics
+///
+/// Panics when a file cannot be written.
+pub fn write_messages_backup_named(root: &Path, encryption: Encryption<'_>, device_name: &str) {
     let work = root.join(".fixture-work");
     fs::create_dir_all(&work).expect("make the fixture's work directory");
     let chat_db = write_chat_db(&work);
@@ -157,7 +177,7 @@ pub fn write_messages_backup(root: &Path, encryption: Encryption<'_>) {
     let contacts = fs::read(&contacts_db).expect("read the address book");
     fs::remove_dir_all(&work).expect("remove the fixture's work directory");
 
-    write_backup(
+    write_backup_named(
         root,
         &[
             BackupFile {
@@ -177,6 +197,7 @@ pub fn write_messages_backup(root: &Path, encryption: Encryption<'_>) {
             },
         ],
         encryption,
+        device_name,
     );
 }
 
@@ -206,11 +227,21 @@ pub fn fill_ios_address_book(conn: &Connection) {
 ///
 /// Panics when a file cannot be written.
 pub fn write_backup(root: &Path, files: &[BackupFile<'_>], encryption: Encryption<'_>) {
+    write_backup_named(root, files, encryption, DEVICE_NAME);
+}
+
+/// [`write_backup`], with `device_name` as the device's name.
+fn write_backup_named(
+    root: &Path,
+    files: &[BackupFile<'_>],
+    encryption: Encryption<'_>,
+    device_name: &str,
+) {
     let keys = match encryption {
         Encryption::None => None,
         Encryption::Password(password) => Some(Keys::new(password)),
     };
-    write_manifest_plist(root, keys.as_ref());
+    write_manifest_plist(root, keys.as_ref(), device_name);
 
     let plain_manifest = root.join("Manifest.plain.db");
     let manifest = Connection::open(&plain_manifest).expect("create Manifest.db");
@@ -361,11 +392,11 @@ impl Keys {
 /// `Manifest.plist`: whether the backup is encrypted, the device it came
 /// from, and for an encrypted backup the key bag and the wrapped
 /// `Manifest.db` key.
-fn write_manifest_plist(root: &Path, keys: Option<&Keys>) {
+fn write_manifest_plist(root: &Path, keys: Option<&Keys>, device_name: &str) {
     let mut lockdown = Dictionary::new();
     for (key, value) in [
         ("BuildVersion", "21A000"),
-        ("DeviceName", "Fixture iPhone"),
+        ("DeviceName", device_name),
         ("ProductType", "iPhone0,0"),
         ("ProductVersion", "17.0"),
         ("SerialNumber", "FIXTURESERIAL"),

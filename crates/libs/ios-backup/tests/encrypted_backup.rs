@@ -8,16 +8,18 @@
 //! (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    time::{Duration, Instant, SystemTime},
 };
 
 use chat_db_fixture::{
     OWNER, OWNER_EMAIL, PHOTO_BYTES,
     ios_backup::{
-        BACKUP_PASSWORD, Encryption, HOME_DOMAIN, MEDIA_DOMAIN, MESSAGES_DB_PATH, PHOTO_PATH,
-        stored_path, write_messages_backup,
+        BACKUP_PASSWORD, DECRYPTED_MANIFEST_NAME, Encryption, HOME_DOMAIN, MEDIA_DOMAIN,
+        MESSAGES_DB_PATH, OneOpenBackup, PHOTO_PATH, one_open_backup_at_a_time, stored_path,
+        write_messages_backup, write_messages_backup_named,
     },
     listing::{file_names, paths_under},
 };
@@ -43,27 +45,72 @@ fn left_in(scratch_root: &Path) -> Vec<PathBuf> {
 }
 
 /// The reader's decrypted copies in the system's temporary directory, where
-/// it wrote them before #1386.
-fn decrypted_in_system_temp() -> BTreeSet<String> {
+/// it wrote them before #1386 (the Messages and Contacts databases) and #788
+/// (`Manifest.db`), each with its modification time, seen while this test
+/// holds the turn at that directory.
+///
+/// `imessage-reader`'s own tests open encrypted backups in process and
+/// write [`DECRYPTED_MANIFEST_NAME`] there, so the turn keeps them out until
+/// the test ends. A copy a killed test left keeps its name, so a copy the
+/// reader writes again shows as a newer modification time.
+struct SystemTemp {
+    _turn: OneOpenBackup,
+    before: BTreeMap<String, Option<SystemTime>>,
+}
+
+impl SystemTemp {
+    fn snapshot() -> Self {
+        let turn = one_open_backup_at_a_time();
+        Self {
+            _turn: turn,
+            before: decrypted_in_system_temp(),
+        }
+    }
+
+    /// Assert that no decrypted copy written since the snapshot is still
+    /// there.
+    fn assert_untouched(self) {
+        let written: Vec<_> = decrypted_in_system_temp()
+            .into_iter()
+            .filter(|(name, modified)| self.before.get(name) != Some(modified))
+            .collect();
+        assert!(written.is_empty(), "{written:?}");
+    }
+}
+
+/// The `crabapple-` files in the system's temporary directory, each with
+/// its modification time.
+fn decrypted_in_system_temp() -> BTreeMap<String, Option<SystemTime>> {
     fs::read_dir(std::env::temp_dir())
         .unwrap()
         .filter_map(|entry| entry.ok())
-        .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| name.starts_with("crabapple-"))
+        .map(|entry| {
+            (
+                entry.file_name().to_string_lossy().into_owned(),
+                entry.metadata().and_then(|m| m.modified()).ok(),
+            )
+        })
+        .filter(|(name, _)| name.starts_with("crabapple-"))
         .collect()
 }
 
 /// The encrypted backup gives up the addresses its device sent from with
 /// the right password. The databases it decrypted are gone with the
-/// request's scratch directory, and nothing was written beside the backup or
-/// in the system's temporary directory.
+/// request's scratch directory, and no decrypted copy was left beside the
+/// backup or in the system's temporary directory.
+///
+/// `crabapple` deletes its `Manifest.db` copy when the reader drops the
+/// backup, so a copy written to the system's temporary directory and
+/// deleted again is not seen here. The test that fails when the copy goes
+/// there is
+/// `an_identities_request_decrypts_into_its_scratch_directory_while_it_runs`.
 #[test]
 fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     build_imessage_reader();
     let backup = backup(Encryption::Password(BACKUP_PASSWORD));
     let scratch_root = tempfile::tempdir().unwrap();
     let backup_before = paths_under(backup.path());
-    let temp_before = decrypted_in_system_temp();
+    let system_temp = SystemTemp::snapshot();
 
     let mut identities = backup_identities(
         backup.path(),
@@ -77,11 +124,69 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);
     assert_eq!(left_in(scratch_root.path()), Vec::<PathBuf>::new());
     assert_eq!(paths_under(backup.path()), backup_before);
-    let new_in_temp: Vec<_> = decrypted_in_system_temp()
-        .difference(&temp_before)
-        .cloned()
-        .collect();
-    assert!(new_in_temp.is_empty(), "{new_in_temp:?}");
+    system_temp.assert_untouched();
+}
+
+/// While an identities request runs, everything the reader decrypted is in
+/// the scratch directory the request names: the backup's `Manifest.db`, the
+/// Messages database and the Contacts database (#1386, #788). Once the
+/// reader has answered, it has deleted all three.
+///
+/// The backup's device name is longer than a pipe holds. The reader logs it
+/// after decrypting both databases and before deleting the Contacts copy,
+/// so it stops on that line until this side reads its output, and the test
+/// lists the scratch directory in between.
+#[test]
+fn an_identities_request_decrypts_into_its_scratch_directory_while_it_runs() {
+    build_imessage_reader();
+    let backup = tempfile::tempdir().unwrap();
+    write_messages_backup_named(
+        backup.path(),
+        Encryption::Password(BACKUP_PASSWORD),
+        &"x".repeat(1 << 20),
+    );
+    let scratch = tempfile::tempdir().unwrap();
+
+    let mut helper = Helper::spawn(
+        &identities_request(backup.path(), Some(BACKUP_PASSWORD), scratch.path()),
+        None,
+        None,
+    )
+    .unwrap();
+    let names = wait_for_file(scratch.path(), "crabapple-contacts-");
+
+    assert_eq!(names.len(), 3, "{names:?}");
+    assert_eq!(names[0], DECRYPTED_MANIFEST_NAME);
+    assert!(names[1].starts_with("crabapple-contacts-"), "{names:?}");
+    assert!(names[2].starts_with("crabapple-sms-"), "{names:?}");
+    let answer = loop {
+        match helper.next_event().unwrap() {
+            Event::Identities { values } => break values,
+            Event::Source { .. } => {}
+            other => panic!("expected the identities, got {other:?}"),
+        }
+    };
+    helper.finish().unwrap();
+    assert!(answer.contains(&OWNER.to_string()), "{answer:?}");
+    assert_eq!(file_names(scratch.path()), Vec::<String>::new());
+}
+
+/// The names in `dir` once one starts with `prefix`. Panics after a minute
+/// without one.
+fn wait_for_file(dir: &Path, prefix: &str) -> Vec<String> {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let names = file_names(dir);
+        if names.iter().any(|name| name.starts_with(prefix)) {
+            return names;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no {prefix} file in {}: {names:?}",
+            dir.display()
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 /// The backup that is not encrypted answers without a password.
