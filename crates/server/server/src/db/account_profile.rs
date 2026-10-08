@@ -833,7 +833,7 @@ pub async fn unlink_account_handle(
     handle_type: HandleType,
     service: HandleService,
 ) -> Result<bool> {
-    let (normalized, _) = normalize_handle(raw, handle_type);
+    let normalized = normalize_handle(raw, handle_type, None).key;
     let is_email = matches!(handle_type, HandleType::Email);
     let service = (!is_email).then_some(service.as_str());
     let removed = sqlx::query(

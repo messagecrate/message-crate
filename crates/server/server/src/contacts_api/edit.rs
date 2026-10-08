@@ -14,6 +14,9 @@ use crate::db::WriteTx;
 use crate::db::contacts::OnService;
 use crate::db::contacts::{self, contact_id_for_handle};
 use crate::db::handles;
+use crate::identity_country::{
+    CountryError, SetIdentityCountryRequest, Whose, set_identity_country,
+};
 use crate::server::ApiError;
 
 /// Why a contact edit did not happen.
@@ -30,6 +33,9 @@ pub enum ContactEditError {
     /// The request asks for something the server will not do, and the person
     /// can fix it by changing the request. The sentence is written for them.
     Refused(String),
+    /// The country picked for a number gives it a `+` form another identity
+    /// holds, and the request did not ask to merge them.
+    IdentityExists(String),
     /// Something failed that changing the request would not help. The cause
     /// goes to the log, not to the person.
     Failed(anyhow::Error),
@@ -53,12 +59,13 @@ impl From<ContactEditError> for ApiError {
     fn from(error: ContactEditError) -> Self {
         match error {
             ContactEditError::Refused(message) => Self::validation(message),
+            ContactEditError::IdentityExists(message) => Self::IdentityExists(message),
             ContactEditError::Failed(cause) => Self::Internal(cause),
         }
     }
 }
 
-/// Shorthand for the eight things a contact edit refuses.
+/// Shorthand for the things a contact edit refuses.
 macro_rules! refuse {
     ($($arg:tt)*) => {
         return Err(ContactEditError::Refused(format!($($arg)*)))
@@ -75,6 +82,8 @@ enum ContactEdit<'a> {
     UpdateIdentity(&'a UpdateContactIdentityRequest),
     /// Unlink an identity.
     RemoveIdentity(&'a RemoveContactIdentityRequest),
+    /// Pick the country of a number written without its `+` code.
+    SetIdentityCountry(&'a SetIdentityCountryRequest),
 }
 
 impl UpdateContactRequest {
@@ -93,6 +102,9 @@ impl UpdateContactRequest {
             self.remove_identity
                 .as_ref()
                 .map(ContactEdit::RemoveIdentity),
+            self.set_identity_country
+                .as_ref()
+                .map(ContactEdit::SetIdentityCountry),
         ]
         .into_iter()
         .flatten();
@@ -100,7 +112,7 @@ impl UpdateContactRequest {
             (Some(edit), None) => Ok(edit),
             _ => {
                 refuse!(
-                    "exactly one of name, add_identity, update_identity, remove_identity is required"
+                    "exactly one of name, add_identity, update_identity, remove_identity, set_identity_country is required"
                 )
             }
         }
@@ -164,6 +176,22 @@ impl ContactEditor<'_> {
             ContactEdit::AddIdentity(add) => self.add_identity(add).await,
             ContactEdit::UpdateIdentity(upd) => self.update_identity(upd).await,
             ContactEdit::RemoveIdentity(rem) => self.remove_identity(rem).await,
+            ContactEdit::SetIdentityCountry(set) => self.set_identity_country(set).await,
+        }
+    }
+
+    /// Pick the country of a phone number on the contact written without its
+    /// `+` code (`crate::identity_country`).
+    async fn set_identity_country(
+        &mut self,
+        set: &SetIdentityCountryRequest,
+    ) -> Result<bool, ContactEditError> {
+        let whose = Whose::Contact(self.contact_id);
+        match set_identity_country(&mut *self.conn, self.account_id, whose, set).await {
+            Ok(()) => self.touched().await,
+            Err(CountryError::Refused(message)) => Err(ContactEditError::Refused(message)),
+            Err(CountryError::Exists(message)) => Err(ContactEditError::IdentityExists(message)),
+            Err(CountryError::Failed(cause)) => Err(ContactEditError::Failed(cause)),
         }
     }
 

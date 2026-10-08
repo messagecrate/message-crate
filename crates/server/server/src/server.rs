@@ -555,6 +555,9 @@ pub enum ApiError {
     },
     /// `409` — the resource is not in a state that allows the operation.
     StateConflict(String),
+    /// `409` — a country picked for a phone number gives it the `+` form
+    /// another identity already holds, and the request did not ask to merge.
+    IdentityExists(String),
     /// `422` — a part, upload id or completion does not match the upload.
     AssetUploadInvalid(String),
     /// `404` — the addressed resource does not exist for this account.
@@ -613,6 +616,7 @@ impl ApiError {
             Self::AccountDisabled(_) => ProblemType::AccountDisabled,
             Self::SearchQueryInvalid { .. } => ProblemType::SearchQueryInvalid,
             Self::StateConflict(_) => ProblemType::StateConflict,
+            Self::IdentityExists(_) => ProblemType::IdentityExists,
             Self::AssetUploadInvalid(_) => ProblemType::AssetUploadInvalid,
             Self::NotFound(_) => ProblemType::NotFound,
             Self::MethodNotAllowed(_) => ProblemType::MethodNotAllowed,
@@ -704,6 +708,7 @@ impl ApiError {
             | Self::InsufficientScope(m)
             | Self::AccountDisabled(m)
             | Self::StateConflict(m)
+            | Self::IdentityExists(m)
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
@@ -746,6 +751,7 @@ impl std::fmt::Display for ApiError {
             | Self::InsufficientScope(m)
             | Self::AccountDisabled(m)
             | Self::StateConflict(m)
+            | Self::IdentityExists(m)
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)

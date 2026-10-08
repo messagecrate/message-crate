@@ -81,6 +81,10 @@ pub struct ImportOptions<'a> {
     pub media: MediaMode,
     /// When `source_from_jsonl` + Replace: wipe these sources before import.
     pub wipe_sources: Option<Vec<String>>,
+    /// The country the run states for every phone number its files write
+    /// without a `+` code; `None` keeps such a number's digits as written
+    /// (#1676).
+    pub phone_country: Option<&'static phone::Country>,
 }
 
 /// Path/mode fields for [`ImportOptions::fixed`].
@@ -101,6 +105,9 @@ pub struct FixedImportArgs<'a> {
     pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,
+    /// The country the run states for phone numbers written without a `+`
+    /// code, as [`ImportOptions::phone_country`] says.
+    pub phone_country: Option<&'static phone::Country>,
 }
 
 impl<'a> ImportOptions<'a> {
@@ -117,6 +124,7 @@ impl<'a> ImportOptions<'a> {
             source_from_jsonl: false,
             media: MediaMode::Clone,
             wipe_sources: None,
+            phone_country: args.phone_country,
         }
     }
 }
@@ -469,7 +477,12 @@ async fn stage_all_files(
     let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id)
         .await
         .map_err(ImportError::Internal)?;
-    let mut stmts = StagingInserts::new(opts.account_id, opts.import_id, identities);
+    let mut stmts = StagingInserts::new(
+        opts.account_id,
+        opts.import_id,
+        identities,
+        opts.phone_country,
+    );
 
     for (idx, path) in paths.iter().enumerate() {
         let file_counts = staging::import_file_to_staging(
@@ -546,6 +559,7 @@ pub(crate) struct BatchContext {
     pub(crate) source: String,
     pub(crate) mode: ImportMode,
     pub(crate) dedupe: bool,
+    pub(crate) phone_country: Option<&'static phone::Country>,
 }
 
 impl BatchContext {
@@ -563,6 +577,10 @@ impl BatchContext {
             source: row.source.clone(),
             mode,
             dedupe: row.dedupe,
+            // The code was checked when the run was created, so one the
+            // table no longer holds can only come from a rebuilt server:
+            // the run then states none.
+            phone_country: row.phone_country.as_deref().and_then(phone::country),
         }
     }
 }
@@ -621,6 +639,16 @@ pub(crate) struct CreateImportRequest {
     /// Run cross-source soft-dedupe after each batch.
     #[serde(default)]
     pub(crate) dedupe: bool,
+    /// The country of the phone the backup came from, as an ISO 3166-1
+    /// alpha-2 code such as `GB`, which `GET /v1/phone-countries` lists.
+    /// Every phone number the run's files write without its `+` code is
+    /// read as a number in that country and stored in its `+` form. Null,
+    /// or left out, states no country: such a number is stored as the
+    /// digits typed and matches no `+` number until a country is picked for
+    /// it. A code the list does not hold is refused with
+    /// `422 Unprocessable Entity`.
+    #[serde(default)]
+    pub(crate) phone_country: Option<String>,
     /// Name of the program that runs the import, such as
     /// `message-crate-push`, stored on the run as given. Null when the
     /// request leaves it out.
@@ -890,6 +918,9 @@ pub(crate) struct ImportRunSummary {
     pub(crate) mode: String,
     /// Whether cross-source dedupe runs after each batch.
     pub(crate) dedupe: bool,
+    /// The country the run states for phone numbers written without their
+    /// `+` code, as an ISO 3166-1 alpha-2 code; null when it states none.
+    pub(crate) phone_country: Option<String>,
     /// Lifecycle status.
     pub(crate) status: crate::db::imports::ImportStatus,
     /// UTC time the run started.
@@ -954,6 +985,7 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             tool: row.tool,
             mode: row.mode,
             dedupe: row.dedupe,
+            phone_country: row.phone_country,
             status: row.status,
             started_at: row.started_at,
             finished_at: row.finished_at,
@@ -1257,6 +1289,17 @@ pub(crate) async fn create_import(
         return Err(ApiError::validation("source is required"));
     }
     validate_source_id(&body.source).map_err(|e| ApiError::validation(e.to_string()))?;
+    let phone_country = body
+        .phone_country
+        .as_deref()
+        .map(|code| {
+            phone::country(code).ok_or_else(|| {
+                ApiError::validation(format!(
+                    "phone_country {code:?} is not a country GET /v1/phone-countries lists"
+                ))
+            })
+        })
+        .transpose()?;
     let account = resolve_import_account(&auth);
     let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.
@@ -1274,6 +1317,7 @@ pub(crate) async fn create_import(
         source: &body.source,
         mode: body.mode.as_str(),
         dedupe: body.dedupe,
+        phone_country: phone_country.map(|country| country.code),
         tool: body.tool.as_deref(),
         stage,
         run_dir: body.run_dir.as_deref(),
@@ -1763,6 +1807,7 @@ async fn run_import_path(
         source: source_id,
         mode: run_mode,
         dedupe: do_dedupe,
+        phone_country,
     } = context;
 
     let _guard = state.account_import_locks.lock(account.to_string()).await;
@@ -1793,6 +1838,7 @@ async fn run_import_path(
         account_id: account,
         fill_content_keys: do_dedupe,
         import_id: Some(import_id),
+        phone_country,
     });
     let import_result = imports_api::import_jsonl_files_on_conn(
         &mut conn,

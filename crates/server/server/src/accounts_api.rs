@@ -500,6 +500,14 @@ pub struct UpdateAccountRequest {
     /// Identities to unlink from the account profile.
     #[serde(default)]
     pub remove_identities: Vec<UnlinkAccountIdentityRequest>,
+    /// Country to pick for one of the account's phone numbers written
+    /// without its `+` code, one whose `country_unknown` is true. The number
+    /// takes the `+` form that country gives it, and joins the identity
+    /// already holding that form when `merge` is set; without `merge`, such
+    /// a request answers `409 Conflict` (`identity-exists`) and changes
+    /// nothing.
+    #[serde(default)]
+    pub set_identity_country: Option<crate::identity_country::SetIdentityCountryRequest>,
     /// Disable or re-enable login.
     #[serde(default)]
     pub disabled: Option<bool>,
@@ -532,11 +540,14 @@ impl UpdateAccountRequest {
             || self.time_zone.is_some()
             || !self.identities.is_empty()
             || !self.remove_identities.is_empty()
+            || self.set_identity_country.is_some()
     }
 
-    /// True when the body adds or removes an identity.
+    /// True when the body adds, removes or changes an identity.
     fn touches_identities(&self) -> bool {
-        !self.identities.is_empty() || !self.remove_identities.is_empty()
+        !self.identities.is_empty()
+            || !self.remove_identities.is_empty()
+            || self.set_identity_country.is_some()
     }
 
     /// True when the body names a field only the owner may set.
@@ -558,6 +569,14 @@ enum ProfileUpdateError {
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
+    /// A country could not be picked for an identity; the sentence is
+    /// written for the person.
+    #[error("{0}")]
+    CountryRefused(String),
+    /// The country picked gives the number a `+` form another identity
+    /// holds, and the request did not ask to merge them.
+    #[error("{0}")]
+    IdentityExists(String),
     /// Database failure.
     #[error(transparent)]
     Db(#[from] anyhow::Error),
@@ -573,7 +592,9 @@ impl From<ProfileUpdateError> for ApiError {
     fn from(e: ProfileUpdateError) -> Self {
         match e {
             err @ (ProfileUpdateError::ServiceCannotCarry(_)
-            | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
+            | ProfileUpdateError::UnknownTimeZone(_)
+            | ProfileUpdateError::CountryRefused(_)) => Self::validation(err.to_string()),
+            ProfileUpdateError::IdentityExists(message) => Self::IdentityExists(message),
             ProfileUpdateError::Db(err) => Self::Internal(err),
         }
     }
@@ -659,6 +680,16 @@ async fn update_profile_in(
         &req.remove_identities,
     )
     .await?;
+    if let Some(set) = &req.set_identity_country {
+        use crate::identity_country::{CountryError, Whose, set_identity_country};
+        set_identity_country(tx, account_id, Whose::Account, set)
+            .await
+            .map_err(|error| match error {
+                CountryError::Refused(message) => ProfileUpdateError::CountryRefused(message),
+                CountryError::Exists(message) => ProfileUpdateError::IdentityExists(message),
+                CountryError::Failed(cause) => ProfileUpdateError::Db(cause),
+            })?;
+    }
     // An account saving its own profile is what profile setup is, so it no
     // longer owes one. Cleared in the same transaction as the change it
     // describes, so the flag cannot outlive the fact it stands for. The
@@ -762,7 +793,8 @@ async fn apply_flags(
     responses(
         (status = 200, body = Account),
         crate::problem::openapi::NotTheOwner,
-        crate::problem::openapi::DemoAccountProtected
+        crate::problem::openapi::DemoAccountProtected,
+        crate::problem::openapi::IdentityExists
     )
 )]
 pub async fn update_account(

@@ -52,6 +52,9 @@ pub enum ProblemType {
     SearchQueryInvalid,
     /// The resource is not in a state that allows the operation.
     StateConflict,
+    /// A country picked for a phone number gives it a `+` form another
+    /// identity already holds, and the request did not ask to merge them.
+    IdentityExists,
     /// A part number, upload id, or completion does not match the upload.
     AssetUploadInvalid,
     /// The addressed resource does not exist for this account.
@@ -69,7 +72,7 @@ pub enum ProblemType {
 
 impl ProblemType {
     /// Every registered type, in the order the docs index lists them.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::ValidationFailed,
         Self::MalformedBody,
         Self::UnsupportedMediaType,
@@ -86,6 +89,7 @@ impl ProblemType {
         Self::AccountDisabled,
         Self::SearchQueryInvalid,
         Self::StateConflict,
+        Self::IdentityExists,
         Self::AssetUploadInvalid,
         Self::NotFound,
         Self::MethodNotAllowed,
@@ -114,6 +118,7 @@ impl ProblemType {
             Self::AccountDisabled => "account-disabled",
             Self::SearchQueryInvalid => "search-query-invalid",
             Self::StateConflict => "state-conflict",
+            Self::IdentityExists => "identity-exists",
             Self::AssetUploadInvalid => "asset-upload-invalid",
             Self::NotFound => "not-found",
             Self::MethodNotAllowed => "method-not-allowed",
@@ -137,7 +142,9 @@ impl ProblemType {
                 StatusCode::UNAUTHORIZED
             }
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-            Self::UsernameTaken | Self::NameTaken | Self::StateConflict => StatusCode::CONFLICT,
+            Self::UsernameTaken | Self::NameTaken | Self::StateConflict | Self::IdentityExists => {
+                StatusCode::CONFLICT
+            }
             Self::DemoAccountProtected
             | Self::NotTheOwner
             | Self::RegistrationClosed
@@ -170,6 +177,7 @@ impl ProblemType {
             Self::AccountDisabled => "Account disabled",
             Self::SearchQueryInvalid => "Search query invalid",
             Self::StateConflict => "State conflict",
+            Self::IdentityExists => "Identity exists",
             Self::AssetUploadInvalid => "Asset upload invalid",
             Self::NotFound => "Not found",
             Self::MethodNotAllowed => "Method not allowed",
@@ -219,6 +227,7 @@ For an import batch, `line` carries the line of the request body that could not 
             Self::AccountDisabled => "The account exists but the owner has disabled it, so it may not log in or act. Ask the owner to enable it.".to_string(),
             Self::SearchQueryInvalid => "The search language refused the query. `detail` names the word and the list it was used on; `word` carries the word, and `did_you_mean` a word the language does have when one is close. The query language is documented in the search reference.".to_string(),
             Self::StateConflict => "The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing. `detail` says which. Read the resource's current state and choose the operation it allows.".to_string(),
+            Self::IdentityExists => "The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number. `detail` names that identity and who holds it: a contact, the account itself, or nobody. Nothing changed. To join the two, send the same request again with `merge` set to `true`: every conversation, message and reaction of the number written without its `+` moves to the identity that holds the `+` form, and a one-to-one conversation with each becomes one.".to_string(),
             Self::AssetUploadInvalid => "Something about the upload does not match what the server expected: the bytes do not hash to the claimed SHA-256, a part number is out of range or a part the wrong length, or a completion names parts that never arrived. `detail` says which. Start the upload again. An upload id that names no upload answers `not-found`, and a server that cannot store the file answers `500`.".to_string(),
             Self::NotFound => "No resource at that address exists for this account. An id that belongs to another account answers this too, so an unknown id and a forbidden one look the same, with one exception: the `{id}` of `/v1/accounts/{id}` itself. A caller who is neither the owner nor the account it names gets `403 Forbidden` there, whether or not the account exists. An id nested under it, such as another account's API token, still answers this.".to_string(),
             Self::MethodNotAllowed => "The path exists but does not take this method. The OpenAPI document lists each route's methods.".to_string(),
@@ -284,6 +293,7 @@ pub mod openapi {
         AccountDisabled,
         SearchQueryInvalid,
         StateConflict,
+        IdentityExists,
         AssetUploadInvalid,
         RangeNotSatisfiable,
     );

@@ -10,18 +10,66 @@ use sqlx::SqliteConnection;
 
 use crate::search::bridge::{TrashScope, contact_sent_messages_from};
 
-/// `(account_id, normalized, handle_type, service)` → handle id for one import.
-pub type HandleIdCache = HashMap<(String, String, String, String), i64>;
-
-/// One standard form of a handle for identity matching, per type, plus a
-/// human-readable note when that form is ambiguous (guarded policy).
+/// The handle ids one import has resolved, and the country its run states
+/// for phone numbers written without their `+` code.
 ///
-/// Phone: E.164 when the raw is unambiguous (`+`-prefixed, or a US national
-/// number); otherwise digits-as-is with a review note — a trunk-zero
-/// `020 7946 0000` becomes `02079460000` flagged, never `+02079460000`.
-/// Email: lowercased. Username/Other: verbatim (trimmed).
-pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<String>) {
-    phone::normalize_typed_handle(raw, handle_type)
+/// The country belongs with the cache because it is part of the key: the
+/// same `07700 900123` is `+447700900123` in a run whose country is the
+/// United Kingdom and the digits as written in a run with none (#1676).
+#[derive(Debug, Default)]
+pub struct HandleIdCache {
+    /// `(account_id, normalized, handle_type, service)` → handle id.
+    ids: HashMap<(String, String, String, String), i64>,
+    /// The run's country, when it states one.
+    country: Option<&'static phone::Country>,
+}
+
+impl HandleIdCache {
+    /// An empty cache for a run that states `country`.
+    #[must_use]
+    pub fn in_country(country: Option<&'static phone::Country>) -> Self {
+        Self {
+            ids: HashMap::new(),
+            country,
+        }
+    }
+
+    /// The run's country, when it states one.
+    #[must_use]
+    pub fn country(&self) -> Option<&'static phone::Country> {
+        self.country
+    }
+}
+
+/// One standard form of a handle for identity matching, per type, with the
+/// country of a phone number whose form is certain and a human-readable note
+/// when it is not (guarded policy).
+///
+/// Phone: E.164 when the raw is unambiguous: written with its `+`, or
+/// written without it in `country`, the country a run or a person stated.
+/// Otherwise the digits as written, with a review note and no region:
+/// `020 7946 0000` with no country is `02079460000`, never `+02079460000`
+/// and never a US number (#1676). Email: lowercased. Username/Other:
+/// verbatim (trimmed).
+pub fn normalize_handle(
+    raw: &str,
+    handle_type: HandleType,
+    country: Option<&'static phone::Country>,
+) -> phone::TypedKey {
+    phone::key_typed_handle(raw, handle_type, country)
+}
+
+/// The region a stored key carries: the calling code of a phone key written
+/// in its `+` form, else empty. For a row whose key was made elsewhere, such
+/// as an address book load.
+#[must_use]
+pub fn region_of_key(normalized: &str, handle_type: &str) -> String {
+    match normalized.strip_prefix('+') {
+        Some(digits) if handle_type == HandleType::Phone.as_str() => phone::calling_code_of(digits)
+            .unwrap_or_default()
+            .to_string(),
+        _ => String::new(),
+    }
 }
 
 /// The shape of an address the source did not type: [`phone::Handle::parse`],
@@ -152,8 +200,9 @@ pub async fn existing_handle_id(
     Ok(id)
 }
 
-/// Insert or reuse a `handles` row. Returns the id and whether this call newly
-/// inserted a flagged (review-note) row.
+/// Insert or reuse a `handles` row for an address no run or person stated a
+/// country for. Returns the id and whether this call newly inserted a
+/// flagged (review-note) row.
 pub async fn upsert_handle_row(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -161,17 +210,37 @@ pub async fn upsert_handle_row(
     handle_type: HandleType,
     service: Option<&str>,
 ) -> Result<(i64, bool)> {
-    let (normalized, note) = normalize_handle(raw, handle_type);
+    upsert_handle_row_in(conn, account_id, raw, handle_type, service, None).await
+}
+
+/// Insert or reuse a `handles` row, reading a phone number written without
+/// its `+` code in `country`. Returns the id and whether this call newly
+/// inserted a flagged (review-note) row.
+pub async fn upsert_handle_row_in(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    raw: &str,
+    handle_type: HandleType,
+    service: Option<&str>,
+    country: Option<&'static phone::Country>,
+) -> Result<(i64, bool)> {
+    let phone::TypedKey {
+        key: normalized,
+        region,
+        note,
+    } = normalize_handle(raw, handle_type, country);
     let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
     let service_str = platform.as_str();
     let inserted = sqlx::query(
-        "INSERT INTO handles (account_id, raw, normalized, normalized_note, handle_type, service)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        "INSERT INTO handles
+           (account_id, raw, normalized, region, normalized_note, handle_type, service)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT DO NOTHING",
     )
     .bind(account_id)
     .bind(raw)
     .bind(normalized.as_str())
+    .bind(region.as_str())
     .bind(note.as_deref())
     .bind(handle_type.as_str())
     .bind(service_str)
@@ -202,7 +271,7 @@ pub async fn upsert_handle_row_cached(
     handle_type: HandleType,
     service: Option<&str>,
 ) -> Result<(i64, bool, bool)> {
-    let (normalized, _) = normalize_handle(raw, handle_type);
+    let normalized = normalize_handle(raw, handle_type, cache.country).key;
     let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
     let key = (
         account_id.to_string(),
@@ -210,11 +279,12 @@ pub async fn upsert_handle_row_cached(
         handle_type.as_str().to_string(),
         platform.as_str().to_string(),
     );
-    if let Some(&id) = cache.get(&key) {
+    if let Some(&id) = cache.ids.get(&key) {
         return Ok((id, false, true));
     }
-    let (id, flagged) = upsert_handle_row(conn, account_id, raw, handle_type, service).await?;
-    cache.insert(key, id);
+    let (id, flagged) =
+        upsert_handle_row_in(conn, account_id, raw, handle_type, service, cache.country).await?;
+    cache.ids.insert(key, id);
     Ok((id, flagged, false))
 }
 
@@ -230,6 +300,11 @@ pub struct Identity {
     pub address: String,
     /// `phone`, `email`, or `whatsapp`.
     pub service: String,
+    /// True for a phone number written without its `+` code whose country
+    /// nobody has stated: it is stored as the digits typed and matches no
+    /// number written with its `+` until a country is picked for it. A
+    /// short code, under 7 digits, has no `+` form and is never flagged.
+    pub country_unknown: bool,
     /// When the identity's oldest message was sent, or null when there is
     /// none.
     pub start_date: Option<String>,
@@ -250,6 +325,12 @@ pub struct Identity {
     pub orphaned_messages: u64,
 }
 
+/// Whether the `handles` row `h` is a phone number whose country is unknown:
+/// stored as the digits typed, with no region, and long enough to have a `+`
+/// form once a country is picked (`phone`'s minimum of 7 national digits).
+pub const COUNTRY_UNKNOWN_SQL: &str = "(h.handle_type = 'phone' AND h.region = '' \
+     AND h.normalized NOT LIKE '+%' AND length(h.normalized) >= 7)";
+
 /// Whose identities [`identities`] reads.
 #[derive(Debug, Clone, Copy)]
 pub enum IdentitiesOf {
@@ -259,11 +340,13 @@ pub enum IdentitiesOf {
     Contact { account_id: i64, contact_id: i64 },
 }
 
-/// One row of [`identities`]: address, service, first and last timestamp,
-/// conversation count, direct, group, and orphaned message counts.
+/// One row of [`identities`]: address, service, whether its country is
+/// unknown, first and last timestamp, conversation count, direct, group, and
+/// orphaned message counts.
 type IdentityRow = (
     String,
     String,
+    bool,
     Option<String>,
     Option<String>,
     i64,
@@ -318,12 +401,14 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
             ),
         ),
     };
+    let country_unknown = COUNTRY_UNKNOWN_SQL;
     let sql = format!(
         "WITH linked AS ({linked})
          SELECT h.normalized,
                 CASE WHEN h.handle_type = 'email' THEN 'email'
                      WHEN h.service = 'whatsapp' THEN 'whatsapp'
                      ELSE 'phone' END AS service,
+                {country_unknown},
                 (SELECT MIN(m.timestamp) {messages}),
                 (SELECT MAX(m.timestamp) {messages}),
                 {conversations},
@@ -343,10 +428,21 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
     Ok(rows
         .into_iter()
         .map(
-            |(handle, service, start_date, end_date, conversations, direct, group, orphaned)| {
+            |(
+                handle,
+                service,
+                country_unknown,
+                start_date,
+                end_date,
+                conversations,
+                direct,
+                group,
+                orphaned,
+            )| {
                 Identity {
                     address: handle,
                     service,
+                    country_unknown,
                     start_date,
                     end_date,
                     conversations: conversations.max(0) as u64,
@@ -426,7 +522,7 @@ mod tests {
         crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
             .await
             .unwrap();
-        let mut cache = HandleIdCache::new();
+        let mut cache = HandleIdCache::default();
         let (first, _, first_cached) = upsert_handle_row_cached(
             &mut conn,
             &mut cache,

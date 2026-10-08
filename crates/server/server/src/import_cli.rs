@@ -203,6 +203,7 @@ async fn import_under_session(
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,
         wipe_sources: Some(vec![source.to_string()]),
+        phone_country: None,
     };
     let result = imports_api::import_jsonl_files_on_conn(
         conn,
