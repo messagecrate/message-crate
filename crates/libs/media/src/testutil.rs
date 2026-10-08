@@ -13,7 +13,7 @@
 //! share it, and a test that changes the location holds it alone.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use std::ffi::OsString;
@@ -138,4 +138,19 @@ impl Drop for ToolsHidden {
         set_search_path(self.previous_search_path.take());
         set_tools_dir(self.previous_tools_dir.take());
     }
+}
+
+/// Write an empty file at `path` with the Unix permission bits `mode`, as a
+/// program put in the Tools Directory for a test: `0o755` for one that may
+/// run, `0o644` for one copied in without `chmod +x`. Off Unix the mode is
+/// not set.
+pub fn write_with_mode(path: &Path, mode: u32) {
+    std::fs::write(path, "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
 }

@@ -24,6 +24,7 @@ serde_json = { workspace = true }
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 ios-backup = { path = "../../libs/ios-backup", features = ["testutil"] }
+media = { path = "../../libs/media", features = ["testutil"] }
 tempfile = { workspace = true }
 
 [lints]

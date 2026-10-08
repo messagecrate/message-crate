@@ -515,6 +515,7 @@ mod tests {
         wtsexporter_command, wtsexporter_file_name, wtsexporter_in,
     };
     use crate::ios_backup::DecryptedWhatsapp;
+    use media::testutil::write_with_mode;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -1054,18 +1055,6 @@ mod tests {
             "create work/decryption.key".to_string(),
         );
         assert_eq!(denied.to_string(), "create work/decryption.key");
-    }
-
-    /// Write an empty file at `path` with the given Unix mode.
-    fn write_with_mode(path: &Path, mode: u32) {
-        fs::write(path, "").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
-        }
-        #[cfg(not(unix))]
-        let _ = mode;
     }
 
     /// wtsexporter is always the app's own copy in the Tools Directory.

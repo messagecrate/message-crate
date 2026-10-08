@@ -130,16 +130,7 @@ mod tests {
         let name = whatsapp_exporter::wtsexporter_file_name();
         media::set_tools_dir(Some(tools.path().to_path_buf()));
         let missing = tools_status().wtsexporter;
-        std::fs::write(tools.path().join(name), "").unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                tools.path().join(name),
-                std::fs::Permissions::from_mode(0o755),
-            )
-            .unwrap();
-        }
+        media::testutil::write_with_mode(&tools.path().join(name), 0o755);
         let found = tools_status().wtsexporter;
         media::set_tools_dir(previous);
 
