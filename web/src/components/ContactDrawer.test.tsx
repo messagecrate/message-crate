@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -843,6 +843,37 @@ describe("ContactDrawer", () => {
     finishTrash();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("follows the list column when the row under the header scrolls sideways", async () => {
+    seed(detail(26));
+    // The row that scrolls sideways in a narrow window (#1722), holding the list column.
+    const row = document.createElement("div");
+    const column = document.createElement("div");
+    column.setAttribute("data-list-column", "");
+    let right = 381;
+    column.getBoundingClientRect = () => ({ right }) as DOMRect;
+    row.append(column);
+    document.body.append(row);
+    try {
+      render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
+      const drawer = screen.getByRole("dialog");
+      // Never narrower than the right pane's 320 px minimum.
+      expect(drawer.style.left).toContain("min(381px,");
+      expect(drawer.style.left).toContain("320px");
+
+      // The frame the drawer scheduled when it found the column has run.
+      await act(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+
+      // A sideways scroll moves the column 200 px left without resizing it.
+      right = 181;
+      row.dispatchEvent(new Event("scroll"));
+      await waitFor(() => {
+        expect(drawer.style.left).toContain("min(181px,");
+      });
+    } finally {
+      row.remove();
+    }
   });
 
   it("moves against a list column that appears after it opened, and back when the column goes", async () => {
