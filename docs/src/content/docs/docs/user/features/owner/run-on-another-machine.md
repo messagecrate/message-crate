@@ -67,6 +67,10 @@ With the server elsewhere, the login card reads **Disconnected from 127.0.0.1:80
 **Use this address** stays unavailable until **Address** holds a different address from the one in use.
 **Cancel** returns to the login card and keeps the old address.
 
+The desktop app keeps the address, after logging out too, and opens on the login card for it at every later start.
+With an address other than its own, the app starts no Message Crate of its own.
+**Change server address**, then **Use the Message Crate on this computer**, goes back to `http://127.0.0.1:8080`.
+
 ### Does an `https://` address with a private certificate work?
 
 Yes, when the desktop app's computer trusts the certificate authority that signed it.
