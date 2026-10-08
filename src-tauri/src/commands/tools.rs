@@ -48,7 +48,8 @@ pub enum ToolStatus {
         total: Option<u64>,
     },
     /// The program's download failed, for `reason`, and the program is not
-    /// found. It is tried again the next time the app starts.
+    /// found. It is tried again the next time the app starts, or with Try
+    /// again on the Import form.
     DownloadFailed {
         /// Why the download failed.
         reason: String,

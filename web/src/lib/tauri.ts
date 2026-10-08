@@ -497,7 +497,7 @@ export type ToolStatus =
   | { state: "unusable"; reason: string }
   /** Downloading into the Tools Directory: bytes so far, and the total when the server said. */
   | { state: "downloading"; received: number; total: number | null }
-  /** The download failed and the program is not found. Tried again at the next start. */
+  /** The download failed and the program is not found. Tried again at the next start, or with Try again. */
   | { state: "downloadFailed"; reason: string };
 
 /**
