@@ -96,8 +96,8 @@ Import continues once the field is empty.
 
 ### Import can't find wtsexporter
 
-A WhatsApp import runs a separate program, `wtsexporter`, which the desktop app doesn't include.
-[WhatsApp](/docs/user/import-sources/whatsapp/#install-wtsexporter) has the install command and says how the app finds the program.
+A WhatsApp import runs a separate program, `wtsexporter`, which the desktop app downloads when it starts.
+[**Settings → System**](/docs/user/features/settings/system/#media) shows whether it arrived, or why the download failed, and [WhatsApp](/docs/user/import-sources/whatsapp/#wtsexporter) says where it comes from.
 
 ### A WhatsApp import doesn't stop when cancelled
 
