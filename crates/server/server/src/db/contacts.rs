@@ -551,26 +551,46 @@ pub async fn delete_if_empty(
     account_id: i64,
     contact_id: i64,
 ) -> Result<bool> {
-    let deleted = sqlx::query(
-        "DELETE FROM contacts
-         WHERE account_id = $1 AND id = $2 AND preferred_name = ''
-           AND NOT EXISTS (SELECT 1 FROM contact_handles ch
-                           WHERE ch.account_id = $1 AND ch.contact_id = $2)",
+    let empty: bool = sqlx::query_scalar(
+        "SELECT EXISTS (
+           SELECT 1 FROM contacts
+           WHERE account_id = $1 AND id = $2 AND preferred_name = ''
+             AND NOT EXISTS (SELECT 1 FROM contact_handles ch
+                             WHERE ch.account_id = $1 AND ch.contact_id = $2))",
     )
     .bind(account_id)
     .bind(contact_id)
-    .execute(&mut *conn)
-    .await?
-    .rows_affected()
-        > 0;
-    if deleted {
-        sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
-            .bind(account_id)
-            .bind(contact_id)
-            .execute(&mut *conn)
-            .await?;
+    .fetch_one(&mut *conn)
+    .await?;
+    if empty {
+        delete_contact(conn, account_id, contact_id).await?;
     }
-    Ok(deleted)
+    Ok(empty)
+}
+
+/// Delete `contact_id` with its trash marker. The cascade takes its identity
+/// links, Contact Group memberships and import records with it; the
+/// identities themselves stay.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn delete_contact(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    contact_id: i64,
+) -> Result<()> {
+    sqlx::query("DELETE FROM contacts WHERE account_id = $1 AND id = $2")
+        .bind(account_id)
+        .bind(contact_id)
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
+        .bind(account_id)
+        .bind(contact_id)
+        .execute(&mut *conn)
+        .await?;
+    Ok(())
 }
 
 /// The identities `contact_id` holds, in the order they were linked.

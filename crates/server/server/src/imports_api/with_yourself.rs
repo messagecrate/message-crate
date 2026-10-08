@@ -152,20 +152,9 @@ async fn delete_unless_referenced(
     if referenced {
         return Ok(());
     }
-    // The cascade takes its identity links, group memberships and import
-    // records with it; the identities themselves stay, on no contact, as the
-    // holder's always are.
-    sqlx::query("DELETE FROM contacts WHERE account_id = $1 AND id = $2")
-        .bind(account_id)
-        .bind(contact_id)
-        .execute(&mut *conn)
-        .await?;
-    sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
-        .bind(account_id)
-        .bind(contact_id)
-        .execute(&mut *conn)
-        .await?;
-    Ok(())
+    // The identities themselves stay, on no contact, as the holder's
+    // always are.
+    crate::db::contacts::delete_contact(conn, account_id, contact_id).await
 }
 
 /// Give a conversation that is no longer with yourself what an import of it
