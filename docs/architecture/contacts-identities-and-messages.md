@@ -548,17 +548,37 @@ one expression the conversation list, the conversation page, the Messages list,
 `title:`, `in:` and plain text all read
 ([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
-Participants and the holder's contact follow the identity list: when an
+Participants and the holder's contact follow the identity list. When an
 account's identities change, the server runs the rule again over the
-account's conversations, so a conversation that is now with yourself loses
-its participants and the contact an import made for the holder, unless
-something else refers to that contact, and one that no longer is gets its
-chat handle back as its participant, on a contact; its messages are not
-rewritten (`imports_api/with_yourself.rs`). Why: otherwise the title and
-`with:me`, which ask of the identities the account has now, and the stored
-rows, which an import wrote against the identities it had then, disagree,
-and the holder stays their own contact
+account's conversations, in the same transaction
+(`imports_api/with_yourself.rs`). Messages are not rewritten. Why: otherwise
+the title and `with:me`, which ask of the identities the account has now,
+and the stored rows, which an import wrote against the identities it had
+then, disagree, and the holder stays their own contact
 ([#1662](https://github.com/messagecrate/message-crate/issues/1662)).
+
+A participant at one of the account's identities is dropped from every
+conversation, one-to-one and group alike, as an import never writes one.
+Other participants stay, because an import writes them too.
+
+The contact an import made for the holder is deleted only when nobody has
+touched it. Its origin is `import`, it carries no name, it is in neither the
+Trash nor a Contact Group the person made, and nothing outside the
+conversations with yourself refers to it (`db/contacts.rs`,
+`delete_untouched_holder_contact`). Any other holder contact stays. Why: an
+address book load renames a contact without changing its origin, so a name
+cannot be told to be the backup's, and deleting the contact would lose it.
+A deleted contact takes its Import Run records with it, as any deleted
+contact does.
+
+A conversation that is no longer with yourself gets its chat handle back as a
+participant. Its name is the name of the contact on the chat handle, which a
+named contact kept. The chat handle and the senders of its received rows get
+a contact when they have none. Two things do not come back. One is the name
+the backup gave a participant whose contact had none. The other is a
+participant at a removed identity other than the chat handle, in a group or
+not. Why: the participant rows were deleted, and the messages hold neither.
+Importing the backup again writes both back.
 
 Dedupe matches a received note in a conversation with yourself with no sender,
 in the content key and in the near-time pass alike (`dedupe.rs`,
