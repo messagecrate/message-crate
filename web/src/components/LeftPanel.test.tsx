@@ -1,12 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useLayoutEffect } from "react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LeftPanel from "./LeftPanel";
-import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
+import { LEFT_PANEL_STORAGE_KEY, LEFT_PANEL_WIDTH_VAR } from "./leftPanelWidth";
 
 const profileState = vi.hoisted(() => ({
   profile: null as object | null,
@@ -86,6 +87,28 @@ function renderPanel(initialEntries?: string[], browseQuery = "") {
 }
 
 describe("LeftPanel", () => {
+  it("gives the header its width before the browser paints", () => {
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+    // A layout effect after the panel's runs before the paint, as the
+    // browser's first frame would.
+    let beforePaint = "";
+    function PaintProbe() {
+      useLayoutEffect(() => {
+        beforePaint = document.documentElement.style.getPropertyValue(LEFT_PANEL_WIDTH_VAR);
+      }, []);
+      return null;
+    }
+    render(
+      <Providers>
+        <MemoryRouter>
+          <LeftPanel browseQuery="" />
+          <PaintProbe />
+        </MemoryRouter>
+      </Providers>,
+    );
+    expect(beforePaint).toBe("300px");
+  });
+
   it("puts browse icons in the shared 15px leading slot", () => {
     renderPanel();
     const messages = screen.getByRole("button", { name: "Messages" });
