@@ -350,8 +350,8 @@ describe("SystemSection", () => {
       wtsexporter: { state: "missing" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(`ffmpeg not used - ${reason}`)).toBeTruthy();
-    expect(screen.getByLabelText(`ffprobe not used - ${reason}`)).toBeTruthy();
+    expect(await screen.findByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
+    expect(screen.getByLabelText(`ffprobe not used. ${reason}`)).toBeTruthy();
   });
 
   it("has nothing to type for the media tools: the ffmpeg directory field is gone (#1053)", async () => {

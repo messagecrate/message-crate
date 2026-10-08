@@ -137,12 +137,12 @@ function ToolStatusRow({
       );
     }
     case "unusable": {
-      const label = `${name} not used - ${status.reason}`;
+      const label = `${name} not used. ${status.reason}`;
       return (
         <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> not used - {status.reason}
+            <code className="font-mono text-[0.7rem]">{name}</code> not used. {status.reason}
           </span>
         </li>
       );
