@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 /**
  * A photo or video in the conversation: a frame of one height, so a
  * Thumbnail that loads above the messages on screen does not push them down,
- * holding whatever the caller draws over it.
+ * holding whatever the caller draws over it. It is never wider than its
+ * message, so a thread at the right pane's 320 px minimum (#1722) does not
+ * scroll sideways; a wider picture is cropped.
  */
 export function ThumbnailTile({
   tileRef,
@@ -13,7 +15,7 @@ export function ThumbnailTile({
   children: ReactNode;
 }) {
   return (
-    <div ref={tileRef} className="relative mt-1.5 h-[200px] w-fit max-w-[280px]">
+    <div ref={tileRef} className="relative mt-1.5 h-[200px] w-fit max-w-[min(280px,100%)]">
       {children}
     </div>
   );
@@ -22,7 +24,13 @@ export function ThumbnailTile({
 /** The Thumbnail, or the file's name in its place while there is none. */
 export function ThumbnailPicture({ name, url }: { name: string; url: string | null }) {
   if (url) {
-    return <img src={url} alt={name} className="block h-full w-auto max-w-[278px] object-cover" />;
+    return (
+      <img
+        src={url}
+        alt={name}
+        className="block h-full w-auto max-w-[min(278px,100%)] object-cover"
+      />
+    );
   }
   return (
     <span className="flex h-full w-[200px] items-center justify-center break-all bg-elevated px-3 text-center text-[0.75rem] text-muted">
