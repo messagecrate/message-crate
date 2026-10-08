@@ -268,21 +268,26 @@ Italy, drops nothing. A number that starts with the country's own
 international prefix is the calling code and number that follow it: `00` in
 the United Kingdom (`0044 7700 900123` is `+447700900123`), `011` in a `+1`
 country, `0011` in Australia, `810` in Russia, `010` in Japan. Digits after
-the prefix that start with no calling code are refused and keep their
-digits. A number that starts with the country's own calling code was
-written in full without its `+` (`447700900123` in the United Kingdom,
-`79161234567` in Russia) only when what follows the code is as long as the
-country's fixed-line and mobile numbers are and the digits as a whole are
-not. Otherwise it is a national number that starts with the same digits:
+the prefix that start with no calling code are refused and keep their digits.
+A number that starts with the country's own calling code was written in full
+without its `+` when the trunk prefix is kept after the code (`44 (0)7700
+900123`), or when what follows the code is as long as the country's fixed-line
+and mobile numbers are and the digits as a whole are not (`447700900123` in
+the United Kingdom, `79161234567` in Russia). When only the whole is as long
+as a number there, it is a national number that starts with the same digits:
 `55 99123 4567` in Brazil has the area code 55, and `9112345678` is an Indian
-mobile number. Why: reading `00` and the trunk prefix the same way in every
-country gave `00447700900123` the key `+440447700900123`, `447700900123` the
-key `+44447700900123` and Australia's `0011 44 …` the key `+1144…`: keys
-that look certain and name nobody. The countries, their calling codes, trunk
-prefixes, international prefixes and number lengths are one table,
-`phone::COUNTRIES`, taken from libphonenumber's `PhoneNumberMetadata.xml`
-(its doc comment names the commit), which `GET /v1/phone-countries` lists
-for the import form and the country picker.
+mobile number. When both are, as `49 151 23456789` is in Germany, the number
+is refused rather than guessed: it keeps its digits, counts under
+`phones_needing_review`, and its review note reads `4915123456789 could be
++494915123456789 or +4915123456789; pick its country or write it with +`. Why:
+reading `00` and the trunk prefix the same way in every country gave
+`00447700900123` the key `+440447700900123`, `447700900123` the key
+`+44447700900123` and Australia's `0011 44 …` the key `+1144…`: keys that look
+certain and name nobody. The countries, their calling codes, trunk prefixes,
+international prefixes and number lengths are one table, `phone::COUNTRIES`,
+taken from libphonenumber's `PhoneNumberMetadata.xml` (its doc comment names
+the commit), which `GET /v1/phone-countries` lists for the import form and the
+country picker.
 
 **The screens say when a number's country is unknown and let the person fix
 it.** An identity's `country_unknown` is true for a phone number whose key has
