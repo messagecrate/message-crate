@@ -499,7 +499,9 @@ describe("ImportRunView", () => {
     });
     expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
     expect(
-      screen.getByText(/Media can't use ffprobe\. Settings → System shows why/),
+      screen.getByText(
+        /Media can't use ffprobe\. Put it in the Tools Directory, which Settings → System shows/,
+      ),
     ).toBeInTheDocument();
   });
 

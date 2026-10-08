@@ -58,7 +58,15 @@ type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
  * One program's status line: the path it was found at, that it is missing,
  * or why it is not used. One case per `state` the desktop process sends.
  */
-function ToolStatusRow({ name, status }: { name: ToolName; status: ToolStatus }) {
+function ToolStatusRow({
+  name,
+  status,
+  toolsDir,
+}: {
+  name: ToolName;
+  status: ToolStatus;
+  toolsDir: string | null;
+}) {
   switch (status.state) {
     case "found": {
       const label = `Found ${name} - ${status.path}`;
@@ -74,12 +82,23 @@ function ToolStatusRow({ name, status }: { name: ToolName; status: ToolStatus })
       );
     }
     case "missing": {
-      const label = `${name} not found`;
+      // An app opened from the Dock on macOS doesn't see the PATH a shell
+      // sets, so a program installed with Homebrew is missing here until it
+      // is linked into the Tools Directory.
+      const fix = toolsDir ? ` Put it in the Tools Directory, ${toolsDir}.` : "";
+      const label = `${name} not found.${fix}`;
       return (
         <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> not found
+            <code className="font-mono text-[0.7rem]">{name}</code> not found.
+            {toolsDir ? (
+              <>
+                {" "}
+                Put it in the Tools Directory,{" "}
+                <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
+              </>
+            ) : null}
           </span>
         </li>
       );
@@ -126,9 +145,9 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
       ) : null}
       {tools ? (
         <ul className="m-0 mt-2 list-none space-y-1 p-0" aria-label="Media tools">
-          <ToolStatusRow name="ffmpeg" status={tools.ffmpeg} />
-          <ToolStatusRow name="ffprobe" status={tools.ffprobe} />
-          <ToolStatusRow name="wtsexporter" status={tools.wtsexporter} />
+          <ToolStatusRow name="ffmpeg" status={tools.ffmpeg} toolsDir={tools.toolsDir} />
+          <ToolStatusRow name="ffprobe" status={tools.ffprobe} toolsDir={tools.toolsDir} />
+          <ToolStatusRow name="wtsexporter" status={tools.wtsexporter} toolsDir={tools.toolsDir} />
         </ul>
       ) : null}
     </div>

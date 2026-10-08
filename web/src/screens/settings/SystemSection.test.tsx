@@ -306,7 +306,11 @@ describe("SystemSection", () => {
     });
     render(<SystemSection />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/ffmpeg not found/i)).toBeTruthy();
+      expect(
+        screen.getByLabelText(
+          "ffmpeg not found. Put it in the Tools Directory, /home/demo/message-crate/tools.",
+        ),
+      ).toBeTruthy();
     });
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
     expect(screen.getByLabelText(/wtsexporter not found/i)).toBeTruthy();

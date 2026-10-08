@@ -453,9 +453,9 @@ export default function ImportRunView({
         ) : null}
         {toolsBlocked ? (
           <p className="m-0 text-[0.813rem] text-muted">
-            Media can't use {missingTools.join(" or ")}. Settings → System shows why, and the Tools
-            Directory to put {missingTools.length === 1 ? "it" : "them"} in. Then come back to
-            Import.
+            Media can't use {missingTools.join(" or ")}. Put{" "}
+            {missingTools.length === 1 ? "it" : "them"} in the Tools Directory, which Settings →
+            System shows with the reason, then come back to Import.
           </p>
         ) : null}
         <ReviewActions

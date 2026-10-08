@@ -53,7 +53,11 @@ When it is on, Import restores the last backup path used for each import source.
 One line per program reports the result:
 
 - A check mark with `Found ffmpeg` and the full path of the program.
-- A cross with `ffmpeg not found`.
+- A cross with `ffmpeg not found` and the Tools Directory to put it in.
+- A cross with `ffmpeg not used` and the reason: ffmpeg and ffprobe found in two places, one only on `PATH` and the other only in the Tools Directory, or a `wtsexporter` without permission to run.
+
+On macOS, an app opened from the Dock or Finder doesn't see the `PATH` a terminal sets, so ffmpeg and ffprobe installed with Homebrew are not found.
+Linking both into the Tools Directory makes them found, for example `ln -s /opt/homebrew/bin/ffmpeg /opt/homebrew/bin/ffprobe ~/message-crate/tools/` (`/usr/local/bin` on an Intel Mac).
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) covers what ffmpeg and ffprobe are used for.
 
