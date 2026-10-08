@@ -11,7 +11,7 @@
 
 use crate::flat_eml::{group_key, names_a_group};
 use crate::types::ParsedMessage;
-use message_ir::{HandleType, IrConversationType};
+use message_ir::{IdentityType, IrConversationType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -85,7 +85,7 @@ pub(crate) fn names_a_member_by_email(msg: &ParsedMessage) -> bool {
             .participants
             .iter()
             .chain(&msg.sender)
-            .any(|h| h.kind() == HandleType::Email)
+            .any(|h| h.kind() == IdentityType::Email)
 }
 
 /// Key every member `msg` names by email address by the one number
@@ -101,7 +101,7 @@ pub(crate) fn key_members_by_number(
     kept: &mut KeptByEmail,
 ) {
     let mut by_number = |handle: &Handle| -> Handle {
-        if handle.kind() != HandleType::Email {
+        if handle.kind() != IdentityType::Email {
             return handle.clone();
         }
         if let Some(number) = numbers.by_email.get(handle.key()) {

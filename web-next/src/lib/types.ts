@@ -1,4 +1,4 @@
-import type { HandleType } from "./handleKind";
+import type { IdentityType } from "./handleKind";
 
 export type ContactSection =
   | "all"
@@ -9,7 +9,7 @@ export type ContactSection =
 /** One handle attached to a contact. */
 export type ContactHandle = {
   raw: string;
-  handle_type: HandleType;
+  handle_type: IdentityType;
   service: string | null;
   /** Review note when the handle's normalized form is ambiguous (not E.164). */
   normalizedNote: string | null;
@@ -22,7 +22,7 @@ export type ContactListItem = {
   preferredName: string | null;
   preferredHandle: string | null;
   /** Type of {@link preferredHandle} (null when the contact has no handles). */
-  handleType: HandleType | null;
+  handleType: IdentityType | null;
   /** Derived from preferredName (first space split) for search/API compat. */
   firstName: string | null;
   /** Derived from preferredName (first space split) for search/API compat. */
@@ -63,7 +63,7 @@ export type YearThread = {
 export type GroupParticipant = {
   name: string;
   handle: string;
-  handleType: HandleType | null;
+  handleType: IdentityType | null;
   contactId: number | null;
 };
 
@@ -134,7 +134,7 @@ export type MessageRow = {
 export type UnassignedHandle = {
   handle: string;
   /** Handle type from the handles table (null when unknown). */
-  handleType?: HandleType | null;
+  handleType?: IdentityType | null;
   displayName: string;
   nameAlias: string | null;
   messageCount: number;

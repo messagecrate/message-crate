@@ -17,7 +17,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use message_ir::HandleService;
+use message_ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -27,14 +27,14 @@ use crate::credentials::{
     require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
-use crate::db::handles::{self, Identity, IdentityService};
+use crate::db::handles::{self, ApiIdentityService, Identity};
 use crate::db::permissions::Permission;
 use crate::db::storage::{self, Scope};
 use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun};
+use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun, with_yourself};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
@@ -465,7 +465,7 @@ pub struct LinkAccountIdentityRequest {
     /// The service the address is on. It never decides the identity's type,
     /// which comes from the address: an email address is on the phone
     /// service, and one on WhatsApp is refused.
-    pub service: IdentityService,
+    pub service: ApiIdentityService,
 }
 
 /// One identity to unlink from the account, with its platform service.
@@ -476,7 +476,7 @@ pub struct UnlinkAccountIdentityRequest {
     /// The service the address is on. It never decides the identity's type,
     /// which comes from the address: an email address is on the phone
     /// service.
-    pub service: IdentityService,
+    pub service: ApiIdentityService,
 }
 
 /// Body for changing an account. Omitted fields are left alone. The name,
@@ -620,12 +620,21 @@ async fn apply_profile_update(
         account_profile::set_preferred_name(conn, account_id, stored_name).await?;
     }
 
+    // The rule an import applies to a conversation with yourself is run
+    // again over the account's conversations once its identities change,
+    // so their participants and the holder's contact follow the list (#1662).
+    let with_yourself_before = if identities.is_empty() && remove_identities.is_empty() {
+        None
+    } else {
+        Some(with_yourself::before_identity_change(conn, account_id).await?)
+    };
+
     for entry in remove_identities {
         let raw = entry.address.trim();
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
@@ -635,7 +644,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(
@@ -648,6 +657,9 @@ async fn apply_profile_update(
         .await?;
     }
 
+    if let Some(before) = with_yourself_before {
+        with_yourself::follow_identities(conn, before).await?;
+    }
     Ok(())
 }
 
@@ -682,6 +694,10 @@ async fn update_profile_in(
     .await?;
     if let Some(set) = &req.set_identity_country {
         use crate::identity_country::{CountryError, Whose, set_identity_country};
+        // A merge can make one of the account's identities the chat handle
+        // of a one-to-one conversation, so the with-yourself rule runs again
+        // around it, as it does for any identity change (#1662).
+        let before = with_yourself::before_identity_change(tx, account_id).await?;
         set_identity_country(tx, account_id, Whose::Account, set)
             .await
             .map_err(|error| match error {
@@ -689,6 +705,7 @@ async fn update_profile_in(
                 CountryError::Exists(message) => ProfileUpdateError::IdentityExists(message),
                 CountryError::Failed(cause) => ProfileUpdateError::Db(cause),
             })?;
+        with_yourself::follow_identities(tx, before).await?;
     }
     // An account saving its own profile is what profile setup is, so it no
     // longer owes one. Cleared in the same transaction as the change it

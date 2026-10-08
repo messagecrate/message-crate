@@ -87,6 +87,14 @@ impl DataSource {
                         }
                     };
 
+                    // `ios-backup`'s test
+                    // `an_identities_request_decrypts_into_its_scratch_directory_while_it_runs`
+                    // relies on this line staying between decrypting the
+                    // Contacts database and deleting it: it gives the backup
+                    // a device name longer than a pipe holds, so the reader
+                    // stops here until the app reads its output, and lists
+                    // the scratch directory meanwhile. Moved, that test
+                    // times out waiting for the Contacts copy.
                     emit_log(format!(
                         "Decrypted iOS backup: {} (version {})\n",
                         backup.lockdown().device_name,
@@ -169,8 +177,17 @@ impl Drop for DataSource {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{FixtureDb, mac_source};
+    use crate::{
+        error::IOS_BACKUP_PASSWORD_INCORRECT,
+        session::MailSession,
+        test_support::{FixtureBackup, FixtureDb, mac_source},
+    };
+    use chat_db_fixture::{
+        FRIEND_PHONE,
+        ios_backup::{BACKUP_PASSWORD, Encryption},
+    };
     use imessage_reader_protocol::ExportRequest;
+    use std::fs;
 
     /// A Mac `chat.db` opens in place: no backup, nothing decrypted, nothing
     /// to clean up, and the connection answers queries.
@@ -213,6 +230,90 @@ mod tests {
         let options =
             ReaderOptions::from_source(mac_source(&dir.path().join("chat.db")), dir.path().into());
         assert!(DataSource::from(&options).is_err());
+    }
+
+    /// The encrypted backup opens with its password: the decrypted Messages
+    /// database is the one file in the request's scratch directory while
+    /// the source is open, its messages come out of the reader, the
+    /// decrypted Contacts database names a sender and is already gone, the
+    /// backup is left as it was, and closing the source empties the scratch
+    /// directory (#788, #1386).
+    #[test]
+    fn an_encrypted_backup_decrypts_into_the_scratch_directory_and_nowhere_else() {
+        let fixture = FixtureBackup::write(Encryption::Password(BACKUP_PASSWORD));
+        let before = fixture.backup_listing();
+        let session = MailSession::new(fixture.options(Some(BACKUP_PASSWORD))).unwrap();
+        let source = &session.data_source;
+
+        assert!(source.is_encrypted());
+        let scratch = fixture.scratch_files();
+        assert_eq!(scratch.len(), 1, "{scratch:?}");
+        assert!(
+            scratch[0].starts_with("crabapple-sms-") && scratch[0].ends_with(".db"),
+            "{scratch:?}"
+        );
+        let decrypted = fixture.scratch.path().join(&scratch[0]);
+        assert!(
+            fs::read(&decrypted)
+                .unwrap()
+                .starts_with(b"SQLite format 3\0")
+        );
+
+        let texts: Vec<String> = FixtureDb::messages(&session)
+            .into_iter()
+            .filter_map(|message| message.text)
+            .collect();
+        assert!(texts.iter().any(|t| t == "Saturday works"), "{texts:?}");
+        assert_eq!(
+            source
+                .contacts_index
+                .lookup(FRIEND_PHONE)
+                .map(|name| name.full),
+            Some("Sam Example".to_string()),
+            "the contacts database was decrypted and read"
+        );
+        assert_eq!(fixture.backup_listing(), before);
+
+        drop(session);
+        assert_eq!(fixture.scratch_files(), Vec::<String>::new());
+    }
+
+    /// The backup that is not encrypted opens without a password and is read
+    /// where it is: nothing is decrypted and nothing is written to the
+    /// scratch directory, and its contacts still name a sender.
+    #[test]
+    fn an_unencrypted_backup_opens_without_a_password() {
+        let fixture = FixtureBackup::write(Encryption::None);
+        let source = DataSource::from(&fixture.options(None)).unwrap();
+
+        assert!(!source.is_encrypted());
+        assert!(source.backup.is_none());
+        assert!(source.temp_messages_db.is_none());
+        let chats: i64 = source
+            .db()
+            .query_row("SELECT count(*) FROM chat", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(chats, 6);
+        assert_eq!(
+            source
+                .contacts_index
+                .lookup(FRIEND_PHONE)
+                .map(|name| name.full),
+            Some("Sam Example".to_string())
+        );
+        assert_eq!(fixture.scratch_files(), Vec::<String>::new());
+    }
+
+    /// A wrong password is refused with the reader's own message, and
+    /// nothing is written to the scratch directory.
+    #[test]
+    fn a_wrong_password_is_refused_and_nothing_is_decrypted() {
+        let fixture = FixtureBackup::write(Encryption::Password(BACKUP_PASSWORD));
+        let Err(err) = DataSource::from(&fixture.options(Some("not-the-password"))) else {
+            panic!("a wrong password opened the backup");
+        };
+        assert_eq!(err.to_string(), IOS_BACKUP_PASSWORD_INCORRECT);
+        assert_eq!(fixture.scratch_files(), Vec::<String>::new());
     }
 
     /// A temp database is deleted when its handle drops, and a path that is

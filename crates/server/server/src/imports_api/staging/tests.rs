@@ -11,7 +11,7 @@ use crate::imports_api::{
 };
 use crate::models::AttachmentRecord;
 use crate::test_support::{attachment, conversation_header, message_line};
-use message_ir::{HandleType, IrAttachment, IrMessageKind, IrService};
+use message_ir::{IdentityType, IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -469,7 +469,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "120363042@g.us")
         .group()
-        .typed_participant("+15555550156", None, HandleType::Phone)
+        .typed_participant("+15555550156", None, IdentityType::Phone)
         .line()
         + &incoming_whatsapp("g-group-1", "+15555550156");
     import_one(&mut conn, "120363042@g.us.jsonl", &body)
@@ -494,7 +494,7 @@ async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header(
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456@lid")
-        .typed_participant("123456@lid", None, HandleType::Other)
+        .typed_participant("123456@lid", None, IdentityType::Other)
         .line()
         + &incoming_whatsapp("g-lid-1", "123456@lid");
     import_one(&mut conn, "123456@lid.jsonl", &body)
@@ -533,7 +533,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "+15555550101")
-        .typed_participant("+15555550101", Some("Sam"), HandleType::Phone)
+        .typed_participant("+15555550101", Some("Sam"), IdentityType::Phone)
         .line()
         + &incoming("g-sat-1", "+15555550101")
         + &incoming_unknown_service("g-sat-2", "+15555550101");
@@ -596,7 +596,7 @@ async fn a_phone_number_sender_is_phone_on_any_service() {
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000005")
         .group()
-        .typed_participant("+15555550156", None, HandleType::Phone)
+        .typed_participant("+15555550156", None, IdentityType::Phone)
         .line()
         + &incoming_unknown_service("g-sat-3", "+15555550199");
     import_one(&mut conn, "chat1000000005.jsonl", &body)
@@ -715,7 +715,7 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
         + &incoming("g-at-im-1", "alerts@example.com");
     let group = conversation_header("sms-backup-restore", "chat1000000007")
         .group()
-        .typed_participant("+15555550156", None, HandleType::Phone)
+        .typed_participant("+15555550156", None, IdentityType::Phone)
         .line()
         + &message_line("g-at-sms-1", "hi")
             .sms()

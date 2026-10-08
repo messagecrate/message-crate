@@ -19,6 +19,7 @@ members = [
     "crates/libs/http",
     "crates/libs/api-types",
     "crates/libs/serve-protocol",
+    "crates/libs/log-lines",
     "crates/libs/ios-backup",
     "crates/exporters/go-sms-pro-exporter",
     "crates/exporters/sms-backup-restore-exporter",
@@ -31,7 +32,7 @@ members = [
     "crates/helpers/chat-db-fixture",
     "crates/helpers/imessage-reader",
     "crates/core/message-crate-core",
-    "crates/libs/push",
+    "crates/libs/import",
     "crates/libs/export",
     "crates/server/demo-seed",
     "crates/server/server",
@@ -76,7 +77,7 @@ redundant_pub_crate = "allow"
 
 # Release binaries (the Docker image and the desktop bundles) are built rarely
 # and run for a long time, so spend the build time on whole-program
-# optimisation. `panic` stays `unwind`: message-crate-push, the journal and the
+# optimisation. `panic` stays `unwind`: message-crate-import, the journal and the
 # iMessage helper catch a worker thread's panic through `join`.
 [profile.release]
 lto = "fat"

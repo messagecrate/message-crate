@@ -4,7 +4,7 @@ use crate::assets::extract_body;
 use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::{HandleType, IrConversationType};
+use message_ir::{IdentityType, IrConversationType};
 use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -316,7 +316,7 @@ pub(crate) fn email_and_number(
         .into_iter()
         .filter(|a| !owner.is_owner_handle(a));
     let number = numbers.next()?;
-    if numbers.next().is_some() || number.kind() != HandleType::Phone {
+    if numbers.next().is_some() || number.kind() != IdentityType::Phone {
         return None;
     }
     let other = if sent {
@@ -328,7 +328,7 @@ pub(crate) fn email_and_number(
         return None;
     }
     let email = mail_address_handle(&other, owner.country)?;
-    (email.kind() == HandleType::Email).then(|| EmailNumber {
+    (email.kind() == IdentityType::Email).then(|| EmailNumber {
         email: email.into_key(),
         number,
     })

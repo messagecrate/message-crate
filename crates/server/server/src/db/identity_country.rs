@@ -65,10 +65,10 @@ pub async fn plus_form(
     let Some((raw, handle_type, service, region)) = row else {
         return Ok(Err(CountryRefusal::CountryKnown));
     };
-    if handle_type != message_ir::HandleType::Phone.as_str() || !region.is_empty() {
+    if handle_type != message_ir::IdentityType::Phone.as_str() || !region.is_empty() {
         return Ok(Err(CountryRefusal::CountryKnown));
     }
-    let typed = phone::key_typed_handle(&raw, message_ir::HandleType::Phone, Some(country));
+    let typed = phone::key_typed_handle(&raw, message_ir::IdentityType::Phone, Some(country));
     if !typed.key.starts_with('+') {
         let reason = typed
             .note
@@ -215,7 +215,18 @@ async fn merge_into(
     .bind(into)
     .execute(&mut *conn)
     .await?;
+    // What the with-yourself rule set aside for `from` is kept for `into`,
+    // so it comes back for the one identity (#1662).
     for statement in [
+        "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
+         SELECT conversation_id, $2, name_alias FROM participants_set_aside WHERE handle_id = $1
+         ON CONFLICT DO NOTHING",
+        "INSERT INTO contact_group_members_set_aside (group_id, handle_id)
+         SELECT group_id, $2 FROM contact_group_members_set_aside WHERE handle_id = $1
+         ON CONFLICT DO NOTHING",
+        "INSERT INTO import_contacts_set_aside (import_id, handle_id, reason)
+         SELECT import_id, $2, reason FROM import_contacts_set_aside WHERE handle_id = $1
+         ON CONFLICT DO NOTHING",
         "UPDATE participants SET handle_id = $2 WHERE handle_id = $1",
         "UPDATE messages SET sender_handle_id = $2 WHERE sender_handle_id = $1",
         "UPDATE messages SET owner_handle_id = $2 WHERE owner_handle_id = $1",
@@ -299,6 +310,9 @@ async fn merge_conversation(
         "INSERT INTO message_tag_members (conversation_id, tag_id)
          SELECT $2, tag_id FROM message_tag_members WHERE conversation_id = $1
          ON CONFLICT DO NOTHING",
+        "INSERT INTO participants_set_aside (conversation_id, handle_id, name_alias)
+         SELECT $2, handle_id, name_alias FROM participants_set_aside WHERE conversation_id = $1
+         ON CONFLICT DO NOTHING",
     ] {
         sqlx::query(statement)
             .bind(source)
@@ -329,7 +343,7 @@ pub async fn account_identity_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     address: &str,
-    service: Option<message_ir::HandleService>,
+    service: Option<message_ir::IdentityService>,
 ) -> Result<Option<i64>> {
     let id = sqlx::query_scalar(
         "SELECT h.id FROM account_handles ah
@@ -341,7 +355,7 @@ pub async fn account_identity_id(
     )
     .bind(account_id)
     .bind(address.trim())
-    .bind(service.map(message_ir::HandleService::as_str))
+    .bind(service.map(message_ir::IdentityService::as_str))
     .fetch_optional(&mut *conn)
     .await?;
     Ok(id)

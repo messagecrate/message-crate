@@ -8,17 +8,17 @@ import Select, { ListBoxItem, selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
 import { useAuth } from "../lib/auth";
-import {
-  DUPLICATE_HANDLE_MESSAGE,
-  HANDLE_SERVICE_OPTIONS,
-  HANDLE_SERVICES,
-  type HandleService,
-  handleDuplicateKey,
-  handlePlaceholder,
-  handleValidationError,
-  serverService,
-} from "../lib/handleService";
 import { newId } from "../lib/newId";
+import {
+  DUPLICATE_IDENTITY_MESSAGE,
+  identityDuplicateKey,
+  identityPlaceholder,
+  identityValidationError,
+  OFFERED_SERVICE_OPTIONS,
+  OFFERED_SERVICES,
+  type OfferedService,
+  serverService,
+} from "../lib/offeredService";
 import { keys } from "../lib/queryKeys";
 import { useRouteQuery } from "../lib/routeQuery";
 import { parseSelectKey } from "../lib/selectKey";
@@ -64,10 +64,10 @@ export const SAME_GESTURE_MS = 150;
 interface HandleInput {
   id: string;
   handle: string;
-  service: HandleService;
+  service: OfferedService;
 }
 
-function newHandleRow(handle = "", service: HandleService = "phone"): HandleInput {
+function newHandleRow(handle = "", service: OfferedService = "phone"): HandleInput {
   return { id: newId(), handle, service };
 }
 
@@ -87,14 +87,14 @@ function rowErrors(rows: HandleInput[]): Map<string, string> {
   const seen = new Set<string>();
 
   for (const row of rows) {
-    const malformed = handleValidationError(row.service, row.handle);
+    const malformed = identityValidationError(row.service, row.handle);
     if (malformed) {
       errors.set(row.id, malformed);
       continue;
     }
-    const key = handleDuplicateKey(row.service, row.handle);
+    const key = identityDuplicateKey(row.service, row.handle);
     if (!key) continue;
-    if (seen.has(key)) errors.set(row.id, DUPLICATE_HANDLE_MESSAGE);
+    if (seen.has(key)) errors.set(row.id, DUPLICATE_IDENTITY_MESSAGE);
     else seen.add(key);
   }
 
@@ -107,7 +107,7 @@ function rowErrors(rows: HandleInput[]): Map<string, string> {
  * the placeholder does, so it is set slightly larger than the icons that only
  * decorate a label.
  */
-function serviceIcon(service: HandleService) {
+function serviceIcon(service: OfferedService) {
   return service === "email" ? <PersonIcon size={18} /> : <PhoneIcon size={18} />;
 }
 
@@ -158,7 +158,7 @@ export default function OnboardingScreen() {
     const shown = listed
       .slice(0, MAX_ACCOUNT_ROWS)
       .map(({ address, service }) =>
-        newHandleRow(address, parseSelectKey(service, HANDLE_SERVICES) ?? "phone"),
+        newHandleRow(address, parseSelectKey(service, OFFERED_SERVICES) ?? "phone"),
       );
     if (shown.length === 0) return;
     setHiddenIdentities(listed.length - shown.length);
@@ -231,7 +231,7 @@ export default function OnboardingScreen() {
   const updateHandle = (index: number, field: "handle" | "service", value: string) => {
     const next = [...handles];
     if (field === "service") {
-      const service = parseSelectKey(value, HANDLE_SERVICES);
+      const service = parseSelectKey(value, OFFERED_SERVICES);
       if (!service) return;
       next[index] = { ...next[index], service };
     } else {
@@ -323,13 +323,13 @@ export default function OnboardingScreen() {
                 <Select
                   selectedKey={h.service}
                   onSelectionChange={(k) => {
-                    const service = parseSelectKey(k, HANDLE_SERVICES);
+                    const service = parseSelectKey(k, OFFERED_SERVICES);
                     if (service) updateHandle(i, "service", service);
                   }}
                   className="w-[140px] shrink-0"
                   aria-label={`Account ${i + 1} type`}
                 >
-                  {HANDLE_SERVICE_OPTIONS.map((s) => (
+                  {OFFERED_SERVICE_OPTIONS.map((s) => (
                     <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
                       {s.label}
                     </ListBoxItem>
@@ -340,7 +340,7 @@ export default function OnboardingScreen() {
                   onChange={(v) => updateHandle(i, "handle", v)}
                   onBlur={() => revalidate(handles)}
                   leadingIcon={serviceIcon(h.service)}
-                  placeholder={handlePlaceholder(h.service)}
+                  placeholder={identityPlaceholder(h.service)}
                   className="min-w-0 flex-1"
                   inputClassName={invalid ? "!border-danger" : undefined}
                   isInvalid={invalid}

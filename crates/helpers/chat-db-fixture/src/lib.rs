@@ -7,7 +7,18 @@
 //! exporter's test binary links no GPL code
 //! (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 //!
+//! [`ios_backup`] puts the same database, a contacts database and the photo
+//! into an iPhone backup, plain or encrypted with a password, for the tests
+//! of decrypting one.
+//!
+//! [`listing`] lists what a directory holds, so the tests of
+//! `imessage-reader`, `ios-backup` and `imessage-ir-exporter` check what a
+//! request wrote and left behind the same way.
+//!
 //! Nothing here comes from a real backup. Every row is made up.
+
+pub mod ios_backup;
+pub mod listing;
 
 use std::{
     fs,

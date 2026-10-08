@@ -2,7 +2,7 @@ import {
   addHandleToContact,
   removeHandleFromContact,
 } from "@/lib/contactsWrite";
-import type { HandleType } from "@/lib/handleKind";
+import type { IdentityType } from "@/lib/handleKind";
 import {
   unauthorizedResponse,
   withAccountHandler,
@@ -17,7 +17,7 @@ type Params = { params: Promise<{ id: string }> };
 
 function parseHandleBody(
   body: Record<string, unknown>,
-): { raw: string; handle_type?: HandleType } | null {
+): { raw: string; handle_type?: IdentityType } | null {
   // Typed form: { raw, handle_type } (legacy: bare `handle`/`phone` strings).
   const raw =
     typeof body.raw === "string"
@@ -34,7 +34,7 @@ function parseHandleBody(
   }
   return {
     raw,
-    handle_type: rawType as HandleType | undefined,
+    handle_type: rawType as IdentityType | undefined,
   };
 }
 
@@ -60,7 +60,7 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
 
-  let handle: { raw: string; handle_type?: HandleType } | null = null;
+  let handle: { raw: string; handle_type?: IdentityType } | null = null;
   try {
     handle = parseHandleBody(body);
   } catch {
@@ -103,7 +103,7 @@ export async function DELETE(req: Request, { params }: Params) {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
 
-  let handle: { raw: string; handle_type?: HandleType } | null = null;
+  let handle: { raw: string; handle_type?: IdentityType } | null = null;
   try {
     handle = parseHandleBody(body);
   } catch {

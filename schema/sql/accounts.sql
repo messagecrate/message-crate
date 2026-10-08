@@ -118,6 +118,18 @@ CREATE TABLE IF NOT EXISTS server_settings (
     asset_max_bytes BIGINT NOT NULL DEFAULT 536870912
 );
 
+-- Which Message Crate this database is. Exactly one row, written when the
+-- database is made and never changed, so an app tells two Message Crates at
+-- one address apart, or this one from the database it replaced, whose
+-- account and Import Run ids start at the same numbers.
+CREATE TABLE IF NOT EXISTS message_crate (
+    -- Always 1: a database is one Message Crate.
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    -- The Message Crate's id: 32 random lowercase hexadecimal digits, answered
+    -- by GET /v1/server as `id`.
+    message_crate_id TEXT NOT NULL
+);
+
 -- A Demo Account build that has not finished. A build writes this row before
 -- it writes anything else and removes it after its last write, so a row found
 -- when the server starts is a build the server stopped part-way: the server
@@ -372,6 +384,21 @@ CREATE TABLE IF NOT EXISTS import_contacts (
 
 CREATE INDEX IF NOT EXISTS ix_import_contacts_contact
     ON import_contacts(contact_id);
+
+-- An `import_contacts` row kept by identity while its contact is gone. When
+-- an identity is linked after an import, the contact the import made for the
+-- holder is deleted (#1662). Its record is kept here under each identity the
+-- contact held, so removing the identity again gives the contact made then
+-- the run's record back, and the row leaves this table.
+CREATE TABLE IF NOT EXISTS import_contacts_set_aside (
+    -- Import run (`imports.id`).
+    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+    -- An identity the deleted contact held (`handles.id`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- The reason the run's record gave (`import_contacts.reason`).
+    reason TEXT NOT NULL,
+    PRIMARY KEY (import_id, handle_id)
+);
 
 -- The Audit Trail: what each user did on this Message Crate, and when, for
 -- everything `imports` and `exports` do not already record. An entry is

@@ -92,6 +92,7 @@ function serveAt(answer: (address: string) => Answer) {
     if (answered === "silent") return new Promise<never>(() => {});
     if (answered === "down") throw new TypeError("Failed to fetch");
     return {
+      id: "0123456789abcdef0123456789abcdef",
       state: answered.state,
       demo_account: answered.demoAccount ?? false,
       version: "0.10.0",

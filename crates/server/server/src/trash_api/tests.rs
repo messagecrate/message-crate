@@ -213,7 +213,7 @@ fn batch_naming(sha: &str) -> String {
 /// must not leave the imported attachment without its file.
 ///
 /// The run starts before `HEAD`, because that is the order an Upload sends:
-/// `message-crate-push` (`crates/libs/push/src/run.rs`) starts the run
+/// `message-crate-import` (`crates/libs/import/src/run.rs`) starts the run
 /// before any asset request.
 #[tokio::test]
 async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch() {

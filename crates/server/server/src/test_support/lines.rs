@@ -86,7 +86,7 @@ impl ConversationHeaderLine {
         self,
         identity: &str,
         display_name: Option<&str>,
-        identity_type: message_ir::HandleType,
+        identity_type: message_ir::IdentityType,
     ) -> Self {
         self.with_participant(Some(identity), display_name, Some(identity_type))
     }
@@ -101,7 +101,7 @@ impl ConversationHeaderLine {
         mut self,
         identity: Option<&str>,
         display_name: Option<&str>,
-        identity_type: Option<message_ir::HandleType>,
+        identity_type: Option<message_ir::IdentityType>,
     ) -> Self {
         self.0
             .conversation

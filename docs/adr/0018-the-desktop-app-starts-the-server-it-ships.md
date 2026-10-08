@@ -31,6 +31,10 @@ OneDrive or iCloud, which can corrupt a database that is in use.
 A dev build (`cargo tauri dev`) uses `data-dev` beside it instead, because
 both builds share one app-data directory and a branch with another Schema
 Fingerprint would rebuild the installed app's database empty.
+Beside `data`, the app keeps `logs`, the Logs Directory: every Import Run's
+log, which the app never deletes, so it outlives the run's directory and the
+owner and the account that ran the run can read it there (#1552, #1665). Both
+move into the Message Crate Directory with #1053.
 
 The server listens on this computer only. A setting in the app opens it to
 the network, for a person who wants to read from a phone while the app is

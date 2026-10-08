@@ -4,12 +4,12 @@
 //! [`SetIdentityCountryRequest`] and run [`set_identity_country`]; the
 //! statements are in `db::identity_country` (#1676).
 
-use message_ir::HandleService;
+use message_ir::IdentityService;
 use serde::Deserialize;
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::{self, OnService};
-use crate::db::handles::IdentityService;
+use crate::db::handles::ApiIdentityService;
 use crate::db::identity_country::{self, CountryRefusal, Holder};
 
 /// A country picked for one phone number written without its `+` code.
@@ -20,7 +20,7 @@ pub struct SetIdentityCountryRequest {
     /// The service the identity is on. When omitted, the identity is found
     /// on the phone service first, then WhatsApp.
     #[serde(default)]
-    pub service: Option<IdentityService>,
+    pub service: Option<ApiIdentityService>,
     /// The country the number is in, as an ISO 3166-1 alpha-2 code such as
     /// `GB`, which `GET /v1/phone-countries` lists. The number takes the
     /// `+` form that country gives it.
@@ -94,7 +94,7 @@ pub async fn set_identity_country(
         )));
     };
     let address = request.address.trim();
-    let service = request.service.map(HandleService::from);
+    let service = request.service.map(IdentityService::from);
     let handle_id = match whose {
         Whose::Contact(contact_id) => contacts::linked_handle_id(
             conn,

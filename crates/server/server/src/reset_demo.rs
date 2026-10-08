@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
-use message_ir::HandleType;
+use message_ir::IdentityType;
 use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 
@@ -72,7 +72,7 @@ struct DemoOwner {
     display_name: String,
     /// `(raw handle, handle type)` pairs linked into `account_handles`.
     #[serde(default)]
-    handle_specs: Vec<(String, HandleType)>,
+    handle_specs: Vec<(String, IdentityType)>,
     /// Email identities, linked into `account_handles`.
     #[serde(default)]
     emails: Vec<String>,
@@ -770,7 +770,7 @@ enum Vacuum {
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
-/// in one request, `message_crate_push::MAX_IMPORT_BODY_BYTES` (64 MiB).
+/// in one request, `message_crate_import::MAX_IMPORT_BODY_BYTES` (64 MiB).
 /// Every other write on the server waits for the transaction, so it waits
 /// for one batch at most.
 const IMPORT_BATCH_BYTES: u64 = 64 * 1024 * 1024;
@@ -2091,7 +2091,7 @@ async fn seed_demo_account_on_conn(
     // profile's emails are read from these links, so the profile and the
     // identities list name the same addresses (#955, #1027).
     for email in &seed.owner.emails {
-        account_profile::link_account_handle(conn, account_id, email, HandleType::Email).await?;
+        account_profile::link_account_handle(conn, account_id, email, IdentityType::Email).await?;
     }
     Ok(())
 }

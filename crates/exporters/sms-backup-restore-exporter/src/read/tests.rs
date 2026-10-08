@@ -48,7 +48,7 @@ fn reads_then_writes_source_fields_and_attachment() {
     assert_eq!(
         docs[0].messages[0].attachments[0].size_bytes,
         Some(5),
-        "decoded aGVsbG8= is five bytes; size_bytes lets message-crate-push skip re-hashing"
+        "decoded aGVsbG8= is five bytes; size_bytes lets message-crate-import skip re-hashing"
     );
     assert_eq!(
         docs[0].messages[0].source.as_ref().unwrap().fields["attrs"]["extra"],
@@ -429,7 +429,7 @@ fn an_email_sender_is_an_email_identity() {
         participant.identity.as_deref(),
         Some("john1985@example.com")
     );
-    assert_eq!(participant.identity_type, Some(HandleType::Email));
+    assert_eq!(participant.identity_type, Some(IdentityType::Email));
     assert_eq!(
         docs[0].messages[0].sender_identity.as_deref(),
         Some("john1985@example.com")
@@ -443,7 +443,7 @@ fn a_sender_name_is_an_identity_of_type_other() {
     );
     let participant = &docs[0].conversation.participants[0];
     assert_eq!(participant.identity.as_deref(), Some("AMAZON"));
-    assert_eq!(participant.identity_type, Some(HandleType::Other));
+    assert_eq!(participant.identity_type, Some(IdentityType::Other));
 }
 
 /// With no owner on the form, the owner comes from the sent MMS, and a

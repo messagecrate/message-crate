@@ -2,7 +2,7 @@ use super::*;
 use media::MediaMode;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
-    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, HandleType,
+    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IdentityType,
     IrConversationType, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
     MessageGuid, MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
 };
@@ -229,7 +229,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
-                identity_type: Some(HandleType::Phone),
+                identity_type: Some(IdentityType::Phone),
             }],
             stats: ConversationStats {
                 message_count: 1,

@@ -454,8 +454,11 @@ fn a_number_and_an_email_are_two_people() {
     assert_eq!(
         members,
         vec![
-            (Some("+15555550122"), Some(message_ir::HandleType::Phone)),
-            (Some("pat@example.com"), Some(message_ir::HandleType::Email)),
+            (Some("+15555550122"), Some(message_ir::IdentityType::Phone)),
+            (
+                Some("pat@example.com"),
+                Some(message_ir::IdentityType::Email)
+            ),
         ]
     );
     assert_eq!(

@@ -1,12 +1,12 @@
 //! Account rows, profile fields, and message deletion.
 
 use anyhow::{Context, Result, bail};
-use message_ir::{HandleService, HandleType};
+use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
-use crate::db::handles::{IdentityService, normalize_handle, upsert_handle_row};
+use crate::db::handles::{ApiIdentityService, normalize_handle, upsert_handle_row};
 use crate::db::schema;
 
 /// Contact points linked to an account, for profile display.
@@ -31,7 +31,7 @@ pub struct AccountPhone {
     pub address: String,
     /// The services the number is an identity under, `phone` (Text Message)
     /// before `whatsapp`. Never empty.
-    pub services: Vec<IdentityService>,
+    pub services: Vec<ApiIdentityService>,
 }
 
 /// Load the email and phone handles linked to an account. Both default to empty
@@ -58,7 +58,7 @@ async fn account_email_addresses(
          ORDER BY h.normalized",
     )
     .bind(account_id)
-    .bind(HandleType::Email.as_str())
+    .bind(IdentityType::Email.as_str())
     .fetch_all(&mut *conn)
     .await?)
 }
@@ -74,12 +74,12 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
          ORDER BY h.normalized",
     )
     .bind(account_id)
-    .bind(HandleType::Phone.as_str())
+    .bind(IdentityType::Phone.as_str())
     .fetch_all(&mut *conn)
     .await?;
     let mut phones: Vec<AccountPhone> = Vec::new();
     for (address, service) in rows {
-        let service = IdentityService::from(HandleService::parse(&service));
+        let service = ApiIdentityService::from(IdentityService::parse(&service));
         match phones.last_mut() {
             Some(phone) if phone.address == address => phone.services.push(service),
             _ => phones.push(AccountPhone {
@@ -107,7 +107,7 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
 pub async fn account_identity_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
-) -> Result<std::collections::HashSet<(String, HandleType)>> {
+) -> Result<std::collections::HashSet<(String, IdentityType)>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT DISTINCT h.normalized, h.handle_type FROM handles h
          JOIN account_handles ah ON ah.handle_id = h.id
@@ -118,7 +118,7 @@ pub async fn account_identity_keys(
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(normalized, handle_type)| (normalized, HandleType::parse(&handle_type)))
+        .map(|(normalized, handle_type)| (normalized, IdentityType::parse(&handle_type)))
         .collect())
 }
 
@@ -161,7 +161,7 @@ pub async fn link_account_handle(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
 ) -> Result<i64> {
     link_account_handle_with_service(conn, account_id, raw, handle_type, None).await
 }
@@ -172,7 +172,7 @@ pub async fn link_account_handle_with_service(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
 ) -> Result<i64> {
     let (handle_id, _) = upsert_handle_row(conn, account_id, raw, handle_type, service).await?;
@@ -814,7 +814,7 @@ pub async fn upsert_account_phone(
     account_id: i64,
     phone: &str,
 ) -> Result<()> {
-    link_account_handle(conn, account_id, phone, HandleType::Phone).await?;
+    link_account_handle(conn, account_id, phone, IdentityType::Phone).await?;
     Ok(())
 }
 
@@ -830,11 +830,11 @@ pub async fn unlink_account_handle(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
-    service: HandleService,
+    handle_type: IdentityType,
+    service: IdentityService,
 ) -> Result<bool> {
     let normalized = normalize_handle(raw, handle_type, None).key;
-    let is_email = matches!(handle_type, HandleType::Email);
+    let is_email = matches!(handle_type, IdentityType::Email);
     let service = (!is_email).then_some(service.as_str());
     let removed = sqlx::query(
         "DELETE FROM account_handles
@@ -871,11 +871,11 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             "Alice@Example.com",
-            HandleType::Email,
+            IdentityType::Email,
         )
         .await
         .unwrap();
-        link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", HandleType::Phone)
+        link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
             .await
             .unwrap();
 
@@ -886,7 +886,7 @@ mod tests {
             profile.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![IdentityService::Phone],
+                services: vec![ApiIdentityService::Phone],
             }]
         );
     }
@@ -1071,7 +1071,7 @@ mod tests {
             .execute(&mut *conn)
             .await
             .unwrap();
-        link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", HandleType::Phone)
+        link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
             .await
             .unwrap();
         let loaded = load_account_profile(&mut conn, ACCOUNT_ID).await.unwrap();
@@ -1079,7 +1079,7 @@ mod tests {
             loaded.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![IdentityService::Phone],
+                services: vec![ApiIdentityService::Phone],
             }]
         );
         assert_eq!(
@@ -1097,12 +1097,12 @@ mod tests {
             &mut conn,
             ACCOUNT_ID,
             "+1 (555) 555-0100",
-            HandleType::Phone,
+            IdentityType::Phone,
         )
         .await
         .unwrap();
         // Same normalized value with a different raw form reuses the handle row.
-        let b = link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", HandleType::Phone)
+        let b = link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
             .await
             .unwrap();
         assert_eq!(a, b);
@@ -1120,9 +1120,10 @@ mod tests {
                 .unwrap();
         assert_eq!(linked, 1);
         // Email handles are lowercased and stored separately by type.
-        let email = link_account_handle(&mut conn, ACCOUNT_ID, "ME@EXAMPLE.com", HandleType::Email)
-            .await
-            .unwrap();
+        let email =
+            link_account_handle(&mut conn, ACCOUNT_ID, "ME@EXAMPLE.com", IdentityType::Email)
+                .await
+                .unwrap();
         let linked_ids: Vec<i64> =
             sqlx::query_scalar("SELECT handle_id FROM account_handles WHERE account_id = $1")
                 .bind(ACCOUNT_ID)
@@ -1141,7 +1142,7 @@ mod tests {
         fixture.account_with_id(ACCOUNT_ID, "Alice").await;
         let mut conn = fixture.conn().await;
         let handle_id =
-            link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", HandleType::Phone)
+            link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
                 .await
                 .unwrap();
         sqlx::query(
@@ -1194,7 +1195,7 @@ mod tests {
         fixture.account_with_id(ACCOUNT_ID, "Alice").await;
         let mut conn = fixture.conn().await;
         let handle_id =
-            link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", HandleType::Phone)
+            link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
                 .await
                 .unwrap();
         sqlx::query("INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Pat')")

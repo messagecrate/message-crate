@@ -3,7 +3,7 @@ import {
   groupYearRowsToCollapseThreads,
   type CollapsedGroupConversation,
 } from "./groupChatList";
-import type { HandleType } from "./handleKind";
+import type { IdentityType } from "./handleKind";
 import type {
   GroupYearRow,
   TrashedContactItem,
@@ -23,7 +23,7 @@ export type TrashListItem =
       contactId?: number;
       handle: string;
       /** Handle identity type (null when unknown — e.g. contact rows). */
-      handleType?: HandleType | null;
+      handleType?: IdentityType | null;
       displayName: string;
       messageCount: number;
       trashedAt: string;

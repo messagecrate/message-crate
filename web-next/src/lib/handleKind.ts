@@ -1,10 +1,10 @@
 import { stripPhoneFormatting } from "./phoneE164";
 
 /**
- * Handle identity types (mirrors `message_ir::HandleType`).
+ * Handle identity types (mirrors `message_ir::IdentityType`).
  * The type determines normalization and matching for a handle.
  */
-export type HandleType = "phone" | "email" | "username" | "other";
+export type IdentityType = "phone" | "email" | "username" | "other";
 
 /** iMessage-style: any handle containing `@` is treated as email. */
 export function isEmailHandle(handle: string): boolean {
@@ -12,7 +12,7 @@ export function isEmailHandle(handle: string): boolean {
 }
 
 /** Infer a handle type from the handle's shape when the source does not say. */
-export function inferHandleType(raw: string): HandleType {
+export function inferHandleType(raw: string): IdentityType {
   const h = raw.trim();
   if (!h) return "other";
   if (h.includes("@")) return "email";
@@ -32,7 +32,7 @@ export function inferHandleType(raw: string): HandleType {
  * the fabricated `+02079460000` — and matches the review-flagged row the
  * import wrote. Email: lowercased. Username/Other: verbatim (trimmed).
  */
-export function normalizeHandle(raw: string, handleType: HandleType): string {
+export function normalizeHandle(raw: string, handleType: IdentityType): string {
   const trimmed = raw.trim();
   switch (handleType) {
     case "phone": {

@@ -8,7 +8,7 @@ import {
   permanentlyDeleteHandle,
   restoreHandle,
 } from "@/lib/handlesWrite";
-import type { HandleType } from "@/lib/handleKind";
+import type { IdentityType } from "@/lib/handleKind";
 import {
   unauthorizedResponse,
   withAccountHandler,
@@ -93,7 +93,7 @@ export async function DELETE(req: Request) {
   if (handle && rawType !== undefined && !isHandleType(rawType)) {
     return NextResponse.json({ error: "invalid handle_type" }, { status: 400 });
   }
-  const handleType = (rawType as HandleType | undefined) ?? undefined;
+  const handleType = (rawType as IdentityType | undefined) ?? undefined;
 
   if (handle) {
     try {

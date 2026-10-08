@@ -46,7 +46,7 @@ async fn imported(
             conn,
             ACCOUNT,
             raw,
-            HandleType::parse(handle_type),
+            IdentityType::parse(handle_type),
             Some(service),
         )
         .await
@@ -262,7 +262,7 @@ async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
         ("020 7946 0000", "02079460000"),
     ] {
         assert_eq!(
-            phone::normalize_typed_handle(raw, HandleType::Phone).0,
+            phone::normalize_typed_handle(raw, IdentityType::Phone).0,
             key,
             "the load and the import must agree on {raw}"
         );

@@ -11,7 +11,7 @@ use std::io::BufRead;
 use std::path::Path;
 use std::sync::Arc;
 
-use message_ir::{HandleType, valid_filename};
+use message_ir::{IdentityType, valid_filename};
 
 const INSERT_ADDRESS_TOKEN: &str = "insert-address-token";
 const MMS_ADDR_FROM: &str = "137";
@@ -934,7 +934,7 @@ pub fn infer_owner_phones(path: &Path) -> Result<Vec<String>> {
                         if get(&a, "type").trim() == MMS_ADDR_FROM {
                             let raw = get(&a, "address");
                             if let Some(owner) =
-                                address_handle(raw).filter(|h| h.kind() == HandleType::Phone)
+                                address_handle(raw).filter(|h| h.kind() == IdentityType::Phone)
                             {
                                 *counts.entry(owner.into_key()).or_default() += 1;
                             }
@@ -1420,7 +1420,7 @@ mod tests {
         let sender = records[0].sender.as_ref().unwrap();
         assert_eq!(
             (sender.kind(), sender.key()),
-            (HandleType::Email, "john1985@example.com")
+            (IdentityType::Email, "john1985@example.com")
         );
     }
 
@@ -1439,7 +1439,10 @@ mod tests {
         let (records, stats) = parse_reader(xml.as_slice(), None).unwrap();
         assert_eq!(stats.skipped_unknown_address, 0);
         let sender = records[0].sender.as_ref().unwrap();
-        assert_eq!((sender.kind(), sender.key()), (HandleType::Other, "AMAZON"));
+        assert_eq!(
+            (sender.kind(), sender.key()),
+            (IdentityType::Other, "AMAZON")
+        );
     }
 
     #[test]

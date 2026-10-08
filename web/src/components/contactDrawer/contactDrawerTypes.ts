@@ -3,8 +3,8 @@ import { formatIsoDateOnly } from "../../lib/formatDate";
 import type { ConversationKind } from "../../lib/searchQuery";
 import { conversationTotal } from "../identityRows";
 
-export type { HandleService } from "../../lib/handleService";
-export { formatHandleServiceLabel, inferService } from "../../lib/handleService";
+export type { OfferedService } from "../../lib/offeredService";
+export { formatOfferedServiceLabel, inferService } from "../../lib/offeredService";
 
 /** Lightweight row data so the drawer can paint before the detail API returns. */
 export type ContactPreview = {

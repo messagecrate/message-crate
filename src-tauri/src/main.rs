@@ -15,6 +15,7 @@ mod commands;
 mod export_directories;
 mod local_server;
 mod run_directories;
+mod run_logs;
 mod state;
 
 use export_directories::ExportDirectories;
@@ -85,6 +86,10 @@ fn main() {
             commands::staging::set_staging_root,
             commands::staging::create_run_dir,
             commands::staging::import_run_log,
+            commands::run_logs::start_import_run_log,
+            commands::run_logs::list_import_run_logs,
+            commands::run_logs::read_import_run_log_lines,
+            commands::run_logs::read_import_run_log,
             commands::staging::summarize_staging,
             commands::staging::transcode_staging,
             commands::staging::delete_run_dir,

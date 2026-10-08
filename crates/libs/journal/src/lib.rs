@@ -155,7 +155,7 @@ pub fn unreadable_line_reason(error: &serde_json::Error) -> String {
 /// [`append`] either lands before the read or after the rewrite, never between
 /// them.
 ///
-/// Unreadable lines are skipped silently during the read, in the push journal
+/// Unreadable lines are skipped silently during the read, in the import journal
 /// and the export journal alike.
 ///
 /// # Errors

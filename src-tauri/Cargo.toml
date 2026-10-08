@@ -26,6 +26,7 @@ chrono = { version = "0.4.44", default-features = false, features = ["clock", "s
 dirs = "7"
 open = "5"
 message-crate-core = { path = "../crates/core/message-crate-core" }
+message-crate-log-lines = { path = "../crates/libs/log-lines" }
 message-ir-format = { path = "../crates/libs/ir-format" }
 message-staging = { path = "../crates/libs/staging" }
 media = { path = "../crates/libs/media" }
@@ -39,7 +40,7 @@ whatsapp-exporter = { path = "../crates/exporters/whatsapp-exporter", default-fe
 imessage-ir-exporter = { path = "../crates/exporters/imessage-ir-exporter", default-features = false }
 ios-backup = { path = "../crates/libs/ios-backup" }
 message-reexport = { path = "../crates/libs/reexport" }
-message-crate-push = { path = "../crates/libs/push" }
+message-crate-import = { path = "../crates/libs/import" }
 message-crate-export = { path = "../crates/libs/export" }
 message-crate-http = { path = "../crates/libs/http" }
 message-crate-serve-protocol = { path = "../crates/libs/serve-protocol" }

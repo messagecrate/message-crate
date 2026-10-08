@@ -6,7 +6,7 @@
 //! - The **Logs Directory** holds each Import Run's log, named for the run,
 //!   and keeps it after the run's directory in the Staging Directory is
 //!   deleted. Staging, Media and Upload all write into it ([`RunLog`] for the
-//!   first two, the push library's own writer for the Upload). Nothing
+//!   first two, the import library's own writer for the Upload). Nothing
 //!   deletes a log.
 //! - The **Scratch Directory** holds what a run writes that is neither its
 //!   output nor kept: the attachment spool and the databases the Apple
@@ -17,6 +17,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+
+use message_crate_core::{RunIssue, RunLogAccount, RunLogLevel, format_run_log};
 
 use crate::export_directories::{self, EXPORT_DIRECTORY_NAME};
 
@@ -50,7 +52,8 @@ pub fn import_run_log(logs_dir: &Path, run_dir: &Path) -> PathBuf {
 }
 
 /// An Import Run's log, open for Staging or Media to add lines to. The
-/// Upload's own writer appends to the same file.
+/// Upload's own writer appends to the same file. Every line carries its time
+/// and level ([`message_crate_core::format_run_log`]).
 #[derive(Debug, Clone)]
 pub struct RunLog {
     /// The log, or `None` when it could not be opened: a run goes on without
@@ -73,17 +76,39 @@ impl RunLog {
     /// Add the error that stopped the stage to the log, as the window shows
     /// it.
     pub fn error(&self, error: &anyhow::Error) {
-        self.line(&format!("Error: {error:#}"));
+        self.write(RunLogLevel::Error, &format!("{error:#}"));
     }
 
-    /// Add `line` to the log. A line that cannot be written is dropped: the
-    /// window has it.
+    /// Say which account runs the run, on which server: the line the Logs
+    /// panel reads to show an account only its own runs' logs.
+    pub fn account(&self, account: &RunLogAccount) {
+        self.write(RunLogLevel::Info, &account.line_text());
+    }
+
+    /// Add `line` to the log, as something the run did.
     pub fn line(&self, line: &str) {
+        self.write(RunLogLevel::Info, line);
+    }
+
+    /// Add an Import Errors row to the log: a skip as a warning, an error as
+    /// an error, and a note as something the run did.
+    pub fn issue(&self, issue: &RunIssue) {
+        let level = match issue.kind.as_str() {
+            "error" => RunLogLevel::Error,
+            "skip" => RunLogLevel::Warn,
+            _ => RunLogLevel::Info,
+        };
+        self.write(level, &format!("{}: {}", issue.item, issue.reason));
+    }
+
+    /// Add `text` at `level`. A line that cannot be written is dropped: the
+    /// window has it.
+    fn write(&self, level: RunLogLevel, text: &str) {
         if let Some(file) = &self.file {
             let mut file = file
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let _ = writeln!(file, "{line}");
+            let _ = file.write_all(format_run_log(level, text).as_bytes());
             let _ = file.flush();
         }
     }
@@ -102,6 +127,8 @@ pub fn sweep_at_start_up(app_data_dir: &Path) {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+
+    use message_crate_core::RunLogLevel;
 
     use super::{RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up};
 
@@ -138,9 +165,22 @@ mod tests {
         RunLog::open(logs.path(), run).line("Converting and compressing attachments…");
 
         let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
+        let lines: Vec<_> = text
+            .lines()
+            .map(|raw| {
+                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
+                (line.level, line.text)
+            })
+            .collect();
         assert_eq!(
-            text,
-            "Conversations: 3\nConverting and compressing attachments…\n"
+            lines,
+            [
+                (RunLogLevel::Info, "Conversations: 3".to_string()),
+                (
+                    RunLogLevel::Info,
+                    "Converting and compressing attachments…".to_string()
+                ),
+            ]
         );
     }
 

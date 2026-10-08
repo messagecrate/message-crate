@@ -7,7 +7,7 @@ import {
   resetDb,
   usefulNameAlias,
 } from "./dbCore";
-import type { HandleType } from "./handleKind";
+import type { IdentityType } from "./handleKind";
 import { formatPhoneDisplay } from "./phoneE164";
 import {
   contactMessageSourceCountsForConversations,
@@ -30,7 +30,7 @@ export function listTrashedHandles(): UnassignedHandle[] {
 
 export type GroupParticipantHandle = {
   handle: string;
-  handleType: HandleType | null;
+  handleType: IdentityType | null;
   nameAlias: string | null;
 };
 
@@ -81,7 +81,7 @@ export function listUnassignedGroupParticipantHandles(): GroupParticipantHandle[
 
   return rows.map((r) => ({
     handle: r.handle.trim(),
-    handleType: (r.handle_type as HandleType | null) ?? null,
+    handleType: (r.handle_type as IdentityType | null) ?? null,
     nameAlias: usefulNameAlias(r.name_alias, r.handle),
   }));
 }
@@ -156,7 +156,7 @@ function listHandleSection(section: "unassigned" | "trash"): UnassignedHandle[] 
       const letter = ch >= "A" && ch <= "Z" ? ch : "#";
       return {
         handle: r.handle,
-        handleType: (r.handle_type as HandleType | null) ?? null,
+        handleType: (r.handle_type as IdentityType | null) ?? null,
         displayName,
         nameAlias: hintUseful,
         messageCount: r.message_count,
@@ -182,10 +182,10 @@ function listHandleSection(section: "unassigned" | "trash"): UnassignedHandle[] 
 export function unassignedThreadsBundle(
   handle: string,
   source?: string | null,
-  opts?: { includeTrashed?: boolean; handleType?: HandleType | null },
+  opts?: { includeTrashed?: boolean; handleType?: IdentityType | null },
 ): {
   handle: string;
-  handleType: HandleType | null;
+  handleType: IdentityType | null;
   yearly: YearThread[];
   groupChats: GroupChatThread[];
   messageSources: string[];
@@ -241,7 +241,7 @@ export function unassignedThreadsBundle(
 
   return {
     handle: trimmed,
-    handleType: (conv.handle_type as HandleType | null) ?? null,
+    handleType: (conv.handle_type as IdentityType | null) ?? null,
     yearly: contactYearlyThreadsForPhones(phones, source, {
       includeTrashed: opts?.includeTrashed,
     }),

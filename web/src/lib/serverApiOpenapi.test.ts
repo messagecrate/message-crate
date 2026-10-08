@@ -38,6 +38,7 @@ vi.mock("./api", () => ({
     post: vi.fn().mockResolvedValue({}),
     postRaw: vi.fn().mockResolvedValue({}),
     postText: vi.fn().mockResolvedValue(""),
+    getText: vi.fn().mockResolvedValue(""),
     put: vi.fn().mockResolvedValue({}),
     patch: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
@@ -75,12 +76,16 @@ const DOCUMENTED = Object.entries(openapi.paths).map(([template, item]) => ({
     ),
 }));
 
-/** `postRaw` is a POST that carries its own media type; `postText` is one that reads a file back. */
+/**
+ * `postRaw` is a POST that carries its own media type; `postText` and
+ * `getText` read a file back.
+ */
 const VERB_METHOD: Record<string, string> = {
   get: "GET",
   post: "POST",
   postRaw: "POST",
   postText: "POST",
+  getText: "GET",
   put: "PUT",
   patch: "PATCH",
   delete: "DELETE",
@@ -120,6 +125,17 @@ const EXERCISED: Record<string, () => unknown> = {
   updateServerSettings: () => serverApi.updateServerSettings({ public_registration: true }),
   getServerStorage: () => serverApi.getServerStorage(),
   getDemoAccount: () => serverApi.getDemoAccount(),
+  listServerLogLines: () =>
+    serverApi.listServerLogLines(
+      every<Parameters<typeof serverApi.listServerLogLines>[0]>({
+        level: "warn",
+        text: "locked",
+        after: 4294967296,
+        limit: 200,
+      }),
+    ),
+  listServerLogFiles: () => serverApi.listServerLogFiles(),
+  getServerLogFile: () => serverApi.getServerLogFile(2),
   replaceDemoAccount: () => serverApi.replaceDemoAccount({ size: "medium" }),
 
   // Accounts

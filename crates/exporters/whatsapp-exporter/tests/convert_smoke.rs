@@ -447,7 +447,7 @@ fn a_lid_chat_has_its_id_as_an_other_participant() {
         .collect();
     assert_eq!(
         participants,
-        vec![(Some("123456@lid"), Some(message_ir::HandleType::Other))]
+        vec![(Some("123456@lid"), Some(message_ir::IdentityType::Other))]
     );
     assert_eq!(
         doc.messages[0].sender_identity.as_deref(),

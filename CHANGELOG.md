@@ -32,6 +32,20 @@ released versions carry their date on the heading.
   it is and asks before it merges the two, their one-to-one conversations
   with them (#1676).
 
+- 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
+  logs on this computer.** The owner picks the server's log or, in the
+  desktop app, any Import Run's log on this computer, whoever ran it. An
+  account opens its own run's log from the run's row in Settings → Storage,
+  in the desktop app on the computer that ran the import. Both read the same
+  way: newest line first, older lines as the list scrolls, a level filter
+  (errors, warnings and up, or everything; it opens at warnings and up), a
+  search that narrows the lines as it is typed, and a download of the log as
+  it is. Each line of an Import Run's log now carries its time and level, the
+  run's Import Errors rows are in it, and its first line names the run, the
+  account that ran it, the server's address and the Message Crate's id.
+  `GET /v1/server` answers that id, which the server writes when its
+  database is made, so two Message Crates at one address, such as the
+  desktop app's own server and a Docker one, are told apart (#1665).
 - 2026-10-06: **A message recorded once to the second and once to the
   millisecond shows once.** Every message file now says whether each
   message's time has milliseconds or only whole seconds, as its backup app
@@ -59,7 +73,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -77,6 +92,8 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
+  on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
   headings.** The summary at the end of an import or a Convert gives its
   Import Errors under an "Import Errors" heading and its notes under a
@@ -111,6 +128,11 @@ released versions carry their date on the heading.
   again. That record now has a new name; one with the old name is ignored and
   can be deleted, and attachments already in the directory are still not
   fetched again.
+- 2026-10-07: **An Upload's report says Import.** The report an Upload
+  writes beside its run, and the name the server keeps for the program that
+  ran each Import Run the desktop app starts, now say import where they said
+  push, the word Message Crate no longer uses for an Import Run. A report
+  with the old name is not read and can be deleted (#1926).
 
 ### Fixes
 
@@ -175,6 +197,14 @@ released versions carry their date on the heading.
   full form. A ten-digit number without `+` is not taken for a US number
   either: an import of a US phone's backup states the United States as the
   phone's country to read `555 555 0100` as `+1 555 555 0100` (#1676).
+- 2026-10-08: **Two reads of encrypted iPhone backups at once no longer
+  break each other.** Opening an encrypted backup decrypts its file list to
+  one fixed name in the computer's temporary directory, so two reads running
+  together, such as an Apple Messages import and a WhatsApp import from
+  encrypted backups, wrote over each other's copy and one failed. The file
+  list was also left behind when a read stopped on an error. It now goes into
+  the read's own directory under the Scratch Directory, which is deleted when
+  the read ends (#788).
 
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored
@@ -271,6 +301,22 @@ released versions carry their date on the heading.
   export written from Message Crate keeps the milliseconds too. A backup
   that records whole seconds, such as iMazing or OpenExtract, lists the
   messages of one second in the order the backup gives them, as before.
+
+#### Contacts and identities
+
+- 2026-10-08: **Adding or removing an identity updates the conversations with
+  yourself already imported.** Notes imported before your number was added as an
+  identity still listed you among the conversation's people. They also kept you
+  as your own contact, in **Contacts** and under **Unknown**, while the
+  conversation was already titled with the account's name. Notes imported while
+  the number was an identity showed the bare address once it was removed, with
+  no person or contact behind it. Saving the identities now stops listing you
+  among a conversation's people, groups included, and the other people stay. The
+  contact an import made for you goes too, unless it has a name, is in the Trash
+  or in a Contact Group you made, or something else refers to it. Removing the
+  identity again lists you as before, with the name the backup gave, and a
+  conversation that is no longer with yourself gets its person back, with a
+  contact. Messages are not changed (#1662).
 
 ### Upgrading
 

@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
-use message_ir::{HandleService, HandleType, nonempty, trimmed};
+use message_ir::{IdentityService, IdentityType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
@@ -254,11 +254,11 @@ pub(super) struct StagingInserts {
     /// Handle ids of the account holder's own addresses met in this run, by
     /// address and service. Apart from `handles`, whose entries each have a
     /// contact: an owner's handle never gets one (ADR-0015).
-    owners: HashMap<(String, HandleService), i64>,
+    owners: HashMap<(String, IdentityService), i64>,
     /// The account's identities, as `(normalized address, handle type)`.
     /// A participant at one of them is the holder, who is never a
     /// participant (ADR-0015, #1093).
-    identities: HashSet<(String, HandleType)>,
+    identities: HashSet<(String, IdentityType)>,
 }
 
 impl StagingInserts {
@@ -269,7 +269,7 @@ impl StagingInserts {
     pub(super) fn new(
         account_id: i64,
         import_id: Option<i64>,
-        identities: HashSet<(String, HandleType)>,
+        identities: HashSet<(String, IdentityType)>,
         phone_country: Option<&'static phone::Country>,
     ) -> Self {
         Self {
@@ -285,7 +285,7 @@ impl StagingInserts {
 /// One participant as the conversation header records it: handle (the name,
 /// typed `Other`, for a person named with no address), the name this backup
 /// used for them, and the handle type when the source said.
-type StagedParticipant = (String, Option<String>, Option<HandleType>);
+type StagedParticipant = (String, Option<String>, Option<IdentityType>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
 ///
@@ -482,7 +482,7 @@ impl FileStaging<'_> {
                 .copied()
                 .unwrap_or_else(|| handle_type_on(&conversation.chat_identifier, None, service))
         } else {
-            HandleType::Other
+            IdentityType::Other
         };
         let (chat_handle_id, flagged, chat_cached) = upsert_handle_row_cached(
             self.tx,
@@ -622,8 +622,8 @@ impl FileStaging<'_> {
 /// service carries ([`handle_type_on`]).
 fn header_handle_types(
     participants: &[StagedParticipant],
-    service: HandleService,
-) -> HashMap<String, HandleType> {
+    service: IdentityService,
+) -> HashMap<String, IdentityType> {
     participants
         .iter()
         .map(|(handle, _, handle_type)| {
@@ -637,16 +637,16 @@ fn header_handle_types(
 
 /// The service of chat and participant handles: the conversation's own hint,
 /// else WhatsApp for a WhatsApp export, else phone.
-fn service_for(header_service: Option<&str>, source: &str) -> HandleService {
+fn service_for(header_service: Option<&str>, source: &str) -> IdentityService {
     header_service.map_or_else(
         || {
             if source.eq_ignore_ascii_case("whatsapp") {
-                HandleService::Whatsapp
+                IdentityService::Whatsapp
             } else {
-                HandleService::Phone
+                IdentityService::Phone
             }
         },
-        HandleService::parse,
+        IdentityService::parse,
     )
 }
 
@@ -692,7 +692,7 @@ async fn insert_participant(
     stmts: &mut StagingInserts,
     conversation_id: i64,
     (handle, name_alias, handle_type): StagedParticipant,
-    service: HandleService,
+    service: IdentityService,
     counts: &mut ImportCounts,
 ) -> Result<()> {
     // The source's type, else the shape, within what the service carries.
@@ -758,8 +758,8 @@ async fn resolve_message_rows(
     stmts: &mut StagingInserts,
     prepared: Vec<(MessageRecord, Vec<PreparedAttachment>)>,
     first_sort_order: i64,
-    service: HandleService,
-    header_types: &HashMap<String, HandleType>,
+    service: IdentityService,
+    header_types: &HashMap<String, IdentityType>,
     counts: &mut ImportCounts,
 ) -> Result<Vec<PendingStagingMessage>> {
     let mut rows = Vec::with_capacity(prepared.len());
@@ -769,7 +769,10 @@ async fn resolve_message_rows(
         } else {
             clean_body(msg.text.as_deref())
         };
-        let sender_service = msg.service.as_deref().map_or(service, HandleService::parse);
+        let sender_service = msg
+            .service
+            .as_deref()
+            .map_or(service, IdentityService::parse);
         let sender_handle_id = resolve_incoming_sender_handle(
             tx,
             &mut stmts.handles,
@@ -817,7 +820,7 @@ async fn resolve_owner_handle(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     address: Option<&str>,
-    service: HandleService,
+    service: IdentityService,
 ) -> Result<Option<i64>> {
     let Some(address) = address else {
         return Ok(None);
@@ -844,7 +847,7 @@ struct PendingStagingMessage {
     attachments: Vec<PreparedAttachment>,
     sender_handle_id: Option<i64>,
     owner_handle_id: Option<i64>,
-    sender_service: HandleService,
+    sender_service: IdentityService,
     body: Option<String>,
     sort_order: i64,
 }

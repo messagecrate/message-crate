@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::Result;
-use message_crate_core::{check_cancel, count_of};
+use message_crate_core::{RunLogLevel, check_cancel, count_of};
 use message_crate_http::HttpError;
 
 use crate::directory::file_label;
@@ -25,7 +25,7 @@ use crate::progress::{FileStatus, Reporter};
 use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
-use crate::run::{MAX_IMPORT_BODY_BYTES, PushConfig, Session};
+use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
 
 /// If the pending message batch is at least this many messages, start its HTTP
 /// import now instead of waiting until the next chat is prepared.
@@ -214,7 +214,7 @@ impl BatchError {
 
 /// Owns the import-side state of one Upload.
 pub(crate) struct ImportPipeline<'a> {
-    cfg: &'a PushConfig,
+    cfg: &'a ImportConfig,
     session: &'a Session,
     journal: &'a Mutex<SharedJournal>,
     /// The Import Run every batch is posted into. Whether the run replaces
@@ -237,7 +237,7 @@ pub(crate) struct ImportPipeline<'a> {
 impl<'a> ImportPipeline<'a> {
     /// An empty pipeline for `total` conversation files.
     pub(crate) fn new(
-        cfg: &'a PushConfig,
+        cfg: &'a ImportConfig,
         session: &'a Session,
         journal: &'a Mutex<SharedJournal>,
         import_id: i64,
@@ -531,12 +531,15 @@ impl<'a> ImportPipeline<'a> {
         if let Err(error) = &outcome.response
             && error.session_refused
         {
-            out.log(&format!(
-                "{} ({} from {})",
-                error.message,
-                count_of(outcome.message_count as u64, "message", "messages"),
-                outcome.batch.source
-            ));
+            out.log_at(
+                RunLogLevel::Warn,
+                &format!(
+                    "{} ({} from {})",
+                    error.message,
+                    count_of(outcome.message_count as u64, "message", "messages"),
+                    outcome.batch.source
+                ),
+            );
             return Ok(false);
         }
         let represented = outcome.batch.file_indexes();
@@ -601,7 +604,7 @@ impl<'a> ImportPipeline<'a> {
                     .failed
                     .saturating_add(outcome.message_count as u64);
                 let error = self.describe_batch_error(&outcome.batch, error);
-                out.log(&format!("{error} ({stats})"));
+                out.log_at(RunLogLevel::Error, &format!("{error} ({stats})"));
                 for &index in &represented {
                     let Some(tracker) = self.trackers[index].as_mut() else {
                         continue;

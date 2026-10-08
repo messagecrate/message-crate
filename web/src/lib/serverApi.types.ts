@@ -1365,8 +1365,9 @@ export interface paths {
         };
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
-         * @description Also reports the server's Build, its Schema Fingerprint, whether the Demo
-         *     Account exists, and the attachment size limit.
+         * @description Also reports this Message Crate's id, the server's Build, its Schema
+         *     Fingerprint, whether the Demo Account exists, and the attachment size
+         *     limit.
          */
         get: operations["get_server"];
         put?: never;
@@ -2524,7 +2525,7 @@ export interface components {
             stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as
-             *     `message-crate-push`, stored on the run as given. Null when the
+             *     `message-crate-import`, stored on the run as given. Null when the
              *     request leaves it out.
              */
             tool?: string | null;
@@ -3231,7 +3232,7 @@ export interface components {
              *     while no Review has stored one.
              */
             summary: unknown;
-            /** @description Importing tool, e.g. `message-crate-push`. */
+            /** @description Importing tool, e.g. `message-crate-import`. */
             tool: string | null;
             /**
              * Format: int64
@@ -3712,7 +3713,7 @@ export interface components {
             started_at: string;
             /** @description Lifecycle status. */
             status: components["schemas"]["ImportStatus"];
-            /** @description Importing tool, e.g. `message-crate-push`. */
+            /** @description Importing tool, e.g. `message-crate-import`. */
             tool: string | null;
             /**
              * Format: int64
@@ -4470,7 +4471,7 @@ export interface components {
                  *     while no Review has stored one.
                  */
                 summary: unknown;
-                /** @description Importing tool, e.g. `message-crate-push`. */
+                /** @description Importing tool, e.g. `message-crate-import`. */
                 tool: string | null;
                 /**
                  * Format: int64
@@ -4801,7 +4802,7 @@ export interface components {
                 started_at: string;
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ImportStatus"];
-                /** @description Importing tool, e.g. `message-crate-push`. */
+                /** @description Importing tool, e.g. `message-crate-import`. */
                 tool: string | null;
                 /**
                  * Format: int64
@@ -5133,6 +5134,14 @@ export interface components {
              *     ends.
              */
             demo_account: boolean;
+            /**
+             * @description This Message Crate's id: 32 random hexadecimal digits written when
+             *     its database is made, and never changed. An app tells two Message
+             *     Crates at one address apart by it, such as one rebuilt with
+             *     `create-database`, whose account and Import Run ids start again at
+             *     the same numbers.
+             */
+            id: string;
             /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.

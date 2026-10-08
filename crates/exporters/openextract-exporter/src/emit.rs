@@ -9,7 +9,7 @@ use message_crate_core::{
     project_conversation,
 };
 use message_ir::{
-    ConversationKey, ExportMeta, HandleType, IrConversationType, IrParticipant, IrService,
+    ConversationKey, ExportMeta, IdentityType, IrConversationType, IrParticipant, IrService,
     IrSource, NAMELESS_CHAT_ID, PendingConversation, PendingMessage, ProjectionHooks,
     orphaned_chat_id,
 };
@@ -398,7 +398,7 @@ fn other_parties<'a>(rows: &[&'a RawRow]) -> Vec<&'a str> {
 /// A sender's address, classified by [`Handle::parse`]: a phone number or an
 /// email address. `None` for a name.
 fn address(sender: &str) -> Option<Handle> {
-    Handle::parse(sender).filter(|handle| handle.kind() != HandleType::Other)
+    Handle::parse(sender).filter(|handle| handle.kind() != IdentityType::Other)
 }
 
 /// A group member: their address, or the name the source gives in its place.

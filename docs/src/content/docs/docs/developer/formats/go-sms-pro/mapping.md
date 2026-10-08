@@ -16,7 +16,7 @@ Shared model: [message-ir](/docs/developer/architecture/common-message/). CSV pr
 
 Source XML/PDU → `ConversationDocument` → [`message_ir_format::FormatSink`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/format_sink.rs).
 
-The desktop app's Import screen runs this exporter and always writes JSON Lines, one file per conversation, because Import and Push read conversation files in that form (`src-tauri/src/commands/extract.rs`).
+The desktop app's Import screen runs this exporter and always writes JSON Lines, one file per conversation, because Import reads conversation files in that form (`src-tauri/src/commands/extract.rs`).
 Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
 
 In CSV form: one file per conversation. PDU media under `attachments/` when copying/embedding. Filenames: 1:1 → `+E164.csv`; untitled groups → `group_+A_+B_….csv` (max 10 phones, then a hash). The XML form is a single SyncTech `smses.xml`.

@@ -975,7 +975,7 @@ async fn the_limits_serve_starts_with_never_fail_on_a_limit_below_the_part_size(
     assert_eq!(limits.part_size, 1024);
 }
 
-/// The multipart upload over HTTP, the way `message-crate-push` sends a large file:
+/// The multipart upload over HTTP, the way `message-crate-import` sends a large file:
 /// open the upload, send each part, complete it, and read the asset back.
 /// Each step is tested alone in `asset_uploads`; this proves the routes join
 /// up, that the part size the server hands out is the one it holds a part to,

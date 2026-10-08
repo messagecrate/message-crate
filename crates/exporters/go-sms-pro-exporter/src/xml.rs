@@ -309,7 +309,7 @@ fn push_bad_addr(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::HandleType;
+    use message_ir::IdentityType;
 
     #[test]
     fn parses_sent_and_received() {
@@ -417,13 +417,13 @@ mod tests {
         let (msgs, stats) = received_from("ann2020@example.com");
         assert_eq!(
             (msgs[0].other.kind(), msgs[0].other.key()),
-            (HandleType::Email, "ann2020@example.com")
+            (IdentityType::Email, "ann2020@example.com")
         );
         assert_eq!(stats.skipped_unknown_address, 0);
         let (msgs, stats) = received_from("AMAZON");
         assert_eq!(
             (msgs[0].other.kind(), msgs[0].other.key()),
-            (HandleType::Other, "AMAZON")
+            (IdentityType::Other, "AMAZON")
         );
         assert_eq!(stats.skipped_unknown_address, 0);
     }

@@ -18,4 +18,5 @@ pub mod commands;
 pub mod export_directories;
 pub mod local_server;
 pub mod run_directories;
+pub mod run_logs;
 pub mod state;

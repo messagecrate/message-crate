@@ -222,6 +222,41 @@ export function updateServerSettings(
   return apiClient.patch<Schema["ServerSettings"]>("/v1/server/settings", body);
 }
 
+/** One line of the server's log. */
+export type LogLine = Schema["LogLine"];
+/** How severe a line of a log is. */
+export type LogLevel = Schema["LogLevel"];
+/** A page of a log's lines, newest first. */
+export type LogLinesPage = Schema["ListLogLinesResponse"];
+/** One file of the server's log. */
+export type LogFile = Schema["LogFile"];
+
+/**
+ * A page of the server's log, newest first: the lines at `level` and more
+ * severe, holding `text`, older than the line whose id is `after`. The
+ * owner's alone (`docs/architecture/server-log.md`).
+ */
+export function listServerLogLines(
+  params: { level?: LogLevel; text?: string; after?: number; limit?: number },
+  opts?: RequestOptions,
+): Promise<LogLinesPage> {
+  return apiClient.get<LogLinesPage>(withQuery("/v1/server/log-lines", query(params)), opts);
+}
+
+/**
+ * The files of the server's log, newest first. The server keeps at most five
+ * (`docs/architecture/server-log.md`), so one page holds them all.
+ */
+export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile[]> {
+  const page = await apiClient.get<Schema["Page_LogFile"]>("/v1/server/log-files", opts);
+  return page.items;
+}
+
+/** One file of the server's log, whole, as text. */
+export function getServerLogFile(id: number, opts?: RequestOptions): Promise<string> {
+  return apiClient.getText(`/v1/server/log-files/${id}`, opts);
+}
+
 /** Where the Demo Account stands: absent, building, ready, or failed. */
 export function getDemoAccount(opts?: RequestOptions): Promise<Schema["DemoAccount"]> {
   return apiClient.get<Schema["DemoAccount"]>("/v1/server/demo-account", opts);

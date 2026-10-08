@@ -1,5 +1,5 @@
 import type { SortDescriptor } from "react-aria-components";
-import { formatHandleServiceLabel } from "../lib/handleService";
+import { formatOfferedServiceLabel } from "../lib/offeredService";
 
 /**
  * One identity as either screen shows it: the address, the service it is on,
@@ -41,7 +41,7 @@ type SortColumn = (typeof SORT_COLUMNS)[number];
 function sortKey(row: IdentityRow, column: SortColumn): string | number {
   switch (column) {
     case "service":
-      return formatHandleServiceLabel(row.address, row.service).toLowerCase();
+      return formatOfferedServiceLabel(row.address, row.service).toLowerCase();
     case "address":
       return row.address.toLowerCase();
     case "start_date":

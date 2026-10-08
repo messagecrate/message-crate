@@ -218,22 +218,27 @@ async function requestRaw<T>(
 }
 
 /**
- * POST a JSON body to a route that answers a file's text instead of JSON, and
- * return that text. A failure is still a problem document, read as everywhere
- * else.
+ * Ask a route that answers a file's text instead of JSON, and return that
+ * text: a POST with a JSON body, or a GET with none. A failure is still a
+ * problem document, read as everywhere else.
  */
-async function requestText(path: string, body: unknown, signal?: AbortSignal): Promise<string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...appHeaders(),
-  };
+async function requestText(
+  method: "GET" | "POST",
+  path: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<string> {
+  const headers: Record<string, string> = { ...appHeaders() };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+  }
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
   const res = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
+    method,
     headers,
-    body: JSON.stringify(body),
+    body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
   const text = await res.text();
@@ -262,7 +267,11 @@ export const apiClient = {
   },
   /** POST a JSON body and read the answer as text: a file the server writes. */
   postText(path: string, body: unknown, opts?: ApiRequestOptions): Promise<string> {
-    return requestText(path, body, opts?.signal);
+    return requestText("POST", path, body, opts?.signal);
+  },
+  /** GET a route that answers a file's text instead of JSON. */
+  getText(path: string, opts?: ApiRequestOptions): Promise<string> {
+    return requestText("GET", path, undefined, opts?.signal);
   },
   post<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
     return request<T>("POST", path, body, opts?.signal);

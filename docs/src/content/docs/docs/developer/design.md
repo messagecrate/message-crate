@@ -20,7 +20,7 @@ message-crate
 │   ├── core/               # shared import/export job settings used by the desktop app
 │   ├── exporters/          # parse iMessage, WhatsApp, SMS, and other backups into JSONL
 │   ├── libs/               # shared code the exporters and the server use (format, contacts,
-│   │                       #   media, message-crate-push, message-crate-export)
+│   │                       #   media, message-crate-import, message-crate-export)
 │   └── server/             # message-crate-server (API + SQLite) and demo-seed (sample inbox)
 ├── docker/                 # image and Compose file that look like a published install
 ├── docs/                   # messagecrate.app (User Guide, Developer docs, landing page)
@@ -58,7 +58,7 @@ and its amendment.
 | `go-sms-pro-exporter`, `imazing-exporter`, `openextract-exporter`, `sms-backup-plus-exporter` | `crates/exporters/` | Rescue / experimental extract |
 | `ios-backup` | `crates/libs/ios-backup/` | Check an iPhone backup before an import and decrypt one of its domains, through `imessage-reader` |
 | `message-reexport` | `crates/libs/reexport/` | Convert an existing export directory |
-| `message-crate-push` / `message-crate-export` | `crates/libs/` | JSONL → running server / server → JSONL |
+| `message-crate-import` / `message-crate-export` | `crates/libs/` | JSONL → running server / server → JSONL |
 
 C4 PlantUML sources and SVG exports live in [`docs/src/assets/architecture/`](https://github.com/messagecrate/message-crate/tree/main/docs/src/assets/architecture). Edit the `.puml` file, export SVG into the same directory, and commit both in one change.
 
@@ -154,7 +154,7 @@ sequenceDiagram
 
 #### How an import runs
 
-Messages and attachments are uploaded to the server using the `message-crate-push` library.
+Messages and attachments are uploaded to the server using the `message-crate-import` library.
 
 ```mermaid
 sequenceDiagram

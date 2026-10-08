@@ -149,7 +149,12 @@ One installation of the product: the thing a person claims, owns, and logs
 into. It holds many accounts and their messages, and each account's data is
 isolated from the others. The product carries the same name. "A Message
 Crate" or "this Message Crate" is one installation; "Message Crate" with no
-article is the product.
+article is the product. **The Message Crate's id** is 32 random hexadecimal
+digits the server writes when its database is made and never changes, and
+`GET /v1/server` answers it as `id`. It tells two Message Crates apart where
+their address and their integer ids cannot: two answering at one address, or
+one rebuilt with `create-database`, which counts its accounts and Import Runs
+from the same numbers again.
 _Avoid_: Vault, Crate on its own, Instance. The server is the running process
 and the database is the store; neither is a name for the installation.
 
@@ -225,7 +230,12 @@ Every identity a conversation or a message uses is on a contact; one taken
 off its contact goes to a new contact with no name.
 
 Handle is the word in the database and the server code over it for the same
-thing; the conversation file and the HTTP API say identity.
+thing; the conversation file and the HTTP API say identity. The shared enums are
+named for the file, `IdentityType` and `IdentityService`, and the server's
+handle code uses them under those names. The HTTP API's own enum is
+`ApiIdentityService`, published as `IdentityService`: it takes only `phone`
+and `whatsapp` and refuses any other word, where the shared enum reads any
+other word as `phone`.
 _Avoid_: Handle, Address, Number
 
 **Participant**:
@@ -503,7 +513,10 @@ _Avoid_: Export Folder, Downloads, Output Directory
 The directory where the desktop app keeps each Import Run's log, named for
 the run, such as `import-iphone-ios-261004-143000.log`. A log stays on the
 computer that ran the import and is never deleted, so it outlives the run's
-directory in the Staging Directory. It belongs in the Message Crate
+directory in the Staging Directory. Its first line names the run, the
+account that ran it, the server's address and the Message Crate's id. The
+owner reads every log in it, and an account the logs of its own runs, in
+the desktop app on that computer. It belongs in the Message Crate
 Directory; until #1053 builds that, it is `logs` in the operating system's
 app-data directory. The server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory

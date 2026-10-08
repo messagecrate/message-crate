@@ -20,7 +20,7 @@ Open every doc comment with a single sentence stating what the item is or does. 
 Give every module a `//!` intro that states its responsibility or invariants. Keep any contracts it enumerates (events, formats) complete and current.
 
 - `crates/server/server/src/operation_lock.rs`, the module intro — "Cross-process exclusion between the HTTP server and database replacement." — Good: the first line states the invariant, and the next paragraph names the two commands it keeps apart and how long the lock is held.
-- `src-tauri/src/commands/mod.rs`, the module intro — "Progress, log lines, issues, and errors are sent as Tauri events (`extract:log`, `extract:progress`, `extract:issue`, `extract:finished`, `extract:error`)." — Good: the list names every event the commands emit, including `extract:issue` from `push.rs`, which the web layer listens for. The names themselves live as constants in `src-tauri/src/commands/events.rs`, so a new event has one place to be added and one list to be kept current.
+- `src-tauri/src/commands/mod.rs`, the module intro — "Progress, log lines, issues, and errors are sent as Tauri events (`extract:log`, `extract:progress`, `extract:issue`, `extract:finished`, `extract:error`)." — Good: the list names every event the commands emit, including `extract:issue` from `upload.rs`, which the web layer listens for. The names themselves live as constants in `src-tauri/src/commands/events.rs`, so a new event has one place to be added and one list to be kept current.
 - `src-tauri/src/commands/extract.rs`, the module intro — "Progress is sent back as Tauri events: `extract:log` (one human-readable log line), `extract:progress` (one typed [`ExtractProgressEvent`] …), `extract:finished` (a summary string or JSON object), and `extract:error` ([`ExtractErrorEvent`])." — Good: each event says what its payload is, and the payload types are rustdoc links.
 
 ## Examples when behavior is non-obvious
@@ -28,7 +28,7 @@ Give every module a `//!` intro that states its responsibility or invariants. Ke
 Include a concrete example or quantified rationale whenever a field, constant, or parser behaves non-obviously. Name the exact values involved.
 
 - `crates/core/message-crate-core/src/progress.rs`, `ProgressEvent::Setup` — "A setup step before any message is read, such as decrypting an iOS backup or caching chat tables. `step` of `total`, with a short label for the person watching ("Deriving backup keys")." — Good: a concrete example of the value, and the reason the variant is separate from message counts.
-- `crates/libs/push/src/run.rs`, `const MAX_IMPORT_BODY_BYTES` — "Kept under Cloudflare's ~100 MiB upload cap so a large group chat is split into several requests instead of one giant one that gets rejected." — Good: names the external constraint behind the chosen value.
+- `crates/libs/import/src/run.rs`, `const MAX_IMPORT_BODY_BYTES` — "Kept under Cloudflare's ~100 MiB upload cap so a large group chat is split into several requests instead of one giant one that gets rejected." — Good: names the external constraint behind the chosen value.
 - `crates/libs/media/src/lib.rs`, `fn compress_options_from_form` — "Build [`CompressOptions`] from the export form's values: the resolution cap, the frame-rate cap, the minimum video size as the whole number of megabytes the person typed (`20` is 20 MiB), and whether already-efficient videos are skipped." — Good: names all four parameters and where they come from. It replaced "Build compress options from CLI-style fields (`min_size` like `20M`)" on a function then called `compress_options_from_cli`, which waved at the parameters without naming them, and there is no command line for the fields to be in the style of.
 
 ## No filler, invented terms, or jargon
@@ -37,8 +37,8 @@ Never write self-contradictory filler, invented terms, or unexplained jargon in 
 
 - `crates/libs/ir/src/lib.rs`, `IrAttachment::missing_reason` — "None when the attachment was imported; set only when bytes were skipped, to one of a closed set: `file_missing`, `too_large`, `not_copied`, `convert_failed: <detail>`, or `unknown: <raw>`." — Good: says exactly when the field is `None` and lists the values it can hold. It replaced "Absent when present", which was self-contradictory and explained nothing.
 - `crates/libs/api-types/src/lib.rs`, `ImportMode::Append` — "Keep existing messages and add only new ones. The default, and what the HTTP API assumes when a request names no mode: it never removes anything." — Good: a plain statement of what the mode does, instead of an invented term such as "resume-safe".
-- `crates/libs/push/src/run.rs`, `PushConfig::mode` — "`Append` adds to existing data; `Replace` clears then imports (with force)." — Bad: "with force" is unexplained; the reader cannot tell what is forced or what the alternative would be.
-- `crates/libs/ir/src/lib.rs`, `enum HandleService` — "Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS)." — Good: names the distinction a reader would otherwise get wrong, instead of leaving "service" to mean two things.
+- `crates/libs/import/src/run.rs`, `ImportConfig::mode` — "`Append` adds to existing data; `Replace` clears then imports (with force)." — Bad: "with force" is unexplained; the reader cannot tell what is forced or what the alternative would be.
+- `crates/libs/ir/src/lib.rs`, `enum IdentityService` — "Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS)." — Good: names the distinction a reader would otherwise get wrong, instead of leaving "service" to mean two things.
 
 ## Handler docs describe the operation, not the route
 
@@ -76,7 +76,7 @@ Document the reason behind non-obvious choices — ordering, omitted files, perf
 
 - `crates/server/demo-seed/src/assets.rs`, `fn write_attachment_blobs` — "One path, `attachments/missing-file.heic`, is left out on purpose so import can show a missing-file warning." — Good: a deliberate-looking omission stated explicitly.
 - `crates/server/server/src/assets_api.rs`, `fn lookup_by_sha256_unverified` — "Used only when streaming an authenticated download. … Hashing the whole file first would read every download twice." — Good: the performance tradeoff is explained instead of just describing the lookup.
-- `crates/libs/push/src/run.rs`, the module intro — "Attachments first, then messages. Messages point at attachments by a content fingerprint (sha256). The server must already have that file, or the import would fail." — Good: explains the invariant that drove the upload ordering.
+- `crates/libs/import/src/run.rs`, the module intro — "Attachments first, then messages. Messages point at attachments by a content fingerprint (sha256). The server must already have that file, or the import would fail." — Good: explains the invariant that drove the upload ordering.
 
 ## Link to real documentation
 

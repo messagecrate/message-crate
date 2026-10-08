@@ -208,16 +208,7 @@ pub async fn discard_trashed_contact(
         .collect::<std::collections::BTreeSet<i64>>()
         .into_iter()
         .collect();
-    sqlx::query("DELETE FROM contacts WHERE account_id = $1 AND id = $2")
-        .bind(account_id)
-        .bind(contact_id)
-        .execute(&mut *conn)
-        .await?;
-    sqlx::query("DELETE FROM trashed_contacts WHERE account_id = $1 AND contact_id = $2")
-        .bind(account_id)
-        .bind(contact_id)
-        .execute(&mut *conn)
-        .await?;
+    contacts::delete_contact(conn, account_id, contact_id).await?;
     Ok(new_contacts)
 }
 

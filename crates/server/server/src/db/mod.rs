@@ -21,6 +21,7 @@ pub mod media_queue;
 pub mod named_membership;
 pub mod ownership;
 pub mod participant_names;
+pub mod participants;
 pub mod permissions;
 pub mod saved_searches;
 pub mod schema;

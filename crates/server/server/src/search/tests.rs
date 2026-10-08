@@ -161,7 +161,7 @@ pub(crate) async fn named_participant(conn: &mut SqliteConnection, conversation:
         conn,
         account,
         alias,
-        message_ir::HandleType::Other,
+        message_ir::IdentityType::Other,
         Some("phone"),
     )
     .await

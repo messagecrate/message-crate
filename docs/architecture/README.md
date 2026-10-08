@@ -17,6 +17,7 @@ document and the code is a bug in one of them.
 | [The search language](search.md) | The language typed on the Contacts, Conversations, and Messages lists: its rules, grammar, values, each list's defaults, and what every word means on every list |
 | [Media](media.md) | How an attachment is kept, served and shown: its Thumbnail, Preview and original, when the server makes them, which one a screen loads, and how a video streams to its player |
 | [The server's log](server-log.md) | Where the server keeps its log (rotating files in the Data Directory), how much it keeps (5 files of 50 MB), who reads it (the owner), and what a line never holds |
+| [Import Run logs](import-run-logs.md) | Where the desktop app keeps each Import Run's log (the Logs Directory, never deleted), the line that names the account that ran it, and who reads it (the owner and that account, on that computer) |
 | [The HTTP interface](http-api.md) | Every rule the `/v1` routes follow: identifiers, naming, methods, status codes, lists, failures, credentials, runs, the generated reference, and how the server code behind a route is named and layered |
 
 ## What goes where

@@ -2324,9 +2324,11 @@ dependencies = [
  "anyhow",
  "chrono",
  "media",
+ "message-crate-log-lines",
  "message-ir",
  "obfuscate",
  "phone",
+ "serde",
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
@@ -2350,7 +2352,8 @@ dependencies = [
  "message-crate-core",
  "message-crate-export",
  "message-crate-http",
- "message-crate-push",
+ "message-crate-import",
+ "message-crate-log-lines",
  "message-crate-serve-protocol",
  "message-ir",
  "message-ir-format",
@@ -2405,7 +2408,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-push"
+name = "message-crate-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2421,6 +2424,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+]
+
+[[package]]
+name = "message-crate-log-lines"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
 ]
 
 [[package]]

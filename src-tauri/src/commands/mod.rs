@@ -20,6 +20,7 @@ pub mod format;
 pub mod jobs;
 pub mod local_server;
 pub mod paths;
+pub mod run_logs;
 pub mod staging;
 pub mod upload;
 

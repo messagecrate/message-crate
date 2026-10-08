@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use message_ir::{HandleService, HandleType};
+use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -53,7 +53,7 @@ impl HandleIdCache {
 /// verbatim (trimmed).
 pub fn normalize_handle(
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     country: Option<&'static phone::Country>,
 ) -> phone::TypedKey {
     phone::key_typed_handle(raw, handle_type, country)
@@ -65,9 +65,11 @@ pub fn normalize_handle(
 #[must_use]
 pub fn region_of_key(normalized: &str, handle_type: &str) -> String {
     match normalized.strip_prefix('+') {
-        Some(digits) if handle_type == HandleType::Phone.as_str() => phone::calling_code_of(digits)
-            .unwrap_or_default()
-            .to_string(),
+        Some(digits) if handle_type == IdentityType::Phone.as_str() => {
+            phone::calling_code_of(digits)
+                .unwrap_or_default()
+                .to_string()
+        }
         _ => String::new(),
     }
 }
@@ -76,8 +78,8 @@ pub fn region_of_key(normalized: &str, handle_type: &str) -> String {
 /// the one rule for what an address looks like. A blank address is `Other`.
 /// An import never stores this type without asking the service first:
 /// [`handle_type_on`] does both.
-pub fn handle_type_of(address: &str) -> HandleType {
-    phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
+pub fn handle_type_of(address: &str) -> IdentityType {
+    phone::Handle::parse(address).map_or(IdentityType::Other, |handle| handle.kind())
 }
 
 /// The type an import gives an address it meets on `service`: the service
@@ -93,11 +95,11 @@ pub fn handle_type_of(address: &str) -> HandleType {
 /// phone number on every service (#1144).
 pub fn handle_type_on(
     address: &str,
-    stated: Option<HandleType>,
-    service: HandleService,
-) -> HandleType {
+    stated: Option<IdentityType>,
+    service: IdentityService,
+) -> IdentityType {
     match (service, stated.unwrap_or_else(|| handle_type_of(address))) {
-        (HandleService::Whatsapp, HandleType::Email) => HandleType::Other,
+        (IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
         (_, kind) => kind,
     }
 }
@@ -122,11 +124,11 @@ pub struct EmailOnWhatsapp {
 /// [`EmailOnWhatsapp`] for an email address on WhatsApp.
 pub fn check_service_carries(
     address: &str,
-    service: HandleService,
-    handle_type: HandleType,
+    service: IdentityService,
+    handle_type: IdentityType,
 ) -> std::result::Result<(), EmailOnWhatsapp> {
     match (service, handle_type) {
-        (HandleService::Whatsapp, HandleType::Email) => Err(EmailOnWhatsapp {
+        (IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
             address: address.to_string(),
         }),
         _ => Ok(()),
@@ -142,31 +144,40 @@ pub fn check_service_carries(
 // Any other word is refused, naming the two. Read as `phone`, a misspelt
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
+//
+// This is the HTTP API's enum; the OpenAPI reference publishes it as
+// `IdentityService`. `message_ir::IdentityService` is the conversation file's
+// enum of the same two services, whose `parse` reads every word but
+// `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
+// two. The `Api` prefix keeps the two apart in Rust, because one bare name
+// would mean either enum depending on a file's imports
+// (docs/architecture/http-api.md, "Code").
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum IdentityService {
+#[schema(as = IdentityService)]
+pub enum ApiIdentityService {
     /// Text Message: SMS, MMS, iMessage and RCS.
     Phone,
     /// WhatsApp.
     Whatsapp,
 }
 
-impl From<HandleService> for IdentityService {
-    fn from(service: HandleService) -> Self {
-        match service {
-            HandleService::Phone => Self::Phone,
-            HandleService::Whatsapp => Self::Whatsapp,
-        }
-    }
-}
-
-impl From<IdentityService> for HandleService {
+impl From<IdentityService> for ApiIdentityService {
     fn from(service: IdentityService) -> Self {
         match service {
             IdentityService::Phone => Self::Phone,
             IdentityService::Whatsapp => Self::Whatsapp,
+        }
+    }
+}
+
+impl From<ApiIdentityService> for IdentityService {
+    fn from(service: ApiIdentityService) -> Self {
+        match service {
+            ApiIdentityService::Phone => Self::Phone,
+            ApiIdentityService::Whatsapp => Self::Whatsapp,
         }
     }
 }
@@ -181,7 +192,7 @@ pub async fn existing_handle_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    service: HandleService,
+    service: IdentityService,
 ) -> Result<Option<i64>> {
     let raw = raw.trim();
     let key = phone::Handle::parse(raw).map_or_else(|| raw.to_string(), phone::Handle::into_key);
@@ -207,7 +218,7 @@ pub async fn upsert_handle_row(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
 ) -> Result<(i64, bool)> {
     upsert_handle_row_in(conn, account_id, raw, handle_type, service, None).await
@@ -220,7 +231,7 @@ pub async fn upsert_handle_row_in(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
     country: Option<&'static phone::Country>,
 ) -> Result<(i64, bool)> {
@@ -229,7 +240,7 @@ pub async fn upsert_handle_row_in(
         region,
         note,
     } = normalize_handle(raw, handle_type, country);
-    let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let service_str = platform.as_str();
     let inserted = sqlx::query(
         "INSERT INTO handles
@@ -268,11 +279,11 @@ pub async fn upsert_handle_row_cached(
     cache: &mut HandleIdCache,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
 ) -> Result<(i64, bool, bool)> {
     let normalized = normalize_handle(raw, handle_type, cache.country).key;
-    let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let key = (
         account_id.to_string(),
         normalized,
@@ -455,6 +466,51 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
         .collect())
 }
 
+/// The ids of the account's handles that are at one of its identities, on
+/// any service ([`crate::db::account_profile::is_account_identity_sql`]).
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn identity_handle_ids(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT h.id FROM handles h WHERE h.account_id = $1 AND {} ORDER BY h.id",
+        crate::db::account_profile::is_account_identity_sql("h", "$1"),
+    ))
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// True when an import would give `handle_id` a contact for what the
+/// account's conversations hold: it is a participant, the chat handle of a
+/// one-to-one conversation, or the sender of a received row.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn is_met_in_conversations(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM participants p
+                        JOIN conversations c ON c.id = p.conversation_id
+                        WHERE c.account_id = $1 AND p.handle_id = $2)
+             OR EXISTS (SELECT 1 FROM conversations c
+                        WHERE c.account_id = $1 AND c.chat_handle_id = $2
+                          AND c.conversation_type = 'individual' COLLATE NOCASE)
+             OR EXISTS (SELECT 1 FROM messages m
+                        WHERE m.account_id = $1 AND m.sender_handle_id = $2
+                          AND m.is_from_me = 0)",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .fetch_one(&mut *conn)
+    .await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,7 +534,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -491,7 +547,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             ambiguous,
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -502,7 +558,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             ambiguous,
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -528,7 +584,7 @@ mod tests {
             &mut cache,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -538,7 +594,7 @@ mod tests {
             &mut cache,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await

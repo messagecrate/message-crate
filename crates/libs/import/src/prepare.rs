@@ -27,7 +27,7 @@ use crate::journal::{JournalMessage, RunJournal};
 use crate::progress::AttachmentSkip;
 use crate::project::{self, AttachmentProjection};
 use crate::report::{AssetTotals, UploadProfile, elapsed_ms};
-use crate::run::{MAX_IMPORT_BODY_BYTES, PushConfig, Session};
+use crate::run::{ImportConfig, MAX_IMPORT_BODY_BYTES, Session};
 
 /// Journal state shared by every prepare worker and the import pipeline.
 ///
@@ -102,7 +102,7 @@ type DigestCache = Mutex<HashMap<PathBuf, String>>;
 /// Read-only inputs every prepare worker shares for the whole run.
 pub(crate) struct PrepareContext<'a> {
     pub input: &'a Path,
-    pub cfg: &'a PushConfig,
+    pub cfg: &'a ImportConfig,
     pub session: &'a Session,
     pub journal: &'a Mutex<SharedJournal>,
     pub batch_size: usize,
@@ -121,7 +121,7 @@ impl<'a> PrepareContext<'a> {
     /// Bundle the run's shared inputs for the prepare workers.
     pub(crate) fn new(
         input: &'a Path,
-        cfg: &'a PushConfig,
+        cfg: &'a ImportConfig,
         session: &'a Session,
         journal: &'a Mutex<SharedJournal>,
         batch_size: usize,
@@ -173,6 +173,8 @@ pub(crate) struct PreparedFile {
     pub profile: UploadProfile,
     pub total_started: Instant,
     pub assets: AssetTotals,
+    /// What the run went on without, such as a digest that did not match.
+    pub warnings: Vec<String>,
     pub log_lines: Vec<String>,
     pub attachment_skips: Vec<AttachmentSkip>,
 }
@@ -220,7 +222,8 @@ pub(crate) fn prepare_file(
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
-    let mut log_lines = scan.warnings;
+    let warnings = scan.warnings;
+    let mut log_lines = Vec::new();
     let mut assets = AssetTotals {
         skipped: scan.skipped,
         ..AssetTotals::default()
@@ -246,6 +249,7 @@ pub(crate) fn prepare_file(
         profile,
         total_started,
         assets,
+        warnings,
         log_lines,
         attachment_skips: scan.skips,
     })

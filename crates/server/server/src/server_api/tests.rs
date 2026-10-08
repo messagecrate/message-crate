@@ -125,6 +125,23 @@ async fn the_state_route_carries_the_build_and_the_schema_fingerprint() {
     );
 }
 
+/// Two Message Crates have different ids, though both start their account
+/// and Import Run ids at the same numbers, and one Message Crate keeps its id
+/// across reads: the desktop app tells their Import Run logs apart by it.
+#[tokio::test]
+async fn each_message_crate_has_an_id_of_its_own_that_stays() {
+    let one = test_fixture().await;
+    let other = test_fixture().await;
+
+    let first: Server = get_json(&one.state, "/v1/server", "").await;
+    let again: Server = get_json(&one.state, "/v1/server", "").await;
+    let elsewhere: Server = get_json(&other.state, "/v1/server", "").await;
+
+    assert_eq!(first.id.len(), 32, "{}", first.id);
+    assert_eq!(first.id, again.id);
+    assert_ne!(first.id, elsewhere.id);
+}
+
 #[tokio::test]
 async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     let fixture = test_fixture().await;

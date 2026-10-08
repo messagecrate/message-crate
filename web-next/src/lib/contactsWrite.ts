@@ -7,7 +7,7 @@ import { openWritableVaultDb } from "./vaultSchema";
 import {
   inferHandleType,
   normalizeHandle,
-  type HandleType,
+  type IdentityType,
 } from "./handleKind";
 import { clearTrashedHandles, resolveHandleId } from "./handlesWrite";
 import type { ContactDetail } from "./types";
@@ -41,14 +41,14 @@ function touchContact(
 export type ContactHandleInput = {
   raw: string;
   /** Optional; inferred from the handle's shape when omitted. */
-  handle_type?: HandleType;
+  handle_type?: IdentityType;
 };
 
 function normalizeHandleInputs(input: ContactHandleInput[]): Array<{
   raw: string;
-  handle_type: HandleType;
+  handle_type: IdentityType;
 }> {
-  const out: Array<{ raw: string; handle_type: HandleType }> = [];
+  const out: Array<{ raw: string; handle_type: IdentityType }> = [];
   const seen = new Set<string>();
   for (const h of input) {
     const raw = h.raw.trim();
@@ -371,7 +371,7 @@ export function deleteLabel(name: string): void {
 function handleOwner(
   db: Database.Database,
   raw: string,
-  handleType: HandleType,
+  handleType: IdentityType,
   accountId: string,
 ): number | null {
   const normalized = normalizeHandle(raw, handleType);
@@ -393,8 +393,8 @@ function handleOwner(
 function remapHandle(
   db: Database.Database,
   contactId: number,
-  from: { raw: string; handle_type: HandleType },
-  to: { raw: string; handle_type: HandleType },
+  from: { raw: string; handle_type: IdentityType },
+  to: { raw: string; handle_type: IdentityType },
   accountId: string,
 ): void {
   if (from.raw === to.raw && from.handle_type === to.handle_type) return;
@@ -441,8 +441,8 @@ function remapHandle(
 function syncContactHandles(
   db: Database.Database,
   contactId: number,
-  oldHandles: Array<{ raw: string; handle_type: HandleType }>,
-  newHandles: Array<{ raw: string; handle_type: HandleType }>,
+  oldHandles: Array<{ raw: string; handle_type: IdentityType }>,
+  newHandles: Array<{ raw: string; handle_type: IdentityType }>,
   accountId: string,
 ): void {
   const shared = Math.min(oldHandles.length, newHandles.length);
@@ -591,7 +591,7 @@ export function addPhoneToContact(id: number, phone: string): ContactDetail {
 export function addHandleToContact(
   id: number,
   raw: string,
-  handleType?: HandleType,
+  handleType?: IdentityType,
 ): ContactDetail {
   const accountId = currentAccountId();
   const existing = getContact(id);
@@ -642,7 +642,7 @@ export function removePhoneFromContact(
 export function removeHandleFromContact(
   id: number,
   raw: string,
-  handleType?: HandleType,
+  handleType?: IdentityType,
 ): ContactDetail {
   const accountId = currentAccountId();
   const existing = getContact(id);
@@ -728,7 +728,7 @@ export function ensureUnknownContacts(): number {
   ];
   const byIdentity = new Map<
     string,
-    { raw: string; handleType: HandleType; nameAlias: string | null }
+    { raw: string; handleType: IdentityType; nameAlias: string | null }
   >();
   for (const candidate of candidates) {
     const raw = candidate.handle.trim();
