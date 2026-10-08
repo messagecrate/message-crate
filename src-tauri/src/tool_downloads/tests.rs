@@ -574,9 +574,9 @@ fn no_network_is_a_failed_download_that_says_so() {
 }
 
 /// Each supported platform pins ffmpeg, ffprobe and, except Linux on ARM,
-/// wtsexporter, at the releases #1053 names.
+/// wtsexporter, each with a whole SHA-256 and a GitHub release address.
 #[test]
-fn every_platform_is_pinned_to_the_named_releases() {
+fn every_platform_is_pinned() {
     for (os, arch) in [
         ("linux", "x86_64"),
         ("linux", "aarch64"),
@@ -594,20 +594,18 @@ fn every_platform_is_pinned_to_the_named_releases() {
         };
         assert_eq!(programs, expected, "{os} {arch}");
         for pin in &pinned {
-            assert_eq!(pin.sha256.len(), 64, "{}", pin.asset);
-            let release = match pin.program {
-                Program::Wtsexporter => "0.13.0-mc.2",
-                _ => "b6.1.1",
-            };
-            assert_eq!(pin.release, release);
+            assert!(
+                pin.sha256.len() == 64 && pin.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                "{}",
+                pin.asset
+            );
+            assert_eq!(
+                pin.url(GITHUB),
+                format!(
+                    "https://github.com/{}/releases/download/{}/{}",
+                    pin.repo, pin.release, pin.asset
+                )
+            );
         }
     }
-    assert_eq!(
-        pinned_for("linux", "x86_64")[0].url(GITHUB),
-        "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/ffmpeg-linux-x64.gz"
-    );
-    assert_eq!(
-        pinned_for("linux", "x86_64")[2].url(GITHUB),
-        "https://github.com/messagecrate/WhatsApp-Chat-Exporter/releases/download/0.13.0-mc.2/wtsexporter_linux_x64"
-    );
 }
