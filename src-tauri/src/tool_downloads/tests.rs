@@ -1183,3 +1183,41 @@ fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
     assert_eq!(downloads.get(Program::Wtsexporter), None);
     assert!(runs(Program::Wtsexporter, tools.path()));
 }
+
+/// A Try again whose thread can't start fails each program it marked with
+/// that reason, and no program is ever shown as interrupted on the way, so
+/// an import waiting for one wakes with the real cause.
+#[test]
+fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
+    let tools = tempfile::tempdir().unwrap();
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let downloads = ToolDownloads::default();
+    let mut seen = None;
+
+    let retried = retry_with(
+        tools.path().to_path_buf(),
+        "http://127.0.0.1:9".into(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+        |work| {
+            // A failed start drops the work without running it.
+            drop(work);
+            seen = downloads.get(Program::Wtsexporter);
+            Err(io::Error::other("no threads left"))
+        },
+    );
+
+    assert!(matches!(retried, Retry::CouldNotStart));
+    assert!(
+        matches!(seen, Some(DownloadState::Downloading { .. })),
+        "the program was {seen:?} before the start failed"
+    );
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::CouldNotStart("no threads left".into()).to_string(),
+        })
+    );
+    assert!(!downloads.checking());
+}

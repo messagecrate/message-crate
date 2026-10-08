@@ -844,6 +844,26 @@ pub fn retry(
     downloads: &ToolDownloads,
     not_found: &[Program],
 ) -> Retry {
+    retry_with(dir, base, pinned, downloads, not_found, |work| {
+        std::thread::Builder::new()
+            .name("tool-downloads-retry".into())
+            .spawn(work)
+    })
+}
+
+/// The work [`retry`] hands to a new thread.
+type Work = Box<dyn FnOnce() + Send>;
+
+/// [`retry`], starting the check's thread with `spawn`, so a test can make
+/// the start fail.
+fn retry_with(
+    dir: PathBuf,
+    base: String,
+    pinned: Vec<Pinned>,
+    downloads: &ToolDownloads,
+    not_found: &[Program],
+    spawn: impl FnOnce(Work) -> io::Result<JoinHandle<()>>,
+) -> Retry {
     let lock = match lock_check(&dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return Retry::AlreadyRunning,
@@ -858,13 +878,25 @@ pub fn retry(
     for &program in &marked {
         run.mark_downloading(program);
     }
-    let spawned = std::thread::Builder::new()
-        .name("tool-downloads-retry".into())
-        .spawn(move || check(&dir, &base, &pinned, &mut run, lock));
+    // The run goes to the thread only once the thread has started. Were it
+    // moved into the closure, a failed start would drop it there, and its
+    // drop would mark these programs interrupted, and wake a waiting import
+    // with that reason, before the cause is known.
+    let (hand_over, handed) = std::sync::mpsc::sync_channel::<CheckRun>(1);
+    let spawned = spawn(Box::new(move || {
+        if let Ok(mut run) = handed.recv() {
+            check(&dir, &base, &pinned, &mut run, lock);
+        }
+    }));
     match spawned {
-        Ok(handle) => Retry::Started(handle),
-        // The run went with the closure that was never started, and its
-        // drop marked these as interrupted: the cause is the thread.
+        Ok(handle) => {
+            // The thread waits on `handed` until this arrives, so the send
+            // can't fail.
+            let _ = hand_over.send(run);
+            Retry::Started(handle)
+        }
+        // Each program fails with the thread's error first, so the run's
+        // drop, which fails only the ones still downloading, leaves them.
         Err(err) => {
             for program in marked {
                 downloads.set(
@@ -874,6 +906,7 @@ pub fn retry(
                     },
                 );
             }
+            drop(run);
             Retry::CouldNotStart
         }
     }
