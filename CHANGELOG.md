@@ -48,7 +48,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -116,9 +117,32 @@ released versions carry their date on the heading.
   gives them, without the scheme. Connecting, Disconnected and Not tested name
   the server the same way, and **Connection Status** on the **Server Address**
   screen names the address in the field (#1973).
+- 2026-10-07: **Conversations, Contacts and Trash keep their list in a
+  narrow window.** In a window 390 px wide the list column shrank to 1 px and
+  the right pane was cut off at the window's edge. Beside a list the
+  navigation panel now gives way first, down to 160 px, the list stops at
+  220 px and the right pane at 320 px. In a window narrower than the three,
+  the area under the header scrolls sideways to reach the right pane, and the
+  header stays where it is. A photo in a conversation is no wider than its
+  message. Settings, Import and Export still fit the window. Phone layouts
+  come later (#1722).
 
 #### Desktop app
 
+- 2026-10-07: **The desktop app remembers the server address.** An address
+  entered under **Change server address** was saved only with the login.
+  Logging out, or a login the server no longer accepted, forgot it. The next
+  start was back on `http://127.0.0.1:8080` and started the app's own Message
+  Crate. While a login was saved, the app instead opened on **Server
+  Address** at every start and waited for **Use this address**. The address
+  is now a setting of its own that logging out leaves alone. The app opens on
+  the login card for the saved address and starts its own Message Crate only
+  when the saved address is `http://127.0.0.1:8080`. **Change server
+  address** still changes it, or goes back to the app's own. The website
+  keeps a changed address the same way, and its **Server Address** screen
+  offers **Use this website's own Message Crate** to go back. Going back to
+  an address, in the app or the website, restores a login saved for it
+  (#1972).
 - 2026-10-05: **The Message Crate the desktop app started stops when the app
   crashes.** Closing the app has always stopped it. When the app crashed or
   was ended from the task manager instead, its Message Crate went on running
@@ -189,6 +213,19 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-07: **A hit found by an earlier version says so in the Messages
+  list.** A search finds a message when one of its earlier versions holds a
+  searched word, but the row showed only the final text, so a word only an
+  earlier version held showed nowhere, and the hit looked like a wrong result
+  until it was opened. Searching `imprudent delighted` on the Demo Account
+  listed "You have delighted us long enough." with "delighted" in bold and
+  nothing for "imprudent". The row now keeps the final text and adds a muted
+  line for each earlier version it quotes, here "Earlier version: So
+  imprudent a match on both sides!", with the searched words in bold. The
+  row quotes the newest matched earlier version, and, for each searched word
+  that neither that version nor the final text shows, the newest matched
+  version that holds the word (#1785).
+
 - 2026-10-07: **A contact's and an identity's counts include orphaned
   messages.** Since orphaned messages got conversations of their own, the
   counts that split a person's conversations and messages into direct and
@@ -221,6 +258,10 @@ released versions carry their date on the heading.
 
 - The database format changed. **An existing Message Crate is rebuilt empty
   on first start and its messages must be imported again.**
+- A desktop app that was pointed at a Message Crate on another computer
+  opens on this computer's own once after upgrading, because the address is
+  now saved apart from the login. Enter the address again under **Change
+  server address** and log in. From then on the app keeps it.
 - Message files exported before replies moved onto the message itself are
   refused when you import or convert them, rather than read with their
   replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and

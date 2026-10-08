@@ -1252,6 +1252,7 @@ pub async fn write_message_map(
 /// copies agree, or two reads of one Mac's `chat.db` that Messages did
 /// not write between, where it adds a mark and takes a later edit as it
 /// would with no dates.
+///
 /// The one rule for which of two copies of a message from one source is
 /// the later backup, for a stored message ([`promote_deletion_marks`],
 /// [`write_edit_map`]) and, in Rust ([`later_backup`]), for two copies
@@ -1422,9 +1423,11 @@ pub async fn add_staged_copy_milliseconds(
 /// Whether one copy of a message records a later edit than another, as an
 /// SQL expression over four SQL values: the copy's earlier-version count
 /// `n` and newest `edited_at` `newest`, and the other copy's `held_n` and
-/// `held_newest`. The one rule for which of two copies of a message is the
-/// later backup, for a stored message ([`write_edit_map`]) and for two
-/// copies staged in one import ([`take_later_staged_copy`]).
+/// `held_newest`. It is the fallback for which of two copies of a message
+/// gives its text when either copy's backup has no date, or the two dates
+/// are equal: for a stored message ([`write_edit_map`]) and for two copies
+/// staged in one import ([`take_later_staged_copy`]). Where the two backups
+/// have different dates, [`later_backup_sql`] decides instead.
 ///
 /// The copy is the later one when its newest earlier version is newer than
 /// the other's, or as new and it lists more of them. When either side
@@ -1437,8 +1440,7 @@ pub async fn add_staged_copy_milliseconds(
 /// The newest earlier version is the edit before the last one: the time of
 /// a part's last edit is recorded nowhere. So a later backup that differs
 /// only by an unsent part, or by one edit after an unsend, can read as not
-/// later (#1804). The rule is used only where one of the two backups has no
-/// date; where both have one, [`later_backup_sql`] decides instead.
+/// later (#1804), which is why the backups' dates decide wherever they can.
 ///
 /// `edited_at` has the one text form of a stored time on both sides
 /// (`models::utc_timestamp_text`), so the text orders as the time.
