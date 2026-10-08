@@ -41,10 +41,16 @@ fn undelivered_line(event: &str, error: &dyn std::fmt::Display) -> String {
 }
 
 /// An issue sink that sends each row to the window as `extract:issue` the
-/// moment the job records it.
-pub fn issue_sink(app: &AppHandle) -> IssueSink {
+/// moment the job records it, and adds it to the Import Run's log, so the log
+/// holds what was skipped or failed and the Logs panel's level filter finds
+/// it.
+pub fn run_issue_sink(app: &AppHandle, run_log: &crate::app_directories::RunLog) -> IssueSink {
     let app = app.clone();
-    IssueSink::new(move |issue| emit(&app, ISSUE, ExtractIssueEvent::from(&issue)))
+    let run_log = run_log.clone();
+    IssueSink::new(move |issue| {
+        run_log.issue(&issue);
+        emit(&app, ISSUE, ExtractIssueEvent::from(&issue));
+    })
 }
 
 /// A progress sink that sends each count to the window as

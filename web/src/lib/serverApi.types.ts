@@ -1342,8 +1342,9 @@ export interface paths {
         };
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
-         * @description Also reports the server's Build, its Schema Fingerprint, whether the Demo
-         *     Account exists, and the attachment size limit.
+         * @description Also reports this Message Crate's id, the server's Build, its Schema
+         *     Fingerprint, whether the Demo Account exists, and the attachment size
+         *     limit.
          */
         get: operations["get_server"];
         put?: never;
@@ -5033,6 +5034,14 @@ export interface components {
              *     ends.
              */
             demo_account: boolean;
+            /**
+             * @description This Message Crate's id: 32 random hexadecimal digits written when
+             *     its database is made, and never changed. An app tells two Message
+             *     Crates at one address apart by it, such as one rebuilt with
+             *     `create-database`, whose account and Import Run ids start again at
+             *     the same numbers.
+             */
+            id: string;
             /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.

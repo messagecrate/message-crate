@@ -1923,9 +1923,11 @@ dependencies = [
  "anyhow",
  "chrono",
  "media",
+ "message-crate-log-lines",
  "message-csv",
  "message-ir",
  "obfuscate",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
@@ -1991,6 +1993,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "message-crate-log-lines"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "tempfile",
+ "utoipa",
+]
+
+[[package]]
 name = "message-crate-serve-protocol"
 version = "0.1.0"
 
@@ -2016,6 +2028,7 @@ dependencies = [
  "libsqlite3-sys",
  "media",
  "message-crate-api-types",
+ "message-crate-log-lines",
  "message-crate-serve-protocol",
  "message-ir",
  "phone",

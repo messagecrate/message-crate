@@ -44,7 +44,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use jsonl_journal::ServerTarget;
-use message_crate_core::{CancelFlag, check_cancel};
+use message_crate_core::{CancelFlag, RunLogLevel, check_cancel};
 
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
@@ -305,7 +305,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
         paths.journal.clone(),
         ServerTarget::new(&session.url, &session.username),
         cfg.force || cfg.mode == ImportMode::Replace,
-        &mut |line| out.show(line),
+        &mut |line| out.show_at(RunLogLevel::Warn, line),
     )?;
     out.expect_files(files.len());
     let import_id = start_import_run(cfg, &session, &paths.input, &mut out)?;
@@ -321,7 +321,8 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     settle(cfg, &mut pipeline, halted, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
-        out.show(
+        out.show_at(
+            RunLogLevel::Warn,
             "The server no longer accepts this session, so the Upload paused. \
              The next Upload sends what this one did not."
                 .into(),
@@ -392,10 +393,13 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
             // tells a pause from a failure by `cancelled`, which the error
             // would hide (#1635), so the refusal goes to the log instead.
             if cancelled {
-                out.show(format!(
-                    "The Upload could not complete its Import Run, so the server may still \
+                out.show_at(
+                    RunLogLevel::Error,
+                    format!(
+                        "The Upload could not complete its Import Run, so the server may still \
                      hold it as running: {error:#}"
-                ));
+                    ),
+                );
                 None
             } else {
                 Some(error)
@@ -407,9 +411,10 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     // matters: the server may still hold the run. A report that could not be
     // written as well goes to the log.
     if let (Some(_), Err(write_error)) = (&completion_error, &written) {
-        out.log(&format!(
-            "The Upload's report could not be written: {write_error:#}"
-        ));
+        out.log_at(
+            RunLogLevel::Error,
+            &format!("The Upload's report could not be written: {write_error:#}"),
+        );
     }
     if let Some(error) = completion_error {
         return Err(error);
@@ -493,7 +498,8 @@ fn finish_refused_at_login(
     report: ImportReport,
     out: &mut Reporter<'_, '_>,
 ) -> Result<ImportReport> {
-    out.show(
+    out.show_at(
+        RunLogLevel::Warn,
         "The server no longer accepts this session, so the Upload did not start. \
          The next Upload sends every conversation."
             .into(),
@@ -672,6 +678,9 @@ fn consume_result(
 /// Fold one prepared conversation's asset totals and log output into the run.
 fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut Reporter<'_, '_>) {
     assets.add(prepared.assets);
+    for line in &prepared.warnings {
+        out.log_at(RunLogLevel::Warn, line);
+    }
     for line in &prepared.log_lines {
         out.log(line);
     }

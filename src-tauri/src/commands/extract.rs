@@ -208,7 +208,7 @@ pub fn extract(
         events::log_to_run(&log_app, &sink_log, line.to_string());
     }));
     config.progress = Some(events::progress_sink(&app_handle));
-    config.issues = Some(events::issue_sink(&app_handle));
+    config.issues = Some(events::run_issue_sink(&app_handle, &run_log));
 
     spawn_job(app, job, move || {
         let run_result = run_staging(&config, &output_dir, &media_settings)

@@ -164,7 +164,21 @@ fn text_only_config(dir: &Path, base_url: String) -> ImportConfig {
 
 /// The Upload's log that `text_only_config` names under `dir`.
 fn read_log(dir: &Path) -> String {
-    fs::read_to_string(dir.join("message-crate-import.log")).unwrap()
+    log_text(&dir.join("message-crate-import.log"))
+}
+
+/// The text of each line of the log at `path`, without its time and level,
+/// with a line break after each, so a test reads what the lines say.
+fn log_text(path: &Path) -> String {
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|raw| {
+            let line = message_crate_core::parse_run_log_line(0, raw)
+                .unwrap_or_else(|| panic!("a line with no time or level: {raw}"));
+            format!("{}\n", line.text)
+        })
+        .collect()
 }
 
 /// Run the Upload `cfg` describes, with the lines the desktop app shows.
@@ -1201,7 +1215,7 @@ fn profiles_attachment_upload_phases() {
         persisted_report["results"][0]["profile"]["asset_bytes"],
         ASSET_BYTES.len() as u64
     );
-    let persisted_log = fs::read_to_string(log_path).unwrap();
+    let persisted_log = log_text(&log_path);
     assert!(
         persisted_log.contains(" in all: ")
             && persisted_log.contains(" finding and hashing 1 Asset, "),
@@ -1851,6 +1865,15 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
         "{log}"
     );
     assert!(!log.contains("WARN"), "{log}");
+    // Each digest warning is a warning in the log's level, so the Logs
+    // panel's "warnings and up" shows it.
+    let raw = fs::read_to_string(dir.path().join("message-crate-import.log")).unwrap();
+    let warnings: Vec<_> = raw
+        .lines()
+        .filter_map(|raw| message_crate_core::parse_run_log_line(0, raw))
+        .filter(|line| line.level == message_crate_core::RunLogLevel::Warn)
+        .collect();
+    assert_eq!(warnings.len(), 2, "{raw}");
 }
 
 #[test]

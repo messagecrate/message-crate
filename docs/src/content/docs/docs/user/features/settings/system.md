@@ -78,7 +78,7 @@ The desktop app keeps everything that is not a phone backup or a chosen destinat
 |---|---|---|
 | Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts |
 | Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
-| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted. The run's account reads it from **Settings → Storage**, and the Owner from **Logs** on Owner Home |
 | Scratch Directory | `scratch` | Decrypted iPhone backup databases, the WhatsApp database decrypted from an Android backup, WhatsApp's files read out of a phone backup, and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
 
 The Staging Directory is the one directory outside it: see [Staging directory](#staging-directory).

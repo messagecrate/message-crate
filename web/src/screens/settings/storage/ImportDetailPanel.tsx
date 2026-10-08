@@ -3,6 +3,7 @@ import ImportSummaryPanel, {
 } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
 import ImportContactsPanel from "./ImportContactsPanel";
+import ImportRunLog from "./ImportRunLog";
 import type { AccountImportRun } from "./storageUtils";
 import {
   formatBytes,
@@ -128,6 +129,7 @@ export default function ImportDetailPanel({
               </p>
             )}
           </div>
+          <ImportRunLog importRunId={selectedImport.id} />
         </>
       ) : null}
     </div>

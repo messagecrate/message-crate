@@ -82,6 +82,11 @@ It states how many contacts the run made and how many it changed, then lists eac
 A contact with no name yet is listed as `(unknown)`.
 A run that touched no contact reads "This import changed no contacts."
 
+**Log** closes the record in the desktop app on the computer that ran the import.
+**Open this run's log** shows the run's log under it, newest line first, with **Show**, **Search the log**, and **Download** as on Owner Home's [Logs](/docs/user/features/owner/owner-home/#logs).
+The log stays on that computer, so a browser, or the desktop app on another computer, shows no **Log**.
+An account sees its own runs' logs, and the Owner sees every run's.
+
 How a run proceeds is covered in [Import](/docs/user/features/messages/import/).
 
 ## Export history

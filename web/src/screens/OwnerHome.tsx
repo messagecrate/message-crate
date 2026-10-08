@@ -17,6 +17,7 @@ import { useWindowWidth } from "../lib/useWindowWidth";
 import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";
 import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
 import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
+import { OwnerLogsPanel } from "./owner/OwnerLogsPanel";
 import { ServerSettingsPanel } from "./owner/ServerSettingsPanel";
 import SettingsScreen from "./SettingsScreen";
 
@@ -31,9 +32,6 @@ const SECTION_LABELS: Record<(typeof SECTIONS)[number], string> = {
   "audit-trail": "Audit Trail",
   logs: "Logs",
 };
-
-/** Sections the side panel lists before anything is built behind them. */
-const EMPTY_SECTIONS: ReadonlySet<(typeof SECTIONS)[number]> = new Set(["logs"]);
 
 function sectionLinkClass(active: boolean): string {
   return `${NAV_LEADING_ROW_CLASS} box-border w-full cursor-pointer rounded border-none px-2 py-1.5 text-left text-[0.875rem] text-text hover:bg-hover ${
@@ -51,8 +49,8 @@ function sectionLinkClass(active: boolean): string {
  * contacts, no import, no export and no trash, so the side panel lists
  * Dashboard, Server Settings, User Accounts, Audit Trail and Logs, and the
  * search bar filters the accounts table. Dashboard shows what the whole
- * database holds, and Audit Trail what each user did and when. Logs shows only
- * its name: nothing is built behind it yet.
+ * database holds, Audit Trail what each user did and when, and Logs the
+ * server's log and, in the desktop app, the Import Run logs on this computer.
  *
  * `/owner/accounts/{id}` is one account's Settings, the screen its holder
  * sees, opened from the gear in the account's row. The owner's own row
@@ -146,13 +144,11 @@ export default function OwnerHome() {
             />
           ) : (
             <div className="max-w-[900px] p-6">
-              {EMPTY_SECTIONS.has(section) && (
-                <h3 className="m-0 text-text">{SECTION_LABELS[section]}</h3>
-              )}
               {section === "dashboard" && <OwnerDashboardPanel />}
               {section === "settings" && <ServerSettingsPanel />}
               {section === "accounts" && <OwnerAccountsPanel filter={accountSearch} />}
               {section === "audit-trail" && <OwnerAuditTrailPanel />}
+              {section === "logs" && <OwnerLogsPanel />}
             </div>
           )}
         </main>

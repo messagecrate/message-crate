@@ -212,5 +212,21 @@ Opening and closing the Message Crate to new accounts is recorded too, under no 
 
 ## Logs
 
-**Logs** shows only its name.
-Nothing is built behind it yet.
+**Logs** shows a log, newest line first.
+**Log** at the top picks which one:
+
+- **The server's log**, what the server did for every account. It opens on this one.
+- In the desktop app, each Import Run's log on this computer, whoever ran the import, under **Import Runs on this computer**. Each is named by its run, the account that ran it, and when its last line was written.
+
+A browser offers the server's log only, because an Import Run's log stays on the computer that ran the import.
+
+Each line shows its time in UTC, its level, and what it says.
+
+- **Show** picks the levels: **Errors**, **Warnings and up**, or **Everything**. It opens at **Warnings and up**.
+- **Search the log** keeps the lines that contain the typed text, ignoring case, as it is typed.
+- Scrolling to the end reads older lines.
+- **Download** saves the log as it is. The server's log is up to five files, and each has its own button.
+
+The list shows the log as it was when it was read, and does not add lines as the server or a run writes them.
+A log names counts, routes, files, and what went wrong, and never what a message says.
+Where each log is kept and how long is covered in [Where the app keeps its files](/docs/user/features/settings/system/#where-the-app-keeps-its-files).
