@@ -117,6 +117,16 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-07: **The desktop app remembers the server address.** An address
+  entered under **Change server address** was saved only with the login, so
+  logging out, or a login the server no longer accepted, forgot it: the next
+  start was back on `http://127.0.0.1:8080` and started the app's own Message
+  Crate. While a login was saved, the app instead opened on **Server
+  Address** at every start and waited for **Use this address**. The address
+  is now a setting of its own that logging out leaves alone. The app opens on
+  the login card for the saved address and starts its own Message Crate only
+  when the saved address is `http://127.0.0.1:8080`. **Change server
+  address** still changes it, or goes back to the app's own (#1972).
 - 2026-10-05: **The Message Crate the desktop app started stops when the app
   crashes.** Closing the app has always stopped it. When the app crashed or
   was ended from the task manager instead, its Message Crate went on running

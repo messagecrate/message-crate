@@ -153,13 +153,10 @@ export default function LoginScreen() {
   // The address the card is after: the one being tried, or the one it is on.
   const target = connection.trying ?? address;
   const [draft, setDraft] = useState(address);
-  // The desktop app opens on this card only for its own Message Crate. An
-  // address the person entered is theirs to confirm at every start, and the
-  // connection screen is also the way back to the app's own.
-  const [settingsOpen, setSettingsOpen] = useState(() => isTauri() && !isOwnAddress(address));
-  // True until that first connection screen is left: the address it shows is
-  // already the saved one, and using it as it stands is a real choice there.
-  const [confirmingAtStart, setConfirmingAtStart] = useState(settingsOpen);
+  // The card opens for the saved address, whichever it is. Change server
+  // address opens the connection screen, which is also the way back to the
+  // desktop app's own.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // What Test reported for the address currently typed, or null when it has
   // not been tested since the last edit.
   const [tested, setTested] = useState<ServerConnection | null>(null);
@@ -320,15 +317,12 @@ export default function LoginScreen() {
   // card back to "connecting", re-probe the same server, and land where it
   // started. Either way there is nothing to apply, so the button is disabled
   // until the field holds a different address.
-  // The one exception is the connection screen the desktop app opens on:
-  // there the saved address is the one being offered.
-  const canApplyDraft = trimmedDraft !== "" && (trimmedDraft !== address || confirmingAtStart);
+  const canApplyDraft = trimmedDraft !== "" && trimmedDraft !== address;
 
   const closeSettings = () => {
     testRun.current += 1;
     setTested(null);
     setSettingsOpen(false);
-    setConfirmingAtStart(false);
   };
 
   return (

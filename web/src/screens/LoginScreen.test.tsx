@@ -784,20 +784,16 @@ describe("LoginScreen", () => {
     expect(screen.getByText("Error: database is locked")).toBeInTheDocument();
   });
 
-  it("opens the desktop app on the connection screen for an address the person entered", async () => {
+  it("opens the desktop app on the login card for a saved address elsewhere, and starts nothing", async () => {
     tauriState.isTauri = true;
     authState.serverUrl = "http://crate.example:8080";
     stubServer();
-    const user = setupUser();
     renderScreen();
 
-    expect(await screen.findByRole("heading", { name: "Server Address" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox")).toHaveValue("http://crate.example:8080");
-    expect(startLocalServer).not.toHaveBeenCalled();
-
-    // The saved address is the one on offer, so it can be used as it stands.
-    await user.click(screen.getByRole("button", { name: "Use this address" }));
     expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
+    expect(screen.getByText("Connected to crate.example:8080")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
+    expect(startLocalServer).not.toHaveBeenCalled();
   });
 
   it("starts the app's own Message Crate when asked to go back to it", async () => {
@@ -818,6 +814,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
     await user.click(
       await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
     );
@@ -843,6 +840,7 @@ describe("LoginScreen", () => {
     const user = setupUser();
     renderScreen();
 
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
     await user.click(
       await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
     );
