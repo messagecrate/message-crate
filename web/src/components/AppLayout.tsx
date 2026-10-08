@@ -320,7 +320,13 @@ export default function AppLayout() {
         <ColumnResizeProvider>
           {/* Each column keeps its own minimum width, so a window narrower
               than the three scrolls this row sideways rather than squeezing
-              the list (#1722). A screen with no list fits the window. */}
+              the list (#1722). A screen with no list fits the window.
+              The header stays outside the row and does not scroll with it,
+              so the search box stays in view; once the row has scrolled, the
+              header's name slot no longer lines up with the navigation
+              panel. That is accepted until the phone layout (#1722), because
+              scrolling the header too would need the row's whole width
+              summed for it and would move the search box out of view. */}
           <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
             <LeftPanel
               browseQuery={browseQuery}
