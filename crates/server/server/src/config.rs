@@ -163,6 +163,12 @@ pub struct ServerConfig {
     /// A relative path resolves against the directory above the config file's directory.
     #[serde(default = "default_static_dir")]
     pub static_dir: PathBuf,
+    /// The desktop app's Tools Directory, where ffmpeg and ffprobe are
+    /// looked for after `PATH`. Only `serve --tools-dir` sets it, and the
+    /// config file has no key for it: a server started by hand finds ffmpeg
+    /// on `PATH` or makes no Previews or Thumbnails (#1053).
+    #[serde(skip)]
+    pub tools_dir: Option<PathBuf>,
 }
 
 impl Default for ServerConfig {
@@ -174,6 +180,7 @@ impl Default for ServerConfig {
             cors_origins: Vec::new(),
             openapi_ui: default_openapi_ui(),
             static_dir: default_static_dir(),
+            tools_dir: None,
         }
     }
 }
@@ -340,26 +347,22 @@ impl Config {
     }
 
     /// Apply `serve`'s own flags: `--bind` replaces `[server] bind`,
-    /// `--static-dir` replaces `[server] static_dir`, and each
-    /// `--cors-origin` is added to `[server] cors_origins`. A relative
-    /// `--static-dir` resolves against `root`, the directory the config's own
-    /// paths resolve against. A config with no `[server]` section is left
-    /// without one, for `require_server` to refuse.
-    pub(crate) fn with_serve_overrides(
-        mut self,
-        root: &Path,
-        bind: Option<String>,
-        static_dir: Option<PathBuf>,
-        cors_origins: Vec<String>,
-    ) -> Self {
+    /// `--static-dir` replaces `[server] static_dir`, each `--cors-origin`
+    /// is added to `[server] cors_origins`, and `--tools-dir` names the Tools
+    /// Directory. A relative `--static-dir` or `--tools-dir` resolves against
+    /// `root`, the directory the config's own paths resolve against. A config
+    /// with no `[server]` section is left without one, for `require_server`
+    /// to refuse.
+    pub(crate) fn with_serve_overrides(mut self, root: &Path, flags: ServeFlags) -> Self {
         if let Some(server) = self.server.as_mut() {
-            if let Some(bind) = bind {
+            if let Some(bind) = flags.bind {
                 server.bind = bind;
             }
-            if let Some(static_dir) = static_dir {
+            if let Some(static_dir) = flags.static_dir {
                 server.static_dir = resolve_path(root, &static_dir);
             }
-            server.cors_origins.extend(cors_origins);
+            server.cors_origins.extend(flags.cors_origins);
+            server.tools_dir = flags.tools_dir.map(|dir| resolve_path(root, &dir));
         }
         self
     }
@@ -386,6 +389,19 @@ impl Config {
         }
         Ok(server)
     }
+}
+
+/// The `serve` flags [`Config::with_serve_overrides`] applies.
+#[derive(Debug, Default)]
+pub(crate) struct ServeFlags {
+    /// `--bind`.
+    pub bind: Option<String>,
+    /// `--static-dir`.
+    pub static_dir: Option<PathBuf>,
+    /// Each `--cors-origin`.
+    pub cors_origins: Vec<String>,
+    /// `--tools-dir`.
+    pub tools_dir: Option<PathBuf>,
 }
 
 /// A configured path made absolute against `base`, unless it already is.

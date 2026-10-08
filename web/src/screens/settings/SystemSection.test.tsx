@@ -10,8 +10,7 @@ import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
-const probeFfmpegTools = vi.hoisted(() => vi.fn());
-const setFfmpegToolsDir = vi.hoisted(() => vi.fn());
+const toolsStatus = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
 const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
 const setStagingRoot = vi.hoisted(() => vi.fn());
@@ -32,8 +31,7 @@ vi.mock("../../lib/tauri-check", () => ({
 }));
 
 vi.mock("../../lib/tauri", () => ({
-  probeFfmpegTools: (...args: unknown[]) => probeFfmpegTools(...args),
-  setFfmpegToolsDir: (...args: unknown[]) => setFfmpegToolsDir(...args),
+  invokeToolsStatus: () => toolsStatus(),
   invokeStagingRoot: async () => ({
     root: desktopStaging.root || desktopStaging.defaultRoot,
     defaultRoot: desktopStaging.defaultRoot,
@@ -65,17 +63,12 @@ beforeEach(() => {
       defaultRoot: desktopStaging.defaultRoot,
     };
   });
-  probeFfmpegTools.mockResolvedValue({
-    ok: true,
-    ffmpeg_path: "/usr/bin/ffmpeg",
-    ffprobe_path: "/usr/bin/ffprobe",
-    error: null,
-  });
-  setFfmpegToolsDir.mockResolvedValue({
-    ok: true,
-    ffmpeg_path: "/usr/bin/ffmpeg",
-    ffprobe_path: "/usr/bin/ffprobe",
-    error: null,
+  toolsStatus.mockReset();
+  toolsStatus.mockResolvedValue({
+    toolsDir: "/home/demo/message-crate/tools",
+    ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+    ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+    wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
   });
 });
 
@@ -196,7 +189,6 @@ describe("SystemSection", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Staging directory")).toBeTruthy();
     });
-    expect(screen.getByLabelText("ffmpeg directory")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull();
   });
@@ -290,81 +282,91 @@ describe("SystemSection", () => {
     expect(screen.queryByText(/must be a full path/)).toBeNull();
   });
 
-  it("shows Found lines when both tools are present", async () => {
+  it("shows where ffmpeg, ffprobe and wtsexporter were found, and the Tools Directory", async () => {
     render(<SystemSection />);
     await waitFor(() => {
       expect(screen.getByLabelText(/Found ffmpeg/i)).toBeTruthy();
     });
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
+    expect(screen.getByLabelText(/Found wtsexporter/i)).toBeTruthy();
     expect(screen.getByText("/usr/bin/ffmpeg")).toBeTruthy();
     expect(screen.getByText("/usr/bin/ffprobe")).toBeTruthy();
+    expect(screen.getByText("/home/demo/message-crate/tools/wtsexporter")).toBeTruthy();
+    expect(screen.getByText("Tools directory").nextElementSibling).toHaveTextContent(
+      "/home/demo/message-crate/tools",
+    );
   });
 
-  it("shows not-found when ffmpeg is missing", async () => {
-    const missing = {
-      ok: false,
-      ffmpeg_path: null,
-      ffprobe_path: "/usr/bin/ffprobe",
-      error: "ffmpeg not found or failed -version",
-    };
-    probeFfmpegTools.mockResolvedValue(missing);
-    setFfmpegToolsDir.mockResolvedValue(missing);
+  it("says which program is missing", async () => {
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "missing" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "missing" },
+    });
     render(<SystemSection />);
     await waitFor(() => {
-      expect(screen.getByLabelText(/ffmpeg not found/i)).toBeTruthy();
+      expect(
+        screen.getByLabelText(
+          "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
+        ),
+      ).toBeTruthy();
     });
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "wtsexporter not found. Put it in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("does not persist an ffmpeg directory when the probe fails", async () => {
-    const user = setupUser();
-    const missing = {
-      ok: false,
-      ffmpeg_path: null,
-      ffprobe_path: null,
-      error: "ffmpeg not found or failed -version",
-    };
-    probeFfmpegTools.mockResolvedValue(missing);
-    setFfmpegToolsDir.mockResolvedValue(missing);
+  it("says to put ffmpeg and ffprobe in the Tools Directory when neither is found", async () => {
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "missing" },
+      ffprobe: { state: "missing" },
+      wtsexporter: { state: "missing" },
+    });
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByLabelText("ffmpeg directory")).toBeTruthy();
-    });
-
-    const ffmpegInput = screen.getByLabelText("ffmpeg directory");
-    await fill(user, ffmpegInput, "/opt/no-ffmpeg");
-    await waitFor(() => {
-      expect(probeFfmpegTools).toHaveBeenCalledWith("/opt/no-ffmpeg");
-    });
-    expect(localStorage.getItem("mc-ffmpeg-path")).toBeNull();
-    expect(setFfmpegToolsDir).not.toHaveBeenCalledWith("/opt/no-ffmpeg");
+    expect(
+      await screen.findByLabelText(
+        "ffmpeg not found. Put it and ffprobe in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "ffprobe not found. Put it and ffmpeg in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
   });
 
-  it("keeps a previous ffmpeg directory when a later probe fails", async () => {
-    const user = setupUser();
-    localStorage.setItem("mc-ffmpeg-path", "/usr/bin");
+  it("says why ffmpeg and ffprobe found in two places are not used", async () => {
+    const reason =
+      "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is in the Tools Directory at /home/demo/message-crate/tools/ffprobe.";
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "unusable", reason },
+      ffprobe: { state: "unusable", reason },
+      wtsexporter: { state: "missing" },
+    });
     render(<SystemSection />);
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("/usr/bin")).toBeTruthy();
-    });
-    await waitFor(() => {
-      expect(setFfmpegToolsDir).toHaveBeenCalledWith("/usr/bin");
-    });
+    expect(await screen.findByLabelText(`ffmpeg not used. ${reason}`)).toBeTruthy();
+    expect(screen.getByLabelText(`ffprobe not used. ${reason}`)).toBeTruthy();
+  });
 
-    const missing = {
-      ok: false,
-      ffmpeg_path: null,
-      ffprobe_path: null,
-      error: "ffmpeg not found or failed -version",
-    };
-    probeFfmpegTools.mockResolvedValue(missing);
-    setFfmpegToolsDir.mockResolvedValue(missing);
+  it("has nothing to type for the media tools: the ffmpeg directory field is gone (#1053)", async () => {
+    render(<SystemSection />);
+    await screen.findByLabelText(/Found ffmpeg/i);
+    expect(screen.queryByLabelText("ffmpeg directory")).toBeNull();
+    const media = screen.getByRole("list", { name: "Media tools" }).parentElement;
+    expect(media?.querySelector("input")).toBeNull();
+  });
 
-    const ffmpegInput = screen.getByLabelText("ffmpeg directory");
-    await user.type(ffmpegInput, "x");
-    await waitFor(() => {
-      expect(probeFfmpegTools).toHaveBeenCalledWith("/usr/binx");
-    });
-    expect(localStorage.getItem("mc-ffmpeg-path")).toBe("/usr/bin");
+  it("says so when the desktop process cannot be asked", async () => {
+    toolsStatus.mockRejectedValue(new Error("no desktop process"));
+    render(<SystemSection />);
+    expect(await screen.findByText(/Could not look for the media tools/)).toHaveTextContent(
+      "no desktop process",
+    );
   });
 });

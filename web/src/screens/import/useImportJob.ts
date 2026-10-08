@@ -31,6 +31,7 @@ import { sessionRefused } from "../../lib/sessionRefusal";
 import {
   type AttachmentForecast,
   awaitTauriJob,
+  ffmpegMissing,
   invokeCreateRunDir,
   invokeDeleteRunDir,
   invokeExtract,
@@ -40,11 +41,12 @@ import {
   invokeSaveImportRunRecord,
   invokeStartImportRunLog,
   invokeSummarizeStaging,
+  invokeToolsStatus,
   invokeTranscodeStaging,
   invokeUpload,
+  type MediaToolName,
   type OwnerIdentityCount,
   onExtractEvents,
-  probeFfmpegTools,
   type RunDirConfig,
   type SizeVerdict,
   type StagingSummary,
@@ -563,7 +565,7 @@ function returnToForm(): void {
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,
-    mediaToolsMissing: false,
+    mediaToolsMissing: [],
     mediaPartiallyRan: false,
     computingSummary: false,
     reviewError: null,
@@ -973,14 +975,16 @@ async function moveStageAtReview(
   }
 }
 
-/** True when ffmpeg is needed for this mode and cannot be found. */
-async function mediaToolsMissingFor(mode: AttachmentMediaMode): Promise<boolean> {
-  if (mediaJobVerb(mode) === null) return false;
+/**
+ * Which of ffmpeg and ffprobe this mode needs and cannot use; empty when it
+ * needs neither or both are found. Both when the desktop process can't say.
+ */
+async function mediaToolsMissingFor(mode: AttachmentMediaMode): Promise<MediaToolName[]> {
+  if (mediaJobVerb(mode) === null) return [];
   try {
-    const probe = await probeFfmpegTools(null);
-    return !probe.ok;
+    return ffmpegMissing(await invokeToolsStatus());
   } catch {
-    return true;
+    return ["ffmpeg", "ffprobe"];
   }
 }
 
@@ -1499,7 +1503,7 @@ async function runImport(
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,
-    mediaToolsMissing: false,
+    mediaToolsMissing: [],
     mediaPartiallyRan: false,
     resumeError: null,
     reviewError: null,
@@ -1962,7 +1966,7 @@ export function useImportJob() {
       stagingSummary: null,
       mediaSummary: null,
       mediaFailedCount: null,
-      mediaToolsMissing: false,
+      mediaToolsMissing: [],
       mediaPartiallyRan: false,
       sourceIdentities: parseSourceIdentities(importRun.source_identities),
     });
@@ -2026,7 +2030,7 @@ export function useImportJob() {
     // ffmpeg missing falls back to the Staging Review's recomputed
     // summary instead of starting a job that can only fail, using the same
     // `mediaToolsMissing` check the normal flow shows there.
-    if (await mediaToolsMissingFor(known.attachmentMedia)) {
+    if ((await mediaToolsMissingFor(known.attachmentMedia)).length > 0) {
       await landOn("staging_review", true);
       return;
     }

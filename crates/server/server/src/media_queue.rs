@@ -259,11 +259,8 @@ pub(crate) async fn work_through(
         return Ok(stats);
     }
     let mut decided = decide_queued(pool, cfg, stop, 0, &mut stats).await?;
-    if !media::ffmpeg_available() {
-        tracing::warn!(
-            waiting,
-            "ffmpeg was not found, so no Thumbnail or Preview is made. The Assets wait in the queue until the server finds it"
-        );
+    if let Some(why) = tools_unavailable(&media::ffmpeg_tools()) {
+        tracing::warn!(waiting, "{why}");
         return Ok(stats);
     }
     let work = crate::process_assets::work_dir(&cfg.paths.data_dir)?;
@@ -321,6 +318,35 @@ pub(crate) async fn work_through(
         );
     }
     Ok(stats)
+}
+
+/// Why the pass makes no Thumbnail or Preview, from where ffmpeg and
+/// ffprobe were looked for, or `None` when both are found in one place.
+/// Two programs in two places are found but not used, so that case says
+/// why rather than that either is missing.
+fn tools_unavailable(tools: &Result<media::FfmpegTools>) -> Option<String> {
+    match tools {
+        Err(err) => Some(format!(
+            "ffmpeg and ffprobe are not used, so no Thumbnail or Preview is made. {err} \
+             The Assets wait in the queue until both are in one place"
+        )),
+        Ok(tools) => {
+            let missing = tools.missing();
+            if missing.is_empty() {
+                return None;
+            }
+            let (verb, pronoun) = if missing.len() == 1 {
+                ("was", "it")
+            } else {
+                ("were", "them")
+            };
+            Some(format!(
+                "{} {verb} not found, so no Thumbnail or Preview is made. \
+                 The Assets wait in the queue until the server finds {pronoun}",
+                missing.join(" and ")
+            ))
+        }
+    }
 }
 
 #[cfg(test)]

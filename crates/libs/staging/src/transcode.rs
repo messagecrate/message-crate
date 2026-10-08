@@ -202,13 +202,7 @@ pub fn transcode_staged(
     // Parity with `process_attachment_files`: fail the whole Media stage up front
     // when the tools are missing, rather than branding every attachment
     // `convert_failed: ffmpeg not found`.
-    if !media::ffmpeg_available() {
-        let probe = media::probe_ffmpeg_tools(None);
-        anyhow::bail!(
-            "ffmpeg/ffprobe are required to convert or compress attachments: {}",
-            probe.error.unwrap_or_else(|| "not found".to_string())
-        );
-    }
+    media::require_ffmpeg()?;
 
     let files = conversation_files(run_dir)?;
     // Counting up front costs a second parse of each conversation file and

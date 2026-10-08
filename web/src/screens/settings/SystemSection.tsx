@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
@@ -6,7 +6,6 @@ import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
-import { FFMPEG_TOOLS_STORAGE_KEY } from "../../lib/ffmpeg-tools";
 import {
   getOpenToNetwork,
   isOwnAddress,
@@ -15,15 +14,14 @@ import {
   setLocalServerOpenToNetwork,
   setOpenToNetwork,
 } from "../../lib/localServer";
-import { readPref, removePref, writePref } from "../../lib/storage";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
-  type FfmpegToolsProbe,
   invokeExportDirectory,
   invokeSetStagingRoot,
   invokeStagingRoot,
-  probeFfmpegTools,
-  setFfmpegToolsDir,
+  invokeToolsStatus,
+  type ToolStatus,
+  type ToolsStatus,
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
@@ -44,8 +42,6 @@ const settingsLabel = "whitespace-nowrap text-[0.875rem] font-medium text-text";
 const settingsNoteLayout = "pl-2 text-[0.75rem] sm:col-start-2";
 const settingsHelp = `${settingsNoteLayout} text-muted`;
 
-const FFMPEG_DEBOUNCE_MS = 300;
-
 /** Example path shown under the Staging directory field. */
 function stagingHelpExample(stagingDir: string, defaultDir: string): string {
   const trimmed = stagingDir.trim().replace(/[/\\]+$/, "");
@@ -56,37 +52,153 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
   return `${trimmed}/${EXAMPLE_STAGING}`;
 }
 
-function persistFfmpegDir(dir: string): void {
-  const trimmed = dir.trim();
-  if (!trimmed) {
-    removePref(FFMPEG_TOOLS_STORAGE_KEY);
-    return;
+type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
+/**
+ * One program's status line: the path it was found at, that it is missing,
+ * or why it is not used. One case per `state` the desktop process sends.
+ */
+/**
+ * Where to put a program that is missing, as the words before the Tools
+ * Directory's path (`dir`), or the whole sentence when `dir` is null.
+ * ffmpeg and ffprobe are used only from one place, so a missing one goes
+ * beside the one that was found, or both go in the Tools Directory.
+ * wtsexporter is looked for in the Tools Directory only.
+ */
+function missingFix(
+  name: ToolName,
+  partner: ToolStatus | null,
+  toolsDir: string | null,
+): { text: string; dir: string | null } | null {
+  if (partner == null) {
+    return toolsDir ? { text: "Put it in the Tools Directory", dir: toolsDir } : null;
   }
-  writePref(FFMPEG_TOOLS_STORAGE_KEY, trimmed);
+  const other = name === "ffmpeg" ? "ffprobe" : "ffmpeg";
+  if (partner.state === "found") {
+    return toolsDir
+      ? { text: `Put it beside ${other}, or put both in the Tools Directory`, dir: toolsDir }
+      : { text: `Put it beside ${other}`, dir: null };
+  }
+  return toolsDir ? { text: `Put it and ${other} in the Tools Directory`, dir: toolsDir } : null;
 }
 
-function ToolStatusRow({ name, path }: { name: "ffmpeg" | "ffprobe"; path: string | null }) {
-  if (path) {
-    const label = `Found ${name} - ${path}`;
-    return (
-      <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-        <CheckIcon size={14} className="mt-0.5 shrink-0 text-ok" />
-        <span>
-          Found <code className="font-mono text-[0.7rem]">{name}</code>
-          {" - "}
-          <code className="font-mono text-[0.7rem]">{path}</code>
-        </span>
-      </li>
-    );
+function ToolStatusRow({
+  name,
+  status,
+  partner,
+  toolsDir,
+}: {
+  name: ToolName;
+  status: ToolStatus;
+  /** For ffmpeg the status of ffprobe, and the reverse; null for wtsexporter. */
+  partner: ToolStatus | null;
+  toolsDir: string | null;
+}) {
+  switch (status.state) {
+    case "found": {
+      const label = `Found ${name} - ${status.path}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <CheckIcon size={14} className="mt-0.5 shrink-0 text-ok" />
+          <span>
+            Found <code className="font-mono text-[0.7rem]">{name}</code>
+            {" - "}
+            <code className="break-all font-mono text-[0.7rem]">{status.path}</code>
+          </span>
+        </li>
+      );
+    }
+    case "missing": {
+      // An app opened from the Dock on macOS doesn't see the PATH a shell
+      // sets, so a program installed with Homebrew is missing here until it
+      // is linked into the Tools Directory.
+      const fix = missingFix(name, partner, toolsDir);
+      const fixText = fix == null ? "" : fix.dir ? ` ${fix.text}, ${fix.dir}.` : ` ${fix.text}.`;
+      const label = `${name} not found.${fixText}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+          <span>
+            <code className="font-mono text-[0.7rem]">{name}</code> not found.
+            {fix ? (
+              <>
+                {" "}
+                {fix.text}
+                {fix.dir ? (
+                  <>
+                    , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
+                  </>
+                ) : null}
+                .
+              </>
+            ) : null}
+          </span>
+        </li>
+      );
+    }
+    case "unusable": {
+      const label = `${name} not used. ${status.reason}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+          <span>
+            <code className="font-mono text-[0.7rem]">{name}</code> not used. {status.reason}
+          </span>
+        </li>
+      );
+    }
   }
-  const label = `${name} not found`;
+}
+
+/**
+ * Where ffmpeg, ffprobe and wtsexporter are, read from the desktop process.
+ * Nothing here is typed: ffmpeg and ffprobe come from PATH, then the Tools
+ * Directory, and wtsexporter only from the Tools Directory.
+ */
+function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string | null }) {
   return (
-    <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-      <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
-      <span>
-        <code className="font-mono text-[0.7rem]">{name}</code> not found
-      </span>
-    </li>
+    <div className="mt-8">
+      <h3 className={sectionHeading}>Media</h3>
+      <p className="m-0 max-w-prose text-[0.813rem] text-muted">
+        ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory, and both must come
+        from one of them. wtsexporter is looked for in the Tools Directory only.
+      </p>
+      {tools?.toolsDir ? (
+        <div className={`${settingsGrid} mt-2`}>
+          <span className={settingsLabel}>Tools directory</span>
+          <span className="break-all pl-2 font-mono text-[0.813rem] text-text">
+            {tools.toolsDir}
+          </span>
+        </div>
+      ) : null}
+      {error ? (
+        <p className="m-0 mt-2 text-[0.75rem] text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {tools ? (
+        <ul className="m-0 mt-2 list-none space-y-1 p-0" aria-label="Media tools">
+          <ToolStatusRow
+            name="ffmpeg"
+            status={tools.ffmpeg}
+            partner={tools.ffprobe}
+            toolsDir={tools.toolsDir}
+          />
+          <ToolStatusRow
+            name="ffprobe"
+            status={tools.ffprobe}
+            partner={tools.ffmpeg}
+            toolsDir={tools.toolsDir}
+          />
+          <ToolStatusRow
+            name="wtsexporter"
+            status={tools.wtsexporter}
+            partner={null}
+            toolsDir={tools.toolsDir}
+          />
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -261,55 +373,32 @@ function ExportDirectory() {
 
 export function SystemSection() {
   const stagingId = useId();
-  const ffmpegId = useId();
-  const [ffmpegPath, setFfmpegPath] = useState("");
   const [stagingPath, setStagingPath] = useState("");
   const [defaultStagingPath, setDefaultStagingPath] = useState("");
   /** The Staging Directory the desktop process holds now. */
   const [stagingError, setStagingError] = useState<string | null>(null);
   const [rememberPaths, setRememberPaths] = useState(false);
-  const [probe, setProbe] = useState<FfmpegToolsProbe | null>(null);
-  const ffmpegDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ffmpegApplyGen = useRef(0);
-
-  const runFfmpegApply = useCallback(async (dir: string) => {
-    const gen = ++ffmpegApplyGen.current;
-    const trimmed = dir.trim();
-    try {
-      if (!trimmed) {
-        const result = await setFfmpegToolsDir(null);
-        if (gen !== ffmpegApplyGen.current) return;
-        persistFfmpegDir("");
-        setProbe(result);
-        return;
-      }
-
-      const probed = await probeFfmpegTools(trimmed);
-      if (gen !== ffmpegApplyGen.current) return;
-      setProbe(probed);
-      if (!probed.ok) return;
-
-      const applied = await setFfmpegToolsDir(trimmed);
-      if (gen !== ffmpegApplyGen.current) return;
-      setProbe(applied);
-      if (applied.ok) persistFfmpegDir(trimmed);
-    } catch {
-      if (gen !== ffmpegApplyGen.current) return;
-      setProbe({
-        ok: false,
-        ffmpeg_path: null,
-        ffprobe_path: null,
-        error: "Could not check ffmpeg tools",
-      });
-    }
-  }, []);
+  const [tools, setTools] = useState<ToolsStatus | null>(null);
+  const [toolsError, setToolsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isTauri()) return;
 
     setRememberPaths(getRememberImporterPaths());
-    const storedFfmpeg = readPref(FFMPEG_TOOLS_STORAGE_KEY) || "";
-    setFfmpegPath(storedFfmpeg);
+
+    let live = true;
+    invokeToolsStatus().then(
+      (status) => {
+        if (live) setTools(status);
+      },
+      (caught: unknown) => {
+        if (live) {
+          setToolsError(
+            `Could not look for the media tools. ${caught instanceof Error ? caught.message : String(caught)}`,
+          );
+        }
+      },
+    );
 
     void (async () => {
       try {
@@ -319,13 +408,12 @@ export function SystemSection() {
       } catch (caught: unknown) {
         setStagingError(caught instanceof Error ? caught.message : String(caught));
       }
-      await runFfmpegApply(storedFfmpeg);
     })();
 
     return () => {
-      if (ffmpegDebounceRef.current) clearTimeout(ffmpegDebounceRef.current);
+      live = false;
     };
-  }, [runFfmpegApply]);
+  }, []);
 
   // The desktop process keeps the setting and decides what it takes: every
   // value typed is sent, and a refusal is shown as the desktop process gave
@@ -374,21 +462,13 @@ export function SystemSection() {
       );
   };
 
-  const onFfmpegPathChange = (next: string) => {
-    setFfmpegPath(next);
-    if (ffmpegDebounceRef.current) clearTimeout(ffmpegDebounceRef.current);
-    ffmpegDebounceRef.current = setTimeout(() => {
-      void runFfmpegApply(next);
-    }, FFMPEG_DEBOUNCE_MS);
-  };
-
   if (!isTauri()) {
     return (
       <div>
         <AppVersion />
         <p className="m-0 mt-8 text-[0.875rem] text-muted">
-          System settings (the Staging Directory, remembered importer paths, ffmpeg tools, and the
-          Export Directory) are available in the desktop app.
+          System settings (the Staging Directory, remembered importer paths, the media tools, and
+          the Export Directory) are available in the desktop app.
         </p>
       </div>
     );
@@ -440,40 +520,7 @@ export function SystemSection() {
         </span>
       </Checkbox>
 
-      <div className="mt-8">
-        <h3 className={sectionHeading}>Media</h3>
-        <div className={settingsGrid}>
-          <label htmlFor={ffmpegId} className={settingsLabel}>
-            ffmpeg directory
-          </label>
-          <div>
-            <PathPicker
-              id={ffmpegId}
-              value={ffmpegPath}
-              onChange={onFfmpegPathChange}
-              directory
-              placeholder="Uses system PATH by default"
-            />
-          </div>
-          <p className={settingsHelp}>
-            Directory must contain both ffmpeg and ffprobe. Leave blank to use system PATH.{" "}
-            <a
-              href="https://messagecrate.app/docs/user/features/messages/attachments-and-media/"
-              target="_blank"
-              rel="noopener"
-              className="text-accent"
-            >
-              Install help
-            </a>
-          </p>
-          {probe ? (
-            <ul className={`${settingsHelp} mt-1 list-none space-y-1 p-0`}>
-              <ToolStatusRow name="ffmpeg" path={probe.ffmpeg_path} />
-              <ToolStatusRow name="ffprobe" path={probe.ffprobe_path} />
-            </ul>
-          ) : null}
-        </div>
-      </div>
+      <MediaTools tools={tools} error={toolsError} />
 
       <ExportDirectory />
 

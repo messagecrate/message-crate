@@ -1,36 +1,82 @@
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
+/// Where this process looks for ffmpeg and ffprobe, and which files there
+/// answered `-version`.
 struct ToolsState {
-    override_dir: Option<PathBuf>,
+    /// The Tools Directory, searched after `PATH`. The desktop app sets it
+    /// for itself and passes it to the server it starts (`serve
+    /// --tools-dir`); a server started by hand has none.
+    tools_dir: Option<PathBuf>,
+    /// The `PATH` searched instead of the process's own. Only tests set it
+    /// ([`set_search_path`]), so a test decides what is found whether or
+    /// not the machine has ffmpeg installed.
+    search_path: Option<OsString>,
     generation: u64,
-    ffmpeg: Option<PathBuf>,
-    ffprobe: Option<PathBuf>,
+    /// The files that answered `-version`, by path, each beside the file as
+    /// it was when it answered. Every lookup searches `PATH` and the Tools
+    /// Directory again, which only reads file metadata, and a lookup runs
+    /// once per file staged and once per Asset shown; the answer kept here
+    /// means a file that answered is not run again until it changes.
+    ///
+    /// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
+    /// missing a shared library, or one that failed to start for a passing
+    /// reason is run again on the next lookup, because what fixes it (an
+    /// approval in System Settings, an installed library, the passing cause
+    /// going away) leaves the file's modified time, size and permissions as
+    /// they were, and a kept failure would hide the fix until a restart.
+    answered: HashMap<PathBuf, FileStamp>,
+}
+
+/// What tells one version of a file from another without reading it: a
+/// copy replaced, rewritten or made executable differs in one of these.
+#[derive(PartialEq, Eq)]
+struct FileStamp {
+    /// When the file was last modified, if the platform says.
+    modified: Option<SystemTime>,
+    /// The file's size in bytes.
+    len: u64,
+    /// The file's permissions, which `chmod +x` changes.
+    permissions: std::fs::Permissions,
+    /// On Unix, the status change time, inode and device: a file replaced
+    /// by another of the same size and modified time, as a copy that keeps
+    /// times does, or moved in from elsewhere, differs in these.
+    #[cfg(unix)]
+    unix: (i64, i64, u64, u64),
+}
+
+impl FileStamp {
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        Self {
+            modified: metadata.modified().ok(),
+            len: metadata.len(),
+            permissions: metadata.permissions(),
+            #[cfg(unix)]
+            unix: (
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+                metadata.ino(),
+                metadata.dev(),
+            ),
+        }
+    }
 }
 
 impl ToolsState {
-    /// The cached location of `ffmpeg` or `ffprobe`.
-    fn cached(&self, name: &str) -> Option<PathBuf> {
-        match name {
-            "ffmpeg" => self.ffmpeg.clone(),
-            "ffprobe" => self.ffprobe.clone(),
-            _ => None,
-        }
-    }
-
-    /// Remember where `ffmpeg` or `ffprobe` was found.
-    fn set_cached(&mut self, name: &str, path: Option<PathBuf>) {
-        match name {
-            "ffmpeg" => self.ffmpeg = path,
-            "ffprobe" => self.ffprobe = path,
-            _ => {}
-        }
+    /// Forget which files answered, so the next lookup runs them again.
+    fn forget(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.answered.clear();
     }
 }
 
@@ -39,66 +85,130 @@ fn tools_state() -> &'static Mutex<ToolsState> {
     static STATE: OnceLock<Mutex<ToolsState>> = OnceLock::new();
     STATE.get_or_init(|| {
         Mutex::new(ToolsState {
-            override_dir: None,
+            tools_dir: None,
+            search_path: None,
             generation: 0,
-            ffmpeg: None,
-            ffprobe: None,
+            answered: HashMap::new(),
         })
     })
 }
 
-/// Store a directory-only override for ffmpeg/ffprobe discovery and clear cached paths.
+/// Name the Tools Directory, searched for ffmpeg and ffprobe after `PATH`,
+/// and forget which files answered `-version` before.
 pub fn set_tools_dir(dir: Option<PathBuf>) {
     let mut state = tools_state().lock().expect("tools state lock");
-    state.override_dir = dir;
-    state.generation = state.generation.wrapping_add(1);
-    state.ffmpeg = None;
-    state.ffprobe = None;
+    state.tools_dir = dir;
+    state.forget();
 }
 
-/// Current tools-directory override, if any (primarily for tests).
+/// The Tools Directory [`set_tools_dir`] named, if any.
 pub fn tools_dir() -> Option<PathBuf> {
     tools_state()
         .lock()
         .expect("tools state lock")
-        .override_dir
+        .tools_dir
         .clone()
 }
 
-/// Result of locating ffmpeg and ffprobe (the GUI's probe result type).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FfmpegToolsProbe {
-    /// Whether both tools were found and pass `-version`.
-    pub ok: bool,
-    /// Resolved ffmpeg path, if found.
-    pub ffmpeg_path: Option<PathBuf>,
-    /// Resolved ffprobe path, if found.
-    pub ffprobe_path: Option<PathBuf>,
-    /// Human-readable list of missing tools when `ok` is false.
-    pub error: Option<String>,
+/// Search `path` instead of the process's `PATH`, or the process's own
+/// again with `None`, and forget which files answered `-version` before.
+#[cfg(any(test, feature = "testutil"))]
+pub(crate) fn set_search_path(path: Option<OsString>) {
+    let mut state = tools_state().lock().expect("tools state lock");
+    state.search_path = path;
+    state.forget();
 }
 
-/// True when both ffmpeg and ffprobe resolve from the search path.
-pub fn ffmpeg_available() -> bool {
-    resolve_tool("ffmpeg").is_some() && ffprobe_available()
+/// The `PATH` [`set_search_path`] put in place of the process's, if any.
+#[cfg(any(test, feature = "testutil"))]
+pub(crate) fn search_path() -> Option<OsString> {
+    tools_state()
+        .lock()
+        .expect("tools state lock")
+        .search_path
+        .clone()
 }
 
-/// True when ffprobe resolves from the search path.
-pub(crate) fn ffprobe_available() -> bool {
-    resolve_tool("ffprobe").is_some()
+/// Where ffmpeg and ffprobe are. Either is `None` when it was not found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FfmpegTools {
+    /// Where ffmpeg is.
+    pub ffmpeg: Option<PathBuf>,
+    /// Where ffprobe is.
+    pub ffprobe: Option<PathBuf>,
 }
 
-/// Fail with an installation hint when ffmpeg and ffprobe are not available.
-pub(crate) fn require_ffmpeg() -> Result<()> {
-    if ffmpeg_available() {
-        Ok(())
-    } else {
-        bail!(
-            "ffmpeg and ffprobe are required to convert or compress attachments. \
-             Keep the bundled tools in lib/ next to this program, install ffmpeg on PATH, \
-             or set MESSAGE_CRATE_BIN to a directory that contains both."
-        )
+impl FfmpegTools {
+    /// The programs not found, by name.
+    pub fn missing(&self) -> Vec<&'static str> {
+        [("ffmpeg", &self.ffmpeg), ("ffprobe", &self.ffprobe)]
+            .into_iter()
+            .filter(|(_, path)| path.is_none())
+            .map(|(name, _)| name)
+            .collect()
     }
+}
+
+/// Where ffmpeg and ffprobe are: both on `PATH`, else both in the Tools
+/// Directory.
+///
+/// # Errors
+///
+/// Returns an error naming both paths when one is found only on `PATH` and
+/// the other only in the Tools Directory, because two builds of different
+/// versions would then work on one file.
+pub fn ffmpeg_tools() -> Result<FfmpegTools> {
+    resolve_tools()
+}
+
+/// Where ffmpeg is, by [`ffmpeg_tools`]. `None` when it is not found, does
+/// not run, or is in a different place from ffprobe.
+pub fn ffmpeg_path() -> Option<PathBuf> {
+    resolve_tools().ok().and_then(|tools| tools.ffmpeg)
+}
+
+/// Where ffprobe is, by [`ffmpeg_tools`]. `None` when it is not found, does
+/// not run, or is in a different place from ffmpeg.
+pub fn ffprobe_path() -> Option<PathBuf> {
+    resolve_tools().ok().and_then(|tools| tools.ffprobe)
+}
+
+/// True when ffmpeg and ffprobe are both found, in one place.
+pub fn ffmpeg_available() -> bool {
+    resolve_tools().is_ok_and(|tools| tools.missing().is_empty())
+}
+
+/// True when ffprobe is found.
+pub(crate) fn ffprobe_available() -> bool {
+    ffprobe_path().is_some()
+}
+
+/// The places ffmpeg and ffprobe are looked for, as an error names them.
+fn where_looked() -> String {
+    match tools_dir() {
+        Some(dir) => format!("on PATH or in the Tools Directory, {}", dir.display()),
+        None => "on PATH".to_string(),
+    }
+}
+
+/// Fail, naming which tool is missing and where it was looked for, when
+/// ffmpeg or ffprobe is not found.
+///
+/// # Errors
+///
+/// Returns an error when either tool is missing, or when the two are in
+/// different places ([`ffmpeg_tools`]).
+pub fn require_ffmpeg() -> Result<()> {
+    let missing = resolve_tools()?.missing();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "ffmpeg and ffprobe are required to convert or compress attachments. {} {} not found {}.",
+        missing.join(" and "),
+        if missing.len() == 1 { "was" } else { "were" },
+        where_looked()
+    )
 }
 
 /// True when running `bin` with `args` exits successfully.
@@ -112,138 +222,115 @@ fn command_runs(bin: &Path, args: &[&str]) -> bool {
         .is_ok_and(|s| s.success())
 }
 
-/// Resolve `ffmpeg` / `ffprobe`: tools-dir override, then beside the running
-/// executable, `lib/` under its directory, `lib/` under its parent directory,
-/// `MESSAGE_CRATE_BIN`, then PATH.
-fn resolve_tool(name: &str) -> Option<PathBuf> {
-    if !matches!(name, "ffmpeg" | "ffprobe") {
-        let override_dir = tools_state()
-            .lock()
-            .expect("tools state lock")
-            .override_dir
-            .clone();
-        return find_tool_with_override(name, override_dir.as_deref());
-    }
-
-    loop {
-        let (generation, override_dir) = {
-            let state = tools_state().lock().expect("tools state lock");
-            if let Some(cached) = state.cached(name) {
-                return Some(cached);
-            }
-            (state.generation, state.override_dir.clone())
-        };
-
-        let resolved = find_tool_with_override(name, override_dir.as_deref());
-
-        let mut state = tools_state().lock().expect("tools state lock");
-        if state.generation != generation {
-            continue;
-        }
-        if state.cached(name).is_none() {
-            state.set_cached(name, resolved.clone());
-        }
-        return resolved;
-    }
+/// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
+/// `PATH` and Tools Directory. Every call searches again, so a program that
+/// arrives, moves or leaves is seen at once without a restart; only the
+/// `-version` answer of a file is kept ([`ToolsState::answered`]).
+fn resolve_tools() -> Result<FfmpegTools> {
+    let (search_path, tools_dir) = {
+        let state = tools_state().lock().expect("tools state lock");
+        (state.search_path.clone(), state.tools_dir.clone())
+    };
+    let search_path = search_path.or_else(|| std::env::var_os("PATH"));
+    find_tools(search_path.as_deref(), tools_dir.as_deref())
 }
 
-/// The tool under `dir` if it exists and runs.
+/// The tool under `dir` if it is a file and runs.
 fn find_tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     let candidate = dir.join(executable_name(name));
-    if candidate.is_file() && command_runs(&candidate, &["-version"]) {
-        Some(candidate)
-    } else {
-        None
+    let metadata = std::fs::metadata(&candidate).ok()?;
+    if !metadata.is_file() {
+        return None;
     }
+    candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
 }
 
-/// Probe both tools in an explicit directory, or fall back to the default
-/// resolution path (tools-dir override, beside the executable, `MESSAGE_CRATE_BIN`, PATH).
-pub fn probe_ffmpeg_tools(dir: Option<&Path>) -> FfmpegToolsProbe {
-    let (ffmpeg, ffprobe) = match dir {
-        Some(d) => (
-            find_tool_in_dir(d, "ffmpeg"),
-            find_tool_in_dir(d, "ffprobe"),
-        ),
-        None => (resolve_tool("ffmpeg"), resolve_tool("ffprobe")),
+/// True when `candidate`, as `file` describes it, answers `-version`. An
+/// answer is kept in [`ToolsState::answered`], so the same file is run once
+/// until it changes or the lookup is forgotten; a failure is not kept, so
+/// the file is run again on the next lookup. No lock is held while it runs.
+fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
+    let generation = {
+        let state = tools_state().lock().expect("tools state lock");
+        if state.answered.get(candidate) == Some(&file) {
+            return true;
+        }
+        state.generation
     };
-    match (ffmpeg, ffprobe) {
-        (Some(f), Some(p)) => FfmpegToolsProbe {
-            ok: true,
-            ffmpeg_path: Some(f),
-            ffprobe_path: Some(p),
-            error: None,
-        },
-        (f, p) => {
-            let mut parts = Vec::new();
-            if f.is_none() {
-                parts.push("ffmpeg not found or failed -version");
-            }
-            if p.is_none() {
-                parts.push("ffprobe not found or failed -version");
-            }
-            FfmpegToolsProbe {
-                ok: false,
-                ffmpeg_path: f,
-                ffprobe_path: p,
-                error: Some(parts.join("; ")),
-            }
+    let runs = command_runs(candidate, &["-version"]);
+    if runs {
+        let mut state = tools_state().lock().expect("tools state lock");
+        if state.generation == generation {
+            state.answered.insert(candidate.to_path_buf(), file);
         }
+    }
+    runs
+}
+
+/// Find `name` in each directory of `search_path` in turn.
+fn find_on_path(name: &str, search_path: Option<&OsStr>) -> Option<PathBuf> {
+    search_path
+        .into_iter()
+        .flat_map(std::env::split_paths)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .find_map(|dir| find_tool_in_dir(&dir, name))
+}
+
+/// Find ffmpeg and ffprobe on `search_path`, then in `tools_dir`, and
+/// nowhere else (#1053). A file that does not answer `-version` is passed
+/// over, because Convert would start with it and then fail on every file.
+///
+/// `PATH` comes first because a person who installed ffmpeg chose it, and
+/// the Tools Directory holds the copy the desktop app downloads for a
+/// computer that has none (`docs/adr/0019`). The two are taken from one
+/// place: both from `PATH` when both are there, else both from the Tools
+/// Directory. One found only on `PATH` and the other only in the Tools
+/// Directory is an error, because they would be two builds, perhaps of
+/// different versions.
+fn find_tools(search_path: Option<&OsStr>, tools_dir: Option<&Path>) -> Result<FfmpegTools> {
+    let path_ffmpeg = find_on_path("ffmpeg", search_path);
+    let path_ffprobe = find_on_path("ffprobe", search_path);
+    if path_ffmpeg.is_some() && path_ffprobe.is_some() {
+        return Ok(FfmpegTools {
+            ffmpeg: path_ffmpeg,
+            ffprobe: path_ffprobe,
+        });
+    }
+    let dir_ffmpeg = tools_dir.and_then(|dir| find_tool_in_dir(dir, "ffmpeg"));
+    let dir_ffprobe = tools_dir.and_then(|dir| find_tool_in_dir(dir, "ffprobe"));
+    if dir_ffmpeg.is_some() && dir_ffprobe.is_some() {
+        return Ok(FfmpegTools {
+            ffmpeg: dir_ffmpeg,
+            ffprobe: dir_ffprobe,
+        });
+    }
+    match (&path_ffmpeg, &path_ffprobe, &dir_ffmpeg, &dir_ffprobe) {
+        (Some(on_path), None, None, Some(in_dir)) => Err(found_in_two_places_error(
+            "ffmpeg", on_path, "ffprobe", in_dir,
+        )),
+        (None, Some(on_path), Some(in_dir), None) => Err(found_in_two_places_error(
+            "ffprobe", on_path, "ffmpeg", in_dir,
+        )),
+        _ => Ok(FfmpegTools {
+            ffmpeg: path_ffmpeg.or(dir_ffmpeg),
+            ffprobe: path_ffprobe.or(dir_ffprobe),
+        }),
     }
 }
 
-/// Locate a tool: in the override directory when set, else beside the program, in `lib/`,
-/// in `MESSAGE_CRATE_BIN`, or on PATH.
-fn find_tool_with_override(name: &str, override_dir: Option<&Path>) -> Option<PathBuf> {
-    if let Some(dir) = override_dir {
-        return find_tool_in_dir(dir, name);
-    }
-
-    let executable = executable_name(name);
-
-    if let Ok(current) = std::env::current_exe()
-        && let Some(dir) = current.parent()
-    {
-        let candidates = [
-            dir.join(&executable),
-            dir.join("lib").join(&executable),
-            dir.parent()
-                .map(|p| p.join("lib").join(&executable))
-                .unwrap_or_default(),
-        ];
-        for candidate in candidates {
-            if candidate.as_os_str().is_empty() {
-                continue;
-            }
-            if candidate.is_file() && command_runs(&candidate, &["-version"]) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    if let Some(extra) = std::env::var_os("MESSAGE_CRATE_BIN") {
-        let candidate = PathBuf::from(extra).join(&executable);
-        if candidate.is_file() && command_runs(&candidate, &["-version"]) {
-            return Some(candidate);
-        }
-    }
-
-    if let Some(paths) = std::env::var_os("PATH") {
-        for directory in std::env::split_paths(&paths) {
-            let candidate = directory.join(&executable);
-            if candidate.is_file() && command_runs(&candidate, &["-version"]) {
-                return Some(candidate);
-            }
-        }
-    }
-
-    // Last resort: bare name (PATH lookup by the OS / shell semantics).
-    let bare = PathBuf::from(&executable);
-    if command_runs(&bare, &["-version"]) {
-        return Some(bare);
-    }
-
-    None
+/// The error for ffmpeg and ffprobe found in two places.
+fn found_in_two_places_error(
+    on_path: &str,
+    path_copy: &Path,
+    in_dir: &str,
+    dir_copy: &Path,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{on_path} is on PATH at {} and {in_dir} is in the Tools Directory at {}. \
+         Both must be on PATH or both in the Tools Directory.",
+        path_copy.display(),
+        dir_copy.display()
+    )
 }
 
 /// The tool's file name, with `.exe` on Windows.
@@ -312,11 +399,9 @@ fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
     if stopped() {
         bail!("stopped before ffmpeg started");
     }
-    let ffmpeg = resolve_tool("ffmpeg").ok_or_else(|| {
-        anyhow::anyhow!(
-            "ffmpeg not found in lib/ (or beside this program), in MESSAGE_CRATE_BIN, or on PATH"
-        )
-    })?;
+    let ffmpeg = resolve_tools()?
+        .ffmpeg
+        .ok_or_else(|| anyhow::anyhow!("ffmpeg not found {}", where_looked()))?;
     let mut child = Command::new(ffmpeg)
         .args(QUIET_FFMPEG)
         .args(args)
@@ -420,11 +505,9 @@ pub(crate) struct Probe {
 /// or directory"), which reads as a problem with the user's file rather than
 /// a missing tool.
 pub(crate) fn ffprobe_command() -> Result<Command> {
-    let ffprobe = resolve_tool("ffprobe").ok_or_else(|| {
-        anyhow::anyhow!(
-            "ffprobe not found in lib/ (or beside this program), in MESSAGE_CRATE_BIN, or on PATH"
-        )
-    })?;
+    let ffprobe = resolve_tools()?
+        .ffprobe
+        .ok_or_else(|| anyhow::anyhow!("ffprobe not found {}", where_looked()))?;
     let mut cmd = Command::new(ffprobe);
     cmd.stdin(Stdio::null());
     Ok(cmd)

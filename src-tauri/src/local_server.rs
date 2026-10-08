@@ -509,6 +509,10 @@ pub struct Launch {
     /// always is. `cargo tauri dev` loads the screens from the Vite dev
     /// server, a different origin, and names it here.
     pub cors_origins: Vec<String>,
+    /// The app's Tools Directory, where the server looks for ffmpeg and
+    /// ffprobe after `PATH`, as the app does. `None` when the app has none
+    /// (no home directory).
+    pub tools_dir: Option<PathBuf>,
 }
 
 impl Launch {
@@ -538,6 +542,10 @@ impl Launch {
         for origin in &self.cors_origins {
             arguments.push("--cors-origin".into());
             arguments.push(origin.clone());
+        }
+        if let Some(tools_dir) = &self.tools_dir {
+            arguments.push("--tools-dir".into());
+            arguments.push(tools_dir.display().to_string());
         }
         arguments
     }

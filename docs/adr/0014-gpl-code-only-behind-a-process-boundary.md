@@ -190,7 +190,7 @@ copies it to `src-tauri/binaries/imessage-reader-<target triple>`, where
 inside every installer for `cargo tauri build`. The app finds it in two
 places only (`ios-backup/src/helper.rs`, `locate`): the file
 `MESSAGE_CRATE_IMESSAGE_READER` names, else beside its own executable.
-`MESSAGE_CRATE_BIN` and `PATH` are not searched, because the reader is built
+`PATH` and the Tools Directory are not searched, because the reader is built
 from this repository and shipped in the installer, not installed as a tool.
 The Docker image is unaffected, because the server never
 links an exporter.

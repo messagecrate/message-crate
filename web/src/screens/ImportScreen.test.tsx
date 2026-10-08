@@ -8,7 +8,7 @@
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveImportRun } from "../lib/importRun";
-import type { StagingSummary } from "../lib/tauri";
+import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import type { RunDirDeleteFailure } from "./import/importRunStore";
@@ -25,7 +25,7 @@ const hookState = vi.hoisted(() => ({
   stagingSummary: null as StagingSummary | null,
   mediaSummary: null as StagingSummary | null,
   mediaFailedCount: null as number | null,
-  mediaToolsMissing: false,
+  mediaToolsMissing: [] as MediaToolName[],
   mediaPartiallyRan: false,
   resumeError: null as string | null,
   sourceIdentities: null as string[] | null,
@@ -262,7 +262,7 @@ describe("ImportScreen entering Import", () => {
     hookState.stagingSummary = null;
     hookState.mediaSummary = null;
     hookState.mediaFailedCount = null;
-    hookState.mediaToolsMissing = false;
+    hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
     hookState.sourceIdentities = null;
@@ -1018,7 +1018,7 @@ describe("ImportScreen during a run", () => {
     hookState.stagingSummary = null;
     hookState.mediaSummary = null;
     hookState.mediaFailedCount = null;
-    hookState.mediaToolsMissing = false;
+    hookState.mediaToolsMissing = [];
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
     hookState.sourceIdentities = null;

@@ -249,7 +249,7 @@ The product has two pieces:
 | Node                   | Node.js 22+ for `web/`, `docs/`, and Docker frontend builds.                                                                      |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
 | Packaging              | Docker (Node 22 + Rust image). GitHub Actions on `v*` tags builds the image and Tauri installers.                                 |
-| Helpers on PATH        | `ffmpeg` / `ffprobe` for media. `wtsexporter` (Python) for WhatsApp. `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
+| Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` (Python) for WhatsApp, in the Tools Directory only. `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
 ### Directory map (`tree -L 2 message-crate`)
@@ -344,6 +344,7 @@ only the fork records the ids a WhatsApp reply is linked by.
 ```bash
 sudo apt install -y pipx && pipx ensurepath
 pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"   # wtsexporter
+mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/  # the app runs it only from its Tools Directory
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh

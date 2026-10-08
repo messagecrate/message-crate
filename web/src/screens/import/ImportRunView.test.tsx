@@ -495,10 +495,30 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done" }),
       stagingSummary: staged(),
       reviewWaiting: "staging",
-      mediaToolsMissing: true,
+      mediaToolsMissing: ["ffprobe"],
     });
     expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
-    expect(screen.getByText(/Media needs ffmpeg/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Media can't use ffprobe\. Put it beside ffmpeg, or put both in the Tools Directory\. Settings → System shows each program's state/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names both Media tools with and when neither can be used", () => {
+    renderView({
+      phase: "staging_review",
+      running: false,
+      steps: stepsAt("convert", { Staging: "done" }),
+      stagingSummary: staged(),
+      reviewWaiting: "staging",
+      mediaToolsMissing: ["ffmpeg", "ffprobe"],
+    });
+    expect(
+      screen.getByText(
+        /Media can't use ffmpeg and ffprobe\. Put both on PATH or both in the Tools Directory\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it("shows on each review that the server did not record it, with approving still offered", () => {

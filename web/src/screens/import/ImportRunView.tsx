@@ -12,7 +12,12 @@ import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
-import { type AttachmentForecast, invokeImportRunLog, type StagingSummary } from "../../lib/tauri";
+import {
+  type AttachmentForecast,
+  invokeImportRunLog,
+  type MediaToolName,
+  type StagingSummary,
+} from "../../lib/tauri";
 import type { AttachmentMediaMode } from "../../lib/types";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {
@@ -296,8 +301,11 @@ export default function ImportRunView({
   unknownContacts: number | null;
   /** Why the contact-match lookup failed, shown in place of the split; null when it did not. */
   unknownContactsError: string | null;
-  /** Convert or compress is chosen and ffmpeg was not found: approving would only fail later. */
-  mediaToolsMissing?: boolean;
+  /**
+   * Convert or compress is chosen and these of ffmpeg and ffprobe can't be
+   * used: approving would only fail later.
+   */
+  mediaToolsMissing?: MediaToolName[];
   /**
    * This Staging Review is a resume that found Media partway through, so
    * the directory holds a mix of originals and processed files and an estimate
@@ -388,7 +396,8 @@ export default function ImportRunView({
     const contacts = summary.contactIdentifiers.length;
     const heading = estimatesHeading(mode);
     const piles = heading && !mediaPartiallyRan ? estimatePiles(summary) : [];
-    const toolsBlocked = heading != null && Boolean(mediaToolsMissing);
+    const missingTools = heading != null ? (mediaToolsMissing ?? []) : [];
+    const toolsBlocked = missingTools.length > 0;
     return (
       <WaitingBody>
         <FactGroups>
@@ -444,7 +453,12 @@ export default function ImportRunView({
         ) : null}
         {toolsBlocked ? (
           <p className="m-0 text-[0.813rem] text-muted">
-            Media needs ffmpeg. Set its directory in Settings, then come back to Import.
+            Media can't use {missingTools.join(" and ")}.{" "}
+            {missingTools.length === 1
+              ? `Put it beside ${missingTools[0] === "ffmpeg" ? "ffprobe" : "ffmpeg"}, or put both in the Tools Directory.`
+              : "Put both on PATH or both in the Tools Directory."}{" "}
+            Settings → System shows each program's state and where the Tools Directory is. Then come
+            back to Import.
           </p>
         ) : null}
         <ReviewActions

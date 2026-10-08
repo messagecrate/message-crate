@@ -75,6 +75,13 @@ pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://g
 pipx install sqlite-web
 ```
 
+The desktop app runs `wtsexporter` only from its Tools Directory, `~/message-crate/tools`, never from `PATH`. A link there points it at the `pipx` install:
+
+```bash title="Link wtsexporter into the Tools Directory"
+mkdir -p ~/message-crate/tools
+ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
+```
+
 ### Fork and clone
 
 Fork the [Message Crate repo](https://github.com/messagecrate/message-crate) on GitHub and clone your fork. If you have never forked a repo before, GitHub has [a guide](https://docs.github.com/en/pull-requests/how-tos/work-with-forks/fork-a-repo).

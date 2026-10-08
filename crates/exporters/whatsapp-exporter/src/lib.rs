@@ -13,6 +13,7 @@ mod run;
 mod wtsexporter;
 
 pub use run::run;
+pub use wtsexporter::{wtsexporter_file_name, wtsexporter_path};
 
 #[cfg(test)]
 #[path = "../tests/convert_smoke.rs"]

@@ -107,6 +107,7 @@ fn launch_at(address: SocketAddr, program: &Path, data_dir: &Path) -> Launch {
         address,
         open_to_network: false,
         cors_origins: Vec::new(),
+        tools_dir: None,
     }
 }
 
@@ -145,6 +146,7 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
         address: OWN_ADDRESS.parse().unwrap(),
         open_to_network: false,
         cors_origins: Vec::new(),
+        tools_dir: None,
     };
     assert_eq!(
         Launch {
@@ -168,6 +170,24 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
             "--exit-with-parent",
             &std::process::id().to_string(),
         ]
+    );
+}
+
+/// The server looks for ffmpeg where the app does: on `PATH`, then in the
+/// app's Tools Directory, which the app names to it (#1053).
+#[test]
+fn the_server_is_told_the_tools_directory() {
+    let launch = Launch {
+        tools_dir: Some(PathBuf::from("/home/someone/message-crate/tools")),
+        ..launch_at(
+            OWN_ADDRESS.parse().unwrap(),
+            Path::new("unused"),
+            Path::new("/data"),
+        )
+    };
+    assert_eq!(
+        launch.arguments()[9..],
+        ["--tools-dir", "/home/someone/message-crate/tools"]
     );
 }
 

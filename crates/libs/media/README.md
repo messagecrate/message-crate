@@ -2,7 +2,7 @@
 
 FFmpeg wrapper used when an export copies, converts, or compresses attachment files. Convert/compress runs in `message-crate-core`'s attachment jobs, in the `message-staging` transcode pass, and in the server's import media processing.
 
-Converters and the desktop app use this crate. `ffmpeg` and `ffprobe` must be beside the binary, in `MESSAGE_CRATE_BIN`, or on `PATH`.
+Converters and the desktop app use this crate. `ffmpeg` and `ffprobe` are looked for on `PATH`, then in the Tools Directory the program names with `set_tools_dir`, and nowhere else. Both come from one place, because two builds would work on one file: both from `PATH` when both are there, else both from the Tools Directory.
 
 ## Build and test
 

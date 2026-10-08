@@ -28,6 +28,32 @@ pub const LOGS_DIRECTORY_NAME: &str = "logs";
 /// The Scratch Directory's name in the app-data directory.
 pub const SCRATCH_DIRECTORY_NAME: &str = "scratch";
 
+/// The Message Crate Directory's name in the home directory. Until #1053
+/// moves staging into `staging/`, it is also the default Staging Directory.
+pub const MESSAGE_CRATE_DIRECTORY_NAME: &str = "message-crate";
+
+/// The Tools Directory's name in the Message Crate Directory.
+pub const TOOLS_DIRECTORY_NAME: &str = "tools";
+
+/// The Tools Directory under `home`: `{home}/message-crate/tools`, where
+/// the app keeps its own copies of ffmpeg, ffprobe and wtsexporter. ffmpeg
+/// and ffprobe are looked for on `PATH` first and here second; wtsexporter
+/// only here (#1053).
+pub fn tools_dir_in(home: &Path) -> PathBuf {
+    home.join(MESSAGE_CRATE_DIRECTORY_NAME)
+        .join(TOOLS_DIRECTORY_NAME)
+}
+
+/// Make the Tools Directory under `home`, so a program put there by hand
+/// has a place to go, and name it to the lookups of this process. A
+/// directory that cannot be made is still named: nothing is found in it.
+pub fn use_tools_dir_in(home: &Path) -> PathBuf {
+    let tools = tools_dir_in(home);
+    let _ = std::fs::create_dir_all(&tools);
+    media::set_tools_dir(Some(tools.clone()));
+    tools
+}
+
 /// The Logs Directory in `app_data_dir`.
 pub fn logs_dir_in(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join(LOGS_DIRECTORY_NAME)
@@ -130,7 +156,28 @@ mod tests {
 
     use message_crate_core::RunLogLevel;
 
-    use super::{RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up};
+    use super::{
+        RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up, tools_dir_in,
+        use_tools_dir_in,
+    };
+
+    /// The Tools Directory is `tools` in the Message Crate Directory, and the
+    /// app makes it and names it to its lookups when it starts (#1053).
+    #[test]
+    fn the_tools_directory_is_made_and_named_to_the_lookups() {
+        let _lock = media::testutil::tools_test_lock();
+        let home = tempfile::tempdir().unwrap();
+        let tools = home.path().join("message-crate").join("tools");
+        assert_eq!(tools_dir_in(home.path()), tools);
+
+        let previous = media::tools_dir();
+        assert_eq!(use_tools_dir_in(home.path()), tools);
+        let named = media::tools_dir();
+        media::set_tools_dir(previous);
+
+        assert!(tools.is_dir());
+        assert_eq!(named, Some(tools));
+    }
 
     #[test]
     fn the_start_up_sweep_clears_the_scratch_directory() {

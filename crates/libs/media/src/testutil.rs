@@ -6,16 +6,19 @@
 //! gates on [`real_ffmpeg_test_guard`], so the rule for a missing ffmpeg
 //! lives in one place.
 //!
-//! The tool location is process-wide ([`crate::set_tools_dir`]), so a test
+//! The tool location is process-wide ([`crate::set_tools_dir`] and the
+//! `PATH` tests put in place of the process's), so a test
 //! that points it somewhere else and a test that runs the real ffmpeg must
 //! not overlap. One lock serializes them: tests that only read the location
 //! share it, and a test that changes the location holds it alone.
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, PoisonError, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use crate::tools::{ffmpeg_available, set_tools_dir, tools_dir};
+use std::ffi::OsString;
+
+use crate::tools::{ffmpeg_available, search_path, set_search_path, set_tools_dir, tools_dir};
 
 /// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
 /// Compress.
@@ -45,7 +48,7 @@ fn tools_lock() -> &'static RwLock<()> {
 
 /// Hold the tool location still, for a test that changes it.
 ///
-/// A test that calls [`crate::set_tools_dir`] must hold this for as long as
+/// A test that changes where the tools are looked for must hold this for as long as
 /// the location differs from the one it found, and put that one back before
 /// releasing it. Otherwise a test that runs the real ffmpeg can resolve the
 /// tools in the instant another test has them pointed at an empty or mock
@@ -88,7 +91,7 @@ pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
     assert!(
         !running_in_ci(),
         "{test} needs ffmpeg and ffprobe, and CI is set but they were not found. \
-         Install ffmpeg in this CI job, or put both tools in MESSAGE_CRATE_BIN."
+         Install ffmpeg on PATH in this CI job."
     );
     // Written to the stderr handle rather than through `eprintln!`, which the
     // test harness captures and throws away for a test that passes.
@@ -101,12 +104,13 @@ pub fn real_ffmpeg_test_guard() -> Option<RwLockReadGuard<'static, ()>> {
 
 /// The tool location made empty for as long as this lives.
 ///
-/// Holds [`tools_test_lock`], points the location at a directory that does
-/// not exist, and puts the previous location back when dropped. The override
-/// replaces every other place the tools are looked for, `PATH` included, so
-/// the tools are missing whether or not the machine has ffmpeg installed.
+/// Holds [`tools_test_lock`], searches an empty `PATH` and a Tools
+/// Directory that does not exist, and puts both back when dropped. Those are
+/// the only places the tools are looked for, so they are missing whether or
+/// not the machine has ffmpeg installed.
 pub struct ToolsHidden {
-    previous: Option<PathBuf>,
+    previous_tools_dir: Option<PathBuf>,
+    previous_search_path: Option<OsString>,
     _lock: RwLockWriteGuard<'static, ()>,
 }
 
@@ -115,19 +119,38 @@ pub struct ToolsHidden {
 #[must_use]
 pub fn hide_ffmpeg() -> ToolsHidden {
     let lock = tools_test_lock();
-    let previous = tools_dir();
+    let previous_tools_dir = tools_dir();
+    let previous_search_path = search_path();
     let nowhere = std::env::temp_dir()
         .join(format!("message-crate-no-tools-{}", std::process::id()))
         .join("does-not-exist");
+    set_search_path(Some(OsString::new()));
     set_tools_dir(Some(nowhere));
     ToolsHidden {
-        previous,
+        previous_tools_dir,
+        previous_search_path,
         _lock: lock,
     }
 }
 
 impl Drop for ToolsHidden {
     fn drop(&mut self) {
-        set_tools_dir(self.previous.take());
+        set_search_path(self.previous_search_path.take());
+        set_tools_dir(self.previous_tools_dir.take());
     }
+}
+
+/// Write an empty file at `path` with the Unix permission bits `mode`, as a
+/// program put in the Tools Directory for a test: `0o755` for one that may
+/// run, `0o644` for one copied in without `chmod +x`. Off Unix the mode is
+/// not set.
+pub fn write_with_mode(path: &Path, mode: u32) {
+    std::fs::write(path, "").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+    #[cfg(not(unix))]
+    let _ = mode;
 }

@@ -92,6 +92,16 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
+  Tools Directory second.** ffmpeg and ffprobe are found among the programs
+  installed on the computer, else in the app's Tools Directory, and both
+  from the same place. wtsexporter is found only in the Tools Directory.
+  The Message Crate the app starts looks in the same places, so the app and
+  the Message Crate it starts convert with the same ffmpeg. **Settings →
+  System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
+  wtsexporter, where each was found, that it is missing and where to put
+  it, or why it is not used. The app does not download the programs yet
+  (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
@@ -320,10 +330,20 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- The **ffmpeg directory** field in Settings → System is gone, and the
+  `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
+  read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
+  or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
+  found: install ffmpeg on `PATH` or put both programs in
+  `~/message-crate/tools`. Put wtsexporter in
+  `~/message-crate/tools` too, because a WhatsApp import no longer finds it
+  on `PATH`. If you start the server with a script, it takes `serve
+  --tools-dir <directory>` for the same purpose (#1053).
 - A `wtsexporter` installed before this release reads WhatsApp replies without
   their link. Install Message Crate's fork of WhatsApp Chat Exporter, release
   `0.13.0-mc.2`, with the line on the guide's WhatsApp page; it replaces the
-  old one (#1936).
+  old one. Then link or copy it into `~/message-crate/tools`, the Tools
+  Directory, because the app runs it from there only (#1936).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

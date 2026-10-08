@@ -3,16 +3,18 @@ use crate::testutil::tools_test_lock;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-struct RestoreToolsDir(Option<PathBuf>);
+/// Where the tools were looked for when a test started, put back when it ends.
+struct RestoreToolsDir(Option<PathBuf>, Option<OsString>);
 
 impl RestoreToolsDir {
     fn capture() -> Self {
-        Self(tools_dir())
+        Self(tools_dir(), search_path())
     }
 }
 
 impl Drop for RestoreToolsDir {
     fn drop(&mut self) {
+        set_search_path(self.1.clone());
         set_tools_dir(self.0.clone());
     }
 }
@@ -24,9 +26,9 @@ fn write_mock_tool(path: &Path) {
     fs::set_permissions(path, perms).unwrap();
 }
 
-/// Point the tool location at a directory holding an `ffmpeg` that runs
-/// `body` and an `ffprobe` that does nothing. Both answer `-version`, so
-/// the lookup accepts them.
+/// Point the tool location at a Tools Directory holding an `ffmpeg` that
+/// runs `body` and an `ffprobe` that does nothing, with an empty `PATH`
+/// before it. Both answer `-version`, so the lookup accepts them.
 fn mock_ffmpeg_dir(body: &str) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     write_mock_tool(&dir.path().join("ffprobe"));
@@ -39,7 +41,17 @@ fn mock_ffmpeg_dir(body: &str) -> tempfile::TempDir {
     let mut perms = fs::metadata(&ffmpeg).unwrap().permissions();
     perms.set_mode(0o755);
     fs::set_permissions(&ffmpeg, perms).unwrap();
+    set_search_path(Some(OsString::new()));
     set_tools_dir(Some(dir.path().to_path_buf()));
+    dir
+}
+
+/// A directory holding an `ffmpeg` and an `ffprobe` that both run.
+fn mock_tools() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["ffmpeg", "ffprobe"] {
+        write_mock_tool(&dir.path().join(name));
+    }
     dir
 }
 
@@ -241,52 +253,332 @@ fn real_ffmpeg_failure_names_the_missing_input() {
     );
 }
 
+/// Both programs from `dir`.
+fn both_in(dir: &Path) -> FfmpegTools {
+    FfmpegTools {
+        ffmpeg: Some(dir.join("ffmpeg")),
+        ffprobe: Some(dir.join("ffprobe")),
+    }
+}
+
+/// A directory holding only `name`, which runs.
+fn only(name: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    write_mock_tool(&dir.path().join(name));
+    dir
+}
+
+/// A person who installed ffmpeg chose it, so `PATH` wins over the copy in
+/// the Tools Directory (#1053).
 #[cfg(unix)]
 #[test]
-fn probe_directory_requires_both_tools() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = tempfile::tempdir().unwrap();
-    write_mock_tool(&dir.path().join("ffmpeg"));
+fn path_is_searched_before_the_tools_directory() {
+    let on_path = mock_tools();
+    let tools = mock_tools();
+    let empty = tempfile::tempdir().unwrap();
+    let search = std::env::join_paths([empty.path(), on_path.path()]).unwrap();
 
-    let probe = probe_ffmpeg_tools(Some(dir.path()));
-    assert!(!probe.ok);
-    assert!(probe.ffmpeg_path.is_some());
-    assert!(probe.ffprobe_path.is_none());
+    assert_eq!(
+        find_tools(Some(&search), Some(tools.path())).unwrap(),
+        both_in(on_path.path())
+    );
+}
+
+/// With nothing on `PATH`, the Tools Directory's copies are used.
+#[cfg(unix)]
+#[test]
+fn the_tools_directory_is_searched_when_path_has_no_ffmpeg() {
+    let tools = mock_tools();
+    let empty = tempfile::tempdir().unwrap();
+
+    assert_eq!(
+        find_tools(Some(empty.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
+    );
+    assert_eq!(
+        find_tools(Some(empty.path().as_os_str()), None).unwrap(),
+        FfmpegTools::default()
+    );
 }
 
 /// A file with the right name that cannot run is not a tool: Convert
-/// would start and then fail on every file.
+/// would start and then fail on every file. The lookup goes on to the
+/// Tools Directory.
 #[cfg(unix)]
 #[test]
-fn probe_directory_refuses_tools_that_cannot_run() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let dir = tempfile::tempdir().unwrap();
-    for name in ["ffmpeg", "ffprobe"] {
-        fs::write(dir.path().join(name), "not a program").unwrap();
-    }
+fn a_tool_that_cannot_run_is_passed_over() {
+    let broken = tempfile::tempdir().unwrap();
+    fs::write(broken.path().join("ffmpeg"), "not a program").unwrap();
+    fs::write(broken.path().join("ffprobe"), "not a program").unwrap();
+    let tools = mock_tools();
 
-    let probe = probe_ffmpeg_tools(Some(dir.path()));
-    assert!(!probe.ok);
-    assert_eq!(probe.ffmpeg_path, None);
-    assert_eq!(probe.ffprobe_path, None);
+    assert_eq!(
+        find_tools(Some(broken.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
+    );
+    assert_eq!(
+        find_tools(Some(broken.path().as_os_str()), None).unwrap(),
+        FfmpegTools::default()
+    );
 }
 
+/// ffmpeg on `PATH` without ffprobe beside it is passed over for the pair
+/// in the Tools Directory, so the two are one build.
 #[cfg(unix)]
 #[test]
-fn set_tools_dir_overrides_and_clears_cache() {
+fn ffmpeg_on_path_without_ffprobe_gives_way_to_the_tools_directory() {
+    let on_path = only("ffmpeg");
+    let tools = mock_tools();
+
+    assert_eq!(
+        find_tools(Some(on_path.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
+    );
+}
+
+/// ffmpeg only on `PATH` and ffprobe only in the Tools Directory would be
+/// two builds working on one file, so the lookup fails and names both.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_and_ffprobe_in_two_places_is_an_error_naming_both() {
+    let on_path = only("ffmpeg");
+    let tools = only("ffprobe");
+
+    let err =
+        find_tools(Some(on_path.path().as_os_str()), Some(tools.path())).expect_err("two places");
+    let message = err.to_string();
+    for path in [on_path.path().join("ffmpeg"), tools.path().join("ffprobe")] {
+        assert!(
+            message.contains(&path.display().to_string()),
+            "message was {message:?}"
+        );
+    }
+}
+
+/// A program that appends a line to `log` each time it runs.
+fn counting_tool(path: &Path, log: &Path) {
+    fs::write(
+        path,
+        format!("#!/bin/sh\necho run >> '{}'\nexit 0\n", log.display()),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+/// How many times the programs writing to `log` ran.
+fn runs_in(log: &Path) -> usize {
+    fs::read_to_string(log).map_or(0, |text| text.lines().count())
+}
+
+/// With ffmpeg and ffprobe in two places, every lookup fails and so
+/// searches again, once per file staged. Each program found was run once
+/// to see that it answers, and is not run again.
+#[cfg(unix)]
+#[test]
+fn a_second_lookup_in_two_places_runs_nothing() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
-    let dir = tempfile::tempdir().unwrap();
-    for name in ["ffmpeg", "ffprobe"] {
-        write_mock_tool(&dir.path().join(name));
-    }
-    set_tools_dir(Some(dir.path().to_path_buf()));
-    assert_eq!(tools_dir(), Some(dir.path().to_path_buf()));
+    let on_path = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let log = tools.path().join("runs.log");
+    counting_tool(&on_path.path().join("ffmpeg"), &log);
+    counting_tool(&tools.path().join("ffprobe"), &log);
+    set_search_path(Some(on_path.path().as_os_str().to_owned()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+
+    assert!(ffmpeg_tools().is_err());
+    let first = runs_in(&log);
+    assert_eq!(first, 2, "each program runs once to answer -version");
+    assert!(ffmpeg_tools().is_err());
+    assert!(ffprobe_path().is_none());
+    assert_eq!(runs_in(&log), first);
+}
+
+/// A file that could not run is run again on the next lookup, because a
+/// failure to answer `-version` is never kept: once it is made executable
+/// it is found.
+#[cfg(unix)]
+#[test]
+fn a_tool_made_executable_later_is_found() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = mock_tools();
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    let ffprobe = tools.path().join("ffprobe");
+    let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
+    perms.set_mode(0o644);
+    fs::set_permissions(&ffprobe, perms.clone()).unwrap();
+    assert!(!ffmpeg_available());
+
+    perms.set_mode(0o755);
+    fs::set_permissions(&ffprobe, perms).unwrap();
     assert!(ffmpeg_available());
+}
+
+/// A pair found in one place and then moved to another, under the same
+/// names, is found at the new place on the next lookup: the place is never
+/// kept, only each file's answer.
+#[cfg(unix)]
+#[test]
+fn a_pair_moved_to_another_directory_is_found_there() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let on_path = mock_tools();
+    let tools = tempfile::tempdir().unwrap();
+    set_search_path(Some(on_path.path().as_os_str().to_owned()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert_eq!(ffmpeg_tools().unwrap(), both_in(on_path.path()));
+
+    for name in ["ffmpeg", "ffprobe"] {
+        fs::rename(on_path.path().join(name), tools.path().join(name)).unwrap();
+    }
+    assert_eq!(ffmpeg_tools().unwrap(), both_in(tools.path()));
+}
+
+/// A program whose `-version` fails, as one Gatekeeper blocks or one
+/// missing a shared library does, is run again on the next lookup and found
+/// once it answers. Fixing either leaves the file as it was, so a kept
+/// failure would hide the fix until a restart.
+#[cfg(unix)]
+#[test]
+fn a_program_that_failed_once_is_found_when_it_answers() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = mock_tools();
+    let marker = tools.path().join("blocked");
+    fs::write(&marker, "").unwrap();
+    let ffprobe = tools.path().join("ffprobe");
+    fs::write(
+        &ffprobe,
+        format!(
+            "#!/bin/sh
+[ -e '{}' ] && exit 1
+exit 0
+",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&ffprobe, perms).unwrap();
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert!(!ffmpeg_available());
+
+    fs::remove_file(&marker).unwrap();
+    assert!(ffmpeg_available());
+}
+
+/// A program replaced in place by another file, with the same size,
+/// content and modified time, is a new file (a new inode), so it is run
+/// again rather than trusted on the old file's answer.
+#[cfg(unix)]
+#[test]
+fn a_program_replaced_in_place_is_run_again() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = tempfile::tempdir().unwrap();
+    let log = tools.path().join("runs.log");
+    for name in ["ffmpeg", "ffprobe"] {
+        counting_tool(&tools.path().join(name), &log);
+    }
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 2);
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 2, "an unchanged file is not run again");
+
+    let ffmpeg = tools.path().join("ffmpeg");
+    let modified = fs::metadata(&ffmpeg).unwrap().modified().unwrap();
+    let replacement = tools.path().join("ffmpeg.new");
+    counting_tool(&replacement, &log);
+    fs::File::options()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    fs::rename(&replacement, &ffmpeg).unwrap();
+
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 3, "the replaced ffmpeg runs once more");
+}
+
+/// With one program in neither place, the other is reported where it is
+/// and the missing one is named.
+#[cfg(unix)]
+#[test]
+fn a_lone_program_is_found_and_the_other_named_missing() {
+    let on_path = only("ffmpeg");
+    let empty = tempfile::tempdir().unwrap();
+
+    let tools = find_tools(Some(on_path.path().as_os_str()), Some(empty.path())).unwrap();
+    assert_eq!(tools.ffmpeg, Some(on_path.path().join("ffmpeg")));
+    assert_eq!(tools.missing(), vec!["ffprobe"]);
+}
+
+/// `PATH` and the Tools Directory are the only places looked in:
+/// `MESSAGE_CRATE_BIN` is not read any more (#1053).
+#[cfg(unix)]
+#[test]
+fn message_crate_bin_is_not_searched() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let elsewhere = mock_tools();
+    set_search_path(Some(OsString::new()));
     set_tools_dir(None);
-    assert_eq!(tools_dir(), None);
+
+    // SAFETY: test-only env mutation; this test holds tools_test_lock so no
+    // concurrent lookup runs.
+    unsafe {
+        std::env::set_var("MESSAGE_CRATE_BIN", elsewhere.path());
+    }
+    let found = ffmpeg_path();
+    unsafe {
+        std::env::remove_var("MESSAGE_CRATE_BIN");
+    }
+    assert_eq!(found, None);
+}
+
+/// A new Tools Directory is searched at once: a tool found before is
+/// forgotten.
+#[cfg(unix)]
+#[test]
+fn set_tools_dir_clears_what_was_found() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let first = mock_tools();
+    let second = mock_tools();
+    set_search_path(Some(OsString::new()));
+
+    set_tools_dir(Some(first.path().to_path_buf()));
+    assert_eq!(ffmpeg_path(), Some(first.path().join("ffmpeg")));
+    set_tools_dir(Some(second.path().to_path_buf()));
+    assert_eq!(tools_dir(), Some(second.path().to_path_buf()));
+    assert_eq!(ffmpeg_path(), Some(second.path().join("ffmpeg")));
+}
+
+/// A tool not found is looked for again, so a copy that arrives in the
+/// Tools Directory after the first lookup is used without a restart.
+#[cfg(unix)]
+#[test]
+fn a_tool_that_arrives_later_is_found() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = tempfile::tempdir().unwrap();
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert!(!ffmpeg_available());
+
+    for name in ["ffmpeg", "ffprobe"] {
+        write_mock_tool(&tools.path().join(name));
+    }
+    assert!(ffmpeg_available());
 }
 
 #[cfg(unix)]
@@ -297,56 +589,21 @@ fn missing_ffprobe_names_the_tool_not_the_input_file() {
     // *input* — "No such file or directory" on `/path/to/IMG_0001.HEIC"
     // — which reads as a problem with the user's file, not the missing
     // tool. `ffprobe_command` must fail before that, with a message that
-    // names ffprobe.
+    // names ffprobe and where it was looked for.
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let empty = tempfile::tempdir().unwrap();
+    set_search_path(Some(OsString::new()));
     set_tools_dir(Some(empty.path().to_path_buf()));
 
-    let err = ffprobe_command().expect_err("no ffprobe in an empty override dir");
+    let err = ffprobe_command().expect_err("no ffprobe on PATH or in the Tools Directory");
     let message = err.to_string();
     assert!(
-        message.contains("ffprobe not found"),
+        message.contains("ffprobe not found on PATH or in the Tools Directory"),
         "message was {message:?}"
     );
-}
-
-#[cfg(unix)]
-#[test]
-fn probe_candidate_directory_does_not_change_override() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    let live = tempfile::tempdir().unwrap();
-    for name in ["ffmpeg", "ffprobe"] {
-        write_mock_tool(&live.path().join(name));
-    }
-    set_tools_dir(Some(live.path().to_path_buf()));
-
-    let candidate = tempfile::tempdir().unwrap();
-    write_mock_tool(&candidate.path().join("ffmpeg"));
-
-    let _probe = probe_ffmpeg_tools(Some(candidate.path()));
-    assert_eq!(tools_dir(), Some(live.path().to_path_buf()));
-}
-
-#[cfg(unix)]
-#[test]
-fn find_tool_prefers_message_crate_bin() {
-    let _guard = tools_test_lock();
-    let _restore = RestoreToolsDir::capture();
-    set_tools_dir(None);
-    let dir = tempfile::tempdir().unwrap();
-    write_mock_tool(&dir.path().join("ffmpeg"));
-
-    // SAFETY: test-only env mutation; this test holds tools_test_lock so no
-    // concurrent resolve_tool calls run. In production, set_tools_dir override
-    // is checked before MESSAGE_CRATE_BIN; job threads share the same override.
-    unsafe {
-        std::env::set_var("MESSAGE_CRATE_BIN", dir.path());
-    }
-    let found = resolve_tool("ffmpeg").expect("ffmpeg from MESSAGE_CRATE_BIN");
-    assert_eq!(found, dir.path().join("ffmpeg"));
-    unsafe {
-        std::env::remove_var("MESSAGE_CRATE_BIN");
-    }
+    assert!(
+        message.contains(&empty.path().display().to_string()),
+        "message was {message:?}"
+    );
 }

@@ -173,9 +173,15 @@ Without ffmpeg the pass makes nothing and leaves the queue as it is, so the
 Assets wait for a server that has it, at its next start or after the next
 Import Run. It still records whether each queued original is shown as it is
 (rule 2). The Docker image has ffmpeg. The desktop app's server looks for
-it where the `media` crate does: beside the program, in `MESSAGE_CRATE_BIN`,
-then on `PATH` (`docs/adr/0019-the-desktop-app-downloads-the-programs-it-needs.md`
-is the decided way it gets there).
+it where the `media` crate does: on `PATH`, then in the Tools Directory the
+app passes with `serve --tools-dir`, and nowhere else
+(`docs/adr/0019-the-desktop-app-downloads-the-programs-it-needs.md` is the
+decided way it gets there). A server started by hand has no Tools Directory
+and finds ffmpeg on `PATH` or makes nothing.
+ffmpeg and ffprobe come from one place, both from `PATH` or both from the
+Tools Directory, because two builds of different versions would work on one
+file. One found only on `PATH` and the other only in the Tools Directory is
+an error naming both.
 
 Why after each import: a Preview existed only once someone ran
 `process-assets` by hand, so an attachment imported with **Attachments →

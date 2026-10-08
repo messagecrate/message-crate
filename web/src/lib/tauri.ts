@@ -485,21 +485,38 @@ export async function invokeFormat(config: {
   });
 }
 
-export interface FfmpegToolsProbe {
-  ok: boolean;
-  ffmpeg_path: string | null;
-  ffprobe_path: string | null;
-  error: string | null;
+/**
+ * Where one program the desktop app runs is. Tagged by `state`, one tag per
+ * state, so a state can be added beside the others without changing them.
+ */
+export type ToolStatus =
+  | { state: "found"; path: string }
+  | { state: "missing" }
+  | { state: "unusable"; reason: string };
+
+/**
+ * Where ffmpeg, ffprobe and wtsexporter are. ffmpeg and ffprobe are looked
+ * for on PATH, then in the Tools Directory, and are taken from one place;
+ * wtsexporter only from the Tools Directory.
+ */
+export interface ToolsStatus {
+  toolsDir: string | null;
+  ffmpeg: ToolStatus;
+  ffprobe: ToolStatus;
+  wtsexporter: ToolStatus;
 }
 
-/** Check whether ffmpeg and ffprobe are available at this directory. */
-export async function probeFfmpegTools(dir: string | null): Promise<FfmpegToolsProbe> {
-  return invoke("probe_ffmpeg_tools", { dir });
+/** Ask the desktop process where ffmpeg, ffprobe and wtsexporter are. */
+export async function invokeToolsStatus(): Promise<ToolsStatus> {
+  return invoke("tools_status");
 }
 
-/** Save the ffmpeg tools directory and check that the tools are there. */
-export async function setFfmpegToolsDir(dir: string | null): Promise<FfmpegToolsProbe> {
-  return invoke("set_ffmpeg_tools_dir", { dir });
+/** The programs Convert and Compress run. */
+export type MediaToolName = "ffmpeg" | "ffprobe";
+
+/** Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used. */
+export function ffmpegMissing(status: ToolsStatus): MediaToolName[] {
+  return (["ffmpeg", "ffprobe"] as const).filter((name) => status[name].state !== "found");
 }
 
 export interface HomeDirInfo {

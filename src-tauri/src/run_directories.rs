@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
-use crate::app_directories::import_run_log;
+use crate::app_directories::{MESSAGE_CRATE_DIRECTORY_NAME, import_run_log};
 use crate::commands::paths::{resolve_openable_path, resolve_staging_root};
 
 /// File in the app-data directory that holds the Staging Directory setting
@@ -32,10 +32,6 @@ pub const RECORD_FILE: &str = "staging.json";
 
 /// File beside [`RECORD_FILE`] that every process locks to read or change it.
 const LOCK_FILE: &str = "staging.json.lock";
-
-/// Directory under the home directory that is the Staging Directory when Settings
-/// name none.
-const DEFAULT_ROOT_NAME: &str = "message-crate";
 
 /// What [`RECORD_FILE`] holds.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -160,7 +156,7 @@ impl RunDirectories {
     fn default_root(&self) -> Result<PathBuf, String> {
         self.home
             .as_ref()
-            .map(|home| home.join(DEFAULT_ROOT_NAME))
+            .map(|home| home.join(MESSAGE_CRATE_DIRECTORY_NAME))
             .ok_or_else(|| "Could not determine the user home directory".to_string())
     }
 
