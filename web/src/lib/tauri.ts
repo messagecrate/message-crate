@@ -486,8 +486,8 @@ export async function invokeFormat(config: {
 }
 
 /**
- * Where one program the desktop app runs is. Tagged by `state`, so the
- * download (#1053, step 3) adds its own states beside these two.
+ * Where one program the desktop app runs is. Tagged by `state`, one tag per
+ * state, so a state can be added beside the others without changing them.
  */
 export type ToolStatus =
   | { state: "found"; path: string }

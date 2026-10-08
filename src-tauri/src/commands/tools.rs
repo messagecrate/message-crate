@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 /// Where one program is, as Settings shows it.
 ///
-/// Tagged by `state`, so the download (#1053, step 3) adds its own states
-/// (in progress, failed and why) beside these two without changing them.
+/// Tagged by `state`, one tag per state, so a state can be added beside the
+/// others without changing them.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum ToolStatus {

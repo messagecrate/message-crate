@@ -55,8 +55,8 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
 type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
 
 /**
- * One program's status line: the path it was found at, or that it is missing.
- * The download (#1053, step 3) adds a line for each of its own states here.
+ * One program's status line: the path it was found at, that it is missing,
+ * or why it is not used. One case per `state` the desktop process sends.
  */
 function ToolStatusRow({ name, status }: { name: ToolName; status: ToolStatus }) {
   switch (status.state) {
