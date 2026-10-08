@@ -79,7 +79,7 @@ The desktop app runs `wtsexporter` only from its Tools Directory, `~/message-cra
 
 ```bash title="Link wtsexporter into the Tools Directory"
 mkdir -p ~/message-crate/tools
-ln -sf "$(command -v wtsexporter)" ~/message-crate/tools/
+ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
 ```
 
 ### Fork and clone

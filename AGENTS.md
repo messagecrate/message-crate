@@ -344,7 +344,7 @@ only the fork records the ids a WhatsApp reply is linked by.
 ```bash
 sudo apt install -y pipx && pipx ensurepath
 pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"   # wtsexporter
-mkdir -p ~/message-crate/tools && ln -sf "$(command -v wtsexporter)" ~/message-crate/tools/  # the app runs it only from its Tools Directory
+mkdir -p ~/message-crate/tools && ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/  # the app runs it only from its Tools Directory
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
