@@ -26,6 +26,29 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
   return out;
 }
 
+/** One earlier version of one part of an edited message, as the server sends it. */
+type EarlierVersion = Message["earlier_versions"][number];
+
+/** When `version` was written, in milliseconds; earliest when the source did not record it. */
+function writtenAt(version: EarlierVersion): number {
+  return version.edited_at ? Date.parse(version.edited_at) : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * The newest earlier version a search found `message` by: of the versions
+ * marked `matched`, the one written last, or the later in the list when
+ * their times tie or are not recorded. None for a hit its final text
+ * matched, which the server marks neither way (`docs/architecture/search.md`).
+ */
+function newestMatchedVersion(message: Message): EarlierVersion | undefined {
+  if (!message.matched_earlier_version) return undefined;
+  let newest: EarlierVersion | undefined;
+  for (const version of message.earlier_versions) {
+    if (version.matched && (!newest || writtenAt(version) >= writtenAt(newest))) newest = version;
+  }
+  return newest;
+}
+
 /**
  * One row of the Messages list: the conversation's name and the message's
  * date in the account's Time Zone, then who sent it and its text, cut around
@@ -36,6 +59,11 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
  * Deleted in the source app keeps its text, with a muted "Deleted in
  * <source>" line under it; an Unsent one reads "Unsent" in place of its text
  * and attachments, because its sender took all of it back.
+ *
+ * A message the search found only by an earlier version keeps its final text,
+ * with a muted "Earlier version: …" line under it quoting the newest version
+ * that matched, cut and in bold the same way, so the row shows why it is a
+ * hit (#1785).
  */
 export default function MessageSearchRow({
   message,
@@ -54,6 +82,8 @@ export default function MessageSearchRow({
   const cut = snippet(unsent ? "" : messageRowText(message), terms);
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
+  const matchedVersion = newestMatchedVersion(message);
+  const versionCut = matchedVersion ? snippet(matchedVersion.text, terms) : null;
 
   return (
     <PlainButton
@@ -89,6 +119,11 @@ export default function MessageSearchRow({
           </span>
         ) : null}
       </span>
+      {versionCut ? (
+        <span className="line-clamp-2 min-w-0 break-words text-[0.75rem] text-muted">
+          Earlier version: {boldRanges(versionCut.text, versionCut.ranges)}
+        </span>
+      ) : null}
       {deletedInSource ? (
         <span className="text-[0.75rem] text-muted">{deletedInSourceText(message.source)}</span>
       ) : null}

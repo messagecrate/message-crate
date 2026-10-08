@@ -187,6 +187,16 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-07: **A hit found by an earlier version says so in the Messages
+  list.** A search finds a message when one of its earlier versions holds a
+  searched word, but the row showed only the final text, with no word in
+  bold, so it looked like a wrong result until it was opened. Searching
+  `imprudent pitied` on the Demo Account listed "Those who do not complain
+  are never pitied." with nothing showing "imprudent". The row now keeps the
+  final text and adds a muted line, "Earlier version: So imprudent a match on
+  both sides!", quoting the newest version that matched, with the searched
+  words in bold (#1785).
+
 - 2026-10-07: **A contact's and an identity's counts include orphaned
   messages.** Since orphaned messages got conversations of their own, the
   counts that split a person's conversations and messages into direct and
