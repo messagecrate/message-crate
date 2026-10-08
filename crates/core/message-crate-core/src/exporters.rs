@@ -16,7 +16,7 @@ use crate::config::{
 };
 
 /// Validation message when Convert or Compress is selected and ffmpeg is missing.
-pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which is missing and where the Tools Directory is.";
+pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which can't be used and where the Tools Directory is.";
 
 /// Which backup type the user selected (iMessage, WhatsApp, SMS Backup & Restore, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
