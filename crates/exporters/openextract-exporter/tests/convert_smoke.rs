@@ -440,7 +440,7 @@ fn a_number_and_an_email_are_two_people() {
         "Date,Sender,Text,Is From Me,Has Attachments\n\
 2020-01-01T17:00:00+00:00,+15555550122,Hi from Jo,False,False\n\
 2020-01-01T17:01:00+00:00,Pat@Example.com,Hi from Pat,False,False\n\
-2020-01-01T17:02:00+00:00,5555550122,Jo again,False,False\n",
+2020-01-01T17:02:00+00:00,+1 555-555-0122,Jo again,False,False\n",
     )]);
     assert_eq!(documents.len(), 1);
     let doc = documents.values().next().unwrap();

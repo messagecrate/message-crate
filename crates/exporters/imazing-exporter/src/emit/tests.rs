@@ -1649,7 +1649,8 @@ fn a_tel_number_and_a_tab_padded_number_are_one_address() {
     );
     assert_eq!(documents.len(), 1);
     let doc = &documents[0];
-    assert_eq!(doc.conversation.chat_identifier, "+15555550101");
+    // No country is stated, so the number keeps its digits (#1676).
+    assert_eq!(doc.conversation.chat_identifier, "5555550101");
     assert_eq!(doc.messages.len(), 2);
     let participants: Vec<_> = doc
         .conversation
@@ -1659,7 +1660,7 @@ fn a_tel_number_and_a_tab_padded_number_are_one_address() {
         .collect();
     assert_eq!(
         participants,
-        vec![(Some("+15555550101"), Some(message_ir::HandleType::Phone))]
+        vec![(Some("5555550101"), Some(message_ir::HandleType::Phone))]
     );
 }
 

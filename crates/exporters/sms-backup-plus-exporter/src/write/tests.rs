@@ -295,7 +295,7 @@ fn the_owner_under_another_spelling_is_not_a_peer() {
     let mut doc = sample_document("hello");
     doc.export.owner_identity = Some("+15555550100".into());
     doc.conversation.participants.push(IrParticipant {
-        identity: Some("5555550100".into()),
+        identity: Some("+1 (555) 555-0100".into()),
         display_name: Some("Me".into()),
         identity_type: None,
     });
@@ -355,7 +355,8 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
 
     assert_eq!(
         subject_of(&["carol@example.org", "(555) 555-0102"]),
-        "SMS with +15555550102"
+        "SMS with 5555550102",
+        "a number without its + code keeps its digits: no country is stated"
     );
     assert_eq!(subject_of(&["carol@example.org", "dan@example.org"]), "SMS");
 }

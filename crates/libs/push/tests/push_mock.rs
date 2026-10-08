@@ -159,6 +159,7 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
         journal_path: Some(dir.join(".import-state.jsonl")),
         cancel: None,
         import_id: None,
+        phone_country: None,
     }
 }
 
@@ -1176,6 +1177,7 @@ fn profiles_attachment_upload_phases() {
         journal_path: Some(dir.path().join(".import-state.jsonl")),
         cancel: None,
         import_id: None,
+        phone_country: None,
     };
     let (report, progress_lines) = run_showing(&cfg);
 
@@ -3676,4 +3678,50 @@ fn a_session_refused_at_login_stops_the_push_as_a_pause() {
     assert_eq!(report.conversations_cancelled, 2);
     assert_eq!(report.conversations_total, 2);
     assert_eq!(batches.calls(), 0);
+}
+
+/// The phone country the Upload is given reaches the Import Run it starts,
+/// where the server reads every number written without its `+` code in it
+/// (#1676).
+#[test]
+fn the_phone_country_is_stated_on_the_import_run() {
+    let server = MockServer::start();
+    server.mock(|when, then| {
+        when.method(GET).path("/v1/session");
+        then.status(200).json_body(json!({
+            "account_id": 1,
+            "username": "alice",
+            "sources": ["sms-backup-restore"]
+        }));
+    });
+    let start = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports")
+            .json_body_includes(r#"{"phone_country": "GB"}"#);
+        then.status(201)
+            .header("Location", "/v1/imports/42")
+            .json_body(json!({ "id": 42 }));
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(200).json_body(json!({ "id": 42 }));
+    });
+    server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "source": "sms-backup-restore",
+            "messages_inserted": 1,
+            "messages_deduped": 0,
+            "messages_failed": 0,
+            "conversations": 1,
+        }));
+    });
+    let tmp = tempfile::tempdir().unwrap();
+    write_jsonl(tmp.path(), &sample_doc());
+    let cfg = PushConfig {
+        phone_country: Some("GB".into()),
+        ..text_only_config(tmp.path(), server.base_url())
+    };
+    run(&cfg, None).unwrap();
+    start.assert();
 }

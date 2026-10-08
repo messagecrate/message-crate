@@ -41,6 +41,7 @@ fn source(include_summary: bool) -> SourceConfig {
         owner_emails: vec!["me@example.com".into()],
         verbose: false,
         include_summary,
+        phone_country: None,
     })
 }
 

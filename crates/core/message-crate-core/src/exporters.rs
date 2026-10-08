@@ -162,6 +162,13 @@ pub struct Form {
     /// Optional zone for timestamps that carry none: a fixed UTC offset
     /// (`UTC-05:00`) or an IANA name (`America/New_York`).
     pub timezone: String,
+    /// The country of the phone the backup came from, as an ISO 3166-1
+    /// alpha-2 code (`GB`), or blank when the person names none. Every phone
+    /// number the run writes without its `+` code is read as a number in it
+    /// (#1676). The server applies it to every file of the run; SMS Backup+
+    /// also keys its numbers by it, because it decides who is one person
+    /// before the server sees the files.
+    pub phone_country: String,
     /// Whether to rewrite output with stable fake identities.
     pub obfuscate: bool,
     /// Optional hex seed for reproducible obfuscation.
@@ -216,6 +223,7 @@ impl Default for Form {
             owner_phones: String::new(),
             owner_emails: String::new(),
             timezone: String::new(),
+            phone_country: String::new(),
             obfuscate: false,
             obfuscate_seed: String::new(),
             advanced: false,
@@ -256,6 +264,7 @@ impl Form {
     ) -> Result<ExporterConfig, Vec<String>> {
         let mut errors = Vec::new();
         let obfuscate = self.validate_obfuscate(&mut errors);
+        self.validate_phone_country(&mut errors);
 
         let config = match exporter {
             Exporter::Imessage => self.to_imessage_config(obfuscate, scratch_dir, &mut errors),
@@ -275,6 +284,25 @@ impl Form {
             Ok(config)
         } else {
             Err(errors)
+        }
+    }
+
+    /// The country the form states for the phone, `None` when it states
+    /// none or names a country the phone table does not hold.
+    #[must_use]
+    pub fn phone_country(&self) -> Option<&'static phone::Country> {
+        phone::country(self.phone_country.trim())
+    }
+
+    /// Refuse a phone country the phone table does not hold. Blank is no
+    /// country, which is allowed: a number without its `+` code then keeps
+    /// its digits.
+    fn validate_phone_country(&self, errors: &mut Vec<String>) {
+        let code = self.phone_country.trim();
+        if !code.is_empty() && phone::country(code).is_none() {
+            errors.push(format!(
+                "Phone country \"{code}\" is not a country code Message Crate knows."
+            ));
         }
     }
 
@@ -529,6 +557,7 @@ impl Form {
             source: SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
                 owner_phones,
                 owner_emails,
+                phone_country: self.phone_country(),
                 verbose: true,
                 include_summary: true,
             }),
@@ -809,6 +838,40 @@ mod tests {
         assert_eq!(plus.owner_phones.len(), 2);
         assert!(plus.verbose);
         assert!(plus.include_summary);
+    }
+
+    /// The form's phone country reaches SMS Backup+, which keys numbers by
+    /// it, and a code the phone table does not hold is refused (#1676).
+    #[test]
+    fn plus_carries_the_phone_country_and_an_unknown_one_is_refused() {
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        let form = Form {
+            input: cwd,
+            output: "out".into(),
+            owner_phones: "+447700900100".into(),
+            owner_emails: "me@example.com".into(),
+            phone_country: " gb ".into(),
+            ..Form::default()
+        };
+        let config = form
+            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+            .unwrap();
+        let SourceConfig::SmsBackupPlus(plus) = config.source else {
+            panic!("expected SmsBackupPlus");
+        };
+        assert_eq!(plus.phone_country.map(|c| c.code), Some("GB"));
+
+        let unknown = Form {
+            phone_country: "ZZ".into(),
+            ..form
+        };
+        let errors = unknown
+            .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+            .unwrap_err();
+        assert_eq!(
+            errors,
+            ["Phone country \"ZZ\" is not a country code Message Crate knows."]
+        );
     }
 
     #[test]

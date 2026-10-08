@@ -159,12 +159,17 @@ mod tests {
         assert!(numbers.with_several_numbers.contains("smiths@example.com"));
     }
 
-    /// Two spellings of one number are one number.
+    /// Two spellings of one number are one number when the phone's country
+    /// is stated, as the archive reader keys them (#1676).
     #[test]
     fn an_address_given_one_number_twice_is_that_number() {
+        let in_us = |number: &str| EmailNumber {
+            email: "smiths@example.com".into(),
+            number: Handle::parse_in(number, phone::country("US")).unwrap(),
+        };
         let mut numbers = EmailNumbers::default();
-        numbers.record(pair("+14075550111"));
-        numbers.record(pair("4075550111"));
+        numbers.record(in_us("+14075550111"));
+        numbers.record(in_us("4075550111"));
         let numbers = numbers.into_numbers();
         assert_eq!(numbers.by_email["smiths@example.com"].key(), "+14075550111");
     }

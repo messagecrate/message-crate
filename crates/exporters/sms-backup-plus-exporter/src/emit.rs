@@ -74,9 +74,10 @@ const GROUP_MEMBERS_WITHOUT_NUMBER: Counter = Counter::new(
 /// or more numbers, as a contact card two people share does, so the address
 /// stays their key. Each is counted once. One number written in national
 /// form in some mails and international form in others (`07700900123`,
-/// `+447700900123`) counts as two, since only a `+` number is read as
-/// international. Each is a note in the Import Run.
-const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: Counter = Counter::new(
+/// `+447700900123`) counts as two when the import form states no country for
+/// the phone, because nothing then says the two are one number; with the
+/// country stated they are one (#1676). Each is a note in the Import Run.
+pub(crate) const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: Counter = Counter::new(
     "group_members_with_several_numbers",
     "Kept 1 group member by an email address the backup gives more than one phone number",
     "Kept {n} group members by email addresses the backup gives more than one phone number",
@@ -429,6 +430,9 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub owner_emails: &'a [String],
+    /// The country of the phone the archive came from, when the import form
+    /// states it: a number written without its `+` code is keyed in it.
+    pub phone_country: Option<&'static phone::Country>,
     pub verbose: bool,
     pub transforms: ExportTransforms,
     pub output_format: OutputFormat,
@@ -463,6 +467,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         scratch_dir,
         owner_phones,
         owner_emails,
+        phone_country,
         verbose,
         transforms,
         output_format,
@@ -479,7 +484,8 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         enabled: verbose,
         log,
     };
-    let owner = Owner::new(OwnerHandleSet::from_phones(owner_phones)?, owner_emails);
+    let owner = Owner::new(OwnerHandleSet::from_phones(owner_phones)?, owner_emails)
+        .in_country(phone_country);
     let owner_identity = owner
         .primary_handle()
         .expect("from_phones guarantees a phone owner handle");

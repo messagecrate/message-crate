@@ -189,7 +189,9 @@ mod tests {
     #[test]
     fn the_form_number_is_normalized_like_a_stored_handle() {
         assert_eq!(owner_from_form("+1 555 555 0100").unwrap(), "+15555550100");
-        assert_eq!(owner_from_form("(555) 555-0100").unwrap(), "+15555550100");
+        // Without its `+` code, a number keeps its digits: the form states
+        // no country (#1676).
+        assert_eq!(owner_from_form("(555) 555-0100").unwrap(), "5555550100");
         assert!(owner_from_form("abc").is_err());
     }
 }

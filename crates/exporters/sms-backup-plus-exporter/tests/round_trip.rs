@@ -34,6 +34,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
         log: None,
         issues: None,
         resume: false,
+        phone_country: phone::country("US"),
     })
     .unwrap();
     let mut documents: Vec<ConversationDocument> = fs::read_dir(output)

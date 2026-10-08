@@ -350,7 +350,7 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
 /// `contact_name` is Sam's name and not a list.
 #[test]
 fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
-    for (handle, name) in [("555-555-0101", "Sam (work)"), (OWNER, "Me")] {
+    for (handle, name) in [("+1 555-555-0101", "Sam (work)"), (OWNER, "Me")] {
         let mut doc = message_ir::testutil::sample_document("hi");
         doc.conversation.chat_identifier = "chat-group".into();
         doc.conversation.conversation_type = IrConversationType::Group;

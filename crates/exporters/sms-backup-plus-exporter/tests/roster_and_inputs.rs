@@ -18,8 +18,18 @@ fn fixtures() -> PathBuf {
 }
 
 /// Convert `input` to JSONL under `output_dir`, with the owner at
-/// +15555550100 and attachments copied.
+/// +15555550100, the phone in the US as the import form states, and
+/// attachments copied.
 fn convert(input: &Path, output_dir: &Path) -> ExportReport {
+    convert_in(input, output_dir, phone::country("US"))
+}
+
+/// [`convert`] for a phone in `phone_country`, or in no country stated.
+fn convert_in(
+    input: &Path,
+    output_dir: &Path,
+    phone_country: Option<&'static phone::Country>,
+) -> ExportReport {
     let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         inputs: &[input],
@@ -34,6 +44,7 @@ fn convert(input: &Path, output_dir: &Path) -> ExportReport {
         log: None,
         issues: None,
         resume: false,
+        phone_country,
     })
     .expect("convert")
 }
@@ -459,4 +470,70 @@ fn a_group_of_one_person_named_twice_is_their_one_to_one_conversation() {
         "one conversation, Carol's"
     );
     assert_eq!(docs["+14075550111"].messages.len(), 2);
+}
+
+/// A UK archive that gives Carol's address her number in national form in
+/// one mail and with its `+44` in another: with the phone's country stated,
+/// the two are one number, so the group member is keyed by it and is not
+/// counted under `group_members_with_several_numbers`. With no country
+/// stated, nothing says the two are one number, and she is (#1676).
+#[test]
+fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_country() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).expect("input dir");
+    let mails = [
+        (
+            "1.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: owner@example.com\nSubject: SMS with Carol\nX-smssync-type: 1\nX-smssync-address: 07700900123",
+                "Carol alone",
+            ),
+        ),
+        (
+            "2.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: owner@example.com\nSubject: SMS with Carol\nX-smssync-type: 1\nX-smssync-address: +447700900123",
+                "Carol again",
+            ),
+        ),
+        (
+            "3.eml",
+            mail(
+                "From: owner@example.com\nTo: \"Carol\" <carol@example.com>, <+447700900456@unknown.email>\nSubject: SMS with Dan\nX-smssync-type: 128\nX-smssync-address: +447700900456",
+                "to the group",
+            ),
+        ),
+    ];
+    for (name, body) in &mails {
+        fs::write(input.join(name), body).expect("write mail");
+    }
+
+    let out = tmp.path().join("gb");
+    let report = convert_in(&input, &out, phone::country("GB"));
+    assert_eq!(
+        report.extra(crate::emit::GROUP_MEMBERS_WITH_SEVERAL_NUMBERS),
+        0
+    );
+    let docs = documents(&out);
+    let group = docs
+        .values()
+        .find(|doc| doc.conversation.chat_identifier.starts_with("chat-"))
+        .expect("the group");
+    let mut members: Vec<&str> = group
+        .conversation
+        .participants
+        .iter()
+        .filter_map(|p| p.identity.as_deref())
+        .collect();
+    members.sort_unstable();
+    assert_eq!(members, ["+447700900123", "+447700900456"]);
+    assert_eq!(docs["+447700900123"].messages.len(), 2, "one conversation");
+
+    let out = tmp.path().join("none");
+    let report = convert_in(&input, &out, None);
+    assert_eq!(
+        report.extra(crate::emit::GROUP_MEMBERS_WITH_SEVERAL_NUMBERS),
+        1
+    );
 }
