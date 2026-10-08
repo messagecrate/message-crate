@@ -322,9 +322,8 @@ released versions carry their date on the heading.
 
 - A `wtsexporter` installed before this release reads WhatsApp replies without
   their link. Install Message Crate's fork of WhatsApp Chat Exporter, release
-  `0.13.0-mc.2`, with the line the WhatsApp import page gives
-  (`pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"`);
-  it replaces the old one (#1936).
+  `0.13.0-mc.2`, with the line on the guide's WhatsApp page; it replaces the
+  old one (#1936).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts
