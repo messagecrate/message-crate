@@ -75,6 +75,31 @@ async fn held(db: &Path) -> Held {
     }
 }
 
+/// How many messages a search of the message text for `word` finds in the
+/// database at `db`.
+async fn text_hits(db: &Path, word: &str) -> i64 {
+    fts_hits(db, "messages_fts", word).await
+}
+
+/// How many earlier versions a search for `word` finds in the database at
+/// `db`. The index keeps them for an Unsent message too.
+async fn version_hits(db: &Path, word: &str) -> i64 {
+    fts_hits(db, "message_versions_fts", word).await
+}
+
+/// How many rows of the search index `table` match `word` in the database
+/// at `db`.
+async fn fts_hits(db: &Path, table: &str, word: &str) -> i64 {
+    let (_pool, mut conn) = open_verify(db).await;
+    sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM {table} WHERE {table} MATCH $1"
+    ))
+    .bind(word)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
 /// Import `files` into `db` in one import, appending to what it holds.
 async fn import(db: &Path, assets: &Path, root: &Path, files: &[PathBuf]) {
     import_jsonl_files(db, files, &edit_options(assets, root, false))
@@ -82,27 +107,39 @@ async fn import(db: &Path, assets: &Path, root: &Path, files: &[PathBuf]) {
         .unwrap();
 }
 
+/// One way of importing two files, and what it gave `g-backup`.
+struct Imported {
+    /// The way, such as `apart-reversed`.
+    order: &'static str,
+    /// The database the files were imported into.
+    db: PathBuf,
+    held: Held,
+}
+
 /// What `files` give `g-backup`: imported in one import in the order
 /// given, in one import in the other order, one import after another in
 /// the order given, and one after another in the other order. The four
-/// must agree, so each is returned to compare.
-async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Held; 4] {
+/// must agree, so each is returned to compare, with its database to look
+/// into further.
+async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Imported; 4] {
     let assets = tmp.join("assets");
     let [a, b] = files;
     let mut out = Vec::new();
-    for (name, batches) in [
+    for (order, batches) in [
         ("together", vec![vec![a.clone(), b.clone()]]),
         ("together-reversed", vec![vec![b.clone(), a.clone()]]),
         ("apart", vec![vec![a.clone()], vec![b.clone()]]),
         ("apart-reversed", vec![vec![b.clone()], vec![a.clone()]]),
     ] {
-        let db = tmp.join(format!("{label}-{name}.db"));
+        let db = tmp.join(format!("{label}-{order}.db"));
         for batch in batches {
             import(&db, &assets, tmp, &batch).await;
         }
-        out.push(held(&db).await);
+        let held = held(&db).await;
+        out.push(Imported { order, db, held });
     }
-    out.try_into().unwrap()
+    out.try_into()
+        .unwrap_or_else(|_| unreachable!("four orders"))
 }
 
 /// The stored date of [`LATER_BACKUP`], in the form a timestamp takes.
@@ -135,7 +172,7 @@ async fn the_later_backup_decides_the_deletion_mark_in_every_order() {
         Some(Deletion::DeletedInSourceApp),
     );
     let recovered = file("recovered-later.jsonl", LATER_BACKUP, None);
-    for held in every_order(tmp.path(), "recovered", [&marked, &recovered]).await {
+    for Imported { held, .. } in every_order(tmp.path(), "recovered", [&marked, &recovered]).await {
         assert_eq!(held.deletion, None, "{held:?}");
         assert_eq!(held.backup_taken_at.as_deref(), Some(LATER_BACKUP_AT));
     }
@@ -146,7 +183,7 @@ async fn the_later_backup_decides_the_deletion_mark_in_every_order() {
         Some(Deletion::DeletedInSourceApp),
     );
     let unmarked = file("unmarked-earlier.jsonl", EARLIER_BACKUP, None);
-    for held in every_order(tmp.path(), "deleted", [&unmarked, &marked]).await {
+    for Imported { held, .. } in every_order(tmp.path(), "deleted", [&unmarked, &marked]).await {
         assert_eq!(
             held.deletion.as_deref(),
             Some("deleted_in_source_app"),
@@ -181,18 +218,13 @@ async fn a_later_backup_that_clears_an_unsent_mark_makes_the_text_searchable() {
         Some(Deletion::Unsent),
     );
     let shown = file("shown-later.jsonl", LATER_BACKUP, None);
-    for held in every_order(tmp.path(), "unsent", [&unsent, &shown]).await {
-        assert_eq!(held.deletion, None, "{held:?}");
-    }
-    for name in ["together", "together-reversed", "apart", "apart-reversed"] {
-        let (_pool, mut conn) = open_verify(&tmp.path().join(format!("unsent-{name}.db"))).await;
-        let hits: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'zqlighthouse'",
-        )
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-        assert_eq!(hits, 1, "{name}: the text is searchable again");
+    for Imported { order, db, held } in every_order(tmp.path(), "unsent", [&unsent, &shown]).await {
+        assert_eq!(held.deletion, None, "{order}: {held:?}");
+        assert_eq!(
+            text_hits(&db, "zqlighthouse").await,
+            1,
+            "{order}: the text is searchable again"
+        );
     }
 }
 
@@ -217,93 +249,28 @@ async fn equal_backup_dates_fall_back_to_the_rules_for_files_without_one() {
     };
     let unmarked = file("unmarked-same.jsonl", None);
     let marked = file("marked-same.jsonl", Some(Deletion::Unsent));
-    for held in every_order(tmp.path(), "same-date", [&unmarked, &marked]).await {
+    for Imported { held, .. } in every_order(tmp.path(), "same-date", [&unmarked, &marked]).await {
         assert_eq!(held.deletion.as_deref(), Some("unsent"), "{held:?}");
         assert_eq!(held.backup_taken_at.as_deref(), Some(LATER_BACKUP_AT));
     }
 }
 
-/// The scenario of #1804: backup A lists part 1's earlier versions
-/// [x@t0, y@t100]; backup B, made later, after part 1 was unsent (which
-/// drops its versions) and part 0 was edited, lists part 0's [a@t0] only.
-/// B's newest version is older than A's, so the version times say A is
-/// later; the backups' dates say B, and B's text and versions are kept in
-/// every order. With the dates swapped, A's are.
-#[tokio::test]
-async fn the_later_backup_decides_the_text_whatever_the_version_times_say() {
-    let tmp = TempDir::new().unwrap();
-    let t0 = 1_426_183_462_000;
-    let a_versions = [edit_version(1, "x", t0), edit_version(1, "y", t0 + 100_000)];
-    let b_versions = [edit_version(0, "a", t0)];
-    let a = |backup| Copy {
-        backup: Some(backup),
-        text: "a z",
-        versions: &a_versions,
-        deletion: None,
-    };
-    let b = |backup| Copy {
-        backup: Some(backup),
-        text: "b",
-        versions: &b_versions,
-        deletion: None,
-    };
-
-    let a_earlier = backup_file(tmp.path(), "a-earlier.jsonl", &a(EARLIER_BACKUP));
-    let b_later = backup_file(tmp.path(), "b-later.jsonl", &b(LATER_BACKUP));
-    for held in every_order(tmp.path(), "b-later", [&a_earlier, &b_later]).await {
-        assert_eq!(
-            held,
-            Held {
-                text: "b".into(),
-                deletion: None,
-                versions: vec![(0, "a".into())],
-                backup_taken_at: Some(LATER_BACKUP_AT.into()),
-            }
-        );
-    }
-
-    let a_later = backup_file(tmp.path(), "a-later.jsonl", &a(LATER_BACKUP));
-    let b_earlier = backup_file(tmp.path(), "b-earlier.jsonl", &b(EARLIER_BACKUP));
-    for held in every_order(tmp.path(), "a-later", [&a_later, &b_earlier]).await {
-        assert_eq!(
-            held,
-            Held {
-                text: "a z".into(),
-                deletion: None,
-                versions: vec![(1, "x".into()), (1, "y".into())],
-                backup_taken_at: Some(LATER_BACKUP_AT.into()),
-            }
-        );
-    }
-}
-
-/// How many messages a search of the message text for `word` finds in the
-/// database at `db`.
-async fn text_hits(db: &Path, word: &str) -> i64 {
-    let (_pool, mut conn) = open_verify(db).await;
-    sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH $1")
-        .bind(word)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap()
-}
-
-/// The scenario of #1804 as the issue gives it, unsent part and all. A
-/// two-part message is sent at t0; part 1 is edited at t100 and t500;
+/// The scenario of #1804. A two-part message is sent at t0; part 1 is
+/// edited at t100 and again at t500, which gives it its current text;
 /// backup A is made; part 1 is unsent at t600, which drops its versions
 /// and marks the message Unsent; part 0 is edited at t700; backup B is
 /// made. A lists part 1's [x@t0, y@t100] and no mark; B lists part 0's
-/// [a@t0] and the Unsent mark. B's newest version is older than A's, so the
-/// version times say A is later.
+/// [a@t0] and the Unsent mark. B's newest version is older than A's, so
+/// the version times say A is later.
 ///
 /// With B the later backup, every order, one import of both files in
-/// either order included, holds B's text, versions and mark, and search
-/// finds neither copy's text. With the dates swapped, every order holds
-/// A's text and versions with no mark, and search finds A's text. With no
-/// dates, the version times decide the text as #1801 left them, and B's
-/// mark adds.
+/// either order included, holds B's text, versions and mark: search finds
+/// neither copy's text, finds B's earlier version, and finds none of A's.
+/// With the dates swapped, every order holds A's text and versions with no
+/// mark, and search finds A's text. With no dates, the version times
+/// decide the text as #1801 left them, and B's mark adds.
 #[tokio::test]
-async fn the_later_backup_decides_an_unsent_part_whatever_the_version_times_say() {
+async fn the_later_backup_decides_the_text_whatever_the_version_times_say() {
     let tmp = TempDir::new().unwrap();
     let t0 = 1_426_183_462_000;
     let a_versions = [
@@ -329,12 +296,12 @@ async fn the_later_backup_decides_an_unsent_part_whatever_the_version_times_say(
         versions: vec![(1, "zqxylo".into()), (1, "zqyarrow".into())],
         backup_taken_at: backup.map(Into::into),
     };
-    let orders = ["together", "together-reversed", "apart", "apart-reversed"];
 
     let a_earlier = backup_file(tmp.path(), "a-earlier.jsonl", &a(Some(EARLIER_BACKUP)));
     let b_later = backup_file(tmp.path(), "b-later.jsonl", &b(Some(LATER_BACKUP)));
-    let held = every_order(tmp.path(), "b-later", [&a_earlier, &b_later]).await;
-    for (held, order) in held.into_iter().zip(orders) {
+    for Imported { order, db, held } in
+        every_order(tmp.path(), "b-later", [&a_earlier, &b_later]).await
+    {
         assert_eq!(
             held,
             Held {
@@ -345,25 +312,28 @@ async fn the_later_backup_decides_an_unsent_part_whatever_the_version_times_say(
             },
             "{order}"
         );
-        let db = tmp.path().join(format!("b-later-{order}.db"));
         assert_eq!(text_hits(&db, "zqbeacon").await, 0, "{order}");
         assert_eq!(text_hits(&db, "zqyonder").await, 0, "{order}");
+        assert_eq!(version_hits(&db, "zqharbor").await, 1, "{order}");
+        assert_eq!(version_hits(&db, "zqxylo").await, 0, "{order}");
+        assert_eq!(version_hits(&db, "zqyarrow").await, 0, "{order}");
     }
 
     let a_later = backup_file(tmp.path(), "a-later.jsonl", &a(Some(LATER_BACKUP)));
     let b_earlier = backup_file(tmp.path(), "b-earlier.jsonl", &b(Some(EARLIER_BACKUP)));
-    let held = every_order(tmp.path(), "a-later", [&a_later, &b_earlier]).await;
-    for (held, order) in held.into_iter().zip(orders) {
+    for Imported { order, db, held } in
+        every_order(tmp.path(), "a-later", [&a_later, &b_earlier]).await
+    {
         assert_eq!(held, a_held(None, Some(LATER_BACKUP_AT)), "{order}");
-        let db = tmp.path().join(format!("a-later-{order}.db"));
         assert_eq!(text_hits(&db, "zqyonder").await, 1, "{order}");
         assert_eq!(text_hits(&db, "zqbeacon").await, 0, "{order}");
     }
 
     let a_undated = backup_file(tmp.path(), "a-undated.jsonl", &a(None));
     let b_undated = backup_file(tmp.path(), "b-undated.jsonl", &b(None));
-    let held = every_order(tmp.path(), "undated", [&a_undated, &b_undated]).await;
-    for (held, order) in held.into_iter().zip(orders) {
+    for Imported { order, held, .. } in
+        every_order(tmp.path(), "undated", [&a_undated, &b_undated]).await
+    {
         assert_eq!(held, a_held(Some("unsent"), None), "{order}");
     }
 }
@@ -438,7 +408,9 @@ async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
     );
     // Undated against dated: the mark adds, and the copy with the later edit
     // keeps its text, whichever is the dated one.
-    for held in every_order(tmp.path(), "mixed", [&unmarked_undated, &marked_dated]).await {
+    for Imported { held, .. } in
+        every_order(tmp.path(), "mixed", [&unmarked_undated, &marked_dated]).await
+    {
         assert_eq!(held.deletion.as_deref(), Some("unsent"), "{held:?}");
         assert_eq!(held.text, "see you at seven", "{held:?}");
         assert_eq!(held.versions, vec![(0, "see you at six".into())]);
@@ -456,7 +428,9 @@ async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
             deletion: Some(Deletion::DeletedInSourceApp),
         },
     );
-    for held in every_order(tmp.path(), "undated", [&unmarked_undated, &marked_undated]).await {
+    for Imported { held, .. } in
+        every_order(tmp.path(), "undated", [&unmarked_undated, &marked_undated]).await
+    {
         assert_eq!(
             held.deletion.as_deref(),
             Some("deleted_in_source_app"),
