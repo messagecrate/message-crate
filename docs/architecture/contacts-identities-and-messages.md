@@ -213,8 +213,9 @@ whose country is unknown matches only the same digits. There is no column for
 the country beside the key, because it would only repeat what the `+` says.
 The country is the calling code rather than an ISO country, because a `+`
 names only the calling code, which the countries that share a numbering plan
-share (`+1` is the United States, Canada and much of the Caribbean). Why: a single string could not say "national number, country
-unknown", and that silence was the bug. A UK archive's `07700900123` and
+share (`+1` is the United States, Canada and much of the Caribbean). Why: a
+single string could not say "national number, country unknown", and that
+silence was the bug. A UK archive's `07700900123` and
 `+447700900123` were two keys for one person, read as a US number or as
 nothing, so their one-to-one conversation split in two and SMS Backup+
 counted a group member with one number under
@@ -263,21 +264,25 @@ A national number is read in a country by that country's trunk prefix: the
 prefix is dropped and the calling code put in front (`07700 900123` in the
 United Kingdom is `+447700900123`, `8 912 345 6789` in Russia is
 `+79123456789`). A country whose leading `0` belongs to the number, such as
-Italy, drops nothing. A number that starts with an international prefix,
-`00`, or `011` in a `+1` country, is the calling code and number that follow
-it, whatever the country (`0044 7700 900123` is `+447700900123`). A number
-that starts with the country's own calling code, with at least 11 digits, was
+Italy, drops nothing. A number that starts with the country's own
+international prefix is the calling code and number that follow it: `00` in
+the United Kingdom (`0044 7700 900123` is `+447700900123`), `011` in a `+1`
+country, `0011` in Australia, `810` in Russia, `010` in Japan. Digits after
+the prefix that start with no calling code are refused and keep their
+digits. A number that starts with the country's own calling code was
 written in full without its `+` (`447700900123` in the United Kingdom,
-`79161234567` in Russia), and keeps the code once. A shorter one that starts
-with the calling code is refused and keeps its digits, because it could as
-well be a national number that starts with the same digits (`9112345678` is
-an Indian mobile number). Why: dropping a trunk prefix that is not there gave
-`00447700900123` the key `+440447700900123` and `447700900123` the key
-`+44447700900123`, keys that look certain and name nobody. The countries,
-their calling codes and trunk prefixes are one table, `phone::COUNTRIES`,
-taken from libphonenumber's `PhoneNumberMetadata.xml` (its doc comment names
-the commit), which `GET /v1/phone-countries` lists for the import form and
-the country picker.
+`79161234567` in Russia) only when what follows the code is as long as the
+country's fixed-line and mobile numbers are and the digits as a whole are
+not. Otherwise it is a national number that starts with the same digits:
+`55 99123 4567` in Brazil has the area code 55, and `9112345678` is an Indian
+mobile number. Why: reading `00` and the trunk prefix the same way in every
+country gave `00447700900123` the key `+440447700900123`, `447700900123` the
+key `+44447700900123` and Australia's `0011 44 …` the key `+1144…`: keys
+that look certain and name nobody. The countries, their calling codes, trunk
+prefixes, international prefixes and number lengths are one table,
+`phone::COUNTRIES`, taken from libphonenumber's `PhoneNumberMetadata.xml`
+(its doc comment names the commit), which `GET /v1/phone-countries` lists
+for the import form and the country picker.
 
 **The screens say when a number's country is unknown and let the person fix
 it.** An identity's `country_unknown` is true for a phone number whose key has
@@ -289,11 +294,12 @@ note and a Pick country control. Picking a country sends
 `+` form, the row is rewritten in place. When one does, the request answers
 `409 Conflict` (`identity-exists`) naming who holds it, a contact, the
 account or nobody, in `detail` and in `holder`, and the screen asks before it
-sends the request again with `merge` (`http-api.md`, "Status codes"). A merge moves everything that names the national number to the
-identity holding the `+` form: participants (a group that lists both keeps one
-seat), senders and owners of messages and reactions, the account's own
-identity link, and the one-to-one conversation, whose messages, participants
-and Message Tags join the other one-to-one conversation when there is one
+sends the request again with `merge` (`http-api.md`, "Status codes"). A
+merge moves everything that names the national number to the identity
+holding the `+` form: participants (a group that lists both keeps one seat),
+senders and owners of messages and reactions, the account's own identity
+link, and the one-to-one conversation, whose messages, participants and
+Message Tags join the other one-to-one conversation when there is one
 (`db/identity_country.rs`). The merged conversation is in the Trash only
 when both were: a live one brings the other out of the Trash with it, and the
 trashed one's messages are shown again. The merged identity goes on the
@@ -305,7 +311,10 @@ conversation the number is the chat handle of, a member of, or a sender in
 has its content key made again and its duplicate flag worked out again
 (`dedupe_changed_messages`), whether the row was rewritten in place or merged,
 because a content key is made from the chat handle's, the sender's and a
-group's members' keys. Why: an identity has at most one one-to-one
+group's members' keys. A merge does the same for the identity holding the
+`+` form, whose keys change when the merge makes it one of the account's
+own: its one-to-one becomes a conversation with yourself, and a group leaves
+it out of its key. Why: an identity has at most one one-to-one
 conversation, so two identities that become one bring their conversations
 together, and a merge cannot be undone, so the person is asked first. A
 trashed conversation does not take a live one into the Trash, because
