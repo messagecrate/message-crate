@@ -76,10 +76,14 @@ fn executable_name() -> &'static str {
 }
 
 /// Where `wtsexporter` is: the app's own copy in the Tools Directory the
-/// desktop app named with [`media::set_tools_dir`]. `None` when there is no
-/// Tools Directory or no file in it.
-pub fn wtsexporter_path() -> Option<PathBuf> {
-    wtsexporter_in(media::tools_dir().as_deref()).ok()
+/// desktop app named with [`media::set_tools_dir`]. `Ok(None)` when there is
+/// no Tools Directory or no file in it.
+///
+/// # Errors
+///
+/// Returns an error when the file is there but is not executable.
+pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
+    find_wtsexporter(media::tools_dir().as_deref())
 }
 
 /// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells
@@ -94,14 +98,56 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 
 /// `wtsexporter` in `tools_dir`, and nowhere else: it is always the app's
 /// own copy, so neither `PATH` nor an environment variable is read (#1053).
-/// A `pipx` install whose Python has gone is still found on `PATH` and fails
-/// only when it is run (`docs/adr/0019`).
+/// `Ok(None)` when there is no Tools Directory or no file in it.
+///
+/// On Unix the file must have an executable bit. It is not run here: a
+/// `pipx` shim is slow to start. So a link to a `pipx` shim whose Python has
+/// gone is found, and fails only when it is run, with the hint
+/// [`run_wtsexporter`] gives (`docs/adr/0019`).
+///
+/// # Errors
+///
+/// Returns an error when the file is there but is not executable.
+fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
+    let Some(tools_dir) = tools_dir else {
+        return Ok(None);
+    };
+    let candidate = tools_dir.join(executable_name());
+    if !candidate.is_file() {
+        return Ok(None);
+    }
+    if !is_executable(&candidate) {
+        bail!(
+            "{} is not executable. It must be {RELEASE_FILE_HINT}.",
+            candidate.display()
+        );
+    }
+    Ok(Some(candidate))
+}
+
+/// Whether `path` has an executable bit.
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
+}
+
+/// Windows runs any `.exe`, so there is no bit to check.
+#[cfg(not(unix))]
+fn is_executable(_path: &Path) -> bool {
+    true
+}
+
+/// [`find_wtsexporter`], with a missing file as an error.
 ///
 /// # Errors
 ///
 /// Returns an error naming the Tools Directory when the file is not in it,
-/// or saying there is none.
+/// saying there is none, or saying the file is not executable.
 fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
+    if let Some(found) = find_wtsexporter(tools_dir)? {
+        return Ok(found);
+    }
     let executable = executable_name();
     let Some(tools_dir) = tools_dir else {
         bail!(
@@ -109,10 +155,6 @@ fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
              {executable} in its Tools Directory."
         );
     };
-    let candidate = tools_dir.join(executable);
-    if candidate.is_file() {
-        return Ok(candidate);
-    }
     bail!(
         "Could not find {executable} in the Tools Directory, {}. Put {RELEASE_FILE_HINT} there. \
          A pipx install, `{PINNED_HINT}`, works too once its wtsexporter is linked into that directory.",
@@ -1014,14 +1056,45 @@ mod tests {
         assert_eq!(denied.to_string(), "create work/decryption.key");
     }
 
+    /// Write an empty file at `path` with the given Unix mode.
+    fn write_with_mode(path: &Path, mode: u32) {
+        fs::write(path, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(mode)).unwrap();
+        }
+        #[cfg(not(unix))]
+        let _ = mode;
+    }
+
     /// wtsexporter is always the app's own copy in the Tools Directory.
     #[test]
     fn wtsexporter_is_found_in_the_tools_directory() {
         let tools = tempfile::tempdir().unwrap();
         let program = tools.path().join(executable_name());
-        fs::write(&program, "").unwrap();
+        write_with_mode(&program, 0o755);
 
         assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
+    }
+
+    /// A release file put in the Tools Directory without `chmod +x` cannot
+    /// start, so it is not reported as found, and the error says how to fix it.
+    #[cfg(unix)]
+    #[test]
+    fn a_wtsexporter_that_is_not_executable_is_refused() {
+        let tools = tempfile::tempdir().unwrap();
+        let program = tools.path().join(executable_name());
+        write_with_mode(&program, 0o644);
+
+        let err = wtsexporter_in(Some(tools.path())).expect_err("not executable");
+        let message = err.to_string();
+        assert!(message.contains("is not executable"), "{message}");
+        assert!(message.contains("chmod +x"), "{message}");
+        assert!(
+            super::find_wtsexporter(Some(tools.path())).is_err(),
+            "the status lookup refuses it too"
+        );
     }
 
     /// A missing copy is reported as missing, naming the Tools Directory,

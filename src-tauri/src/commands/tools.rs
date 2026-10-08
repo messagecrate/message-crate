@@ -72,7 +72,12 @@ pub fn tools_status() -> ToolsStatus {
         tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
         ffmpeg,
         ffprobe,
-        wtsexporter: ToolStatus::of(whatsapp_exporter::wtsexporter_path()),
+        wtsexporter: match whatsapp_exporter::wtsexporter_path() {
+            Ok(path) => ToolStatus::of(path),
+            Err(err) => ToolStatus::Unusable {
+                reason: err.to_string(),
+            },
+        },
     }
 }
 
@@ -130,6 +135,15 @@ mod tests {
         media::set_tools_dir(Some(tools.path().to_path_buf()));
         let missing = tools_status().wtsexporter;
         std::fs::write(tools.path().join(name), "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                tools.path().join(name),
+                std::fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
         let found = tools_status().wtsexporter;
         media::set_tools_dir(previous);
 
