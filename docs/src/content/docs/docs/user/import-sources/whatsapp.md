@@ -23,8 +23,20 @@ pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://g
 
 `wtsexporter --help` prints the program's options once it is installed.
 
-The desktop app has no setting for where `wtsexporter` is.
-It finds the program when it is on the `PATH` the app was started with, or when the environment variable `WTSEXPORTER` holds the full path to it.
+The desktop app runs `wtsexporter` only from its Tools Directory, which [**Settings → System**](/docs/user/features/settings/system/#media) shows, and never from `PATH`.
+After the install, a link in the Tools Directory points it at the `pipx` install:
+
+```bash title="Linux and macOS"
+mkdir -p ~/message-crate/tools
+ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
+```
+
+On Windows, `wtsexporter.exe` is copied there instead:
+
+```powershell title="Windows"
+New-Item -ItemType Directory -Force "$HOME\message-crate\tools"
+Copy-Item "$(pipx environment --value PIPX_BIN_DIR)\wtsexporter.exe" "$HOME\message-crate\tools\"
+```
 
 ## WhatsApp on Android
 
