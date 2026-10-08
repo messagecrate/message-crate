@@ -9,7 +9,8 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
-/// Where this process looks for ffmpeg and ffprobe, and where it found them.
+/// Where this process looks for ffmpeg and ffprobe, and which files there
+/// answered `-version`.
 struct ToolsState {
     /// The Tools Directory, searched after `PATH`. The desktop app sets it
     /// for itself and passes it to the server it starts (`serve
@@ -20,22 +21,19 @@ struct ToolsState {
     /// not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     generation: u64,
-    /// ffmpeg and ffprobe, once both were found in one place.
-    found: Option<(PathBuf, PathBuf)>,
-    /// Whether each file looked at answered `-version`, by path. While a
-    /// program is missing, or the two are in two places, every lookup
-    /// searches again, and a lookup runs once per file staged and once per
-    /// Asset shown; the answer kept here means a file already run is not
-    /// run again. A file that changes, or one that appears, is run once.
-    runs: HashMap<PathBuf, RunVerdict>,
-}
-
-/// Whether a file answered `-version`, and the file as it was then.
-struct RunVerdict {
-    /// The file as it was when it was run.
-    file: FileStamp,
-    /// True when it answered `-version`.
-    runs: bool,
+    /// The files that answered `-version`, by path, each beside the file as
+    /// it was when it answered. Every lookup searches `PATH` and the Tools
+    /// Directory again, which only reads file metadata, and a lookup runs
+    /// once per file staged and once per Asset shown; the answer kept here
+    /// means a file that answered is not run again until it changes.
+    ///
+    /// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
+    /// missing a shared library, or one that failed to start for a passing
+    /// reason is run again on the next lookup, because what fixes it (an
+    /// approval in System Settings, an installed library, the passing cause
+    /// going away) leaves the file's modified time, size and permissions as
+    /// they were, and a kept failure would hide the fix until a restart.
+    answered: HashMap<PathBuf, FileStamp>,
 }
 
 /// What tells one version of a file from another without reading it: a
@@ -48,24 +46,37 @@ struct FileStamp {
     len: u64,
     /// The file's permissions, which `chmod +x` changes.
     permissions: std::fs::Permissions,
+    /// On Unix, the status change time, inode and device: a file replaced
+    /// by another of the same size and modified time, as a copy that keeps
+    /// times does, or moved in from elsewhere, differs in these.
+    #[cfg(unix)]
+    unix: (i64, i64, u64, u64),
 }
 
 impl FileStamp {
     fn of(metadata: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
         Self {
             modified: metadata.modified().ok(),
             len: metadata.len(),
             permissions: metadata.permissions(),
+            #[cfg(unix)]
+            unix: (
+                metadata.ctime(),
+                metadata.ctime_nsec(),
+                metadata.ino(),
+                metadata.dev(),
+            ),
         }
     }
 }
 
 impl ToolsState {
-    /// Forget where the tools were found, so the next lookup searches again.
+    /// Forget which files answered, so the next lookup runs them again.
     fn forget(&mut self) {
         self.generation = self.generation.wrapping_add(1);
-        self.found = None;
-        self.runs.clear();
+        self.answered.clear();
     }
 }
 
@@ -77,14 +88,13 @@ fn tools_state() -> &'static Mutex<ToolsState> {
             tools_dir: None,
             search_path: None,
             generation: 0,
-            found: None,
-            runs: HashMap::new(),
+            answered: HashMap::new(),
         })
     })
 }
 
 /// Name the Tools Directory, searched for ffmpeg and ffprobe after `PATH`,
-/// and forget where they were found before.
+/// and forget which files answered `-version` before.
 pub fn set_tools_dir(dir: Option<PathBuf>) {
     let mut state = tools_state().lock().expect("tools state lock");
     state.tools_dir = dir;
@@ -101,7 +111,7 @@ pub fn tools_dir() -> Option<PathBuf> {
 }
 
 /// Search `path` instead of the process's `PATH`, or the process's own
-/// again with `None`, and forget where the tools were found before.
+/// again with `None`, and forget which files answered `-version` before.
 #[cfg(any(test, feature = "testutil"))]
 pub(crate) fn set_search_path(path: Option<OsString>) {
     let mut state = tools_state().lock().expect("tools state lock");
@@ -213,42 +223,16 @@ fn command_runs(bin: &Path, args: &[&str]) -> bool {
 }
 
 /// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
-/// `PATH` and Tools Directory, remembered once both are found. A tool not
-/// found is looked for again next time, so one that arrives later is used;
-/// a file already run is not run again ([`ToolsState::runs`]).
+/// `PATH` and Tools Directory. Every call searches again, so a program that
+/// arrives, moves or leaves is seen at once without a restart; only the
+/// `-version` answer of a file is kept ([`ToolsState::answered`]).
 fn resolve_tools() -> Result<FfmpegTools> {
-    loop {
-        let (generation, search_path, tools_dir) = {
-            let state = tools_state().lock().expect("tools state lock");
-            if let Some((ffmpeg, ffprobe)) = &state.found {
-                return Ok(FfmpegTools {
-                    ffmpeg: Some(ffmpeg.clone()),
-                    ffprobe: Some(ffprobe.clone()),
-                });
-            }
-            (
-                state.generation,
-                state.search_path.clone(),
-                state.tools_dir.clone(),
-            )
-        };
-        let search_path = search_path.or_else(|| std::env::var_os("PATH"));
-
-        let resolved = find_tools(search_path.as_deref(), tools_dir.as_deref());
-
-        let mut state = tools_state().lock().expect("tools state lock");
-        if state.generation != generation {
-            continue;
-        }
-        if let Ok(FfmpegTools {
-            ffmpeg: Some(ffmpeg),
-            ffprobe: Some(ffprobe),
-        }) = &resolved
-        {
-            state.found = Some((ffmpeg.clone(), ffprobe.clone()));
-        }
-        return resolved;
-    }
+    let (search_path, tools_dir) = {
+        let state = tools_state().lock().expect("tools state lock");
+        (state.search_path.clone(), state.tools_dir.clone())
+    };
+    let search_path = search_path.or_else(|| std::env::var_os("PATH"));
+    find_tools(search_path.as_deref(), tools_dir.as_deref())
 }
 
 /// The tool under `dir` if it is a file and runs.
@@ -261,25 +245,24 @@ fn find_tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
 }
 
-/// True when `candidate`, as `file` describes it, answers `-version`. The
-/// answer is kept in [`ToolsState::runs`], so the same file is run once
-/// until it changes or the lookup is forgotten.
+/// True when `candidate`, as `file` describes it, answers `-version`. An
+/// answer is kept in [`ToolsState::answered`], so the same file is run once
+/// until it changes or the lookup is forgotten; a failure is not kept, so
+/// the file is run again on the next lookup. No lock is held while it runs.
 fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
     let generation = {
         let state = tools_state().lock().expect("tools state lock");
-        if let Some(verdict) = state.runs.get(candidate)
-            && verdict.file == file
-        {
-            return verdict.runs;
+        if state.answered.get(candidate) == Some(&file) {
+            return true;
         }
         state.generation
     };
     let runs = command_runs(candidate, &["-version"]);
-    let mut state = tools_state().lock().expect("tools state lock");
-    if state.generation == generation {
-        state
-            .runs
-            .insert(candidate.to_path_buf(), RunVerdict { file, runs });
+    if runs {
+        let mut state = tools_state().lock().expect("tools state lock");
+        if state.generation == generation {
+            state.answered.insert(candidate.to_path_buf(), file);
+        }
     }
     runs
 }

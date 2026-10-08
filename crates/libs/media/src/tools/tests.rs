@@ -396,8 +396,9 @@ fn a_second_lookup_in_two_places_runs_nothing() {
     assert_eq!(runs_in(&log), first);
 }
 
-/// A file that could not run is run again once it is made executable,
-/// because `chmod` changes neither its size nor when it was modified.
+/// A file that could not run is run again on the next lookup, because a
+/// failure to answer `-version` is never kept: once it is made executable
+/// it is found.
 #[cfg(unix)]
 #[test]
 fn a_tool_made_executable_later_is_found() {
@@ -415,6 +416,97 @@ fn a_tool_made_executable_later_is_found() {
     perms.set_mode(0o755);
     fs::set_permissions(&ffprobe, perms).unwrap();
     assert!(ffmpeg_available());
+}
+
+/// A pair found in one place and then moved to another, under the same
+/// names, is found at the new place on the next lookup: the place is never
+/// kept, only each file's answer.
+#[cfg(unix)]
+#[test]
+fn a_pair_moved_to_another_directory_is_found_there() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let on_path = mock_tools();
+    let tools = tempfile::tempdir().unwrap();
+    set_search_path(Some(on_path.path().as_os_str().to_owned()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert_eq!(ffmpeg_tools().unwrap(), both_in(on_path.path()));
+
+    for name in ["ffmpeg", "ffprobe"] {
+        fs::rename(on_path.path().join(name), tools.path().join(name)).unwrap();
+    }
+    assert_eq!(ffmpeg_tools().unwrap(), both_in(tools.path()));
+}
+
+/// A program whose `-version` fails, as one Gatekeeper blocks or one
+/// missing a shared library does, is run again on the next lookup and found
+/// once it answers. Fixing either leaves the file as it was, so a kept
+/// failure would hide the fix until a restart.
+#[cfg(unix)]
+#[test]
+fn a_program_that_failed_once_is_found_when_it_answers() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = mock_tools();
+    let marker = tools.path().join("blocked");
+    fs::write(&marker, "").unwrap();
+    let ffprobe = tools.path().join("ffprobe");
+    fs::write(
+        &ffprobe,
+        format!(
+            "#!/bin/sh
+[ -e '{}' ] && exit 1
+exit 0
+",
+            marker.display()
+        ),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&ffprobe, perms).unwrap();
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert!(!ffmpeg_available());
+
+    fs::remove_file(&marker).unwrap();
+    assert!(ffmpeg_available());
+}
+
+/// A program replaced in place by another file, with the same size,
+/// content and modified time, is a new file (a new inode), so it is run
+/// again rather than trusted on the old file's answer.
+#[cfg(unix)]
+#[test]
+fn a_program_replaced_in_place_is_run_again() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = tempfile::tempdir().unwrap();
+    let log = tools.path().join("runs.log");
+    for name in ["ffmpeg", "ffprobe"] {
+        counting_tool(&tools.path().join(name), &log);
+    }
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 2);
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 2, "an unchanged file is not run again");
+
+    let ffmpeg = tools.path().join("ffmpeg");
+    let modified = fs::metadata(&ffmpeg).unwrap().modified().unwrap();
+    let replacement = tools.path().join("ffmpeg.new");
+    counting_tool(&replacement, &log);
+    fs::File::options()
+        .write(true)
+        .open(&replacement)
+        .unwrap()
+        .set_modified(modified)
+        .unwrap();
+    fs::rename(&replacement, &ffmpeg).unwrap();
+
+    assert!(ffmpeg_available());
+    assert_eq!(runs_in(&log), 3, "the replaced ffmpeg runs once more");
 }
 
 /// With one program in neither place, the other is reported where it is
