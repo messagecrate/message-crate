@@ -485,6 +485,9 @@ export async function invokeFormat(config: {
   });
 }
 
+/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
+export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
 /**
  * Where one program the desktop app runs is. Tagged by `state`, one tag per
  * state, so a state can be added beside the others without changing them.
@@ -505,9 +508,6 @@ export type ToolStatus =
  * for on PATH, then in the Tools Directory, and are taken from one place;
  * wtsexporter only from the Tools Directory.
  */
-/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
-export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
-
 export interface ToolsStatus {
   toolsDir: string | null;
   /**
