@@ -4,7 +4,6 @@ import { canReadImportRunLogs } from "../../lib/desktopFeatures";
 import { useRouteQuery } from "../../lib/routeQuery";
 import {
   getServerLogFile,
-  type LogLevel,
   type LogLinesPage,
   listServerLogFiles,
   listServerLogLines,
@@ -23,9 +22,12 @@ import { useServerInfo } from "../../lib/useServerInfo";
 /** What the level filter shows: errors, warnings and up, or every line. */
 export type LevelFilter = "error" | "warn" | "all";
 
-/** What a page of lines asks for. */
+/**
+ * What a page of lines asks for. The level is one the filter offers, which
+ * both the server's log and a run log read.
+ */
 export type LinesRequest = {
-  level?: LogLevel;
+  level?: Exclude<LevelFilter, "all">;
   text?: string;
   after?: number;
   limit: number;

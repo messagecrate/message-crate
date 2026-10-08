@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
+import type { LogLinesPage } from "./serverApi";
 import type { components } from "./serverApi.types";
 import type {
   AttachmentMediaMode,
@@ -138,24 +139,27 @@ export async function invokeListImportRunLogs(reader: RunLogReader): Promise<Run
   return invoke("list_import_run_logs", { reader });
 }
 
-/** A page of a log's lines, newest first, the shape the server's log answers too. */
-export type RunLogLinesPage = components["schemas"]["ListLogLinesResponse"];
+/**
+ * The levels a run log writes. The desktop app refuses `debug` and `trace`,
+ * which only the server's log has.
+ */
+export type RunLogLevel = "error" | "warn" | "info";
 
 /**
  * A page of one Import Run log's lines, newest first: those at `level` and
  * more severe (every line when absent), holding `text`, older than the line
- * whose id is `after`.
+ * whose id is `after`. The page has the shape the server's log answers.
  */
 export async function invokeReadImportRunLogLines(
   reader: RunLogReader,
   name: string,
   query: {
-    level?: components["schemas"]["LogLevel"];
+    level?: RunLogLevel;
     text?: string;
     after?: number;
     limit: number;
   },
-): Promise<RunLogLinesPage> {
+): Promise<LogLinesPage> {
   return invoke("read_import_run_log_lines", { args: { reader, name, query } });
 }
 

@@ -21,7 +21,7 @@ const LEVEL_LABELS: Record<LevelFilter, string> = {
 };
 
 /** The level a filter asks the log for; every line when none. */
-function levelParam(filter: LevelFilter): LogLevel | undefined {
+function levelParam(filter: LevelFilter): Exclude<LevelFilter, "all"> | undefined {
   return filter === "all" ? undefined : filter;
 }
 
