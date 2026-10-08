@@ -15,6 +15,8 @@
 use anyhow::Result;
 use sqlx::SqliteConnection;
 
+use message_crate_api_types::IdentityHolder;
+
 use crate::db::contacts::{self, IdentityGoes, Origin};
 use crate::db::{account_profile, handles};
 use crate::dedupe::HAS_CONTENT_KEY_SQL;
@@ -78,19 +80,9 @@ pub async fn plus_form(
     }))
 }
 
-/// Who holds an identity, for the question asked before a merge.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Holder {
-    /// The contact it is on, by id, with its name; empty for a contact with
-    /// no name.
-    Contact(i64, String),
-    /// The account holder: it is one of the account's own identities.
-    Account,
-    /// Nothing holds it.
-    Nobody,
-}
-
-/// Who holds the identity `handle_id`.
+/// Who holds the identity `handle_id`, for the question asked before a
+/// merge: the contact it is on, the account when it is one of the account's
+/// own identities, or nobody.
 ///
 /// # Errors
 ///
@@ -99,16 +91,16 @@ pub async fn holder(
     conn: &mut SqliteConnection,
     account_id: i64,
     handle_id: i64,
-) -> Result<Holder> {
+) -> Result<IdentityHolder> {
     if let Some(contact_id) = contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
         let name = contacts::preferred_name(conn, account_id, contact_id).await?;
-        return Ok(Holder::Contact(contact_id, name));
+        return Ok(IdentityHolder::Contact { contact_id, name });
     }
     Ok(
         if account_profile::is_account_identity(conn, account_id, handle_id).await? {
-            Holder::Account
+            IdentityHolder::Account
         } else {
-            Holder::Nobody
+            IdentityHolder::Nobody
         },
     )
 }
@@ -145,7 +137,10 @@ async fn messages_keyed_by(
 /// that does: see [`merge_into`]. Answers the messages a dedupe had keyed
 /// whose keys named the number, whose duplicate flags the caller must put
 /// right: every message of a conversation the number is the chat handle
-/// of, a member of, or a sender in ([`messages_keyed_by`]).
+/// of, a member of, or a sender in ([`messages_keyed_by`]). A merge adds
+/// the same for the identity holding the `+` form, because its keys change
+/// too when it becomes one of the account's own: its one-to-one becomes a
+/// conversation with yourself, and a group leaves it out of its key.
 ///
 /// `edited_contact` is the contact whose screen picked the country, when it
 /// was a contact's: the merged identity goes on it, from whatever contact
@@ -162,10 +157,15 @@ pub async fn give_country(
     form: &PlusForm,
     edited_contact: Option<i64>,
 ) -> Result<Vec<i64>> {
-    let changed = messages_keyed_by(conn, account_id, form.handle_id).await?;
+    let mut changed = messages_keyed_by(conn, account_id, form.handle_id).await?;
     match form.existing {
         None => handles::set_plus_form(conn, account_id, form.handle_id, &form.key).await?,
-        Some(into) => merge_into(conn, account_id, form.handle_id, into, edited_contact).await?,
+        Some(into) => {
+            changed.extend(messages_keyed_by(conn, account_id, into).await?);
+            changed.sort_unstable();
+            changed.dedup();
+            merge_into(conn, account_id, form.handle_id, into, edited_contact).await?;
+        }
     }
     Ok(changed)
 }

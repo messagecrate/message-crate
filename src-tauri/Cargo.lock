@@ -3050,6 +3050,7 @@ dependencies = [
  "anyhow",
  "hex",
  "message-ir",
+ "regex",
  "sha2 0.11.0",
 ]
 

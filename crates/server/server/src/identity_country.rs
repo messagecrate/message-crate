@@ -12,7 +12,7 @@ use sqlx::SqliteConnection;
 use crate::db::account_profile;
 use crate::db::contacts::{self, OnService};
 use crate::db::handles::ApiIdentityService;
-use crate::db::identity_country::{self, CountryRefusal, Holder};
+use crate::db::identity_country::{self, CountryRefusal};
 use crate::imports_api::with_yourself;
 
 /// A country picked for one phone number written without its `+` code.
@@ -142,7 +142,7 @@ pub async fn set_identity_country(
         Some(existing) => Some(identity_country::holder(conn, account_id, existing).await?),
         None => None,
     };
-    if matches!(whose, Whose::Contact(_)) && holder == Some(Holder::Account) {
+    if matches!(whose, Whose::Contact(_)) && holder == Some(IdentityHolder::Account) {
         // Joining a contact's number to the account holder's own makes its
         // conversations ones with yourself and takes the number off the
         // contact, so it is done where the account's identities are.
@@ -154,23 +154,19 @@ pub async fn set_identity_country(
     }
     if let Some(holder) = holder.filter(|_| !request.merge) {
         let held = match &holder {
-            Holder::Contact(_, name) if name.is_empty() => {
+            IdentityHolder::Contact { name, .. } if name.is_empty() => {
                 "another identity of a contact with no name".to_string()
             }
-            Holder::Contact(_, name) => format!("another identity of {name}"),
-            Holder::Account => "one of this account's own identities".to_string(),
-            Holder::Nobody => "another identity, on no contact".to_string(),
+            IdentityHolder::Contact { name, .. } => format!("another identity of {name}"),
+            IdentityHolder::Account => "one of this account's own identities".to_string(),
+            IdentityHolder::Nobody => "another identity, on no contact".to_string(),
         };
         return Err(CountryError::Exists {
             detail: format!(
                 "{address} in {} is {}, which is already {held}.",
                 country.code, form.key
             ),
-            holder: match holder {
-                Holder::Contact(contact_id, name) => IdentityHolder::Contact { contact_id, name },
-                Holder::Account => IdentityHolder::Account,
-                Holder::Nobody => IdentityHolder::Nobody,
-            },
+            holder,
         });
     }
     let edited_contact = match whose {

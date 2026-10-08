@@ -655,3 +655,99 @@ async fn picking_the_country_finds_the_own_number_keyed_by_the_digits() {
         .collect();
     assert_eq!(addresses, [FULL]);
 }
+
+/// Link the account's own number written `address`, on the phone service.
+async fn link_own(
+    state: &crate::server::AppState,
+    account: &crate::test_support::RegisteredAccount,
+    address: &str,
+) {
+    let _: serde_json::Value = patch_json(
+        state,
+        &format!("/v1/accounts/{}", account.account_id),
+        &account.token,
+        serde_json::json!({ "identities": [{ "address": address, "service": "phone" }] }),
+    )
+    .await;
+}
+
+/// Pick the United Kingdom for the account's own `07700900123` on My
+/// Identities, merging into the identity holding its `+` form.
+async fn pick_own_and_merge(
+    state: &crate::server::AppState,
+    account: &crate::test_support::RegisteredAccount,
+) {
+    let _: serde_json::Value = patch_json(
+        state,
+        &format!("/v1/accounts/{}", account.account_id),
+        &account.token,
+        serde_json::json!({ "set_identity_country": {
+            "address": "07700900123", "country": "GB", "merge": true,
+        }}),
+    )
+    .await;
+}
+
+/// A merge on My Identities when both numbers have a one-to-one
+/// conversation: the national number's conversation, one with yourself,
+/// joins the other and goes, and the with-yourself rule run after it does
+/// not look for it.
+#[tokio::test]
+async fn an_own_number_merges_when_both_numbers_have_a_one_to_one_conversation() {
+    let fixture = crate::test_support::test_fixture().await;
+    let account =
+        crate::test_support::register_via_api(&fixture.state, "both11", "hunter2hunter2").await;
+    let state = &fixture.state;
+    let body = format!("{}{}", one_to_one(NATIONAL, "m1"), one_to_one(FULL, "m2"));
+    import_with_country(state, &account.token, None, body).await;
+    link_own(state, &account, "07700900123").await;
+
+    pick_own_and_merge(state, &account).await;
+
+    assert_eq!(conversations_and_members(state).await.0, 1);
+    let mut conn = state.db.acquire().await.unwrap();
+    let with_yourself = crate::db::conversations::with_yourself_ids(&mut conn, account.account_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        with_yourself.len(),
+        1,
+        "the joined conversation is with yourself"
+    );
+}
+
+/// A merge on My Identities makes the `+` form one of the account's own,
+/// which changes the content keys of its conversations: a group that listed
+/// it leaves the holder out of its key, so another source's copy of the
+/// group, which never listed the holder, now matches it.
+#[tokio::test]
+async fn an_own_number_merge_keys_again_the_groups_of_the_plus_form() {
+    let fixture = crate::test_support::test_fixture().await;
+    let account =
+        crate::test_support::register_via_api(&fixture.state, "ownkeys", "hunter2hunter2").await;
+    let state = &fixture.state;
+    let token = &account.token;
+    let (ann, bob) = ("+447700900456", "+447700900789");
+    let group = |source: &str, chat: &str, members: &[&str]| {
+        let mut header = conversation_header(source, chat).group();
+        for member in members {
+            header = header.participant(member, None);
+        }
+        format!(
+            "{header}\n{}\n",
+            message_line(&format!("{source}-1"), "see you at six")
+                .at(1_700_000_000_000)
+                .sender(ann),
+        )
+    };
+    let sms = group("sms", "group-sms", &[FULL, ann, bob]);
+    import_run(state, token, "sms", None, true, sms).await;
+    let imessage = group("imessage", "group-imessage", &[ann, bob]);
+    import_run(state, token, "imessage", None, true, imessage).await;
+    link_own(state, &account, "07700900123").await;
+    assert_eq!(messages_shown(state, token).await, 2);
+
+    pick_own_and_merge(state, &account).await;
+
+    assert_eq!(messages_shown(state, token).await, 1);
+}
