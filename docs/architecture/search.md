@@ -260,7 +260,14 @@ than a column of `messages_fts`: one index row per version is what lets the
 answer name the version, and a word typed in an earlier version and in the
 final text is told apart by asking the final text's index alone (#1143,
 #1644). The web app opens such a hit with the matching version shown
-(#1648).
+(#1648). Its row in the Messages list keeps the final text and quotes,
+under it, the newest version marked `matched`, so the row shows the word
+that found it (#1785). Within one part the later version in the list is
+the newer, because the list is oldest first within each part. Across parts
+the later `edited_at` is the newer when both versions carry one, and the
+later in the list otherwise. When matched versions hold different words of
+the query, the row adds the newest matched version holding a word not yet
+quoted, until every word some matched version holds shows once.
 
 **A message's earlier versions are the ones it shows, and a duplicate's
 count for the copy shown.** A message shows its own earlier versions, or,
