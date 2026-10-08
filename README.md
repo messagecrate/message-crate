@@ -127,9 +127,9 @@ No. The self-hosted Message Crate is the product, not a trial, and the maintaine
 **Is it secure? Has it been audited?**
 No third party has audited the code.
 Security is a design priority, but Message Crate is built for a home network, not for the open internet.
-Its login only keeps the accounts on one Message Crate apart, and the Demo Account logs in with an empty password.
+Its login is for user management: it keeps each account's messages separate on one Message Crate, and the Demo Account logs in with an empty password.
 [Run on another machine](https://messagecrate.app/docs/user/features/owner/run-on-another-machine/) says a Message Crate reached from the internet needs a reverse proxy with TLS in front of the server.
-That proxy should carry its own authentication too, because the server's login was never meant to be the only lock.
+That proxy should carry its own authentication too, because the server's login is user management, not a lock on the server.
 
 **Is it finished?**
 No. Message Crate is under heavy development on the way to 1.0.
