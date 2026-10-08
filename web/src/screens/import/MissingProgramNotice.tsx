@@ -1,12 +1,9 @@
 import Button from "../../components/Button";
-import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
+import type { ToolName, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
-import { downloadProgress, troubleshootingSection } from "../../lib/toolStatusCopy";
+import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
 import { accentLink } from "../../lib/uiStyles";
 import { useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
-
-/** A program the Import form can need. */
-export type ProgramName = "ffmpeg" | "ffprobe" | "wtsexporter";
 
 /** What a program is needed for: a WhatsApp import, or Convert and Compress. */
 export type ProgramNeed = "whatsapp" | "media";
@@ -16,34 +13,28 @@ function troubleshootingUrl(need: ProgramNeed): string {
   return troubleshootingSection(need === "whatsapp" ? "wtsexporter" : "ffmpeg").url;
 }
 
-/** One program's state, as a sentence; null when it is found. */
-function programLine(name: ProgramName, status: ToolStatus): string | null {
-  switch (status.state) {
-    case "found":
-      return null;
-    case "missing":
-      return name === "wtsexporter"
-        ? "wtsexporter hasn't been downloaded."
-        : `${name} isn't on PATH and hasn't been downloaded.`;
-    case "unavailable":
-      return `The app has no ${name} download for this computer.`;
-    case "downloadFailed":
-      return `The ${name} download failed. ${status.reason}`;
-    case "unusable":
-      return `${name} can't be used. ${status.reason}`;
-    case "downloading":
-      return `${name} is downloading: ${downloadProgress(status.received, status.total)}.`;
-  }
+/** `names` as a list in a sentence: "ffmpeg", or "ffmpeg and ffprobe". */
+function nameList(names: readonly ToolName[]): string {
+  return names.join(" and ");
 }
 
-/** What the missing programs mean for the import, or for a program still downloading, that it waits. */
-function consequence(need: ProgramNeed, blocked: boolean): string {
-  if (need === "whatsapp") {
-    return blocked ? "A WhatsApp import can't start without it." : "The import waits for it.";
+/**
+ * What the programs mean for the import: that it can't start or that Convert
+ * and Compress can't run when one can't be used (`blocked`), or else that it
+ * waits for the ones still downloading (`downloading`), named.
+ */
+function consequence(
+  need: ProgramNeed,
+  blocked: boolean,
+  downloading: readonly ToolName[],
+): string {
+  if (blocked) {
+    return need === "whatsapp"
+      ? "A WhatsApp import can't start without wtsexporter."
+      : "Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.";
   }
-  return blocked
-    ? "Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are."
-    : "Media waits for it.";
+  const waits = nameList(downloading);
+  return need === "whatsapp" ? `The import waits for ${waits}.` : `Media waits for ${waits}.`;
 }
 
 /**
@@ -95,24 +86,27 @@ export function MissingProgramNotice({
   status,
   need,
 }: {
-  programs: readonly ProgramName[];
+  programs: readonly ToolName[];
   status: ToolsStatus;
   need: ProgramNeed;
 }) {
   const lines = programs.flatMap((name) => {
-    const line = programLine(name, status[name]);
-    return line == null ? [] : [line];
+    const program = status[name];
+    if (program.state === "found") return [];
+    const { before, after } = toolStatusLine(program);
+    return [`${before}${name}${after}`];
   });
   if (lines.length === 0) return null;
   const unusable = programs.filter((name) => !toolUsable(status[name]));
   const blocked = unusable.length > 0;
+  const downloading = programs.filter((name) => status[name].state === "downloading");
   // A program the app has no download of for this computer can't be brought
   // by Try again: the troubleshooting section says where a copy goes.
   const retryable = unusable.some((name) => status[name].state !== "unavailable");
   return (
     <div role="status" className="mt-2 text-[0.813rem] text-muted">
       <p className="m-0">
-        {lines.join(" ")} {consequence(need, blocked)}
+        {lines.join(" ")} {consequence(need, blocked, downloading)}
       </p>
       {blocked ? <TryAgain need={need} offerRetry={retryable} /> : null}
     </div>

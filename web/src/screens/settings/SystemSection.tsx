@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
@@ -19,13 +19,14 @@ import {
   invokeExportDirectory,
   invokeSetStagingRoot,
   invokeStagingRoot,
+  type ToolName,
   type ToolStatus,
   type ToolsStatus,
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import {
-  downloadProgress,
+  toolStatusLine,
   troubleshootingSection,
   troubleshootingSentence,
 } from "../../lib/toolStatusCopy";
@@ -58,15 +59,9 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
   return `${trimmed}/${EXAMPLE_STAGING}`;
 }
 
-type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
-
 /** Said once on every failed download's line, whatever the reason: each is retried. */
 const DOWNLOAD_RETRIED = "It is tried again the next time the app starts.";
 
-/**
- * One program's status line: the path it was found at, that it is missing,
- * or why it is not used. One case per `state` the desktop process sends.
- */
 /**
  * Where to put a program that is missing, as the words before the Tools
  * Directory's path (`dir`), or the whole sentence when `dir` is null.
@@ -91,6 +86,69 @@ function missingFix(
   return toolsDir ? { text: `Put it and ${other} in the Tools Directory`, dir: toolsDir } : null;
 }
 
+/**
+ * What Settings says after a program's status line: where a missing one
+ * goes, and for a failed download that it is tried again and the
+ * troubleshooting section. As text for the row's label, and as the row shows it.
+ */
+function statusExtra(
+  name: ToolName,
+  status: ToolStatus,
+  partner: ToolStatus | null,
+  toolsDir: string | null,
+): { label: string; node: ReactNode } | null {
+  const fixWithDir = (fix: { text: string; dir: string | null } | null) =>
+    fix == null
+      ? null
+      : {
+          label: fix.dir ? `${fix.text}, ${fix.dir}.` : `${fix.text}.`,
+          node: (
+            <>
+              {fix.text}
+              {fix.dir ? (
+                <>
+                  , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
+                </>
+              ) : null}
+              .
+            </>
+          ),
+        };
+  switch (status.state) {
+    // An app opened from the Dock on macOS doesn't see the PATH a shell
+    // sets, so a program installed with Homebrew is missing here until it
+    // is linked into the Tools Directory.
+    case "missing":
+      return fixWithDir(missingFix(name, partner, toolsDir));
+    // No download for this computer: only a copy put there by hand is used.
+    case "unavailable":
+      return fixWithDir(
+        toolsDir ? { text: "Put a copy in the Tools Directory", dir: toolsDir } : null,
+      );
+    case "downloadFailed": {
+      const section = troubleshootingSection(name);
+      return {
+        label: `${DOWNLOAD_RETRIED} ${troubleshootingSentence(name)}`,
+        node: (
+          <>
+            {DOWNLOAD_RETRIED} See "
+            <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
+              {section.heading}
+            </a>
+            " in Troubleshooting at messagecrate.app.
+          </>
+        ),
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * One program's status line: the path it was found at, or the line the
+ * Import form shows too (`toolStatusLine`), with what Settings adds after it.
+ */
 function ToolStatusRow({
   name,
   status,
@@ -103,112 +161,39 @@ function ToolStatusRow({
   partner: ToolStatus | null;
   toolsDir: string | null;
 }) {
-  switch (status.state) {
-    case "found": {
-      const label = `Found ${name} - ${status.path}`;
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <CheckIcon size={14} className="mt-0.5 shrink-0 text-ok" />
-          <span>
-            Found <code className="font-mono text-[0.7rem]">{name}</code>
-            {" - "}
-            <code className="break-all font-mono text-[0.7rem]">{status.path}</code>
-          </span>
-        </li>
-      );
-    }
-    case "missing": {
-      // An app opened from the Dock on macOS doesn't see the PATH a shell
-      // sets, so a program installed with Homebrew is missing here until it
-      // is linked into the Tools Directory.
-      const fix = missingFix(name, partner, toolsDir);
-      const fixText = fix == null ? "" : fix.dir ? ` ${fix.text}, ${fix.dir}.` : ` ${fix.text}.`;
-      const label = `${name} not found.${fixText}`;
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
-          <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> not found.
-            {fix ? (
-              <>
-                {" "}
-                {fix.text}
-                {fix.dir ? (
-                  <>
-                    , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
-                  </>
-                ) : null}
-                .
-              </>
-            ) : null}
-          </span>
-        </li>
-      );
-    }
-    case "unavailable": {
-      // No download for this computer: only a copy put there by hand is used.
-      const fix = toolsDir ? ` Put a copy in the Tools Directory, ${toolsDir}.` : "";
-      const label = `${name} not found, and the app has no download of it for this computer.${fix}`;
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
-          <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> not found, and the app has no
-            download of it for this computer.
-            {toolsDir ? (
-              <>
-                {" "}
-                Put a copy in the Tools Directory,{" "}
-                <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
-              </>
-            ) : null}
-          </span>
-        </li>
-      );
-    }
-    case "unusable": {
-      const label = `${name} not used. ${status.reason}`;
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
-          <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> not used. {status.reason}
-          </span>
-        </li>
-      );
-    }
-    case "downloading": {
-      const progress = downloadProgress(status.received, status.total);
-      const label = `Downloading ${name} - ${progress}`;
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <DownloadIcon size={14} className="mt-0.5 shrink-0 text-muted" />
-          <span>
-            Downloading <code className="font-mono text-[0.7rem]">{name}</code>
-            {" - "}
-            {progress}
-          </span>
-        </li>
-      );
-    }
-    case "downloadFailed": {
-      const label = `${name} download failed. ${status.reason} ${DOWNLOAD_RETRIED} ${troubleshootingSentence(name)}`;
-      const section = troubleshootingSection(name);
-      return (
-        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
-          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
-          <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> download failed. {status.reason}{" "}
-            {DOWNLOAD_RETRIED} See "
-            <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
-              {section.heading}
-            </a>
-            " in Troubleshooting at messagecrate.app.
-          </span>
-        </li>
-      );
-    }
+  if (status.state === "found") {
+    return (
+      <li
+        className="flex items-start gap-1.5 text-[0.75rem] text-text"
+        aria-label={`Found ${name} - ${status.path}`}
+      >
+        <CheckIcon size={14} className="mt-0.5 shrink-0 text-ok" />
+        <span>
+          Found <code className="font-mono text-[0.7rem]">{name}</code>
+          {" - "}
+          <code className="break-all font-mono text-[0.7rem]">{status.path}</code>
+        </span>
+      </li>
+    );
   }
+  const line = toolStatusLine(status);
+  const extra = statusExtra(name, status, partner, toolsDir);
+  const label = `${line.before}${name}${line.after}${extra ? ` ${extra.label}` : ""}`;
+  return (
+    <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+      {status.state === "downloading" ? (
+        <DownloadIcon size={14} className="mt-0.5 shrink-0 text-muted" />
+      ) : (
+        <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+      )}
+      <span>
+        {line.before}
+        <code className="font-mono text-[0.7rem]">{name}</code>
+        {line.after}
+        {extra ? <> {extra.node}</> : null}
+      </span>
+    </li>
+  );
 }
 
 /**

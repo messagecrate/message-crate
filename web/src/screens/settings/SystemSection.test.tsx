@@ -391,8 +391,8 @@ describe("SystemSection", () => {
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText("Downloading ffmpeg - 12 MB of 29 MB (41%)")).toBeTruthy();
-    expect(screen.getByLabelText("Downloading ffprobe - 0 B so far")).toBeTruthy();
+    expect(await screen.findByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    expect(screen.getByLabelText("Downloading ffprobe: 0 B so far.")).toBeTruthy();
     // The next answer, a second later, has both in place.
     expect(await screen.findByLabelText(/Found ffmpeg/i, {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();

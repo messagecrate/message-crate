@@ -836,7 +836,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       await screen.findByText(
-        "The wtsexporter download failed. No connection to the download's server: dns error. A WhatsApp import can't start without it.",
+        "wtsexporter download failed. No connection to the download's server: dns error. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
@@ -846,14 +846,14 @@ describe("ImportFormFields programs the import needs", () => {
     expect(importButton()).toBeDisabled();
   });
 
-  it("blocks a WhatsApp import while wtsexporter hasn't been downloaded", async () => {
+  it("blocks a WhatsApp import while wtsexporter is not found", async () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "missing" } }));
     renderForm(readyWhatsapp);
 
     expect(
       await screen.findByText(
-        "wtsexporter hasn't been downloaded. A WhatsApp import can't start without it.",
+        "wtsexporter not found. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
     expect(importButton()).toBeDisabled();
@@ -866,7 +866,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       await screen.findByText(
-        "The app has no wtsexporter download for this computer. A WhatsApp import can't start without it.",
+        "wtsexporter not found, and the app has no download of it for this computer. A WhatsApp import can't start without wtsexporter.",
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -883,9 +883,7 @@ describe("ImportFormFields programs the import needs", () => {
     );
     renderForm(readyWhatsapp);
 
-    expect(
-      await screen.findByText(/wtsexporter can't be used\. It is not executable\./),
-    ).toBeTruthy();
+    expect(await screen.findByText(/wtsexporter not used\. It is not executable\./)).toBeTruthy();
     expect(importButton()).toBeDisabled();
   });
 
@@ -900,7 +898,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       await screen.findByText(
-        "wtsexporter is downloading: 12 MB of 30 MB (40%). The import waits for it.",
+        "Downloading wtsexporter: 12 MB of 30 MB (40%). The import waits for wtsexporter.",
       ),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
@@ -915,7 +913,7 @@ describe("ImportFormFields programs the import needs", () => {
       .mockResolvedValue(status({}));
     renderForm(readyWhatsapp);
 
-    expect(await screen.findByText(/wtsexporter hasn't been downloaded/)).toBeTruthy();
+    expect(await screen.findByText(/wtsexporter not found/)).toBeTruthy();
     expect(importButton()).toBeDisabled();
     await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
   });
@@ -930,6 +928,21 @@ describe("ImportFormFields programs the import needs", () => {
     expect(importButton()).toBeEnabled();
   });
 
+  it("names the program Media waits for while it downloads", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({
+        ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      }),
+    );
+    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+
+    expect(
+      await screen.findByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   it("says Convert needs ffmpeg without blocking the import", async () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
@@ -939,7 +952,7 @@ describe("ImportFormFields programs the import needs", () => {
 
     expect(
       await screen.findByText(
-        "ffmpeg isn't on PATH and hasn't been downloaded. ffprobe isn't on PATH and hasn't been downloaded. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
+        "ffmpeg not found. ffprobe not found. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
       ),
     ).toBeTruthy();
     expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
@@ -999,9 +1012,9 @@ describe("ImportFormFields programs the import needs", () => {
     await user.click(await screen.findByRole("button", { name: "Try again" }));
 
     expect(desktop.retry).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText(/wtsexporter is downloading/)).toBeTruthy();
+    expect(await screen.findByText(/Downloading wtsexporter/)).toBeTruthy();
     // Asked again while it downloads, until it is found.
-    await waitFor(() => expect(screen.queryByText(/wtsexporter is downloading/)).toBeNull(), {
+    await waitFor(() => expect(screen.queryByText(/Downloading wtsexporter/)).toBeNull(), {
       timeout: 3000,
     });
     expect(desktop.toolsStatus.mock.calls.length).toBeGreaterThanOrEqual(3);

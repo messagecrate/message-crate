@@ -1,15 +1,45 @@
 import { formatBytes } from "./attachmentProgressCopy";
-import type { ToolName } from "./tauri";
+import type { ToolName, ToolStatus } from "./tauri";
 
 /**
  * A download's progress: "12 MB of 29 MB (41%)", or "12 MB so far" with no
  * total. The Import form, Settings and the run's progress line all say it
  * this way, so one download reads the same in each.
  */
-export function downloadProgress(received: number, total: number | null): string {
+function downloadProgress(received: number, total: number | null): string {
   if (total == null || total <= 0) return `${formatBytes(received)} so far`;
   const percent = Math.min(100, Math.floor((received / total) * 100));
   return `${formatBytes(received)} of ${formatBytes(total)} (${percent}%)`;
+}
+
+/**
+ * The line for a program that is not found, the same in Settings and on the
+ * Import form, one case per `state` the desktop process sends. It is split
+ * around the program's name so Settings can set the name as code:
+ * `${before}${name}${after}` is the sentence.
+ */
+export function toolStatusLine(status: Exclude<ToolStatus, { state: "found" }>): {
+  before: string;
+  after: string;
+} {
+  switch (status.state) {
+    case "missing":
+      return { before: "", after: " not found." };
+    case "unavailable":
+      return {
+        before: "",
+        after: " not found, and the app has no download of it for this computer.",
+      };
+    case "unusable":
+      return { before: "", after: ` not used. ${status.reason}` };
+    case "downloading":
+      return {
+        before: "Downloading ",
+        after: `: ${downloadProgress(status.received, status.total)}.`,
+      };
+    case "downloadFailed":
+      return { before: "", after: ` download failed. ${status.reason}` };
+  }
 }
 
 /**
