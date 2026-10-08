@@ -17,7 +17,7 @@ For a Message Crate in Docker:
 
 1. `docker ps` lists the running containers. `message-crate` must be among them.
 2. `docker logs message-crate` shows what the server printed, including why it stopped.
-3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. For any address but its own, `http://127.0.0.1:8080`, the app opens on **Server Address** at every start.
+3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. The app keeps the address after logging out and opens on the login card for it at the next start. It starts its own Message Crate only when the address is its own, `http://127.0.0.1:8080`.
 
 A server on a different computer needs more than the address.
 [Run on another machine](/docs/user/features/owner/run-on-another-machine/) covers it.
