@@ -67,7 +67,7 @@ impl WtsexporterArgs {
 }
 
 /// The file name of `wtsexporter`, with `.exe` on Windows.
-pub fn executable_name() -> &'static str {
+pub fn wtsexporter_file_name() -> &'static str {
     if cfg!(windows) {
         "wtsexporter.exe"
     } else {
@@ -112,7 +112,7 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
     let Some(tools_dir) = tools_dir else {
         return Ok(None);
     };
-    let candidate = tools_dir.join(executable_name());
+    let candidate = tools_dir.join(wtsexporter_file_name());
     if !candidate.is_file() {
         return Ok(None);
     }
@@ -148,7 +148,7 @@ fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
     if let Some(found) = find_wtsexporter(tools_dir)? {
         return Ok(found);
     }
-    let executable = executable_name();
+    let executable = wtsexporter_file_name();
     let Some(tools_dir) = tools_dir else {
         bail!(
             "Could not find {executable}: no Tools Directory is set. The desktop app keeps \
@@ -510,9 +510,9 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, WtsexporterArgs, android_crypt_backup, executable_name, extracts_ios_backup,
-        input_search_root, names_a_full_disk, resolve_forwarded_paths, run_wtsexporter,
-        scratch_write_error, wtsexporter_command, wtsexporter_in,
+        Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
+        names_a_full_disk, resolve_forwarded_paths, run_wtsexporter, scratch_write_error,
+        wtsexporter_command, wtsexporter_file_name, wtsexporter_in,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use std::fs;
@@ -1072,7 +1072,7 @@ mod tests {
     #[test]
     fn wtsexporter_is_found_in_the_tools_directory() {
         let tools = tempfile::tempdir().unwrap();
-        let program = tools.path().join(executable_name());
+        let program = tools.path().join(wtsexporter_file_name());
         write_with_mode(&program, 0o755);
 
         assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
@@ -1084,7 +1084,7 @@ mod tests {
     #[test]
     fn a_wtsexporter_that_is_not_executable_is_refused() {
         let tools = tempfile::tempdir().unwrap();
-        let program = tools.path().join(executable_name());
+        let program = tools.path().join(wtsexporter_file_name());
         write_with_mode(&program, 0o644);
 
         let err = wtsexporter_in(Some(tools.path())).expect_err("not executable");
@@ -1103,7 +1103,7 @@ mod tests {
     fn wtsexporter_is_looked_for_nowhere_but_the_tools_directory() {
         let tools = tempfile::tempdir().unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
-        write_with_mode(&elsewhere.path().join(executable_name()), 0o755);
+        write_with_mode(&elsewhere.path().join(wtsexporter_file_name()), 0o755);
 
         let err = wtsexporter_in(Some(tools.path())).expect_err("not in the Tools Directory");
         let no_dir = wtsexporter_in(None).expect_err("no Tools Directory");

@@ -127,7 +127,7 @@ mod tests {
         let _lock = media::testutil::tools_test_lock();
         let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
-        let name = whatsapp_exporter::executable_name();
+        let name = whatsapp_exporter::wtsexporter_file_name();
         media::set_tools_dir(Some(tools.path().to_path_buf()));
         let missing = tools_status().wtsexporter;
         std::fs::write(tools.path().join(name), "").unwrap();
