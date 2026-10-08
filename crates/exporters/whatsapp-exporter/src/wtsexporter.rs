@@ -67,7 +67,7 @@ impl WtsexporterArgs {
 }
 
 /// The file name of `wtsexporter`, with `.exe` on Windows.
-fn executable_name() -> &'static str {
+pub fn executable_name() -> &'static str {
     if cfg!(windows) {
         "wtsexporter.exe"
     } else {
