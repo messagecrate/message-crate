@@ -13,8 +13,12 @@
 
 mod countries;
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+
 use anyhow::{Context, Result, bail};
 use message_ir::IdentityType;
+use regex::Regex;
 use sha2::{Digest, Sha256};
 
 pub use countries::{COUNTRIES, Country, country};
@@ -151,13 +155,6 @@ const COUNTRY_CALLING_CODES: &[&str] = &[
 /// its country is known.
 pub const MIN_NATIONAL_DIGITS: usize = 7;
 
-/// The fewest digits a number written with its calling code but without the
-/// `+` must have before [`normalize_checked`] reads it so (`447700900123`,
-/// `79161234567`). A shorter number that starts with the calling code could
-/// as well be a national number that happens to (`9112345678` is an Indian
-/// mobile number), so it is refused rather than given either form.
-const MIN_DIGITS_WITH_CALLING_CODE: usize = 11;
-
 /// Split digits into `(country_calling_code, national_number)`.
 ///
 /// When `had_plus` is true, uses longest-match ITU calling codes. Without `+`, only
@@ -209,9 +206,8 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
     match region {
         PhoneRegion::Unknown => Err("written without its country code, in no known country".into()),
         PhoneRegion::Country(country) if country.calling_code == "1" => {
-            if let Some(international) = digits.strip_prefix("011") {
-                // `011` is how a number abroad is dialled from the NANP.
-                written_abroad(international)
+            if let Some(international) = after_international_prefix(&digits, country) {
+                dialled_abroad(international, country)
             } else if digits.len() == 10 {
                 Ok(format!("+1{digits}"))
             } else if digits.len() == 11 && digits.starts_with('1') {
@@ -237,34 +233,28 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
 /// The `+` form of `digits`, a number written without its `+` in `country`
 /// (not a `+1` country, which [`normalize_checked`] writes by its own rule).
 ///
-/// `00` before the digits is the international prefix: what follows is
-/// the number's own calling code and number, so `0044 7700 900123` in any
-/// country is `+447700900123`. Then the country's trunk prefix is dropped
-/// (`07700 900123` in the United Kingdom). A number that starts with the
-/// country's own calling code instead, with at least
-/// [`MIN_DIGITS_WITH_CALLING_CODE`] digits, was written in full without its
-/// `+` (`447700900123`). A shorter one is refused, because it could as well
-/// be a national number, unless what follows the calling code is too short
-/// to be a number at all (`65123456` in Singapore is a national number).
-/// Anything else is the national number.
+/// The country's own international prefix before the digits means what
+/// follows is a calling code and number ([`dialled_abroad`]): `00 44 7700
+/// 900123` in the United Kingdom, `0011 44 …` in Australia, `8 10 44 …` in
+/// Russia. Otherwise the country's trunk prefix is dropped (`07700 900123` in
+/// the United Kingdom). A number that starts with the country's own calling
+/// code was written in full without its `+` (`447700900123`) only when what
+/// follows the code is as long as the country's numbers are and the digits
+/// as a whole are not: `55 99123 4567` in Brazil is a national number with
+/// the area code 55. Anything else is the national number.
 fn in_country(digits: &str, country: &Country) -> Result<String, String> {
-    if let Some(international) = digits.strip_prefix("00") {
-        return written_abroad(international);
+    if let Some(international) = after_international_prefix(digits, country) {
+        return dialled_abroad(international, country);
     }
     let trunk = country.trunk_prefix;
+    let national_length =
+        |n: &str| u8::try_from(n.len()).is_ok_and(|len| country.national_lengths.contains(&len));
     let national = if !trunk.is_empty() && digits.starts_with(trunk) {
         &digits[trunk.len()..]
     } else if let Some(rest) = digits
         .strip_prefix(country.calling_code)
-        .filter(|rest| rest.len() >= MIN_NATIONAL_DIGITS)
+        .filter(|rest| national_length(rest) && !national_length(digits))
     {
-        if digits.len() < MIN_DIGITS_WITH_CALLING_CODE {
-            return Err(format!(
-                "{digits} starts with {}'s calling code {} and is too short to tell \
-                 whether it is written with it",
-                country.code, country.calling_code
-            ));
-        }
         rest
     } else {
         digits
@@ -276,6 +266,38 @@ fn in_country(digits: &str, country: &Country) -> Result<String, String> {
     } else {
         Ok(format!("+{}{national}", country.calling_code))
     }
+}
+
+/// The digits after `country`'s international prefix, when they start with
+/// one ([`Country::international_prefix`]).
+fn after_international_prefix<'a>(digits: &'a str, country: &Country) -> Option<&'a str> {
+    static PREFIXES: LazyLock<HashMap<&'static str, Regex>> = LazyLock::new(|| {
+        COUNTRIES
+            .iter()
+            .map(|c| {
+                let pattern = format!("^(?:{})", c.international_prefix);
+                let prefix = Regex::new(&pattern).expect("libphonenumber's prefix is a regex");
+                (c.code, prefix)
+            })
+            .collect()
+    });
+    let found = PREFIXES.get(country.code)?.find(digits)?;
+    Some(&digits[found.end()..])
+}
+
+/// The `+` form of `digits`, dialled after `country`'s international
+/// prefix. Digits that start with no calling code are refused, because the
+/// prefix was then most likely not one: a wrong guess would give a key that
+/// names nobody.
+fn dialled_abroad(digits: &str, country: &Country) -> Result<String, String> {
+    if !COUNTRIES.iter().any(|c| digits.starts_with(c.calling_code)) {
+        return Err(format!(
+            "not a number {} can read: what follows its international prefix starts \
+             with no calling code",
+            country.code
+        ));
+    }
+    written_abroad(digits)
 }
 
 /// The `+` form of `digits`, the calling code and number written after a
@@ -1106,31 +1128,46 @@ mod tests {
     }
 
     #[test]
-    fn an_international_prefix_starts_the_number_s_own_calling_code() {
-        // `00` from most countries, `011` from the NANP: the digits after it
+    fn a_country_s_own_international_prefix_starts_a_calling_code() {
+        // Each country's own prefix, from libphonenumber: the digits after it
         // are a calling code and number, never a national number (#1676).
         assert_eq!(keyed_in("0044 7700 900123", "GB").key, "+447700900123");
-        assert_eq!(keyed_in("00 33 6 12 34 56 78", "DE").key, "+33612345678");
         assert_eq!(keyed_in("011 44 7700 900123", "US").key, "+447700900123");
-        // A `00` that leads nowhere is refused, not given a `+` form.
+        assert_eq!(keyed_in("0011 44 7700 900123", "AU").key, "+447700900123");
+        assert_eq!(keyed_in("002 44 7700 900123", "KR").key, "+447700900123");
+        assert_eq!(keyed_in("8 10 44 7700 900123", "RU").key, "+447700900123");
+        assert_eq!(keyed_in("010 65 6123 4567", "JP").key, "+6561234567");
+        // Australia's `0011` is not its trunk prefix and a `11`.
         assert!(
-            normalize_checked("0001234567", PhoneRegion::Country(country("GB").unwrap())).is_err()
+            !keyed_in("0011 44 7700 900123", "AU")
+                .key
+                .starts_with("+611")
+        );
+    }
+
+    #[test]
+    fn digits_after_an_international_prefix_that_name_no_calling_code_are_refused() {
+        let refused = keyed_in("00 0123 456789", "GB");
+        assert_eq!(refused.key, "000123456789");
+        assert!(
+            refused
+                .note
+                .is_some_and(|n| n.contains("not a number GB can read"))
         );
     }
 
     #[test]
     fn a_number_written_with_its_calling_code_but_no_plus_keeps_it_once() {
+        // The rest is as long as the country's numbers are, and the whole is
+        // not.
         assert_eq!(keyed_in("447700900123", "GB").key, "+447700900123");
         assert_eq!(keyed_in("79161234567", "RU").key, "+79161234567");
         assert_eq!(keyed_in("33612345678", "FR").key, "+33612345678");
-        // Too short to tell from a national number that starts with the
-        // same digits: refused, and the digits are kept as written.
-        let unsure = keyed_in("9112345678", "IN");
-        assert_eq!(unsure.key, "9112345678");
-        assert!(unsure.note.is_some_and(|n| n.contains("too short to tell")));
-        // What follows the calling code is too short to be a number, so the
-        // digits are the national number.
-        assert_eq!(keyed_in("65123456", "SG").key, "+6565123456");
+        // Brazil's area code 55 is not its calling code: the whole is as
+        // long as a Brazilian mobile number.
+        assert_eq!(keyed_in("55 99123 4567", "BR").key, "+5555991234567");
+        // An Indian mobile number that starts with 91 is a national number.
+        assert_eq!(keyed_in("9112345678", "IN").key, "+919112345678");
     }
 
     #[test]
