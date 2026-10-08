@@ -445,38 +445,66 @@ fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
     }
 }
 
-/// A pinned file the app recorded that does not run is downloaded again,
-/// and when the download does not run either the failure says so.
+/// A pinned file the app recorded that does not run is not downloaded
+/// again, start after start, because the download would be the same file;
+/// the failure says it doesn't run.
 #[cfg(unix)]
 #[test]
-fn a_pinned_program_that_does_not_run_is_downloaded_again() {
+fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let not_a_program = b"not a program";
     let (pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(not_a_program), true);
-    let target = tools.path().join("ffmpeg");
-    std::fs::write(&target, not_a_program).unwrap();
-    make_executable(&target).unwrap();
-    let mut manifest = Manifest::new();
-    manifest.insert(
-        Program::Ffmpeg,
-        Written::of(&pinned, Stamp::at(&target).unwrap()),
-    );
-    write_manifest(tools.path(), &manifest).unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+
+    for _start in 0..2 {
+        let downloads = ToolDownloads::default();
+        download_missing(
+            tools.path(),
+            &server.base_url(),
+            std::slice::from_ref(&pinned),
+            &downloads,
+        );
+        let Some(DownloadState::Failed { reason }) = downloads.get(Program::Ffmpeg) else {
+            panic!(
+                "the program was not said not to run: {:?}",
+                downloads.get(Program::Ffmpeg)
+            );
+        };
+        assert!(reason.contains("does not run"), "{reason}");
+    }
+
+    asked.assert_calls(1);
+}
+
+/// The pinned program put there by hand that does not run is kept and
+/// recorded, and not downloaded, because the download would be the same file.
+#[cfg(unix)]
+#[test]
+fn a_pinned_program_put_there_by_hand_that_does_not_run_is_not_downloaded() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let not_a_program = b"not a program";
+    let (pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(not_a_program), true);
+    std::fs::write(tools.path().join("ffmpeg"), not_a_program).unwrap();
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(tools.path(), &server.base_url(), &[pinned], &downloads);
+    download_missing(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
 
-    asked.assert_calls(1);
-    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Ffmpeg) else {
-        panic!(
-            "the download did not fail: {:?}",
-            downloads.get(Program::Ffmpeg)
-        );
-    };
-    assert!(reason.contains("does not run"), "{reason}");
+    asked.assert_calls(0);
+    assert!(read_manifest(tools.path()).contains_key(&Program::Ffmpeg));
+    assert!(matches!(
+        downloads.get(Program::Ffmpeg),
+        Some(DownloadState::Failed { .. })
+    ));
 }
 
 /// ffmpeg is kept and recorded again when its record is lost, because the

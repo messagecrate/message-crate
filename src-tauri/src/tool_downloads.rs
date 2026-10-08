@@ -23,7 +23,9 @@
 //!
 //! - **The pinned one stays.** A file is the pinned one when its entry
 //!   names the pinned release and its stamp is the one recorded, so no file
-//!   is read again at start-up.
+//!   is read again at start-up. One that does not run is not downloaded
+//!   again, because the download would be the same file: Settings says it
+//!   doesn't run until a newer pin or another file changes that.
 //! - **A pinned file with no entry is adopted.** A file with no entry, or
 //!   whose stamp changed, whose SHA-256 is the pinned program's gets an
 //!   entry and stays. The pinned program's SHA-256 is carried beside the
@@ -265,6 +267,9 @@ fn write_manifest(dir: &Path, manifest: &Manifest) -> io::Result<()> {
 enum Need {
     /// The file there is the pinned one and runs: it stays.
     Keep,
+    /// The file there is the pinned one and does not run: it stays, and
+    /// Settings says so, since downloading it again gives the same file.
+    DoesNotRun,
     /// The file there is the pinned program with no entry, or with a stamp
     /// that changed: it stays and goes into the record.
     Adopt,
@@ -286,7 +291,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
         return if runs(pinned.program, dir) {
             Need::Keep
         } else {
-            Need::Download
+            Need::DoesNotRun
         };
     }
     if file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
@@ -558,6 +563,13 @@ impl ToolDownloads {
     }
 }
 
+/// The state of a program in place that does not run.
+fn does_not_run() -> DownloadState {
+    DownloadState::Failed {
+        reason: DownloadError::DoesNotRun.to_string(),
+    }
+}
+
 /// Check `dir` against `pinned` and download, one after another, what is
 /// missing or not the pinned release, from `base`. ffmpeg and ffprobe are
 /// passed over when both are on `PATH`. Each download's progress and
@@ -581,9 +593,10 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
                     let _ = write_manifest(dir, &manifest);
                 }
                 if !runs(pin.program, dir) {
-                    wanted.push(pin);
+                    downloads.set(pin.program, does_not_run());
                 }
             }
+            Need::DoesNotRun => downloads.set(pin.program, does_not_run()),
             Need::Download => wanted.push(pin),
         }
     }
@@ -630,12 +643,7 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
                 if runs(program, dir) {
                     downloads.clear(program);
                 } else {
-                    downloads.set(
-                        program,
-                        DownloadState::Failed {
-                            reason: DownloadError::DoesNotRun.to_string(),
-                        },
-                    );
+                    downloads.set(program, does_not_run());
                 }
                 if let Err(err) = write_manifest(dir, &manifest) {
                     // The program is in place and works; without the record
