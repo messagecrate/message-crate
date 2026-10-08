@@ -571,6 +571,18 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
     if wanted.is_empty() {
         return;
     }
+    // Every program wanted shows as downloading from now on, before the
+    // first request, so Settings opened while a connection is made, or
+    // between two downloads, keeps asking until the last one ends.
+    for pin in &wanted {
+        downloads.set(
+            pin.program,
+            DownloadState::Downloading {
+                received: 0,
+                total: None,
+            },
+        );
+    }
     let fail_all = |err: DownloadError| {
         for pin in &wanted {
             downloads.set(

@@ -507,6 +507,54 @@ fn an_interrupted_downloads_leftovers_are_deleted() {
     );
 }
 
+/// Every program to be downloaded shows as downloading before its first
+/// request, so Settings keeps asking through a slow connect and the gap
+/// between two downloads.
+#[test]
+fn every_program_wanted_shows_as_downloading_before_its_request() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (ffmpeg, ffmpeg_gz) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(b"ffmpeg"), true);
+    let (wts, wts_bytes) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let ffmpeg_path = format!(
+        "/{}/releases/download/{}/{}",
+        ffmpeg.repo, ffmpeg.release, ffmpeg.asset
+    );
+    server.mock(|when, then| {
+        when.method(GET).path(ffmpeg_path);
+        then.status(200)
+            .delay(Duration::from_millis(500))
+            .body(ffmpeg_gz);
+    });
+    serve(&server, &wts, &wts_bytes);
+    let downloads = ToolDownloads::default();
+    let base = server.base_url();
+    let dir = tools.path().to_path_buf();
+
+    let mut seen_waiting = false;
+    std::thread::scope(|scope| {
+        let check = scope.spawn(|| download_missing(&dir, &base, &[ffmpeg, wts], &downloads));
+        while !check.is_finished() {
+            if downloads.get(Program::Wtsexporter)
+                == Some(DownloadState::Downloading {
+                    received: 0,
+                    total: None,
+                })
+            {
+                seen_waiting = true;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    });
+
+    assert!(
+        seen_waiting,
+        "wtsexporter was not downloading while it waited"
+    );
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+}
+
 /// With no network the check fails quietly, saying so, and leaves nothing.
 #[test]
 fn no_network_is_a_failed_download_that_says_so() {
