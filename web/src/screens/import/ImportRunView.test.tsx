@@ -500,7 +500,23 @@ describe("ImportRunView", () => {
     expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
     expect(
       screen.getByText(
-        /Media can't use ffprobe\. Put it in the Tools Directory, which Settings → System shows/,
+        /Media can't use ffprobe\. Put it beside ffmpeg, or put both in the Tools Directory\. Settings → System shows each program's state/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("names both Media tools with and when neither can be used", () => {
+    renderView({
+      phase: "staging_review",
+      running: false,
+      steps: stepsAt("convert", { Staging: "done" }),
+      stagingSummary: staged(),
+      reviewWaiting: "staging",
+      mediaToolsMissing: ["ffmpeg", "ffprobe"],
+    });
+    expect(
+      screen.getByText(
+        /Media can't use ffmpeg and ffprobe\. Put both on PATH or both in the Tools Directory\./,
       ),
     ).toBeInTheDocument();
   });

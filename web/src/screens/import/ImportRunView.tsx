@@ -453,9 +453,12 @@ export default function ImportRunView({
         ) : null}
         {toolsBlocked ? (
           <p className="m-0 text-[0.813rem] text-muted">
-            Media can't use {missingTools.join(" or ")}. Put{" "}
-            {missingTools.length === 1 ? "it" : "them"} in the Tools Directory, which Settings →
-            System shows with the reason, then come back to Import.
+            Media can't use {missingTools.join(" and ")}.{" "}
+            {missingTools.length === 1
+              ? `Put it beside ${missingTools[0] === "ffmpeg" ? "ffprobe" : "ffmpeg"}, or put both in the Tools Directory.`
+              : "Put both on PATH or both in the Tools Directory."}{" "}
+            Settings → System shows each program's state and where the Tools Directory is. Then come
+            back to Import.
           </p>
         ) : null}
         <ReviewActions
