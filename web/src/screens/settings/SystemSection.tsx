@@ -84,6 +84,17 @@ function ToolStatusRow({ name, status }: { name: ToolName; status: ToolStatus })
         </li>
       );
     }
+    case "unusable": {
+      const label = `${name} not used - ${status.reason}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+          <span>
+            <code className="font-mono text-[0.7rem]">{name}</code> not used - {status.reason}
+          </span>
+        </li>
+      );
+    }
   }
 }
 
@@ -97,8 +108,8 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
     <div className="mt-8">
       <h3 className={sectionHeading}>Media</h3>
       <p className="m-0 max-w-prose text-[0.813rem] text-muted">
-        ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory. wtsexporter is
-        looked for in the Tools Directory only.
+        ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory, and both must come
+        from one of them. wtsexporter is looked for in the Tools Directory only.
       </p>
       {tools?.toolsDir ? (
         <div className={`${settingsGrid} mt-2`}>

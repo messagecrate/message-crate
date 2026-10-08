@@ -22,6 +22,11 @@ pub enum ToolStatus {
     },
     /// The program is on neither place it is looked for.
     Missing,
+    /// The program was found but is not used, for `reason`.
+    Unusable {
+        /// Why it is not used.
+        reason: String,
+    },
 }
 
 impl ToolStatus {
@@ -53,10 +58,20 @@ pub struct ToolsStatus {
 /// Look for ffmpeg, ffprobe and wtsexporter where this process runs them from.
 #[tauri::command]
 pub fn tools_status() -> ToolsStatus {
+    let (ffmpeg, ffprobe) = match media::ffmpeg_tools() {
+        Ok(tools) => (ToolStatus::of(tools.ffmpeg), ToolStatus::of(tools.ffprobe)),
+        // Found in two places: neither is used, and both say why.
+        Err(err) => {
+            let unusable = ToolStatus::Unusable {
+                reason: err.to_string(),
+            };
+            (unusable.clone(), unusable)
+        }
+    };
     ToolsStatus {
         tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
-        ffmpeg: ToolStatus::of(media::ffmpeg_path()),
-        ffprobe: ToolStatus::of(media::ffprobe_path()),
+        ffmpeg,
+        ffprobe,
         wtsexporter: ToolStatus::of(whatsapp_exporter::wtsexporter_path()),
     }
 }
@@ -81,6 +96,21 @@ mod tests {
                 "ffmpeg": { "state": "found", "path": "/usr/bin/ffmpeg" },
                 "ffprobe": { "state": "found", "path": "/usr/bin/ffprobe" },
                 "wtsexporter": { "state": "missing" },
+            })
+        );
+    }
+
+    /// A program found but not used carries its reason, which the window shows.
+    #[test]
+    fn an_unusable_program_is_sent_with_its_reason() {
+        let status = ToolStatus::Unusable {
+            reason: "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is elsewhere.".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&status).unwrap(),
+            serde_json::json!({
+                "state": "unusable",
+                "reason": "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is elsewhere.",
             })
         );
     }

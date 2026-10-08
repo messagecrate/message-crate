@@ -495,10 +495,12 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done" }),
       stagingSummary: staged(),
       reviewWaiting: "staging",
-      mediaToolsMissing: true,
+      mediaToolsMissing: ["ffprobe"],
     });
     expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
-    expect(screen.getByText(/Media needs ffmpeg/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Media can't use ffprobe\. Settings → System shows why/),
+    ).toBeInTheDocument();
   });
 
   it("shows on each review that the server did not record it, with approving still offered", () => {

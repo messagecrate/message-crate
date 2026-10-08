@@ -90,7 +90,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeSaveImportRunRecord: (...args: unknown[]) => saveRunRecordMock(...args),
   invokeStartImportRunLog: (...args: unknown[]) => invokeStartImportRunLogMock(...args),
   invokeToolsStatus: () => toolsStatusMock(),
-  ffmpegFound: (await importOriginal<typeof import("../../lib/tauri")>()).ffmpegFound,
+  ffmpegMissing: (await importOriginal<typeof import("../../lib/tauri")>()).ffmpegMissing,
   invokeImessageBackupIdentities: (...args: unknown[]) =>
     invokeImessageBackupIdentitiesMock(...args),
   onExtractEvents: (...args: [{ onProgress?: (event: ImportProgressEvent) => void }]) =>
@@ -2181,14 +2181,21 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     expect(toolsStatusMock).not.toHaveBeenCalled();
-    expect(result.current.mediaToolsMissing).toBe(false);
+    expect(result.current.mediaToolsMissing).toEqual([]);
   });
 
   it("flags missing ffmpeg tools at the Staging Review under convert", async () => {
     toolsStatusMock.mockResolvedValue(ffmpegMissing());
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
-    expect(result.current.mediaToolsMissing).toBe(true);
+    expect(result.current.mediaToolsMissing).toEqual(["ffmpeg"]);
+  });
+
+  it("names ffprobe alone when ffmpeg is found without it", async () => {
+    toolsStatusMock.mockResolvedValue({ ...okProbe(), ffprobe: { state: "missing" } });
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+    expect(result.current.mediaToolsMissing).toEqual(["ffprobe"]);
   });
 
   describe("the desktop job between stages (#1407)", () => {
@@ -3082,7 +3089,7 @@ describe("useImportJob resumeAtReview", () => {
 
     expect(invokeTranscodeStagingMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("staging_review");
-    expect(result.current.mediaToolsMissing).toBe(true);
+    expect(result.current.mediaToolsMissing).toEqual(["ffmpeg"]);
     // The directory may hold a mix of originals and already-converted files --
     // The Staging Review's "has not run yet" copy would be wrong here.
     expect(result.current.mediaPartiallyRan).toBe(true);

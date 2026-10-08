@@ -6,8 +6,8 @@
 //! - **Convert** — rewrite images to `.jpg`, videos to `.mp4`, audio to `.mp3`
 //! - **Compress** — re-encode to shrink files, with optional video settings
 //!
-//! Convert and compress need `ffmpeg` / `ffprobe` on `PATH` or in the Tools
-//! Directory ([`set_tools_dir`]), and nowhere else.
+//! Convert and compress need `ffmpeg` / `ffprobe`, both on `PATH` or both
+//! in the Tools Directory ([`set_tools_dir`]), and nowhere else.
 
 mod estimate;
 mod mime;
@@ -27,7 +27,8 @@ pub use process::{
     transcode_file, transcode_file_as,
 };
 pub use tools::{
-    ffmpeg_available, ffmpeg_path, ffprobe_path, require_ffmpeg, set_tools_dir, tools_dir,
+    FfmpegTools, ffmpeg_available, ffmpeg_path, ffmpeg_tools, ffprobe_path, require_ffmpeg,
+    set_tools_dir, tools_dir,
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,

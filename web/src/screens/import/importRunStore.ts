@@ -3,7 +3,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { getAccountId, onAccountIdChange } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { StagingSummary } from "../../lib/tauri";
+import type { MediaToolName, StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
 import type { ImportJobFormValues } from "./useImportJob";
 
@@ -50,7 +50,8 @@ export type ImportRunState = {
    * has not run, and on a resume, where the Media stage's own report is gone.
    */
   mediaFailedCount: number | null;
-  mediaToolsMissing: boolean;
+  /** Which of ffmpeg and ffprobe the chosen Media mode needs and can't use. */
+  mediaToolsMissing: MediaToolName[];
   /**
    * True only for a resume that landed at the Staging Review because
    * ffmpeg went missing mid Media, not for the genuine not-yet-run case:
@@ -99,7 +100,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,
-    mediaToolsMissing: false,
+    mediaToolsMissing: [],
     mediaPartiallyRan: false,
     resumeError: null,
     reviewError: null,

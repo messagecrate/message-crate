@@ -253,6 +253,21 @@ fn real_ffmpeg_failure_names_the_missing_input() {
     );
 }
 
+/// Both programs from `dir`.
+fn both_in(dir: &Path) -> FfmpegTools {
+    FfmpegTools {
+        ffmpeg: Some(dir.join("ffmpeg")),
+        ffprobe: Some(dir.join("ffprobe")),
+    }
+}
+
+/// A directory holding only `name`, which runs.
+fn only(name: &str) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    write_mock_tool(&dir.path().join(name));
+    dir
+}
+
 /// A person who installed ffmpeg chose it, so `PATH` wins over the copy in
 /// the Tools Directory (#1053).
 #[cfg(unix)]
@@ -264,12 +279,12 @@ fn path_is_searched_before_the_tools_directory() {
     let search = std::env::join_paths([empty.path(), on_path.path()]).unwrap();
 
     assert_eq!(
-        find_tool("ffmpeg", Some(&search), Some(tools.path())),
-        Some(on_path.path().join("ffmpeg"))
+        find_tools(Some(&search), Some(tools.path())).unwrap(),
+        both_in(on_path.path())
     );
 }
 
-/// With nothing on `PATH`, the Tools Directory's copy is used.
+/// With nothing on `PATH`, the Tools Directory's copies are used.
 #[cfg(unix)]
 #[test]
 fn the_tools_directory_is_searched_when_path_has_no_ffmpeg() {
@@ -277,16 +292,12 @@ fn the_tools_directory_is_searched_when_path_has_no_ffmpeg() {
     let empty = tempfile::tempdir().unwrap();
 
     assert_eq!(
-        find_tool(
-            "ffprobe",
-            Some(empty.path().as_os_str()),
-            Some(tools.path())
-        ),
-        Some(tools.path().join("ffprobe"))
+        find_tools(Some(empty.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
     );
     assert_eq!(
-        find_tool("ffprobe", Some(empty.path().as_os_str()), None),
-        None
+        find_tools(Some(empty.path().as_os_str()), None).unwrap(),
+        FfmpegTools::default()
     );
 }
 
@@ -298,20 +309,63 @@ fn the_tools_directory_is_searched_when_path_has_no_ffmpeg() {
 fn a_tool_that_cannot_run_is_passed_over() {
     let broken = tempfile::tempdir().unwrap();
     fs::write(broken.path().join("ffmpeg"), "not a program").unwrap();
+    fs::write(broken.path().join("ffprobe"), "not a program").unwrap();
     let tools = mock_tools();
 
     assert_eq!(
-        find_tool(
-            "ffmpeg",
-            Some(broken.path().as_os_str()),
-            Some(tools.path())
-        ),
-        Some(tools.path().join("ffmpeg"))
+        find_tools(Some(broken.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
     );
     assert_eq!(
-        find_tool("ffmpeg", Some(broken.path().as_os_str()), None),
-        None
+        find_tools(Some(broken.path().as_os_str()), None).unwrap(),
+        FfmpegTools::default()
     );
+}
+
+/// ffmpeg on `PATH` without ffprobe beside it is passed over for the pair
+/// in the Tools Directory, so the two are one build.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_on_path_without_ffprobe_gives_way_to_the_tools_directory() {
+    let on_path = only("ffmpeg");
+    let tools = mock_tools();
+
+    assert_eq!(
+        find_tools(Some(on_path.path().as_os_str()), Some(tools.path())).unwrap(),
+        both_in(tools.path())
+    );
+}
+
+/// ffmpeg only on `PATH` and ffprobe only in the Tools Directory would be
+/// two builds working on one file, so the lookup fails and names both.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_and_ffprobe_in_two_places_is_an_error_naming_both() {
+    let on_path = only("ffmpeg");
+    let tools = only("ffprobe");
+
+    let err =
+        find_tools(Some(on_path.path().as_os_str()), Some(tools.path())).expect_err("two places");
+    let message = err.to_string();
+    for path in [on_path.path().join("ffmpeg"), tools.path().join("ffprobe")] {
+        assert!(
+            message.contains(&path.display().to_string()),
+            "message was {message:?}"
+        );
+    }
+}
+
+/// With one program in neither place, the other is reported where it is
+/// and the missing one is named.
+#[cfg(unix)]
+#[test]
+fn a_lone_program_is_found_and_the_other_named_missing() {
+    let on_path = only("ffmpeg");
+    let empty = tempfile::tempdir().unwrap();
+
+    let tools = find_tools(Some(on_path.path().as_os_str()), Some(empty.path())).unwrap();
+    assert_eq!(tools.ffmpeg, Some(on_path.path().join("ffmpeg")));
+    assert_eq!(tools.missing(), vec!["ffprobe"]);
 }
 
 /// `PATH` and the Tools Directory are the only places looked in:

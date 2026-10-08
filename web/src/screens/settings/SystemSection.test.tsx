@@ -312,6 +312,20 @@ describe("SystemSection", () => {
     expect(screen.getByLabelText(/wtsexporter not found/i)).toBeTruthy();
   });
 
+  it("says why ffmpeg and ffprobe found in two places are not used", async () => {
+    const reason =
+      "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is in the Tools Directory at /home/demo/message-crate/tools/ffprobe.";
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "unusable", reason },
+      ffprobe: { state: "unusable", reason },
+      wtsexporter: { state: "missing" },
+    });
+    render(<SystemSection />);
+    expect(await screen.findByLabelText(`ffmpeg not used - ${reason}`)).toBeTruthy();
+    expect(screen.getByLabelText(`ffprobe not used - ${reason}`)).toBeTruthy();
+  });
+
   it("has nothing to type for the media tools: the ffmpeg directory field is gone (#1053)", async () => {
     render(<SystemSection />);
     await screen.findByLabelText(/Found ffmpeg/i);

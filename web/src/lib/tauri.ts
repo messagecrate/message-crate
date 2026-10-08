@@ -489,12 +489,15 @@ export async function invokeFormat(config: {
  * Where one program the desktop app runs is. Tagged by `state`, so the
  * download (#1053, step 3) adds its own states beside these two.
  */
-export type ToolStatus = { state: "found"; path: string } | { state: "missing" };
+export type ToolStatus =
+  | { state: "found"; path: string }
+  | { state: "missing" }
+  | { state: "unusable"; reason: string };
 
 /**
  * Where ffmpeg, ffprobe and wtsexporter are. ffmpeg and ffprobe are looked
- * for on PATH, then in the Tools Directory; wtsexporter only in the Tools
- * Directory.
+ * for on PATH, then in the Tools Directory, and are taken from one place;
+ * wtsexporter only from the Tools Directory.
  */
 export interface ToolsStatus {
   toolsDir: string | null;
@@ -508,9 +511,12 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
   return invoke("tools_status");
 }
 
-/** Whether ffmpeg and ffprobe, which Convert and Compress run, were both found. */
-export function ffmpegFound(status: ToolsStatus): boolean {
-  return status.ffmpeg.state === "found" && status.ffprobe.state === "found";
+/** The programs Convert and Compress run. */
+export type MediaToolName = "ffmpeg" | "ffprobe";
+
+/** Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used. */
+export function ffmpegMissing(status: ToolsStatus): MediaToolName[] {
+  return (["ffmpeg", "ffprobe"] as const).filter((name) => status[name].state !== "found");
 }
 
 export interface HomeDirInfo {
