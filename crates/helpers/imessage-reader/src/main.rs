@@ -65,8 +65,10 @@ fn main() {
     let request: Request = serde_json::from_str(&first)
         .unwrap_or_else(|e| fail(format!("the request is not valid JSON: {e}")));
 
+    // SAFETY (each call below): nothing has started a thread yet.
     match request {
         Request::Identities(request) => {
+            unsafe { backup::keep_temporary_files_in(&request.scratch_dir) };
             let found = identities::identities(request).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
                 protocol_version: PROTOCOL_VERSION,
@@ -77,6 +79,7 @@ fn main() {
             });
         }
         Request::Export(request) => {
+            unsafe { backup::keep_temporary_files_in(&request.scratch_dir) };
             let options = ReaderOptions::from_export(request);
             let session = MailSession::new(options).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
@@ -99,6 +102,7 @@ fn main() {
             }
         }
         Request::BackupDomain(request) => {
+            unsafe { backup::keep_temporary_files_in(&request.out_dir) };
             let backup = domain::open(&request).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
                 protocol_version: PROTOCOL_VERSION,

@@ -440,7 +440,14 @@ dependencies = [
 name = "chat-db-fixture"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "aes-kw",
+ "cbc",
+ "pbkdf2",
+ "plist",
  "rusqlite",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -1634,7 +1641,6 @@ dependencies = [
 name = "imessage-reader"
 version = "0.1.0"
 dependencies = [
- "aes-kw",
  "chat-db-fixture",
  "chrono",
  "crabapple",

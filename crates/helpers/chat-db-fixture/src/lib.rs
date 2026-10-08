@@ -7,7 +7,13 @@
 //! exporter's test binary links no GPL code
 //! (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 //!
+//! [`ios_backup`] puts the same database, a contacts database and the photo
+//! into an iPhone backup, plain or encrypted with a password, for the tests
+//! of decrypting one.
+//!
 //! Nothing here comes from a real backup. Every row is made up.
+
+pub mod ios_backup;
 
 use std::{
     fs,
