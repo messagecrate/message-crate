@@ -152,7 +152,8 @@ impl LineFilter {
 /// line break. Bytes after the last line break before `end` are a line still
 /// being written, or the middle of one when `end` is not where a line starts,
 /// and are skipped. The file is read a chunk at a time from `end`, so a page
-/// near the end of a large file reads only that far.
+/// near the end of a large file reads only that far, and each byte is read
+/// and copied a bounded number of times however long its line is.
 ///
 /// # Errors
 ///
@@ -169,32 +170,57 @@ pub fn lines_backward<F: Read + Seek>(
         }
         each(offset, &String::from_utf8_lossy(bytes))
     };
-    // The bytes of the line that runs on past the chunk being read, whose
-    // start is in an earlier chunk.
-    let mut carry: Vec<u8> = Vec::new();
+    // The parts of a whole line that started in an earlier chunk than the
+    // one being read, the newest part first. Each part is copied once, and
+    // the line is joined once, when its start is found.
+    let mut parts: Vec<Vec<u8>> = Vec::new();
+    // Whether a line break has been seen: until then, the bytes read are the
+    // line still being written, and are dropped rather than kept.
     let mut whole = false;
     let mut pos = end;
+    let mut chunk = Vec::new();
     while pos > 0 {
         let start = pos.saturating_sub(CHUNK_BYTES);
-        let mut chunk = vec![0; usize::try_from(pos - start).unwrap_or(0)];
+        chunk.resize(usize::try_from(pos - start).unwrap_or(0), 0);
         file.seek(SeekFrom::Start(start))?;
         file.read_exact(&mut chunk)?;
-        chunk.extend_from_slice(&carry);
         let mut line_end = chunk.len();
         while let Some(newline) = chunk[..line_end].iter().rposition(|b| *b == b'\n') {
-            if whole && emit(start + newline as u64 + 1, &chunk[newline + 1..line_end]).is_break() {
-                return Ok(());
+            if whole {
+                let offset = start + newline as u64 + 1;
+                let head = &chunk[newline + 1..line_end];
+                let flow = if parts.is_empty() {
+                    emit(offset, head)
+                } else {
+                    emit(offset, &joined(head, &mut parts))
+                };
+                if flow.is_break() {
+                    return Ok(());
+                }
             }
             whole = true;
             line_end = newline;
         }
-        carry = chunk[..line_end].to_vec();
+        if whole && line_end > 0 {
+            parts.push(chunk[..line_end].to_vec());
+        }
         pos = start;
     }
-    if whole {
-        let _ = emit(0, &carry);
+    if whole && !parts.is_empty() {
+        let _ = emit(0, &joined(&[], &mut parts));
     }
     Ok(())
+}
+
+/// `head` followed by `parts`, which hold the rest of the line newest part
+/// first, as one line. Empties `parts`.
+fn joined(head: &[u8], parts: &mut Vec<Vec<u8>>) -> Vec<u8> {
+    let mut line = Vec::with_capacity(head.len() + parts.iter().map(Vec::len).sum::<usize>());
+    line.extend_from_slice(head);
+    for part in parts.drain(..).rev() {
+        line.extend_from_slice(&part);
+    }
+    line
 }
 
 #[cfg(test)]
@@ -243,6 +269,57 @@ mod tests {
         assert!(!warnings.matches(&line(LogLevel::Info, "upload done")));
         assert!(!warnings.matches(&line(LogLevel::Warn, "skipped")));
         assert!(LineFilter::new(None, Some(" ")).matches(&line(LogLevel::Trace, "x")));
+    }
+
+    /// A reader that counts the bytes read from it.
+    struct Counted<'a> {
+        inner: Cursor<&'a [u8]>,
+        read: u64,
+    }
+
+    impl Read for Counted<'_> {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let n = self.inner.read(buf)?;
+            self.read += n as u64;
+            Ok(n)
+        }
+    }
+
+    impl Seek for Counted<'_> {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.inner.seek(pos)
+        }
+    }
+
+    #[test]
+    fn a_line_longer_than_many_chunks_is_read_once_and_whole() {
+        let long = "y".repeat(usize::try_from(CHUNK_BYTES * 5 + 7).unwrap());
+        let text = format!("{long}\nlast\n{long}");
+        let mut file = Counted {
+            inner: Cursor::new(text.as_bytes()),
+            read: 0,
+        };
+        let mut seen = Vec::new();
+        lines_backward(&mut file, text.len() as u64, |offset, line| {
+            seen.push((offset, line.len()));
+            ControlFlow::Continue(())
+        })
+        .unwrap();
+        assert_eq!(seen, [(long.len() as u64 + 1, 4), (0, long.len())]);
+        assert_eq!(file.read, text.len() as u64);
+
+        // No line break at all: nothing is a whole line.
+        let mut none = Vec::new();
+        lines_backward(
+            &mut Cursor::new(long.as_bytes()),
+            long.len() as u64,
+            |o, _| {
+                none.push(o);
+                ControlFlow::Continue(())
+            },
+        )
+        .unwrap();
+        assert!(none.is_empty());
     }
 
     #[test]
