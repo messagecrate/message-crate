@@ -200,6 +200,13 @@ columns; import resolves handles to ids while rows are being staged.
 `trashed_conversations` and `trashed_contacts` mark items as trashed without
 deleting underlying rows.
 
+`participants_set_aside`, `import_contacts_set_aside` and
+`contact_group_members_set_aside` keep what linking an identity after an
+import takes away: the holder's participant rows, and the Import Run records
+and Import Run Contact Group memberships of the holder's deleted contact.
+Removing the identity again puts them back. The rules are in
+[`docs/architecture/contacts-identities-and-messages.md`](https://github.com/messagecrate/message-crate/blob/main/docs/architecture/contacts-identities-and-messages.md).
+
 ## How storage sizes are measured
 
 The owner's Dashboard reports what the database takes on disk. Every
@@ -247,6 +254,7 @@ SQLite, so it is reported once for the whole database and never per account.
 | One import attempt, or one export attempt | `imports`, `exports` |
 | The messages a running export matched when it started | `export_messages` |
 | What an import did to each contact | `import_contacts` |
+| What linking an identity set aside | `*_set_aside` |
 
 Baseline table definitions live in
 [`schema/sql/`](https://github.com/messagecrate/message-crate/blob/main/schema/sql/).

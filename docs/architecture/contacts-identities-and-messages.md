@@ -557,28 +557,37 @@ and the stored rows, which an import wrote against the identities it had
 then, disagree, and the holder stays their own contact
 ([#1662](https://github.com/messagecrate/message-crate/issues/1662)).
 
-A participant at one of the account's identities is dropped from every
-conversation, one-to-one and group alike, as an import never writes one.
-Other participants stay, because an import writes them too.
+A participant at one of the account's identities is set aside from every
+conversation, one-to-one and group alike, as an import never writes one
+(`db/participants.rs`). The row moves to `participants_set_aside` with the
+name the backup gave. Other participants stay, because an import writes them
+too.
 
 The contact an import made for the holder is deleted only when nobody has
-touched it. Its origin is `import`, it carries no name, it is in neither the
-Trash nor a Contact Group the person made, and nothing outside the
-conversations with yourself refers to it (`db/contacts.rs`,
-`delete_untouched_holder_contact`). Any other holder contact stays. Why: an
-address book load renames a contact without changing its origin, so a name
-cannot be told to be the backup's, and deleting the contact would lose it.
-A deleted contact takes its Import Run records with it, as any deleted
-contact does.
+touched it. Its origin is `import`, it carries no name, and it is in neither
+the Trash nor a Contact Group the person made. Nothing but the holder's own
+rows refers to it either: a message or a reaction sent from one of the
+account's identities does not count, because an import gives such a sender
+no contact (`db/contacts.rs`, `delete_untouched_holder_contact`). Any other
+holder contact stays. Why: an address book load renames a contact without
+changing its origin, so a name cannot be told to be the backup's, and
+deleting the contact would lose the name. The deleted contact's Import Run
+records and its Import Run Contact Group memberships are set aside under each
+identity it held.
 
-A conversation that is no longer with yourself gets its chat handle back as a
-participant. Its name is the name of the contact on the chat handle, which a
-named contact kept. The chat handle and the senders of its received rows get
-a contact when they have none. Two things do not come back. One is the name
-the backup gave a participant whose contact had none. The other is a
-participant at a removed identity other than the chat handle, in a group or
-not. Why: the participant rows were deleted, and the messages hold neither.
-Importing the backup again writes both back.
+Removing an identity gives back what linking it set aside. Each participant
+set aside at it returns as it was, with its name. Each of its identities that
+a conversation holds as a participant, a one-to-one chat handle or a received
+row's sender gets a contact when it has none, as an import would make one.
+That contact takes the Import Run records and Contact Group memberships set
+aside for the identity. A conversation that is no longer with yourself also
+gets its chat handle as a participant when it has none. Its name is the name
+of the contact on the chat handle, when the contact has one. A conversation
+imported while the chat handle was an identity has no participant row to give
+back, so that name is the only one there is.
+
+A participant an import writes for a seat set aside replaces it
+(`db/staging.rs`, `promote_participants`).
 
 Dedupe matches a received note in a conversation with yourself with no sender,
 in the content key and in the near-time pass alike (`dedupe.rs`,

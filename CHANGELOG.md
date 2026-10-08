@@ -231,19 +231,19 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
-- 2026-10-08: **Adding or removing an identity updates the conversations
-  with yourself already imported.** Notes imported before the holder's
-  number was added as an identity kept the holder as the conversation's
-  participant. They also kept the holder as their own contact, in
-  **Contacts** and under **Unknown**, while the conversation was already
-  titled with the account's name. Notes imported while the number was an
-  identity showed the bare address once it was removed, with no participant
-  or contact behind it. Saving the identities now takes the holder off
-  every conversation as a participant, groups included, and other
-  participants stay. The contact an import made for the holder goes too,
-  unless it has a name, is in the Trash or a Contact Group, or something
-  else refers to it. A conversation that is no longer with yourself gets its
-  participant back, with a contact. Messages are not changed (#1662).
+- 2026-10-08: **Adding or removing an identity updates the conversations with
+  yourself already imported.** Notes imported before your number was added as an
+  identity still listed you among the conversation's people. They also kept you
+  as your own contact, in **Contacts** and under **Unknown**, while the
+  conversation was already titled with the account's name. Notes imported while
+  the number was an identity showed the bare address once it was removed, with
+  no person or contact behind it. Saving the identities now stops listing you
+  among a conversation's people, groups included, and the other people stay. The
+  contact an import made for you goes too, unless it has a name, is in the Trash
+  or in a Contact Group you made, or something else refers to it. Removing the
+  identity again lists you as before, with the name the backup gave, and a
+  conversation that is no longer with yourself gets its person back, with a
+  contact. Messages are not changed (#1662).
 
 ### Upgrading
 
