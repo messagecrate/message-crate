@@ -1245,7 +1245,7 @@ mod conversation_stem_tests {
 }
 
 #[cfg(test)]
-mod handle_service_tests {
+mod identity_service_tests {
     use super::IdentityService;
 
     #[test]
@@ -1304,7 +1304,7 @@ mod storage_id_round_trip_tests {
     }
 
     #[test]
-    fn handle_type() {
+    fn identity_type() {
         for v in [
             IdentityType::Phone,
             IdentityType::Email,
@@ -1335,7 +1335,7 @@ mod storage_id_round_trip_tests {
     }
 
     #[test]
-    fn handle_service() {
+    fn identity_service() {
         for v in [IdentityService::Phone, IdentityService::Whatsapp] {
             assert_eq!(IdentityService::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
