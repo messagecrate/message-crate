@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
+import { renderWithProviders as render } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
@@ -30,7 +31,8 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => tauriState.isTauri,
 }));
 
-vi.mock("../../lib/tauri", () => ({
+vi.mock("../../lib/tauri", async (importOriginal) => ({
+  toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
   invokeToolsStatus: () => toolsStatus(),
   invokeStagingRoot: async () => ({
     root: desktopStaging.root || desktopStaging.defaultRoot,
@@ -360,6 +362,37 @@ describe("SystemSection", () => {
     expect(screen.queryByLabelText("ffmpeg directory")).toBeNull();
     const media = screen.getByRole("list", { name: "Media tools" }).parentElement;
     expect(media?.querySelector("input")).toBeNull();
+  });
+
+  it("shows a download's progress, and asks again until it ends", async () => {
+    toolsStatus.mockResolvedValueOnce({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 29 * 1024 * 1024 },
+      ffprobe: { state: "downloading", received: 0, total: null },
+      wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
+    });
+    render(<SystemSection />);
+    expect(await screen.findByLabelText("Downloading ffmpeg - 12 MB of 29 MB (41%)")).toBeTruthy();
+    expect(screen.getByLabelText("Downloading ffprobe - 0 B so far")).toBeTruthy();
+    // The next answer, a second later, has both in place.
+    expect(await screen.findByLabelText(/Found ffmpeg/i, {}, { timeout: 3000 })).toBeTruthy();
+    expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
+  });
+
+  it("says why a download failed", async () => {
+    const reason = "No connection to the download's server: error sending request.";
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "downloadFailed", reason },
+    });
+    render(<SystemSection />);
+    expect(
+      await screen.findByLabelText(
+        `wtsexporter download failed. ${reason} It is tried again the next time the app starts.`,
+      ),
+    ).toBeTruthy();
   });
 
   it("says so when the desktop process cannot be asked", async () => {

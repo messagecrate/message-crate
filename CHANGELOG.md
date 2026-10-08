@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **The desktop app downloads ffmpeg, ffprobe and wtsexporter
+  by itself.** Each time it starts, it downloads in the background whatever
+  is missing from its Tools Directory, with no button and nothing to wait
+  for. ffmpeg and ffprobe aren't downloaded when both are already installed
+  on the system path. Each program comes from a pinned release of its project,
+  wtsexporter from Message Crate's own copy of the WhatsApp Chat Exporter,
+  and every file is checked against a checksum the app carries. A file that
+  doesn't match is deleted. A program in the Tools Directory that isn't the
+  pinned one is replaced, but only once the new file has passed its check,
+  so with no internet the old one is still used. Settings → System shows
+  each download's progress, or why it failed, and a failed download is
+  tried again at the next start (#1053).
+
 - 2026-10-08: **A phone number written without its country code can be given
   its country.** The import form has a **Phone's country** under
   **Processing Options (Advanced)**: every number the import writes without a

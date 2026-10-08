@@ -1,6 +1,6 @@
 ---
 title: System
-description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
+description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found and how their download stands, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
 ---
 
 The **System** tab of **Settings** holds the settings of one installed desktop app.
@@ -48,6 +48,16 @@ When it is on, Import restores the last backup path used for each import source.
 `ffmpeg` and `ffprobe` convert and compress attachments, and are looked for on the system `PATH`, then in the Tools Directory.
 `wtsexporter` reads WhatsApp backups, and is looked for in the Tools Directory only.
 
+Each time it starts, the desktop app downloads into the Tools Directory the programs that are missing there, in the background.
+Login and browsing don't wait for it.
+`ffmpeg` and `ffprobe` are not downloaded when both are on `PATH`, because the copy installed there is the one used.
+`ffmpeg` and `ffprobe` come from a pinned release of `eugeneware/ffmpeg-static`, and `wtsexporter` from a pinned release of Message Crate's fork, `messagecrate/WhatsApp-Chat-Exporter`.
+The app carries the SHA-256 checksum of every file it downloads, and refuses and deletes a file that doesn't match.
+
+The Tools Directory belongs to the app, and one rule holds for all three programs.
+A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
+The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, the old one stays in use.
+
 **Tools directory** shows the full path of the Tools Directory, `tools` in the Message Crate Directory, such as `/home/sam/message-crate/tools` on Linux.
 
 One line per program reports the result:
@@ -59,9 +69,16 @@ One line per program reports the result:
 - A cross with `<program> not used` and the reason.
   For ffmpeg and ffprobe, the reason is that they were found in two places, one only on `PATH` and the other only in the Tools Directory.
   For wtsexporter, the reason is that it has no permission to run.
+- A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
+  The line updates each second until the download ends.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a program in the Tools Directory that doesn't run on this computer.
+  A failed download is tried again the next time the app starts.
+  A program that doesn't run is not downloaded again, because the download would be the same file.
+  For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
+  While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.
 
-On macOS, an app opened from the Dock or Finder doesn't see the `PATH` a terminal sets, so ffmpeg and ffprobe installed with Homebrew are not found.
-Linking both into the Tools Directory makes them found, for example `ln -s /opt/homebrew/bin/ffmpeg /opt/homebrew/bin/ffprobe ~/message-crate/tools/` (`/usr/local/bin` on an Intel Mac).
+On macOS, an app opened from the Dock or Finder doesn't see the `PATH` Homebrew sets in a terminal, so it doesn't find ffmpeg and ffprobe installed with Homebrew.
+It downloads its own copies into the Tools Directory instead, and nothing needs doing.
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) covers what ffmpeg and ffprobe are used for.
 

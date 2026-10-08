@@ -168,4 +168,10 @@ export const keys = {
      */
     noSelection: ["trash", "no-selection"] as const,
   },
+  /**
+   * Where ffmpeg, ffprobe and wtsexporter are and how their downloads stand,
+   * from the desktop process. It belongs to this computer, not to an account,
+   * so it is used as it is, without `routeQueryKey` in front (ADR 0002).
+   */
+  desktopToolsStatus: { all: ["desktop", "tools-status"] as const },
 };

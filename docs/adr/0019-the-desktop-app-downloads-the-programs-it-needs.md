@@ -13,8 +13,8 @@ release and one checksum, and a file that doesn't match is refused.
 wtsexporter is always the app's own copy. ffmpeg is not downloaded when it is
 on `PATH`.
 
-Decided, not built yet: #1053 tracks the work, and until it lands the app
-downloads nothing.
+Built in #2001. The app records beside the programs which release and
+checksum each file it wrote came from.
 
 ## Why
 
@@ -86,3 +86,14 @@ release and checksum for every platform, in one pull request.
 
 ffmpeg from `PATH` is whatever version the person installed, so the app can
 run a version no release was tested with.
+
+## Amended 2026-10-08: wtsexporter comes from Message Crate's fork
+
+The text above is kept as it was decided. Since #2001, the wtsexporter
+the app downloads is a pinned release of Message Crate's fork,
+`messagecrate/WhatsApp-Chat-Exporter`, and not of
+`KnugiHK/WhatsApp-Chat-Exporter`. The fork adds to its JSON who sent each
+message and who is in each group, because the original's JSON does not say
+who sent a group message and the import needs to know. The fork's changes stay
+in the fork, and the fork is archived once the original has everything
+Message Crate needs (#1053). Nothing else in this decision changed.

@@ -1,10 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
-import { CheckIcon, XIcon } from "../../components/icons";
+import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
+import { formatBytes } from "../../lib/attachmentProgressCopy";
 import { APP_BUILD } from "../../lib/build";
 import {
   getOpenToNetwork,
@@ -14,6 +16,7 @@ import {
   setLocalServerOpenToNetwork,
   setOpenToNetwork,
 } from "../../lib/localServer";
+import { keys } from "../../lib/queryKeys";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   invokeExportDirectory,
@@ -22,6 +25,7 @@ import {
   invokeToolsStatus,
   type ToolStatus,
   type ToolsStatus,
+  toolsDownloading,
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
@@ -53,6 +57,19 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
 }
 
 type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
+/** A download's progress: "12 MB of 29 MB (41%)", or "12 MB so far" with no total. */
+function downloadProgress(received: number, total: number | null): string {
+  if (total == null || total <= 0) return `${formatBytes(received)} so far`;
+  const percent = Math.min(100, Math.floor((received / total) * 100));
+  return `${formatBytes(received)} of ${formatBytes(total)} (${percent}%)`;
+}
+
+/** Said once on every failed download's line, whatever the reason: each is retried. */
+const DOWNLOAD_RETRIED = "It is tried again the next time the app starts.";
+
+/** How often Settings asks the desktop process again while a download runs. */
+const DOWNLOAD_POLL_MS = 1000;
 
 /**
  * One program's status line: the path it was found at, that it is missing,
@@ -143,6 +160,32 @@ function ToolStatusRow({
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
             <code className="font-mono text-[0.7rem]">{name}</code> not used. {status.reason}
+          </span>
+        </li>
+      );
+    }
+    case "downloading": {
+      const progress = downloadProgress(status.received, status.total);
+      const label = `Downloading ${name} - ${progress}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <DownloadIcon size={14} className="mt-0.5 shrink-0 text-muted" />
+          <span>
+            Downloading <code className="font-mono text-[0.7rem]">{name}</code>
+            {" - "}
+            {progress}
+          </span>
+        </li>
+      );
+    }
+    case "downloadFailed": {
+      const label = `${name} download failed. ${status.reason} ${DOWNLOAD_RETRIED}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+          <span>
+            <code className="font-mono text-[0.7rem]">{name}</code> download failed. {status.reason}{" "}
+            {DOWNLOAD_RETRIED}
           </span>
         </li>
       );
@@ -378,27 +421,25 @@ export function SystemSection() {
   /** The Staging Directory the desktop process holds now. */
   const [stagingError, setStagingError] = useState<string | null>(null);
   const [rememberPaths, setRememberPaths] = useState(false);
-  const [tools, setTools] = useState<ToolsStatus | null>(null);
-  const [toolsError, setToolsError] = useState<string | null>(null);
+  // Where the programs are belongs to this computer, not to an account, so
+  // this is a plain `useQuery`, asked again each second while a download runs.
+  const toolsQuery = useQuery({
+    queryKey: keys.desktopToolsStatus.all,
+    queryFn: invokeToolsStatus,
+    enabled: isTauri(),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data && toolsDownloading(query.state.data) ? DOWNLOAD_POLL_MS : false,
+  });
+  const tools: ToolsStatus | null = toolsQuery.data ?? null;
+  const toolsError = toolsQuery.error
+    ? `Could not look for the media tools. ${toolsQuery.error instanceof Error ? toolsQuery.error.message : String(toolsQuery.error)}`
+    : null;
 
   useEffect(() => {
     if (!isTauri()) return;
 
     setRememberPaths(getRememberImporterPaths());
-
-    let live = true;
-    invokeToolsStatus().then(
-      (status) => {
-        if (live) setTools(status);
-      },
-      (caught: unknown) => {
-        if (live) {
-          setToolsError(
-            `Could not look for the media tools. ${caught instanceof Error ? caught.message : String(caught)}`,
-          );
-        }
-      },
-    );
 
     void (async () => {
       try {
@@ -409,10 +450,6 @@ export function SystemSection() {
         setStagingError(caught instanceof Error ? caught.message : String(caught));
       }
     })();
-
-    return () => {
-      live = false;
-    };
   }, []);
 
   // The desktop process keeps the setting and decides what it takes: every

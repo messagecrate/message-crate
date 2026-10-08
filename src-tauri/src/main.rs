@@ -17,6 +17,7 @@ mod local_server;
 mod run_directories;
 mod run_logs;
 mod state;
+mod tool_downloads;
 
 use export_directories::ExportDirectories;
 use local_server::LocalServer;
@@ -24,6 +25,7 @@ use run_directories::RunDirectories;
 use state::AppState;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
+use tool_downloads::ToolDownloads;
 
 /// Start the desktop window and wait until the user quits.
 fn main() {
@@ -44,6 +46,9 @@ fn main() {
         .manage(app_state)
         // The Message Crate this app starts for itself, when asked to.
         .manage(LocalServer::default())
+        // Where each download into the Tools Directory stands, which
+        // Settings → System → Media shows.
+        .manage(ToolDownloads::default())
         // The Staging Directory and the run directories made under it, kept
         // in the app-data directory; the Export Directory; and the start-up
         // sweep of the Scratch and Export Directories.
@@ -51,8 +56,11 @@ fn main() {
             // ffmpeg and ffprobe are looked for on PATH, then in the Tools
             // Directory; wtsexporter only there (#1053). Named before the
             // server is started, which is told it too.
+            // What is missing there is downloaded in the background, and
+            // nothing waits for it (`tool_downloads`).
             if let Some(home) = dirs::home_dir() {
-                app_directories::use_tools_dir_in(&home);
+                let tools = app_directories::use_tools_dir_in(&home);
+                tool_downloads::start(tools, app.state::<ToolDownloads>().inner().clone());
             }
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(run_directories::RECORD_FILE);

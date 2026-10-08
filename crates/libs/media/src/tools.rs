@@ -178,6 +178,27 @@ pub fn ffmpeg_available() -> bool {
     resolve_tools().is_ok_and(|tools| tools.missing().is_empty())
 }
 
+/// True when ffmpeg and ffprobe are both on `PATH` and answer `-version`.
+/// The desktop app downloads neither then, because a person who installed
+/// ffmpeg chose it (`docs/adr/0019`).
+pub fn ffmpeg_on_path() -> bool {
+    let search_path = searched_path();
+    ["ffmpeg", "ffprobe"]
+        .iter()
+        .all(|name| find_on_path(name, search_path.as_deref()).is_some())
+}
+
+/// The `PATH` the lookup searches: the one a test put in place
+/// ([`set_search_path`]), else the process's own.
+fn searched_path() -> Option<OsString> {
+    tools_state()
+        .lock()
+        .expect("tools state lock")
+        .search_path
+        .clone()
+        .or_else(|| std::env::var_os("PATH"))
+}
+
 /// True when ffprobe is found.
 pub(crate) fn ffprobe_available() -> bool {
     ffprobe_path().is_some()
@@ -227,16 +248,14 @@ fn command_runs(bin: &Path, args: &[&str]) -> bool {
 /// arrives, moves or leaves is seen at once without a restart; only the
 /// `-version` answer of a file is kept ([`ToolsState::answered`]).
 fn resolve_tools() -> Result<FfmpegTools> {
-    let (search_path, tools_dir) = {
-        let state = tools_state().lock().expect("tools state lock");
-        (state.search_path.clone(), state.tools_dir.clone())
-    };
-    let search_path = search_path.or_else(|| std::env::var_os("PATH"));
-    find_tools(search_path.as_deref(), tools_dir.as_deref())
+    let search_path = searched_path();
+    find_tools(search_path.as_deref(), tools_dir().as_deref())
 }
 
-/// The tool under `dir` if it is a file and runs.
-fn find_tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
+/// The program `name` in `dir`, `.exe` added on Windows, when it is a file
+/// that answers `-version`. The desktop app also asks this of a program in
+/// the Tools Directory, to know that the file it keeps there runs.
+pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     let candidate = dir.join(executable_name(name));
     let metadata = std::fs::metadata(&candidate).ok()?;
     if !metadata.is_file() {
@@ -273,7 +292,7 @@ fn find_on_path(name: &str, search_path: Option<&OsStr>) -> Option<PathBuf> {
         .into_iter()
         .flat_map(std::env::split_paths)
         .filter(|dir| !dir.as_os_str().is_empty())
-        .find_map(|dir| find_tool_in_dir(&dir, name))
+        .find_map(|dir| tool_in_dir(&dir, name))
 }
 
 /// Find ffmpeg and ffprobe on `search_path`, then in `tools_dir`, and
@@ -296,8 +315,8 @@ fn find_tools(search_path: Option<&OsStr>, tools_dir: Option<&Path>) -> Result<F
             ffprobe: path_ffprobe,
         });
     }
-    let dir_ffmpeg = tools_dir.and_then(|dir| find_tool_in_dir(dir, "ffmpeg"));
-    let dir_ffprobe = tools_dir.and_then(|dir| find_tool_in_dir(dir, "ffprobe"));
+    let dir_ffmpeg = tools_dir.and_then(|dir| tool_in_dir(dir, "ffmpeg"));
+    let dir_ffprobe = tools_dir.and_then(|dir| tool_in_dir(dir, "ffprobe"));
     if dir_ffmpeg.is_some() && dir_ffprobe.is_some() {
         return Ok(FfmpegTools {
             ffmpeg: dir_ffmpeg,

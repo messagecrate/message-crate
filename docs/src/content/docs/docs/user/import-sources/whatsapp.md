@@ -1,6 +1,6 @@
 ---
 title: WhatsApp
-description: Import WhatsApp from an Android phone or an iPhone backup. Advanced, because it needs a separate program and, on Android, a decryption key.
+description: Import WhatsApp from an Android phone or an iPhone backup. Advanced, because it runs a separate program the desktop app downloads and, on Android, needs a decryption key.
 ---
 
 WhatsApp is the hardest source to import.
@@ -8,35 +8,15 @@ It belongs after a first import of [iPhone](/docs/user/your-messages/back-up-an-
 
 Two things make it hard:
 
-- The desktop app doesn't include the program that reads WhatsApp data. It must be installed separately ([issue 940](https://github.com/messagecrate/message-crate/issues/940)).
+- The program that reads WhatsApp data, `wtsexporter`, isn't part of the desktop app. The app downloads it when it starts, so the first WhatsApp import needs the app to have started once with an internet connection.
 - On Android, WhatsApp's backup file is encrypted, and Import needs the key.
 
-## Install wtsexporter
+## wtsexporter
 
-The desktop app runs `wtsexporter`, from the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter) project.
-Install it from Message Crate's fork, [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), at release `0.13.0-mc.2`, because only the fork records the ids a quoted reply is linked by.
-It needs Python and [`pipx`](https://pipx.pypa.io/).
-
-```bash title="Install wtsexporter"
-pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"
-```
-
-`wtsexporter --help` prints the program's options once it is installed.
-
-The desktop app runs `wtsexporter` only from its Tools Directory, which [**Settings → System**](/docs/user/features/settings/system/#media) shows, and never from `PATH`.
-After the install, a link in the Tools Directory points to the `pipx` install of `wtsexporter`:
-
-```bash title="Linux and macOS"
-mkdir -p ~/message-crate/tools
-ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
-```
-
-On Windows, `wtsexporter.exe` is copied there instead:
-
-```powershell title="Windows"
-New-Item -ItemType Directory -Force "$HOME\message-crate\tools"
-Copy-Item "$(pipx environment --value PIPX_BIN_DIR)\wtsexporter.exe" "$HOME\message-crate\tools\"
-```
+The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records the ids a quoted reply is linked by.
+Each time it starts, the desktop app downloads the pinned release into its Tools Directory when it isn't there, in the background, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
+The app runs `wtsexporter` only from the Tools Directory, never from `PATH`.
+A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
 
 ## WhatsApp on Android
 
