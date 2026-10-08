@@ -190,17 +190,161 @@ The contact drawer moves only the identity it is given too, and can split a
 number. Why: the person named that one identity, and the drawer has no way
 to ask about the other.
 
-**A phone number has one key everywhere.** `phone::normalize_typed_handle`
-gives a number its key, and the same key is used by the `handles` row, by the
-entry the contacts book files it under, and by the owner's own numbers
+**A phone number has one key everywhere.** `phone::key_typed_handle` gives a
+number its key, and the same key is used by the `handles` row, by the entry
+the contacts book files it under, and by the owner's own numbers
 (`OwnerHandleSet`). A number with a `+` before its first digit keeps its
 country: `+65 5555 0100` is `+6555550100`, and `(+44) 7700 900123` and
-`tel:+447700900123` are `+447700900123`. A number without `+` is read as a US
-number when it has ten digits, or eleven starting with `1`. Anything else keeps
-its digits as written, so `020 7946 0000` is `02079460000` and never the
-invented `+02079460000`. Why: a book or owner key that differs from the handle
-key names nobody, or names the wrong person. Stripping the `+` first once filed
+`tel:+447700900123` are `+447700900123`. A number without `+` is read in the
+country stated for it, by the rules below, and keeps its digits as written
+when none is: `020 7946 0000` is `02079460000`, never the invented
+`+02079460000`, and `(555) 555-0100` is `5555550100`, never a US number by
+default. Why: a book or owner key that differs from the handle key names
+nobody, or names the wrong person. Stripping the `+` first once filed
 `+65 5555 0100` under the US number `+16555550100`.
+
+**A phone number carries its country as a fact.** The country lives inside
+the key: a `handles` row whose `normalized` starts with `+` names its calling
+code, and one without names no country. The key starts with `+` when the
+country is certain: the number was written with its `+`, or written without
+it in a country a source or a person stated (below). Matching is on the key
+alone, so a number whose country is known matches only its `+` form, and one
+whose country is unknown matches only the same digits. There is no column for
+the country beside the key, because it would only repeat what the `+` says.
+The country is the calling code rather than an ISO country, because a `+`
+names only the calling code, which the countries that share a numbering plan
+share (`+1` is the United States, Canada and much of the Caribbean). Why: a
+single string could not say "national number, country unknown", and that
+silence was the bug. A UK archive's `07700900123` and
+`+447700900123` were two keys for one person, read as a US number or as
+nothing, so their one-to-one conversation split in two and SMS Backup+
+counted a group member with one number under
+`group_members_with_several_numbers`
+([#1676](https://github.com/messagecrate/message-crate/issues/1676)).
+
+**An unknown country is stored as unknown.** A number written without `+`, in
+no country anyone stated, is stored as the digits typed, with no `+`. It is
+never matched to a `+` number until its country is known. When a person picks
+its country, the row is rewritten in its `+` form and merges with any identity
+already in that form (below). Why: nothing is guessed into the database as a
+fact. The split remains only for numbers whose country nobody has stated, and
+the person can see which those are (below). A short code (fewer than 7 digits
+after the trunk prefix, `phone::MIN_NATIONAL_DIGITS`) has no `+` form in any
+country, so it keeps its digits whatever country is stated.
+
+A run's country rewrites only that run's numbers. A later run that states the
+country keys its own `07700 900123` as `+447700900123`, and an identity an
+earlier run stored as `07700900123` stays as it is, beside it, until the
+person picks its country. Why: a merge moves conversations and messages and
+cannot be undone, so it is asked about first (below), and an import has no
+one to ask. The earlier run may also have been from a phone in another
+country: the same digits are another number there. The bare identity shows
+"Country unknown", so the person can see it and join the two.
+
+**A country comes from three explicit sources and nothing else.** The archive,
+when the source names the phone's country. SMS Backup+ does not. Apple's
+`chat.db` does, in the `country` column of its `handle` table (`us`, `gb`),
+but Message Crate does not read it yet: `imessage-database` 4.2.0's `Handle`
+does not load the column, so the Apple Messages Reader cannot pass it on, and
+the conversation file has no field for it
+([#1994](https://github.com/messagecrate/message-crate/issues/1994)). The
+import form's country for the run, which applies to every number written
+without `+` in that run: the Import Run records it (`imports.phone_country`,
+an ISO code), staging keys every such number in it, and SMS Backup+ keys its
+own numbers in it too, because it decides which spellings are one group
+member before the server sees the files (`Owner::in_country`). And a country
+a person picks for one identity on the Contacts screen or My Identities.
+There is no default taken from the account holder's own identities, and
+nothing is inferred from the digits. Why: each of these is a statement by the
+source or the person. A default from the holder's own numbers was considered
+and parked, because it is a guess the design would later have to undo: a
+holder with a `+1` number still texts people abroad.
+
+A national number is read in a country by that country's trunk prefix: the
+prefix is dropped and the calling code put in front (`07700 900123` in the
+United Kingdom is `+447700900123`, `8 912 345 6789` in Russia is
+`+79123456789`). A country whose leading `0` belongs to the number, such as
+Italy, drops nothing. A number that starts with the country's own
+international prefix is the calling code and number that follow it: `00` in
+the United Kingdom (`0044 7700 900123` is `+447700900123`), `011` in a `+1`
+country, `0011` in Australia, `810` in Russia, `010` in Japan. Digits after
+the prefix that start with no calling code are refused and keep their digits.
+A number that starts with the country's own calling code was written in full
+without its `+` when the trunk prefix is kept after the code (`44 (0)7700
+900123`), or when what follows the code is as long as the country's fixed-line
+and mobile numbers are and the digits as a whole are not (`447700900123` in
+the United Kingdom, `79161234567` in Russia). When only the whole is as long
+as a number there, it is a national number that starts with the same digits:
+`55 99123 4567` in Brazil has the area code 55, and `9112345678` is an Indian
+mobile number. When both are, as `49 151 23456789` is in Germany, the number
+is refused rather than guessed: it keeps its digits, counts under
+`phones_needing_review`, and its review note reads `4915123456789 could be
++494915123456789 or +4915123456789; pick its country or write it with +`. Why:
+reading `00` and the trunk prefix the same way in every country gave
+`00447700900123` the key `+440447700900123`, `447700900123` the key
+`+44447700900123` and Australia's `0011 44 …` the key `+1144…`: keys that look
+certain and name nobody. The countries, their calling codes, trunk prefixes,
+international prefixes and number lengths are one table, `phone::COUNTRIES`,
+taken from libphonenumber's `PhoneNumberMetadata.xml` (its doc comment names
+the commit), which `GET /v1/phone-countries` lists for the import form and the
+country picker.
+
+**The screens say when a number's country is unknown and let the person fix
+it.** An identity's `country_unknown` is true for a phone number whose key has
+no `+` and is long enough to have a `+` form. The Contacts screen and My
+Identities show such a number as the digits typed with a "Country unknown"
+note and a Pick country control. Picking a country sends
+`set_identity_country` in `PATCH /v1/contacts/{id}` or
+`PATCH /v1/accounts/{id}`. When no identity on the same service holds the
+`+` form, the row is rewritten in place. When one does, the request answers
+`409 Conflict` (`identity-exists`) naming who holds it, a contact, the
+account or nobody, in `detail` and in `holder`, and the screen asks before it
+sends the request again with `merge` (`http-api.md`, "Status codes"). A
+merge moves everything that names the national number to the identity
+holding the `+` form: participants (a group that lists both keeps one seat),
+senders and owners of messages and reactions, the account's own identity
+link, and the one-to-one conversation, whose messages, participants and
+Message Tags join the other one-to-one conversation when there is one
+(`db/identity_country.rs`). The merged conversation is in the Trash only
+when both were: a live one brings the other out of the Trash with it, and the
+trashed one's messages are shown again. The merged identity goes on the
+contact whose screen picked the country, from whatever contact held the `+`
+form, and a contact with no name left with no identity goes; from My
+Identities it stays where it was and becomes one of the account's own, and the
+with-yourself rule runs again around the merge (#1662). Every message of a
+conversation the number is the chat handle of, a member of, or a sender in
+has its content key made again and its duplicate flag worked out again
+(`dedupe_changed_messages`), whether the row was rewritten in place or merged,
+because a content key is made from the chat handle's, the sender's and a
+group's members' keys. A merge does the same for the identity holding the
+`+` form, whose keys change when the merge makes it one of the account's
+own: its one-to-one becomes a conversation with yourself, and a group leaves
+it out of its key. Why: an identity has at most one one-to-one
+conversation, so two identities that become one bring their conversations
+together, and a merge cannot be undone, so the person is asked first. A
+trashed conversation does not take a live one into the Trash, because
+emptying the Trash would delete the live messages for good. Rejected:
+leaving the merged identity on another named contact that held the `+` form,
+which left the contact on screen with no identity; and refusing the merge
+there. The person picking the country is the one who knows the two are one
+number, and the question names the other contact.
+
+A number on a contact whose `+` form is one of the account's own identities
+is not joined from the Contacts screen: `PATCH /v1/contacts/{id}` answers
+`409 Conflict` (`state-conflict`), naming My Identities. There, the person
+adds the number to the account's identities and picks its country, and the
+two join as the account's own. Why: joining it makes the number's
+conversations ones with yourself and takes the number off the contact, which
+is an act on the account's identities, and a contact's screen that ended with
+its only identity gone would have nothing left to show.
+
+**Existing rows are not touched.** A key takes its `+` when a row is written,
+from the number's own `+` or a stated country, and no pass rewrites the rows
+already written. A schema change rebuilds the database (CLAUDE.md, "No
+backwards compatibility"), so a database from before a country could be
+stated starts empty.
+Why: a back-fill would need a default country, which is the guess the rules
+above refuse.
 
 **An address is classified once, from the value the backup wrote.**
 `phone::Handle::parse` decides what an address looks like before anything
@@ -341,7 +485,7 @@ the person unsure which rows went in, and a load is cheap to repeat.
 When a phone value written without `+` matches no key as written, and `+`
 followed by its digits is the key of an identity the row's contact already
 holds, the row names that identity. A contact that holds both readings
-(`+6555550100` and `+16555550100`) refuses the load, naming both keys.
+(`+6555550100` and `6555550100`) refuses the load, naming both keys.
 Otherwise the value is keyed by the phone rule above. The load's `notes` name
 each row read with its `+` back, and each value without `+` that became a new
 identity. Export writes the number as `'+6555550100`, so a spreadsheet that
@@ -753,6 +897,8 @@ flowchart LR
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
 | Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs` |
+| A phone number's key and its country | `key_typed_handle` and `COUNTRIES` in `crates/libs/phone` |
+| Picking a number's country, and merging it into the `+` form | `crates/server/server/src/identity_country.rs`, `crates/server/server/src/db/identity_country.rs` |
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
 | Making, naming, and replacing a contact during import | `crates/server/server/src/imports_api/contact_name.rs` |
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |

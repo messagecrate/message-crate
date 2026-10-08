@@ -120,6 +120,7 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
     ownerEmails,
     obfuscate: r.obfuscate,
     timeZone: r.timeZone,
+    phoneCountry: typeof r.phoneCountry === "string" ? r.phoneCountry : "",
     isAndroidSms: r.isAndroidSms,
     attachmentRoot: r.attachmentRoot,
     appleContacts: r.appleContacts,

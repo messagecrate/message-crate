@@ -1112,6 +1112,7 @@ pub async fn import_jsonl_text(
             account_id,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
         ImportSchemaMode::AssumeReady,
     )

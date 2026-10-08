@@ -27,6 +27,7 @@ export async function invokeExtract(config: ExtractConfig): Promise<void> {
       mediaMinSize: config.media_min_size ?? null,
       obfuscate: config.obfuscate ?? null,
       timezone: config.timezone ?? null,
+      phoneCountry: config.phone_country ?? null,
       ownerPhones: config.owner_phones ?? null,
       ownerEmails: config.owner_emails ?? null,
       attachmentRoot: config.attachment_root ?? null,

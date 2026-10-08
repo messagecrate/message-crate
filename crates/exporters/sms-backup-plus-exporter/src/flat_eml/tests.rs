@@ -22,7 +22,8 @@ Hello from Alice\r\n",
     let mail = mailparse::parse_mail(&bytes).unwrap();
     let headers = MailHeaders::from_mail(&mail);
     let owners = OwnerHandleSet::from_phones(&["5555550100".to_string()]).unwrap();
-    let msg = parse_flat_eml_mail(&path, &mail, &headers, &Owner::new(owners, &[])).unwrap();
+    let owner = Owner::new(owners, &[]).in_country(phone::country("US"));
+    let msg = parse_flat_eml_mail(&path, &mail, &headers, &owner).unwrap();
     assert!(!msg.is_from_me);
     assert_eq!(msg.text.trim(), "Hello from Alice");
     assert_eq!(msg.chat_key, "+14075550107");
@@ -54,7 +55,7 @@ Hello\r\n",
         &path,
         &mail,
         &headers,
-        &Owner::new(owners, &["me@example.com".into()]),
+        &Owner::new(owners, &["me@example.com".into()]).in_country(phone::country("US")),
     )
     .unwrap();
     assert_eq!(msg.chat_key, "+14075550107");
@@ -183,7 +184,9 @@ fn parse(eml: &str, owners: &[&str]) -> Option<ParsedMessage> {
     let headers = MailHeaders::from_mail(&mail);
     let owners: Vec<String> = owners.iter().map(|s| s.to_string()).collect();
     let owners = OwnerHandleSet::from_phones(&owners).unwrap();
-    let owner = Owner::new(owners, &["me@example.com".to_string()]);
+    // The fixtures are from a US phone, as the import form states.
+    let owner =
+        Owner::new(owners, &["me@example.com".to_string()]).in_country(phone::country("US"));
     parse_flat_eml_mail(&path, &mail, &headers, &owner)
 }
 

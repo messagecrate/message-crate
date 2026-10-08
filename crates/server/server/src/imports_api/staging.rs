@@ -9,7 +9,7 @@ use sqlx::SqliteConnection;
 
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
-    HandleIdCache, handle_type_on, upsert_handle_row, upsert_handle_row_cached,
+    HandleIdCache, handle_type_on, upsert_handle_row_cached, upsert_handle_row_in,
 };
 use crate::db::staging::{
     self as db_staging, BackupOrder, StagedCopy, StagingAttachment, StagingConversation,
@@ -264,15 +264,18 @@ pub(super) struct StagingInserts {
 impl StagingInserts {
     /// Fresh insert state for one import run, with the identities the account
     /// holds when the run starts.
+    /// Every phone number the run writes without its `+` code is read in
+    /// `phone_country`, the country the run states, when it states one.
     pub(super) fn new(
         account_id: i64,
         import_id: Option<i64>,
         identities: HashSet<(String, IdentityType)>,
+        phone_country: Option<&'static phone::Country>,
     ) -> Self {
         Self {
             account_id,
             import_id,
-            handles: HandleIdCache::new(),
+            handles: HandleIdCache::in_country(phone_country),
             owners: HashMap::new(),
             identities,
         }
@@ -523,6 +526,7 @@ impl FileStaging<'_> {
                 &self.stmts.identities,
                 &conversation.chat_identifier,
                 chat_handle_type,
+                self.stmts.handles.country(),
             );
         if chat_is_an_address && !with_yourself {
             count_other_identity(chat_handle_type, chat_cached, &mut counts);
@@ -697,7 +701,12 @@ async fn insert_participant(
     // account's identities gets no handle, contact or participant row. The
     // exporters drop the addresses their backup names as the owner's; this
     // catches the ones only the account knows (#1093).
-    if is_account_identity(&stmts.identities, &handle, handle_type) {
+    if is_account_identity(
+        &stmts.identities,
+        &handle,
+        handle_type,
+        stmts.handles.country(),
+    ) {
         return Ok(());
     }
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
@@ -820,12 +829,13 @@ async fn resolve_owner_handle(
     if let Some(&id) = stmts.owners.get(&key) {
         return Ok(Some(id));
     }
-    let (id, _) = upsert_handle_row(
+    let (id, _) = upsert_handle_row_in(
         tx,
         stmts.account_id,
         address,
         handle_type_on(address, None, service),
         Some(service.as_str()),
+        stmts.handles.country(),
     )
     .await?;
     stmts.owners.insert(key, id);

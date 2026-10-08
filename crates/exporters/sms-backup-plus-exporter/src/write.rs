@@ -407,8 +407,9 @@ impl<'a> Conversation<'a> {
     }
 }
 
-/// The key two spellings of one handle share: `5555550100` and
-/// `+15555550100` are one number. A handle that is no phone number or email
+/// The key two spellings of one handle share: `+1 (555) 555-0100` and
+/// `+15555550100` are one number. `5555550100` is not, because nothing
+/// says which country it is in (#1676). A handle that is no phone number or email
 /// address is its own key.
 fn handle_key(handle: &str) -> String {
     phone::Handle::parse(handle).map_or_else(|| handle.to_string(), phone::Handle::into_key)

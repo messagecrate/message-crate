@@ -1445,6 +1445,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 }),
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -1468,6 +1469,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 add_identity: None,
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -1493,6 +1495,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                     service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -1518,6 +1521,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                     address: "sam@example.com".into(),
                     service: Some(ApiIdentityService::Phone),
                 }),
+                set_identity_country: None,
             },
         )
         .await
@@ -1551,6 +1555,7 @@ async fn add_identity(
                 }),
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -1626,6 +1631,7 @@ async fn an_email_address_is_not_added_on_whatsapp() {
             }),
             update_identity: None,
             remove_identity: None,
+            set_identity_country: None,
         },
     )
     .await;
@@ -1713,6 +1719,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
                     service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -1791,6 +1798,7 @@ async fn try_replace_identity(
                 service,
             }),
             remove_identity: None,
+            set_identity_country: None,
         },
     )
     .await
@@ -1942,6 +1950,7 @@ async fn mutate_contact_rejects_trashed_contact() {
             add_identity: None,
             update_identity: None,
             remove_identity: None,
+            set_identity_country: None,
         },
     )
     .await
@@ -2029,6 +2038,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 add_identity: None,
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -2051,6 +2061,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 }),
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -2074,6 +2085,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 }),
                 update_identity: None,
                 remove_identity: None,
+                set_identity_country: None,
             },
         )
         .await
@@ -2098,6 +2110,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                     address: "+15555550135".into(),
                     service: Some(ApiIdentityService::Phone),
                 }),
+                set_identity_country: None,
             },
         )
         .await
@@ -3678,6 +3691,7 @@ async fn removing_an_identity_in_a_conversation_puts_it_on_a_new_unknown_contact
                 address: "+15555550123".into(),
                 service: None,
             }),
+            set_identity_country: None,
         },
     )
     .await
@@ -3710,6 +3724,7 @@ async fn replacing_an_identity_in_a_conversation_puts_the_old_one_on_a_new_unkno
                 service: None,
             }),
             remove_identity: None,
+            set_identity_country: None,
         },
     )
     .await
@@ -3751,6 +3766,7 @@ async fn an_identity_removed_from_one_contact_can_be_added_to_another() {
             address: "+15555550123".into(),
             service: None,
         }),
+        set_identity_country: None,
     };
 
     mutate_committed(&mut conn, account, ada, &edit(true))

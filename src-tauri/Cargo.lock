@@ -2327,6 +2327,7 @@ dependencies = [
  "message-crate-log-lines",
  "message-ir",
  "obfuscate",
+ "phone",
  "serde",
  "sha2 0.11.0",
  "tempfile",
@@ -3049,6 +3050,7 @@ dependencies = [
  "anyhow",
  "hex",
  "message-ir",
+ "regex",
  "sha2 0.11.0",
 ]
 

@@ -479,7 +479,8 @@ pub async fn with_yourself_ids(
     .await?)
 }
 
-/// The chat handle of `conversation_id`.
+/// The chat handle of `conversation_id`, or `None` when the account has no
+/// such conversation.
 ///
 /// # Errors
 ///
@@ -488,12 +489,12 @@ pub async fn chat_handle_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     conversation_id: i64,
-) -> anyhow::Result<i64> {
+) -> anyhow::Result<Option<i64>> {
     Ok(sqlx::query_scalar(
         "SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2",
     )
     .bind(account_id)
     .bind(conversation_id)
-    .fetch_one(&mut *conn)
+    .fetch_optional(&mut *conn)
     .await?)
 }

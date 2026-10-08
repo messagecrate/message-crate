@@ -582,6 +582,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         form: Some(serde_json::json!({ "source": "imessage-ios" })),
         source_fingerprint: Some(serde_json::json!({ "size_bytes": 42 })),
         source_identities: None,
+        phone_country: None,
     };
     // `test_state` already opened a session; close it so this one can start.
     let _ = discard_import(
@@ -650,6 +651,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
         })),
         source_fingerprint: None,
         source_identities: None,
+        phone_country: None,
     };
     let _ = create_import(
         State(state.clone()),
@@ -706,6 +708,7 @@ async fn imports_create_stores_source_identities() {
         form: None,
         source_fingerprint: None,
         source_identities: Some(serde_json::json!(["+15555550110", "owner@example.com"])),
+        phone_country: None,
     };
     let _ = create_import(
         State(state.clone()),
@@ -738,6 +741,7 @@ async fn a_second_session_is_refused_with_conflict() {
         form: None,
         source_fingerprint: None,
         source_identities: None,
+        phone_country: None,
     };
     let err = create_import(
         State(state.clone()),

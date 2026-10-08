@@ -115,8 +115,13 @@ pub(crate) async fn follow_identities(
         .into_iter()
         .filter(|id| !with_yourself_now.contains(id))
     {
-        let chat_handle_id =
-            conversations::chat_handle_id(conn, account_id, conversation_id).await?;
+        // A conversation the change joined to another is gone: its messages
+        // and participants are the other one's now.
+        let Some(chat_handle_id) =
+            conversations::chat_handle_id(conn, account_id, conversation_id).await?
+        else {
+            continue;
+        };
         participants::add_chat_handle_participant(
             conn,
             account_id,

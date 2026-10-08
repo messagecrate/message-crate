@@ -13,6 +13,7 @@ pub mod engine;
 pub mod exports;
 pub mod free_name;
 pub mod handles;
+pub mod identity_country;
 pub mod import_contacts;
 pub mod imports;
 pub mod maintenance;

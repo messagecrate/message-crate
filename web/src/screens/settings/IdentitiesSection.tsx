@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import AddIdentityDialog from "../../components/AddIdentityDialog";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import IdentityCountryDialog from "../../components/IdentityCountryDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
+import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { identityType } from "../../lib/backupIdentity";
 import {
@@ -44,6 +46,7 @@ function placeholderRows(profile: AccountProfile): Identity[] {
     ...profile.emails.map((address) => ({ address, service: "email" })),
   ].map((row) => ({
     ...row,
+    country_unknown: false,
     start_date: null,
     end_date: null,
     conversations: 0,
@@ -75,6 +78,9 @@ export function IdentitiesSection({
   const [removeTarget, setRemoveTarget] = useState<Identity | null>(null);
   const [removeError, setRemoveError] = useState("");
   const busy = updateProfile.isPending;
+  const countryPick = useIdentityCountryPick((pick) =>
+    updateProfile.mutateAsync({ set_identity_country: pick }),
+  );
 
   // Until the server answers, the profile's own identities are shown with no
   // counts, so the table never waits on a fetch and never shows a number
@@ -179,6 +185,11 @@ export function IdentitiesSection({
           busy={busy}
           emptyText="No identities yet."
           onRemove={fixed ? undefined : requestRemove}
+          onPickCountry={
+            fixed
+              ? undefined
+              : (row) => countryPick.request({ address: row.address, service: row.service })
+          }
         />
       </div>
       <div className="mt-3 mb-6">
@@ -199,6 +210,16 @@ export function IdentitiesSection({
         )}
       </div>
 
+      <IdentityCountryDialog
+        open={countryPick.target !== null}
+        address={countryPick.target?.address ?? ""}
+        busy={busy}
+        error={countryPick.error}
+        onClose={() => {
+          if (!busy) countryPick.close();
+        }}
+        onPick={(args) => void countryPick.confirm(args)}
+      />
       <AddIdentityDialog
         open={adding}
         busy={busy}

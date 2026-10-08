@@ -99,6 +99,11 @@ pub struct ExtractArgs {
     /// fixed offset (`UTC-05:00`). The screen sends the account's zone unless
     /// the person picked another in the advanced section.
     pub timezone: Option<String>,
+    /// The country of the phone the backup came from, as an ISO 3166-1
+    /// alpha-2 code (`GB`), or none. SMS Backup+ keys numbers written
+    /// without their `+` code in it; the server applies it to every file of
+    /// the Import Run, which the web app creates with it (#1676).
+    pub phone_country: Option<String>,
     /// Owner phone numbers for the Android SMS sources (SMS Backup & Restore,
     /// GO SMS Pro, SMS Backup+) and both WhatsApp platforms.
     pub owner_phones: Option<Vec<String>>,
@@ -171,6 +176,7 @@ pub fn extract(
         // `Form` trims and drops empty values itself, so the raw strings can
         // pass through unchanged.
         timezone: args.timezone.unwrap_or_default(),
+        phone_country: args.phone_country.unwrap_or_default(),
         owner_phones: args.owner_phones.unwrap_or_default(),
         owner_emails: args.owner_emails.unwrap_or_default(),
         attachment_root: args.attachment_root.unwrap_or_default(),
@@ -232,6 +238,7 @@ struct ExtractOptions {
     media_min_size: String,
     obfuscate: bool,
     timezone: String,
+    phone_country: String,
     owner_phones: Vec<String>,
     owner_emails: Vec<String>,
     attachment_root: String,
@@ -404,6 +411,7 @@ fn build_exporter_config(
         media_max_fps: options.media_max_fps.clone(),
         media_min_size: options.media_min_size.clone(),
         obfuscate: options.obfuscate,
+        phone_country: options.phone_country.clone(),
         // Import and Upload read conversation files as JSON Lines (one JSON
         // object per line).
         output_format: OutputFormat::Jsonl,

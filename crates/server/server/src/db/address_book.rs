@@ -972,7 +972,8 @@ async fn apply(
                 Some(&(handle_id, _)) => handle_id,
                 None => {
                     sqlx::query_scalar(
-                        "INSERT INTO handles (account_id, raw, normalized, handle_type, service, origin)
+                        "INSERT INTO handles
+                           (account_id, raw, normalized, handle_type, service, origin)
                          VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                     )
                     .bind(account_id)

@@ -35,6 +35,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         scratch_dir: &config.scratch_dir,
         owner_phones: &source.owner_phones,
         owner_emails: &source.owner_emails,
+        phone_country: source.phone_country,
         verbose: source.verbose,
         transforms,
         output_format: config.output_format,
@@ -66,6 +67,7 @@ mod tests {
             owner_emails: emails.iter().map(|e| (*e).to_string()).collect(),
             verbose: false,
             include_summary: false,
+            phone_country: None,
         })
     }
 
@@ -108,6 +110,7 @@ mod tests {
             log: None,
             issues: None,
             resume: false,
+            phone_country: phone::country("US"),
         })
         .unwrap_err()
         .to_string();

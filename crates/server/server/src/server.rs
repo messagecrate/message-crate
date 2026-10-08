@@ -555,6 +555,14 @@ pub enum ApiError {
     },
     /// `409` — the resource is not in a state that allows the operation.
     StateConflict(String),
+    /// `409` — a country picked for a phone number gives it the `+` form
+    /// another identity already holds, and the request did not ask to merge.
+    IdentityExists {
+        /// The sentence, naming the number, its `+` form and who holds it.
+        detail: String,
+        /// Who holds the `+` form.
+        holder: message_crate_api_types::IdentityHolder,
+    },
     /// `422` — a part, upload id or completion does not match the upload.
     AssetUploadInvalid(String),
     /// `404` — the addressed resource does not exist for this account.
@@ -613,6 +621,7 @@ impl ApiError {
             Self::AccountDisabled(_) => ProblemType::AccountDisabled,
             Self::SearchQueryInvalid { .. } => ProblemType::SearchQueryInvalid,
             Self::StateConflict(_) => ProblemType::StateConflict,
+            Self::IdentityExists { .. } => ProblemType::IdentityExists,
             Self::AssetUploadInvalid(_) => ProblemType::AssetUploadInvalid,
             Self::NotFound(_) => ProblemType::NotFound,
             Self::MethodNotAllowed(_) => ProblemType::MethodNotAllowed,
@@ -651,6 +660,7 @@ impl ApiError {
                 did_you_mean: None,
                 retry_after: None,
                 line: None,
+                holder: None,
             };
         };
         let mut problem = Problem {
@@ -664,6 +674,7 @@ impl ApiError {
             did_you_mean: None,
             retry_after: None,
             line: None,
+            holder: None,
         };
         match self {
             Self::ValidationFailed(errors) => problem.errors = Some(errors.clone()),
@@ -687,6 +698,10 @@ impl ApiError {
                 problem.line = Some(*line as u64);
             }
             Self::RangeNotSatisfiable { detail, .. } => problem.detail = Some(detail.clone()),
+            Self::IdentityExists { detail, holder } => {
+                problem.detail = Some(detail.clone());
+                problem.holder = Some(holder.clone());
+            }
             Self::InvalidImportLines { errors, line } => {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
@@ -732,6 +747,7 @@ impl std::fmt::Display for ApiError {
             ),
             Self::SearchQueryInvalid { detail, .. }
             | Self::MalformedImportLine { detail, .. }
+            | Self::IdentityExists { detail, .. }
             | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
             Self::MalformedBody(m)
             | Self::UnsupportedMediaType(m)

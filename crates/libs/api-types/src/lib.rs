@@ -816,7 +816,8 @@ mod export_scope_tests {
 ///
 /// The extension members belong to the types named here: `word` and
 /// `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-/// `line` to `malformed-body` and `validation-failed` from an import batch.
+/// `line` to `malformed-body` and `validation-failed` from an import batch,
+/// `holder` to `identity-exists`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
 pub struct Problem {
@@ -858,6 +859,29 @@ pub struct Problem {
     /// own that line came from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u64>,
+    /// `identity-exists`: who already holds the `+` form the picked country
+    /// gives the number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder: Option<IdentityHolder>,
+}
+
+/// Who holds an identity: a contact, the account itself, or nobody. The
+/// `holder` of an `identity-exists` problem.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum IdentityHolder {
+    /// A contact: the identity is on it.
+    Contact {
+        /// The contact's id.
+        contact_id: i64,
+        /// The contact's name; empty for a contact with no name.
+        name: String,
+    },
+    /// The account itself: the identity is one of its own.
+    Account,
+    /// Nobody: the identity is on no contact and is not the account's.
+    Nobody,
 }
 
 impl Problem {
@@ -921,6 +945,7 @@ mod problem_tests {
             did_you_mean: None,
             retry_after: None,
             line: None,
+            holder: None,
         };
         assert_eq!(problem.slug(), None);
         assert_eq!(problem.sentence(), "Internal server error");

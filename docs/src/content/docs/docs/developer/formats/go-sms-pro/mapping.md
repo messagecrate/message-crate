@@ -45,7 +45,7 @@ Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` hol
 
 | XML child | Shared field(s) | Notes |
 |-----------|------------------|--------|
-| `<address>` | `chat_identifier`, `sender_identity` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and is otherwise read as a US number, an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender_identity`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
+| `<address>` | `chat_identifier`, `sender_identity` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and otherwise keeps its digits, until the Import Run or a person states its country (#1676), an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender_identity`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
 | `<contactName>` | `sender_display_name` | Display name filled for incoming when present. |
 | `<date>` | `timestamp_unix_ms`, `timestamp`, `timestamp_utc`, `timestamp_display` | Raw ms in `timestamp_unix_ms`. Converted to local/UTC RFC3339 and a human display string. |
 | `<type>` | `android_type`, `direction` | `1` → `incoming`, `2` → `outgoing`. Other values are skipped. |

@@ -80,6 +80,12 @@ pub struct UpdateContactRequest {
     /// Identity to unlink.
     #[serde(default)]
     pub remove_identity: Option<RemoveContactIdentityRequest>,
+    /// Country to pick for a phone number written without its `+` code,
+    /// one whose `country_unknown` is true. The number takes the `+` form
+    /// that country gives it, and joins the identity already holding that
+    /// form when `merge` is set.
+    #[serde(default)]
+    pub set_identity_country: Option<crate::identity_country::SetIdentityCountryRequest>,
 }
 
 /// Full contact view: every identity with stats, plus totals across them.
@@ -314,6 +320,11 @@ pub(crate) async fn get_contact(
 }
 
 /// Rename a contact or change its linked identities.
+///
+/// Exactly one of the body's fields is set. `set_identity_country` picks the
+/// country of a phone number written without its `+` code; when another
+/// identity already holds the `+` form it gives, the request answers
+/// `409 Conflict` (`identity-exists`) unless it sets `merge`.
 #[utoipa::path(
     patch,
     path = "/v1/contacts/{id}",
@@ -323,6 +334,7 @@ pub(crate) async fn get_contact(
     request_body = UpdateContactRequest,
     responses(
         (status = 200, body = Contact),
+        crate::problem::openapi::IdentityExists
     )
 )]
 pub(crate) async fn update_contact(

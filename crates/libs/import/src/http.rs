@@ -296,6 +296,7 @@ impl Session {
         source: &str,
         mode: ImportMode,
         tool: Option<&str>,
+        phone_country: Option<&str>,
     ) -> Result<i64> {
         let what = "Import Run start";
         let mut body = serde_json::json!({
@@ -304,6 +305,9 @@ impl Session {
         });
         if let Some(tool) = tool {
             body["tool"] = serde_json::Value::String(tool.to_string());
+        }
+        if let Some(phone_country) = phone_country {
+            body["phone_country"] = serde_json::Value::String(phone_country.to_string());
         }
         let response = self
             .http

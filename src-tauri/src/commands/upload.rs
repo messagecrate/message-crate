@@ -172,6 +172,9 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         journal_path: None,
         cancel: None,
         import_id: args.import_id,
+        // The web app creates the Import Run, with the form's phone country
+        // on it, before the Upload starts, and the Upload posts into it.
+        phone_country: None,
     })
 }
 

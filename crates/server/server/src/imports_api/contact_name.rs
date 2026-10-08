@@ -116,14 +116,15 @@ pub(super) struct IncomingSender<'a> {
     pub service: IdentityService,
 }
 
-/// True when `address`, read as `handle_type`, is one of the account's
-/// identities: the account holder, on any service.
+/// True when `address`, read as `handle_type` in the run's `country`, is one
+/// of the account's identities: the account holder, on any service.
 pub(super) fn is_account_identity(
     identities: &HashSet<(String, IdentityType)>,
     address: &str,
     handle_type: IdentityType,
+    country: Option<&'static phone::Country>,
 ) -> bool {
-    let (normalized, _) = normalize_handle(address, handle_type);
+    let normalized = normalize_handle(address, handle_type, country).key;
     identities.contains(&(normalized, handle_type))
 }
 
@@ -169,7 +170,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     // each of those gave it a contact unless it is one of the account's
     // identities. A sender at one is the holder, who never gets a contact
     // here (#1093); the message still records the address it came from.
-    if !cached && !is_account_identity(identities, address, handle_type) {
+    if !cached && !is_account_identity(identities, address, handle_type, cache.country()) {
         ensure_contact_for_handle(tx, account_id, import_id, handle_id, None, counts).await?;
     }
     Ok(Some(handle_id))

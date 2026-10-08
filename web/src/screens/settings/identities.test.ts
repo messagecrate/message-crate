@@ -5,6 +5,7 @@ function identity(direct: number, group: number, orphaned: number): Identity {
   return {
     address: "+15555550100",
     service: "phone",
+    country_unknown: false,
     start_date: null,
     end_date: null,
     conversations: 0,

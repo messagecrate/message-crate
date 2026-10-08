@@ -74,6 +74,7 @@ function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues
     whatsappBusiness: false,
     whatsappOwnerPhone: "",
     timeZone: "America/New_York",
+    phoneCountry: "",
     ...overrides,
   };
 }

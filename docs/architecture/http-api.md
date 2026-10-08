@@ -201,7 +201,29 @@ current one, because that account reaches every other.
   Account is there when it is not yet.
 - A name collision answers `409 Conflict`. So does an action on a resource in
   the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
-  or a `complete` on a finished run.
+  or a `complete` on a finished run. So does an action asked of the wrong
+  resource, `state-conflict` with `detail` naming the right one: a country
+  picked on a contact for a number whose `+` form is one of the account's own
+  identities answers it from `PATCH /v1/contacts/{id}`. Why: the merge makes
+  the number the account's own, so it belongs to `PATCH /v1/accounts/{id}`,
+  which runs the with-yourself rule and takes the number off its contact.
+  `state-conflict` fits because the contact's number is in a state, held by
+  the account, that this route does not change; `422` would say the request
+  broke a rule the client could fix by rewriting it, and no body sent to this
+  route can do the merge.
+- A request that would join two records into one, and so cannot be undone,
+  answers `409 Conflict` with nothing changed the first time, and the client
+  confirms by sending the same request again with `merge: true`. The problem
+  names the other record, in `detail` and in an extension such as
+  `identity-exists`'s `holder`, so the client can ask the person. A country
+  picked for a phone number whose `+` form another identity holds is the one
+  such request (`set_identity_country` in `PATCH /v1/contacts/{id}` and
+  `PATCH /v1/accounts/{id}`). Why: the server is the only party that knows the
+  two are one record, and only once it has worked out the `+` form, so a
+  client cannot ask before it sends. Rejected: merging without asking,
+  because a merge moves conversations and messages and cannot be undone; and
+  a separate preview route, which would work the same form out twice while
+  another request between the two could change the answer.
 - A failed credential answers `401 Unauthorized`. A refused one, including a
   token without the needed scope and a disabled account, answers
   `403 Forbidden`.

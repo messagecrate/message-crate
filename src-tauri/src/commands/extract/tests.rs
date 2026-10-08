@@ -15,6 +15,7 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
         media_min_size: "20".into(),
         obfuscate: false,
         timezone: String::new(),
+        phone_country: String::new(),
         owner_phones,
         owner_emails: Vec::new(),
         attachment_root: String::new(),

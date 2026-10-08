@@ -13,6 +13,7 @@ message-crate-log-lines = { path = "../../libs/log-lines" }
 message-ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }
+phone = { path = "../../libs/phone" }
 serde_json = { workspace = true, optional = true }
 serde = { workspace = true }
 sha2 = { workspace = true }

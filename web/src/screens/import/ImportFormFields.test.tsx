@@ -86,6 +86,9 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
     onObfuscateChange: vi.fn(),
     timeZone: "America/New_York",
     onTimeZoneChange: vi.fn(),
+    phoneCountry: "",
+    phoneCountries: [],
+    onPhoneCountryChange: vi.fn(),
     running: false,
     onImport: vi.fn(),
     ...override,
@@ -484,12 +487,31 @@ describe("ImportFormFields Import button", () => {
 
   // The section holds a field only for some sources. For the rest it would
   // open on nothing.
-  it("shows Processing Options only for a source with a field in it", () => {
-    const { unmount } = renderForm({ source: "imessage-ios" });
-    expect(screen.getByText("Processing Options (Advanced)")).toBeInTheDocument();
-    unmount();
-    renderForm({ source: "whatsapp-android" });
-    expect(screen.queryByText("Processing Options (Advanced)")).toBeNull();
+  // Every source has the phone's country (#1676), so every source has the section.
+  it("shows Processing Options with the phone's country for every source", () => {
+    for (const source of ["imessage-ios", "whatsapp-android", "sms-backup-plus"]) {
+      const { unmount } = renderForm({ source, processingOpen: true });
+      expect(screen.getByText("Processing Options (Advanced)")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Phone's country/ })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it("states the picked country as the phone's country", async () => {
+    const user = setupUser();
+    const onPhoneCountryChange = vi.fn();
+    renderForm({
+      source: "sms-backup-plus",
+      processingOpen: true,
+      phoneCountries: [
+        { code: "GB", calling_code: "44", name: "United Kingdom" },
+        { code: "US", calling_code: "1", name: "United States" },
+      ],
+      onPhoneCountryChange,
+    });
+    await user.click(screen.getByRole("button", { name: /Phone's country/ }));
+    await user.click(await screen.findByRole("option", { name: "United Kingdom (+44)" }));
+    expect(onPhoneCountryChange).toHaveBeenCalledWith("GB");
   });
 
   it("names each Android SMS source's own backup files in the directory placeholder", () => {

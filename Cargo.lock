@@ -1927,6 +1927,7 @@ dependencies = [
  "message-csv",
  "message-ir",
  "obfuscate",
+ "phone",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -2460,6 +2461,7 @@ dependencies = [
  "anyhow",
  "hex",
  "message-ir",
+ "regex",
  "sha2 0.11.0",
 ]
 

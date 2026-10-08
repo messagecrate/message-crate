@@ -17,6 +17,7 @@ import {
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { serverService } from "../lib/offeredService";
+import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { unmatchedIdentities } from "../lib/serverApi";
@@ -227,6 +228,8 @@ export default function ImportScreen() {
   const [formatOpen, setFormatOpen] = useState(true);
   const [processingOpen, setProcessingOpen] = useState(false);
   const [obfuscate, setObfuscate] = useState(false);
+  const [phoneCountry, setPhoneCountry] = useState("");
+  const { countries: phoneCountries } = usePhoneCountries();
   /** The zone iMazing dates are read in. The account's zone until the person
    * picks another under Processing Options; null means "the account's". */
   const accountTimeZone = useTimeZone();
@@ -331,6 +334,7 @@ export default function ImportScreen() {
     ownerEmailsSeededRef.current = true;
     setOwnerEmails(restored.ownerEmails.join(", "));
     setObfuscate(restored.obfuscate);
+    setPhoneCountry(restored.phoneCountry);
     setTimeZoneOverride(restored.timeZone);
   }
 
@@ -788,6 +792,9 @@ export default function ImportScreen() {
           onObfuscateChange={setObfuscate}
           timeZone={timeZone}
           onTimeZoneChange={setTimeZoneOverride}
+          phoneCountry={phoneCountry}
+          phoneCountries={phoneCountries}
+          onPhoneCountryChange={setPhoneCountry}
           running={running}
           onImport={(flushedPhones) =>
             void startImport({
@@ -802,6 +809,7 @@ export default function ImportScreen() {
               ownerEmails: splitEmails(ownerEmails),
               obfuscate,
               timeZone,
+              phoneCountry,
               isAndroidSms,
               attachmentRoot,
               appleContacts,

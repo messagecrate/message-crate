@@ -143,6 +143,12 @@ pub struct ImportConfig {
     pub cancel: Option<CancelFlag>,
     /// Existing Import Run to post into when the caller already created one.
     pub import_id: Option<i64>,
+    /// The country of the phone the backup came from, as an ISO 3166-1
+    /// alpha-2 code (`GB`), stated on the Import Run this Upload creates: the
+    /// server reads every phone number the run's files write without its
+    /// `+` code as a number in it (#1676). `None` states no country. A run
+    /// the caller already created (`import_id`) carries its own.
+    pub phone_country: Option<String>,
 }
 
 /// Check the session token against the server without importing any messages.
@@ -531,7 +537,12 @@ fn start_import_run(
         out.show(format!("Reusing Import Run {import_id} for {source}"));
         return Ok(import_id);
     }
-    let id = session.start_import(&source, cfg.mode, Some("message-crate-import"))?;
+    let id = session.start_import(
+        &source,
+        cfg.mode,
+        Some("message-crate-import"),
+        cfg.phone_country.as_deref(),
+    )?;
     out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
 }

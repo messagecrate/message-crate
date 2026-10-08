@@ -516,7 +516,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -700,6 +700,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "409": {
+            "description": "[`identity-exists`](https://messagecrate.app/docs/developer/reference/errors/identity-exists): The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/identity-exists"
             ]
           },
           "413": {
@@ -3800,7 +3813,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3951,7 +3964,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4113,7 +4126,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6108,7 +6121,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6147,6 +6160,7 @@
           "Contacts"
         ],
         "summary": "Rename a contact or change its linked identities.",
+        "description": "Exactly one of the body's fields is set. `set_identity_country` picks the\ncountry of a phone number written without its `+` code; when another\nidentity already holds the `+` form it gives, the request answers\n`409 Conflict` (`identity-exists`) unless it sets `merge`.",
         "operationId": "update_contact",
         "parameters": [
           {
@@ -6245,6 +6259,19 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "409": {
+            "description": "[`identity-exists`](https://messagecrate.app/docs/developer/reference/errors/identity-exists): The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/identity-exists"
             ]
           },
           "413": {
@@ -6793,7 +6820,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7776,7 +7803,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7900,7 +7927,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8054,7 +8081,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8312,7 +8339,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8597,7 +8624,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8769,7 +8796,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8944,7 +8971,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9252,7 +9279,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10430,6 +10457,113 @@
         ]
       }
     },
+    "/v1/phone-countries": {
+      "get": {
+        "tags": [
+          "Contacts"
+        ],
+        "summary": "The countries a phone number written without its `+` code can be read in, by ISO code.",
+        "operationId": "list_phone_countries",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 40, max 500.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Page offset, max 50000.",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_PhoneCountry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
     "/v1/saved-searches": {
       "get": {
         "tags": [
@@ -11475,7 +11609,7 @@
             ]
           },
           "409": {
-            "description": "[`username-taken`](https://messagecrate.app/docs/developer/reference/errors/username-taken): The username already belongs to an account on this server.\n\n[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`username-taken`](https://messagecrate.app/docs/developer/reference/errors/username-taken): The username already belongs to an account on this server.\n\n[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11708,7 +11842,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14367,6 +14501,13 @@
             "$ref": "#/components/schemas/ImportMode",
             "description": "What happens to the messages this source brought in before: `replace`\nremoves them on the run's first batch, and `append` keeps them and\nadds only new ones. `append` when the request leaves it out."
           },
+          "phone_country": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The country of the phone the backup came from, as an ISO 3166-1\nalpha-2 code such as `GB`, which `GET /v1/phone-countries` lists.\nEvery phone number the run's files write without its `+` code is\nread as a number in that country and stored in its `+` form. Null,\nor left out, states no country: such a number is stored as the\ndigits typed and matches no `+` number until a country is picked for\nit. A code the list does not hold is refused with\n`422 Unprocessable Entity`."
+          },
           "run_dir": {
             "type": [
               "string",
@@ -14982,6 +15123,7 @@
         "required": [
           "address",
           "service",
+          "country_unknown",
           "conversations",
           "direct_messages",
           "group_messages",
@@ -14999,6 +15141,10 @@
             "format": "int64",
             "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
             "minimum": 0
+          },
+          "country_unknown": {
+            "type": "boolean",
+            "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
           },
           "direct_messages": {
             "type": "integer",
@@ -15037,6 +15183,70 @@
             "description": "When the identity's oldest message was sent, or null when there is\nnone."
           }
         }
+      },
+      "IdentityHolder": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A contact: the identity is on it.",
+            "required": [
+              "contact_id",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "contact_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The contact's id."
+              },
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `contact`. A contact: the identity is on it. The other forms are `account` and `nobody`.",
+                "enum": [
+                  "contact"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "The contact's name; empty for a contact with no name."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The account itself: the identity is one of its own.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `account`. The account itself: the identity is one of its own. The other forms are `contact` and `nobody`.",
+                "enum": [
+                  "account"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Nobody: the identity is on no contact and is not the account's.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `nobody`. Nobody: the identity is on no contact and is not the account's. The other forms are `contact` and `account`.",
+                "enum": [
+                  "nobody"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who holds an identity: a contact, the account itself, or nobody. The\n`holder` of an `identity-exists` problem."
       },
       "IdentityService": {
         "type": "string",
@@ -15359,6 +15569,7 @@
           "duration_ms",
           "finished_at",
           "parse_ms",
+          "phone_country",
           "prepare_ms",
           "run_dir",
           "stage",
@@ -15465,6 +15676,13 @@
             ],
             "format": "int64",
             "description": "Time spent parsing, when finished."
+          },
+          "phone_country": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The country the run states for phone numbers written without their\n`+` code, as an ISO 3166-1 alpha-2 code; null when it states none."
           },
           "prepare_ms": {
             "type": [
@@ -17442,6 +17660,7 @@
               "required": [
                 "address",
                 "service",
+                "country_unknown",
                 "conversations",
                 "direct_messages",
                 "group_messages",
@@ -17459,6 +17678,10 @@
                   "format": "int64",
                   "description": "Direct, group, and orphaned conversations: for a contact, those the identity\ntakes part in, whoever wrote in them; for an account, those holding\nat least one of the identity's messages. Trashed conversations are\nexcluded.",
                   "minimum": 0
+                },
+                "country_unknown": {
+                  "type": "boolean",
+                  "description": "True for a phone number written without its `+` code whose country\nnobody has stated: it is stored as the digits typed and matches no\nnumber written with its `+` until a country is picked for it. A\nshort code, under 7 digits, has no `+` form and is never flagged."
                 },
                 "direct_messages": {
                   "type": "integer",
@@ -17613,6 +17836,7 @@
                 "duration_ms",
                 "finished_at",
                 "parse_ms",
+                "phone_country",
                 "prepare_ms",
                 "run_dir",
                 "stage",
@@ -17719,6 +17943,13 @@
                   ],
                   "format": "int64",
                   "description": "Time spent parsing, when finished."
+                },
+                "phone_country": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The country the run states for phone numbers written without their\n`+` code, as an ISO 3166-1 alpha-2 code; null when it states none."
                 },
                 "prepare_ms": {
                   "type": [
@@ -18404,6 +18635,56 @@
           }
         }
       },
+      "Page_PhoneCountry": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One country a phone number can be read in.",
+              "required": [
+                "code",
+                "calling_code"
+              ],
+              "properties": {
+                "calling_code": {
+                  "type": "string",
+                  "description": "Country calling code without the `+`, such as `44`. Countries that\nshare a numbering plan share one: `1` is the United States, Canada and\nmuch of the Caribbean."
+                },
+                "code": {
+                  "type": "string",
+                  "description": "ISO 3166-1 alpha-2 code, upper case, such as `GB`: the value the\nimport form's `phone_country` and an identity's `country` take. `XK`\nis Kosovo."
+                }
+              }
+            },
+            "description": "The rows on this page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size used.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Page offset used.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows matching the query across every page.",
+            "minimum": 0
+          }
+        }
+      },
       "Page_SavedSearch": {
         "type": "object",
         "description": "One page of a list.",
@@ -18583,9 +18864,27 @@
           "delete"
         ]
       },
+      "PhoneCountry": {
+        "type": "object",
+        "description": "One country a phone number can be read in.",
+        "required": [
+          "code",
+          "calling_code"
+        ],
+        "properties": {
+          "calling_code": {
+            "type": "string",
+            "description": "Country calling code without the `+`, such as `44`. Countries that\nshare a numbering plan share one: `1` is the United States, Canada and\nmuch of the Caribbean."
+          },
+          "code": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 code, upper case, such as `GB`: the value the\nimport form's `phone_country` and an identity's `country` take. `XK`\nis Kosovo."
+          }
+        }
+      },
       "Problem": {
         "type": "object",
-        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,\n`line` to `malformed-body` and `validation-failed` from an import batch.",
+        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,\n`line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
         "required": [
           "type",
           "title",
@@ -18615,6 +18914,17 @@
               "type": "string"
             },
             "description": "Every rule the request broke, one sentence each. Only on\n`validation-failed`."
+          },
+          "holder": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityHolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`identity-exists`: who already holds the `+` form the picked country\ngives the number."
           },
           "line": {
             "type": [
@@ -18995,6 +19305,39 @@
           }
         }
       },
+      "SetIdentityCountryRequest": {
+        "type": "object",
+        "description": "A country picked for one phone number written without its `+` code.",
+        "required": [
+          "address",
+          "country"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "The identity as the list shows it: the number as typed, without `+`."
+          },
+          "country": {
+            "type": "string",
+            "description": "The country the number is in, as an ISO 3166-1 alpha-2 code such as\n`GB`, which `GET /v1/phone-countries` lists. The number takes the\n`+` form that country gives it."
+          },
+          "merge": {
+            "type": "boolean",
+            "description": "Join the identity to the one already holding that `+` form, when\nanother does. Without it, such a request changes nothing and answers\n`409 Conflict` (`identity-exists`), naming that identity, so the\nperson can be asked first."
+          },
+          "service": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityService"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The service the identity is on. When omitted, the identity is found\non the phone service first, then WhatsApp."
+          }
+        }
+      },
       "Tapback": {
         "type": "object",
         "description": "One tapback reaction on an exported message.",
@@ -19175,6 +19518,17 @@
             },
             "description": "Identities to unlink from the account profile."
           },
+          "set_identity_country": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SetIdentityCountryRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Country to pick for one of the account's phone numbers written\nwithout its `+` code, one whose `country_unknown` is true. The number\ntakes the `+` form that country gives it, and joins the identity\nalready holding that form when `merge` is set; without `merge`, such\na request answers `409 Conflict` (`identity-exists`) and changes\nnothing."
+          },
           "time_zone": {
             "type": [
               "string",
@@ -19258,6 +19612,17 @@
               }
             ],
             "description": "Identity to unlink."
+          },
+          "set_identity_country": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/SetIdentityCountryRequest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Country to pick for a phone number written without its `+` code,\none whose `country_unknown` is true. The number takes the `+` form\nthat country gives it, and joins the identity already holding that\nform when `merge` is set."
           },
           "update_identity": {
             "oneOf": [

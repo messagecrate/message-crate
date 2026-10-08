@@ -8,6 +8,7 @@ license = "LicenseRef-FCL-1.0-ALv2"
 anyhow = { workspace = true }
 hex = { workspace = true }
 message-ir = { path = "../ir" }
+regex = { workspace = true }
 sha2 = { workspace = true }
 
 [lints]

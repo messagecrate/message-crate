@@ -26,6 +26,7 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
         log: None,
         issues: None,
         resume: false,
+        phone_country: phone::country("US"),
     })
 }
 
@@ -245,6 +246,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             log: None,
             issues: None,
             resume,
+            phone_country: phone::country("US"),
         })
     });
 }
@@ -370,6 +372,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         log: None,
         issues: None,
         resume: false,
+        phone_country: phone::country("US"),
     })
     .unwrap();
 
@@ -428,6 +431,7 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
         log: None,
         issues: None,
         resume: false,
+        phone_country: phone::country("US"),
     })
     .expect("convert");
     let dates = jsonl_backup_dates(&output);

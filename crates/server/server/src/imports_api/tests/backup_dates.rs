@@ -498,6 +498,7 @@ async fn the_later_backup_decides_the_duplicate_flag() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: true,
             import_id: None,
+            phone_country: None,
         });
         import_jsonl_files(&db, std::slice::from_ref(&sms), &sms_options)
             .await

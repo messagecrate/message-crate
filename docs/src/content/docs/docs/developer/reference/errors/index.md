@@ -42,6 +42,7 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`account-disabled`](./account-disabled/) | `403 Forbidden` | Account disabled |
 | [`search-query-invalid`](./search-query-invalid/) | `422 Unprocessable Entity` | Search query invalid |
 | [`state-conflict`](./state-conflict/) | `409 Conflict` | State conflict |
+| [`identity-exists`](./identity-exists/) | `409 Conflict` | Identity exists |
 | [`asset-upload-invalid`](./asset-upload-invalid/) | `422 Unprocessable Entity` | Asset upload invalid |
 | [`not-found`](./not-found/) | `404 Not Found` | Not found |
 | [`method-not-allowed`](./method-not-allowed/) | `405 Method Not Allowed` | Method not allowed |

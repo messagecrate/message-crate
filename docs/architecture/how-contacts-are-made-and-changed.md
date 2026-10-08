@@ -53,8 +53,9 @@ flowchart TD
 ```
 
 - A phone number has one key. A number with `+` keeps its country. A number
-  without `+` is read as a US number when it has ten digits, or eleven
-  starting with `1`.
+  without `+` is read in the country the Import Run states for the phone, and
+  keeps its digits as written when the run states none: it is never read as
+  a US number by default (#1676).
 - iMessage, SMS, MMS and RCS are all text messages, so one number is one
   identity with the service `phone`. The same number on WhatsApp is a second
   identity with the service `whatsapp`.
@@ -228,12 +229,11 @@ If it does, the row names that identity.
 Only the row's own contact is looked at, so a dropped `+` never attaches
 another person's number to this contact.
 A contact that holds both readings, such as `+6555550100` and
-`+16555550100`, refuses the load, naming both keys, because the row cannot
+`6555550100`, refuses the load, naming both keys, because the row cannot
 say which it means.
-Otherwise the value is keyed by the phone rule: ten digits as a US number,
-eleven starting with `1` likewise, and any other count as bare digits.
-A ten-digit US number written without `+`, whose `+1` key the account holds,
-therefore still loads as that identity.
+Otherwise the value is keyed by the phone rule, which keeps the digits as
+written: a load states no country, so `555-555-0100` is the identity
+`5555550100`, not `+15555550100` (#1676).
 
 A person editing in a spreadsheet does not see the `+` go, so the load says
 what it did.

@@ -310,6 +310,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: true,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -346,6 +347,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -401,6 +403,7 @@ fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> Import
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     })
 }
 
@@ -732,6 +735,7 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
 
     let before = write_jsonl(
@@ -808,6 +812,7 @@ fn edit_options<'a>(
         account_id: TEST_ACCOUNT,
         fill_content_keys,
         import_id: None,
+        phone_country: None,
     })
 }
 
@@ -1174,6 +1179,7 @@ async fn append_existing_guid_adds_missing_children() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
     import_jsonl_files(&db, &[first], &options).await.unwrap();
 
@@ -1261,6 +1267,7 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
 
     // The first import has no file on disk, so the attachment is stored as missing.
@@ -1338,6 +1345,7 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
     import_jsonl_files(&db, std::slice::from_ref(&path), &options)
         .await
@@ -1389,6 +1397,7 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
 
     import_jsonl_files(&db, std::slice::from_ref(&path), &options)
@@ -1502,6 +1511,7 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -1561,6 +1571,7 @@ async fn promote_stamps_messages_with_import_id() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: Some(import_id),
+            phone_country: None,
         }),
         ImportSchemaMode::AssumeReady,
     )
@@ -1658,6 +1669,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
         ImportSchemaMode::AssumeReady,
     )
@@ -1727,6 +1739,7 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
             source_from_jsonl: true,
             media: MediaMode::Clone,
             wipe_sources: Some(vec!["go-sms-pro".into()]),
+            phone_country: None,
         },
     )
     .await
@@ -1789,6 +1802,7 @@ async fn media_none_skips_attachment_copy() {
             source_from_jsonl: true,
             media: MediaMode::Disabled,
             wipe_sources: Some(vec!["sms".into()]),
+            phone_country: None,
         },
     )
     .await
@@ -1844,6 +1858,7 @@ fn media_convert_stores_the_converted_file_not_the_original() {
                 source_from_jsonl: true,
                 media: MediaMode::Convert,
                 wipe_sources: Some(vec!["imessage".into()]),
+                phone_country: None,
             },
         )
         .await
@@ -1897,6 +1912,7 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
     import_jsonl_files(&db, &[path], &opts).await.unwrap();
 
@@ -2125,6 +2141,7 @@ async fn a_participant_with_no_address_and_no_name_is_never_created() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
     import_jsonl_files(&db, &[path], &opts).await.unwrap();
 
@@ -2182,6 +2199,7 @@ async fn persists_missing_reason_with_null_sha256() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -2323,6 +2341,7 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -2372,6 +2391,7 @@ async fn rejects_attachment_path_traversal() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -2415,6 +2435,7 @@ async fn failed_replace_keeps_existing_messages() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -2443,6 +2464,7 @@ async fn failed_replace_keeps_existing_messages() {
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
     )
     .await
@@ -2503,6 +2525,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
 
     // A first import makes Ada's contact; the person names it, puts it in a
@@ -3878,6 +3901,7 @@ async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, s
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
         ImportSchemaMode::AssumeReady,
     )
@@ -4552,7 +4576,7 @@ async fn two_conversations_on_one_identity_in_one_batch_become_one() {
     let (state, _fixture, token) = importer().await;
     let body = format!(
         "{}\n{}\n{}\n{}\n",
-        one_to_one_header("+15555550119"),
+        one_to_one_header("(555) 555-0119"),
         same_second_message("m1", 1_426_183_462_000),
         one_to_one_header("5555550119"),
         same_second_message("m2", 1_426_183_462_000),
@@ -4754,7 +4778,7 @@ async fn a_participant_listed_twice_under_one_identity_is_listed_once() {
         .group()
         .title("Trip")
         .participant("+1 (555) 555-0119", None)
-        .participant("5555550119", None);
+        .participant("+15555550119", None);
     let body = format!(
         "{header}\n{}\n",
         same_second_message("m1", 1_426_183_462_000)
@@ -6538,4 +6562,5 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
 
 mod backup_dates;
 mod changed_content_dedupe;
+mod phone_country;
 mod time_precision;

@@ -235,8 +235,8 @@ async fn a_blank_name_or_groups_cell_agrees_with_the_rows_that_fill_it() {
 // --- How an identity is keyed ---
 
 /// A phone gets the key every other part of the server gives it: E.164 when
-/// the number says its country or is a US number, and the digits as written
-/// otherwise, never an invented `+0…`.
+/// the number says its country, and the digits as written otherwise, never
+/// an invented `+0…` and never a US number by default (#1676).
 #[tokio::test]
 async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
     let (mut conn, _pool, _dir) = account().await;
@@ -255,9 +255,9 @@ async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
     .fetch_all(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(keys, ["+15555550100", "+6555550100", "02079460000"]);
+    assert_eq!(keys, ["+6555550100", "02079460000", "5555550100"]);
     for (raw, key) in [
-        ("(555) 555-0100", "+15555550100"),
+        ("(555) 555-0100", "5555550100"),
         ("+65 5555 0100", "+6555550100"),
         ("020 7946 0000", "02079460000"),
     ] {
@@ -350,7 +350,7 @@ async fn the_same_identity_under_two_ids_is_refused_with_both_rows() {
     // Row 3 writes the number another way; it is the same key.
     let text = file(&[
         "a,Ada,,phone,phone,+15555550100",
-        "b,Bao,,phone,phone,(555) 555-0100",
+        "b,Bao,,phone,phone,+1 (555) 555-0100",
     ]);
     let reasons = refused(&mut conn, &text, LoadMode::Append).await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
@@ -1379,20 +1379,21 @@ async fn a_number_without_plus_whose_contact_holds_both_readings_is_refused() {
         "Ada",
         &[
             ("phone", "phone", "+6555550100"),
-            ("phone", "phone", "+16555550100"),
+            ("phone", "phone", "6555550100"),
         ],
     )
     .await;
     let reasons = refused(
         &mut conn,
-        &file(&[&format!("{ada},Ada,,phone,phone,6555550100")]),
+        // Written with spaces, so it is not the stored key as it stands.
+        &file(&[&format!("{ada},Ada,,phone,phone,655 555 0100")]),
         LoadMode::Edit,
     )
     .await;
     assert_eq!(reasons.len(), 1, "{reasons:?}");
     assert!(reasons[0].starts_with("row 2: "), "{reasons:?}");
     assert!(reasons[0].contains("+6555550100"), "{reasons:?}");
-    assert!(reasons[0].contains("+16555550100"), "{reasons:?}");
+    assert!(reasons[0].contains("and 6555550100"), "{reasons:?}");
 }
 
 /// Only the row's own contact is looked at, so a dropped `+` never puts
@@ -1415,11 +1416,11 @@ async fn a_number_without_plus_never_takes_another_contacts_identity() {
     );
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+16555550100"]
+        ["phone/phone/6555550100"]
     );
     assert_eq!(
         counts.notes,
-        ["row 2: 6555550100 has no +, so it became the new identity +16555550100"]
+        ["row 2: 6555550100 has no +, so it became the new identity 6555550100"]
     );
 }
 
@@ -1445,10 +1446,13 @@ async fn a_new_identity_of_bare_digits_is_named_in_the_result() {
     );
 }
 
-/// A ten-digit US number written without `+` whose `+1` key the account
-/// holds is that identity, as before, and needs no word in the result.
+/// A ten-digit number written without `+` or its country code is not read
+/// as a US number (#1676): it is an identity of its own digits, even when
+/// the contact holds the `+1` number, and the result says so. A `+` a
+/// spreadsheet dropped from `+15555550100` leaves `15555550100`, which the
+/// rule above reads back.
 #[tokio::test]
-async fn a_us_number_without_plus_still_loads_as_its_plus_one_identity() {
+async fn a_national_number_without_plus_is_not_read_as_a_us_number() {
     let (mut conn, _pool, _dir) = account().await;
     let ada = imported(&mut conn, "Ada", &[("phone", "phone", "+15555550100")]).await;
     let counts = loaded(
@@ -1457,10 +1461,13 @@ async fn a_us_number_without_plus_still_loads_as_its_plus_one_identity() {
         LoadMode::Edit,
     )
     .await;
-    assert_eq!(counts, LoadCounts::default());
+    assert_eq!(
+        counts.notes,
+        ["row 2: 555-555-0100 has no +, so it became the new identity 5555550100"]
+    );
     assert_eq!(
         identities_of(&mut conn, ada).await,
-        ["phone/phone/+15555550100"]
+        ["phone/phone/5555550100"]
     );
 }
 

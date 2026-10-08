@@ -54,6 +54,11 @@ export interface ExtractConfig {
   obfuscate?: boolean;
   /** Zone iMazing dates are read in (an IANA name); iMazing carries none of its own. */
   timezone?: string;
+  /**
+   * The country of the phone the backup came from (ISO code, `GB`); SMS
+   * Backup+ keys numbers written without their `+` code in it.
+   */
+  phone_country?: string;
   /** Owner phone numbers for the Android SMS sources and WhatsApp (repeatable). */
   owner_phones?: string[];
   /** Owner email addresses for SMS Backup+ (repeatable). */

@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS handles (
     -- Identity string exactly as the backup/source wrote it.
     raw TEXT NOT NULL,
     -- Dedup key: E.164 when unambiguous for phones; otherwise cleaned digits/text.
+    -- A phone number carries its country inside this key: one that starts
+    -- with + names its calling code, because the number was written with its
+    -- + or without it in a country an import run or a person stated. A phone
+    -- number written without its + code, in no country anyone stated, is the
+    -- digits as typed and matches no + number until a country is picked for
+    -- it (#1676).
     normalized TEXT NOT NULL,
     -- Human-readable reason the number needs review; NULL when normalization is trusted.
     normalized_note TEXT,

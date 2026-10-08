@@ -23,6 +23,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
             account_id: TEST_ACCOUNT,
             fill_content_keys: false,
             import_id: None,
+            phone_country: None,
         }),
         super::super::ImportSchemaMode::Ensure,
     )

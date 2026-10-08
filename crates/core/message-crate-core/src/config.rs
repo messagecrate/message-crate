@@ -236,6 +236,11 @@ pub struct SmsBackupPlusConfig {
     pub owner_phones: Vec<String>,
     /// Owner email addresses used to mark outgoing messages.
     pub owner_emails: Vec<String>,
+    /// The country of the phone the archive came from, when the import form
+    /// states it. SMS Backup+ keys a number written without its `+` code in
+    /// it, so the two spellings of one number are one person before the
+    /// server sees them (#1676).
+    pub phone_country: Option<&'static phone::Country>,
     /// Whether to emit verbose log lines.
     pub verbose: bool,
     /// Whether to print the end-of-run summary.

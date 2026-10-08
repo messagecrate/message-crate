@@ -263,6 +263,7 @@ const EXERCISED: Record<string, () => unknown> = {
   updateSavedSearch: () => serverApi.updateSavedSearch(8, { name: "Receipts", query: "receipt" }),
   deleteSavedSearch: () => serverApi.deleteSavedSearch(8),
   listSearchFields: () => serverApi.listSearchFields("contacts"),
+  listPhoneCountries: () => serverApi.listPhoneCountries(),
 
   // Exports
   getExport: () => serverApi.getExport(2),

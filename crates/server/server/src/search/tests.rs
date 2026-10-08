@@ -2126,6 +2126,7 @@ mod kind_words {
                 account_id: ACCOUNT,
                 fill_content_keys: false,
                 import_id: None,
+                phone_country: None,
             }),
             crate::imports_api::ImportSchemaMode::Ensure,
         )

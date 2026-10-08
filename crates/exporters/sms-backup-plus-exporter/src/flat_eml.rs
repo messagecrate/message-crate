@@ -5,7 +5,7 @@ use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
 use message_ir::{IdentityType, IrConversationType};
-use phone::{Handle, OwnerHandleSet};
+use phone::{Country, Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
@@ -72,13 +72,14 @@ impl MailHeaders {
     }
 }
 
-/// The addresses in an `X-smssync-address` header, once each by key.
-fn smssync_addresses(raw_address: &str) -> Vec<Handle> {
+/// The addresses in an `X-smssync-address` header, once each by key, a
+/// number written without its `+` code keyed in `country`.
+fn smssync_addresses(raw_address: &str, country: Option<&'static Country>) -> Vec<Handle> {
     let mut addresses = Vec::new();
     let mut seen = HashSet::new();
     for handle in ADDRESS_SPLIT_RE
         .split(raw_address)
-        .filter_map(Handle::parse)
+        .filter_map(|raw| Handle::parse_in(raw, country))
     {
         if seen.insert(handle.key().to_string()) {
             addresses.push(handle);
@@ -105,6 +106,9 @@ pub(crate) struct Owner {
     handles: OwnerHandleSet,
     /// Trimmed and lowercased; none empty.
     emails: Vec<String>,
+    /// The country of the phone, when the import form states it: every
+    /// number the archive writes without its `+` code is in it (#1676).
+    country: Option<&'static Country>,
 }
 
 impl Owner {
@@ -116,7 +120,18 @@ impl Owner {
             .map(|e| e.trim().to_ascii_lowercase())
             .filter(|e| !e.is_empty())
             .collect();
-        Self { handles, emails }
+        Self {
+            handles,
+            emails,
+            country: None,
+        }
+    }
+
+    /// The owner of a phone in `country`, when one is stated: SMS Backup+
+    /// writes a number as the phone showed it, often without its `+` code,
+    /// and the archive never says which country the phone was in.
+    pub(crate) fn in_country(self, country: Option<&'static Country>) -> Self {
+        Self { country, ..self }
     }
 
     /// The owner's first number, as a handle key.
@@ -156,21 +171,21 @@ fn addr_spec(address: &str) -> &str {
 /// The handle in one mail address (`addr-spec`, no display name). SMS Backup+
 /// writes a contact with an email address as that address, and anyone else as
 /// `<number or name>@unknown.email`, whose part before the `@` is the handle.
-fn mail_address_handle(addr_spec: &str) -> Option<Handle> {
+fn mail_address_handle(addr_spec: &str, country: Option<&'static Country>) -> Option<Handle> {
     let addr_spec = addr_spec.trim();
     match addr_spec.rsplit_once('@') {
         Some((local, domain)) if domain.eq_ignore_ascii_case(UNKNOWN_EMAIL_DOMAIN) => {
-            Handle::parse(local)
+            Handle::parse_in(local, country)
         }
-        _ => Handle::parse(addr_spec),
+        _ => Handle::parse_in(addr_spec, country),
     }
 }
 
 /// The address in a `From` header, which SMS Backup+ writes as
 /// `"Bob" <+14075550108@unknown.email>`. Only the part inside `<…>` is read:
 /// a digit in the display name is not part of the number.
-fn from_address(from: &str) -> Option<Handle> {
-    mail_address_handle(addr_spec(from))
+fn from_address(from: &str, country: Option<&'static Country>) -> Option<Handle> {
+    mail_address_handle(addr_spec(from), country)
 }
 
 /// Every address a `To` header names, as `addr-spec`s. Empty when the header
@@ -224,7 +239,7 @@ fn mail_participants(headers: &MailHeaders, sent: bool, owner: &Owner) -> MailPa
             owner_named = true;
             continue;
         }
-        let Some(handle) = mail_address_handle(&address) else {
+        let Some(handle) = mail_address_handle(&address, owner.country) else {
             continue;
         };
         if owner.is_owner_handle(&handle) {
@@ -297,7 +312,7 @@ pub(crate) fn email_and_number(
     if to.len() >= GROUP_MIN_TO_ADDRESSES {
         return None;
     }
-    let mut numbers = smssync_addresses(&headers.smssync_address)
+    let mut numbers = smssync_addresses(&headers.smssync_address, owner.country)
         .into_iter()
         .filter(|a| !owner.is_owner_handle(a));
     let number = numbers.next()?;
@@ -312,7 +327,7 @@ pub(crate) fn email_and_number(
     if owner.is_owner_email(&other) {
         return None;
     }
-    let email = mail_address_handle(&other)?;
+    let email = mail_address_handle(&other, owner.country)?;
     (email.kind() == IdentityType::Email).then(|| EmailNumber {
         email: email.into_key(),
         number,
@@ -398,7 +413,7 @@ pub(crate) fn parse_flat_eml_mail(
         return None;
     }
     let (timestamp_secs, has_milliseconds) = timestamp_seconds(headers)?;
-    let has_address = !smssync_addresses(&headers.smssync_address).is_empty();
+    let has_address = !smssync_addresses(&headers.smssync_address, owner.country).is_empty();
     let subject_name = contact_name_from_subject(&headers.subject, has_address);
     let sent = is_sent(headers, owner);
     let addresses = FlatAddresses::from_headers(headers, owner, sent);
@@ -455,6 +470,8 @@ struct FlatAddresses {
     /// A received mail whose `To` names a group without naming the owner by
     /// any number or email address they gave (`MailParticipants::OwnerNotNamed`).
     owner_not_named: bool,
+    /// The phone's country, for reading `From` again.
+    country: Option<&'static Country>,
 }
 
 /// Where a flat EML lands and who sent it.
@@ -484,21 +501,23 @@ impl FlatAddresses {
                     first: participants.first().cloned(),
                     non_owner: participants,
                     owner_not_named: false,
+                    country: owner.country,
                 };
             }
             MailParticipants::OwnerNotNamed => {
-                if let Some(from) = from_address(&headers.from) {
+                if let Some(from) = from_address(&headers.from, owner.country) {
                     return Self {
                         first: Some(from.clone()),
                         non_owner: vec![from],
                         owner_not_named: true,
+                        country: owner.country,
                     };
                 }
                 true
             }
             MailParticipants::NotAGroup => false,
         };
-        let addresses = smssync_addresses(&headers.smssync_address);
+        let addresses = smssync_addresses(&headers.smssync_address, owner.country);
         let first = addresses.first().cloned();
         let non_owner = addresses
             .into_iter()
@@ -508,6 +527,7 @@ impl FlatAddresses {
             first,
             non_owner,
             owner_not_named,
+            country: owner.country,
         }
     }
 
@@ -549,7 +569,7 @@ impl FlatAddresses {
     /// mail that does not name the owner, only the address in `From` says
     /// who wrote it, and the peer is that address or nobody.
     fn peer_is_sender(&self, headers: &MailHeaders) -> bool {
-        !self.owner_not_named || from_address(&headers.from).is_some()
+        !self.owner_not_named || from_address(&headers.from, self.country).is_some()
     }
 
     /// The sender of an incoming group message: the `From` header's address
@@ -558,7 +578,7 @@ impl FlatAddresses {
     /// contact with an email address is named in `From` by that address
     /// alone.
     fn group_sender(&self, headers: &MailHeaders) -> Option<Handle> {
-        let from = from_address(&headers.from)?;
+        let from = from_address(&headers.from, self.country)?;
         self.non_owner
             .iter()
             .find(|peer| peer.key() == from.key())

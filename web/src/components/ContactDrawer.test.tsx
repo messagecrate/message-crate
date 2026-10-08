@@ -37,6 +37,11 @@ const post = vi.fn();
 const trash = vi.fn();
 
 vi.mock("../lib/serverApi", () => ({
+  listPhoneCountries: () =>
+    Promise.resolve([
+      { code: "GB", calling_code: "44" },
+      { code: "US", calling_code: "1" },
+    ]),
   getContact: (...args: unknown[]) => get(...args),
   updateContact: (...args: unknown[]) => post(...args),
   trashContact: (...args: unknown[]) => trash(...args),
@@ -60,6 +65,7 @@ function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDeta
         direct_messages: 42,
         group_messages: 7,
         orphaned_messages: 0,
+        country_unknown: false,
       },
     ],
     direct_conversations: 3,
@@ -172,6 +178,7 @@ describe("ContactDrawer", () => {
           direct_messages: 99,
           group_messages: 11,
           orphaned_messages: 0,
+          country_unknown: false,
         },
       ],
     });
@@ -370,6 +377,7 @@ describe("ContactDrawer", () => {
             direct_messages: 42,
             group_messages: 7,
             orphaned_messages: 0,
+            country_unknown: false,
           },
         ],
       }),
@@ -421,6 +429,7 @@ describe("ContactDrawer", () => {
             direct_messages: 42,
             group_messages: 7,
             orphaned_messages: 0,
+            country_unknown: false,
           },
         ],
       }),
@@ -507,6 +516,7 @@ describe("ContactDrawer", () => {
             direct_messages: 4,
             group_messages: 0,
             orphaned_messages: 0,
+            country_unknown: false,
           },
           {
             address: "+15550102",
@@ -517,6 +527,7 @@ describe("ContactDrawer", () => {
             direct_messages: 8,
             group_messages: 0,
             orphaned_messages: 0,
+            country_unknown: false,
           },
         ],
       }),
@@ -714,6 +725,7 @@ describe("ContactDrawer", () => {
       direct_messages: 0,
       group_messages: 2,
       orphaned_messages: 0,
+      country_unknown: false,
     };
     get.mockResolvedValue(
       detail(1, {
@@ -899,5 +911,78 @@ describe("ContactDrawer", () => {
       expect(drawer.style.left).toContain("min(14rem,");
     });
     expect(drawer.className).toMatch(/\bml-auto\b/);
+  });
+
+  /**
+   * #1676: a number written without its `+` code says its country is unknown
+   * and offers the country picker. When the `+` form is another identity's,
+   * the server refuses and names it, and the drawer asks before it merges.
+   */
+  it("picks a number's country and merges it after asking", async () => {
+    const user = setupUser();
+    const national = detail(5, {
+      identities: [
+        {
+          address: "07700900123",
+          service: "phone",
+          country_unknown: true,
+          start_date: null,
+          end_date: null,
+          conversations: 1,
+          direct_messages: 1,
+          group_messages: 0,
+          orphaned_messages: 0,
+        },
+      ],
+    });
+    seed(national);
+    get.mockResolvedValue(national);
+    const merged = detail(5, {
+      identities: [{ ...national.identities[0], address: "+447700900123", country_unknown: false }],
+    });
+    const question = "07700900123 in GB is +447700900123, which is already an identity of Ada";
+    post.mockReset();
+    post
+      .mockRejectedValueOnce(
+        new ApiError(409, question, {
+          type: "https://messagecrate.app/docs/developer/reference/errors/identity-exists",
+          title: "Identity exists",
+          status: 409,
+          detail: question,
+        }),
+      )
+      .mockResolvedValueOnce(merged);
+    render(<ContactDrawer variant="docked" contactId="5" onClose={() => {}} />);
+
+    expect(await screen.findByText(/Country unknown/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Pick the country of 07700900123" }));
+    await user.click(await screen.findByRole("button", { name: /Country/ }));
+    await user.click(await screen.findByRole("option", { name: /\(\+44\)/ }));
+    await user.click(screen.getByRole("button", { name: "Set country" }));
+
+    expect(await screen.findByText(question)).toBeTruthy();
+    expect(post).toHaveBeenLastCalledWith("5", {
+      set_identity_country: {
+        address: "07700900123",
+        service: "phone",
+        country: "GB",
+        merge: false,
+      },
+    });
+    get.mockResolvedValue(merged);
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+    await waitFor(() => {
+      expect(post).toHaveBeenLastCalledWith("5", {
+        set_identity_country: {
+          address: "07700900123",
+          service: "phone",
+          country: "GB",
+          merge: true,
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(/Country unknown/)).toBeNull();
+    });
   });
 });

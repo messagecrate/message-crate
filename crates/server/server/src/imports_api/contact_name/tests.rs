@@ -451,6 +451,7 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
+        phone_country: None,
     });
     crate::imports_api::import_jsonl_files_on_conn(
         conn,

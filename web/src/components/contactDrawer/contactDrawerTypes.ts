@@ -118,6 +118,7 @@ export function emptyHandleRow(address: string): ContactHandle {
   return {
     address,
     service: "",
+    country_unknown: false,
     start_date: null,
     end_date: null,
     conversations: 0,
