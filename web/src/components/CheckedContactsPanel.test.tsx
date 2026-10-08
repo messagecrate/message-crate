@@ -188,6 +188,7 @@ describe("CheckedContactsPanel", () => {
       direct_messages: 0,
       group_messages: 2,
       orphaned_messages: 0,
+      country_unknown: false,
     };
     const sam: ContactDetail = {
       id: 1,

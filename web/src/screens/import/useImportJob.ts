@@ -264,6 +264,13 @@ export type ImportJobFormValues = {
    * under Processing Options. Only the iMazing extract reads it, because its
    * dates carry no zone of their own. */
   timeZone: string;
+  /**
+   * The country of the phone the backup came from, as an ISO code (`GB`), or
+   * empty for none. The Import Run states it, and the server reads every
+   * number the run's files write without its `+` code as a number there
+   * (#1676).
+   */
+  phoneCountry: string;
   /** True for the Android SMS sources, whose extract carries owner phones. */
   isAndroidSms: boolean;
   attachmentRoot: string;
@@ -1535,6 +1542,7 @@ async function runImport(
       const importRun = await endSessionIfRefused(() =>
         createImport({
           ...importRunCreateBody(form.source),
+          phone_country: form.phoneCountry || null,
           stage: "parse",
           run_dir: outputDir,
           device_id: getDeviceId(),
@@ -1560,6 +1568,7 @@ async function runImport(
         ...(resumeWrite ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
         ...extractFieldsFor(form),
+        ...(form.phoneCountry ? { phone_country: form.phoneCountry } : {}),
       }),
     );
     if (extractResult.extraction) {

@@ -92,6 +92,8 @@ export const keys = {
   contactGroups: { all: ["contact-groups"] as const },
   messageTags: { all: ["message-tags"] as const },
   savedSearches: { all: ["saved-searches"] as const },
+  /** The countries a phone number can be read in, a fixed list. */
+  phoneCountries: { all: ["phone-countries"] as const },
   searchFields: {
     all: ["search-fields"] as const,
     list: (list: string) => ["search-fields", list] as const,

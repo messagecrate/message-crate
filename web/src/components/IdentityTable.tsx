@@ -91,7 +91,8 @@ function Heading({
  *
  * `onBrowse` turns a conversation count into a link (the contact drawer
  * passes one; the Profile tab does not), and `totalConversations` adds the
- * Summary row.
+ * Summary row. A phone number whose country is unknown says so under the
+ * address, with a Pick country link when `onPickCountry` is given (#1676).
  */
 export default function IdentityTable({
   rows,
@@ -104,6 +105,7 @@ export default function IdentityTable({
   ariaLabel = "Identities",
   onRemove,
   onBrowse,
+  onPickCountry,
 }: {
   rows: readonly IdentityRow[];
   /** Heading of the earliest-message date column. */
@@ -126,6 +128,11 @@ export default function IdentityTable({
   onRemove?: (row: IdentityRow) => void;
   /** Where a conversation count leads; with none, counts are plain numbers. */
   onBrowse?: (row: IdentityRow) => void;
+  /**
+   * Opens the country picker for a number whose country is unknown; with
+   * none, such a number shows the note and no control.
+   */
+  onPickCountry?: (row: IdentityRow) => void;
 }) {
   const { showOrphaned, sort, setSort } = useOrphanedColumn(rows);
   const sorted = useMemo(() => sortIdentityRows(rows, sort), [rows, sort]);
@@ -239,6 +246,24 @@ export default function IdentityTable({
               <span className="block truncate" title={row.address}>
                 {row.address}
               </span>
+              {row.country_unknown ? (
+                <span className="block text-[0.75rem] text-muted">
+                  Country unknown
+                  {onPickCountry ? (
+                    <>
+                      {" · "}
+                      <PlainButton
+                        className={linkClass}
+                        isDisabled={busy || loading}
+                        aria-label={`Pick the country of ${row.address}`}
+                        onPress={() => onPickCountry(row)}
+                      >
+                        Pick country
+                      </PlainButton>
+                    </>
+                  ) : null}
+                </span>
+              ) : null}
             </Cell>
             {renderCounts(row, onBrowse ? () => onBrowse(row) : undefined)}
             <Cell className="px-1 py-0.5 text-right align-middle">

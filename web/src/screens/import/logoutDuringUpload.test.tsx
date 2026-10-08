@@ -118,6 +118,7 @@ const form = {
   whatsappBusiness: false,
   whatsappOwnerPhone: "",
   timeZone: "America/New_York",
+  phoneCountry: "",
   assetMaxBytes: 512 * MIB,
 };
 

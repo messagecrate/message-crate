@@ -28,6 +28,7 @@ import {
   isImessageMethod,
 } from "../../lib/imessageImport";
 import { showsAttachmentOptions } from "../../lib/importSource";
+import { type PhoneCountryChoice, phoneCountryLabel } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import type { AttachmentMediaMode } from "../../lib/types";
@@ -115,10 +116,74 @@ export type ImportFormFieldsProps = {
   /** The IANA zone iMazing dates are read in; shown only for that source. */
   timeZone: string;
   onTimeZoneChange: (zone: string) => void;
+  /** The phone's country as an ISO code, or empty for none; every source has it. */
+  phoneCountry: string;
+  /** The countries to offer, from `GET /v1/phone-countries`; empty until loaded. */
+  phoneCountries: readonly PhoneCountryChoice[];
+  onPhoneCountryChange: (code: string) => void;
   running: boolean;
   /** Optional flushed owner phones (SBR commits draft before import). */
   onImport: (ownerPhones?: string[]) => void;
 };
+
+/** The choice that states no country for the phone. */
+const NO_PHONE_COUNTRY = "none";
+
+/**
+ * The country of the phone the backup came from. A backup writes many numbers
+ * without their `+` code, as the phone showed them, and nothing in it says
+ * which country they are in. With a country picked, each is read as a number
+ * there, so `07700 900123` and `+44 7700 900123` are one person. With none,
+ * such a number keeps its digits and can be given its country later on the
+ * Contacts screen (#1676).
+ */
+function PhoneCountryField({
+  value,
+  countries,
+  onChange,
+}: {
+  value: string;
+  countries: readonly PhoneCountryChoice[];
+  onChange: (code: string) => void;
+}) {
+  return (
+    <StackedField label="Phone's country" optional>
+      <Select
+        selectedKey={value || NO_PHONE_COUNTRY}
+        onSelectionChange={(k) => {
+          if (typeof k === "string") onChange(k === NO_PHONE_COUNTRY ? "" : k);
+        }}
+        aria-label="Phone's country"
+        triggerClassName="!bg-bg"
+      >
+        {[
+          <ListBoxItem
+            key={NO_PHONE_COUNTRY}
+            id={NO_PHONE_COUNTRY}
+            textValue="Not stated"
+            className={selectItemClassName}
+          >
+            Not stated
+          </ListBoxItem>,
+          ...countries.map((c) => (
+            <ListBoxItem
+              key={c.code}
+              id={c.code}
+              textValue={c.name}
+              className={selectItemClassName}
+            >
+              {phoneCountryLabel(c)}
+            </ListBoxItem>
+          )),
+        ]}
+      </Select>
+      <p className={hintStyle}>
+        Numbers written without a country code are read as numbers in this country. Leave it unset
+        when the backup holds numbers from more than one country written that way.
+      </p>
+    </StackedField>
+  );
+}
 
 const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
 const WHATSAPP_CONTACTS_FILTERS = [{ name: "SQLite database", extensions: ["db", "sqlite"] }];
@@ -251,8 +316,6 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const whatsappMethod = isWhatsappMethod(props.source) ? props.source : null;
   const whatsappFallbackPhone =
     whatsappMethod !== null && !whatsappOwnerPhoneRequired(whatsappMethod);
-  // The section is left out for a source with no field in it.
-  const hasProcessingOptions = isIos || isAndroidSms || isImazing || whatsappFallbackPhone;
   const imessageReadiness = imessageMethod
     ? imessageCanImport({
         method: imessageMethod,
@@ -749,52 +812,55 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         )}
       </CollapsibleSection>
 
-      {hasProcessingOptions ? (
-        <CollapsibleSection
-          title="Processing Options (Advanced)"
-          open={props.processingOpen}
-          onToggle={props.onToggleProcessing}
-        >
-          <div className="mb-2 flex flex-col items-start gap-3">
-            {isIos || isAndroidSms ? (
-              <Checkbox
-                labelClassName="text-[0.875rem]"
-                checked={props.obfuscate}
-                onChange={props.onObfuscateChange}
-              >
-                Obfuscate - All message data is anonymized.
-              </Checkbox>
-            ) : null}
-            {isImazing ? (
-              <div className="w-full max-w-[28rem]">
-                <TimeZoneField
-                  label="Time zone of the messages"
-                  value={props.timeZone}
-                  onChange={props.onTimeZoneChange}
-                />
-                <p className={hintStyle}>
-                  Pre-filled from your profile. iMazing writes each message time without a zone, so
-                  pick the one the phone was in.
-                </p>
-              </div>
-            ) : null}
-          </div>
-          {whatsappFallbackPhone ? (
-            <StackedField label={WHATSAPP_OWNER_PHONE_LABEL} optional>
-              <input
-                type="text"
-                inputMode="tel"
-                aria-label={`${WHATSAPP_OWNER_PHONE_LABEL} (Optional)`}
-                value={props.whatsappOwnerPhone}
-                onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
-                placeholder="+1 555 555 0100"
-                className={fieldStyle}
-              />
-              <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
-            </StackedField>
+      <CollapsibleSection
+        title="Processing Options (Advanced)"
+        open={props.processingOpen}
+        onToggle={props.onToggleProcessing}
+      >
+        <div className="mb-2 flex flex-col items-start gap-3">
+          {isIos || isAndroidSms ? (
+            <Checkbox
+              labelClassName="text-[0.875rem]"
+              checked={props.obfuscate}
+              onChange={props.onObfuscateChange}
+            >
+              Obfuscate - All message data is anonymized.
+            </Checkbox>
           ) : null}
-        </CollapsibleSection>
-      ) : null}
+          {isImazing ? (
+            <div className="w-full max-w-[28rem]">
+              <TimeZoneField
+                label="Time zone of the messages"
+                value={props.timeZone}
+                onChange={props.onTimeZoneChange}
+              />
+              <p className={hintStyle}>
+                Pre-filled from your profile. iMazing writes each message time without a zone, so
+                pick the one the phone was in.
+              </p>
+            </div>
+          ) : null}
+        </div>
+        <PhoneCountryField
+          value={props.phoneCountry}
+          countries={props.phoneCountries}
+          onChange={props.onPhoneCountryChange}
+        />
+        {whatsappFallbackPhone ? (
+          <StackedField label={WHATSAPP_OWNER_PHONE_LABEL} optional>
+            <input
+              type="text"
+              inputMode="tel"
+              aria-label={`${WHATSAPP_OWNER_PHONE_LABEL} (Optional)`}
+              value={props.whatsappOwnerPhone}
+              onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
+              placeholder="+1 555 555 0100"
+              className={fieldStyle}
+            />
+            <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
+          </StackedField>
+        ) : null}
+      </CollapsibleSection>
 
       {blockedBy ? (
         <p role="status" className="mt-2 mb-0 text-[0.813rem] text-muted">

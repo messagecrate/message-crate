@@ -4,6 +4,7 @@ import AddIdentityDialog from "../AddIdentityDialog";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import DataCard from "../DataCard";
+import IdentityCountryDialog from "../IdentityCountryDialog";
 import IdentityTable, { type IdentityRow } from "../IdentityTable";
 import type { ContactBrowseKind } from "./contactDrawerTypes";
 import { removeIdentityConfirmBody } from "./handleTableLogic";
@@ -16,6 +17,7 @@ function toIdentityRow(h: ContactHandle): IdentityRow {
   return {
     address: h.address,
     service: h.service,
+    country_unknown: h.country_unknown,
     start_date: h.start_date ?? null,
     end_date: h.end_date ?? null,
     conversations: h.conversations,
@@ -56,6 +58,11 @@ export function ContactDrawerHandles({
     setAdding,
     busy,
     error: mutationError,
+    failure,
+    countryTarget,
+    setCountryTarget,
+    requestPickCountry,
+    confirmCountry,
     removeTarget,
     setRemoveTarget,
     requestRemoveHandle,
@@ -99,7 +106,18 @@ export function ContactDrawerHandles({
         totalConversations={conversations}
         emptyText={loading ? "Loading…" : "No identities"}
         onRemove={requestRemove}
+        onPickCountry={(row) => requestPickCountry({ address: row.address, service: row.service })}
         onBrowse={onBrowse ? (row) => onBrowse({ kind: "all", handle: row.address }) : undefined}
+      />
+      <IdentityCountryDialog
+        open={countryTarget !== null}
+        address={countryTarget?.address ?? ""}
+        busy={busy}
+        error={countryTarget ? failure : null}
+        onClose={() => {
+          if (!busy) setCountryTarget(null);
+        }}
+        onPick={confirmCountry}
       />
       <AddIdentityDialog
         open={adding}

@@ -291,6 +291,7 @@ const baseForm = {
   whatsappBusiness: false,
   whatsappOwnerPhone: "",
   timeZone: "America/New_York",
+  phoneCountry: "",
   // What a resumed run reads back from its stored form. A new run reads the
   // server's limit instead and replaces this.
   assetMaxBytes: 512 * MIB,
@@ -2750,6 +2751,7 @@ const validSnapshot = {
   whatsappBusiness: false,
   whatsappOwnerPhone: "",
   timeZone: "America/New_York",
+  phoneCountry: "GB",
   backupPasswordGiven: false,
   whatsappKeyGiven: false,
   assetMaxBytes: 512 * MIB,

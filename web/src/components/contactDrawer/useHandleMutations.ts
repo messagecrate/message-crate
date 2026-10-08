@@ -11,6 +11,11 @@ import type { RemoveIdentityTarget } from "./handleTableLogic";
 export function useHandleMutations({ contactId }: { contactId: string }) {
   const [adding, setAdding] = useState(false);
   const [removeTarget, setRemoveTarget] = useState<RemoveIdentityTarget | null>(null);
+  // The identity whose country is being picked, as the list shows it.
+  const [countryTarget, setCountryTarget] = useState<{
+    address: string;
+    service: string | null;
+  } | null>(null);
   const updateContact = useUpdateContact();
   const busy = updateContact.isPending;
   // The dialogs stay open on a refusal and show this, so a person can retry.
@@ -41,6 +46,34 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     );
   };
 
+  const requestPickCountry = (target: { address: string; service: string | null }) => {
+    if (busy) return;
+    updateContact.reset();
+    setCountryTarget(target);
+  };
+
+  /**
+   * Pick the country of the number written without its `+` code. With
+   * `merge`, it joins the identity the server named as holding its `+` form.
+   */
+  const confirmCountry = ({ country, merge }: { country: string; merge: boolean }) => {
+    if (!countryTarget || busy) return;
+    updateContact.mutate(
+      {
+        contactId,
+        body: {
+          set_identity_country: {
+            address: countryTarget.address,
+            service: listedServerService(countryTarget.service),
+            country,
+            merge,
+          },
+        },
+      },
+      { onSuccess: () => setCountryTarget(null) },
+    );
+  };
+
   const confirmAdd = (args: { address: string; service: HandleService }) => {
     if (busy) return;
     updateContact.mutate(
@@ -57,6 +90,12 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     setAdding,
     busy,
     error,
+    /** The last refusal itself, so the country picker can tell a merge question from a failure. */
+    failure: updateContact.error,
+    countryTarget,
+    setCountryTarget,
+    requestPickCountry,
+    confirmCountry,
     removeTarget,
     setRemoveTarget,
     requestRemoveHandle,

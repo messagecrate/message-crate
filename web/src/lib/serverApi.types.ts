@@ -727,7 +727,13 @@ export interface paths {
         delete: operations["delete_contact"];
         options?: never;
         head?: never;
-        /** Rename a contact or change its linked identities. */
+        /**
+         * Rename a contact or change its linked identities.
+         * @description Exactly one of the body's fields is set. `set_identity_country` picks the
+         *     country of a phone number written without its `+` code; when another
+         *     identity already holds the `+` form it gives, the request answers
+         *     `409 Conflict` (`identity-exists`) unless it sets `merge`.
+         */
         patch: operations["update_contact"];
         trace?: never;
     };
@@ -1232,6 +1238,23 @@ export interface paths {
          *     Another account's message is `404`.
          */
         get: operations["get_message"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/phone-countries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The countries a phone number written without its `+` code can be read in, by ISO code. */
+        get: operations["list_phone_countries"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2472,6 +2495,17 @@ export interface components {
              *     adds only new ones. `append` when the request leaves it out.
              */
             mode?: components["schemas"]["ImportMode"];
+            /**
+             * @description The country of the phone the backup came from, as an ISO 3166-1
+             *     alpha-2 code such as `GB`, which `GET /v1/phone-countries` lists.
+             *     Every phone number the run's files write without its `+` code is
+             *     read as a number in that country and stored in its `+` form. Null,
+             *     or left out, states no country: such a number is stored as the
+             *     digits typed and matches no `+` number until a country is picked for
+             *     it. A code the list does not hold is refused with
+             *     `422 Unprocessable Entity`.
+             */
+            phone_country?: string | null;
             /** @description Absolute path to the run directory on the client that owns this Import Run. */
             run_dir?: string | null;
             /**
@@ -2863,6 +2897,13 @@ export interface components {
              */
             conversations: number;
             /**
+             * @description True for a phone number written without its `+` code whose country
+             *     nobody has stated: it is stored as the digits typed and matches no
+             *     number written with its `+` until a country is picked for it. A
+             *     short code, under 7 digits, has no `+` form and is never flagged.
+             */
+            country_unknown: boolean;
+            /**
              * Format: int64
              * @description The identity's messages in one-to-one conversations, trashed
              *     conversations and duplicates excluded.
@@ -3157,6 +3198,11 @@ export interface components {
              * @description Time spent parsing, when finished.
              */
             parse_ms: number | null;
+            /**
+             * @description The country the run states for phone numbers written without their
+             *     `+` code, as an ISO 3166-1 alpha-2 code; null when it states none.
+             */
+            phone_country: string | null;
             /**
              * Format: int64
              * @description Time spent preparing conversation files, when finished.
@@ -4242,6 +4288,13 @@ export interface components {
                  */
                 conversations: number;
                 /**
+                 * @description True for a phone number written without its `+` code whose country
+                 *     nobody has stated: it is stored as the digits typed and matches no
+                 *     number written with its `+` until a country is picked for it. A
+                 *     short code, under 7 digits, has no `+` form and is never flagged.
+                 */
+                country_unknown: boolean;
+                /**
                  * Format: int64
                  * @description The identity's messages in one-to-one conversations, trashed
                  *     conversations and duplicates excluded.
@@ -4384,6 +4437,11 @@ export interface components {
                  * @description Time spent parsing, when finished.
                  */
                 parse_ms: number | null;
+                /**
+                 * @description The country the run states for phone numbers written without their
+                 *     `+` code, as an ISO 3166-1 alpha-2 code; null when it states none.
+                 */
+                phone_country: string | null;
                 /**
                  * Format: int64
                  * @description Time spent preparing conversation files, when finished.
@@ -4762,6 +4820,33 @@ export interface components {
             total: number;
         };
         /** @description One page of a list. */
+        Page_PhoneCountry: {
+            /** @description The rows on this page. */
+            items: {
+                /**
+                 * @description Country calling code without the `+`, such as `44`. Countries that
+                 *     share a numbering plan share one: `1` is the United States, Canada and
+                 *     much of the Caribbean.
+                 */
+                calling_code: string;
+                /**
+                 * @description ISO 3166-1 alpha-2 code, upper case, such as `GB`: the value the
+                 *     import form's `phone_country` and an identity's `country` take. `XK`
+                 *     is Kosovo.
+                 */
+                code: string;
+            }[];
+            /** @description Page size used. */
+            limit: number;
+            /** @description Page offset used. */
+            offset: number;
+            /**
+             * Format: int64
+             * @description Rows matching the query across every page.
+             */
+            total: number;
+        };
+        /** @description One page of a list. */
         Page_SavedSearch: {
             /** @description The rows on this page. */
             items: {
@@ -4854,6 +4939,21 @@ export interface components {
          * @enum {string}
          */
         Permission: "import" | "export" | "delete";
+        /** @description One country a phone number can be read in. */
+        PhoneCountry: {
+            /**
+             * @description Country calling code without the `+`, such as `44`. Countries that
+             *     share a numbering plan share one: `1` is the United States, Canada and
+             *     much of the Caribbean.
+             */
+            calling_code: string;
+            /**
+             * @description ISO 3166-1 alpha-2 code, upper case, such as `GB`: the value the
+             *     import form's `phone_country` and an identity's `country` take. `XK`
+             *     is Kosovo.
+             */
+            code: string;
+        };
         /**
          * @description An RFC 7807 problem document: the body of every failure the server answers,
          *     served as `application/problem+json` (`docs/architecture/http-api.md`).
@@ -5134,6 +5234,29 @@ export interface components {
             /** @description The username the account logs in with. */
             username: string;
         };
+        /** @description A country picked for one phone number written without its `+` code. */
+        SetIdentityCountryRequest: {
+            /** @description The identity as the list shows it: the number as typed, without `+`. */
+            address: string;
+            /**
+             * @description The country the number is in, as an ISO 3166-1 alpha-2 code such as
+             *     `GB`, which `GET /v1/phone-countries` lists. The number takes the
+             *     `+` form that country gives it.
+             */
+            country: string;
+            /**
+             * @description Join the identity to the one already holding that `+` form, when
+             *     another does. Without it, such a request changes nothing and answers
+             *     `409 Conflict` (`identity-exists`), naming that identity, so the
+             *     person can be asked first.
+             */
+            merge?: boolean;
+            /**
+             * @description The service the identity is on. When omitted, the identity is found
+             *     on the phone service first, then WhatsApp.
+             */
+            service?: components["schemas"]["IdentityService"] | null;
+        };
         /** @description One tapback reaction on an exported message. */
         Tapback: {
             /** @description Emoji form of the reaction, when one exists. */
@@ -5219,6 +5342,15 @@ export interface components {
             /** @description Identities to unlink from the account profile. */
             remove_identities?: components["schemas"]["UnlinkAccountIdentityRequest"][];
             /**
+             * @description Country to pick for one of the account's phone numbers written
+             *     without its `+` code, one whose `country_unknown` is true. The number
+             *     takes the `+` form that country gives it, and joins the identity
+             *     already holding that form when `merge` is set; without `merge`, such
+             *     a request answers `409 Conflict` (`identity-exists`) and changes
+             *     nothing.
+             */
+            set_identity_country?: components["schemas"]["SetIdentityCountryRequest"] | null;
+            /**
              * @description IANA time zone to set, for example `America/New_York`; `None` leaves
              *     the current zone unchanged. An unknown name is a 422.
              */
@@ -5253,6 +5385,13 @@ export interface components {
             name?: string | null;
             /** @description Identity to unlink. */
             remove_identity?: components["schemas"]["RemoveContactIdentityRequest"] | null;
+            /**
+             * @description Country to pick for a phone number written without its `+` code,
+             *     one whose `country_unknown` is true. The number takes the `+` form
+             *     that country gives it, and joins the identity already holding that
+             *     form when `merge` is set.
+             */
+            set_identity_country?: components["schemas"]["SetIdentityCountryRequest"] | null;
             /** @description Identity to replace. */
             update_identity?: components["schemas"]["UpdateContactIdentityRequest"] | null;
         };
@@ -5826,6 +5965,15 @@ export interface operations {
             };
             /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
             406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`identity-exists`](https://messagecrate.app/docs/developer/reference/errors/identity-exists): The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9476,6 +9624,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            /** @description [`identity-exists`](https://messagecrate.app/docs/developer/reference/errors/identity-exists): The country picked for a phone number written without its `+` code gives it a `+` form that another identity on the same service already holds, so the two are one number. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
             413: {
                 headers: {
@@ -12166,6 +12323,71 @@ export interface operations {
             };
             /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_phone_countries: {
+        parameters: {
+            query?: {
+                /** @description Page size, default 40, max 500. */
+                limit?: number | null;
+                /** @description Page offset, max 50000. */
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_PhoneCountry"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

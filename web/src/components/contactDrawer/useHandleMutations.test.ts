@@ -21,6 +21,7 @@ function row(address: string, service: string): ContactHandle {
     direct_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
+    country_unknown: false,
   };
 }
 

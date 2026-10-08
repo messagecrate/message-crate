@@ -9,6 +9,11 @@ import { formatHandleServiceLabel } from "../lib/handleService";
 export type IdentityRow = {
   address: string;
   service: string | null;
+  /**
+   * A phone number written without its `+` code whose country nobody has
+   * stated: it matches no number written with its `+` until one is picked.
+   */
+  country_unknown?: boolean;
   /** When the oldest message the identity takes part in was sent, or null. */
   start_date: string | null;
   /** When the newest was sent, or null. */

@@ -38,6 +38,7 @@ const identities: Identity[] = [
     direct_messages: 12,
     group_messages: 30,
     orphaned_messages: 0,
+    country_unknown: false,
   },
   {
     address: "bob@example.com",
@@ -48,6 +49,7 @@ const identities: Identity[] = [
     direct_messages: 1,
     group_messages: 0,
     orphaned_messages: 0,
+    country_unknown: false,
   },
   {
     address: "archer@example.com",
@@ -58,6 +60,7 @@ const identities: Identity[] = [
     direct_messages: 0,
     group_messages: 0,
     orphaned_messages: 0,
+    country_unknown: false,
   },
 ];
 

@@ -838,6 +838,16 @@ export function listSearchFields(
   return readEveryPage<Schema["Page_FieldDoc"]>(path, opts);
 }
 
+// ── Phone countries ─────────────────────────────────────────────────────────
+
+/**
+ * Every country a phone number written without its `+` code can be read in,
+ * as the server keys numbers (#1676).
+ */
+export function listPhoneCountries(opts?: RequestOptions): Promise<Schema["PhoneCountry"][]> {
+  return readEveryPage<Schema["Page_PhoneCountry"]>("/v1/phone-countries", opts);
+}
+
 // ── Import Runs ─────────────────────────────────────────────────────────────
 
 /** The account's Import Runs, newest first, narrowed to one status when given. */
