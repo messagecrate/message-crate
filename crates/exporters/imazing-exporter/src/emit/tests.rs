@@ -1150,12 +1150,12 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
             (
                 Some("+15555550111"),
                 Some("Alice Example"),
-                Some(message_ir::HandleType::Phone)
+                Some(message_ir::IdentityType::Phone)
             ),
             (
                 Some("+15555550122"),
                 Some("Bob Example"),
-                Some(message_ir::HandleType::Phone)
+                Some(message_ir::IdentityType::Phone)
             ),
             (None, Some("Carol Silent"), None),
         ]
@@ -1659,7 +1659,7 @@ fn a_tel_number_and_a_tab_padded_number_are_one_address() {
         .collect();
     assert_eq!(
         participants,
-        vec![(Some("+15555550101"), Some(message_ir::HandleType::Phone))]
+        vec![(Some("+15555550101"), Some(message_ir::IdentityType::Phone))]
     );
 }
 
@@ -1688,12 +1688,12 @@ fn a_tel_label_in_a_roster_is_one_member() {
             (
                 Some("+15555550111"),
                 Some("Alice Example"),
-                Some(message_ir::HandleType::Phone)
+                Some(message_ir::IdentityType::Phone)
             ),
             (
                 Some("+15555550122"),
                 None,
-                Some(message_ir::HandleType::Phone)
+                Some(message_ir::IdentityType::Phone)
             ),
         ]
     );

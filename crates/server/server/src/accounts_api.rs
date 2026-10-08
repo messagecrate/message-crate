@@ -17,7 +17,6 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use message_ir::HandleService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -604,7 +603,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = message_ir::IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
@@ -614,7 +613,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = message_ir::IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(

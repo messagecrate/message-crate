@@ -1,8 +1,8 @@
 "use client";
 
-import type { HandleType } from "@/lib/handleKind";
+import type { IdentityType } from "@/lib/handleKind";
 
-const LABELS: Record<HandleType, string> = {
+const LABELS: Record<IdentityType, string> = {
   phone: "Phone",
   email: "Email",
   username: "Username",
@@ -14,7 +14,7 @@ export function HandleTypeBadge({
   type,
   className = "",
 }: {
-  type: HandleType | null | undefined;
+  type: IdentityType | null | undefined;
   className?: string;
 }) {
   if (!type) return null;

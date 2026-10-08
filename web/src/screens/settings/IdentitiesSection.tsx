@@ -6,8 +6,8 @@ import IdentityTable, { type IdentityRow } from "../../components/IdentityTable"
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { identityType } from "../../lib/backupIdentity";
 import {
-  type HandleService,
   listedServerService,
+  type OfferedService,
   type ServerService,
   serverService,
 } from "../../lib/handleService";
@@ -112,7 +112,7 @@ export function IdentitiesSection({
     }
   };
 
-  const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
+  const confirmAdd = async ({ address, service }: { address: string; service: OfferedService }) => {
     setAddError("");
     const identity = { address, service: serverService(service) };
     try {

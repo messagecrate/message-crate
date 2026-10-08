@@ -1,7 +1,7 @@
 import fs from "fs";
 
 import Database from "better-sqlite3";
-import { inferHandleType, normalizeHandle, type HandleType } from "./handleKind";
+import { inferHandleType, normalizeHandle, type IdentityType } from "./handleKind";
 import { formatPhoneDisplay } from "./phoneE164";
 import { ensureDbParentDir } from "./paths";
 
@@ -128,7 +128,7 @@ export function splitNameParts(name: string | null | undefined): {
 export function displayName(row: {
   preferred_name?: string | null;
   preferred_handle?: string | null;
-  preferred_handle_type?: HandleType | null;
+  preferred_handle_type?: IdentityType | null;
 }): string {
   const preferred = row.preferred_name?.trim();
   if (preferred) return preferred;
@@ -190,7 +190,7 @@ export function hasTrashedContactsTable(db: Database.Database): boolean {
 export type ContactHandleRow = {
   handle_id: number;
   raw: string;
-  handle_type: HandleType;
+  handle_type: IdentityType;
   service: string | null;
   /** Review note when the handle's normalized form is ambiguous (not E.164). */
   normalized_note: string | null;
@@ -245,7 +245,7 @@ export function preferredHandleOf(handles: ContactHandleRow[]): string | null {
 /** Handle type of the preferred handle, if any. */
 export function preferredHandleTypeOf(
   handles: ContactHandleRow[],
-): HandleType | null {
+): IdentityType | null {
   const first = handles[0];
   return first ? first.handle_type : null;
 }
@@ -261,7 +261,7 @@ export function handleIdsForRaws(
   raws: string[],
   service = "phone",
 ): number[] {
-  const seen = new Map<string, { type: HandleType; normalized: string }>();
+  const seen = new Map<string, { type: IdentityType; normalized: string }>();
   for (const raw of raws) {
     const trimmed = raw.trim();
     if (!trimmed) continue;

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
-import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
+import { listedServerService, type OfferedService, serverService } from "../../lib/handleService";
 import { formatHandleServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
@@ -41,7 +41,7 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     );
   };
 
-  const confirmAdd = (args: { address: string; service: HandleService }) => {
+  const confirmAdd = (args: { address: string; service: OfferedService }) => {
     if (busy) return;
     updateContact.mutate(
       {

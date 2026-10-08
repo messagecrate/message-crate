@@ -12,10 +12,10 @@ import {
   DUPLICATE_HANDLE_MESSAGE,
   HANDLE_SERVICE_OPTIONS,
   HANDLE_SERVICES,
-  type HandleService,
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
+  type OfferedService,
   serverService,
 } from "../lib/handleService";
 import { newId } from "../lib/newId";
@@ -64,10 +64,10 @@ export const SAME_GESTURE_MS = 150;
 interface HandleInput {
   id: string;
   handle: string;
-  service: HandleService;
+  service: OfferedService;
 }
 
-function newHandleRow(handle = "", service: HandleService = "phone"): HandleInput {
+function newHandleRow(handle = "", service: OfferedService = "phone"): HandleInput {
   return { id: newId(), handle, service };
 }
 
@@ -107,7 +107,7 @@ function rowErrors(rows: HandleInput[]): Map<string, string> {
  * the placeholder does, so it is set slightly larger than the icons that only
  * decorate a label.
  */
-function serviceIcon(service: HandleService) {
+function serviceIcon(service: OfferedService) {
   return service === "email" ? <PersonIcon size={18} /> : <PhoneIcon size={18} />;
 }
 

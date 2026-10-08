@@ -1,12 +1,12 @@
 "use client";
 
 import type { ContactHandle } from "@/lib/types";
-import { inferHandleType, type HandleType } from "@/lib/handleKind";
+import { inferHandleType, type IdentityType } from "@/lib/handleKind";
 
 /** One handle row in the contact edit draft (raw + explicit identity type). */
 export type ContactEditDraftHandle = {
   raw: string;
-  handle_type: HandleType;
+  handle_type: IdentityType;
   /** Review note for an ambiguous normalized value; cleared when the raw is edited. */
   normalizedNote?: string | null;
 };
@@ -20,7 +20,7 @@ export type ContactEditDraft = {
 /** Handles to persist: non-empty trimmed rows with their types. */
 export type ContactEditDraftSaveHandle = {
   raw: string;
-  handle_type: HandleType;
+  handle_type: IdentityType;
 };
 
 export function seedContactEditDraft(contact: {
@@ -113,7 +113,7 @@ export function updateHandleAt(
 export function setHandleTypeAt(
   handles: ContactEditDraftHandle[],
   index: number,
-  handle_type: HandleType,
+  handle_type: IdentityType,
 ): ContactEditDraftHandle[] {
   const next = [...handles];
   const row = next[index] ?? { raw: "", handle_type };
@@ -147,7 +147,7 @@ export function handlesForSave(
     .filter((h) => h.raw !== "");
 }
 
-const HANDLE_TYPE_OPTIONS: Array<{ value: HandleType; label: string }> = [
+const HANDLE_TYPE_OPTIONS: Array<{ value: IdentityType; label: string }> = [
   { value: "phone", label: "Phone" },
   { value: "email", label: "Email" },
   { value: "username", label: "Username" },
@@ -189,7 +189,7 @@ export function ContactHandleList({
                   setHandleTypeAt(
                     handles,
                     index,
-                    e.target.value as HandleType,
+                    e.target.value as IdentityType,
                   ),
                 )
               }

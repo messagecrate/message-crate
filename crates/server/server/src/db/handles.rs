@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use message_ir::{HandleService, HandleType};
+use message_ir::IdentityType;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -20,7 +20,7 @@ pub type HandleIdCache = HashMap<(String, String, String, String), i64>;
 /// number); otherwise digits-as-is with a review note — a trunk-zero
 /// `020 7946 0000` becomes `02079460000` flagged, never `+02079460000`.
 /// Email: lowercased. Username/Other: verbatim (trimmed).
-pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<String>) {
+pub fn normalize_handle(raw: &str, handle_type: IdentityType) -> (String, Option<String>) {
     phone::normalize_typed_handle(raw, handle_type)
 }
 
@@ -28,8 +28,8 @@ pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<S
 /// the one rule for what an address looks like. A blank address is `Other`.
 /// An import never stores this type without asking the service first:
 /// [`handle_type_on`] does both.
-pub fn handle_type_of(address: &str) -> HandleType {
-    phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
+pub fn handle_type_of(address: &str) -> IdentityType {
+    phone::Handle::parse(address).map_or(IdentityType::Other, |handle| handle.kind())
 }
 
 /// The type an import gives an address it meets on `service`: the service
@@ -45,11 +45,11 @@ pub fn handle_type_of(address: &str) -> HandleType {
 /// phone number on every service (#1144).
 pub fn handle_type_on(
     address: &str,
-    stated: Option<HandleType>,
-    service: HandleService,
-) -> HandleType {
+    stated: Option<IdentityType>,
+    service: message_ir::IdentityService,
+) -> IdentityType {
     match (service, stated.unwrap_or_else(|| handle_type_of(address))) {
-        (HandleService::Whatsapp, HandleType::Email) => HandleType::Other,
+        (message_ir::IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
         (_, kind) => kind,
     }
 }
@@ -74,11 +74,11 @@ pub struct EmailOnWhatsapp {
 /// [`EmailOnWhatsapp`] for an email address on WhatsApp.
 pub fn check_service_carries(
     address: &str,
-    service: HandleService,
-    handle_type: HandleType,
+    service: message_ir::IdentityService,
+    handle_type: IdentityType,
 ) -> std::result::Result<(), EmailOnWhatsapp> {
     match (service, handle_type) {
-        (HandleService::Whatsapp, HandleType::Email) => Err(EmailOnWhatsapp {
+        (message_ir::IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
             address: address.to_string(),
         }),
         _ => Ok(()),
@@ -94,6 +94,10 @@ pub fn check_service_carries(
 // Any other word is refused, naming the two. Read as `phone`, a misspelt
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
+//
+// `message_ir::IdentityService` is the conversation file's enum of the same
+// two services, whose `parse` reads every word but `whatsapp` and `wa` as
+// `phone`; the `From` impls below convert between the two.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
@@ -105,16 +109,16 @@ pub enum IdentityService {
     Whatsapp,
 }
 
-impl From<HandleService> for IdentityService {
-    fn from(service: HandleService) -> Self {
+impl From<message_ir::IdentityService> for IdentityService {
+    fn from(service: message_ir::IdentityService) -> Self {
         match service {
-            HandleService::Phone => Self::Phone,
-            HandleService::Whatsapp => Self::Whatsapp,
+            message_ir::IdentityService::Phone => Self::Phone,
+            message_ir::IdentityService::Whatsapp => Self::Whatsapp,
         }
     }
 }
 
-impl From<IdentityService> for HandleService {
+impl From<IdentityService> for message_ir::IdentityService {
     fn from(service: IdentityService) -> Self {
         match service {
             IdentityService::Phone => Self::Phone,
@@ -133,7 +137,7 @@ pub async fn existing_handle_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    service: HandleService,
+    service: message_ir::IdentityService,
 ) -> Result<Option<i64>> {
     let raw = raw.trim();
     let key = phone::Handle::parse(raw).map_or_else(|| raw.to_string(), phone::Handle::into_key);
@@ -158,11 +162,13 @@ pub async fn upsert_handle_row(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
 ) -> Result<(i64, bool)> {
     let (normalized, note) = normalize_handle(raw, handle_type);
-    let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
+    let platform = message_ir::IdentityService::parse(
+        service.unwrap_or(message_ir::IdentityService::Phone.as_str()),
+    );
     let service_str = platform.as_str();
     let inserted = sqlx::query(
         "INSERT INTO handles (account_id, raw, normalized, normalized_note, handle_type, service)
@@ -199,11 +205,13 @@ pub async fn upsert_handle_row_cached(
     cache: &mut HandleIdCache,
     account_id: i64,
     raw: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
     service: Option<&str>,
 ) -> Result<(i64, bool, bool)> {
     let (normalized, _) = normalize_handle(raw, handle_type);
-    let platform = HandleService::parse(service.unwrap_or(HandleService::Phone.as_str()));
+    let platform = message_ir::IdentityService::parse(
+        service.unwrap_or(message_ir::IdentityService::Phone.as_str()),
+    );
     let key = (
         account_id.to_string(),
         normalized,
@@ -382,7 +390,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -395,7 +403,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             ambiguous,
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -406,7 +414,7 @@ mod tests {
             &mut conn,
             TEST_ACCOUNT,
             ambiguous,
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -432,7 +440,7 @@ mod tests {
             &mut cache,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await
@@ -442,7 +450,7 @@ mod tests {
             &mut cache,
             TEST_ACCOUNT,
             "+15555550100",
-            HandleType::Phone,
+            IdentityType::Phone,
             Some("phone"),
         )
         .await

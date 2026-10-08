@@ -3,7 +3,7 @@ import {
   restoreHandle,
   trashHandle,
 } from "@/lib/handlesWrite";
-import type { HandleType } from "@/lib/handleKind";
+import type { IdentityType } from "@/lib/handleKind";
 import { ensureUnknownContacts } from "@/lib/contactsWrite";
 import {
   unauthorizedResponse,
@@ -26,7 +26,7 @@ type TrashBody = { handle?: string; handle_type?: unknown; permanent?: boolean }
 
 function parseBody(body: TrashBody): {
   handle: string;
-  handleType: HandleType | undefined;
+  handleType: IdentityType | undefined;
 } | null {
   const handle = body.handle?.trim() ?? "";
   if (!handle) return null;
@@ -34,7 +34,7 @@ function parseBody(body: TrashBody): {
   if (rawType !== undefined && !isHandleType(rawType)) {
     throw new Error("invalid handle_type");
   }
-  return { handle, handleType: rawType as HandleType | undefined };
+  return { handle, handleType: rawType as IdentityType | undefined };
 }
 
 export async function POST(req: Request) {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  let parsed: { handle: string; handleType: HandleType | undefined } | null = null;
+  let parsed: { handle: string; handleType: IdentityType | undefined } | null = null;
   try {
     parsed = parseBody(body);
   } catch {
@@ -79,7 +79,7 @@ export async function DELETE(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  let parsed: { handle: string; handleType: HandleType | undefined } | null = null;
+  let parsed: { handle: string; handleType: IdentityType | undefined } | null = null;
   try {
     parsed = parseBody(body);
   } catch {

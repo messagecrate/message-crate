@@ -9,7 +9,7 @@
 //! mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, HandleType,
+    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
     IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
     IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, PendingAttachment,
     PendingConversation, PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
@@ -429,7 +429,7 @@ pub fn default_participants(
         .map(|h| IrParticipant {
             identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
-            identity_type: Some(HandleType::Phone),
+            identity_type: Some(IdentityType::Phone),
         })
         .collect();
     if participants.is_empty()
@@ -453,7 +453,7 @@ pub fn default_participants(
                     .get(chat_id)
                     .cloned()
                     .or_else(|| convo.first_contact_name()),
-                identity_type: Some(HandleType::Phone),
+                identity_type: Some(IdentityType::Phone),
             });
         }
     }

@@ -225,7 +225,9 @@ Every identity a conversation or a message uses is on a contact; one taken
 off its contact goes to a new contact with no name.
 
 Handle is the word in the database and the server code over it for the same
-thing; the conversation file and the HTTP API say identity.
+thing; the conversation file and the HTTP API say identity. The shared enums are
+named for the file, `IdentityType` and `IdentityService`, and the server's
+handle code uses them under those names.
 _Avoid_: Handle, Address, Number
 
 **Participant**:

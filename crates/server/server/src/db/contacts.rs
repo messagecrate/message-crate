@@ -344,10 +344,10 @@ pub async fn live_contact_exists(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnService {
     /// Only the row on this service.
-    Only(message_ir::HandleService),
+    Only(message_ir::IdentityService),
     /// The row on this service when there is one, else the phone row, then
     /// WhatsApp, then anything else. `None` names no service to prefer.
-    Preferring(Option<message_ir::HandleService>),
+    Preferring(Option<message_ir::IdentityService>),
 }
 
 /// Id and service of the handle row for `raw` that is linked to this
@@ -362,7 +362,7 @@ pub async fn linked_handle_id(
     contact_id: i64,
     raw: &str,
     on: OnService,
-) -> Result<Option<(i64, message_ir::HandleService)>> {
+) -> Result<Option<(i64, message_ir::IdentityService)>> {
     let needle = raw.trim();
     if needle.is_empty() {
         return Ok(None);
@@ -389,11 +389,11 @@ pub async fn linked_handle_id(
     .bind(account_id)
     .bind(contact_id)
     .bind(needle)
-    .bind(service.map(message_ir::HandleService::as_str))
+    .bind(service.map(message_ir::IdentityService::as_str))
     .bind(only)
     .fetch_optional(&mut *conn)
     .await?;
-    Ok(row.map(|(id, service)| (id, message_ir::HandleService::parse(&service))))
+    Ok(row.map(|(id, service)| (id, message_ir::IdentityService::parse(&service))))
 }
 
 /// Where an identity goes when it leaves its contact.

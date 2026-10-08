@@ -221,7 +221,7 @@ impl IrConversationType {
 /// Kind of a participant identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum HandleType {
+pub enum IdentityType {
     /// Telephone number.
     Phone,
     /// Email address.
@@ -232,7 +232,7 @@ pub enum HandleType {
     Other,
 }
 
-impl HandleType {
+impl IdentityType {
     /// Lowercase storage id (`phone` / `email` / `username` / `other`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -300,7 +300,7 @@ pub struct IrParticipant {
     pub display_name: Option<String>,
     /// Known kind of `identity`; `None` when the source did not record one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity_type: Option<HandleType>,
+    pub identity_type: Option<IdentityType>,
 }
 
 /// Transport a message arrived on.
@@ -365,14 +365,14 @@ impl IrService {
 /// UI labels: `Phone` → "Text message", `Whatsapp` → "WhatsApp".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum HandleService {
+pub enum IdentityService {
     /// Phone platform (SMS/iMessage/RCS are transports, not platforms).
     Phone,
     /// WhatsApp platform.
     Whatsapp,
 }
 
-impl HandleService {
+impl IdentityService {
     /// Lowercase storage id (`phone` / `whatsapp`).
     pub fn as_str(self) -> &'static str {
         match self {
@@ -1246,7 +1246,7 @@ mod conversation_stem_tests {
 
 #[cfg(test)]
 mod handle_service_tests {
-    use super::HandleService;
+    use super::IdentityService;
 
     #[test]
     fn parse_phone_aliases() {
@@ -1259,14 +1259,17 @@ mod handle_service_tests {
             "Text message",
             "text_message",
         ] {
-            assert_eq!(HandleService::parse(s), HandleService::Phone, "{s}");
+            assert_eq!(IdentityService::parse(s), IdentityService::Phone, "{s}");
         }
     }
 
     #[test]
     fn parse_whatsapp() {
-        assert_eq!(HandleService::parse("whatsapp"), HandleService::Whatsapp);
-        assert_eq!(HandleService::parse("WA"), HandleService::Whatsapp);
+        assert_eq!(
+            IdentityService::parse("whatsapp"),
+            IdentityService::Whatsapp
+        );
+        assert_eq!(IdentityService::parse("WA"), IdentityService::Whatsapp);
     }
 }
 
@@ -1303,12 +1306,12 @@ mod storage_id_round_trip_tests {
     #[test]
     fn handle_type() {
         for v in [
-            HandleType::Phone,
-            HandleType::Email,
-            HandleType::Username,
-            HandleType::Other,
+            IdentityType::Phone,
+            IdentityType::Email,
+            IdentityType::Username,
+            IdentityType::Other,
         ] {
-            assert_eq!(HandleType::parse(v.as_str()), v);
+            assert_eq!(IdentityType::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }
@@ -1333,8 +1336,8 @@ mod storage_id_round_trip_tests {
 
     #[test]
     fn handle_service() {
-        for v in [HandleService::Phone, HandleService::Whatsapp] {
-            assert_eq!(HandleService::parse(v.as_str()), v);
+        for v in [IdentityService::Phone, IdentityService::Whatsapp] {
+            assert_eq!(IdentityService::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }
     }

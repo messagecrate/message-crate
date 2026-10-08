@@ -1,13 +1,17 @@
 import type { components } from "./serverApi.types";
 
-/** Messaging service ids used on profiles, setup, and contacts. */
-export type HandleService = "phone" | "email" | "whatsapp";
+/**
+ * A service offered wherever an identity is added: setup, the account
+ * profile, and the contact drawer. `email` is offered on its own; the server
+ * takes it as `phone` (`serverService`).
+ */
+export type OfferedService = "phone" | "email" | "whatsapp";
 
 export const HANDLE_SERVICES = [
   "phone",
   "email",
   "whatsapp",
-] as const satisfies readonly HandleService[];
+] as const satisfies readonly OfferedService[];
 
 /** The service the server takes for an identity: `phone` or `whatsapp`. */
 export type ServerService = components["schemas"]["IdentityService"];
@@ -18,7 +22,7 @@ export type ServerService = components["schemas"]["IdentityService"];
  * an identity by its address, never by its service, and refuses `email` as a
  * service.
  */
-export function serverService(service: HandleService): ServerService {
+export function serverService(service: OfferedService): ServerService {
   switch (service) {
     case "phone":
     case "email":
@@ -52,13 +56,13 @@ export const HANDLE_SERVICE_OPTIONS = [
   { value: "email", label: "Email", placeholder: "you@example.com" },
   { value: "whatsapp", label: "WhatsApp", placeholder: EXAMPLE_PHONE },
 ] as const satisfies ReadonlyArray<{
-  value: HandleService;
+  value: OfferedService;
   label: string;
   placeholder: string;
 }>;
 
 /** Example shown in an empty value field for `service`. */
-export function handlePlaceholder(service: HandleService): string {
+export function handlePlaceholder(service: OfferedService): string {
   return HANDLE_SERVICE_OPTIONS.find((option) => option.value === service)?.placeholder ?? "";
 }
 
@@ -72,7 +76,7 @@ export function handlePlaceholder(service: HandleService): string {
  * pass. Seven digits is the shortest real subscriber number and fifteen is the
  * most E.164 allows.
  */
-export function handleValidationError(service: HandleService, value: string): string | null {
+export function handleValidationError(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
@@ -109,7 +113,7 @@ export const DUPLICATE_HANDLE_MESSAGE = "This account is already in the list.";
  * that really are different, and a missed duplicate costs far less than an
  * error the person cannot talk their way out of.
  */
-export function handleDuplicateKey(service: HandleService, value: string): string | null {
+export function handleDuplicateKey(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const normalized =

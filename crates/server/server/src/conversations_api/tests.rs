@@ -1,7 +1,7 @@
 use super::*;
 use crate::db::conversations::{ConversationSort, display_service_label};
 use crate::db::participant_names::Participant;
-use message_ir::HandleType;
+use message_ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
@@ -75,10 +75,14 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     let fixture = test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let peer =
-        account_profile::link_account_handle(&mut conn, account, "+15555550135", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550135",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file
@@ -164,7 +168,7 @@ async fn list_conversations_finds_a_handle_across_platforms() {
         &mut conn,
         account,
         "+15555550135",
-        HandleType::Phone,
+        IdentityType::Phone,
         Some("whatsapp"),
     )
     .await
@@ -236,10 +240,14 @@ async fn list_conversations_sorts_by_date_or_message_count() {
         .await;
     }
 
-    let peer2 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550143", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer2 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550143",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file
@@ -334,10 +342,14 @@ async fn list_conversations_paginates() {
     let (pool, _fixture, account) = conversations_setup().await;
     let mut conn = pool.acquire().await.unwrap();
     // Second conversation + message.
-    let peer2 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550143", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer2 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550143",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file
@@ -475,10 +487,14 @@ async fn list_conversations_filters_by_contact_and_type() {
     .unwrap();
 
     // Unrelated group conversation (no link to Sam).
-    let other =
-        account_profile::link_account_handle(&mut conn, account, "+15555550167", HandleType::Phone)
-            .await
-            .unwrap();
+    let other = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550167",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, group_title, source_file
@@ -499,7 +515,7 @@ async fn list_conversations_filters_by_contact_and_type() {
 
     // Group that includes Sam (distinct chat handle; Sam is a participant).
     let group_chat =
-        account_profile::link_account_handle(&mut conn, account, "chat123456", HandleType::Other)
+        account_profile::link_account_handle(&mut conn, account, "chat123456", IdentityType::Other)
             .await
             .unwrap();
     sqlx::query(
@@ -657,16 +673,24 @@ async fn list_conversations_filters_by_participant_count() {
     let mut conn = pool.acquire().await.unwrap();
     // conversations_setup() has conversation 1 with 1 participant.
 
-    let p2 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550145", HandleType::Phone)
-            .await
-            .unwrap();
-    let p3 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550146", HandleType::Phone)
-            .await
-            .unwrap();
+    let p2 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550145",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
+    let p3 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550146",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     let group_chat =
-        account_profile::link_account_handle(&mut conn, account, "chat-big", HandleType::Other)
+        account_profile::link_account_handle(&mut conn, account, "chat-big", IdentityType::Other)
             .await
             .unwrap();
     sqlx::query(
@@ -727,20 +751,32 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     // conversations_setup() already owns conversation 1 with 1 participant, which the
     // `=3` filter below must exclude.
 
-    let p2 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550148", HandleType::Phone)
-            .await
-            .unwrap();
-    let p3 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550149", HandleType::Phone)
-            .await
-            .unwrap();
-    let p4 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550150", HandleType::Phone)
-            .await
-            .unwrap();
+    let p2 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550148",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
+    let p3 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550149",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
+    let p4 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550150",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     let group_chat =
-        account_profile::link_account_handle(&mut conn, account, "chat-trio", HandleType::Other)
+        account_profile::link_account_handle(&mut conn, account, "chat-trio", IdentityType::Other)
             .await
             .unwrap();
     sqlx::query(
@@ -818,14 +854,22 @@ async fn list_conversations_filters_by_import_id() {
     .await
     .unwrap();
 
-    let peer1 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550135", HandleType::Phone)
-            .await
-            .unwrap();
-    let peer2 =
-        account_profile::link_account_handle(&mut conn, account, "+15555550143", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer1 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550135",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
+    let peer2 = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550143",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
 
     sqlx::query(
         "INSERT INTO conversations (
@@ -976,9 +1020,10 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     .unwrap();
 
     for (id, raw) in [(3, "+15555550147"), (4, "+15555550148")] {
-        let peer = account_profile::link_account_handle(&mut conn, account, raw, HandleType::Phone)
-            .await
-            .unwrap();
+        let peer =
+            account_profile::link_account_handle(&mut conn, account, raw, IdentityType::Phone)
+                .await
+                .unwrap();
         sqlx::query(
             "INSERT INTO conversations (
                 id, account_id, chat_handle_id, conversation_type, source_file
@@ -1169,10 +1214,14 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     .await
     .unwrap();
 
-    let peer =
-        account_profile::link_account_handle(&mut conn, account, "+15555550147", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550147",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file
@@ -1193,10 +1242,14 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     .unwrap();
 
     // Canonical message in another conversation (winner for dedupe).
-    let peer_other =
-        account_profile::link_account_handle(&mut conn, account, "+15555550148", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer_other = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550148",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file

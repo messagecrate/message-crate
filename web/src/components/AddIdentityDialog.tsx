@@ -2,11 +2,11 @@ import { useEffect, useId, useState } from "react";
 import {
   HANDLE_SERVICE_OPTIONS,
   HANDLE_SERVICES,
-  type HandleService,
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
   inferService,
+  type OfferedService,
 } from "../lib/handleService";
 import { parseSelectKey } from "../lib/selectKey";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
@@ -27,7 +27,7 @@ const DUPLICATE_MESSAGE = "This identity is already in the list.";
 function alreadyListed(
   existing: readonly { address: string; service?: string | null }[],
   handle: string,
-  service: HandleService,
+  service: OfferedService,
 ): boolean {
   const key = handleDuplicateKey(service, handle);
   if (!key) return false;
@@ -62,9 +62,9 @@ export default function AddIdentityDialog({
   error?: string;
   existing?: readonly { address: string; service?: string | null }[];
   onClose: () => void;
-  onConfirm: (args: { address: string; service: HandleService }) => void;
+  onConfirm: (args: { address: string; service: OfferedService }) => void;
 }) {
-  const [service, setService] = useState<HandleService>("phone");
+  const [service, setService] = useState<OfferedService>("phone");
   const [handle, setHandle] = useState("");
   const [invalid, setInvalid] = useState("");
   const serviceId = useId();

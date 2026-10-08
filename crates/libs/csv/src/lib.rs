@@ -60,18 +60,18 @@ pub struct ParticipantCell {
     #[serde(default)]
     pub display_name: String,
     /// Explicit `null` → `None`; any string is parsed leniently via
-    /// [`message_ir::HandleType::parse`]. The writer always writes the field.
+    /// [`message_ir::IdentityType::parse`]. The writer always writes the field.
     #[serde(deserialize_with = "deserialize_identity_type")]
-    pub identity_type: Option<message_ir::HandleType>,
+    pub identity_type: Option<message_ir::IdentityType>,
 }
 
 /// Parse an identity type cell, accepting `null`.
-fn deserialize_identity_type<'de, D>(de: D) -> Result<Option<message_ir::HandleType>, D::Error>
+fn deserialize_identity_type<'de, D>(de: D) -> Result<Option<message_ir::IdentityType>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
     let s = Option::<String>::deserialize(de)?;
-    Ok(s.map(|s| message_ir::HandleType::parse(&s)))
+    Ok(s.map(|s| message_ir::IdentityType::parse(&s)))
 }
 
 /// Timestamp formatting (defined in `message-ir`, where the shared
@@ -138,7 +138,7 @@ pub fn field(rec: &csv::StringRecord, idx: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{ParticipantCell, col, field, json_cell, parse_bool};
-    use message_ir::HandleType;
+    use message_ir::IdentityType;
 
     #[test]
     fn col_finds_a_column_by_name_and_names_a_missing_one() {
@@ -171,7 +171,7 @@ mod tests {
         assert_eq!(json_cell(&vec!["a", "b"]), r#"["a","b"]"#);
     }
 
-    fn identity_type_of(json: &str) -> Option<HandleType> {
+    fn identity_type_of(json: &str) -> Option<IdentityType> {
         serde_json::from_str::<ParticipantCell>(json)
             .unwrap()
             .identity_type
@@ -189,7 +189,7 @@ mod tests {
     fn a_participant_cell_identity_type_is_parsed_leniently() {
         assert_eq!(
             identity_type_of(r#"{"identity": "+15555550101", "identity_type": "Phone"}"#),
-            Some(HandleType::Phone)
+            Some(IdentityType::Phone)
         );
     }
 

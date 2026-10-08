@@ -12,7 +12,7 @@ use crate::test_support::{
     post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status, register_via_api,
     seed_conversation, seed_one_message, test_fixture,
 };
-use message_ir::HandleType;
+use message_ir::IdentityType;
 
 fn member(id: i64) -> String {
     format!("/v1/accounts/{id}")
@@ -2582,7 +2582,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         &mut conn,
         account_id,
         "+15555550100",
-        HandleType::Phone,
+        IdentityType::Phone,
         Some("phone"),
     )
     .await

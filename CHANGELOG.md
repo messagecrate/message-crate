@@ -66,6 +66,12 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-07: **The code names an identity's type and service as the
+  conversation file does.** The shared enums behind a conversation file's
+  `identity_type` and `service` fields are now `IdentityType` and
+  `IdentityService`, where they were `HandleType` and `HandleService`. The
+  database's `handles` tables and the server code over them keep the word
+  handle. Nothing changes on screen, on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
   headings.** The summary at the end of an import or a Convert gives its
   Import Errors under an "Import Errors" heading and its notes under a
