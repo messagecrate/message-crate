@@ -3,9 +3,15 @@ import type { ReactNode } from "react";
 /**
  * A photo or video in the conversation: a frame of one height, so a
  * Thumbnail that loads above the messages on screen does not push them down,
- * holding whatever the caller draws over it. It is never wider than its
- * message, so a thread at the right pane's 320 px minimum (#1722) does not
- * scroll sideways; a wider picture is cropped.
+ * holding whatever the caller draws over it.
+ *
+ * The frame's 280 px cap is in pixels, because the message around it sizes
+ * itself to its content and a percentage cap is ignored while it does; with
+ * one the message grew to the picture's own width. The picture's cap is a
+ * percentage as well, which also makes it shrink below its own width, so in
+ * a message narrower than 280 px, as in the right pane's 320 px minimum
+ * (#1722), the frame takes the message's width and object-cover crops the
+ * picture instead of the thread scrolling sideways.
  */
 export function ThumbnailTile({
   tileRef,
@@ -15,7 +21,7 @@ export function ThumbnailTile({
   children: ReactNode;
 }) {
   return (
-    <div ref={tileRef} className="relative mt-1.5 h-[200px] w-fit max-w-[min(280px,100%)]">
+    <div ref={tileRef} className="relative mt-1.5 h-[200px] w-fit max-w-[280px]">
       {children}
     </div>
   );
