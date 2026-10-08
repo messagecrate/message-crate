@@ -31,7 +31,10 @@ released versions carry their date on the heading.
   search that narrows the lines as it is typed, and a download of the log as
   it is. Each line of an Import Run's log now carries its time and level, the
   run's Import Errors rows are in it, and its first line names the run, the
-  account that ran it and the server (#1665).
+  account that ran it, the server's address and the Message Crate's id.
+  `GET /v1/server` answers that id, which the server writes when its
+  database is made, so two Message Crates at one address, such as the
+  desktop app's own server and a Docker one, are told apart (#1665).
 - 2026-10-06: **A message recorded once to the second and once to the
   millisecond shows once.** Every message file now says whether each
   message's time has milliseconds or only whole seconds, as its backup app
