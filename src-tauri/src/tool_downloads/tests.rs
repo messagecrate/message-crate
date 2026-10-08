@@ -5,6 +5,16 @@ use std::ffi::OsString;
 use httpmock::prelude::*;
 
 /// The SHA-256 of `bytes`, in lowercase hex.
+impl Retry {
+    /// The check's thread, when one started.
+    fn started(self) -> Option<JoinHandle<()>> {
+        match self {
+            Self::Started(handle) => Some(handle),
+            Self::AlreadyRunning | Self::CouldNotStart => None,
+        }
+    }
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -983,6 +993,7 @@ fn try_again_runs_the_check_once_and_returns_at_once() {
         &downloads,
         &[Program::Wtsexporter],
     )
+    .started()
     .expect("a check started");
     assert!(
         started.elapsed() < Duration::from_millis(400),
@@ -1027,7 +1038,10 @@ fn try_again_while_a_check_runs_starts_nothing() {
         &[Program::Wtsexporter],
     );
 
-    assert!(check.is_none(), "a second check started");
+    assert!(
+        matches!(check, Retry::AlreadyRunning),
+        "a second check started"
+    );
     asked.assert_calls(0);
     assert_eq!(downloads.get(Program::Wtsexporter), Some(running));
 }
@@ -1092,6 +1106,7 @@ fn a_check_counts_as_running_until_it_ends() {
         &downloads,
         &[],
     )
+    .started()
     .expect("a check started");
     assert!(downloads.checking(), "Try again's check is not running");
     check.join().unwrap();
@@ -1159,6 +1174,7 @@ fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
         &downloads,
         &[Program::Wtsexporter],
     )
+    .started()
     .expect("a check started");
     let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {});
     check.join().unwrap();

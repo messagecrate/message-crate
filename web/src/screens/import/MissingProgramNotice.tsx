@@ -3,7 +3,11 @@ import type { ToolName, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
 import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
 import { accentLink } from "../../lib/uiStyles";
-import { useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
+import {
+  OTHER_CHECK_POLL_FOR_MS,
+  useRetryToolDownloads,
+  useToolsStatus,
+} from "../../lib/useToolsStatus";
 
 /** What a program is needed for: a WhatsApp import, or Convert and Compress. */
 export type ProgramNeed = "whatsapp" | "media";
@@ -44,11 +48,15 @@ function consequence(
  */
 export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offerRetry?: boolean }) {
   const retry = useRetryToolDownloads();
-  // Try again started nothing because a check already runs (the start-up
-  // check, say, still on another program): the status is asked for until
-  // that check ends, and this says why nothing new started meanwhile.
-  const checking = useToolsStatus().data?.checking ?? false;
-  const alreadyRunning = retry.data === false && checking;
+  // Try again started nothing because a check already holds the Tools
+  // Directory: the start-up check, say, still on another program, or
+  // another app's. `checking` counts only this process's checks, so the
+  // status is also asked for every 2 s for two minutes, and this says why
+  // nothing new started meanwhile.
+  const alreadyRunning = retry.data === "alreadyRunning";
+  useToolsStatus({
+    otherCheckUntil: alreadyRunning ? retry.submittedAt + OTHER_CHECK_POLL_FOR_MS : 0,
+  });
   return (
     <div className="mt-1 flex flex-wrap items-center gap-3">
       {offerRetry ? (

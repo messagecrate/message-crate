@@ -978,7 +978,7 @@ describe("ImportFormFields programs the import needs", () => {
           }),
         )
         .mockResolvedValue(status({}));
-      return false;
+      return "alreadyRunning";
     });
     renderForm(readyWhatsapp);
 
@@ -991,6 +991,29 @@ describe("ImportFormFields programs the import needs", () => {
     ).toBeTruthy();
     await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
   });
+
+  it("Try again while another app's check runs says so, and asks until the program arrives", async () => {
+    const user = setupUser();
+    desktop.isTauri = true;
+    const failed = status({ wtsexporter: { state: "downloadFailed", reason: "No connection." } });
+    desktop.toolsStatus.mockResolvedValue(failed);
+    desktop.retry.mockImplementation(async () => {
+      // Another app holds the Tools Directory: this process counts no check,
+      // and that app's download lands a moment later.
+      desktop.toolsStatus.mockResolvedValueOnce(failed).mockResolvedValue(status({}));
+      return "alreadyRunning";
+    });
+    renderForm(readyWhatsapp);
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByText(
+        "A check of the Tools Directory is already running. This form shows its result when it ends.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 5000 });
+  }, 10_000);
 
   it("Try again starts the download and follows it until the program arrives", async () => {
     const user = setupUser();
@@ -1005,7 +1028,7 @@ describe("ImportFormFields programs the import needs", () => {
           status({ wtsexporter: { state: "downloading", received: 0, total: null } }),
         )
         .mockResolvedValue(status({}));
-      return true;
+      return "started";
     });
     renderForm(readyWhatsapp);
 

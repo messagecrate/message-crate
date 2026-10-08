@@ -511,8 +511,10 @@ export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
 export interface ToolsStatus {
   toolsDir: string | null;
   /**
-   * A check of the Tools Directory runs now, the start-up check or Try again.
-   * A program it has not looked at yet shows as missing until it does.
+   * A check of the Tools Directory runs in this process now, the start-up
+   * check or Try again. A program it has not looked at yet shows as missing
+   * until it does. Another app's check on the same Tools Directory is not
+   * counted: Try again reports it as `alreadyRunning`.
    */
   checking: boolean;
   ffmpeg: ToolStatus;
@@ -526,14 +528,21 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
 }
 
 /**
- * Check the Tools Directory again and download what is missing, as Try again
- * on the Import form asks. Returns at once, with whether a check started.
- * False in three cases: a check was already running, which `tools_status`
- * shows as `checking`; the app has no Tools Directory (`toolsDir` is null);
- * or the check's thread could not be started, which each program it would
- * have downloaded shows as a failed download with that reason.
+ * What Try again did. `started`: a check started in this process.
+ * `alreadyRunning`: another check holds the lock on the Tools Directory (the
+ * start-up check, an earlier Try again, or another app's check), and nothing
+ * started. `noToolsDirectory`: the app has none (`toolsDir` is null).
+ * `couldNotStart`: the check's thread could not be started, which each
+ * program it would have downloaded shows as a failed download with that
+ * reason.
  */
-export async function invokeRetryToolDownloads(): Promise<boolean> {
+export type RetryResult = "started" | "alreadyRunning" | "noToolsDirectory" | "couldNotStart";
+
+/**
+ * Check the Tools Directory again and download what is missing, as Try again
+ * on the Import form asks. Returns at once, with what it did.
+ */
+export async function invokeRetryToolDownloads(): Promise<RetryResult> {
   return invoke("retry_tool_downloads");
 }
 

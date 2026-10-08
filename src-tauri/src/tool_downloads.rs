@@ -814,6 +814,20 @@ fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun
     check(dir, base, pinned, &mut run, lock);
 }
 
+/// What [`retry`] did.
+#[derive(Debug)]
+pub enum Retry {
+    /// A check started, on the thread this carries.
+    Started(JoinHandle<()>),
+    /// Another check holds the lock on the Tools Directory: the start-up
+    /// check, an earlier Try again, or another app's check. Nothing started,
+    /// and the check already running brings the programs.
+    AlreadyRunning,
+    /// The check's thread could not be started: each program in `not_found`
+    /// that has a pin fails with [`DownloadError::CouldNotStart`].
+    CouldNotStart,
+}
+
 /// Start the check of `dir` again on a thread of its own, as **Try again**
 /// on the Import form asks (#1053), and return without waiting for it.
 ///
@@ -821,21 +835,18 @@ fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun
 /// downloading before this returns, so the window, which asks again only
 /// while a download runs, keeps asking until the check has decided each one.
 ///
-/// `None` in two cases. Another check holds the lock (the start-up check,
-/// an earlier Try again, or another app's check): nothing starts, and the
-/// window follows the check already running. Or the check's thread could
-/// not be started: each program in `not_found` that has a pin fails with
-/// [`DownloadError::CouldNotStart`].
+/// Returns [`Retry::Started`] with the check's thread, or says why no check
+/// started: [`Retry::AlreadyRunning`] or [`Retry::CouldNotStart`].
 pub fn retry(
     dir: PathBuf,
     base: String,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
     not_found: &[Program],
-) -> Option<JoinHandle<()>> {
+) -> Retry {
     let lock = match lock_check(&dir) {
         Ok(Some(lock)) => Some(lock),
-        Ok(None) => return None,
+        Ok(None) => return Retry::AlreadyRunning,
         Err(_) => None,
     };
     let mut run = downloads.begin_check();
@@ -851,7 +862,7 @@ pub fn retry(
         .name("tool-downloads-retry".into())
         .spawn(move || check(&dir, &base, &pinned, &mut run, lock));
     match spawned {
-        Ok(handle) => Some(handle),
+        Ok(handle) => Retry::Started(handle),
         // The run went with the closure that was never started, and its
         // drop marked these as interrupted: the cause is the thread.
         Err(err) => {
@@ -863,7 +874,7 @@ pub fn retry(
                     },
                 );
             }
-            None
+            Retry::CouldNotStart
         }
     }
 }

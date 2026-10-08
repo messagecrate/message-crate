@@ -542,7 +542,7 @@ describe("ImportRunView", () => {
         .mockResolvedValue(
           tools({ state: "found", path: "/home/sam/message-crate/tools/ffprobe" }),
         );
-      return true;
+      return "started";
     });
     renderView({
       phase: "staging_review",

@@ -102,7 +102,9 @@ pub struct ToolsStatus {
     pub tools_dir: Option<String>,
     /// Whether a check of the Tools Directory runs in this process now, the
     /// start-up check or Try again. A program it has not looked at yet shows
-    /// as missing, so the window keeps asking while this is true.
+    /// as missing, so the window keeps asking while this is true. Another
+    /// app's check on the same Tools Directory is not counted: Try again
+    /// reports it as [`RetryResult::AlreadyRunning`].
     pub checking: bool,
     /// ffmpeg, from `PATH` or the Tools Directory.
     pub ffmpeg: ToolStatus,
@@ -127,23 +129,33 @@ fn pinned_programs() -> Vec<Program> {
         .collect()
 }
 
+/// What Try again did, as [`retry_tool_downloads`] tells the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RetryResult {
+    /// A check started in this process, and `checking` is true until it ends.
+    Started,
+    /// Another check holds the lock on the Tools Directory: the start-up
+    /// check, an earlier Try again, or another app's check. Nothing started.
+    /// `checking` is true only when that check runs in this process, so the
+    /// window can't tell from the status when another app's check ends.
+    AlreadyRunning,
+    /// The app has no Tools Directory (no home directory), which the status
+    /// shows as `toolsDir: null`.
+    NoToolsDirectory,
+    /// The check's thread could not be started, and each program it would
+    /// have downloaded shows as a failed download with that reason.
+    CouldNotStart,
+}
+
 /// Check the Tools Directory again and download what is missing, as **Try
 /// again** on the Import form asks (#1053). Returns at once: the check runs
 /// on a thread of its own, and the window follows it through
 /// [`tools_status`].
-///
-/// Returns whether a check started. `false` in three cases:
-///
-/// - a check was already running (the start-up check, an earlier Try again,
-///   or another app's), and the window follows it through `checking`;
-/// - the app has no Tools Directory (no home directory), which the status
-///   shows as `toolsDir: null`;
-/// - the check's thread could not be started, and each program it would
-///   have downloaded shows as a failed download with that reason.
 #[tauri::command]
-pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool {
+pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> RetryResult {
     let Some(dir) = media::tools_dir() else {
-        return false;
+        return RetryResult::NoToolsDirectory;
     };
     let status = tools_status_with(&downloads, &pinned_programs());
     let not_found: Vec<Program> = [
@@ -156,14 +168,19 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool 
     .map(|(program, _)| program)
     .collect();
     let pinned = tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH);
-    tool_downloads::retry(
+    match tool_downloads::retry(
         dir,
         tool_downloads::GITHUB.to_string(),
         pinned,
         &downloads,
         &not_found,
-    )
-    .is_some()
+    ) {
+        // Nothing joins the check's thread: the window follows the check
+        // through `tools_status`.
+        tool_downloads::Retry::Started(_thread) => RetryResult::Started,
+        tool_downloads::Retry::AlreadyRunning => RetryResult::AlreadyRunning,
+        tool_downloads::Retry::CouldNotStart => RetryResult::CouldNotStart,
+    }
 }
 
 /// How far a download waited for moves before the window hears of it again,
