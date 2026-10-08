@@ -355,6 +355,68 @@ fn ffmpeg_and_ffprobe_in_two_places_is_an_error_naming_both() {
     }
 }
 
+/// A program that appends a line to `log` each time it runs.
+fn counting_tool(path: &Path, log: &Path) {
+    fs::write(
+        path,
+        format!("#!/bin/sh\necho run >> '{}'\nexit 0\n", log.display()),
+    )
+    .unwrap();
+    let mut perms = fs::metadata(path).unwrap().permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).unwrap();
+}
+
+/// How many times the programs writing to `log` ran.
+fn runs_in(log: &Path) -> usize {
+    fs::read_to_string(log).map_or(0, |text| text.lines().count())
+}
+
+/// With ffmpeg and ffprobe in two places, every lookup fails and so
+/// searches again, once per file staged. Each program found was run once
+/// to see that it answers, and is not run again.
+#[cfg(unix)]
+#[test]
+fn a_second_lookup_in_two_places_runs_nothing() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let on_path = tempfile::tempdir().unwrap();
+    let tools = tempfile::tempdir().unwrap();
+    let log = tools.path().join("runs.log");
+    counting_tool(&on_path.path().join("ffmpeg"), &log);
+    counting_tool(&tools.path().join("ffprobe"), &log);
+    set_search_path(Some(on_path.path().as_os_str().to_owned()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+
+    assert!(ffmpeg_tools().is_err());
+    let first = runs_in(&log);
+    assert_eq!(first, 2, "each program runs once to answer -version");
+    assert!(ffmpeg_tools().is_err());
+    assert!(ffprobe_path().is_none());
+    assert_eq!(runs_in(&log), first);
+}
+
+/// A file that could not run is run again once it is made executable,
+/// because `chmod` changes neither its size nor when it was modified.
+#[cfg(unix)]
+#[test]
+fn a_tool_made_executable_later_is_found() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let tools = mock_tools();
+    set_search_path(Some(OsString::new()));
+    set_tools_dir(Some(tools.path().to_path_buf()));
+    let ffprobe = tools.path().join("ffprobe");
+    let mut perms = fs::metadata(&ffprobe).unwrap().permissions();
+    perms.set_mode(0o644);
+    fs::set_permissions(&ffprobe, perms.clone()).unwrap();
+    assert!(!ffmpeg_available());
+
+    perms.set_mode(0o755);
+    fs::set_permissions(&ffprobe, perms).unwrap();
+    assert!(ffmpeg_available());
+}
+
 /// With one program in neither place, the other is reported where it is
 /// and the missing one is named.
 #[cfg(unix)]

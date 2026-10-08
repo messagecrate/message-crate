@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
@@ -21,6 +22,42 @@ struct ToolsState {
     generation: u64,
     /// ffmpeg and ffprobe, once both were found in one place.
     found: Option<(PathBuf, PathBuf)>,
+    /// Whether each file looked at answered `-version`, by path. While a
+    /// program is missing, or the two are in two places, every lookup
+    /// searches again, and a lookup runs once per file staged and once per
+    /// Asset shown; the answer kept here means a file already run is not
+    /// run again. A file that changes, or one that appears, is run once.
+    runs: HashMap<PathBuf, RunVerdict>,
+}
+
+/// Whether a file answered `-version`, and the file as it was then.
+struct RunVerdict {
+    /// The file as it was when it was run.
+    file: FileStamp,
+    /// True when it answered `-version`.
+    runs: bool,
+}
+
+/// What tells one version of a file from another without reading it: a
+/// copy replaced, rewritten or made executable differs in one of these.
+#[derive(PartialEq, Eq)]
+struct FileStamp {
+    /// When the file was last modified, if the platform says.
+    modified: Option<SystemTime>,
+    /// The file's size in bytes.
+    len: u64,
+    /// The file's permissions, which `chmod +x` changes.
+    permissions: std::fs::Permissions,
+}
+
+impl FileStamp {
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        Self {
+            modified: metadata.modified().ok(),
+            len: metadata.len(),
+            permissions: metadata.permissions(),
+        }
+    }
 }
 
 impl ToolsState {
@@ -28,6 +65,7 @@ impl ToolsState {
     fn forget(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.found = None;
+        self.runs.clear();
     }
 }
 
@@ -40,6 +78,7 @@ fn tools_state() -> &'static Mutex<ToolsState> {
             search_path: None,
             generation: 0,
             found: None,
+            runs: HashMap::new(),
         })
     })
 }
@@ -175,7 +214,8 @@ fn command_runs(bin: &Path, args: &[&str]) -> bool {
 
 /// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
 /// `PATH` and Tools Directory, remembered once both are found. A tool not
-/// found is looked for again next time, so one that arrives later is used.
+/// found is looked for again next time, so one that arrives later is used;
+/// a file already run is not run again ([`ToolsState::runs`]).
 fn resolve_tools() -> Result<FfmpegTools> {
     loop {
         let (generation, search_path, tools_dir) = {
@@ -214,11 +254,34 @@ fn resolve_tools() -> Result<FfmpegTools> {
 /// The tool under `dir` if it is a file and runs.
 fn find_tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     let candidate = dir.join(executable_name(name));
-    if candidate.is_file() && command_runs(&candidate, &["-version"]) {
-        Some(candidate)
-    } else {
-        None
+    let metadata = std::fs::metadata(&candidate).ok()?;
+    if !metadata.is_file() {
+        return None;
     }
+    candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
+}
+
+/// True when `candidate`, as `file` describes it, answers `-version`. The
+/// answer is kept in [`ToolsState::runs`], so the same file is run once
+/// until it changes or the lookup is forgotten.
+fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
+    let generation = {
+        let state = tools_state().lock().expect("tools state lock");
+        if let Some(verdict) = state.runs.get(candidate)
+            && verdict.file == file
+        {
+            return verdict.runs;
+        }
+        state.generation
+    };
+    let runs = command_runs(candidate, &["-version"]);
+    let mut state = tools_state().lock().expect("tools state lock");
+    if state.generation == generation {
+        state
+            .runs
+            .insert(candidate.to_path_buf(), RunVerdict { file, runs });
+    }
+    runs
 }
 
 /// Find `name` in each directory of `search_path` in turn.
