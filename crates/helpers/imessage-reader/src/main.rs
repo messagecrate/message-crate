@@ -54,6 +54,26 @@ fn fail(message: impl ToString) -> ! {
     std::process::exit(1)
 }
 
+/// Keep the temporary files `crabapple` writes in the directory `request`
+/// names: an identities request's or an export's scratch directory, or the
+/// directory a backup domain request decrypts into. A request that decrypts
+/// nothing names none. See [`backup::keep_temporary_files_in`].
+///
+/// Safe to call only from `main` before anything starts a thread, which is
+/// the one place it is called. It is a function of its own, not a call in
+/// each arm of `main`, so a mutation test can remove it and the process
+/// test in `tests/temporary_files.rs` sees the difference.
+fn keep_temporary_files_for(request: &Request) {
+    let dir = match request {
+        Request::Identities(request) => &request.scratch_dir,
+        Request::Export(request) => &request.scratch_dir,
+        Request::BackupDomain(request) => &request.out_dir,
+        Request::Attachment { .. } | Request::DecryptDomain => return,
+    };
+    // SAFETY: `main` calls this before anything has started a thread.
+    unsafe { backup::keep_temporary_files_in(dir) };
+}
+
 fn main() {
     let stdin = std::io::stdin();
     let mut lines = stdin.lock().lines();
@@ -65,10 +85,9 @@ fn main() {
     let request: Request = serde_json::from_str(&first)
         .unwrap_or_else(|e| fail(format!("the request is not valid JSON: {e}")));
 
-    // SAFETY (each call below): nothing has started a thread yet.
+    keep_temporary_files_for(&request);
     match request {
         Request::Identities(request) => {
-            unsafe { backup::keep_temporary_files_in(&request.scratch_dir) };
             let found = identities::identities(request).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
                 protocol_version: PROTOCOL_VERSION,
@@ -79,7 +98,6 @@ fn main() {
             });
         }
         Request::Export(request) => {
-            unsafe { backup::keep_temporary_files_in(&request.scratch_dir) };
             let options = ReaderOptions::from_export(request);
             let session = MailSession::new(options).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
@@ -102,7 +120,6 @@ fn main() {
             }
         }
         Request::BackupDomain(request) => {
-            unsafe { backup::keep_temporary_files_in(&request.out_dir) };
             let backup = domain::open(&request).unwrap_or_else(|e| fail(e));
             emit(&Event::Source {
                 protocol_version: PROTOCOL_VERSION,
