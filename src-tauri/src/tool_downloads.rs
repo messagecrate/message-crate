@@ -942,17 +942,12 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
                     downloads.set(program, does_not_run(program));
                 }
                 if let Err(err) = write_manifest(dir, &manifest) {
-                    // The program is in place and works; without the record
-                    // the next start takes it as someone else's.
-                    downloads.set(
-                        program,
-                        DownloadState::Failed {
-                            reason: DownloadError::CouldNotWrite(format!(
-                                "{} could not be written: {err}",
-                                MANIFEST_FILE
-                            ))
-                            .to_string(),
-                        },
+                    // The program is in place and the lookup finds it, so
+                    // its download did not fail. Without the record the
+                    // next start reads the file again and adopts it.
+                    eprintln!(
+                        "The {} download is in place, and {MANIFEST_FILE} could not be written: {err}",
+                        program.name()
                     );
                 }
             }

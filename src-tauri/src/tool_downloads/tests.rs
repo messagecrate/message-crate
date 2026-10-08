@@ -1127,3 +1127,42 @@ fn a_check_that_panics_mid_download_fails_the_download() {
     );
     assert!(!downloads.checking());
 }
+
+/// A download that arrives and runs is not a failed download when its
+/// record can't be written: the program is found, and an import waiting for
+/// it goes on.
+#[test]
+fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    // A directory where the record goes: renaming the record over it fails.
+    std::fs::create_dir(tools.path().join(MANIFEST_FILE)).unwrap();
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(100))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    )
+    .expect("a check started");
+    let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {});
+    check.join().unwrap();
+
+    assert_eq!(waited, Ok(()));
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert!(runs(Program::Wtsexporter, tools.path()));
+}
