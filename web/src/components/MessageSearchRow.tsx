@@ -29,24 +29,35 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
 /** One earlier version of one part of an edited message, as the server sends it. */
 type EarlierVersion = Message["earlier_versions"][number];
 
-/** When `version` was written, in milliseconds; earliest when the source did not record it. */
-function writtenAt(version: EarlierVersion): number {
-  return version.edited_at ? Date.parse(version.edited_at) : Number.NEGATIVE_INFINITY;
+/**
+ * Whether `later`, which comes after `earlier` in the server's list, is the
+ * newer of the two. The list is oldest first within each part, so within
+ * one part the later in the list is newer. Across parts the one with the
+ * later `edited_at` is newer when both carry one, the later in the list on
+ * a tie, and the later in the list when either time is not recorded.
+ */
+function isNewer(later: EarlierVersion, earlier: EarlierVersion): boolean {
+  if (later.part_index === earlier.part_index || !later.edited_at || !earlier.edited_at) {
+    return true;
+  }
+  return Date.parse(later.edited_at) >= Date.parse(earlier.edited_at);
+}
+
+/** The newest of `versions` by `isNewer`, keeping the server's list order. */
+function newest(versions: readonly EarlierVersion[]): EarlierVersion | undefined {
+  let found: EarlierVersion | undefined;
+  for (const version of versions) if (!found || isNewer(version, found)) found = version;
+  return found;
 }
 
 /**
  * The newest earlier version a search found `message` by: of the versions
- * marked `matched`, the one written last, or the later in the list when
- * their times tie or are not recorded. None for a hit its final text
+ * marked `matched`, the newest by `isNewer`. None for a hit its final text
  * matched, which the server marks neither way (`docs/architecture/search.md`).
  */
 function newestMatchedVersion(message: Message): EarlierVersion | undefined {
   if (!message.matched_earlier_version) return undefined;
-  let newest: EarlierVersion | undefined;
-  for (const version of message.earlier_versions) {
-    if (version.matched && (!newest || writtenAt(version) >= writtenAt(newest))) newest = version;
-  }
-  return newest;
+  return newest(message.earlier_versions.filter((version) => version.matched));
 }
 
 /**

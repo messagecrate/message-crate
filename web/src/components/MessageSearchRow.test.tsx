@@ -204,4 +204,25 @@ describe("MessageSearchRow", () => {
     );
     expect(screen.getByRole("button")).toHaveTextContent("Earlier version: Here is a photo");
   });
+  it("takes the later of two versions of one part as the newer, even when only the older has a time", () => {
+    renderRow(
+      message({
+        text: "Nothing here",
+        matched_earlier_version: true,
+        earlier_versions: [
+          {
+            part_index: 0,
+            text: "imprudent at first",
+            matched: true,
+            edited_at: "2024-01-01T10:00:00Z",
+          },
+          { part_index: 0, text: "imprudent at last", matched: true, edited_at: null },
+        ],
+      }),
+      [{ text: "imprudent", prefix: false }],
+    );
+    expect(screen.getByText(/^Earlier version:/)).toHaveTextContent(
+      "Earlier version: imprudent at last",
+    );
+  });
 });
