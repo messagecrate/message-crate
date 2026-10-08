@@ -20,3 +20,4 @@ pub mod local_server;
 pub mod run_directories;
 pub mod run_logs;
 pub mod state;
+pub mod tool_downloads;

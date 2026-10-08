@@ -492,7 +492,11 @@ export async function invokeFormat(config: {
 export type ToolStatus =
   | { state: "found"; path: string }
   | { state: "missing" }
-  | { state: "unusable"; reason: string };
+  | { state: "unusable"; reason: string }
+  /** Downloading into the Tools Directory: bytes so far, and the total when the server said. */
+  | { state: "downloading"; received: number; total: number | null }
+  /** The download failed and the program is not found. Tried again at the next start. */
+  | { state: "downloadFailed"; reason: string };
 
 /**
  * Where ffmpeg, ffprobe and wtsexporter are. ffmpeg and ffprobe are looked
@@ -509,6 +513,13 @@ export interface ToolsStatus {
 /** Ask the desktop process where ffmpeg, ffprobe and wtsexporter are. */
 export async function invokeToolsStatus(): Promise<ToolsStatus> {
   return invoke("tools_status");
+}
+
+/** Whether any of ffmpeg, ffprobe and wtsexporter is downloading now. */
+export function toolsDownloading(status: ToolsStatus): boolean {
+  return [status.ffmpeg, status.ffprobe, status.wtsexporter].some(
+    (tool) => tool.state === "downloading",
+  );
 }
 
 /** The programs Convert and Compress run. */

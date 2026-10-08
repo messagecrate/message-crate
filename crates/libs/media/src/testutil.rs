@@ -133,6 +133,17 @@ pub fn hide_ffmpeg() -> ToolsHidden {
     }
 }
 
+/// Search `search_path` instead of the process's `PATH`, and `tools_dir`
+/// as the Tools Directory, until the returned guard is dropped. Holds
+/// [`tools_test_lock`], as [`hide_ffmpeg`] does.
+#[must_use]
+pub fn locate_tools(search_path: OsString, tools_dir: PathBuf) -> ToolsHidden {
+    let hidden = hide_ffmpeg();
+    set_search_path(Some(search_path));
+    set_tools_dir(Some(tools_dir));
+    hidden
+}
+
 impl Drop for ToolsHidden {
     fn drop(&mut self) {
         set_search_path(self.previous_search_path.take());

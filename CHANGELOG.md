@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **The desktop app downloads ffmpeg, ffprobe and wtsexporter
+  by itself.** Each time it starts, it downloads in the background whatever
+  is missing from the Tools Directory, `~/message-crate/tools`, with no
+  button and nothing to wait for. ffmpeg and ffprobe come from
+  `eugeneware/ffmpeg-static` release `b6.1.1`, and are not downloaded when
+  both are already on `PATH`. wtsexporter comes from Message Crate's fork,
+  `messagecrate/WhatsApp-Chat-Exporter` release `0.13.0-mc.2`. Every file is
+  checked against a SHA-256 checksum the app carries, and one that doesn't
+  match is deleted. A newer pinned release replaces the old file only after
+  the new one has passed its check. Settings → System → Media shows each
+  download's progress, or why it failed, and a failed download is tried
+  again at the next start (#1053).
+
 - 2026-10-08: **A phone number written without its country code can be given
   its country.** The import form has a **Phone's country** under
   **Processing Options (Advanced)**: every number the import writes without a

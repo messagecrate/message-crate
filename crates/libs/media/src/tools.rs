@@ -178,6 +178,28 @@ pub fn ffmpeg_available() -> bool {
     resolve_tools().is_ok_and(|tools| tools.missing().is_empty())
 }
 
+/// True when ffmpeg and ffprobe are both on `PATH` and answer `-version`.
+/// The desktop app downloads neither then, because a person who installed
+/// ffmpeg chose it (`docs/adr/0019`).
+pub fn ffmpeg_on_path() -> bool {
+    let search_path = tools_state()
+        .lock()
+        .expect("tools state lock")
+        .search_path
+        .clone()
+        .or_else(|| std::env::var_os("PATH"));
+    ["ffmpeg", "ffprobe"]
+        .iter()
+        .all(|name| find_on_path(name, search_path.as_deref()).is_some())
+}
+
+/// The program `name` in `dir`, `.exe` added on Windows, when it is a file
+/// that answers `-version`. The desktop app asks this of a program in the
+/// Tools Directory it did not download, to leave one that works in place.
+pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
+    find_tool_in_dir(dir, name)
+}
+
 /// True when ffprobe is found.
 pub(crate) fn ffprobe_available() -> bool {
     ffprobe_path().is_some()

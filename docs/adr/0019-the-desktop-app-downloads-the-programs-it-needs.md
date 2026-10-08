@@ -13,8 +13,9 @@ release and one checksum, and a file that doesn't match is refused.
 wtsexporter is always the app's own copy. ffmpeg is not downloaded when it is
 on `PATH`.
 
-Decided, not built yet: #1053 tracks the work, and until it lands the app
-downloads nothing.
+Built in #1053's third step. The app records the release and checksum of
+each file it wrote in `manifest.json` in the Tools Directory, so a start
+needs no file read again to know a program is the pinned one.
 
 ## Why
 
@@ -66,7 +67,9 @@ would be a second way to say the same thing.
 On a new computer, the first WhatsApp import and the first Media Stage need
 an internet connection, and both depend on two GitHub projects keeping their
 release files in place: `eugeneware/ffmpeg-static` and
-`KnugiHK/WhatsApp-Chat-Exporter`. When a download fails the app says so only
+`messagecrate/WhatsApp-Chat-Exporter`, Message Crate's fork of the WhatsApp
+Chat Exporter. The fork is the source because the original's JSON does not
+say who sent a group message. When a download fails the app says so only
 where the program is needed, and the user guide's troubleshooting section
 tells a person how to install ffmpeg with a package manager or put either
 program in the Tools Directory by hand. Convert needs no connection. It
