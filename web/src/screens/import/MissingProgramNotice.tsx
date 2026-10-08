@@ -2,7 +2,7 @@ import Button from "../../components/Button";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
 import { accentLink } from "../../lib/uiStyles";
-import { downloadProgress, useRetryToolDownloads } from "../../lib/useToolsStatus";
+import { downloadProgress, useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
 
 /** A program the Import form can need. */
 export type ProgramName = "ffmpeg" | "ffprobe" | "wtsexporter";
@@ -54,6 +54,11 @@ function consequence(need: ProgramNeed, blocked: boolean): string {
  */
 export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offerRetry?: boolean }) {
   const retry = useRetryToolDownloads();
+  // Try again started nothing because a check already runs (the start-up
+  // check, say, still on another program): the status is asked for until
+  // that check ends, and this says why nothing new started meanwhile.
+  const checking = useToolsStatus().data?.checking ?? false;
+  const alreadyRunning = retry.data === false && checking;
   return (
     <div className="mt-1 flex flex-wrap items-center gap-3">
       {offerRetry ? (
@@ -64,6 +69,12 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
       <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLink}>
         Troubleshooting
       </a>
+      {alreadyRunning ? (
+        <span className="text-[0.813rem] text-muted">
+          A check of the Tools Directory is already running. This form shows its result when it
+          ends.
+        </span>
+      ) : null}
       {retry.isError ? (
         <span role="alert" className="text-[0.813rem] text-danger">
           The download didn't start.{" "}

@@ -948,6 +948,37 @@ describe("ImportFormFields programs the import needs", () => {
     expect(importButton()).toBeEnabled();
   });
 
+  it("Try again while a check runs says so, and follows that check until it ends", async () => {
+    const user = setupUser();
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({ wtsexporter: { state: "downloadFailed", reason: "No connection." } }),
+    );
+    desktop.retry.mockImplementation(async () => {
+      // The start-up check still runs: nothing new starts, and it brings
+      // wtsexporter a moment later.
+      desktop.toolsStatus
+        .mockResolvedValueOnce(
+          status({
+            checking: true,
+            wtsexporter: { state: "downloadFailed", reason: "No connection." },
+          }),
+        )
+        .mockResolvedValue(status({}));
+      return false;
+    });
+    renderForm(readyWhatsapp);
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(
+      await screen.findByText(
+        "A check of the Tools Directory is already running. This form shows its result when it ends.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
+  });
+
   it("Try again starts the download and follows it until the program arrives", async () => {
     const user = setupUser();
     desktop.isTauri = true;
