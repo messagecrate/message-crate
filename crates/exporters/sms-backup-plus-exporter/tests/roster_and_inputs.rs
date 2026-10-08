@@ -537,3 +537,53 @@ fn an_address_given_one_number_in_both_spellings_has_one_number_in_a_stated_coun
         1
     );
 }
+
+/// An owner number given in national form is the owner when the archive
+/// writes it with its `+` code, in the country the run states: the run
+/// keys the owner's numbers in that country, as it keys the archive's
+/// (#1676). Keyed with no country, `07700900123` named nobody the archive
+/// wrote, so the owner became the peer of their own one-to-one chat.
+#[test]
+fn an_owner_given_in_national_form_is_not_a_peer_in_the_run_s_country() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).expect("input dir");
+    fs::write(
+        input.join("sent.eml"),
+        b"From: owner@example.com\r\n\
+To: dee@unknown.email\r\n\
+Subject: SMS with Dee\r\n\
+X-smssync-type: 2\r\n\
+X-smssync-address: +447700900123~07700900456\r\n\
+X-smssync-date: 1609459200000\r\n\
+Content-Type: text/plain; charset=utf-8\r\n\
+\r\n\
+Hello Dee\r\n",
+    )
+    .expect("write mail");
+    let out = tmp.path().join("out");
+    let cache = tempfile::tempdir().unwrap();
+    convert_export(ConvertExportArgs {
+        inputs: &[input.as_path()],
+        output_dir: &out,
+        scratch_dir: cache.path(),
+        owner_phones: &["07700900123".into()],
+        owner_emails: &["owner@example.com".into()],
+        verbose: false,
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        log: None,
+        issues: None,
+        resume: false,
+        phone_country: phone::country("GB"),
+    })
+    .expect("convert");
+
+    let docs = documents(&out);
+    assert_eq!(
+        docs.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["+447700900456"],
+        "the one-to-one chat is with Dee, not the owner"
+    );
+}

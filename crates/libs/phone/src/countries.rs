@@ -34,6 +34,18 @@ const fn c(code: &'static str, calling_code: &'static str, trunk_prefix: &'stati
 }
 
 /// Every country, by ISO code.
+///
+/// The calling codes and trunk prefixes are the `countryCode` and
+/// `nationalPrefix` attributes of each `<territory>` in libphonenumber's
+/// `resources/PhoneNumberMetadata.xml`, at commit `d1457634c3d9`
+/// (2026-10-07):
+/// <https://github.com/google/libphonenumber/blob/d1457634c3d95e570dad433ee0ab400beb343a56/resources/PhoneNumberMetadata.xml>.
+/// The table departs from it in two ways. The calling code `1` rows carry no
+/// trunk prefix, because [`crate::normalize_checked`] writes a `+1` number by
+/// its own rule; libphonenumber gives them `1`. `AC` (Ascension) and `TA`
+/// (Tristan da Cunha) are left out, because ISO 3166-1 gives them no code of
+/// their own. A trunk prefix is checked against that file before it is
+/// changed, because a wrong one gives a number a `+` form that names nobody.
 pub const COUNTRIES: &[Country] = &[
     c("AD", "376", ""),
     c("AE", "971", "0"),
@@ -81,7 +93,7 @@ pub const COUNTRIES: &[Country] = &[
     c("CL", "56", ""),
     c("CM", "237", ""),
     c("CN", "86", "0"),
-    c("CO", "57", ""),
+    c("CO", "57", "0"),
     c("CR", "506", ""),
     c("CU", "53", "0"),
     c("CV", "238", ""),
@@ -148,7 +160,7 @@ pub const COUNTRIES: &[Country] = &[
     c("KE", "254", "0"),
     c("KG", "996", "0"),
     c("KH", "855", "0"),
-    c("KI", "686", ""),
+    c("KI", "686", "0"),
     c("KM", "269", ""),
     c("KN", "1", ""),
     c("KP", "850", "0"),
@@ -159,7 +171,7 @@ pub const COUNTRIES: &[Country] = &[
     c("LA", "856", "0"),
     c("LB", "961", "0"),
     c("LC", "1", ""),
-    c("LI", "423", ""),
+    c("LI", "423", "0"),
     c("LK", "94", "0"),
     c("LR", "231", "0"),
     c("LS", "266", ""),
@@ -168,12 +180,12 @@ pub const COUNTRIES: &[Country] = &[
     c("LV", "371", ""),
     c("LY", "218", "0"),
     c("MA", "212", "0"),
-    c("MC", "377", ""),
+    c("MC", "377", "0"),
     c("MD", "373", "0"),
     c("ME", "382", "0"),
     c("MF", "590", "0"),
     c("MG", "261", "0"),
-    c("MH", "692", ""),
+    c("MH", "692", "1"),
     c("MK", "389", "0"),
     c("ML", "223", ""),
     c("MM", "95", "0"),
@@ -247,7 +259,7 @@ pub const COUNTRIES: &[Country] = &[
     c("TD", "235", ""),
     c("TG", "228", ""),
     c("TH", "66", "0"),
-    c("TJ", "992", "8"),
+    c("TJ", "992", ""),
     c("TK", "690", ""),
     c("TL", "670", ""),
     c("TM", "993", "8"),
@@ -262,7 +274,7 @@ pub const COUNTRIES: &[Country] = &[
     c("UG", "256", "0"),
     c("US", "1", ""),
     c("UY", "598", "0"),
-    c("UZ", "998", "8"),
+    c("UZ", "998", ""),
     c("VA", "39", ""),
     c("VC", "1", ""),
     c("VE", "58", "0"),
@@ -290,22 +302,6 @@ pub fn country(code: &str) -> Option<&'static Country> {
         .find(|country| country.code.eq_ignore_ascii_case(code))
 }
 
-/// The calling code at the start of `digits`, the digits of a number written
-/// with its `+`: the longest calling code any country in the table has.
-/// `None` when no country's calling code starts the digits.
-#[must_use]
-pub fn calling_code_of(digits: &str) -> Option<&'static str> {
-    (1..=3)
-        .rev()
-        .filter_map(|len| digits.get(..len))
-        .find_map(|prefix| {
-            COUNTRIES
-                .iter()
-                .find(|country| country.calling_code == prefix)
-                .map(|country| country.calling_code)
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -325,15 +321,6 @@ mod tests {
         assert_eq!(country("gb").map(|c| c.calling_code), Some("44"));
         assert_eq!(country(" US ").map(|c| c.calling_code), Some("1"));
         assert!(country("ZZ").is_none());
-    }
-
-    #[test]
-    fn the_longest_calling_code_wins() {
-        // `+353` is Ireland, not `+35` (no country) or `+3`.
-        assert_eq!(calling_code_of("353861234567"), Some("353"));
-        assert_eq!(calling_code_of("447700900123"), Some("44"));
-        assert_eq!(calling_code_of("15555550100"), Some("1"));
-        assert_eq!(calling_code_of("28123456"), None);
     }
 
     #[test]

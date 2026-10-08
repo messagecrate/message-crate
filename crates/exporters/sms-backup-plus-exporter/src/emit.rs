@@ -484,8 +484,11 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         enabled: verbose,
         log,
     };
-    let owner = Owner::new(OwnerHandleSet::from_phones(owner_phones)?, owner_emails)
-        .in_country(phone_country);
+    let owner = Owner::new(
+        OwnerHandleSet::from_phones_in(owner_phones, phone_country)?,
+        owner_emails,
+    )
+    .in_country(phone_country);
     let owner_identity = owner
         .primary_handle()
         .expect("from_phones guarantees a phone owner handle");
