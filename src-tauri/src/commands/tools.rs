@@ -30,6 +30,11 @@ pub enum ToolStatus {
     },
     /// The program is on neither place it is looked for.
     Missing,
+    /// The program is on neither place it is looked for, and the app has no
+    /// download of it for this computer (wtsexporter on Linux on ARM), so
+    /// Try again can't bring it. A copy put in the Tools Directory by hand
+    /// is used.
+    Unavailable,
     /// The program was found but is not used, for `reason`.
     Unusable {
         /// Why it is not used.
@@ -58,6 +63,15 @@ impl ToolStatus {
                 path: path.display().to_string(),
             },
             None => Self::Missing,
+        }
+    }
+
+    /// This status, with a missing program the app has no download for
+    /// (`pinned` is false) told apart as unavailable.
+    fn with_pin(self, pinned: bool) -> Self {
+        match self {
+            Self::Missing if !pinned => Self::Unavailable,
+            status => status,
         }
     }
 
@@ -101,7 +115,15 @@ pub struct ToolsStatus {
 /// and say how each one's download stands.
 #[tauri::command]
 pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
-    tools_status_with(&downloads)
+    tools_status_with(&downloads, &pinned_programs())
+}
+
+/// The programs the app has a download of for this computer.
+fn pinned_programs() -> Vec<Program> {
+    tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH)
+        .into_iter()
+        .map(|pin| pin.program)
+        .collect()
 }
 
 /// Check the Tools Directory again and download what is missing, as **Try
@@ -122,7 +144,7 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool 
     let Some(dir) = media::tools_dir() else {
         return false;
     };
-    let status = tools_status_with(&downloads);
+    let status = tools_status_with(&downloads, &pinned_programs());
     let not_found: Vec<Program> = [
         (Program::Ffmpeg, &status.ffmpeg),
         (Program::Ffprobe, &status.ffprobe),
@@ -192,8 +214,14 @@ fn waiting_event(step: &str, line: &str) -> ExtractProgressEvent {
     }
 }
 
-/// [`tools_status`], with the downloads in `downloads`.
-fn tools_status_with(downloads: &ToolDownloads) -> ToolsStatus {
+/// [`tools_status`], with the downloads in `downloads` and a download for
+/// this computer of each of `pinned`.
+fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStatus {
+    let status = |program: Program, found: ToolStatus| {
+        found
+            .with_pin(pinned.contains(&program))
+            .with_download(downloads.get(program))
+    };
     let (ffmpeg, ffprobe) = match media::ffmpeg_tools() {
         Ok(tools) => (ToolStatus::of(tools.ffmpeg), ToolStatus::of(tools.ffprobe)),
         // Found in two places: neither is used, and both say why.
@@ -213,9 +241,9 @@ fn tools_status_with(downloads: &ToolDownloads) -> ToolsStatus {
     ToolsStatus {
         tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
         checking: downloads.checking(),
-        ffmpeg: ffmpeg.with_download(downloads.get(Program::Ffmpeg)),
-        ffprobe: ffprobe.with_download(downloads.get(Program::Ffprobe)),
-        wtsexporter: wtsexporter.with_download(downloads.get(Program::Wtsexporter)),
+        ffmpeg: status(Program::Ffmpeg, ffmpeg),
+        ffprobe: status(Program::Ffprobe, ffprobe),
+        wtsexporter: status(Program::Wtsexporter, wtsexporter),
     }
 }
 
@@ -270,12 +298,23 @@ mod tests {
         let name = whatsapp_exporter::wtsexporter_file_name();
         media::set_tools_dir(Some(tools.path().to_path_buf()));
         let downloads = ToolDownloads::default();
-        let missing = tools_status_with(&downloads).wtsexporter;
+        let pinned = [Program::Wtsexporter];
+        let missing = tools_status_with(&downloads, &pinned).wtsexporter;
+        let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
         media::testutil::write_with_mode(&tools.path().join(name), 0o755);
-        let found = tools_status_with(&downloads).wtsexporter;
+        let found = tools_status_with(&downloads, &pinned).wtsexporter;
+        let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
         media::set_tools_dir(previous);
 
         assert_eq!(missing, ToolStatus::Missing);
+        // No download for this computer: told apart, so the form offers no
+        // Try again; a copy put there by hand is found all the same.
+        assert_eq!(unavailable, ToolStatus::Unavailable);
+        assert_eq!(
+            serde_json::to_value(&unavailable).unwrap(),
+            serde_json::json!({ "state": "unavailable" })
+        );
+        assert_eq!(found_by_hand, found);
         assert_eq!(
             found,
             ToolStatus::Found {

@@ -398,6 +398,22 @@ describe("SystemSection", () => {
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
   });
 
+  it("says a program the app has no download for goes in the Tools Directory by hand", async () => {
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
+      ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "unavailable" },
+    });
+    render(<SystemSection />);
+    expect(
+      await screen.findByLabelText(
+        "wtsexporter not found, and the app has no download of it for this computer. Put a copy in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("says why a download failed", async () => {
     const reason = "No connection to the download's server: error sending request.";
     toolsStatus.mockResolvedValue({

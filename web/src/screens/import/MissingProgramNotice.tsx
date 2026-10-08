@@ -26,6 +26,8 @@ function programLine(name: ProgramName, status: ToolStatus): string | null {
       return name === "wtsexporter"
         ? "wtsexporter hasn't been downloaded."
         : `${name} isn't on PATH and hasn't been downloaded.`;
+    case "unavailable":
+      return `The app has no ${name} download for this computer.`;
     case "downloadFailed":
       return `The ${name} download failed. ${status.reason}`;
     case "unusable":
@@ -50,13 +52,15 @@ function consequence(need: ProgramNeed, blocked: boolean): string {
  * now rather than at the next start, and the troubleshooting section for
  * `need`.
  */
-export function TryAgain({ need }: { need: ProgramNeed }) {
+export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offerRetry?: boolean }) {
   const retry = useRetryToolDownloads();
   return (
     <div className="mt-1 flex flex-wrap items-center gap-3">
-      <Button size="xs" onClick={() => retry.mutate()} disabled={retry.isPending}>
-        Try again
-      </Button>
+      {offerRetry ? (
+        <Button size="xs" onClick={() => retry.mutate()} disabled={retry.isPending}>
+          Try again
+        </Button>
+      ) : null}
       <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLink}>
         Troubleshooting
       </a>
@@ -90,13 +94,17 @@ export function MissingProgramNotice({
     return line == null ? [] : [line];
   });
   if (lines.length === 0) return null;
-  const blocked = programs.some((name) => !toolUsable(status[name]));
+  const unusable = programs.filter((name) => !toolUsable(status[name]));
+  const blocked = unusable.length > 0;
+  // A program the app has no download of for this computer can't be brought
+  // by Try again: the troubleshooting section says where a copy goes.
+  const retryable = unusable.some((name) => status[name].state !== "unavailable");
   return (
     <div role="status" className="mt-2 text-[0.813rem] text-muted">
       <p className="m-0">
         {lines.join(" ")} {consequence(need, blocked)}
       </p>
-      {blocked ? <TryAgain need={need} /> : null}
+      {blocked ? <TryAgain need={need} offerRetry={retryable} /> : null}
     </div>
   );
 }

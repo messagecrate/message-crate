@@ -139,6 +139,27 @@ function ToolStatusRow({
         </li>
       );
     }
+    case "unavailable": {
+      // No download for this computer: only a copy put there by hand is used.
+      const fix = toolsDir ? ` Put a copy in the Tools Directory, ${toolsDir}.` : "";
+      const label = `${name} not found, and the app has no download of it for this computer.${fix}`;
+      return (
+        <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
+          <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
+          <span>
+            <code className="font-mono text-[0.7rem]">{name}</code> not found, and the app has no
+            download of it for this computer.
+            {toolsDir ? (
+              <>
+                {" "}
+                Put a copy in the Tools Directory,{" "}
+                <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
+              </>
+            ) : null}
+          </span>
+        </li>
+      );
+    }
     case "unusable": {
       const label = `${name} not used. ${status.reason}`;
       return (

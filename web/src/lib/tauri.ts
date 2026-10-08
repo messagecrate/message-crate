@@ -492,6 +492,8 @@ export async function invokeFormat(config: {
 export type ToolStatus =
   | { state: "found"; path: string }
   | { state: "missing" }
+  /** Missing, and the app has no download of it for this computer: only a copy put in the Tools Directory by hand is used. */
+  | { state: "unavailable" }
   | { state: "unusable"; reason: string }
   /** Downloading into the Tools Directory: bytes so far, and the total when the server said. */
   | { state: "downloading"; received: number; total: number | null }

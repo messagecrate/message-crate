@@ -859,6 +859,23 @@ describe("ImportFormFields programs the import needs", () => {
     expect(importButton()).toBeDisabled();
   });
 
+  it("blocks a WhatsApp import on a computer the app has no wtsexporter download for, without Try again", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "unavailable" } }));
+    renderForm(readyWhatsapp);
+
+    expect(
+      await screen.findByText(
+        "The app has no wtsexporter download for this computer. A WhatsApp import can't start without it.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
+      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+    );
+    expect(importButton()).toBeDisabled();
+  });
+
   it("blocks a WhatsApp import while wtsexporter can't be used", async () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
