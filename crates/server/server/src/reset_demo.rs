@@ -770,7 +770,7 @@ enum Vacuum {
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
-/// in one request, `message_crate_push::MAX_IMPORT_BODY_BYTES` (64 MiB).
+/// in one request, `message_crate_import::MAX_IMPORT_BODY_BYTES` (64 MiB).
 /// Every other write on the server waits for the transaction, so it waits
 /// for one batch at most.
 const IMPORT_BATCH_BYTES: u64 = 64 * 1024 * 1024;

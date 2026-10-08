@@ -22,6 +22,26 @@ function sources(): [string, string][] {
     .map((p) => [p.replaceAll("\\", "/"), readFileSync(new URL(p, SRC), "utf8")]);
 }
 
+/**
+ * For each line of `text`, whether it is a comment: it starts with
+ * `startsComment`, or it sits inside a `/* … *\/` block opened at the start of
+ * an earlier line, JSX's `{/* … *\/}` included. A block counts as open only
+ * when its marker starts a line, so a `/*` inside a string, such as a glob,
+ * opens nothing.
+ */
+function commentLines(text: string, startsComment: RegExp): boolean[] {
+  let inBlock = false;
+  return text.split("\n").map((line) => {
+    const isComment = inBlock || startsComment.test(line);
+    if (!inBlock && /^\s*\{?\/\*/.test(line)) {
+      inBlock = !line.slice(line.indexOf("/*") + 2).includes("*/");
+    } else if (inBlock && line.includes("*/")) {
+      inBlock = false;
+    }
+    return isComment;
+  });
+}
+
 /** Lines of `text` that `test` matches (a pattern, or a check that returns true), as "path:line: text". */
 function hits(path: string, text: string, test: RegExp | ((line: string) => boolean)): string[] {
   const matches = typeof test === "function" ? test : (line: string) => test.test(line);
@@ -42,15 +62,17 @@ describe("colors are theme tokens", () => {
     const hexInCode = /(^|["'`[\s(,:])#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b/;
     const hexInComment =
       /(^|["'`[\s(,:])#([0-9a-fA-F]{6}|[0-9a-fA-F]{8}|(?=\d*[a-fA-F])[0-9a-fA-F]{3,4})\b/;
-    const comment = /^\s*(\/\/|\/\*|\*)/;
-    const hexHits = (path: string, text: string) =>
-      text
+    const comment = /^\s*(\{?\/\/|\{?\/\*|\*)/;
+    const hexHits = (path: string, text: string) => {
+      const inComment = commentLines(text, comment);
+      return text
         .split("\n")
         .flatMap((line, i) =>
-          (comment.test(line) ? hexInComment : hexInCode).test(line)
+          (inComment[i] ? hexInComment : hexInCode).test(line)
             ? [`${path}:${i + 1}: ${line.trim()}`]
             : [],
         );
+    };
     const rgb = /(?<![a-zA-Z])(rgba?|hsla?)\(/;
     const palette =
       /\b(bg|text|border|ring|outline|fill|stroke|shadow|from|to|via|decoration)-(white|black|(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})\b/;
@@ -97,12 +119,15 @@ describe("focus rings", () => {
   // A comment line is blanked, not dropped, so the line numbers stay right. A
   // line opening with `*` counts only when a space, `/` or the line's end
   // follows, so a class line opening with Tailwind's `*:` variant is still read.
-  const comment = /^\s*(\/\/|\/\*|\*(\s|\/|$))/;
-  const code = (text: string) =>
-    text
+  // A line inside a `{/* … */}` block counts too.
+  const comment = /^\s*(\{?\/\/|\{?\/\*|\*(\s|\/|$))/;
+  const code = (text: string) => {
+    const inComment = commentLines(text, comment);
+    return text
       .split("\n")
-      .map((line) => (comment.test(line) ? "" : line))
+      .map((line, i) => (inComment[i] ? "" : line))
       .join("\n");
+  };
 
   // A ring offset is a box-shadow in a colour of its own, white unless a class
   // sets it, so it drew a white line round every focused button in the dark

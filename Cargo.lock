@@ -1964,7 +1964,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-push"
+name = "message-crate-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",

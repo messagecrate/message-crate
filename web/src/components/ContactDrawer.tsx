@@ -18,6 +18,7 @@ import {
 } from "./contactDrawer/contactDrawerTypes";
 import { PencilIcon } from "./icons";
 import PlainButton from "./PlainButton";
+import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
 
 /**
  * Overlay mode only: the list column's right edge, which `overlayDrawerLeft`
@@ -30,6 +31,11 @@ import PlainButton from "./PlainButton";
  * is the one the `ResizeObserver` watches; a column that unmounts stops being
  * watched, and the drawer takes the no-column placement until another
  * appears.
+ *
+ * A scroll moves the column without resizing it: in a narrow window the row
+ * under the header scrolls sideways (#1722). Every scroll in the page is
+ * listened for, since scroll events do not bubble, and measures the column
+ * again on the next frame.
  */
 function useDrawerLeft(open: boolean): number | null {
   const [left, setLeft] = useState<number | null>(null);
@@ -79,10 +85,12 @@ function useDrawerLeft(open: boolean): number | null {
     // ResizeObserver's first report would; an unchanged edge sets no state.
     measure();
     window.addEventListener("resize", scheduleMeasure);
+    document.addEventListener("scroll", scheduleMeasure, { capture: true, passive: true });
 
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", scheduleMeasure);
+      document.removeEventListener("scroll", scheduleMeasure, { capture: true });
       pageChanges.disconnect();
       columnResizes.disconnect();
     };
@@ -94,17 +102,18 @@ function useDrawerLeft(open: boolean): number | null {
 /**
  * The overlay drawer's left edge. Its right edge is `right: 0`, so it is never
  * past the window's, though the 920px cap can end it sooner. The drawer is
- * never narrower than 20rem (or the whole window, when the window is narrower
- * than that).
+ * never narrower than the right pane's minimum, `RIGHT_PANE_MIN_WIDTH` (or the
+ * whole window, when the window is narrower than that).
  *
- * Next to the list column, the drawer starts at the column's right edge; when
- * that leaves less than 20rem, it moves left over the column. With no list
- * column it keeps 14rem of the page in view, and `ml-auto` with its 920px cap
- * pushes it against the right edge.
+ * Next to the list column, the drawer starts at the column's right edge, where
+ * the right pane starts; when that leaves less than the right pane's minimum,
+ * it moves left over the column. With no list column it keeps 14rem of the
+ * page in view, and `ml-auto` with its 920px cap pushes it against the right
+ * edge.
  */
 function overlayDrawerLeft(listColumnRight: number | null): string {
   const edge = listColumnRight == null ? "14rem" : `${listColumnRight}px`;
-  return `max(0px, min(${edge}, 100vw - 20rem))`;
+  return `max(0px, min(${edge}, 100vw - ${RIGHT_PANE_MIN_WIDTH}px))`;
 }
 
 type ContactDrawerProps = {

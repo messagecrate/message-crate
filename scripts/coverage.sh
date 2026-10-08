@@ -22,7 +22,7 @@
 # ffmpeg on PATH matters: the transcode and media tests skip themselves
 # without it, and what they would have called then shows as uncovered.
 # src-tauri is not a workspace member and is not measured; its commands are
-# thin wrappers over the exporter, push, and export crates, which are.
+# thin wrappers over the exporter, import, and export crates, which are.
 # Test code itself (tests/ directories and the <module>/tests.rs files) is
 # left out of the numbers. Coverage is a report, never a gate:
 # docs/adr/0007-ci-is-the-only-gate.md. The Coverage workflow runs this

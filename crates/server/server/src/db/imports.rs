@@ -158,7 +158,7 @@ pub struct ImportRow {
     pub account_id: i64,
     /// Source id the run imports.
     pub source: String,
-    /// Importing tool, e.g. `message-crate-push`.
+    /// Importing tool, e.g. `message-crate-import`.
     pub tool: Option<String>,
     /// Import mode (`replace` or `append`).
     pub mode: String,

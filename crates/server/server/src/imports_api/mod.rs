@@ -187,7 +187,7 @@ impl ImportCounts {
 }
 
 /// An Import Run this process opened, as opposed to one a client
-/// (message-crate-push) owns and closes itself. Whoever starts one must
+/// (message-crate-import) owns and closes itself. Whoever starts one must
 /// finish it whatever the import does, so the Settings import table never
 /// shows a run stuck in progress.
 pub(crate) struct OwnedImportRun {
@@ -623,7 +623,7 @@ pub(crate) struct CreateImportRequest {
     #[serde(default)]
     pub(crate) dedupe: bool,
     /// Name of the program that runs the import, such as
-    /// `message-crate-push`, stored on the run as given. Null when the
+    /// `message-crate-import`, stored on the run as given. Null when the
     /// request leaves it out.
     #[serde(default)]
     pub(crate) tool: Option<String>,
@@ -885,7 +885,7 @@ pub(crate) struct ImportRunSummary {
     pub(crate) id: i64,
     /// Source id the run imports.
     pub(crate) source: String,
-    /// Importing tool, e.g. `message-crate-push`.
+    /// Importing tool, e.g. `message-crate-import`.
     pub(crate) tool: Option<String>,
     /// Import mode (`replace` or `append`).
     pub(crate) mode: String,
@@ -994,7 +994,7 @@ pub(crate) struct OwnerImportRun {
     pub(crate) id: i64,
     /// Source id the run imports.
     source: String,
-    /// Importing tool, e.g. `message-crate-push`.
+    /// Importing tool, e.g. `message-crate-import`.
     tool: Option<String>,
     /// Import mode (`replace` or `append`).
     mode: String,

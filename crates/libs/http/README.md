@@ -9,7 +9,7 @@ probe; `ok_json` reads every server answer, turning a failure into the `detail`
 sentence of the server's RFC 7807 problem document rather than a status code;
 and `classify_retry` decides which failures are worth trying again.
 
-`message-crate-push` and `message-crate-export` use this crate, and the desktop app reaches
+`message-crate-import` and `message-crate-export` use this crate, and the desktop app reaches
 `AuthError` through their re-exports.
 
 ## Build and test
@@ -22,7 +22,7 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## Docs
 
-This crate is a library used by the push and export crates. It builds no binary.
+This crate is a library used by the import and export crates. It builds no binary.
 
 ## License
 

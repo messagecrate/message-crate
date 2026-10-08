@@ -39,7 +39,7 @@ whatsapp-exporter = { path = "../crates/exporters/whatsapp-exporter", default-fe
 imessage-ir-exporter = { path = "../crates/exporters/imessage-ir-exporter", default-features = false }
 ios-backup = { path = "../crates/libs/ios-backup" }
 message-reexport = { path = "../crates/libs/reexport" }
-message-crate-push = { path = "../crates/libs/push" }
+message-crate-import = { path = "../crates/libs/import" }
 message-crate-export = { path = "../crates/libs/export" }
 message-crate-http = { path = "../crates/libs/http" }
 message-crate-serve-protocol = { path = "../crates/libs/serve-protocol" }

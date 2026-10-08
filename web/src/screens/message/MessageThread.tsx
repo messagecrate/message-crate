@@ -14,6 +14,19 @@ const LOAD_MARGIN = 600;
 const BOTTOM_SLACK = 8;
 
 /**
+ * Scrolls the thread so `node` sits at its top (`start`) or in its middle
+ * (`center`). Only the thread scrolls: `scrollIntoView` would also scroll
+ * every scrolling ancestor, such as the row under the header that scrolls
+ * sideways in a narrow window (#1722), and pan the list out of view.
+ */
+function scrollThreadTo(thread: HTMLElement, node: HTMLElement, align: "center" | "start") {
+  const nodeBox = node.getBoundingClientRect();
+  const offset = nodeBox.top - thread.getBoundingClientRect().top;
+  const slack = align === "center" ? (thread.clientHeight - nodeBox.height) / 2 : 0;
+  thread.scrollTop += offset - slack;
+}
+
+/**
  * The conversation, the way a phone shows it (#1391): oldest at the top,
  * newest at the bottom, a separator for each day, and older and newer
  * messages loading as the person scrolls toward either end.
@@ -111,7 +124,7 @@ export default function MessageThread({
       } else {
         const node = document.getElementById(`row-${landing.to.id}`);
         if (node) {
-          node.scrollIntoView({ block: landing.to.align });
+          scrollThreadTo(el, node, landing.to.align);
           landedSeq.current = landing.seq;
         }
       }

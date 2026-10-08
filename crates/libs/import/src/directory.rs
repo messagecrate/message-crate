@@ -35,8 +35,8 @@ pub(crate) fn input_directory(input: &Path) -> Result<PathBuf> {
     Ok(directory)
 }
 
-/// True for files message-crate-push itself writes (journal/report/log), not conversations.
-fn is_push_artifact(name: &str) -> bool {
+/// True for files message-crate-import itself writes (journal/report/log), not conversations.
+fn is_import_artifact(name: &str) -> bool {
     name.eq_ignore_ascii_case(journal::JOURNAL_NAME)
         || name.eq_ignore_ascii_case(journal::REPORT_NAME)
         || name.eq_ignore_ascii_case(journal::LOG_NAME)
@@ -52,7 +52,7 @@ fn is_conversation_jsonl(path: &Path, exclude: &[&Path]) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return false;
     };
-    if is_push_artifact(name) {
+    if is_import_artifact(name) {
         return false;
     }
     path.extension()
@@ -163,7 +163,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn list_jsonl_files_skips_push_artifacts_and_sorts() {
+    fn list_jsonl_files_skips_import_artifacts_and_sorts() {
         let dir = tempfile::tempdir().unwrap();
         for name in [
             "b.jsonl",

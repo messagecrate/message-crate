@@ -48,7 +48,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -100,6 +101,11 @@ released versions carry their date on the heading.
   again. That record now has a new name; one with the old name is ignored and
   can be deleted, and attachments already in the directory are still not
   fetched again.
+- 2026-10-07: **An Upload's report says Import.** The report an Upload
+  writes beside its run, and the name the server keeps for the program that
+  ran each Import Run the desktop app starts, now say import where they said
+  push, the word Message Crate no longer uses for an Import Run. A report
+  with the old name is not read and can be deleted (#1926).
 
 ### Fixes
 
@@ -114,6 +120,15 @@ released versions carry their date on the heading.
   gives them, without the scheme. Connecting, Disconnected and Not tested name
   the server the same way, and **Connection Status** on the **Server Address**
   screen names the address in the field (#1973).
+- 2026-10-07: **Conversations, Contacts and Trash keep their list in a
+  narrow window.** In a window 390 px wide the list column shrank to 1 px and
+  the right pane was cut off at the window's edge. Beside a list the
+  navigation panel now gives way first, down to 160 px, the list stops at
+  220 px and the right pane at 320 px. In a window narrower than the three,
+  the area under the header scrolls sideways to reach the right pane, and the
+  header stays where it is. A photo in a conversation is no wider than its
+  message. Settings, Import and Export still fit the window. Phone layouts
+  come later (#1722).
 
 #### Desktop app
 
@@ -200,6 +215,19 @@ released versions carry their date on the heading.
   too.
 
 #### Browsing and search
+
+- 2026-10-07: **A hit found by an earlier version says so in the Messages
+  list.** A search finds a message when one of its earlier versions holds a
+  searched word, but the row showed only the final text, so a word only an
+  earlier version held showed nowhere, and the hit looked like a wrong result
+  until it was opened. Searching `imprudent delighted` on the Demo Account
+  listed "You have delighted us long enough." with "delighted" in bold and
+  nothing for "imprudent". The row now keeps the final text and adds a muted
+  line for each earlier version it quotes, here "Earlier version: So
+  imprudent a match on both sides!", with the searched words in bold. The
+  row quotes the newest matched earlier version, and, for each searched word
+  that neither that version nor the final text shows, the newest matched
+  version that holds the word (#1785).
 
 - 2026-10-07: **A contact's and an identity's counts include orphaned
   messages.** Since orphaned messages got conversations of their own, the
