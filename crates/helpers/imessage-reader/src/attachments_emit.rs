@@ -185,9 +185,17 @@ mod tests {
     /// The balloon id Messages stores on a handwritten message.
     const HANDWRITING_BALLOON: &str = "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.Handwriting.HandwritingProvider";
 
-    /// The ROWID of the row [`insert_hello_row`] adds, past the fixture's
-    /// last message ROWID (18).
+    /// The ROWID of the row [`insert_hello_row`] adds, well past the
+    /// fixture's own ROWIDs.
     const HELLO_ROWID: i64 = 100;
+    /// When that row was sent, in seconds since 2001: after the fixture's
+    /// last message.
+    const HELLO_SECONDS_SINCE_2001: i64 = 600_001_000;
+    /// Apple's own link preview balloon: a balloon id with no plugin prefix.
+    const URL_BALLOON: &str = "com.apple.messages.URLBalloonProvider";
+    /// A third-party app's extension under the same
+    /// `MSMessageExtensionBalloonPlugin` prefix as handwriting.
+    const OTHER_APP_BALLOON: &str = "com.apple.messages.MSMessageExtensionBalloonPlugin:ABCDE12345:com.example.SomeApp.MessagesExtension";
 
     /// Add a message row to the fixture's first chat that carries the
     /// "hello" handwriting payload under the given balloon id, and return
@@ -206,7 +214,7 @@ mod tests {
             rusqlite::params![
                 HELLO_ROWID,
                 guid,
-                chat_db_fixture::apple_nanos(600_001_000),
+                chat_db_fixture::apple_nanos(HELLO_SECONDS_SINCE_2001),
                 balloon_bundle_id,
                 HELLO_PAYLOAD
             ],
@@ -251,10 +259,7 @@ mod tests {
     /// `MSMessageExtensionBalloonPlugin` prefix as handwriting.
     #[test]
     fn a_payload_that_is_not_handwriting_renders_no_svg() {
-        for balloon in [
-            "com.apple.messages.URLBalloonProvider",
-            "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls",
-        ] {
+        for balloon in [URL_BALLOON, OTHER_APP_BALLOON] {
             let fixture = FixtureDb::write();
             let session = fixture.session();
             let message = insert_hello_row(&fixture, &session, "not-hw-guid", Some(balloon));
