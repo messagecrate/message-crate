@@ -8,7 +8,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const PINNED_HINT: &str = "whatsapp-chat-exporter>=0.13";
+/// How to install the `wtsexporter` Message Crate reads: its fork at release
+/// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
+/// ids a quoted reply is linked by. Upstream records neither.
+const PINNED_HINT: &str = "pipx install 'whatsapp-chat-exporter[android_backup,crypt15] @ git+https://github.com/messagecrate/WhatsApp-Chat-Exporter@0.13.0-mc.2'";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Platform {
@@ -71,7 +74,8 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
         }
         bail!(
             "WTSEXPORTER is set but not a file: {}. Install with \
-             pip install '{PINNED_HINT}' or place the release binary in cli/ next to this tool.",
+             {PINNED_HINT} or place the messagecrate/WhatsApp-Chat-Exporter 0.13.0-mc.2 \
+             release binary in cli/ next to this tool.",
             path.display()
         );
     }
@@ -113,9 +117,9 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
     }
 
     bail!(
-        "Could not find {executable}. Install with: pip install '{PINNED_HINT}' \
-         (or pip install 'whatsapp-chat-exporter[android_backup,crypt15]'), \
-         put the KnugiHK release binary in cli/ next to this tool / in MESSAGE_CRATE_BIN, \
+        "Could not find {executable}. Install with: {PINNED_HINT}, \
+         put the messagecrate/WhatsApp-Chat-Exporter 0.13.0-mc.2 release binary in cli/ \
+         next to this tool / in MESSAGE_CRATE_BIN, \
          or set WTSEXPORTER. Tried: {}",
         tried
             .iter()
@@ -153,9 +157,11 @@ pub(crate) fn run_wtsexporter(
         .output()
         .map_err(|err| {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
-                " (often a broken pipx/venv shim: the script exists but its Python interpreter does not — try `pipx reinstall whatsapp-chat-exporter` or set WTSEXPORTER to a working binary)"
+                format!(
+                    " (often a broken pipx/venv shim: the script exists but its Python interpreter does not — try `pipx uninstall whatsapp-chat-exporter` and then `{PINNED_HINT}`, or set WTSEXPORTER to a working binary)"
+                )
             } else {
-                ""
+                String::new()
             };
             anyhow::anyhow!("spawn {}: {err}{hint}", bin.display())
         })?;
