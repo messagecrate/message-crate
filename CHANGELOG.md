@@ -117,6 +117,20 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-07: **The desktop app remembers the server address.** An address
+  entered under **Change server address** was saved only with the login.
+  Logging out, or a login the server no longer accepted, forgot it. The next
+  start was back on `http://127.0.0.1:8080` and started the app's own Message
+  Crate. While a login was saved, the app instead opened on **Server
+  Address** at every start and waited for **Use this address**. The address
+  is now a setting of its own that logging out leaves alone. The app opens on
+  the login card for the saved address and starts its own Message Crate only
+  when the saved address is `http://127.0.0.1:8080`. **Change server
+  address** still changes it, or goes back to the app's own. The website
+  keeps a changed address the same way, and its **Server Address** screen
+  offers **Use this website's own Message Crate** to go back. Going back to
+  an address, in the app or the website, restores a login saved for it
+  (#1972).
 - 2026-10-05: **The Message Crate the desktop app started stops when the app
   crashes.** Closing the app has always stopped it. When the app crashed or
   was ended from the task manager instead, its Message Crate went on running
@@ -219,6 +233,10 @@ released versions carry their date on the heading.
 
 - The database format changed. **An existing Message Crate is rebuilt empty
   on first start and its messages must be imported again.**
+- A desktop app that was pointed at a Message Crate on another computer
+  opens on this computer's own once after upgrading, because the address is
+  now saved apart from the login. Enter the address again under **Change
+  server address** and log in. From then on the app keeps it.
 - Message files exported before replies moved onto the message itself are
   refused when you import or convert them, rather than read with their
   replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and

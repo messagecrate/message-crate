@@ -96,3 +96,13 @@ ffmpeg at once, usually before the server's own wait on the app's process
 handle stops it. A Windows server whose app crashed therefore ends the way a
 closed app's server does, without finishing the work in flight. On Unix a
 crash is unchanged.
+
+## Note, 2026-10-07: the saved server address decides
+
+The app starts its server only when the address on the login card is its
+own, and that address is now the saved server address, a setting kept apart
+from the saved login (#1972). Logging out, or a login the server refuses,
+leaves it as it is. An app pointed at a Message Crate elsewhere therefore
+starts nothing at every later start. The very first start, before any
+address is saved, still starts and seeds the app's own Message Crate; no
+start-up option skips it.
