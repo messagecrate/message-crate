@@ -718,7 +718,7 @@ pub async fn take_back_set_aside(
     handle_id: i64,
     contact_id: i64,
 ) -> Result<()> {
-    crate::db::import_contacts::take_back(conn, account_id, handle_id, contact_id).await?;
+    crate::db::import_contacts::give_back(conn, account_id, handle_id, contact_id).await?;
     sqlx::query(
         "INSERT INTO contact_group_members (contact_id, group_id)
          SELECT $3, sa.group_id FROM contact_group_members_set_aside sa
@@ -731,6 +731,21 @@ pub async fn take_back_set_aside(
     .bind(contact_id)
     .execute(&mut *conn)
     .await?;
+    forget_set_aside(conn, account_id, handle_id).await
+}
+
+/// Forget the import run records and import run Contact Group memberships
+/// set aside under `handle_id`, when no contact takes them back.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn forget_set_aside(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<()> {
+    crate::db::import_contacts::forget_set_aside(conn, account_id, handle_id).await?;
     sqlx::query(
         "DELETE FROM contact_group_members_set_aside
          WHERE handle_id = $2
@@ -794,7 +809,8 @@ enum IdentityUse {
     /// conversation's chat handle.
     Person,
     /// Only the account holder's side: a message's owner identity, one of
-    /// the account's identities, or a group's id.
+    /// the account's identities, a group's id, or a participant set aside
+    /// while its address is one of the account's identities (#1662).
     Holder,
     /// Nothing.
     Nothing,
@@ -827,6 +843,7 @@ async fn identity_use(
            OR EXISTS (SELECT 1 FROM staging_messages
                       WHERE account_id = $1 AND owner_handle_id = $2)
            OR EXISTS (SELECT 1 FROM account_handles WHERE account_id = $1 AND handle_id = $2)
+           OR EXISTS (SELECT 1 FROM participants_set_aside WHERE handle_id = $2)
            OR EXISTS (SELECT 1 FROM conversations WHERE account_id = $1 AND chat_handle_id = $2)
            OR EXISTS (SELECT 1 FROM staging_conversations
                       WHERE account_id = $1 AND chat_handle_id = $2)",

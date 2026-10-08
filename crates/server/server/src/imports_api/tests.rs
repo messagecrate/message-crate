@@ -6138,11 +6138,12 @@ async fn removing_an_identity_linked_by_mistake_keeps_the_backups_name() {
     assert_eq!(holder_contact(&fixture).await, Some(contact_id));
 }
 
-/// The holder named `Matt` in the header of a group with Ada and of a
-/// one-to-one conversation with Ada.
-fn holder_listed_with_ada_file() -> String {
+/// The holder named `holder_name` in the header of a group with Ada and of
+/// a one-to-one conversation with Ada, each with one message from Ada whose
+/// guid ends in `suffix`.
+fn holder_listed_with_ada_file(holder_name: &str, suffix: &str) -> String {
     let message = |guid: &str| {
-        message_line(guid, "hi")
+        message_line(&format!("{guid}-{suffix}"), "hi")
             .at(1_400_773_262_000)
             .service(IrService::Whatsapp)
             .sender("+15555550101")
@@ -6152,17 +6153,61 @@ fn holder_listed_with_ada_file() -> String {
         conversation_header("whatsapp", "group-1662@g.us")
             .group()
             .title("Family")
-            .participant("+15555550199", Some("Matt"))
+            .participant("+15555550199", Some(holder_name))
             .participant("+15555550101", Some("Ada"))
             .line(),
         message("group-hi"),
         conversation_header("whatsapp", "+15555550101")
             .participant("+15555550101", Some("Ada"))
-            .participant("+15555550199", Some("Matt"))
+            .participant("+15555550199", Some(holder_name))
             .line(),
         message("ada-hi"),
     ]
     .concat()
+}
+
+/// The id of the group titled `Family`.
+async fn family_group(fixture: &crate::test_support::TestFixture) -> i64 {
+    sqlx::query_scalar("SELECT id FROM conversations WHERE group_title = 'Family'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap()
+}
+
+/// How many rows the three set-aside tables hold for the holder's number.
+async fn set_aside_rows(fixture: &crate::test_support::TestFixture) -> i64 {
+    sqlx::query_scalar(
+        "SELECT (SELECT COUNT(*) FROM participants_set_aside sa
+                 JOIN handles h ON h.id = sa.handle_id WHERE h.normalized = '+15555550199')
+              + (SELECT COUNT(*) FROM import_contacts_set_aside sa
+                 JOIN handles h ON h.id = sa.handle_id WHERE h.normalized = '+15555550199')
+              + (SELECT COUNT(*) FROM contact_group_members_set_aside sa
+                 JOIN handles h ON h.id = sa.handle_id WHERE h.normalized = '+15555550199')",
+    )
+    .fetch_one(&mut *fixture.conn().await)
+    .await
+    .unwrap()
+}
+
+/// Link or remove the holder's number `+15555550199` on `service`.
+async fn change_holder_identity_on(
+    state: &crate::server::AppState,
+    fixture: &crate::test_support::TestFixture,
+    token: &str,
+    field: &str,
+    service: &str,
+) {
+    let account_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'importer'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    let _: serde_json::Value = patch_json(
+        state,
+        &format!("/v1/accounts/{account_id}"),
+        token,
+        serde_json::json!({ field: [{ "address": "+15555550199", "service": service }] }),
+    )
+    .await;
 }
 
 /// Linking the holder's number by mistake sets the holder's participant rows
@@ -6172,12 +6217,8 @@ fn holder_listed_with_ada_file() -> String {
 #[tokio::test]
 async fn removing_an_identity_puts_back_the_holder_participants_it_set_aside() {
     let (state, fixture, token) = importer().await;
-    import_whatsapp(&state, &token, holder_listed_with_ada_file()).await;
-    let group: i64 =
-        sqlx::query_scalar("SELECT id FROM conversations WHERE group_title = 'Family'")
-            .fetch_one(&mut *fixture.conn().await)
-            .await
-            .unwrap();
+    import_whatsapp(&state, &token, holder_listed_with_ada_file("Matt", "1")).await;
+    let group = family_group(&fixture).await;
     let with_ada = conversation_at(&fixture, "+15555550101").await;
     let expected = vec![
         ("+15555550101".to_string(), Some("Ada".to_string())),
@@ -6193,6 +6234,60 @@ async fn removing_an_identity_puts_back_the_holder_participants_it_set_aside() {
 
     assert_eq!(participants_of(&fixture, group).await, expected);
     assert_eq!(participants_of(&fixture, with_ada).await, expected);
+}
+
+/// A participant set aside keeps its identity alive. The holder's number is
+/// linked on the phone service, so its WhatsApp row is set aside in the
+/// group and stays on the named contact the import made. Taking that row off
+/// the contact must not delete it, or its set-aside participant would go
+/// with it, and removing the identity would give nothing back (#1662).
+#[tokio::test]
+async fn taking_a_set_aside_identity_off_its_contact_keeps_it_for_the_unlink() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_listed_with_ada_file("Matt", "1")).await;
+    let group = family_group(&fixture).await;
+    change_holder_identity_on(&state, &fixture, &token, "identities", "phone").await;
+    let contact_id = holder_contact(&fixture)
+        .await
+        .expect("the named contact stays");
+    let _: serde_json::Value = patch_json(
+        &state,
+        &format!("/v1/contacts/{contact_id}"),
+        &token,
+        serde_json::json!({
+            "remove_identity": { "address": "+15555550199", "service": "whatsapp" }
+        }),
+    )
+    .await;
+
+    change_holder_identity_on(&state, &fixture, &token, "remove_identities", "phone").await;
+
+    assert!(
+        participants_of(&fixture, group)
+            .await
+            .contains(&("+15555550199".to_string(), Some("Matt".to_string())))
+    );
+}
+
+/// An import while the holder's number is linked writes no participant for
+/// the holder, whatever the backup now calls them. Removing the identity
+/// then gives back the participant set aside, with the name it had (#1662).
+#[tokio::test]
+async fn removing_an_identity_keeps_the_set_aside_name_over_a_later_backups() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_listed_with_ada_file("Matt", "1")).await;
+    let group = family_group(&fixture).await;
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    import_whatsapp(&state, &token, holder_listed_with_ada_file("Matthew", "2")).await;
+    assert_eq!(family_group(&fixture).await, group);
+
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    assert!(
+        participants_of(&fixture, group)
+            .await
+            .contains(&("+15555550199".to_string(), Some("Matt".to_string())))
+    );
 }
 
 /// A group with Ada, where the holder's number `+15555550199` sent a
@@ -6274,6 +6369,67 @@ async fn removing_an_identity_gives_the_new_contact_the_runs_record_back() {
 
     let contact_id = holder_contact(&fixture).await.expect("a contact again");
     assert_eq!(record(contact_id).await, before);
+}
+
+/// The run records set aside for the holder's number go to the contact the
+/// number has when the identity is removed, here Ada's, to which the person
+/// added the number while it was linked. None stay behind (#1662).
+#[tokio::test]
+async fn removing_an_identity_gives_set_aside_records_to_the_contact_it_has() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_sent_in_a_group_file()).await;
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    assert!(set_aside_rows(&fixture).await > 0);
+    let ada: i64 = sqlx::query_scalar(
+        "SELECT ch.contact_id FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id WHERE h.normalized = '+15555550101'",
+    )
+    .fetch_one(&mut *fixture.conn().await)
+    .await
+    .unwrap();
+    let _: serde_json::Value = patch_json(
+        &state,
+        &format!("/v1/contacts/{ada}"),
+        &token,
+        serde_json::json!({
+            "add_identity": { "address": "+15555550199", "service": "whatsapp" }
+        }),
+    )
+    .await;
+
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    assert_eq!(holder_contact(&fixture).await, Some(ada));
+    assert_eq!(set_aside_rows(&fixture).await, 0);
+}
+
+/// The run records set aside for the holder's number are forgotten when the
+/// identity is removed and no conversation holds the number any more, so a
+/// later link cannot give a new contact a record for an earlier run (#1662).
+#[tokio::test]
+async fn removing_an_identity_forgets_set_aside_records_nothing_takes() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, holder_sent_in_a_group_file()).await;
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    assert!(set_aside_rows(&fixture).await > 0);
+    // The group deleted for good while the number was linked.
+    let group = family_group(&fixture).await;
+    let path = format!("/v1/conversations/{group}");
+    let trashed = crate::test_support::post_status(
+        &state,
+        &format!("{path}/trash"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert!(trashed.is_success(), "{trashed}");
+    let deleted = crate::test_support::delete_status(&state, &path, &token).await;
+    assert!(deleted.is_success(), "{deleted}");
+
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    assert_eq!(holder_contact(&fixture).await, None);
+    assert_eq!(set_aside_rows(&fixture).await, 0);
 }
 
 /// Start an Import Run and complete it with `issues` skips, returning its id.

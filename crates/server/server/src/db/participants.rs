@@ -46,8 +46,9 @@ pub async fn set_aside_identity_participants(
 
 /// Move each participant set aside in the account's conversations whose
 /// identity is no longer one of the account's back into `participants`, as
-/// it was. A participant an import wrote for the same seat since stays as
-/// the import wrote it.
+/// it was, with the name it had when it was set aside. An import while the
+/// identity was linked wrote no participant for it (#1093), so a newer
+/// backup's name for the holder is not kept.
 ///
 /// # Errors
 ///

@@ -46,8 +46,9 @@ CREATE INDEX IF NOT EXISTS ix_participants_handle_id ON participants (handle_id)
 -- A participant set aside because its identity became one of the account's
 -- after the import wrote it. The holder is never a participant, so linking
 -- the identity moves the row here, and removing the identity again moves it
--- back to `participants` (#1662). A participant an import writes for the
--- same seat replaces it.
+-- back to `participants` (#1662). An import while the identity is linked
+-- writes no participant for it, so the row comes back with the name it had
+-- when it was set aside.
 CREATE TABLE IF NOT EXISTS participants_set_aside (
     -- Parent conversation (`conversations.id`).
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

@@ -92,15 +92,22 @@ pub(crate) async fn follow_identities(
         .into_iter()
         .filter(|id| !identity_handles_now.contains(id))
     {
-        if contacts::contact_id_for_handle(conn, account_id, handle_id)
-            .await?
-            .is_none()
-            && handles::is_met_in_conversations(conn, account_id, handle_id).await?
-        {
-            let contact_id =
+        // The run records and groups set aside for the handle go to its
+        // contact: the one it has, else the one an import would make for
+        // it. With neither they are forgotten, so a later link starts over.
+        let contact_id = match contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
+            Some(contact_id) => Some(contact_id),
+            None if handles::is_met_in_conversations(conn, account_id, handle_id).await? => Some(
                 ensure_contact_for_handle(conn, account_id, None, handle_id, None, &mut counts)
-                    .await?;
-            contacts::take_back_set_aside(conn, account_id, handle_id, contact_id).await?;
+                    .await?,
+            ),
+            None => None,
+        };
+        match contact_id {
+            Some(contact_id) => {
+                contacts::take_back_set_aside(conn, account_id, handle_id, contact_id).await?;
+            }
+            None => contacts::forget_set_aside(conn, account_id, handle_id).await?,
         }
     }
     let with_yourself_now = conversations::with_yourself_ids(conn, account_id).await?;

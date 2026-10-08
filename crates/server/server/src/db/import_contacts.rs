@@ -277,13 +277,13 @@ pub async fn set_aside(
 }
 
 /// Give `contact_id` the import run records [`set_aside`] kept under
-/// `handle_id`, and forget them there. A run that already records the
-/// contact keeps its own reason.
+/// `handle_id`. A run that already records the contact keeps its own reason.
+/// [`forget_set_aside`] then clears them.
 ///
 /// # Errors
 ///
-/// Returns an error when a statement fails.
-pub async fn take_back(
+/// Returns an error when the statement fails.
+pub async fn give_back(
     conn: &mut SqliteConnection,
     account_id: i64,
     handle_id: i64,
@@ -301,6 +301,19 @@ pub async fn take_back(
     .bind(contact_id)
     .execute(&mut *conn)
     .await?;
+    Ok(())
+}
+
+/// Forget the import run records [`set_aside`] kept under `handle_id`.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn forget_set_aside(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<()> {
     sqlx::query(
         "DELETE FROM import_contacts_set_aside
          WHERE handle_id = $2

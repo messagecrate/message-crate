@@ -586,8 +586,19 @@ of the contact on the chat handle, when the contact has one. A conversation
 imported while the chat handle was an identity has no participant row to give
 back, so that name is the only one there is.
 
-A participant an import writes for a seat set aside replaces it
+An import while the identity is linked writes no participant at it, so a
+participant set aside comes back with the name it had when it was set aside,
+even when a later backup named the holder differently. Why: the import drops
+the holder's participant before it is written, so the newer name is never
+stored. Importing that backup again after the unlink does not change it
+either, because an import never replaces a participant row already there
 (`db/staging.rs`, `promote_participants`).
+
+Removing an identity also settles the Import Run records and Contact Group
+memberships set aside for it. They go to the contact the identity has, or to
+the one it gets. When it gets none, because no conversation holds it any
+more, they are forgotten. Why: a record left behind would go to whichever
+contact a later unlink made, under a run that never touched it.
 
 Dedupe matches a received note in a conversation with yourself with no sender,
 in the content key and in the near-time pass alike (`dedupe.rs`,
