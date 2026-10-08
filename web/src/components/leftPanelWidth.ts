@@ -19,8 +19,8 @@ export const LEFT_PANEL_WINDOW_SHARE = 0.5;
  * the window's share, never below `floor`. A width is shown as the smaller of
  * this and the stored width, which `LEFT_PANEL_MAX_WIDTH` already bounds.
  * The floor is `LEFT_PANEL_MIN_WIDTH` on a screen with no list, so Settings
- * keeps room at phone width (#1718), and `COLUMN_ROW_LEFT_PANEL_FLOOR` beside
- * a list, where the page scrolls sideways instead (#1722).
+ * keeps room at phone width (#1718), and `LEFT_PANEL_DEFAULT_WIDTH` beside a
+ * list, where the row under the header scrolls sideways instead (#1722).
  */
 export function leftPanelWindowMaxWidth(
   windowWidth: number,

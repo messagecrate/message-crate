@@ -25,7 +25,6 @@ import AppHeader, { type HeaderSearch } from "./AppHeader";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
-import { COLUMN_ROW_LEFT_PANEL_FLOOR, COLUMN_ROW_MIN_WIDTH } from "./columnRowWidth";
 import {
   type ContactBrowseKind,
   type ContactListPreviewSource,
@@ -35,6 +34,7 @@ import {
 } from "./contactDrawer/contactDrawerTypes";
 import LeftPanel from "./LeftPanel";
 import ListColumn from "./ListColumn";
+import { LEFT_PANEL_DEFAULT_WIDTH } from "./leftPanelWidth";
 import ResultsColumn from "./ResultsColumn";
 import RightPane from "./RightPane";
 import { RightToolbarProvider } from "./RightToolbarContext";
@@ -312,134 +312,127 @@ export default function AppLayout() {
           onSearch={handleSearch}
         />
         <ColumnResizeProvider>
-          {/* Beside a list the row keeps every column's minimum width
-              (`COLUMN_ROW_MIN_WIDTH`), and a narrower window scrolls it
-              sideways rather than squeezing the list. A screen with no list
-              fits the window. */}
+          {/* Each column keeps its own minimum width, so a window narrower
+              than the three scrolls this row sideways rather than squeezing
+              the list (#1722). A screen with no list fits the window. */}
           <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-            <div
-              data-column-row
-              className="flex min-w-0 flex-1"
-              style={isFullScreen ? undefined : { minWidth: `${COLUMN_ROW_MIN_WIDTH}px` }}
-            >
-              <LeftPanel
-                browseQuery={browseQuery}
-                windowFloor={isFullScreen ? undefined : COLUMN_ROW_LEFT_PANEL_FLOOR}
-              />
+            <LeftPanel
+              browseQuery={browseQuery}
+              windowFloor={isFullScreen ? undefined : LEFT_PANEL_DEFAULT_WIDTH}
+            />
 
-              {/* Conversations: render list component directly with props */}
-              {mode === "conversations" && !isMessageRoute && (
-                <>
-                  <ListColumn>
-                    {tagPage ? (
-                      <SetPageStatus
-                        state={tagPage}
-                        setLabel="Message Tag"
-                        setsLabel="Message Tags"
-                        name={tagSlugParam ?? ""}
-                      />
-                    ) : (
-                      <ResultsColumn
-                        query={threadListQuery}
-                        tag={tagFilter}
-                        searchTyped={conversationSearch !== ""}
-                        selectedConversationId={null}
-                        onSelectConversation={handleConversationSelect}
-                      />
-                    )}
-                  </ListColumn>
-                  <RightPane>
-                    <main className={mainPane}>
-                      <div className={emptyMain}>Select a conversation to view messages</div>
-                    </main>
-                  </RightPane>
-                </>
-              )}
-
-              {/* Contacts: render list component directly with props */}
-              {mode === "contacts" && (
-                <>
-                  <ListColumn>
-                    {groupPage ? (
-                      <SetPageStatus
-                        state={groupPage}
-                        setLabel="Contact Group"
-                        setsLabel="Contact Groups"
-                        name={groupSlugParam ?? ""}
-                      />
-                    ) : (
-                      <ContactList
-                        filter={contactSearch}
-                        groupFilter={groupFilter}
-                        selectedId={selectedContact?.id ?? null}
-                        onSelect={(c) => setSelectedContact(contactPreviewFromListRow(c))}
-                        onCheckedChange={handleCheckedContacts}
-                        clearCheckedRev={clearCheckedRev}
-                      />
-                    )}
-                  </ListColumn>
-                  <RightPane>
-                    {checkedContacts.length > 0 ? (
-                      <CheckedContactsPanel
-                        contacts={checkedContacts}
-                        onClear={clearCheckedContacts}
-                      />
-                    ) : selectedContact ? (
-                      <ContactDrawer
-                        variant="docked"
-                        contactId={selectedContact.id}
-                        preview={selectedContact}
-                        onClose={closeContactDrawer}
-                        onBrowseConversations={handleBrowseContactConversations}
-                      />
-                    ) : (
-                      <main className={mainPane}>
-                        <div className={emptyMain}>Select a contact to view details</div>
-                      </main>
-                    )}
-                  </RightPane>
-                </>
-              )}
-
-              {/* Trash: ListColumn shows ConversationList with trash query; main shows TrashScreen via <Outlet /> */}
-              {trashMode && (
-                <>
-                  <ListColumn>
-                    <ConversationList
-                      selectedId={trashSelectedId}
-                      onSelect={(c) => updateSearchParams({ tsel: String(c.id) })}
-                      query={trashListQuery}
+            {/* Conversations: render list component directly with props */}
+            {mode === "conversations" && !isMessageRoute && (
+              <>
+                <ListColumn>
+                  {tagPage ? (
+                    <SetPageStatus
+                      state={tagPage}
+                      setLabel="Message Tag"
+                      setsLabel="Message Tags"
+                      name={tagSlugParam ?? ""}
                     />
-                  </ListColumn>
-                  <RightPane>
+                  ) : (
+                    <ResultsColumn
+                      query={threadListQuery}
+                      tag={tagFilter}
+                      searchTyped={conversationSearch !== ""}
+                      selectedConversationId={null}
+                      onSelectConversation={handleConversationSelect}
+                    />
+                  )}
+                </ListColumn>
+                <RightPane>
+                  <main className={mainPane}>
+                    <div className={emptyMain}>Select a conversation to view messages</div>
+                  </main>
+                </RightPane>
+              </>
+            )}
+
+            {/* Contacts: render list component directly with props */}
+            {mode === "contacts" && (
+              <>
+                <ListColumn>
+                  {groupPage ? (
+                    <SetPageStatus
+                      state={groupPage}
+                      setLabel="Contact Group"
+                      setsLabel="Contact Groups"
+                      name={groupSlugParam ?? ""}
+                    />
+                  ) : (
+                    <ContactList
+                      filter={contactSearch}
+                      groupFilter={groupFilter}
+                      selectedId={selectedContact?.id ?? null}
+                      onSelect={(c) => setSelectedContact(contactPreviewFromListRow(c))}
+                      onCheckedChange={handleCheckedContacts}
+                      clearCheckedRev={clearCheckedRev}
+                    />
+                  )}
+                </ListColumn>
+                <RightPane>
+                  {checkedContacts.length > 0 ? (
+                    <CheckedContactsPanel
+                      contacts={checkedContacts}
+                      onClear={clearCheckedContacts}
+                    />
+                  ) : selectedContact ? (
+                    <ContactDrawer
+                      variant="docked"
+                      contactId={selectedContact.id}
+                      preview={selectedContact}
+                      onClose={closeContactDrawer}
+                      onBrowseConversations={handleBrowseContactConversations}
+                    />
+                  ) : (
                     <main className={mainPane}>
-                      <Outlet />
+                      <div className={emptyMain}>Select a contact to view details</div>
                     </main>
-                  </RightPane>
-                </>
-              )}
+                  )}
+                </RightPane>
+              </>
+            )}
 
-              {/* Message route: MessageRoute renders both ListColumn and RightPane */}
-              {isMessageRoute && <Outlet />}
+            {/* Trash: ListColumn shows ConversationList with trash query; main shows TrashScreen via <Outlet /> */}
+            {trashMode && (
+              <>
+                <ListColumn>
+                  <ConversationList
+                    selectedId={trashSelectedId}
+                    onSelect={(c) => updateSearchParams({ tsel: String(c.id) })}
+                    query={trashListQuery}
+                  />
+                </ListColumn>
+                <RightPane>
+                  <main className={mainPane}>
+                    <Outlet />
+                  </main>
+                </RightPane>
+              </>
+            )}
 
-              {/* Full-screen views: no ListColumn, just main */}
-              {isFullScreen && (
-                <main className={mainPane}>
-                  <Outlet />
-                </main>
-              )}
+            {/* Message route: MessageRoute renders both ListColumn and RightPane */}
+            {isMessageRoute && <Outlet />}
 
-              {/* Overlay contact panel (e.g. opened from a message thread). */}
-              {openContactId ? (
-                <ContactDrawer
-                  variant="overlay"
-                  contactId={openContactId}
-                  preview={openContactPreview}
-                  onClose={closeContactDrawer}
-                  onBrowseConversations={handleBrowseContactConversations}
-                />
-              ) : null}
-            </div>
+            {/* Full-screen views: no ListColumn, just main */}
+            {isFullScreen && (
+              <main className={mainPane}>
+                <Outlet />
+              </main>
+            )}
+
+            {/* Overlay contact panel (e.g. opened from a message thread). */}
+            {openContactId ? (
+              <ContactDrawer
+                variant="overlay"
+                contactId={openContactId}
+                preview={openContactPreview}
+                onClose={closeContactDrawer}
+                onBrowseConversations={handleBrowseContactConversations}
+              />
+            ) : null}
           </div>
         </ColumnResizeProvider>
       </div>

@@ -409,8 +409,9 @@ describe("AppLayout in a phone-width window (#1722)", () => {
       .parentElement as HTMLElement;
   }
 
-  function columnRow(container: HTMLElement): HTMLElement {
-    return container.querySelector("[data-column-row]") as HTMLElement;
+  /** The row under the header that holds the navigation panel and the columns beside it. */
+  function columnRow(): HTMLElement {
+    return navigationPanel().parentElement as HTMLElement;
   }
 
   it.each(["/", "/contacts", "/trash"])(
@@ -421,29 +422,39 @@ describe("AppLayout in a phone-width window (#1722)", () => {
       const { container } = renderLayout(entry);
 
       // The navigation panel stops at its default width, the list and the
-      // right pane at their minimums, and the row is as wide as all three.
+      // right pane at their minimums, and the row scrolls sideways.
       expect(navigationPanel().style.width).toBe("220px");
       expect(container.querySelector("[data-list-column]")).toHaveStyle({ minWidth: "220px" });
       expect(container.querySelector("[data-right-pane]")).toHaveStyle({ minWidth: "320px" });
-      const row = columnRow(container);
-      expect(row).toHaveStyle({ minWidth: "762px" });
-      expect(row.parentElement?.className).toContain("overflow-x-auto");
+      expect(columnRow().className).toContain("overflow-x-auto");
     },
   );
 
   it("keeps the same row for an open conversation", () => {
     setWindowWidth(390);
-    const { container } = renderLayout("/messages/6");
+    render(
+      <Providers>
+        <MemoryRouter initialEntries={["/messages/6"]}>
+          <Routes>
+            <Route element={<AppLayout />}>
+              <Route path="messages/:id" element={<div data-testid="message-route" />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </Providers>,
+    );
     expect(navigationPanel().style.width).toBe("220px");
-    expect(columnRow(container)).toHaveStyle({ minWidth: "762px" });
+    expect(columnRow().className).toContain("overflow-x-auto");
+    // The message route's columns sit in the row itself, with no wrapper
+    // between that would clip them.
+    expect(screen.getByTestId("message-route").parentElement).toBe(columnRow());
   });
 
   it("leaves Settings to fit the window, with the panel at half its width", () => {
     localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
     setWindowWidth(390);
-    const { container } = renderLayout("/settings");
+    renderLayout("/settings");
     expect(navigationPanel().style.width).toBe("195px");
-    expect(columnRow(container).style.minWidth).toBe("");
   });
 
   it("changes nothing in a 1280 px window", () => {
