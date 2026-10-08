@@ -548,6 +548,18 @@ one expression the conversation list, the conversation page, the Messages list,
 `title:`, `in:` and plain text all read
 ([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
+Participants and the holder's contact follow the identity list: when an
+account's identities change, the server runs the rule again over the
+account's conversations, so a conversation that is now with yourself loses
+its participants and the contact an import made for the holder, unless
+something else refers to that contact, and one that no longer is gets its
+chat handle back as its participant, on a contact; its messages are not
+rewritten (`imports_api/with_yourself.rs`). Why: otherwise the title and
+`with:me`, which ask of the identities the account has now, and the stored
+rows, which an import wrote against the identities it had then, disagree,
+and the holder stays their own contact
+([#1662](https://github.com/messagecrate/message-crate/issues/1662)).
+
 Dedupe matches a received note in a conversation with yourself with no sender,
 in the content key and in the near-time pass alike (`dedupe.rs`,
 `sender_for_key_sql`, through `is_with_yourself_sql`). Why: a copy imported

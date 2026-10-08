@@ -114,6 +114,17 @@ released versions carry their date on the heading.
   gives them, without the scheme. Connecting, Disconnected and Not tested name
   the server the same way, and **Connection Status** on the **Server Address**
   screen names the address in the field (#1973).
+- 2026-10-08: **Adding or removing an identity updates the conversations with
+  yourself already imported.** Notes imported before the holder's number was
+  added as an identity kept the holder as the conversation's participant and
+  as their own contact, in **Contacts** and under **Unknown**, while the
+  conversation was already titled with the account's name. Notes imported
+  while the number was an identity showed the bare address once it was
+  removed, with no participant or contact behind it. Saving the identities now drops the participants of every
+  conversation that is now with yourself and the contact an import made for
+  the holder, unless something else refers to it, and gives a conversation
+  that no longer is its participant back, on a contact. Messages are not
+  changed (#1662).
 
 #### Desktop app
 

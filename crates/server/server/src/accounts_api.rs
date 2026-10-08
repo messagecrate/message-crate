@@ -34,7 +34,7 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun};
+use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun, with_yourself};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
@@ -599,6 +599,16 @@ async fn apply_profile_update(
         account_profile::set_preferred_name(conn, account_id, stored_name).await?;
     }
 
+    // The rule an import applies to a conversation with yourself is run
+    // again over the account's conversations once its identities change,
+    // so their participants and the holder's contact follow the list (#1662).
+    let changes_identities = !identities.is_empty() || !remove_identities.is_empty();
+    let with_yourself_before = if changes_identities {
+        with_yourself::conversations_with_yourself(conn, account_id).await?
+    } else {
+        Vec::new()
+    };
+
     for entry in remove_identities {
         let raw = entry.address.trim();
         if raw.is_empty() {
@@ -627,6 +637,9 @@ async fn apply_profile_update(
         .await?;
     }
 
+    if changes_identities {
+        with_yourself::follow_identities(conn, account_id, &with_yourself_before).await?;
+    }
     Ok(())
 }
 

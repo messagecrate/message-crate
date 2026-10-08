@@ -37,6 +37,7 @@ pub mod contact_name;
 pub mod failure;
 pub mod promote;
 pub mod staging;
+pub mod with_yourself;
 
 pub use failure::{ImportError, ImportFailure, MISSING_GUID_LINES_NAMED};
 

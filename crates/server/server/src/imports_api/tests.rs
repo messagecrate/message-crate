@@ -5705,6 +5705,196 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     }
 }
 
+/// Import one conversation with the holder's number `+15555550199` (a note
+/// sent and its received copy, the holder listed by number alone as the
+/// chat's participant, as WhatsApp lists them) and one with Ada, and answer the holder's
+/// conversation's id.
+async fn import_notes_to_yourself(
+    state: &crate::server::AppState,
+    fixture: &crate::test_support::TestFixture,
+    token: &str,
+) -> i64 {
+    let path = batches_path(state, token, "whatsapp").await;
+    let message = |guid: &str, sender: Option<&str>| {
+        let message = message_line(guid, "Note to self")
+            .at(1_400_773_261_000)
+            .service(IrService::Whatsapp)
+            .kind(IrMessageKind::Unknown);
+        match sender {
+            Some(sender) => message.sender(sender),
+            None => message.outgoing(),
+        }
+        .line()
+    };
+    let body = [
+        conversation_header("whatsapp", "+15555550199")
+            .participant("+15555550199", None)
+            .line(),
+        message("note-sent", None),
+        message("note-received", Some("+15555550199")),
+        conversation_header("whatsapp", "+15555550101")
+            .participant("+15555550101", Some("Ada"))
+            .line(),
+        message_line("ada", "hi")
+            .at(1_400_773_262_000)
+            .service(IrService::Whatsapp)
+            .sender("+15555550101")
+            .line(),
+    ]
+    .concat();
+    let (status, text) =
+        crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
+    assert!(status.is_success(), "{status} {text}");
+    let _: serde_json::Value = post_json(
+        state,
+        &path.replace("/batches", "/complete"),
+        token,
+        serde_json::json!({ "status": "completed" }),
+    )
+    .await;
+    sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE h.normalized = '+15555550199'",
+    )
+    .fetch_one(&mut *fixture.conn().await)
+    .await
+    .unwrap()
+}
+
+/// What the account holds about the holder's number: the participants rows
+/// of `conversation_id`, and the contacts on `+15555550199`.
+async fn holder_rows(
+    fixture: &crate::test_support::TestFixture,
+    conversation_id: i64,
+) -> (i64, i64) {
+    let mut conn = fixture.conn().await;
+    let participants: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM participants WHERE conversation_id = $1")
+            .bind(conversation_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    let contacts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id
+         WHERE h.normalized = '+15555550199'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    (participants, contacts)
+}
+
+/// Linking an identity after an import makes the conversations at that
+/// address conversations with yourself, and the stored rows follow: the
+/// participant goes, and so does the contact the import made for the holder,
+/// so the holder is in neither Contacts nor Unknown. The reads agree: `with:me`
+/// finds the conversation and it has no participants (#1662).
+#[tokio::test]
+async fn linking_an_identity_after_an_import_takes_the_holder_off_its_conversations() {
+    let (state, fixture, token) = importer().await;
+    let conversation_id = import_notes_to_yourself(&state, &fixture, &token).await;
+    assert_eq!(
+        holder_rows(&fixture, conversation_id).await,
+        (1, 1),
+        "before the identity is linked, the number is a participant with a contact"
+    );
+    let unknown: serde_json::Value =
+        get_json(&state, "/v1/contacts?q=group%3Aunknown", &token).await;
+    assert!(unknown.to_string().contains("+15555550199"), "{unknown}");
+
+    let account_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'importer'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    let _: serde_json::Value = patch_json(
+        &state,
+        &format!("/v1/accounts/{account_id}"),
+        &token,
+        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "whatsapp" }] }),
+    )
+    .await;
+
+    assert_eq!(
+        holder_rows(&fixture, conversation_id).await,
+        (0, 0),
+        "the conversation with yourself has no participant, and the holder no contact"
+    );
+    for path in ["/v1/contacts", "/v1/contacts?q=group%3Aunknown"] {
+        let page: serde_json::Value = get_json(&state, path, &token).await;
+        let text = page.to_string();
+        assert!(!text.contains("+15555550199"), "{path}: {page}");
+    }
+    let contacts: serde_json::Value = get_json(&state, "/v1/contacts", &token).await;
+    assert!(
+        contacts.to_string().contains("+15555550101"),
+        "Ada keeps her contact: {contacts}"
+    );
+    let page: serde_json::Value = get_json(&state, "/v1/conversations?q=with%3Ame", &token).await;
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1, "{page}");
+    assert_eq!(items[0]["id"], conversation_id, "{page}");
+    assert_eq!(items[0]["participants"], serde_json::json!([]), "{page}");
+}
+
+/// Removing an identity after an import makes the conversations at that
+/// address ordinary one-to-one conversations again, and the stored rows
+/// follow: the chat's address is its participant, on a contact, as an import
+/// writes it. The reads agree: `with:me` no longer finds it, and the
+/// participant it shows opens that contact (#1662).
+#[tokio::test]
+async fn removing_an_identity_after_an_import_gives_its_conversations_their_participant_back() {
+    let (state, fixture, token) = importer().await;
+    let account_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'importer'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    let account = format!("/v1/accounts/{account_id}");
+    let identity = serde_json::json!([{ "address": "+15555550199", "service": "whatsapp" }]);
+    let _: serde_json::Value = patch_json(
+        &state,
+        &account,
+        &token,
+        serde_json::json!({ "identities": identity }),
+    )
+    .await;
+    let conversation_id = import_notes_to_yourself(&state, &fixture, &token).await;
+    assert_eq!(
+        holder_rows(&fixture, conversation_id).await,
+        (0, 0),
+        "imported with the identity linked, the conversation is with yourself"
+    );
+
+    let _: serde_json::Value = patch_json(
+        &state,
+        &account,
+        &token,
+        serde_json::json!({ "remove_identities": identity }),
+    )
+    .await;
+
+    assert_eq!(
+        holder_rows(&fixture, conversation_id).await,
+        (1, 1),
+        "the chat's address is its participant again, on a contact"
+    );
+    let page: serde_json::Value = get_json(&state, "/v1/conversations?q=with%3Ame", &token).await;
+    assert_eq!(page["total"], 0, "{page}");
+    let page: serde_json::Value = get_json(
+        &state,
+        &format!("/v1/conversations/{conversation_id}"),
+        &token,
+    )
+    .await;
+    let participants = page["participants"].as_array().unwrap();
+    assert_eq!(participants.len(), 1, "{page}");
+    assert_eq!(participants[0]["identity"], "+15555550199", "{page}");
+    assert!(participants[0]["contact_id"].is_i64(), "{page}");
+    let unknown: serde_json::Value =
+        get_json(&state, "/v1/contacts?q=group%3Aunknown", &token).await;
+    assert!(unknown.to_string().contains("+15555550199"), "{unknown}");
+}
+
 /// Start an Import Run and complete it with `issues` skips, returning its id.
 async fn run_with_issues(state: &crate::server::AppState, token: &str, issues: usize) -> i64 {
     let (_, created): (String, serde_json::Value) = post_created_json(
