@@ -39,6 +39,15 @@ fn pin_with(
             if gzip { ".gz" } else { "" }
         )),
         sha256: leak(sha256.to_string()),
+        program_sha256: leak(if gzip {
+            let mut program = Vec::new();
+            flate2::read::GzDecoder::new(published)
+                .read_to_end(&mut program)
+                .unwrap();
+            sha256_hex(&program)
+        } else {
+            sha256.to_string()
+        }),
         gzip,
     };
     (pinned, published.to_vec())
@@ -215,6 +224,36 @@ fn a_gzipped_program_is_unpacked_and_made_executable() {
         let mode = std::fs::metadata(&path).unwrap().permissions().mode();
         assert_eq!(mode & 0o111, 0o111, "not executable: {mode:o}");
     }
+}
+
+/// A gzipped asset that passes its own checksum is still refused when the
+/// program it unpacks to is not the pinned program.
+#[test]
+fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (mut pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(b"ffmpeg"), true);
+    pinned.program_sha256 = leak(sha256_hex(b"the pinned program"));
+    let server = MockServer::start();
+    serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+
+    download_missing(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert!(!tools.path().join(Program::Ffmpeg.file_name()).exists());
+    assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
+    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Ffmpeg) else {
+        panic!(
+            "the download did not fail: {:?}",
+            downloads.get(Program::Ffmpeg)
+        );
+    };
+    assert!(reason.contains(&sha256_hex(b"ffmpeg")), "{reason}");
 }
 
 /// Write a program at `path` that answers `-version`.
@@ -438,6 +477,81 @@ fn a_pinned_program_that_does_not_run_is_downloaded_again() {
         );
     };
     assert!(reason.contains("does not run"), "{reason}");
+}
+
+/// ffmpeg is kept and recorded again when its record is lost, because the
+/// file is the pinned program, though the pin is of the `.gz`.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let program = b"#!/bin/sh\n# pinned\nexit 0\n";
+    let (pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(program), true);
+    let target = tools.path().join(Program::Ffmpeg.file_name());
+    std::fs::write(&target, program).unwrap();
+    make_executable(&target).unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+
+    download_missing(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    asked.assert_calls(0);
+    assert_eq!(downloads.get(Program::Ffmpeg), None);
+    assert_eq!(
+        read_manifest(tools.path()).get(&Program::Ffmpeg),
+        Some(&Written::of(&pinned, Stamp::at(&target).unwrap()))
+    );
+}
+
+/// The app's own file whose stamp stopped matching, as after a sync or a
+/// remount, is recorded again with its new stamp and not downloaded, because
+/// its content is still the pinned program.
+#[cfg(unix)]
+#[test]
+fn a_changed_stamp_on_the_pinned_program_is_recorded_again() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let program = b"#!/bin/sh\n# pinned\nexit 0\n";
+    let (pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(program), true);
+    let target = tools.path().join(Program::Ffmpeg.file_name());
+    std::fs::write(&target, program).unwrap();
+    make_executable(&target).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Ffmpeg,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+    write_manifest(tools.path(), &manifest).unwrap();
+    File::options()
+        .write(true)
+        .open(&target)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_000_000))
+        .unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+
+    download_missing(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &ToolDownloads::default(),
+    );
+
+    asked.assert_calls(0);
+    let recorded = read_manifest(tools.path());
+    assert_eq!(
+        recorded.get(&Program::Ffmpeg),
+        Some(&Written::of(&pinned, Stamp::at(&target).unwrap()))
+    );
+    assert_ne!(recorded, manifest);
 }
 
 /// A program put there by hand is kept and recorded when it is the pinned

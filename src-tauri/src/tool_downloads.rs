@@ -16,21 +16,22 @@
 //!   in use.
 //!
 //! Which file in the Tools Directory the app wrote is kept in
-//! [`MANIFEST_FILE`] beside the programs: the release, asset and checksum
-//! of each, with the file's [`Stamp`]. One rule holds for all three
-//! programs, because the Tools Directory belongs to the app:
+//! [`MANIFEST_FILE`] beside the programs: the release, the asset and its
+//! checksum, the program's checksum, and the file's [`Stamp`]. One rule
+//! holds for all three programs, because the Tools Directory belongs to the
+//! app:
 //!
 //! - **The pinned one stays.** A file is the pinned one when its entry
 //!   names the pinned release and its stamp is the one recorded, so no file
-//!   is read again at start-up. It stays while it runs; one that does not
-//!   run is downloaded again.
-//! - **A pinned file put there by hand is adopted.** A file with no entry
-//!   whose SHA-256 is the pinned one gets an entry. Only a pin that is not
-//!   gzipped can match, because a gzipped pin's checksum is of the `.gz`.
+//!   is read again at start-up.
+//! - **A pinned file with no entry is adopted.** A file with no entry, or
+//!   whose stamp changed, whose SHA-256 is the pinned program's gets an
+//!   entry and stays. The pinned program's SHA-256 is carried beside the
+//!   asset's, because ffmpeg's and ffprobe's assets are gzipped.
 //! - **Anything else is replaced** after a good download, whoever put it
-//!   there: a file from an older release, one with no entry, one whose
-//!   stamp changed. Until the download passes, the old file stays in use,
-//!   so with no internet a file put there by hand is still the one used.
+//!   there: a file from an older release, or any other file. Until the
+//!   download passes, the old file stays in use, so with no internet a file
+//!   put there by hand is still the one used.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -137,6 +138,9 @@ pub struct Pinned {
     pub asset: &'static str,
     /// The asset's SHA-256, in lowercase hex.
     pub sha256: &'static str,
+    /// The program's SHA-256, in lowercase hex: the asset's when it is not
+    /// gzipped, and what it unpacks to when it is.
+    pub program_sha256: &'static str,
     /// Whether the asset is gzipped: the checksum is over the gzipped
     /// file, and the program is what it unpacks to.
     pub gzip: bool,
@@ -162,6 +166,8 @@ pub struct Written {
     pub asset: String,
     /// The asset's SHA-256.
     pub sha256: String,
+    /// The program's SHA-256, which is the asset's when it is not gzipped.
+    pub program_sha256: String,
     /// The program file as it was written, which tells the app's file from
     /// one put over it since.
     pub stamp: Stamp,
@@ -174,13 +180,17 @@ impl Written {
             release: pinned.release.to_string(),
             asset: pinned.asset.to_string(),
             sha256: pinned.sha256.to_string(),
+            program_sha256: pinned.program_sha256.to_string(),
             stamp,
         }
     }
 
     /// Whether this is the file `pinned` publishes.
     fn is(&self, pinned: &Pinned) -> bool {
-        self.release == pinned.release && self.asset == pinned.asset && self.sha256 == pinned.sha256
+        self.release == pinned.release
+            && self.asset == pinned.asset
+            && self.sha256 == pinned.sha256
+            && self.program_sha256 == pinned.program_sha256
     }
 }
 
@@ -255,8 +265,8 @@ fn write_manifest(dir: &Path, manifest: &Manifest) -> io::Result<()> {
 enum Need {
     /// The file there is the pinned one and runs: it stays.
     Keep,
-    /// The file there is the pinned one, put there by someone else: it
-    /// stays and goes into the record.
+    /// The file there is the pinned program with no entry, or with a stamp
+    /// that changed: it stays and goes into the record.
     Adopt,
     /// The program is downloaded, and replaces whatever is there once the
     /// download passed.
@@ -279,7 +289,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
             Need::Download
         };
     }
-    if !pinned.gzip && file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.sha256) {
+    if file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
         Need::Adopt
     } else {
         Need::Download
@@ -406,8 +416,9 @@ fn download_client() -> reqwest::Result<reqwest::blocking::Client> {
 /// Download `pinned` from `url` into `dir` and put it in place.
 ///
 /// The file is streamed to a temporary file in `dir` and its SHA-256
-/// computed on the way. On a match it is unpacked when gzipped, made
-/// executable, and renamed over the program; on a mismatch, or any failure,
+/// computed on the way. On a match it is unpacked when gzipped and the
+/// program's SHA-256 checked, then made executable and renamed over the
+/// program; on a mismatch, or any failure,
 /// the temporary file is deleted and the program there is left as it was.
 /// `progress` hears the bytes received so far and the total when the
 /// server says it.
@@ -463,6 +474,14 @@ fn download(
         let packed = arrived.as_file_mut();
         packed.rewind().map_err(write_error)?;
         io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
+        unpacked.flush().map_err(write_error)?;
+        let actual = file_sha256(unpacked.path()).map_err(write_error)?;
+        if actual != pinned.program_sha256 {
+            return Err(DownloadError::ChecksumMismatch {
+                expected: pinned.program_sha256.to_string(),
+                actual,
+            });
+        }
         unpacked
     } else {
         arrived
