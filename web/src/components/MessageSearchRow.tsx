@@ -30,51 +30,51 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
 type EarlierVersion = Message["earlier_versions"][number];
 
 /**
- * Whether `later`, which comes after `earlier` in the server's list, is the
- * newer of the two. The list is oldest first within each part, so within
- * one part the later in the list is newer. Across parts the one with the
- * later `edited_at` is newer when both carry one, the later in the list on
- * a tie, and the later in the list when either time is not recorded.
+ * `message`'s earlier versions marked `matched`, newest first. A version's
+ * time is its `edited_at`. A version without one takes the time of the
+ * nearest version before it in the same part of `earlier_versions` that has
+ * one, and a version with none before it is older than every dated version.
+ * Of two versions with the same time, the later in `earlier_versions` is the
+ * newer, because the server lists each part's versions oldest first.
  */
-function isNewer(later: EarlierVersion, earlier: EarlierVersion): boolean {
-  if (later.part_index === earlier.part_index || !later.edited_at || !earlier.edited_at) {
-    return true;
-  }
-  return Date.parse(later.edited_at) >= Date.parse(earlier.edited_at);
+function matchedNewestFirst(message: Message): EarlierVersion[] {
+  const partTime = new Map<number, number>();
+  return message.earlier_versions
+    .map((version, index) => {
+      const time = version.edited_at
+        ? Date.parse(version.edited_at)
+        : (partTime.get(version.part_index) ?? Number.NEGATIVE_INFINITY);
+      partTime.set(version.part_index, time);
+      return { version, time, index };
+    })
+    .filter(({ version }) => version.matched)
+    .sort((a, b) => (a.time === b.time ? b.index - a.index : b.time - a.time))
+    .map(({ version }) => version);
 }
 
-/** The newest of `versions` by `isNewer`, keeping the server's list order. */
-function newest(versions: readonly EarlierVersion[]): EarlierVersion | undefined {
-  let found: EarlierVersion | undefined;
-  for (const version of versions) if (!found || isNewer(version, found)) found = version;
-  return found;
+/** Whether `version` holds `term`, the way the full-text index matches it. */
+function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
+  return matchRanges(version.text, [term]).length > 0;
 }
 
 /**
  * The earlier versions a search found `message` by that its row quotes: the
- * newest version marked `matched`, then, while a searched word some matched
- * version holds is not yet quoted, the newest matched version holding one,
- * so each such word shows once. None for a hit its final text matched,
- * which the server marks neither way (`docs/architecture/search.md`).
+ * newest matched version, and, for each searched word it does not show, the
+ * newest matched version that holds the word. None for a hit its final text
+ * matched, which the server marks neither way (`docs/architecture/search.md`).
  */
 function versionsToQuote(message: Message, terms: readonly FreeTextTerm[]): EarlierVersion[] {
   if (!message.matched_earlier_version) return [];
-  const matched = message.earlier_versions.filter((version) => version.matched);
-  const termsIn = (version: EarlierVersion) =>
-    terms.filter((term) => matchRanges(version.text, [term]).length > 0);
-  const missing = new Set(matched.flatMap(termsIn));
-  const quoted: EarlierVersion[] = [];
-  for (let next = newest(matched); next; ) {
-    quoted.push(next);
-    for (const term of termsIn(next)) missing.delete(term);
-    next = newest(
-      matched.filter(
-        (version) =>
-          !quoted.includes(version) && termsIn(version).some((term) => missing.has(term)),
-      ),
-    );
+  const matched = matchedNewestFirst(message);
+  const [first] = matched;
+  if (!first) return [];
+  const quoted = new Set([first]);
+  for (const term of terms) {
+    if (holds(first, term)) continue;
+    const version = matched.find((candidate) => holds(candidate, term));
+    if (version) quoted.add(version);
   }
-  return quoted;
+  return [...quoted];
 }
 
 /**

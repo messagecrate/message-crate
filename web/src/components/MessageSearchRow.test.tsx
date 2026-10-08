@@ -247,4 +247,27 @@ describe("MessageSearchRow", () => {
       "Earlier version: alpha again",
     ]);
   });
+
+  it("takes the newest matched version by time across parts, whatever an undated part between them says", () => {
+    renderRow(
+      message({
+        text: "Nothing here",
+        matched_earlier_version: true,
+        earlier_versions: [
+          { part_index: 0, text: "alpha at ten", matched: true, edited_at: "2024-01-01T10:00:00Z" },
+          { part_index: 1, text: "alpha undated", matched: true, edited_at: null },
+          {
+            part_index: 2,
+            text: "alpha at nine",
+            matched: true,
+            edited_at: "2024-01-01T09:00:00Z",
+          },
+        ],
+      }),
+      [{ text: "alpha", prefix: false }],
+    );
+    expect(screen.getAllByText(/^Earlier version:/).map((line) => line.textContent)).toEqual([
+      "Earlier version: alpha at ten",
+    ]);
+  });
 });
