@@ -58,21 +58,26 @@ function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
 }
 
 /**
- * The earlier versions a search found `message` by that its row quotes: the
- * newest matched version, and, for each searched word it does not show, the
- * newest matched version that holds the word. None for a hit its final text
- * matched, which the server marks neither way (`docs/architecture/search.md`).
+ * The earlier versions a search found `message` by that its row quotes, each
+ * with the searched words its line is cut around: the newest matched
+ * version, cut around all of them, and, for each searched word it does not
+ * show, the newest matched version that holds the word, cut around the words
+ * it is quoted for. None for a hit its final text matched, which the server
+ * marks neither way (`docs/architecture/search.md`).
  */
-function versionsToQuote(message: Message, terms: readonly FreeTextTerm[]): EarlierVersion[] {
+function versionsToQuote(
+  message: Message,
+  terms: readonly FreeTextTerm[],
+): [EarlierVersion, FreeTextTerm[]][] {
   if (!message.matched_earlier_version) return [];
   const matched = matchedNewestFirst(message);
   const [first] = matched;
   if (!first) return [];
-  const quoted = new Set([first]);
+  const quoted = new Map([[first, [...terms]]]);
   for (const term of terms) {
     if (holds(first, term)) continue;
     const version = matched.find((candidate) => holds(candidate, term));
-    if (version) quoted.add(version);
+    if (version) quoted.set(version, [...(quoted.get(version) ?? []), term]);
   }
   return [...quoted];
 }
@@ -111,10 +116,14 @@ export default function MessageSearchRow({
   const cut = snippet(unsent ? "" : messageRowText(message), terms);
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
-  const versionCuts = versionsToQuote(message, terms).map((version) => ({
-    key: message.earlier_versions.indexOf(version),
-    ...snippet(version.text, terms),
-  }));
+  const versionCuts = versionsToQuote(message, terms).map(([version, words]) => {
+    const text = snippet(version.text, words).text;
+    return {
+      key: message.earlier_versions.indexOf(version),
+      text,
+      ranges: matchRanges(text, terms),
+    };
+  });
 
   return (
     <PlainButton

@@ -270,4 +270,34 @@ describe("MessageSearchRow", () => {
       "Earlier version: alpha at ten",
     ]);
   });
+
+  it("cuts a version quoted for a word the newest lacks around that word, with every searched word in bold", () => {
+    const filler = "and then some more words go here ".repeat(10);
+    renderRow(
+      message({
+        text: "Nothing here",
+        matched_earlier_version: true,
+        earlier_versions: [
+          {
+            part_index: 0,
+            text: `foo ${filler}bar`,
+            matched: true,
+            edited_at: "2024-01-01T10:00:00Z",
+          },
+          { part_index: 0, text: "foo again", matched: true, edited_at: "2024-01-01T11:00:00Z" },
+        ],
+      }),
+      [
+        { text: "foo", prefix: false },
+        { text: "bar", prefix: false },
+      ],
+    );
+    const lines = screen.getAllByText(/^Earlier version:/);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toHaveTextContent("Earlier version: foo again");
+    expect(lines[1].textContent).toMatch(/^Earlier version: …/);
+    expect(lines[1].textContent).not.toContain("foo");
+    expect(lines[1].textContent).toMatch(/ bar$/);
+    expect([...lines[1].querySelectorAll("strong")].map((b) => b.textContent)).toEqual(["bar"]);
+  });
 });
