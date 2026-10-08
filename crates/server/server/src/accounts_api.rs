@@ -17,7 +17,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use message_ir::HandleService;
+use message_ir::IdentityService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -27,7 +27,7 @@ use crate::credentials::{
     require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
-use crate::db::handles::{self, Identity, IdentityService};
+use crate::db::handles::{self, ApiIdentityService, Identity};
 use crate::db::permissions::Permission;
 use crate::db::storage::{self, Scope};
 use crate::db::{WriteTx, begin_write};
@@ -465,7 +465,7 @@ pub struct LinkAccountIdentityRequest {
     /// The service the address is on. It never decides the identity's type,
     /// which comes from the address: an email address is on the phone
     /// service, and one on WhatsApp is refused.
-    pub service: IdentityService,
+    pub service: ApiIdentityService,
 }
 
 /// One identity to unlink from the account, with its platform service.
@@ -476,7 +476,7 @@ pub struct UnlinkAccountIdentityRequest {
     /// The service the address is on. It never decides the identity's type,
     /// which comes from the address: an email address is on the phone
     /// service.
-    pub service: IdentityService,
+    pub service: ApiIdentityService,
 }
 
 /// Body for changing an account. Omitted fields are left alone. The name,
@@ -604,7 +604,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
@@ -614,7 +614,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = HandleService::from(entry.service);
+        let service = IdentityService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(

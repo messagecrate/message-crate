@@ -843,6 +843,13 @@ No other endings: no `Body`, `Payload`, `Input`, `Patch`, `Item`, `Info`,
 `Message` next to `MessageResponse` would leave a reader asking whether they
 are one thing or two.
 
+A wire type whose Rust name would clash with a shared crate's type takes the
+`Api` prefix in Rust and keeps its wire name through `#[schema(as = …)]`:
+`ApiIdentityService` in `db/handles.rs` is `IdentityService` on the wire,
+beside the conversation file's `message_ir::IdentityService`. Why: two types
+under one bare name mean one or the other depending on a file's imports, and
+those two read the same word differently.
+
 A handler reads the request, checks the caller and shapes the answer; it holds
 no SQL. Every query lives in `db/`, in the module for the table it is chiefly
 about, and it is written for SQLite, the only database engine

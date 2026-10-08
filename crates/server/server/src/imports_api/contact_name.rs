@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use message_ir::{HandleService, HandleType, trimmed};
+use message_ir::{IdentityService, IdentityType, trimmed};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
@@ -90,11 +90,11 @@ pub(super) async fn ensure_contact_for_handle(
 /// `AMAZON`: something the exporter could not tie to an address, which the
 /// run's counts name.
 pub(super) fn count_other_identity(
-    handle_type: HandleType,
+    handle_type: IdentityType,
     cached: bool,
     counts: &mut ImportCounts,
 ) {
-    if handle_type == HandleType::Other && !cached {
+    if handle_type == IdentityType::Other && !cached {
         counts.other_identities += 1;
     }
 }
@@ -111,17 +111,17 @@ pub(super) struct IncomingSender<'a> {
     pub address: Option<&'a str>,
     /// The address's type when the source stated it, else its shape decides.
     /// Either way the service has the last word ([`handle_type_on`]).
-    pub handle_type: Option<HandleType>,
+    pub handle_type: Option<IdentityType>,
     /// Service the message arrived on: `phone` or `whatsapp`.
-    pub service: HandleService,
+    pub service: IdentityService,
 }
 
 /// True when `address`, read as `handle_type`, is one of the account's
 /// identities: the account holder, on any service.
 pub(super) fn is_account_identity(
-    identities: &HashSet<(String, HandleType)>,
+    identities: &HashSet<(String, IdentityType)>,
     address: &str,
-    handle_type: HandleType,
+    handle_type: IdentityType,
 ) -> bool {
     let (normalized, _) = normalize_handle(address, handle_type);
     identities.contains(&(normalized, handle_type))
@@ -134,7 +134,7 @@ pub(super) fn is_account_identity(
 pub(super) async fn resolve_incoming_sender_handle(
     tx: &mut SqliteConnection,
     cache: &mut HandleIdCache,
-    identities: &HashSet<(String, HandleType)>,
+    identities: &HashSet<(String, IdentityType)>,
     account_id: i64,
     import_id: Option<i64>,
     sender: IncomingSender<'_>,

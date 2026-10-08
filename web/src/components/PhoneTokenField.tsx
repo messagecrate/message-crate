@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Tag, TagGroup, TagList } from "react-aria-components";
-import { EXAMPLE_PHONE } from "../lib/handleService";
+import { EXAMPLE_PHONE } from "../lib/offeredService";
 import { commitPhoneTokens, removePhoneToken } from "../lib/phoneTokens";
 import { focusRing } from "../lib/uiStyles";
 import PlainButton from "./PlainButton";

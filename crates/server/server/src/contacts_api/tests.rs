@@ -2,7 +2,7 @@ use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
 use crate::paging::{DEFAULT_LIST_LIMIT, parse_sort};
 use edit::ContactEditError;
-use message_ir::HandleType;
+use message_ir::IdentityType;
 
 use crate::db::account_profile;
 use crate::test_support::{
@@ -381,10 +381,14 @@ async fn list_contacts_uses_preferred_name_and_handle_ids() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let handle_id =
-        account_profile::link_account_handle(&mut conn, account, "+15555550100", HandleType::Phone)
-            .await
-            .unwrap();
+    let handle_id = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550100",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     // link_account_handle puts it on account_handles; also link as contact handle.
     sqlx::query(
         "INSERT INTO contact_handles (account_id, handle_id, contact_id)
@@ -441,7 +445,7 @@ async fn list_contacts_filters_and_paginates() {
         .await
         .unwrap();
         let handle_id =
-            account_profile::link_account_handle(&mut conn, account, phone, HandleType::Phone)
+            account_profile::link_account_handle(&mut conn, account, phone, IdentityType::Phone)
                 .await
                 .unwrap();
         sqlx::query(
@@ -527,10 +531,14 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let peer =
-        account_profile::link_account_handle(&mut conn, account, "+15555550135", HandleType::Phone)
-            .await
-            .unwrap();
+    let peer = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550135",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO contact_handles (account_id, handle_id, contact_id)
          VALUES ($1, $2, $3)",
@@ -589,7 +597,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         &mut conn,
         account,
         "chat-sam-group",
-        HandleType::Other,
+        IdentityType::Other,
     )
     .await
     .unwrap();
@@ -621,10 +629,14 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await;
 
     // Unrelated conversation should not be counted.
-    let other =
-        account_profile::link_account_handle(&mut conn, account, "+15555550167", HandleType::Phone)
-            .await
-            .unwrap();
+    let other = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550167",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, source_file
@@ -686,10 +698,14 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let sam_handle =
-        account_profile::link_account_handle(&mut conn, account, "+15555550135", HandleType::Phone)
-            .await
-            .unwrap();
+    let sam_handle = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550135",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO contact_handles (account_id, handle_id, contact_id)
          VALUES ($1, $2, $3)",
@@ -735,7 +751,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         &mut conn,
         account,
         "chat-sam-group",
-        HandleType::Other,
+        IdentityType::Other,
     )
     .await
     .unwrap();
@@ -773,10 +789,14 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let pat_handle =
-        account_profile::link_account_handle(&mut conn, account, "+15555550100", HandleType::Phone)
-            .await
-            .unwrap();
+    let pat_handle = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550100",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO contact_handles (account_id, handle_id, contact_id)
          VALUES ($1, $2, $3)",
@@ -867,8 +887,8 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     .unwrap();
     let mut handles = Vec::new();
     for (raw, handle_type) in [
-        ("+15555550135", HandleType::Phone),
-        ("sam@example.com", HandleType::Email),
+        ("+15555550135", IdentityType::Phone),
+        ("sam@example.com", IdentityType::Email),
     ] {
         let (handle, _) =
             crate::db::handles::upsert_handle_row(&mut conn, account, raw, handle_type, None)
@@ -890,7 +910,7 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
         &mut conn,
         account,
         "chat-sam-group",
-        HandleType::Other,
+        IdentityType::Other,
         None,
     )
     .await
@@ -1019,10 +1039,14 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
 
-    let mine =
-        account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
-            .await
-            .unwrap();
+    let mine = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550128",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     let jane = insert_contact_with_handle(&mut conn, account, "Jane", "+15555550100").await;
     let jane_phone: i64 =
         sqlx::query_scalar("SELECT handle_id FROM contact_handles WHERE contact_id = $1")
@@ -1036,7 +1060,7 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         &mut conn,
         account,
         "jane@example.com",
-        HandleType::Email,
+        IdentityType::Email,
         Some("email"),
     )
     .await
@@ -1057,10 +1081,15 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let (group_chat, _) =
-        handles::upsert_handle_row(&mut conn, account, "chat-jane-bob", HandleType::Other, None)
-            .await
-            .unwrap();
+    let (group_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "chat-jane-bob",
+        IdentityType::Other,
+        None,
+    )
+    .await
+    .unwrap();
 
     // Direct: Jane sends when minute % 5 is 1 or 2 (40 of 100); the holder
     // writes the first and the last message.
@@ -1099,10 +1128,15 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
         insert_held_message(&mut conn, account, 2, "2024-02-01", minute, mine, sender).await;
     }
     // A later group in the trash, where Jane sent 5 more.
-    let (trashed_chat, _) =
-        handles::upsert_handle_row(&mut conn, account, "chat-trashed", HandleType::Other, None)
-            .await
-            .unwrap();
+    let (trashed_chat, _) = handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "chat-trashed",
+        IdentityType::Other,
+        None,
+    )
+    .await
+    .unwrap();
     insert_conversation(
         &mut conn,
         account,
@@ -1196,10 +1230,14 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
 
-    let mine =
-        account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
-            .await
-            .unwrap();
+    let mine = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550128",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     let ada: i64 = sqlx::query_scalar(
         "INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Ada') RETURNING id",
     )
@@ -1211,7 +1249,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         &mut conn,
         account,
         "+15555550123",
-        HandleType::Phone,
+        IdentityType::Phone,
         Some("phone"),
     )
     .await
@@ -1229,7 +1267,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         &mut conn,
         account,
         "chat-ada-group",
-        HandleType::Other,
+        IdentityType::Other,
         None,
     )
     .await
@@ -1238,7 +1276,7 @@ async fn a_contacts_counts_split_one_to_one_group_and_orphaned() {
         &mut conn,
         account,
         &message_ir::orphaned_chat_id(Some("+15555550123")),
-        HandleType::Other,
+        IdentityType::Other,
         None,
     )
     .await
@@ -1312,15 +1350,19 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
 
-    let mine =
-        account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
-            .await
-            .unwrap();
+    let mine = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "+15555550128",
+        IdentityType::Phone,
+    )
+    .await
+    .unwrap();
     let (ada_phone, _) = handles::upsert_handle_row(
         &mut conn,
         account,
         "+15555550123",
-        HandleType::Phone,
+        IdentityType::Phone,
         Some("phone"),
     )
     .await
@@ -1329,7 +1371,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
         &mut conn,
         account,
         "chat-ada-group",
-        HandleType::Other,
+        IdentityType::Other,
         None,
     )
     .await
@@ -1338,7 +1380,7 @@ async fn the_holders_orphaned_messages_count_as_orphaned() {
         &mut conn,
         account,
         &message_ir::orphaned_chat_id(None),
-        HandleType::Other,
+        IdentityType::Other,
         None,
     )
     .await
@@ -1399,7 +1441,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1448,7 +1490,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: detail.identities[0].address.clone(),
                     address: "sam@example.com".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
             },
@@ -1474,7 +1516,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "sam@example.com".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
             },
         )
@@ -1494,7 +1536,7 @@ async fn add_identity(
     account: i64,
     contact_id: i64,
     raw: &str,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) {
     assert!(
         mutate_committed(
@@ -1543,15 +1585,15 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
 
     for (raw, service, expected) in [
-        ("+15555550138", Some(IdentityService::Whatsapp), "phone"),
-        ("+15555550139", Some(IdentityService::Phone), "phone"),
+        ("+15555550138", Some(ApiIdentityService::Whatsapp), "phone"),
+        ("+15555550139", Some(ApiIdentityService::Phone), "phone"),
         ("+15555550140", None, "phone"),
-        ("tel:+15555550141", Some(IdentityService::Phone), "phone"),
-        ("ada@example.com", Some(IdentityService::Phone), "email"),
+        ("tel:+15555550141", Some(ApiIdentityService::Phone), "phone"),
+        ("ada@example.com", Some(ApiIdentityService::Phone), "email"),
         ("sam@example.com", None, "email"),
         ("sam", None, "other"),
-        ("sam.lee", Some(IdentityService::Phone), "other"),
-        ("sam#1234", Some(IdentityService::Whatsapp), "other"),
+        ("sam.lee", Some(ApiIdentityService::Phone), "other"),
+        ("sam#1234", Some(ApiIdentityService::Whatsapp), "other"),
     ] {
         add_identity(&mut conn, account, contact_id, raw, service).await;
         assert_eq!(
@@ -1580,7 +1622,7 @@ async fn an_email_address_is_not_added_on_whatsapp() {
             name: None,
             add_identity: Some(AddContactIdentityRequest {
                 address: "ann@example.com".into(),
-                service: Some(IdentityService::Whatsapp),
+                service: Some(ApiIdentityService::Whatsapp),
             }),
             update_identity: None,
             remove_identity: None,
@@ -1608,7 +1650,7 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
         &mut conn,
         account,
         "123456789012345@lid",
-        HandleType::Other,
+        IdentityType::Other,
         Some("whatsapp"),
     )
     .await
@@ -1619,7 +1661,7 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
         account,
         contact_id,
         "123456789012345@lid",
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
 
@@ -1653,7 +1695,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1668,7 +1710,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: "+15555550143".into(),
                     address: "+15555550143".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
             },
@@ -1681,7 +1723,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1710,7 +1752,7 @@ async fn contact_on_whatsapp(conn: &mut SqliteConnection, account: i64) -> i64 {
         account,
         contact_id,
         "+15555550100",
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
     contact_id
@@ -1721,7 +1763,7 @@ async fn replace_identity(
     conn: &mut SqliteConnection,
     account: i64,
     contact_id: i64,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) {
     let answer = try_replace_identity(conn, account, contact_id, "+15555550101", service).await;
     assert!(matches!(answer, Ok(true)), "{answer:?}");
@@ -1734,7 +1776,7 @@ async fn try_replace_identity(
     account: i64,
     contact_id: i64,
     address: &str,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) -> Result<bool, ContactEditError> {
     mutate_committed(
         conn,
@@ -1805,7 +1847,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         account,
         contact_id,
         "+15555550100",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1813,7 +1855,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         &mut conn,
         account,
         contact_id,
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
 
@@ -1842,7 +1884,7 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
         account,
         contact_id,
         "+15555550102",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -2005,7 +2047,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2028,7 +2070,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2054,7 +2096,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
             },
         )
@@ -2082,7 +2124,7 @@ async fn insert_contact_with_handle(
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let handle_id = account_profile::link_account_handle(conn, account, phone, HandleType::Phone)
+    let handle_id = account_profile::link_account_handle(conn, account, phone, IdentityType::Phone)
         .await
         .unwrap();
     sqlx::query(
@@ -2116,7 +2158,7 @@ async fn insert_direct_conversation(
     .unwrap()
     {
         Some(id) => id,
-        None => account_profile::link_account_handle(conn, account, phone, HandleType::Phone)
+        None => account_profile::link_account_handle(conn, account, phone, IdentityType::Phone)
             .await
             .unwrap(),
     };
@@ -2245,7 +2287,7 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     insert_contact_with_handle(&mut conn, account, "Older", "+15555550135").await;
     insert_contact_with_handle(&mut conn, account, "Silent", "+15555550143").await;
     // A thread per contact; the owner's messages ride on the owner's handle.
-    account_profile::link_account_handle(&mut conn, account, "+15555550128", HandleType::Phone)
+    account_profile::link_account_handle(&mut conn, account, "+15555550128", IdentityType::Phone)
         .await
         .unwrap();
     insert_direct_conversation(&mut conn, account, 1, "+15555550100", "imessage", &[]).await;
@@ -2300,10 +2342,14 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     .await;
     // Older wrote again this year, in a group chat now in the trash: the
     // column leaves the trash out, as `last-message:` does (#725).
-    let binned_chat =
-        account_profile::link_account_handle(&mut conn, account, "chat-binned", HandleType::Other)
-            .await
-            .unwrap();
+    let binned_chat = account_profile::link_account_handle(
+        &mut conn,
+        account,
+        "chat-binned",
+        IdentityType::Other,
+    )
+    .await
+    .unwrap();
     sqlx::query(
         "INSERT INTO conversations (
             id, account_id, chat_handle_id, conversation_type, group_title, source_file

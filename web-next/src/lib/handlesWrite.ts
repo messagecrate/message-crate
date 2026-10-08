@@ -5,7 +5,7 @@ import {
   inferHandleType,
   normalizeHandle,
   phoneReviewNote,
-  type HandleType,
+  type IdentityType,
 } from "./handleKind";
 import { openWritableVaultDb } from "./vaultSchema";
 
@@ -18,7 +18,7 @@ export function resolveHandleId(
   db: Database.Database,
   accountId: string,
   raw: string,
-  handleType: HandleType,
+  handleType: IdentityType,
   service = "phone",
 ): number {
   const trimmed = raw.trim();
@@ -51,7 +51,7 @@ export function handleIdForRaw(
   db: Database.Database,
   accountId: string,
   raw: string,
-  handleType?: HandleType,
+  handleType?: IdentityType,
   service = "phone",
 ): number | null {
   const trimmed = raw.trim();
@@ -110,7 +110,7 @@ export function trashHandlesInDb(
   db: Database.Database,
   handles: string[],
   accountId: string = currentAccountId(),
-  handleType?: HandleType,
+  handleType?: IdentityType,
 ): string[] {
   const trimmed = [...new Set(handles.map((h) => h.trim()).filter(Boolean))];
   if (trimmed.length === 0) return [];
@@ -141,7 +141,7 @@ export function noConversationToTrash(handles: string[]): Error {
 }
 
 /** Move a handle's 1:1 conversation into Trash (the handle may still belong to a contact). */
-export function trashHandle(handle: string, handleType?: HandleType): void {
+export function trashHandle(handle: string, handleType?: IdentityType): void {
   const accountId = currentAccountId();
   const trimmed = handle.trim();
   if (!trimmed) throw new Error("handle required");
@@ -160,7 +160,7 @@ export function trashHandle(handle: string, handleType?: HandleType): void {
 }
 
 /** Restore a handle's 1:1 conversation from Trash. */
-export function restoreHandle(handle: string, handleType?: HandleType): void {
+export function restoreHandle(handle: string, handleType?: IdentityType): void {
   const accountId = currentAccountId();
   const trimmed = handle.trim();
   if (!trimmed) throw new Error("handle required");
@@ -184,7 +184,7 @@ export function restoreHandle(handle: string, handleType?: HandleType): void {
  */
 export function permanentlyDeleteHandle(
   handle: string,
-  handleType?: HandleType,
+  handleType?: IdentityType,
 ): void {
   const accountId = currentAccountId();
   const trimmed = handle.trim();

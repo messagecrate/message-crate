@@ -10,7 +10,7 @@ import {
   resetDb,
   usefulNameAlias,
 } from "./dbCore";
-import type { HandleType } from "./handleKind";
+import type { IdentityType } from "./handleKind";
 import { formatPhoneDisplay } from "./phoneE164";
 import type { GroupChatThread, GroupParticipant, GroupYearRow } from "./types";
 
@@ -155,7 +155,7 @@ function groupPeopleTitles(
       name: string;
       unknown: boolean;
       handle: string;
-      handleType: HandleType | null;
+      handleType: IdentityType | null;
       contactId: number | null;
     }>
   >();
@@ -166,7 +166,7 @@ function groupPeopleTitles(
     list.push({
       ...participantLabel(r),
       handle,
-      handleType: (r.handle_type as HandleType | null) ?? null,
+      handleType: (r.handle_type as IdentityType | null) ?? null,
       contactId: r.contact_id ?? null,
     });
     byConv.set(r.conversation_id, list);

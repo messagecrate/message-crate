@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
-use message_ir::HandleType;
+use message_ir::IdentityType;
 use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 
@@ -72,7 +72,7 @@ struct DemoOwner {
     display_name: String,
     /// `(raw handle, handle type)` pairs linked into `account_handles`.
     #[serde(default)]
-    handle_specs: Vec<(String, HandleType)>,
+    handle_specs: Vec<(String, IdentityType)>,
     /// Email identities, linked into `account_handles`.
     #[serde(default)]
     emails: Vec<String>,
@@ -2090,7 +2090,7 @@ async fn seed_demo_account_on_conn(
     // profile's emails are read from these links, so the profile and the
     // identities list name the same addresses (#955, #1027).
     for email in &seed.owner.emails {
-        account_profile::link_account_handle(conn, account_id, email, HandleType::Email).await?;
+        account_profile::link_account_handle(conn, account_id, email, IdentityType::Email).await?;
     }
     Ok(())
 }

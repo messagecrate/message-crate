@@ -5,7 +5,7 @@ use crate::emit::TransportFamily;
 use crate::parse::{RawRow, SourceKind};
 use chrono::NaiveDateTime;
 use message_csv::Zone;
-use message_ir::{ConversationKey, HandleType, IrParticipant};
+use message_ir::{ConversationKey, IdentityType, IrParticipant};
 use phone::Handle;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -92,7 +92,7 @@ pub(super) fn session_key(kind: SourceKind, session: &str, rows: &[&RawRow]) -> 
 /// unambiguous and as its digits otherwise. `None` for a blank value or a
 /// name such as `Trip 2024`, which is no address.
 fn parse_address(raw: &str) -> Option<Handle> {
-    Handle::parse(raw).filter(|handle| handle.kind() != HandleType::Other)
+    Handle::parse(raw).filter(|handle| handle.kind() != IdentityType::Other)
 }
 
 /// True for a row someone other than the account holder wrote.
@@ -474,7 +474,7 @@ pub(super) fn resolve_sender(
         );
     }
     let handle = sender.unwrap_or_else(|| match &session.address {
-        Some(peer) if peer.kind() == HandleType::Phone => peer.key().to_string(),
+        Some(peer) if peer.kind() == IdentityType::Phone => peer.key().to_string(),
         _ => String::new(),
     });
     let mut display = row.sender_name.trim().to_string();

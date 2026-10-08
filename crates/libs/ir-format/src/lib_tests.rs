@@ -391,7 +391,7 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
             .expect("the tel: participant is read back");
         assert_eq!(
             participant.identity_type,
-            Some(message_ir::HandleType::Phone)
+            Some(message_ir::IdentityType::Phone)
         );
     }
 }

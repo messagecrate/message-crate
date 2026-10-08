@@ -18,7 +18,7 @@ use mail_builder::headers::text::Text;
 use mail_builder::mime::MimePart;
 use message_crate_core::{ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
-    ConversationDocument, HandleType, IrConversationType, IrDirection, IrMessage, IrMessageKind,
+    ConversationDocument, IdentityType, IrConversationType, IrDirection, IrMessage, IrMessageKind,
     give_each_document_its_own_file, trimmed,
 };
 use message_ir_format::{MergedArchive, load_attachment_bytes};
@@ -351,7 +351,7 @@ impl<'a> Conversation<'a> {
         let unnamed = || {
             self.peers.iter().find_map(|peer| {
                 phone::Handle::parse(peer)
-                    .filter(|handle| handle.kind() == HandleType::Phone)
+                    .filter(|handle| handle.kind() == IdentityType::Phone)
                     .map(phone::Handle::into_key)
             })
         };

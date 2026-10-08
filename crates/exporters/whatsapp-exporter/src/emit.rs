@@ -13,7 +13,7 @@ use message_crate_core::{
 };
 use message_csv::{format_local_ts, json_cell};
 use message_ir::{
-    ExportMeta, HandleType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
+    ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
     PendingConversation, PendingMessage, PendingReply, ProjectionHooks, SortKeyUnit,
 };
 use message_staging::{AttachmentSource, ExportWriter};
@@ -534,14 +534,14 @@ impl ProjectionHooks for WhatsappProjection {
             .map(|h| IrParticipant {
                 identity: Some(h.clone()),
                 display_name: None,
-                identity_type: Some(HandleType::Phone),
+                identity_type: Some(IdentityType::Phone),
             })
             .collect();
         if !convo.is_group && jid_to_e164(convo.extra_str("whatsapp_jid")).is_none() {
             participants.push(IrParticipant {
                 identity: Some(chat_id.to_string()),
                 display_name: None,
-                identity_type: Some(HandleType::Other),
+                identity_type: Some(IdentityType::Other),
             });
         }
         participants

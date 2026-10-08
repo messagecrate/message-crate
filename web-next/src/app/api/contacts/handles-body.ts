@@ -1,14 +1,14 @@
 import type { ContactHandleInput } from "@/lib/contactsWrite";
-import type { HandleType } from "@/lib/handleKind";
+import type { IdentityType } from "@/lib/handleKind";
 
-export const HANDLE_TYPES: readonly HandleType[] = [
+export const HANDLE_TYPES: readonly IdentityType[] = [
   "phone",
   "email",
   "username",
   "other",
 ];
 
-export function isHandleType(value: unknown): value is HandleType {
+export function isHandleType(value: unknown): value is IdentityType {
   return (
     typeof value === "string" &&
     (HANDLE_TYPES as readonly string[]).includes(value)
@@ -37,7 +37,7 @@ export function parseHandlesBody(
     }
     out.push({
       raw: row.raw.trim(),
-      handle_type: rawType as HandleType | undefined,
+      handle_type: rawType as IdentityType | undefined,
     });
   }
   return out.length > 0 ? out : undefined;

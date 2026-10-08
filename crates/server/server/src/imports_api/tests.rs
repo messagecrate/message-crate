@@ -1987,7 +1987,7 @@ async fn a_name_keyed_chat_is_not_the_chat_of_the_address_it_spells() {
             conversation_header("sms_backup_plus", "AMAZON").typed_participant(
                 "AMAZON",
                 None,
-                message_ir::HandleType::Other
+                message_ir::IdentityType::Other
             ),
             message_line("g-sender", "from a sender")
                 .at(1_426_183_463_000)

@@ -204,7 +204,9 @@ in the UI, the published documentation, the HTTP API and the conversation
 file. The conversation file, its CSV, EML and mbox forms, the Apple Messages
 Reader's protocol and the staging summary say `identity`, in their Rust
 fields as on disk. Neither is a stale name: the database and the code over it
-are not renamed to `identity`, and UI copy does not say "handle".
+are not renamed to `identity`, and UI copy does not say "handle". `CONTEXT.md`,
+under Identity, names the Rust enums for an identity's type and service: the
+shared ones and the HTTP API's own.
 
 A stale name met in passing is fixed, not matched.
 

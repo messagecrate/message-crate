@@ -1,13 +1,13 @@
 import { useEffect, useId, useState } from "react";
 import {
-  HANDLE_SERVICE_OPTIONS,
-  HANDLE_SERVICES,
-  type HandleService,
-  handleDuplicateKey,
-  handlePlaceholder,
-  handleValidationError,
+  identityDuplicateKey,
+  identityPlaceholder,
+  identityValidationError,
   inferService,
-} from "../lib/handleService";
+  OFFERED_SERVICE_OPTIONS,
+  OFFERED_SERVICES,
+  type OfferedService,
+} from "../lib/offeredService";
 import { parseSelectKey } from "../lib/selectKey";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
 import Button from "./Button";
@@ -27,14 +27,14 @@ const DUPLICATE_MESSAGE = "This identity is already in the list.";
 function alreadyListed(
   existing: readonly { address: string; service?: string | null }[],
   handle: string,
-  service: HandleService,
+  service: OfferedService,
 ): boolean {
-  const key = handleDuplicateKey(service, handle);
+  const key = identityDuplicateKey(service, handle);
   if (!key) return false;
   return existing.some((row) => {
     const rowService = inferService(row.address, row.service);
-    const known = HANDLE_SERVICES.find((s) => s === rowService) ?? "phone";
-    return handleDuplicateKey(known, row.address) === key;
+    const known = OFFERED_SERVICES.find((s) => s === rowService) ?? "phone";
+    return identityDuplicateKey(known, row.address) === key;
   });
 }
 
@@ -62,9 +62,9 @@ export default function AddIdentityDialog({
   error?: string;
   existing?: readonly { address: string; service?: string | null }[];
   onClose: () => void;
-  onConfirm: (args: { address: string; service: HandleService }) => void;
+  onConfirm: (args: { address: string; service: OfferedService }) => void;
 }) {
-  const [service, setService] = useState<HandleService>("phone");
+  const [service, setService] = useState<OfferedService>("phone");
   const [handle, setHandle] = useState("");
   const [invalid, setInvalid] = useState("");
   const serviceId = useId();
@@ -85,7 +85,7 @@ export default function AddIdentityDialog({
 
   const submit = () => {
     if (!canSubmit) return;
-    const why = handleValidationError(service, trimmed);
+    const why = identityValidationError(service, trimmed);
     if (why) {
       setInvalid(why);
       return;
@@ -114,7 +114,7 @@ export default function AddIdentityDialog({
           id={serviceId}
           selectedKey={service}
           onSelectionChange={(k) => {
-            const next = parseSelectKey(k, HANDLE_SERVICES);
+            const next = parseSelectKey(k, OFFERED_SERVICES);
             if (next) {
               setService(next);
               setInvalid("");
@@ -127,7 +127,7 @@ export default function AddIdentityDialog({
           popoverClassName={Z_POPOVER_IN_MODAL}
           className="block w-full min-w-0"
         >
-          {HANDLE_SERVICE_OPTIONS.map((s) => (
+          {OFFERED_SERVICE_OPTIONS.map((s) => (
             <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
               {s.label}
             </ListBoxItem>
@@ -153,7 +153,7 @@ export default function AddIdentityDialog({
           disabled={busy}
           autoComplete="off"
           spellCheck={false}
-          placeholder={handlePlaceholder(service)}
+          placeholder={identityPlaceholder(service)}
           aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? problemId : undefined}
           className={inputClass}

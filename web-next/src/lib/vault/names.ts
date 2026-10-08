@@ -3,7 +3,7 @@
  * helpers in `dbCore.ts` without importing that module, which loads
  * better-sqlite3 on import.
  */
-import { inferHandleType, type HandleType } from "@/lib/handleKind";
+import { inferHandleType, type IdentityType } from "@/lib/handleKind";
 import { formatPhoneDisplay } from "@/lib/phoneE164";
 
 /** The vault's placeholder name for a contact nobody has named. */
@@ -42,7 +42,7 @@ export function preferredNameOf(name: string | null | undefined): string | null 
   return trimmed;
 }
 
-export function handleTypeOf(handle: string | null | undefined): HandleType | null {
+export function handleTypeOf(handle: string | null | undefined): IdentityType | null {
   const trimmed = (handle ?? "").trim();
   return trimmed ? inferHandleType(trimmed) : null;
 }

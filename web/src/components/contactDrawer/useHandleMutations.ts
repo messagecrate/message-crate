@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
-import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
-import { formatHandleServiceLabel } from "./contactDrawerTypes";
+import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
+import { formatOfferedServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
 /**
@@ -21,7 +21,7 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     setRemoveTarget({
       address: h.address,
       service: h.service ?? null,
-      serviceLabel: formatHandleServiceLabel(h.address, h.service),
+      serviceLabel: formatOfferedServiceLabel(h.address, h.service),
       conversationCount: h.conversations,
     });
   };
@@ -41,7 +41,7 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     );
   };
 
-  const confirmAdd = (args: { address: string; service: HandleService }) => {
+  const confirmAdd = (args: { address: string; service: OfferedService }) => {
     if (busy) return;
     updateContact.mutate(
       {

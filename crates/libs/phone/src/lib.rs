@@ -8,7 +8,7 @@
 use std::fmt;
 
 use anyhow::{Context, Result, bail};
-use message_ir::HandleType;
+use message_ir::IdentityType;
 use sha2::{Digest, Sha256};
 
 /// Minimum digit length after stripping formatting.
@@ -267,9 +267,9 @@ pub fn normalize_digits_us(raw: &str) -> Option<String> {
 /// as US), falling back to the trimmed raw value when no digits survive.
 /// Email: lowercased. Username/Other: verbatim (trimmed). The second value is
 /// the guard note, when the phone form was uncertain.
-pub fn normalize_typed_handle(raw: &str, handle_type: HandleType) -> (String, Option<String>) {
+pub fn normalize_typed_handle(raw: &str, handle_type: IdentityType) -> (String, Option<String>) {
     match handle_type {
-        HandleType::Phone => {
+        IdentityType::Phone => {
             let guarded = normalize_guarded(raw, PhoneRegion::for_raw(raw));
             if guarded.normalized.is_empty() {
                 // No usable digits: fall back to the raw, unflagged.
@@ -278,8 +278,8 @@ pub fn normalize_typed_handle(raw: &str, handle_type: HandleType) -> (String, Op
                 (guarded.normalized, guarded.note)
             }
         }
-        HandleType::Email => (raw.trim().to_lowercase(), None),
-        HandleType::Username | HandleType::Other => (raw.trim().to_string(), None),
+        IdentityType::Email => (raw.trim().to_lowercase(), None),
+        IdentityType::Username | IdentityType::Other => (raw.trim().to_string(), None),
     }
 }
 
@@ -292,7 +292,7 @@ pub fn normalize_typed_handle(raw: &str, handle_type: HandleType) -> (String, Op
 /// number with its country or in national form.
 #[derive(Debug, Clone)]
 pub struct Handle {
-    kind: HandleType,
+    kind: IdentityType,
     key: String,
     raw: String,
 }
@@ -317,17 +317,17 @@ impl Handle {
             return None;
         }
         let kind = if value.contains('@') {
-            HandleType::Email
+            IdentityType::Email
         } else if is_written_as_a_number(value) {
-            HandleType::Phone
+            IdentityType::Phone
         } else {
-            HandleType::Other
+            IdentityType::Other
         };
         Some(Self::typed(value, kind))
     }
 
     /// A handle of a kind the caller already knows.
-    fn typed(raw: &str, kind: HandleType) -> Self {
+    fn typed(raw: &str, kind: IdentityType) -> Self {
         Self {
             kind,
             key: normalize_typed_handle(raw, kind).0,
@@ -337,7 +337,7 @@ impl Handle {
 
     /// What kind of address this is.
     #[must_use]
-    pub fn kind(&self) -> HandleType {
+    pub fn kind(&self) -> IdentityType {
         self.kind
     }
 
@@ -376,25 +376,25 @@ fn is_written_as_a_number(value: &str) -> bool {
 /// owner phone written `+44 7700 900123` is `+447700900123` here too.
 #[derive(Debug, Clone)]
 pub struct OwnerHandleSet {
-    handles: Vec<(String, HandleType)>,
+    handles: Vec<(String, IdentityType)>,
 }
 
 impl OwnerHandleSet {
-    /// Build the set from raw `(value, HandleType)` pairs; errors when the list
+    /// Build the set from raw `(value, IdentityType)` pairs; errors when the list
     /// is empty or a phone has no usable digits. The order is kept, and a
     /// handle given twice is kept once.
     ///
     /// # Errors
     ///
-    /// Returns an error when `handles` is empty, or when a `HandleType::Phone`
+    /// Returns an error when `handles` is empty, or when a `IdentityType::Phone`
     /// value sanitizes to no usable digits.
-    pub fn new(handles: &[(String, HandleType)]) -> Result<Self> {
+    pub fn new(handles: &[(String, IdentityType)]) -> Result<Self> {
         if handles.is_empty() {
             bail!("the backup device's phone number or email address is required");
         }
-        let mut keyed: Vec<(String, HandleType)> = Vec::new();
+        let mut keyed: Vec<(String, IdentityType)> = Vec::new();
         for (raw, handle_type) in handles {
-            if *handle_type == HandleType::Phone {
+            if *handle_type == IdentityType::Phone {
                 sanitize_number(raw)
                     .with_context(|| format!("owner phone has no usable digits: {raw}"))?;
             }
@@ -421,7 +421,7 @@ impl OwnerHandleSet {
     /// `+447700900123`.
     pub fn is_owner(&self, handle: &Handle) -> bool {
         let Handle { kind, key, raw } = handle;
-        if *kind != HandleType::Phone {
+        if *kind != IdentityType::Phone {
             return self.handles.iter().any(|(v, t)| t == kind && v == key);
         }
         let Some(digits) = sanitize_number(raw) else {
@@ -437,9 +437,9 @@ impl OwnerHandleSet {
 
     /// Convenience for exporters that only know about phone numbers.
     pub fn from_phones(phones: &[String]) -> Result<Self> {
-        let handles: Vec<(String, HandleType)> = phones
+        let handles: Vec<(String, IdentityType)> = phones
             .iter()
-            .map(|p| (p.clone(), HandleType::Phone))
+            .map(|p| (p.clone(), IdentityType::Phone))
             .collect();
         Self::new(&handles)
     }
@@ -458,7 +458,7 @@ impl OwnerHandleSet {
     fn phone_keys(&self) -> impl Iterator<Item = &str> {
         self.handles
             .iter()
-            .filter(|(_, t)| *t == HandleType::Phone)
+            .filter(|(_, t)| *t == IdentityType::Phone)
             .map(|(v, _)| v.as_str())
     }
 }
@@ -565,14 +565,14 @@ mod tests {
     fn typed_handle_policy_matches_the_server_for_international_numbers() {
         // The contacts book and the server must key this identically:
         // for_raw keeps the + signal, so the E.164 form survives.
-        let (uk, note) = normalize_typed_handle("+44 20 7946 0000", HandleType::Phone);
+        let (uk, note) = normalize_typed_handle("+44 20 7946 0000", IdentityType::Phone);
         assert_eq!(uk, "+442079460000");
         assert!(note.is_none());
-        let (us, _) = normalize_typed_handle("(555) 555-0100", HandleType::Phone);
+        let (us, _) = normalize_typed_handle("(555) 555-0100", IdentityType::Phone);
         assert_eq!(us, "+15555550100");
-        let (email, _) = normalize_typed_handle(" Bob@Example.COM ", HandleType::Email);
+        let (email, _) = normalize_typed_handle(" Bob@Example.COM ", IdentityType::Email);
         assert_eq!(email, "bob@example.com");
-        let (wordy, _) = normalize_typed_handle("no digits here", HandleType::Phone);
+        let (wordy, _) = normalize_typed_handle("no digits here", IdentityType::Phone);
         assert_eq!(wordy, "no digits here");
     }
 
@@ -820,7 +820,7 @@ mod tests {
         assert_eq!(trunk.primary_owner_handle().as_deref(), Some("02079460000"));
         // Only a phone-free set has no primary owner handle.
         let email_only =
-            OwnerHandleSet::new(&[("a@example.com".into(), HandleType::Email)]).unwrap();
+            OwnerHandleSet::new(&[("a@example.com".into(), IdentityType::Email)]).unwrap();
         assert_eq!(email_only.primary_owner_handle(), None);
     }
 
@@ -838,18 +838,18 @@ mod tests {
     #[test]
     fn owner_handle_set_matches_typed_handles() {
         let owners = OwnerHandleSet::new(&[
-            ("(555) 555-0100".into(), HandleType::Phone),
-            ("Person@Example.COM".into(), HandleType::Email),
+            ("(555) 555-0100".into(), IdentityType::Phone),
+            ("Person@Example.COM".into(), IdentityType::Email),
         ])
         .unwrap();
-        assert!(owners.is_owner(&Handle::typed("+15555550100", HandleType::Phone)));
-        assert!(owners.is_owner(&Handle::typed("5555550100", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("5555550199", HandleType::Phone)));
-        assert!(owners.is_owner(&Handle::typed("person@example.com", HandleType::Email)));
-        assert!(!owners.is_owner(&Handle::typed("other@example.com", HandleType::Email)));
+        assert!(owners.is_owner(&Handle::typed("+15555550100", IdentityType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("5555550100", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("5555550199", IdentityType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("person@example.com", IdentityType::Email)));
+        assert!(!owners.is_owner(&Handle::typed("other@example.com", IdentityType::Email)));
         // A phone-shaped handle is not treated as an email or username handle.
-        assert!(!owners.is_owner(&Handle::typed("(555) 555-0100", HandleType::Email)));
-        assert!(!owners.is_owner(&Handle::typed("Person@Example.COM", HandleType::Username)));
+        assert!(!owners.is_owner(&Handle::typed("(555) 555-0100", IdentityType::Email)));
+        assert!(!owners.is_owner(&Handle::typed("Person@Example.COM", IdentityType::Username)));
     }
 
     #[test]
@@ -869,16 +869,16 @@ mod tests {
     #[test]
     fn an_owner_given_with_plus_matches_its_national_form() {
         let owners = OwnerHandleSet::from_phones(&["+447700900123".into()]).unwrap();
-        assert!(owners.is_owner(&Handle::typed("07700900123", HandleType::Phone)));
-        assert!(owners.is_owner(&Handle::typed("07700 900123", HandleType::Phone)));
-        assert!(owners.is_owner(&Handle::typed("7700900123", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("07700900124", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("0447700900123", HandleType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("07700900123", IdentityType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("07700 900123", IdentityType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("7700900123", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("07700900124", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("0447700900123", IdentityType::Phone)));
         // A value with `+` is in international form and names its country.
-        assert!(!owners.is_owner(&Handle::typed("+7700900123", HandleType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("+7700900123", IdentityType::Phone)));
         // An owner given without `+` has no country to strip.
         let local = OwnerHandleSet::from_phones(&["020 7946 0000".into()]).unwrap();
-        assert!(!local.is_owner(&Handle::typed("2079460000", HandleType::Phone)));
+        assert!(!local.is_owner(&Handle::typed("2079460000", IdentityType::Phone)));
     }
 
     #[test]
@@ -888,37 +888,37 @@ mod tests {
             owners.primary_owner_handle().as_deref(),
             Some("+447700900123")
         );
-        assert!(owners.is_owner(&Handle::typed("+447700900123", HandleType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("+447700900123", IdentityType::Phone)));
         // A source that has already dropped the `+` matches by digits.
-        assert!(owners.is_owner(&Handle::typed("447700900123", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("447700900999", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("06", HandleType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("447700900123", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("447700900999", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("06", IdentityType::Phone)));
     }
 
     #[test]
     fn owner_handle_set_guards_trunk_zero() {
         let owners =
-            OwnerHandleSet::new(&[("020 7946 0000".to_string(), HandleType::Phone)]).unwrap();
-        assert!(owners.is_owner(&Handle::typed("02079460000", HandleType::Phone)));
-        assert!(owners.is_owner(&Handle::typed("020 7946 0000", HandleType::Phone)));
+            OwnerHandleSet::new(&[("020 7946 0000".to_string(), IdentityType::Phone)]).unwrap();
+        assert!(owners.is_owner(&Handle::typed("02079460000", IdentityType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("020 7946 0000", IdentityType::Phone)));
         // The digits-as-is identity is never fabricated into +02079460000, so
         // a +0… message handle matches through the same digit stripping.
-        assert!(owners.is_owner(&Handle::typed("+02079460000", HandleType::Phone)));
-        assert!(!owners.is_owner(&Handle::typed("+02079469999", HandleType::Phone)));
+        assert!(owners.is_owner(&Handle::typed("+02079460000", IdentityType::Phone)));
+        assert!(!owners.is_owner(&Handle::typed("+02079469999", IdentityType::Phone)));
     }
 
     #[test]
     fn a_plus_before_the_first_digit_keeps_the_country() {
         for raw in ["(+44) 7700 900123", "tel:+447700900123"] {
             assert_eq!(
-                normalize_typed_handle(raw, HandleType::Phone).0,
+                normalize_typed_handle(raw, IdentityType::Phone).0,
                 "+447700900123",
                 "{raw}"
             );
         }
     }
 
-    fn parsed(raw: &str) -> (HandleType, String) {
+    fn parsed(raw: &str) -> (IdentityType, String) {
         let handle = Handle::parse(raw).unwrap();
         (handle.kind(), handle.key().to_string())
     }
@@ -928,15 +928,15 @@ mod tests {
         // +65 5555 0100 is no one's number: the note on `mod tests` says why.
         assert_eq!(
             parsed("+6555550100"),
-            (HandleType::Phone, "+6555550100".into())
+            (IdentityType::Phone, "+6555550100".into())
         );
         assert_eq!(
             parsed("+447700900123"),
-            (HandleType::Phone, "+447700900123".into())
+            (IdentityType::Phone, "+447700900123".into())
         );
         assert_eq!(
             parsed("tel:+447700900123"),
-            (HandleType::Phone, "+447700900123".into())
+            (IdentityType::Phone, "+447700900123".into())
         );
     }
 
@@ -944,31 +944,31 @@ mod tests {
     fn a_number_without_plus_is_read_as_a_us_number_and_a_short_code_keeps_its_digits() {
         assert_eq!(
             parsed("(555) 555-0100"),
-            (HandleType::Phone, "+15555550100".into())
+            (IdentityType::Phone, "+15555550100".into())
         );
         assert_eq!(
             parsed("15555550100"),
-            (HandleType::Phone, "+15555550100".into())
+            (IdentityType::Phone, "+15555550100".into())
         );
         assert_eq!(
             parsed("020 7946 0000"),
-            (HandleType::Phone, "02079460000".into())
+            (IdentityType::Phone, "02079460000".into())
         );
-        assert_eq!(parsed("7535"), (HandleType::Phone, "7535".into()));
+        assert_eq!(parsed("7535"), (IdentityType::Phone, "7535".into()));
     }
 
     #[test]
     fn an_address_with_at_is_an_email_address_not_the_digits_inside_it() {
         assert_eq!(
             parsed(" John1985@Example.com "),
-            (HandleType::Email, "john1985@example.com".into())
+            (IdentityType::Email, "john1985@example.com".into())
         );
     }
 
     #[test]
     fn an_address_that_is_neither_a_number_nor_an_email_is_a_sender_name() {
-        assert_eq!(parsed("AMAZON"), (HandleType::Other, "AMAZON".into()));
-        assert_eq!(parsed(" Bank 24 "), (HandleType::Other, "Bank 24".into()));
+        assert_eq!(parsed("AMAZON"), (IdentityType::Other, "AMAZON".into()));
+        assert_eq!(parsed(" Bank 24 "), (IdentityType::Other, "Bank 24".into()));
         assert!(Handle::parse("   ").is_none());
     }
 

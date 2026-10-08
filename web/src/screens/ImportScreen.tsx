@@ -4,7 +4,6 @@ import { isAndroidSmsSource, needsOwnerEmails, splitEmails } from "../lib/androi
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
-import { serverService } from "../lib/handleService";
 import {
   emptyImessagePathStats,
   IMESSAGE_DEFAULT_METHOD,
@@ -17,6 +16,7 @@ import {
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
+import { serverService } from "../lib/offeredService";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { unmatchedIdentities } from "../lib/serverApi";

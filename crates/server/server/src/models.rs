@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, Deletion, EarlierVersion, HandleService, HandleType, IrAttachment,
+    ConversationHeader, Deletion, EarlierVersion, IdentityService, IdentityType, IrAttachment,
     IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
@@ -82,7 +82,7 @@ pub struct ParticipantRecord {
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
     /// Handle type (phone, email, username, or other).
-    pub handle_type: Option<HandleType>,
+    pub handle_type: Option<IdentityType>,
 }
 
 /// One message of an imported conversation.
@@ -111,7 +111,7 @@ pub struct MessageRecord {
     /// The sender's identity type read from the address alone (phone, email
     /// or other). Staging prefers the type the header gives a participant
     /// with the same address.
-    pub sender_handle_type: Option<HandleType>,
+    pub sender_handle_type: Option<IdentityType>,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -339,9 +339,9 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<Conv
                 .as_deref()
                 .is_some_and(|s| s.eq_ignore_ascii_case("whatsapp"))
             {
-                HandleService::Whatsapp.as_str().to_string()
+                IdentityService::Whatsapp.as_str().to_string()
             } else {
-                HandleService::Phone.as_str().to_string()
+                IdentityService::Phone.as_str().to_string()
             },
         ),
         conversation_type: header.conversation.conversation_type.as_str().to_string(),
@@ -462,7 +462,7 @@ fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
     Some(ParticipantRecord {
         handle: name,
         name_alias,
-        handle_type: Some(HandleType::Other),
+        handle_type: Some(IdentityType::Other),
     })
 }
 
@@ -473,13 +473,13 @@ fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
 fn sender_identity(
     address: Option<&str>,
     name: Option<&str>,
-) -> Option<(String, Option<HandleType>)> {
+) -> Option<(String, Option<IdentityType>)> {
     if let Some(address) = address.and_then(nonempty) {
         let kind = sender_handle_type(Some(address.as_str()));
         return Some((address, kind));
     }
     let name = name.and_then(nonempty)?;
-    Some((name, Some(HandleType::Other)))
+    Some((name, Some(IdentityType::Other)))
 }
 
 /// The shape of a sender's address, read from the address alone.
@@ -492,7 +492,7 @@ fn sender_identity(
 /// [`Handle::parse`], the one rule for what an address looks like: a
 /// contact's number is a phone number on a service the model does not know
 /// too, such as a message Apple Messages sent by satellite (#1144).
-fn sender_handle_type(sender_identity: Option<&str>) -> Option<HandleType> {
+fn sender_handle_type(sender_identity: Option<&str>) -> Option<IdentityType> {
     sender_identity.and_then(Handle::parse).map(|h| h.kind())
 }
 
@@ -574,7 +574,7 @@ mod tests {
                 assert!(!m.is_from_me);
                 assert_eq!(m.text.as_deref(), Some("hello"));
                 assert_eq!(m.service.as_deref(), Some("sms"));
-                assert_eq!(m.sender_handle_type, Some(HandleType::Phone));
+                assert_eq!(m.sender_handle_type, Some(IdentityType::Phone));
                 assert!(m.tapbacks.is_empty());
                 assert!(m.reply_to.is_none());
             }
@@ -776,13 +776,16 @@ mod tests {
     fn types_a_sender_by_the_address_alone() {
         assert_eq!(
             sender_handle_type(Some("alice@example.com")),
-            Some(HandleType::Email)
+            Some(IdentityType::Email)
         );
         assert_eq!(
             sender_handle_type(Some("+1 (555) 555-0101")),
-            Some(HandleType::Phone)
+            Some(IdentityType::Phone)
         );
-        assert_eq!(sender_handle_type(Some("AMAZON")), Some(HandleType::Other));
+        assert_eq!(
+            sender_handle_type(Some("AMAZON")),
+            Some(IdentityType::Other)
+        );
         assert_eq!(sender_handle_type(Some("  ")), None);
         assert_eq!(sender_handle_type(None), None);
     }

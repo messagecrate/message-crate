@@ -3,7 +3,7 @@
 //! `db::handles`; this module decides which to run and what to refuse.
 
 use anyhow::Result as AnyResult;
-use message_ir::HandleService;
+use message_ir::IdentityService;
 use sqlx::SqliteConnection;
 
 use super::{
@@ -199,7 +199,7 @@ impl ContactEditor<'_> {
         }
         let platform = add
             .service
-            .map_or(HandleService::Phone, HandleService::from);
+            .map_or(IdentityService::Phone, IdentityService::from);
         let handle_id = self.handle_row(raw, platform).await?;
         match self.claim(handle_id).await? {
             // Already linked: no address-book change.
@@ -221,7 +221,7 @@ impl ContactEditor<'_> {
         if prev.is_empty() || next.is_empty() {
             refuse!("previous_address and address must not be empty");
         }
-        let named = upd.service.map(HandleService::from);
+        let named = upd.service.map(IdentityService::from);
         // The old identity is found on its own service, whatever service the
         // request names, so one edit can move a contact from WhatsApp to Text
         // Message. When the address is on the contact under more than one
@@ -277,7 +277,7 @@ impl ContactEditor<'_> {
         &mut self,
         raw: &str,
         on: OnService,
-    ) -> AnyResult<Option<(i64, HandleService)>> {
+    ) -> AnyResult<Option<(i64, IdentityService)>> {
         contacts::linked_handle_id(&mut *self.conn, self.account_id, self.contact_id, raw, on).await
     }
 
@@ -297,7 +297,7 @@ impl ContactEditor<'_> {
     async fn handle_row(
         &mut self,
         raw: &str,
-        platform: HandleService,
+        platform: IdentityService,
     ) -> Result<i64, ContactEditError> {
         let raw = raw.trim();
         if let Some(id) =

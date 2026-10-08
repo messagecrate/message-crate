@@ -26,7 +26,7 @@ use message_crate_core::{
     RunIssue, item_line, item_reason,
 };
 use message_ir::{
-    ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
+    ConversationDocument, ConversationMeta, ExportMeta, IdentityType, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
     IrService, SCHEMA_VERSION, TimePrecision, nonempty, owner_sender,
 };
@@ -363,11 +363,11 @@ fn pending_from_record(record: ConversationRecord) -> PendingConversation {
 
 /// iMessage stores handles as phone numbers or email addresses without
 /// recording which; infer the type from the handle shape.
-fn handle_type_for(handle: &str) -> HandleType {
+fn handle_type_for(handle: &str) -> IdentityType {
     if handle.contains('@') {
-        HandleType::Email
+        IdentityType::Email
     } else {
-        HandleType::Phone
+        IdentityType::Phone
     }
 }
 

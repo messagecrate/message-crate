@@ -1,5 +1,5 @@
 use super::*;
-use message_ir::HandleType;
+use message_ir::IdentityType;
 
 #[test]
 fn parses_flat_received() {
@@ -279,10 +279,10 @@ fn an_email_address_and_a_sender_name_are_not_numbers() {
     let msg = received_from("john1985@example.com");
     assert_eq!(crate::identity::chat_id_for(&msg), "john1985@example.com");
     let sender = msg.sender.unwrap();
-    assert_eq!(sender.kind(), HandleType::Email);
+    assert_eq!(sender.kind(), IdentityType::Email);
     let msg = received_from("AMAZON");
     assert_eq!(crate::identity::chat_id_for(&msg), "AMAZON");
-    assert_eq!(msg.sender.unwrap().kind(), HandleType::Other);
+    assert_eq!(msg.sender.unwrap().kind(), IdentityType::Other);
 }
 
 /// The `From` of a group message names its sender inside the address,

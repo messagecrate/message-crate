@@ -15,7 +15,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result};
-use message_ir::{HandleService, HandleType};
+use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -118,7 +118,7 @@ impl std::fmt::Display for LoadError {
 /// The key of one identity: the three columns `handles` is unique on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IdentityKey {
-    service: HandleService,
+    service: IdentityService,
     handle_type: &'static str,
     normalized: String,
 }
@@ -312,22 +312,22 @@ impl Snapshot {
 }
 
 /// The `service` value the `handles` table stores, or `None` for any other
-/// text. Unlike [`HandleService::parse`], which reads every unknown word as
+/// text. Unlike [`IdentityService::parse`], which reads every unknown word as
 /// the phone platform, an unknown word here is an error.
-fn parse_service(text: &str) -> Option<HandleService> {
-    [HandleService::Phone, HandleService::Whatsapp]
+fn parse_service(text: &str) -> Option<IdentityService> {
+    [IdentityService::Phone, IdentityService::Whatsapp]
         .into_iter()
         .find(|s| s.as_str().eq_ignore_ascii_case(text))
 }
 
 /// The `handle_type` value the `handles` table stores, or `None` for any
 /// other text.
-fn parse_handle_type(text: &str) -> Option<HandleType> {
+fn parse_handle_type(text: &str) -> Option<IdentityType> {
     [
-        HandleType::Phone,
-        HandleType::Email,
-        HandleType::Username,
-        HandleType::Other,
+        IdentityType::Phone,
+        IdentityType::Email,
+        IdentityType::Username,
+        IdentityType::Other,
     ]
     .into_iter()
     .find(|t| t.as_str().eq_ignore_ascii_case(text))
@@ -502,7 +502,7 @@ fn row_identity(
         row.identity.clone()
     } else {
         match handle_type {
-            HandleType::Phone => {
+            IdentityType::Phone => {
                 if phone::sanitize_phone_shaped(&row.identity).is_none() {
                     return Err(format!(
                         "row {n}: \"{}\" is not a phone number Message Crate can key: \
@@ -510,7 +510,7 @@ fn row_identity(
                         row.identity
                     ));
                 }
-                let keyed = phone::normalize_typed_handle(&row.identity, HandleType::Phone).0;
+                let keyed = phone::normalize_typed_handle(&row.identity, IdentityType::Phone).0;
                 if row.identity.contains('+') {
                     keyed
                 } else {
@@ -546,7 +546,7 @@ fn row_identity(
                     }
                 }
             }
-            HandleType::Email => {
+            IdentityType::Email => {
                 let lowered = row.identity.to_lowercase();
                 let mut parts = lowered.split('@');
                 let well_formed = matches!(
@@ -561,7 +561,7 @@ fn row_identity(
                 }
                 lowered
             }
-            HandleType::Username | HandleType::Other => row.identity.clone(),
+            IdentityType::Username | IdentityType::Other => row.identity.clone(),
         }
     };
     Ok(Some(FileIdentity {

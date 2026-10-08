@@ -9,7 +9,7 @@ use message_crate_core::{
 };
 use message_csv::format_local_ts;
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, HandleType,
+    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
     IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
     IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, SCHEMA_VERSION, TimePrecision,
     one_copy_per_message, owner_sender,
@@ -270,7 +270,7 @@ struct PendingConversation {
     kind: ConversationKind,
     group_title: Option<String>,
     /// Each participant's handle key and kind.
-    participants: Vec<(String, HandleType)>,
+    participants: Vec<(String, IdentityType)>,
     messages: Vec<PendingMessage>,
 }
 

@@ -67,6 +67,8 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
+  on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
   headings.** The summary at the end of an import or a Convert gives its
   Import Errors under an "Import Errors" heading and its notes under a
