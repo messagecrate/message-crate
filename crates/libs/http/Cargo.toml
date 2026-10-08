@@ -2,7 +2,7 @@
 name = "message-crate-http"
 version = "0.1.0"
 edition = "2024"
-description = "Blocking HTTP client helpers and typed retry classification for the push and export crates"
+description = "Blocking HTTP client helpers and typed retry classification for the import and export crates"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]

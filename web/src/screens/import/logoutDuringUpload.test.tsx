@@ -8,7 +8,7 @@
 //
 // The other way round, a session the server refuses to any call the Import
 // Run makes ends the session here too, and the run stays where the server has
-// it for the next login (#1491 for the push, #1677 for the run's own calls).
+// it for the next login (#1491 for the Upload, #1677 for the run's own calls).
 
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -490,7 +490,7 @@ describe("a session the server refuses to the Import Run's own calls (#1677)", (
     await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
     expect(getToken()).toBeNull();
     await waitFor(() => expect(result.current.job.running).toBe(false));
-    // The push never starts, and the run is neither completed nor deleted.
+    // The Upload never starts, and the run is neither completed nor deleted.
     expect(calls).not.toContain("upload started");
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(deleteRunDirMock).not.toHaveBeenCalled();

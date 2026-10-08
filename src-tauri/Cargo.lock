@@ -2349,7 +2349,7 @@ dependencies = [
  "message-crate-core",
  "message-crate-export",
  "message-crate-http",
- "message-crate-push",
+ "message-crate-import",
  "message-crate-serve-protocol",
  "message-ir",
  "message-ir-format",
@@ -2404,7 +2404,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-push"
+name = "message-crate-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -1,7 +1,7 @@
 //! Report types written at the end of an Upload, plus the small formatting
 //! helpers that turn them into log text.
 //!
-//! [`PushReport`] is the JSON file left next to the export and the payload of
+//! [`ImportReport`] is the JSON file left next to the export and the payload of
 //! [`crate::ProgressEvent::Finished`]. Everything here is plain data with no
 //! I/O so the desktop app and tests can build and inspect reports directly.
 
@@ -95,7 +95,7 @@ pub struct UploadProfile {
 
 /// Final summary of a whole Upload (also written to disk as the report file).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct PushReport {
+pub struct ImportReport {
     /// `true` when no conversation failed and the run was not cancelled.
     pub ok: bool,
     /// `true` when the run halted before it finished, so the Upload is paused.
@@ -250,11 +250,11 @@ pub fn format_duration_ms(ms: u64) -> String {
 
 /// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
 /// Upload's report rather than from whether the Upload returned. `failed` has a
-/// zero floor: cancelled (the run halted, see [`PushReport::cancelled`]), or
+/// zero floor: cancelled (the run halted, see [`ImportReport::cancelled`]), or
 /// nothing landed at all. A skip-only repeat Upload is a no-op,
 /// not a failure. Item-level failures beside successes are
 /// `completed_with_issues`.
-pub fn outcome_status(report: &PushReport) -> &'static str {
+pub fn outcome_status(report: &ImportReport) -> &'static str {
     let nothing_landed = report.conversations_total > 0
         && report.conversations_ok == 0
         && report.conversations_skipped == 0;
@@ -274,7 +274,7 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
 
 /// Build the sentences that end the Upload's log: how the Upload ended, and
 /// what it did with the conversations, messages and Assets it read.
-pub fn format_push_summary(report: &PushReport) -> String {
+pub fn format_import_summary(report: &ImportReport) -> String {
     let elapsed = format_duration_ms(report.elapsed_ms);
     // A run that halted is paused (CONTEXT.md, Pause). A cancel that came
     // after the last conversation was sent halted nothing, so that run
@@ -351,8 +351,8 @@ mod tests {
         assert_eq!(format_duration_ms(3_723_000), "1h02m03s");
     }
 
-    fn sample_report() -> PushReport {
-        PushReport {
+    fn sample_report() -> ImportReport {
+        ImportReport {
             ok: true,
             cancelled: false,
             session_refused: false,
@@ -380,8 +380,8 @@ mod tests {
     }
 
     #[test]
-    fn format_push_summary_writes_sentences() {
-        let report = PushReport {
+    fn format_import_summary_writes_sentences() {
+        let report = ImportReport {
             ok: false,
             elapsed_ms: 12_000,
             conversations_ok: 8,
@@ -393,7 +393,7 @@ mod tests {
             ..sample_report()
         };
         assert_eq!(
-            format_push_summary(&report),
+            format_import_summary(&report),
             "The Upload completed in 12s, with errors.\n\
              Sent 8 of 10 conversations, with 1 failed, 1 sent before, \
              and 0 left for the next Upload.\n\
@@ -407,8 +407,8 @@ mod tests {
 
     /// One of each is worded singular.
     #[test]
-    fn format_push_summary_words_one_singular() {
-        let one = PushReport {
+    fn format_import_summary_words_one_singular() {
+        let one = ImportReport {
             conversations_total: 1,
             conversations_ok: 1,
             messages_attempted: 1,
@@ -418,7 +418,7 @@ mod tests {
             assets_skipped: 1,
             ..sample_report()
         };
-        let summary = format_push_summary(&one);
+        let summary = format_import_summary(&one);
         assert!(summary.contains("Sent 1 of 1 conversation, "), "{summary}");
         assert!(
             summary.contains("The Upload tried to send 1 message: "),
@@ -438,20 +438,20 @@ mod tests {
     /// run that left conversations for the next Upload is paused, and only
     /// such a run.
     #[test]
-    fn format_push_summary_says_how_the_upload_ended() {
-        let first_line = |report: PushReport| {
-            format_push_summary(&report)
+    fn format_import_summary_says_how_the_upload_ended() {
+        let first_line = |report: ImportReport| {
+            format_import_summary(&report)
                 .lines()
                 .next()
                 .unwrap()
                 .to_string()
         };
-        let not_ok = PushReport {
+        let not_ok = ImportReport {
             ok: false,
             ..sample_report()
         };
         assert_eq!(
-            first_line(PushReport {
+            first_line(ImportReport {
                 cancelled: true,
                 conversations_cancelled: 6,
                 ..not_ok.clone()
@@ -459,7 +459,7 @@ mod tests {
             "The Upload paused after 1m00s."
         );
         assert_eq!(
-            first_line(PushReport {
+            first_line(ImportReport {
                 cancelled: true,
                 session_refused: true,
                 conversations_cancelled: 6,
@@ -470,7 +470,7 @@ mod tests {
         // A refused session halts the Upload even when the batch it refused
         // carried only a conversation that had already failed.
         assert_eq!(
-            first_line(PushReport {
+            first_line(ImportReport {
                 cancelled: true,
                 session_refused: true,
                 conversations_failed: 1,
@@ -479,7 +479,7 @@ mod tests {
             "The Upload paused after 1m00s, because the server refused the session."
         );
         assert_eq!(
-            first_line(PushReport {
+            first_line(ImportReport {
                 conversations_failed: 1,
                 ..not_ok
             }),

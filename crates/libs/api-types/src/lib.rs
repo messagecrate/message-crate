@@ -72,8 +72,8 @@ impl AppKind {
 
 /// What happens to a source's messages that were imported before: `replace`
 /// wipes them first, `append` keeps them and adds only new ones.
-// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `message-crate-push`'s settings and the
-// desktop push command, uses this type, so a misspelling cannot compile as
+// Every path that carries a mode, the `POST /v1/imports` body, the `import` CLI flag, `message-crate-import`'s settings and the
+// desktop upload command, uses this type, so a misspelling cannot compile as
 // "append".
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]

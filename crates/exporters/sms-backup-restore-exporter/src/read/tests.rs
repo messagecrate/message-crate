@@ -48,7 +48,7 @@ fn reads_then_writes_source_fields_and_attachment() {
     assert_eq!(
         docs[0].messages[0].attachments[0].size_bytes,
         Some(5),
-        "decoded aGVsbG8= is five bytes; size_bytes lets message-crate-push skip re-hashing"
+        "decoded aGVsbG8= is five bytes; size_bytes lets message-crate-import skip re-hashing"
     );
     assert_eq!(
         docs[0].messages[0].source.as_ref().unwrap().fields["attrs"]["extra"],
