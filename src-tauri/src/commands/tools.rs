@@ -58,14 +58,15 @@ impl ToolStatus {
 
     /// This status as `download` changes it. A download in progress is
     /// shown whatever was found, because the file is about to change. A
-    /// failed one is shown only when the program is not found, because a
-    /// program found is still used.
+    /// failed one is shown only when the program is missing: a program found
+    /// is still used, and a program not used says why, which is the cause a
+    /// person must fix (two places, or no permission to run).
     fn with_download(self, download: Option<DownloadState>) -> Self {
         match (download, self) {
             (Some(DownloadState::Downloading { received, total }), _) => {
                 Self::Downloading { received, total }
             }
-            (Some(DownloadState::Failed { reason }), Self::Missing | Self::Unusable { .. }) => {
+            (Some(DownloadState::Failed { reason }), Self::Missing) => {
                 Self::DownloadFailed { reason }
             }
             (_, status) => status,
@@ -213,6 +214,21 @@ mod tests {
                 "state": "downloadFailed",
                 "reason": "The download's server answered 404 Not Found.",
             })
+        );
+    }
+
+    /// A program not used keeps its reason when its download failed, because
+    /// that reason is what a person must fix.
+    #[test]
+    fn an_unusable_program_keeps_its_reason_over_a_failed_download() {
+        let unusable = ToolStatus::Unusable {
+            reason: "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is elsewhere.".into(),
+        };
+        assert_eq!(
+            unusable.clone().with_download(Some(DownloadState::Failed {
+                reason: "no network".into()
+            })),
+            unusable
         );
     }
 
