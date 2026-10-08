@@ -359,8 +359,8 @@ pub enum DownloadError {
     },
     /// The file could not be written to the Tools Directory.
     CouldNotWrite(String),
-    /// The file passed its checksum and is in place, and does not run.
-    DoesNotRun,
+    /// The program passed its checksum and is in place, and does not run.
+    DoesNotRun(Program),
 }
 
 impl fmt::Display for DownloadError {
@@ -386,7 +386,17 @@ impl fmt::Display for DownloadError {
                     "The file could not be written to the Tools Directory: {why}."
                 )
             }
-            Self::DoesNotRun => write!(f, "The file was downloaded but does not run."),
+            Self::DoesNotRun(program @ (Program::Ffmpeg | Program::Ffprobe)) => write!(
+                f,
+                "{program} was downloaded but doesn't run on this computer. \
+                 Install it with your package manager instead; the app uses the copy on PATH.",
+                program = program.name()
+            ),
+            Self::DoesNotRun(Program::Wtsexporter) => write!(
+                f,
+                "wtsexporter was downloaded but doesn't run on this computer. \
+                 See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app."
+            ),
         }
     }
 }
@@ -563,10 +573,10 @@ impl ToolDownloads {
     }
 }
 
-/// The state of a program in place that does not run.
-fn does_not_run() -> DownloadState {
+/// The state of `program` in place that does not run.
+fn does_not_run(program: Program) -> DownloadState {
     DownloadState::Failed {
-        reason: DownloadError::DoesNotRun.to_string(),
+        reason: DownloadError::DoesNotRun(program).to_string(),
     }
 }
 
@@ -593,10 +603,10 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
                     let _ = write_manifest(dir, &manifest);
                 }
                 if !runs(pin.program, dir) {
-                    downloads.set(pin.program, does_not_run());
+                    downloads.set(pin.program, does_not_run(pin.program));
                 }
             }
-            Need::DoesNotRun => downloads.set(pin.program, does_not_run()),
+            Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
             Need::Download => wanted.push(pin),
         }
     }
@@ -643,7 +653,7 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
                 if runs(program, dir) {
                     downloads.clear(program);
                 } else {
-                    downloads.set(program, does_not_run());
+                    downloads.set(program, does_not_run(program));
                 }
                 if let Err(err) = write_manifest(dir, &manifest) {
                     // The program is in place and works; without the record
