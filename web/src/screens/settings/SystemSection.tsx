@@ -58,13 +58,40 @@ type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
  * One program's status line: the path it was found at, that it is missing,
  * or why it is not used. One case per `state` the desktop process sends.
  */
+/**
+ * Where to put a program that is missing, as the words before the Tools
+ * Directory's path (`dir`), or the whole sentence when `dir` is null.
+ * ffmpeg and ffprobe are used only from one place, so a missing one goes
+ * beside the one that was found, or both go in the Tools Directory.
+ * wtsexporter is looked for in the Tools Directory only.
+ */
+function missingFix(
+  name: ToolName,
+  partner: ToolStatus | null,
+  toolsDir: string | null,
+): { text: string; dir: string | null } | null {
+  if (partner == null) {
+    return toolsDir ? { text: "Put it in the Tools Directory", dir: toolsDir } : null;
+  }
+  const other = name === "ffmpeg" ? "ffprobe" : "ffmpeg";
+  if (partner.state === "found") {
+    return toolsDir
+      ? { text: `Put it beside ${other}, or put both in the Tools Directory`, dir: toolsDir }
+      : { text: `Put it beside ${other}`, dir: null };
+  }
+  return toolsDir ? { text: `Put it and ${other} in the Tools Directory`, dir: toolsDir } : null;
+}
+
 function ToolStatusRow({
   name,
   status,
+  partner,
   toolsDir,
 }: {
   name: ToolName;
   status: ToolStatus;
+  /** For ffmpeg the status of ffprobe, and the reverse; null for wtsexporter. */
+  partner: ToolStatus | null;
   toolsDir: string | null;
 }) {
   switch (status.state) {
@@ -85,18 +112,24 @@ function ToolStatusRow({
       // An app opened from the Dock on macOS doesn't see the PATH a shell
       // sets, so a program installed with Homebrew is missing here until it
       // is linked into the Tools Directory.
-      const fix = toolsDir ? ` Put it in the Tools Directory, ${toolsDir}.` : "";
-      const label = `${name} not found.${fix}`;
+      const fix = missingFix(name, partner, toolsDir);
+      const fixText = fix == null ? "" : fix.dir ? ` ${fix.text}, ${fix.dir}.` : ` ${fix.text}.`;
+      const label = `${name} not found.${fixText}`;
       return (
         <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
             <code className="font-mono text-[0.7rem]">{name}</code> not found.
-            {toolsDir ? (
+            {fix ? (
               <>
                 {" "}
-                Put it in the Tools Directory,{" "}
-                <code className="break-all font-mono text-[0.7rem]">{toolsDir}</code>.
+                {fix.text}
+                {fix.dir ? (
+                  <>
+                    , <code className="break-all font-mono text-[0.7rem]">{fix.dir}</code>
+                  </>
+                ) : null}
+                .
               </>
             ) : null}
           </span>
@@ -145,9 +178,24 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
       ) : null}
       {tools ? (
         <ul className="m-0 mt-2 list-none space-y-1 p-0" aria-label="Media tools">
-          <ToolStatusRow name="ffmpeg" status={tools.ffmpeg} toolsDir={tools.toolsDir} />
-          <ToolStatusRow name="ffprobe" status={tools.ffprobe} toolsDir={tools.toolsDir} />
-          <ToolStatusRow name="wtsexporter" status={tools.wtsexporter} toolsDir={tools.toolsDir} />
+          <ToolStatusRow
+            name="ffmpeg"
+            status={tools.ffmpeg}
+            partner={tools.ffprobe}
+            toolsDir={tools.toolsDir}
+          />
+          <ToolStatusRow
+            name="ffprobe"
+            status={tools.ffprobe}
+            partner={tools.ffmpeg}
+            toolsDir={tools.toolsDir}
+          />
+          <ToolStatusRow
+            name="wtsexporter"
+            status={tools.wtsexporter}
+            partner={null}
+            toolsDir={tools.toolsDir}
+          />
         </ul>
       ) : null}
     </div>

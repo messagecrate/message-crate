@@ -308,12 +308,36 @@ describe("SystemSection", () => {
     await waitFor(() => {
       expect(
         screen.getByLabelText(
-          "ffmpeg not found. Put it in the Tools Directory, /home/demo/message-crate/tools.",
+          "ffmpeg not found. Put it beside ffprobe, or put both in the Tools Directory, /home/demo/message-crate/tools.",
         ),
       ).toBeTruthy();
     });
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
-    expect(screen.getByLabelText(/wtsexporter not found/i)).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "wtsexporter not found. Put it in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says to put ffmpeg and ffprobe in the Tools Directory when neither is found", async () => {
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      ffmpeg: { state: "missing" },
+      ffprobe: { state: "missing" },
+      wtsexporter: { state: "missing" },
+    });
+    render(<SystemSection />);
+    expect(
+      await screen.findByLabelText(
+        "ffmpeg not found. Put it and ffprobe in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText(
+        "ffprobe not found. Put it and ffmpeg in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
   });
 
   it("says why ffmpeg and ffprobe found in two places are not used", async () => {
