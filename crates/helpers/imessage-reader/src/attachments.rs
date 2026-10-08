@@ -66,7 +66,57 @@ pub(crate) fn decrypt_for_app(session: &MailSession, source: &Path) -> Event {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::FixtureDb;
+    use crate::test_support::{FixtureBackup, FixtureDb};
+    use chat_db_fixture::{
+        PHOTO_BYTES,
+        ios_backup::{BACKUP_PASSWORD, Encryption, MEDIA_DOMAIN, PHOTO_PATH, stored_path},
+    };
+
+    /// The path the reader resolves for the photo of a session over
+    /// `fixture`'s backup: the photo's stored file in the backup.
+    fn photo_path(session: &MailSession, fixture: &FixtureBackup) -> PathBuf {
+        let messages = FixtureDb::messages(session);
+        let attachments = Attachment::from_message(session.data_source.db(), &messages[0]).unwrap();
+        let path = resolved_path(session, &attachments[0]).unwrap();
+        assert_eq!(
+            path,
+            stored_path(fixture.backup.path(), MEDIA_DOMAIN, PHOTO_PATH)
+        );
+        path
+    }
+
+    /// An encrypted backup's photo decrypts to its original bytes, into a
+    /// file of its own in the request's scratch directory (#788).
+    #[test]
+    fn an_encrypted_backups_photo_decrypts_to_its_bytes_in_the_scratch_directory() {
+        let fixture = FixtureBackup::write(Encryption::Password(BACKUP_PASSWORD));
+        let session = MailSession::new(fixture.options(Some(BACKUP_PASSWORD))).unwrap();
+        let photo = photo_path(&session, &fixture);
+
+        let Event::Attachment(AttachmentFile::Ready { path }) = decrypt_for_app(&session, &photo)
+        else {
+            panic!("the photo was not decrypted");
+        };
+        assert_eq!(path.parent(), Some(fixture.scratch.path()));
+        assert_eq!(std::fs::read(&path).unwrap(), PHOTO_BYTES);
+        assert_ne!(std::fs::read(&photo).unwrap(), PHOTO_BYTES);
+    }
+
+    /// A backup that is not encrypted holds the photo as it is, so the
+    /// answer names the stored file itself and nothing is decrypted.
+    #[test]
+    fn an_unencrypted_backups_photo_is_named_where_it_is() {
+        let fixture = FixtureBackup::write(Encryption::None);
+        let session = MailSession::new(fixture.options(None)).unwrap();
+        let photo = photo_path(&session, &fixture);
+
+        assert!(matches!(
+            decrypt_for_app(&session, &photo),
+            Event::Attachment(AttachmentFile::Ready { path }) if path == photo
+        ));
+        assert_eq!(std::fs::read(&photo).unwrap(), PHOTO_BYTES);
+        assert!(fixture.scratch_files().is_empty());
+    }
 
     /// On a Mac the row's `filename` is the path; a row without one has no
     /// file.

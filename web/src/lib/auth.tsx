@@ -37,7 +37,7 @@ interface AuthContextValue extends AuthState {
    * Revoke the server session (best-effort) and clear the saved login.
    *
    * An Upload that is running is paused first, and the session is revoked
-   * once the pause is recorded: the push sends this session's token. Unless
+   * once the pause is recorded: the Upload sends this session's token. Unless
    * `ask` is false, logout first asks whether to pause it, and does nothing
    * when the person goes back. It waits at most {@link UPLOAD_PAUSE_LIMIT_MS}
    * for the pause, less when the person presses **Log out now**, and then
@@ -76,7 +76,7 @@ const SERVER_ADDRESS_KEY = "message-crate-server-address";
 
 /**
  * How long logout waits for a running Upload to pause before it revokes the
- * session anyway (#1491). A push that does not stop must not keep the person
+ * session anyway (#1491). An Upload that does not stop must not keep the person
  * logged in; the Upload then resumes from what its journal recorded as sent.
  */
 export const UPLOAD_PAUSE_LIMIT_MS = 15_000;
@@ -440,10 +440,10 @@ function SessionProvider({
   // The server has refused the token, so the session is already over there
   // and there is nothing to tell it. With no token set, the 401 came from a
   // request made before login, and there is no session here to end either.
-  // An Upload that is running is paused all the same: its push sends the
+  // An Upload that is running is paused all the same: it sends the
   // same token, so it would only record every remaining conversation as
   // failed, and the run stays resumable.
-  // A session the server refused to an Import Run, its push or its own
+  // A session the server refused to an Import Run, its Upload or its own
   // calls, ends the same way, unless a later login has replaced the token the
   // run sent: a refusal that outlived a logout says nothing about the session
   // after it.
@@ -474,8 +474,8 @@ function SessionProvider({
           if (closingRef.current) return;
           closingRef.current = true;
           try {
-            // No pause: closing the window ends the push with the app, and
-            // the run resumes from what the push journal recorded as sent.
+            // No pause: closing the window ends the Upload with the app, and
+            // the run resumes from what the Upload's journal recorded as sent.
             await revokeSession();
             await win.destroy();
           } catch {

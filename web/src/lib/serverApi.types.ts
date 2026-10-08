@@ -2491,7 +2491,7 @@ export interface components {
             stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as
-             *     `message-crate-push`, stored on the run as given. Null when the
+             *     `message-crate-import`, stored on the run as given. Null when the
              *     request leaves it out.
              */
             tool?: string | null;
@@ -3186,7 +3186,7 @@ export interface components {
              *     while no Review has stored one.
              */
             summary: unknown;
-            /** @description Importing tool, e.g. `message-crate-push`. */
+            /** @description Importing tool, e.g. `message-crate-import`. */
             tool: string | null;
             /**
              * Format: int64
@@ -3667,7 +3667,7 @@ export interface components {
             started_at: string;
             /** @description Lifecycle status. */
             status: components["schemas"]["ImportStatus"];
-            /** @description Importing tool, e.g. `message-crate-push`. */
+            /** @description Importing tool, e.g. `message-crate-import`. */
             tool: string | null;
             /**
              * Format: int64
@@ -4413,7 +4413,7 @@ export interface components {
                  *     while no Review has stored one.
                  */
                 summary: unknown;
-                /** @description Importing tool, e.g. `message-crate-push`. */
+                /** @description Importing tool, e.g. `message-crate-import`. */
                 tool: string | null;
                 /**
                  * Format: int64
@@ -4744,7 +4744,7 @@ export interface components {
                 started_at: string;
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ImportStatus"];
-                /** @description Importing tool, e.g. `message-crate-push`. */
+                /** @description Importing tool, e.g. `message-crate-import`. */
                 tool: string | null;
                 /**
                  * Format: int64

@@ -1,4 +1,5 @@
-//! A session over the `chat-db-fixture` database, for tests inside this crate.
+//! A session over the `chat-db-fixture` database, or over an iPhone backup
+//! made from it, for tests inside this crate.
 //!
 //! The process seam (`imessage-ir-exporter/tests/helper_process.rs`) proves
 //! the binary works; the tests here open the same database in process so the
@@ -7,6 +8,10 @@
 use std::fs;
 use std::path::Path;
 
+use chat_db_fixture::ios_backup::{
+    Encryption, SystemTempTurn, system_temp_turn, write_messages_backup,
+};
+use chat_db_fixture::listing::{file_names, paths_under};
 use imessage_database::tables::{messages::Message, table::Table};
 use imessage_reader_protocol::{ExportRequest, Platform, Source};
 use rusqlite::Connection;
@@ -79,6 +84,57 @@ impl FixtureDb {
     }
 }
 
+/// An iPhone backup made from the fixture `chat.db`
+/// ([`chat_db_fixture::ios_backup::write_messages_backup`]), and the scratch
+/// directory a request names, each in a directory that lives as long as the
+/// value.
+pub(crate) struct FixtureBackup {
+    pub backup: TempDir,
+    pub scratch: TempDir,
+    /// Held for the fixture's life when the backup is encrypted.
+    _turn: Option<SystemTempTurn>,
+}
+
+impl FixtureBackup {
+    pub(crate) fn write(encryption: Encryption<'_>) -> Self {
+        let turn = matches!(encryption, Encryption::Password(_)).then(system_temp_turn);
+        let backup = tempfile::tempdir().expect("a temp dir");
+        write_messages_backup(backup.path(), encryption);
+        Self {
+            backup,
+            scratch: tempfile::tempdir().expect("a temp dir"),
+            _turn: turn,
+        }
+    }
+
+    /// The export request the app would send for this backup, with
+    /// `password`.
+    pub(crate) fn options(&self, password: Option<&str>) -> ReaderOptions {
+        ReaderOptions::from_export(ExportRequest {
+            source: Source {
+                db_path: self.backup.path().to_path_buf(),
+                platform: Platform::Ios,
+                backup_password: password.map(str::to_string),
+            },
+            attachment_root: None,
+            contacts_path: None,
+            use_caller_id: true,
+            scratch_dir: self.scratch.path().to_path_buf(),
+        })
+    }
+
+    /// The names of the files in the scratch directory, sorted.
+    pub(crate) fn scratch_files(&self) -> Vec<String> {
+        file_names(self.scratch.path())
+    }
+
+    /// Every path under the backup directory, sorted, to show that
+    /// decrypting wrote nothing there.
+    pub(crate) fn backup_listing(&self) -> Vec<std::path::PathBuf> {
+        paths_under(self.backup.path())
+    }
+}
+
 /// A Mac source with no backup password.
 pub(crate) fn mac_source(db_path: &Path) -> Source {
     Source {
@@ -109,18 +165,10 @@ pub(crate) fn fill_macos_address_book(conn: &Connection) {
     .expect("fill the macOS address book");
 }
 
-/// The full-text table an iOS backup's `AddressBook.sqlitedb` holds, with the
-/// space-separated phone and email columns the reader splits, naming the same
-/// people as [`fill_macos_address_book`].
-pub(crate) fn fill_ios_address_book(conn: &Connection) {
-    conn.execute_batch(
-        "CREATE TABLE ABPersonFullTextSearch_content (c0First TEXT, c1Last TEXT, c16Phone TEXT, c17Email TEXT);
-         INSERT INTO ABPersonFullTextSearch_content VALUES ('Sam', 'Example', '+15555550107 15555550107 5555550107', 'Sam@Example.com sam@work.example');
-         INSERT INTO ABPersonFullTextSearch_content VALUES ('Robin', NULL, NULL, 'friend@example.com');
-         INSERT INTO ABPersonFullTextSearch_content VALUES (NULL, NULL, '+15555550179', NULL);",
-    )
-    .expect("fill the iOS address book");
-}
+/// The full-text table an iOS backup's `AddressBook.sqlitedb` holds, naming
+/// the same people as [`fill_macos_address_book`]. The fixture crate owns it
+/// because the made-up iPhone backup carries the same book.
+pub(crate) use chat_db_fixture::ios_backup::fill_ios_address_book;
 
 /// Run `f` with the permissions of `directory` set to `mode`, then set them back
 /// to `0o755` before returning, so the temporary directory can still be removed.

@@ -637,7 +637,7 @@ mod tests {
         assert_missing_path_resolves(
             "message-crate",
             &[],
-            &["staging-x", "message-crate-push.log"],
+            &["staging-x", "message-crate-import.log"],
         );
     }
 
@@ -662,7 +662,7 @@ mod tests {
         let root = temp.path().join("message-crate");
         let staging = root.join("staging-test");
         fs::create_dir_all(&staging).unwrap();
-        let log = staging.join("message-crate-push.log");
+        let log = staging.join("message-crate-import.log");
         fs::write(&log, "ok\n").unwrap();
 
         let resolved =
@@ -722,7 +722,7 @@ mod tests {
     #[test]
     fn existing_path_passes_missing_check() {
         let temp = tempfile::tempdir().unwrap();
-        let file = temp.path().join("message-crate-push.log");
+        let file = temp.path().join("message-crate-import.log");
         fs::write(&file, "ok\n").unwrap();
         missing_path_error(&file).unwrap();
     }

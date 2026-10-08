@@ -16,9 +16,9 @@ use serde::{Deserialize, Serialize};
 /// Filename of the local upload log, written next to the conversation files.
 pub const JOURNAL_NAME: &str = ".import-state.jsonl";
 /// Filename of the JSON summary written at the end of an Upload.
-pub const REPORT_NAME: &str = "message-crate-push-report.json";
+pub const REPORT_NAME: &str = "message-crate-import-report.json";
 /// Filename of the human-readable Upload log.
-pub const LOG_NAME: &str = "message-crate-push.log";
+pub const LOG_NAME: &str = "message-crate-import.log";
 
 /// One message identity recorded in the journal: conversation file plus guid.
 #[derive(Debug, Clone, Serialize, Deserialize)]

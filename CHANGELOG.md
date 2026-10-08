@@ -62,7 +62,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -114,6 +115,11 @@ released versions carry their date on the heading.
   again. That record now has a new name; one with the old name is ignored and
   can be deleted, and attachments already in the directory are still not
   fetched again.
+- 2026-10-07: **An Upload's report says Import.** The report an Upload
+  writes beside its run, and the name the server keeps for the program that
+  ran each Import Run the desktop app starts, now say import where they said
+  push, the word Message Crate no longer uses for an Import Run. A report
+  with the old name is not read and can be deleted (#1926).
 
 ### Fixes
 
@@ -168,6 +174,15 @@ released versions carry their date on the heading.
   Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
+
+- 2026-10-08: **Two reads of encrypted iPhone backups at once no longer
+  break each other.** Opening an encrypted backup decrypts its file list to
+  one fixed name in the computer's temporary directory, so two reads running
+  together, such as an Apple Messages import and a WhatsApp import from
+  encrypted backups, wrote over each other's copy and one failed. The file
+  list was also left behind when a read stopped on an error. It now goes into
+  the read's own directory under the Scratch Directory, which is deleted when
+  the read ends (#788).
 
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored

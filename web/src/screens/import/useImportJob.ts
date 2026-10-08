@@ -1239,7 +1239,7 @@ async function uploadAndFinish(
         mode: "append",
         skip_attachments: false,
         // Extract (or the Media stage) just wrote these files. Matching
-        // size_bytes lets message-crate-push skip a second full-file hash.
+        // size_bytes lets message-crate-import skip a second full-file hash.
         trust_export: true,
         import_id: runId,
       }),

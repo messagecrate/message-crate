@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use message_crate_core::{RunLogLevel, count_of, format_run_log};
 
 use crate::report::{
-    FileResult, PushReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
+    FileResult, ImportReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
 };
 
 /// How the Upload ended with one conversation file.
@@ -86,7 +86,7 @@ pub enum ProgressEvent {
         conversation: String,
     },
     /// The run finished; the report is final.
-    Finished(PushReport),
+    Finished(ImportReport),
 }
 
 /// Callback type for live progress (desktop log panel, tests).
@@ -510,7 +510,7 @@ mod tests {
     #[test]
     fn reporter_mirrors_shown_lines_to_callback_and_log() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = dir.path().join("push.log");
+        let log_path = dir.path().join("import.log");
         let mut seen = Vec::new();
         {
             let mut cb = |event: ProgressEvent| seen.push(event);
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn conversation_issues_cover_failed_and_cancelled_files_only() {
         let dir = tempfile::tempdir().unwrap();
-        let log_path = dir.path().join("push.log");
+        let log_path = dir.path().join("import.log");
         let mut seen = Vec::new();
         {
             let mut cb = |event: ProgressEvent| seen.push(event);

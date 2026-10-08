@@ -139,7 +139,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         ..Default::default()
     };
 
-    // Keep the server's row id and source name so a later push can trace
+    // Keep the server's row id and source name so a later import can trace
     // each message back to the server it came from.
     let mut source_fields = serde_json::Map::new();
     source_fields.insert("server_message_id".into(), json!(msg.id));

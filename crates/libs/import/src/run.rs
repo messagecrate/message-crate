@@ -56,7 +56,7 @@ use crate::prepare::{
 };
 use crate::progress::{ProgressEvent, ProgressFn, Reporter};
 use crate::report::{
-    AssetTotals, PushReport, count_file_results, elapsed_ms, format_push_summary, now_stamp,
+    AssetTotals, ImportReport, count_file_results, elapsed_ms, format_import_summary, now_stamp,
     outcome_status,
 };
 
@@ -92,7 +92,7 @@ pub const DEFAULT_PREPARE_WORKERS: usize = 2;
 
 /// Settings for one full Upload (paths, URL, flags, limits).
 #[derive(Debug, Clone)]
-pub struct PushConfig {
+pub struct ImportConfig {
     /// A directory of JSON Lines conversation files, or one such file.
     pub input: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
@@ -226,7 +226,7 @@ impl RunPaths {
     /// # Errors
     ///
     /// Returns an error when the input directory does not exist.
-    fn resolve(cfg: &PushConfig) -> Result<Self> {
+    fn resolve(cfg: &ImportConfig) -> Result<Self> {
         let input = input_directory(&cfg.input)?;
         Ok(Self {
             report: cfg
@@ -269,11 +269,11 @@ impl RunPaths {
 /// an error either. The report comes back with
 /// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
 /// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
-pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
+pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<ImportReport> {
     // A refused session stops the run through the cancel flag, so the run
     // always has one.
     let stop = cfg.cancel.clone().unwrap_or_default();
-    let cfg = &PushConfig {
+    let cfg = &ImportConfig {
         cancel: Some(stop.clone()),
         ..cfg.clone()
     };
@@ -345,7 +345,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     if counted.failed == 0 && !cancelled {
         let _ = journal.compact();
     }
-    let mut report = PushReport {
+    let mut report = ImportReport {
         ok: counted.failed == 0 && !cancelled,
         cancelled,
         session_refused,
@@ -421,7 +421,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     }
     written?;
     out.log("");
-    out.log(&format_push_summary(&report));
+    out.log(&format_import_summary(&report));
     out.conversation_issues(&report.results);
     out.event(ProgressEvent::Log(String::new()));
     out.event(ProgressEvent::Finished(report.clone()));
@@ -436,7 +436,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
 /// # Errors
 ///
 /// Returns an error when the HTTP client cannot be built or the session token is rejected.
-fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Result<Session> {
+fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Result<Session> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -464,12 +464,12 @@ fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Resu
 /// was sent, and every conversation is left for the next Upload. No account
 /// answered, so `account` is 0 and `username` is empty.
 fn refused_at_login(
-    cfg: &PushConfig,
+    cfg: &ImportConfig,
     files: &[PathBuf],
     started_at: String,
     run_started: Instant,
-) -> PushReport {
-    PushReport {
+) -> ImportReport {
+    ImportReport {
         cancelled: true,
         session_refused: true,
         mode: cfg.mode,
@@ -484,7 +484,7 @@ fn refused_at_login(
             .collect(),
         // Nothing was sent, and no account answered: every count is 0, the
         // account 0 and the username empty.
-        ..PushReport::default()
+        ..ImportReport::default()
     }
 }
 
@@ -495,9 +495,9 @@ fn refused_at_login(
 /// Returns an error when the report cannot be written.
 fn finish_refused_at_login(
     paths: &RunPaths,
-    report: PushReport,
+    report: ImportReport,
     out: &mut Reporter<'_, '_>,
-) -> Result<PushReport> {
+) -> Result<ImportReport> {
     out.show_at(
         RunLogLevel::Warn,
         "The server no longer accepts this session, so the Upload did not start. \
@@ -518,7 +518,7 @@ fn finish_refused_at_login(
 /// Returns the server's refusal, which includes an account that already has a
 /// running Import Run.
 fn start_import_run(
-    cfg: &PushConfig,
+    cfg: &ImportConfig,
     session: &Session,
     input: &Path,
     out: &mut Reporter<'_, '_>,
@@ -531,7 +531,7 @@ fn start_import_run(
         out.show(format!("Reusing Import Run {import_id} for {source}"));
         return Ok(import_id);
     }
-    let id = session.start_import(&source, cfg.mode, Some("message-crate-push"))?;
+    let id = session.start_import(&source, cfg.mode, Some("message-crate-import"))?;
     out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
 }
@@ -699,7 +699,7 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 ///
 /// Returns an error when the journal cannot be updated or the import thread panicked.
 fn settle(
-    cfg: &PushConfig,
+    cfg: &ImportConfig,
     pipeline: &mut ImportPipeline<'_>,
     halted: bool,
     out: &mut Reporter<'_, '_>,
@@ -716,7 +716,7 @@ fn settle(
 /// # Errors
 ///
 /// Returns an error when the directory cannot be created or the file cannot be written.
-fn write_report(path: &Path, report: &PushReport) -> Result<()> {
+fn write_report(path: &Path, report: &ImportReport) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -737,7 +737,7 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
 fn complete_import_run(
     session: &Session,
     import_id: i64,
-    report: &PushReport,
+    report: &ImportReport,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
     session.complete_import(

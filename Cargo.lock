@@ -440,7 +440,14 @@ dependencies = [
 name = "chat-db-fixture"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "aes-kw",
+ "cbc",
+ "pbkdf2",
+ "plist",
  "rusqlite",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -1634,7 +1641,6 @@ dependencies = [
 name = "imessage-reader"
 version = "0.1.0"
 dependencies = [
- "aes-kw",
  "chat-db-fixture",
  "chrono",
  "crabapple",
@@ -1966,17 +1972,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "message-crate-log-lines"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "tempfile",
- "utoipa",
-]
-
-[[package]]
-name = "message-crate-push"
+name = "message-crate-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -1994,6 +1990,16 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+]
+
+[[package]]
+name = "message-crate-log-lines"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "tempfile",
+ "utoipa",
 ]
 
 [[package]]

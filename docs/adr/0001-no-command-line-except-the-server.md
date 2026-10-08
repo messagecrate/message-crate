@@ -113,3 +113,10 @@ The text above is kept as it was decided. Since #1906, the crate it calls
 `message-crate-pull` is `message-crate-export`, at `crates/libs/export/`,
 because CONTEXT.md names the operation Export and avoids Pull. Nothing else
 in this decision changed.
+
+## Amended 2026-10-07: `message-crate-push` is now `message-crate-import`
+
+The text above is kept as it was decided. Since #1926, the crate it calls
+`message-crate-push` is `message-crate-import`, at `crates/libs/import/`,
+because CONTEXT.md names the operation Import and avoids Push for an Import
+Run. Nothing else in this decision changed.
