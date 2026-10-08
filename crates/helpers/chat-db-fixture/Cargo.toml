@@ -13,19 +13,23 @@ description = "A small Apple Messages chat.db, and an iPhone backup holding it w
 repository = "https://github.com/messagecrate/message-crate"
 publish = false
 
-# The crypto crates are pinned to the versions crabapple 0.4.7 (pinned in
-# `imessage-reader`) decrypts with, so the backup is encrypted by the same
-# primitives the reader decrypts it with and the lockfile holds one copy of
-# each. A crabapple bump must move these pins to its new versions.
+# The crypto crates are required at the same 0.x minor versions crabapple
+# 0.4.7 (pinned in `imessage-reader`) requires. Cargo resolves two
+# requirements of one 0.x minor to one lockfile entry, so the fixture and
+# crabapple always share each crate's version, and the backup is encrypted
+# by the same primitives the reader decrypts it with. Caret ranges, not `=`
+# pins, so a patch release can be taken for both at once. A crabapple bump
+# that moves one of these to a new minor version must move it here too, or
+# the lockfile holds two copies and the two sides drift apart.
 [dependencies]
-aes = "=0.9.2"
-aes-kw = "=0.3.1"
-cbc = "=0.2.1"
-pbkdf2 = { version = "=0.13.0", features = ["hmac"] }
+aes = "0.9.2"
+aes-kw = "0.3.1"
+cbc = "0.2.1"
+pbkdf2 = { version = "0.13.0", features = ["hmac"] }
 plist = "1.9.0"
 rusqlite = { version = "=0.40.0", features = ["bundled"] }
-sha1 = "=0.11.0"
-sha2 = "=0.11.0"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
 
 [dev-dependencies]
 tempfile = { workspace = true }
