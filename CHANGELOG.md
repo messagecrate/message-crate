@@ -21,17 +21,6 @@ released versions carry their date on the heading.
 
 ### Features
 
-- 2026-10-08: **The desktop app looks for ffmpeg and wtsexporter in one
-  place, its Tools Directory.** ffmpeg and ffprobe are found on `PATH`, then
-  in `~/message-crate/tools`, and nowhere else; wtsexporter is found only in
-  `~/message-crate/tools`. The server the app starts looks in the same two
-  places, so the app and its server convert with the same ffmpeg; a server
-  started by hand finds ffmpeg on `PATH` or makes no Previews or Thumbnails.
-  **Settings → System → Media** has nothing to type any more: it names the
-  Tools Directory and shows, for ffmpeg, ffprobe and wtsexporter, the path
-  found or that the program is missing. The app does not download the
-  programs yet (#1053).
-
 - 2026-10-08: **A phone number written without its country code can be given
   its country.** The import form has a **Phone's country** under
   **Processing Options (Advanced)**: every number the import writes without a
@@ -103,6 +92,16 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
+  Tools Directory second.** ffmpeg and ffprobe are found among the programs
+  installed on the computer, else in the app's Tools Directory, and both
+  come from the same one. wtsexporter is found only in the Tools Directory.
+  The Message Crate the app starts looks in the same places, so both convert
+  with the same ffmpeg. **Settings → System → Media** has nothing to type
+  any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
+  wtsexporter, where each was found, that it is missing and where to put
+  it, or why it is not used. The app does not download the programs yet
+  (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
