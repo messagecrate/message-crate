@@ -1,8 +1,8 @@
 import { useEffect, useId, useState } from "react";
 import {
-  handleDuplicateKey,
-  handlePlaceholder,
-  handleValidationError,
+  identityDuplicateKey,
+  identityPlaceholder,
+  identityValidationError,
   inferService,
   OFFERED_SERVICE_OPTIONS,
   OFFERED_SERVICES,
@@ -29,12 +29,12 @@ function alreadyListed(
   handle: string,
   service: OfferedService,
 ): boolean {
-  const key = handleDuplicateKey(service, handle);
+  const key = identityDuplicateKey(service, handle);
   if (!key) return false;
   return existing.some((row) => {
     const rowService = inferService(row.address, row.service);
     const known = OFFERED_SERVICES.find((s) => s === rowService) ?? "phone";
-    return handleDuplicateKey(known, row.address) === key;
+    return identityDuplicateKey(known, row.address) === key;
   });
 }
 
@@ -85,7 +85,7 @@ export default function AddIdentityDialog({
 
   const submit = () => {
     if (!canSubmit) return;
-    const why = handleValidationError(service, trimmed);
+    const why = identityValidationError(service, trimmed);
     if (why) {
       setInvalid(why);
       return;
@@ -153,7 +153,7 @@ export default function AddIdentityDialog({
           disabled={busy}
           autoComplete="off"
           spellCheck={false}
-          placeholder={handlePlaceholder(service)}
+          placeholder={identityPlaceholder(service)}
           aria-invalid={problem ? true : undefined}
           aria-describedby={problem ? problemId : undefined}
           className={inputClass}

@@ -62,7 +62,7 @@ export const OFFERED_SERVICE_OPTIONS = [
 }>;
 
 /** Example shown in an empty value field for `service`. */
-export function handlePlaceholder(service: OfferedService): string {
+export function identityPlaceholder(service: OfferedService): string {
   return OFFERED_SERVICE_OPTIONS.find((option) => option.value === service)?.placeholder ?? "";
 }
 
@@ -76,7 +76,7 @@ export function handlePlaceholder(service: OfferedService): string {
  * pass. Seven digits is the shortest real subscriber number and fifteen is the
  * most E.164 allows.
  */
-export function handleValidationError(service: OfferedService, value: string): string | null {
+export function identityValidationError(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
@@ -95,7 +95,7 @@ export function handleValidationError(service: OfferedService, value: string): s
 }
 
 /** Shown against the second and later rows carrying an account already listed. */
-export const DUPLICATE_HANDLE_MESSAGE = "This account is already in the list.";
+export const DUPLICATE_IDENTITY_MESSAGE = "This account is already in the list.";
 
 /**
  * Key two handles share when they are the same account, or null for a value
@@ -113,7 +113,7 @@ export const DUPLICATE_HANDLE_MESSAGE = "This account is already in the list.";
  * that really are different, and a missed duplicate costs far less than an
  * error the person cannot talk their way out of.
  */
-export function handleDuplicateKey(service: OfferedService, value: string): string | null {
+export function identityDuplicateKey(service: OfferedService, value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const normalized =
@@ -136,7 +136,7 @@ export function inferService(handle: string, service: string | null | undefined)
 }
 
 /** Label shown in the handles table Service column. */
-export function formatHandleServiceLabel(
+export function formatOfferedServiceLabel(
   handle: string,
   service: string | null | undefined,
 ): string {

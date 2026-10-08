@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
 import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
-import { formatHandleServiceLabel } from "./contactDrawerTypes";
+import { formatOfferedServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
 /**
@@ -21,7 +21,7 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
     setRemoveTarget({
       address: h.address,
       service: h.service ?? null,
-      serviceLabel: formatHandleServiceLabel(h.address, h.service),
+      serviceLabel: formatOfferedServiceLabel(h.address, h.service),
       conversationCount: h.conversations,
     });
   };

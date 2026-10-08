@@ -10,10 +10,10 @@ import TimeZoneField from "../components/TimeZoneField";
 import { useAuth } from "../lib/auth";
 import { newId } from "../lib/newId";
 import {
-  DUPLICATE_HANDLE_MESSAGE,
-  handleDuplicateKey,
-  handlePlaceholder,
-  handleValidationError,
+  DUPLICATE_IDENTITY_MESSAGE,
+  identityDuplicateKey,
+  identityPlaceholder,
+  identityValidationError,
   OFFERED_SERVICE_OPTIONS,
   OFFERED_SERVICES,
   type OfferedService,
@@ -87,14 +87,14 @@ function rowErrors(rows: HandleInput[]): Map<string, string> {
   const seen = new Set<string>();
 
   for (const row of rows) {
-    const malformed = handleValidationError(row.service, row.handle);
+    const malformed = identityValidationError(row.service, row.handle);
     if (malformed) {
       errors.set(row.id, malformed);
       continue;
     }
-    const key = handleDuplicateKey(row.service, row.handle);
+    const key = identityDuplicateKey(row.service, row.handle);
     if (!key) continue;
-    if (seen.has(key)) errors.set(row.id, DUPLICATE_HANDLE_MESSAGE);
+    if (seen.has(key)) errors.set(row.id, DUPLICATE_IDENTITY_MESSAGE);
     else seen.add(key);
   }
 
@@ -340,7 +340,7 @@ export default function OnboardingScreen() {
                   onChange={(v) => updateHandle(i, "handle", v)}
                   onBlur={() => revalidate(handles)}
                   leadingIcon={serviceIcon(h.service)}
-                  placeholder={handlePlaceholder(h.service)}
+                  placeholder={identityPlaceholder(h.service)}
                   className="min-w-0 flex-1"
                   inputClassName={invalid ? "!border-danger" : undefined}
                   isInvalid={invalid}
