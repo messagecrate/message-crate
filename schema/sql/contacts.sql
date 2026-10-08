@@ -93,6 +93,18 @@ CREATE TABLE IF NOT EXISTS contact_group_members (
     PRIMARY KEY (contact_id, group_id)
 );
 
+-- An import run's Contact Group membership kept by identity while its
+-- contact is gone: the holder's import contact, deleted when an identity is
+-- linked after the import (#1662). Removing the identity again puts the
+-- contact made then back in the group, and the row leaves this table.
+CREATE TABLE IF NOT EXISTS contact_group_members_set_aside (
+    -- The import run's group (`contact_groups.id`).
+    group_id INTEGER NOT NULL REFERENCES contact_groups(id) ON DELETE CASCADE,
+    -- An identity the deleted contact held (`handles.id`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, handle_id)
+);
+
 -- Soft-delete marker for a conversation; chat rows stay until purge.
 CREATE TABLE IF NOT EXISTS trashed_conversations (
     -- Owning account (`accounts.id`).

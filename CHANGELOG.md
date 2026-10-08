@@ -282,6 +282,22 @@ released versions carry their date on the heading.
   that records whole seconds, such as iMazing or OpenExtract, lists the
   messages of one second in the order the backup gives them, as before.
 
+#### Contacts and identities
+
+- 2026-10-08: **Adding or removing an identity updates the conversations with
+  yourself already imported.** Notes imported before your number was added as an
+  identity still listed you among the conversation's people. They also kept you
+  as your own contact, in **Contacts** and under **Unknown**, while the
+  conversation was already titled with the account's name. Notes imported while
+  the number was an identity showed the bare address once it was removed, with
+  no person or contact behind it. Saving the identities now stops listing you
+  among a conversation's people, groups included, and the other people stay. The
+  contact an import made for you goes too, unless it has a name, is in the Trash
+  or in a Contact Group you made, or something else refers to it. Removing the
+  identity again lists you as before, with the name the backup gave, and a
+  conversation that is no longer with yourself gets its person back, with a
+  contact. Messages are not changed (#1662).
+
 ### Upgrading
 
 - The database format changed. **An existing Message Crate is rebuilt empty

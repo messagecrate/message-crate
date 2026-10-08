@@ -1,6 +1,8 @@
 //! The conversation list and one conversation's summary and sources: what
 //! `GET /v1/conversations`, `GET /v1/conversations/{id}` and its `sources`
 //! read. `conversations_api` answers the routes; the queries live here.
+//! So does the list of conversations with yourself that an identity change
+//! measures against (`imports_api::with_yourself`).
 
 use std::collections::{HashMap, HashSet};
 
@@ -454,4 +456,44 @@ pub async fn list_conversation_source_stats(
         })
         .collect();
     Ok(Some(sources))
+}
+
+/// The ids of the account's conversations with yourself, by the identities
+/// it has now ([`is_with_yourself_sql`]).
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn with_yourself_ids(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> anyhow::Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT c.id FROM conversations c
+         WHERE c.account_id = $1 AND {}
+         ORDER BY c.id",
+        is_with_yourself_sql("c")
+    ))
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// The chat handle of `conversation_id`.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn chat_handle_id(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    conversation_id: i64,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT chat_handle_id FROM conversations WHERE account_id = $1 AND id = $2",
+    )
+    .bind(account_id)
+    .bind(conversation_id)
+    .fetch_one(&mut *conn)
+    .await?)
 }

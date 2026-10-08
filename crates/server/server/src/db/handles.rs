@@ -368,6 +368,51 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
         .collect())
 }
 
+/// The ids of the account's handles that are at one of its identities, on
+/// any service ([`crate::db::account_profile::is_account_identity_sql`]).
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn identity_handle_ids(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT h.id FROM handles h WHERE h.account_id = $1 AND {} ORDER BY h.id",
+        crate::db::account_profile::is_account_identity_sql("h", "$1"),
+    ))
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// True when an import would give `handle_id` a contact for what the
+/// account's conversations hold: it is a participant, the chat handle of a
+/// one-to-one conversation, or the sender of a received row.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn is_met_in_conversations(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM participants p
+                        JOIN conversations c ON c.id = p.conversation_id
+                        WHERE c.account_id = $1 AND p.handle_id = $2)
+             OR EXISTS (SELECT 1 FROM conversations c
+                        WHERE c.account_id = $1 AND c.chat_handle_id = $2
+                          AND c.conversation_type = 'individual' COLLATE NOCASE)
+             OR EXISTS (SELECT 1 FROM messages m
+                        WHERE m.account_id = $1 AND m.sender_handle_id = $2
+                          AND m.is_from_me = 0)",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .fetch_one(&mut *conn)
+    .await?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

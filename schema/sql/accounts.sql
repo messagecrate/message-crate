@@ -380,6 +380,21 @@ CREATE TABLE IF NOT EXISTS import_contacts (
 CREATE INDEX IF NOT EXISTS ix_import_contacts_contact
     ON import_contacts(contact_id);
 
+-- An `import_contacts` row kept by identity while its contact is gone. When
+-- an identity is linked after an import, the contact the import made for the
+-- holder is deleted (#1662). Its record is kept here under each identity the
+-- contact held, so removing the identity again gives the contact made then
+-- the run's record back, and the row leaves this table.
+CREATE TABLE IF NOT EXISTS import_contacts_set_aside (
+    -- Import run (`imports.id`).
+    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+    -- An identity the deleted contact held (`handles.id`).
+    handle_id INTEGER NOT NULL REFERENCES handles(id) ON DELETE CASCADE,
+    -- The reason the run's record gave (`import_contacts.reason`).
+    reason TEXT NOT NULL,
+    PRIMARY KEY (import_id, handle_id)
+);
+
 -- The Audit Trail: what each user did on this Message Crate, and when, for
 -- everything `imports` and `exports` do not already record. An entry is
 -- written once and never changed by a route; deleting an account sets its
