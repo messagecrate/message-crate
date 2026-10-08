@@ -202,6 +202,19 @@ current one, because that account reaches every other.
 - A name collision answers `409 Conflict`. So does an action on a resource in
   the wrong state: deleting before trashing, claiming a claimed Message Crate, a batch
   or a `complete` on a finished run.
+- A request that would join two records into one, and so cannot be undone,
+  answers `409 Conflict` with nothing changed the first time, and the client
+  confirms by sending the same request again with `merge: true`. The problem
+  names the other record, in `detail` and in an extension such as
+  `identity-exists`'s `holder`, so the client can ask the person. A country
+  picked for a phone number whose `+` form another identity holds is the one
+  such request (`set_identity_country` in `PATCH /v1/contacts/{id}` and
+  `PATCH /v1/accounts/{id}`). Why: the server is the only party that knows the
+  two are one record, and only once it has worked out the `+` form, so a
+  client cannot ask before it sends. A separate preview route would work the
+  same form out twice, and another request between the two could change the
+  answer. Rejected: merging without asking, because a merge moves
+  conversations and messages and cannot be undone.
 - A failed credential answers `401 Unauthorized`. A refused one, including a
   token without the needed scope and a disabled account, answers
   `403 Forbidden`.

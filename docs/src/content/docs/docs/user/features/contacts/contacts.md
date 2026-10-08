@@ -107,7 +107,10 @@ The import form's **Phone's country**, under **Processing Options (Advanced)**, 
 An identity whose country nobody stated says **Country unknown** under the number, with **Pick country**.
 Picking the country gives the number its full form, such as `+447700900123`.
 When another identity already has that form, the dialog says whose it is and asks before it goes on, because **Merge** makes the two one identity: their conversations and messages join, and the two one-to-one conversations become one.
+When one of the two conversations is in the Trash and the other is not, the joined conversation is out of the Trash.
 **My Identities** under Settings has the same note and link for the account's own numbers.
+When the full form is one of the account's own numbers, the Contacts screen names **My Identities** instead: the number is added there and its country picked there, and its conversations become ones with yourself.
+A later import that states the country leaves an identity an earlier import stored without it as it is, so it still says **Country unknown** until its country is picked.
 A short code, such as `73737`, has no full form in any country and shows no note.
 
 Message Crate has no command that merges two contacts.
