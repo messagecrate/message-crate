@@ -154,7 +154,7 @@ export default function LeftPanel({
 
   // Keep the header brand slot aligned with the nav while it resizes. Set
   // before the browser paints, so the slot's fallback, which knows nothing of
-  // the panel's floor beside a list, never shows for a frame.
+  // the panel's cap beside a list, never shows for a frame.
   useLayoutEffect(() => {
     document.documentElement.style.setProperty(LEFT_PANEL_WIDTH_VAR, `${width}px`);
   }, [width]);
