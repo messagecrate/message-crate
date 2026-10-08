@@ -992,6 +992,35 @@ describe("ImportFormFields programs the import needs", () => {
     await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
   });
 
+  it("the already-running line goes when this process's check ends with the program still failed", async () => {
+    const user = setupUser();
+    desktop.isTauri = true;
+    const failed = status({ wtsexporter: { state: "downloadFailed", reason: "No connection." } });
+    desktop.toolsStatus.mockResolvedValue(failed);
+    desktop.retry.mockImplementation(async () => {
+      // The start-up check still runs, then ends without wtsexporter. Two
+      // answers say so, since a poll may land before the click resolves.
+      const running = status({
+        checking: true,
+        wtsexporter: { state: "downloadFailed", reason: "No connection." },
+      });
+      desktop.toolsStatus
+        .mockResolvedValueOnce(running)
+        .mockResolvedValueOnce(running)
+        .mockResolvedValue(failed);
+      return "alreadyRunning";
+    });
+    renderForm(readyWhatsapp);
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    const line =
+      "A check of the Tools Directory is already running. This form shows its result when it ends.";
+    expect(await screen.findByText(line)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(line)).toBeNull(), { timeout: 4000 });
+    expect(importButton()).toBeDisabled();
+  }, 10_000);
+
   it("Try again while another app's check runs says so, and asks until the program arrives", async () => {
     const user = setupUser();
     desktop.isTauri = true;

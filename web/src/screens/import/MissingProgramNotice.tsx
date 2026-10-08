@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Button from "../../components/Button";
 import type { ToolName, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
@@ -54,9 +55,33 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
   // status is also asked for every 2 s for two minutes, and this says why
   // nothing new started meanwhile.
   const alreadyRunning = retry.data === "alreadyRunning";
-  useToolsStatus({
-    otherCheckUntil: alreadyRunning ? retry.submittedAt + OTHER_CHECK_POLL_FOR_MS : 0,
-  });
+  const otherCheckUntil = alreadyRunning ? retry.submittedAt + OTHER_CHECK_POLL_FOR_MS : 0;
+  const status = useToolsStatus({ otherCheckUntil });
+  const checking = status.data?.checking === true;
+  // The line goes when the check it spoke of ends: this process's check once
+  // `checking` has been seen and drops, or another app's when the two
+  // minutes are up. A timer re-renders at that deadline, since nothing else
+  // changes then.
+  // `seen` says whether this process's check has been seen since the click
+  // that `otherCheckUntil` belongs to.
+  const [seen, setSeen] = useState({ until: 0, seen: false });
+  const [deadlinePassed, setDeadlinePassed] = useState(false);
+  useEffect(() => {
+    if (checking) setSeen({ until: otherCheckUntil, seen: true });
+  }, [checking, otherCheckUntil]);
+  useEffect(() => {
+    setDeadlinePassed(false);
+    if (!otherCheckUntil) return;
+    const left = otherCheckUntil - Date.now();
+    if (left <= 0) {
+      setDeadlinePassed(true);
+      return;
+    }
+    const timer = setTimeout(() => setDeadlinePassed(true), left);
+    return () => clearTimeout(timer);
+  }, [otherCheckUntil]);
+  const sawCheck = seen.until === otherCheckUntil && seen.seen;
+  const showAlreadyRunning = alreadyRunning && (checking || (!sawCheck && !deadlinePassed));
   return (
     <div className="mt-1 flex flex-wrap items-center gap-3">
       {offerRetry ? (
@@ -67,7 +92,7 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
       <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLink}>
         Troubleshooting
       </a>
-      {alreadyRunning ? (
+      {showAlreadyRunning ? (
         <span className="text-[0.813rem] text-muted">
           A check of the Tools Directory is already running. This form shows its result when it
           ends.
