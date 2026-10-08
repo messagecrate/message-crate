@@ -22,16 +22,14 @@ use std::{
 use chat_db_fixture::{
     PHOTO_BYTES,
     ios_backup::{BACKUP_PASSWORD, Encryption, write_messages_backup},
+    listing::{file_names, paths_under},
 };
 use common::{config, helper_binary};
+use imessage_reader_protocol::IOS_BACKUP_PASSWORD_INCORRECT;
 use message_crate_core::{
     AppleConfig, ApplePlatform, ExporterConfig, IMESSAGE_READER_DIRECTORY, LogSink, ProgressSink,
     SourceConfig,
 };
-
-/// What the reader says when the password does not open the backup
-/// (`IOS_BACKUP_PASSWORD_INCORRECT` in `imessage-reader`).
-const PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
 
 /// A backup and the run's output, in one directory that lives as long as
 /// the value.
@@ -105,11 +103,10 @@ impl Run {
     /// Assert that the run's scratch directory is gone: only the lock file
     /// of the directory it was made in is left.
     fn assert_scratch_is_gone(&self) {
-        let left: Vec<_> = fs::read_dir(self.reader_scratch_root())
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(left, vec![".lock".to_string()]);
+        assert_eq!(
+            file_names(&self.reader_scratch_root()),
+            vec![".lock".to_string()]
+        );
     }
 
     fn seen_in_scratch(&self) -> BTreeSet<String> {
@@ -126,22 +123,12 @@ fn file_names_under(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Every file under `dir`, at any depth.
+/// Every file under `dir`, at any depth, without the directories.
 fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            out.extend(files_under(&path));
-        } else {
-            out.push(path);
-        }
-    }
-    out.sort();
-    out
+    paths_under(dir)
+        .into_iter()
+        .filter(|path| path.is_file())
+        .collect()
 }
 
 /// Every conversation file of the export, read into one string.
@@ -222,7 +209,7 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
 
     let err = imessage_ir_exporter::run(&run.config(Some("not-the-password"), None)).unwrap_err();
 
-    assert_eq!(err.to_string(), PASSWORD_INCORRECT);
+    assert_eq!(err.to_string(), IOS_BACKUP_PASSWORD_INCORRECT);
     run.assert_scratch_is_gone();
 }
 

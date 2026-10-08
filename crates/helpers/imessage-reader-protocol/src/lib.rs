@@ -125,6 +125,11 @@ pub fn bare_address(raw: &str) -> Option<String> {
     }
 }
 
+/// The [`Event::Error`] message the helper sends when the password does not
+/// open an encrypted iPhone backup. It is here, on the permissive side, so
+/// the tests that spawn the helper compare against the helper's own words.
+pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
+
 /// The file name of the helper executable, without the `.exe` Windows adds.
 pub const HELPER_NAME: &str = "imessage-reader";
 

@@ -19,15 +19,13 @@ use chat_db_fixture::{
         BACKUP_PASSWORD, Encryption, HOME_DOMAIN, MEDIA_DOMAIN, MESSAGES_DB_PATH, PHOTO_PATH,
         stored_path, write_messages_backup,
     },
+    listing::{file_names, paths_under},
 };
 use imessage_reader_protocol::{
-    AttachmentFile, Event, ExportRequest, IdentitiesRequest, Platform, Request, Source,
+    AttachmentFile, Event, ExportRequest, IOS_BACKUP_PASSWORD_INCORRECT, IdentitiesRequest,
+    Platform, Request, Source,
 };
 use ios_backup::{Helper, backup_identities, reader_build::build_imessage_reader};
-
-/// What the reader says when the password does not open the backup
-/// (`IOS_BACKUP_PASSWORD_INCORRECT` in `imessage-reader`).
-const PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
 
 /// A backup in a directory that lives as long as the value.
 fn backup(encryption: Encryption<'_>) -> tempfile::TempDir {
@@ -36,26 +34,9 @@ fn backup(encryption: Encryption<'_>) -> tempfile::TempDir {
     dir
 }
 
-/// Every path under `dir`, sorted.
-fn listing(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    let mut pending = vec![dir.to_path_buf()];
-    while let Some(dir) = pending.pop() {
-        for entry in fs::read_dir(&dir).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                pending.push(path.clone());
-            }
-            out.push(path);
-        }
-    }
-    out.sort();
-    out
-}
-
 /// What the request left under the scratch root, less the root's lock file.
 fn left_in(scratch_root: &Path) -> Vec<PathBuf> {
-    listing(scratch_root)
+    paths_under(scratch_root)
         .into_iter()
         .filter(|path| path != &scratch_root.join(".lock"))
         .collect()
@@ -81,7 +62,7 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     build_imessage_reader();
     let backup = backup(Encryption::Password(BACKUP_PASSWORD));
     let scratch_root = tempfile::tempdir().unwrap();
-    let backup_before = listing(backup.path());
+    let backup_before = paths_under(backup.path());
     let temp_before = decrypted_in_system_temp();
 
     let mut identities = backup_identities(
@@ -95,7 +76,7 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     identities.sort();
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);
     assert_eq!(left_in(scratch_root.path()), Vec::<PathBuf>::new());
-    assert_eq!(listing(backup.path()), backup_before);
+    assert_eq!(paths_under(backup.path()), backup_before);
     let new_in_temp: Vec<_> = decrypted_in_system_temp()
         .difference(&temp_before)
         .cloned()
@@ -133,7 +114,7 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
     )
     .unwrap_err();
 
-    assert_eq!(err.to_string(), PASSWORD_INCORRECT);
+    assert_eq!(err.to_string(), IOS_BACKUP_PASSWORD_INCORRECT);
     assert_eq!(left_in(scratch_root.path()), Vec::<PathBuf>::new());
 }
 
@@ -276,16 +257,6 @@ fn an_export_decrypts_into_its_scratch_directory_and_the_photo_comes_out_whole()
         file_names(scratch.path()),
         vec![path.file_name().unwrap().to_string_lossy().into_owned()]
     );
-}
-
-/// The names of the entries in `dir`, sorted.
-fn file_names(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
 }
 
 /// An iPhone backup as a source, with `password`.

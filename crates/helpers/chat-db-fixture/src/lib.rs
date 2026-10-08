@@ -11,9 +11,13 @@
 //! into an iPhone backup, plain or encrypted with a password, for the tests
 //! of decrypting one.
 //!
+//! [`listing`] lists what a directory holds, so the tests of all three
+//! crates check what a request wrote and left behind the same way.
+//!
 //! Nothing here comes from a real backup. Every row is made up.
 
 pub mod ios_backup;
+pub mod listing;
 
 use std::{
     fs,

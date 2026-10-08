@@ -53,6 +53,43 @@ pub const CONTACTS_DB_PATH: &str = "Library/AddressBook/AddressBook.sqlitedb";
 /// an iPhone writes is this path after `~/`.
 pub const PHOTO_PATH: &str = "Library/SMS/Attachments/00/00/att-1/photo.jpg";
 
+/// The name `crabapple` gives the decrypted `Manifest.db` of an encrypted
+/// backup it opens. It writes the file into the process's temporary
+/// directory (`std::env::temp_dir`) and removes it when the backup is
+/// dropped.
+pub const DECRYPTED_MANIFEST_NAME: &str = "crabapple-Manifest.db";
+
+/// A turn at the system's temporary directory, held while a test opens an
+/// encrypted backup in process or checks that directory for
+/// [`DECRYPTED_MANIFEST_NAME`].
+///
+/// `imessage-reader`'s own tests open encrypted backups in process, where
+/// nothing moves the temporary directory, so each writes its decrypted
+/// `Manifest.db` to the one fixed path in the system's temporary directory.
+/// Two such tests at once write over each other's copy, and a test that
+/// checks the reader program leaves nothing there would see theirs. Test
+/// threads of one binary, and test binaries side by side under
+/// cargo-nextest or in two worktrees, all lock one file in the system's
+/// temporary directory, so they take turns.
+pub struct OneOpenBackup {
+    /// The locked file; dropping it lets the next test go.
+    _locked: fs::File,
+}
+
+/// Wait for the turn at the system's temporary directory, and hold it
+/// until the value drops.
+///
+/// # Panics
+///
+/// Panics when the lock file cannot be created or locked.
+#[must_use]
+pub fn one_open_backup_at_a_time() -> OneOpenBackup {
+    let file = fs::File::create(std::env::temp_dir().join("chat-db-fixture-backup.lock"))
+        .expect("create the backup lock file");
+    file.lock().expect("lock the backup lock file");
+    OneOpenBackup { _locked: file }
+}
+
 /// Whether, and how, a backup is encrypted.
 #[derive(Debug, Clone, Copy)]
 pub enum Encryption<'a> {

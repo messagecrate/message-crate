@@ -8,7 +8,10 @@
 use std::fs;
 use std::path::Path;
 
-use chat_db_fixture::ios_backup::{Encryption, write_messages_backup};
+use chat_db_fixture::ios_backup::{
+    Encryption, OneOpenBackup, one_open_backup_at_a_time, write_messages_backup,
+};
+use chat_db_fixture::listing::{file_names, paths_under};
 use imessage_database::tables::{messages::Message, table::Table};
 use imessage_reader_protocol::{ExportRequest, Platform, Source};
 use rusqlite::Connection;
@@ -129,59 +132,8 @@ impl FixtureBackup {
     /// Every path under the backup directory, sorted, to show that
     /// decrypting wrote nothing there.
     pub(crate) fn backup_listing(&self) -> Vec<std::path::PathBuf> {
-        let mut out = Vec::new();
-        let mut pending = vec![self.backup.path().to_path_buf()];
-        while let Some(dir) = pending.pop() {
-            for entry in fs::read_dir(&dir).expect("list the backup") {
-                let path = entry.expect("a backup entry").path();
-                if path.is_dir() {
-                    pending.push(path.clone());
-                }
-                out.push(path);
-            }
-        }
-        out.sort();
-        out
+        paths_under(self.backup.path())
     }
-}
-
-/// A lock held while a test has an encrypted backup open.
-///
-/// `crabapple` decrypts a backup's `Manifest.db` to one fixed path in the
-/// temporary directory (see `backup::keep_temporary_files_in`, which keeps
-/// the real program's copy in its request's own directory). These tests run
-/// as threads of one process, or under cargo-nextest as processes side by
-/// side, so two backups open at once would write over each other's copy. A
-/// lock on one file in the temporary directory makes them take turns, in
-/// either case.
-pub(crate) struct OneOpenBackup {
-    /// The locked file; dropping it lets the next test go.
-    _locked: fs::File,
-}
-
-/// Wait until no other test has an encrypted backup open, and hold the
-/// turn until the value drops.
-pub(crate) fn one_open_backup_at_a_time() -> OneOpenBackup {
-    let file = fs::File::create(std::env::temp_dir().join("imessage-reader-tests-backup.lock"))
-        .expect("create the backup lock file");
-    file.lock().expect("lock the backup lock file");
-    OneOpenBackup { _locked: file }
-}
-
-/// The names of the entries in `dir`, sorted.
-pub(crate) fn file_names(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .expect("list the directory")
-        .map(|entry| {
-            entry
-                .expect("an entry")
-                .file_name()
-                .to_string_lossy()
-                .into_owned()
-        })
-        .collect();
-    names.sort();
-    names
 }
 
 /// A Mac source with no backup password.

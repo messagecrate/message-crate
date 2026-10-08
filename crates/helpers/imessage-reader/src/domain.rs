@@ -213,8 +213,10 @@ fn decrypt_to(backup: &Backup, file_id: &str, target: &Path) -> Result<(), Runti
 #[cfg(test)]
 mod tests {
     use super::{decrypt_domain, domain_files, list_domain, open, target_path, total_bytes};
-    use crate::{error::IOS_BACKUP_PASSWORD_INCORRECT, test_support::one_open_backup_at_a_time};
-    use chat_db_fixture::ios_backup::{BackupFile, Encryption, write_backup};
+    use crate::error::IOS_BACKUP_PASSWORD_INCORRECT;
+    use chat_db_fixture::ios_backup::{
+        BackupFile, Encryption, one_open_backup_at_a_time, write_backup,
+    };
     use imessage_reader_protocol::BackupDomainRequest;
     use rusqlite::Connection;
     use std::{
