@@ -277,6 +277,97 @@ async fn the_later_backup_decides_the_text_whatever_the_version_times_say() {
     }
 }
 
+/// How many messages a search of the message text for `word` finds in the
+/// database at `db`.
+async fn text_hits(db: &Path, word: &str) -> i64 {
+    let (_pool, mut conn) = open_verify(db).await;
+    sqlx::query_scalar("SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH $1")
+        .bind(word)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// The scenario of #1804 as the issue gives it, unsent part and all. A
+/// two-part message is sent at t0; part 1 is edited at t100 and t500;
+/// backup A is made; part 1 is unsent at t600, which drops its versions
+/// and marks the message Unsent; part 0 is edited at t700; backup B is
+/// made. A lists part 1's [x@t0, y@t100] and no mark; B lists part 0's
+/// [a@t0] and the Unsent mark. B's newest version is older than A's, so the
+/// version times say A is later.
+///
+/// With B the later backup, every order, one import of both files in
+/// either order included, holds B's text, versions and mark, and search
+/// finds neither copy's text. With the dates swapped, every order holds
+/// A's text and versions with no mark, and search finds A's text. With no
+/// dates, the version times decide the text as #1801 left them, and B's
+/// mark adds.
+#[tokio::test]
+async fn the_later_backup_decides_an_unsent_part_whatever_the_version_times_say() {
+    let tmp = TempDir::new().unwrap();
+    let t0 = 1_426_183_462_000;
+    let a_versions = [
+        edit_version(1, "zqxylo", t0),
+        edit_version(1, "zqyarrow", t0 + 100_000),
+    ];
+    let b_versions = [edit_version(0, "zqharbor", t0)];
+    let a = |backup| Copy {
+        backup,
+        text: "zqharbor zqyonder",
+        versions: &a_versions,
+        deletion: None,
+    };
+    let b = |backup| Copy {
+        backup,
+        text: "zqbeacon",
+        versions: &b_versions,
+        deletion: Some(Deletion::Unsent),
+    };
+    let a_held = |deletion: Option<&str>, backup: Option<&str>| Held {
+        text: "zqharbor zqyonder".into(),
+        deletion: deletion.map(Into::into),
+        versions: vec![(1, "zqxylo".into()), (1, "zqyarrow".into())],
+        backup_taken_at: backup.map(Into::into),
+    };
+    let orders = ["together", "together-reversed", "apart", "apart-reversed"];
+
+    let a_earlier = backup_file(tmp.path(), "a-earlier.jsonl", &a(Some(EARLIER_BACKUP)));
+    let b_later = backup_file(tmp.path(), "b-later.jsonl", &b(Some(LATER_BACKUP)));
+    let held = every_order(tmp.path(), "b-later", [&a_earlier, &b_later]).await;
+    for (held, order) in held.into_iter().zip(orders) {
+        assert_eq!(
+            held,
+            Held {
+                text: "zqbeacon".into(),
+                deletion: Some("unsent".into()),
+                versions: vec![(0, "zqharbor".into())],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+        let db = tmp.path().join(format!("b-later-{order}.db"));
+        assert_eq!(text_hits(&db, "zqbeacon").await, 0, "{order}");
+        assert_eq!(text_hits(&db, "zqyonder").await, 0, "{order}");
+    }
+
+    let a_later = backup_file(tmp.path(), "a-later.jsonl", &a(Some(LATER_BACKUP)));
+    let b_earlier = backup_file(tmp.path(), "b-earlier.jsonl", &b(Some(EARLIER_BACKUP)));
+    let held = every_order(tmp.path(), "a-later", [&a_later, &b_earlier]).await;
+    for (held, order) in held.into_iter().zip(orders) {
+        assert_eq!(held, a_held(None, Some(LATER_BACKUP_AT)), "{order}");
+        let db = tmp.path().join(format!("a-later-{order}.db"));
+        assert_eq!(text_hits(&db, "zqyonder").await, 1, "{order}");
+        assert_eq!(text_hits(&db, "zqbeacon").await, 0, "{order}");
+    }
+
+    let a_undated = backup_file(tmp.path(), "a-undated.jsonl", &a(None));
+    let b_undated = backup_file(tmp.path(), "b-undated.jsonl", &b(None));
+    let held = every_order(tmp.path(), "undated", [&a_undated, &b_undated]).await;
+    for (held, order) in held.into_iter().zip(orders) {
+        assert_eq!(held, a_held(Some("unsent"), None), "{order}");
+    }
+}
+
 /// An append of the older backup after the newer one changes nothing:
 /// not the mark, not the text, not the earlier versions, not the date,
 /// even though the older copy carries a mark and lists more versions.
