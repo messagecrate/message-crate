@@ -1,13 +1,13 @@
 import { useEffect, useId, useState } from "react";
 import {
-  HANDLE_SERVICE_OPTIONS,
-  HANDLE_SERVICES,
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
   inferService,
+  OFFERED_SERVICE_OPTIONS,
+  OFFERED_SERVICES,
   type OfferedService,
-} from "../lib/handleService";
+} from "../lib/offeredService";
 import { parseSelectKey } from "../lib/selectKey";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
 import Button from "./Button";
@@ -33,7 +33,7 @@ function alreadyListed(
   if (!key) return false;
   return existing.some((row) => {
     const rowService = inferService(row.address, row.service);
-    const known = HANDLE_SERVICES.find((s) => s === rowService) ?? "phone";
+    const known = OFFERED_SERVICES.find((s) => s === rowService) ?? "phone";
     return handleDuplicateKey(known, row.address) === key;
   });
 }
@@ -114,7 +114,7 @@ export default function AddIdentityDialog({
           id={serviceId}
           selectedKey={service}
           onSelectionChange={(k) => {
-            const next = parseSelectKey(k, HANDLE_SERVICES);
+            const next = parseSelectKey(k, OFFERED_SERVICES);
             if (next) {
               setService(next);
               setInvalid("");
@@ -127,7 +127,7 @@ export default function AddIdentityDialog({
           popoverClassName={Z_POPOVER_IN_MODAL}
           className="block w-full min-w-0"
         >
-          {HANDLE_SERVICE_OPTIONS.map((s) => (
+          {OFFERED_SERVICE_OPTIONS.map((s) => (
             <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
               {s.label}
             </ListBoxItem>

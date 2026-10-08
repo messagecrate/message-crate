@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHandleServiceLabel,
-  HANDLE_SERVICE_OPTIONS,
-  HANDLE_SERVICES,
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
   inferService,
   listedServerService,
+  OFFERED_SERVICE_OPTIONS,
+  OFFERED_SERVICES,
   serverService,
-} from "./handleService";
+} from "./offeredService";
 
-describe("handleService", () => {
+describe("offeredService", () => {
   it("lists phone, email, whatsapp for profile/onboarding", () => {
-    expect([...HANDLE_SERVICES]).toEqual(["phone", "email", "whatsapp"]);
-    expect(HANDLE_SERVICE_OPTIONS.map((o) => o.value)).toEqual(["phone", "email", "whatsapp"]);
+    expect([...OFFERED_SERVICES]).toEqual(["phone", "email", "whatsapp"]);
+    expect(OFFERED_SERVICE_OPTIONS.map((o) => o.value)).toEqual(["phone", "email", "whatsapp"]);
   });
 
   it("infers email and phone from handle when service empty", () => {
@@ -64,13 +64,13 @@ describe("handlePlaceholder", () => {
   });
 
   it("gives every option in the picker an example", () => {
-    for (const option of HANDLE_SERVICE_OPTIONS) {
+    for (const option of OFFERED_SERVICE_OPTIONS) {
       expect(option.placeholder.length).toBeGreaterThan(0);
     }
   });
 
   it("calls a phone number what the contact drawer calls it", () => {
-    expect(HANDLE_SERVICE_OPTIONS.find((o) => o.value === "phone")?.label).toBe("Text Message");
+    expect(OFFERED_SERVICE_OPTIONS.find((o) => o.value === "phone")?.label).toBe("Text Message");
   });
 });
 

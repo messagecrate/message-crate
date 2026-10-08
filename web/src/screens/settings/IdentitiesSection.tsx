@@ -10,7 +10,7 @@ import {
   type OfferedService,
   type ServerService,
   serverService,
-} from "../../lib/handleService";
+} from "../../lib/offeredService";
 import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";

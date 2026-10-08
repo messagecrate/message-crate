@@ -8,17 +8,17 @@ import Select, { ListBoxItem, selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
 import { useAuth } from "../lib/auth";
+import { newId } from "../lib/newId";
 import {
   DUPLICATE_HANDLE_MESSAGE,
-  HANDLE_SERVICE_OPTIONS,
-  HANDLE_SERVICES,
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
+  OFFERED_SERVICE_OPTIONS,
+  OFFERED_SERVICES,
   type OfferedService,
   serverService,
-} from "../lib/handleService";
-import { newId } from "../lib/newId";
+} from "../lib/offeredService";
 import { keys } from "../lib/queryKeys";
 import { useRouteQuery } from "../lib/routeQuery";
 import { parseSelectKey } from "../lib/selectKey";
@@ -158,7 +158,7 @@ export default function OnboardingScreen() {
     const shown = listed
       .slice(0, MAX_ACCOUNT_ROWS)
       .map(({ address, service }) =>
-        newHandleRow(address, parseSelectKey(service, HANDLE_SERVICES) ?? "phone"),
+        newHandleRow(address, parseSelectKey(service, OFFERED_SERVICES) ?? "phone"),
       );
     if (shown.length === 0) return;
     setHiddenIdentities(listed.length - shown.length);
@@ -231,7 +231,7 @@ export default function OnboardingScreen() {
   const updateHandle = (index: number, field: "handle" | "service", value: string) => {
     const next = [...handles];
     if (field === "service") {
-      const service = parseSelectKey(value, HANDLE_SERVICES);
+      const service = parseSelectKey(value, OFFERED_SERVICES);
       if (!service) return;
       next[index] = { ...next[index], service };
     } else {
@@ -323,13 +323,13 @@ export default function OnboardingScreen() {
                 <Select
                   selectedKey={h.service}
                   onSelectionChange={(k) => {
-                    const service = parseSelectKey(k, HANDLE_SERVICES);
+                    const service = parseSelectKey(k, OFFERED_SERVICES);
                     if (service) updateHandle(i, "service", service);
                   }}
                   className="w-[140px] shrink-0"
                   aria-label={`Account ${i + 1} type`}
                 >
-                  {HANDLE_SERVICE_OPTIONS.map((s) => (
+                  {OFFERED_SERVICE_OPTIONS.map((s) => (
                     <ListBoxItem key={s.value} id={s.value} className={selectItemClassName}>
                       {s.label}
                     </ListBoxItem>

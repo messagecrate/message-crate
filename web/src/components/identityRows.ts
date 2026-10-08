@@ -1,5 +1,5 @@
 import type { SortDescriptor } from "react-aria-components";
-import { formatHandleServiceLabel } from "../lib/handleService";
+import { formatHandleServiceLabel } from "../lib/offeredService";
 
 /**
  * One identity as either screen shows it: the address, the service it is on,

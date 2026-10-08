@@ -7,7 +7,7 @@ import type { components } from "./serverApi.types";
  */
 export type OfferedService = "phone" | "email" | "whatsapp";
 
-export const HANDLE_SERVICES = [
+export const OFFERED_SERVICES = [
   "phone",
   "email",
   "whatsapp",
@@ -38,7 +38,7 @@ export function serverService(service: OfferedService): ServerService {
  * type; one a person added is on the phone service.
  */
 export function listedServerService(service: string | null | undefined): ServerService | undefined {
-  const known = HANDLE_SERVICES.find((candidate) => candidate === service);
+  const known = OFFERED_SERVICES.find((candidate) => candidate === service);
   return known === undefined ? undefined : serverService(known);
 }
 
@@ -51,7 +51,7 @@ export const EXAMPLE_PHONE = "+1 555-555-0119";
  * in an empty field, on the same line as its service. The phone services take
  * `EXAMPLE_PHONE`, the web app's one phone example; change it there.
  */
-export const HANDLE_SERVICE_OPTIONS = [
+export const OFFERED_SERVICE_OPTIONS = [
   { value: "phone", label: "Text Message", placeholder: EXAMPLE_PHONE },
   { value: "email", label: "Email", placeholder: "you@example.com" },
   { value: "whatsapp", label: "WhatsApp", placeholder: EXAMPLE_PHONE },
@@ -63,7 +63,7 @@ export const HANDLE_SERVICE_OPTIONS = [
 
 /** Example shown in an empty value field for `service`. */
 export function handlePlaceholder(service: OfferedService): string {
-  return HANDLE_SERVICE_OPTIONS.find((option) => option.value === service)?.placeholder ?? "";
+  return OFFERED_SERVICE_OPTIONS.find((option) => option.value === service)?.placeholder ?? "";
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
-import { listedServerService, type OfferedService, serverService } from "../../lib/handleService";
+import { listedServerService, type OfferedService, serverService } from "../../lib/offeredService";
 import { formatHandleServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 

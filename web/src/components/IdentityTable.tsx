@@ -1,7 +1,7 @@
 import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { formatIsoDateOnly } from "../lib/formatDate";
-import { formatHandleServiceLabel } from "../lib/handleService";
+import { formatHandleServiceLabel } from "../lib/offeredService";
 import { useTimeZone } from "../lib/timeZone";
 import { focusRing } from "../lib/uiStyles";
 import Button from "./Button";
