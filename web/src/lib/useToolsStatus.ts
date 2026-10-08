@@ -1,0 +1,46 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatBytes } from "./attachmentProgressCopy";
+import { keys } from "./queryKeys";
+import { invokeRetryToolDownloads, invokeToolsStatus, toolsDownloading } from "./tauri";
+import { isTauri } from "./tauri-check";
+
+/** How often the window asks the desktop process again while a download runs. */
+export const DOWNLOAD_POLL_MS = 1000;
+
+/**
+ * Where ffmpeg, ffprobe and wtsexporter are and how their downloads stand,
+ * asked again each second while a download runs. Settings and the Import
+ * screen read the same entry. It belongs to this computer, not to an account,
+ * so this is a plain `useQuery`; the browser has no desktop process to ask.
+ */
+export function useToolsStatus() {
+  return useQuery({
+    queryKey: keys.desktopToolsStatus.all,
+    queryFn: invokeToolsStatus,
+    enabled: isTauri(),
+    retry: false,
+    refetchInterval: (query) =>
+      query.state.data && toolsDownloading(query.state.data) ? DOWNLOAD_POLL_MS : false,
+  });
+}
+
+/**
+ * Try again: the desktop process checks the Tools Directory and downloads
+ * what is missing, and the status is asked for at once. The programs it
+ * downloads show as downloading by then, so the status keeps being asked for
+ * until they arrive or fail.
+ */
+export function useRetryToolDownloads() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: invokeRetryToolDownloads,
+    onSettled: () => client.invalidateQueries({ queryKey: keys.desktopToolsStatus.all }),
+  });
+}
+
+/** A download's progress: "12 MB of 29 MB (41%)", or "12 MB so far" with no total. */
+export function downloadProgress(received: number, total: number | null): string {
+  if (total == null || total <= 0) return `${formatBytes(received)} so far`;
+  const percent = Math.min(100, Math.floor((received / total) * 100));
+  return `${formatBytes(received)} of ${formatBytes(total)} (${percent}%)`;
+}

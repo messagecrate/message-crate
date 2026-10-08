@@ -108,6 +108,7 @@ fn main() {
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
             commands::tools::tools_status,
+            commands::tools::retry_tool_downloads,
         ]);
 
     builder

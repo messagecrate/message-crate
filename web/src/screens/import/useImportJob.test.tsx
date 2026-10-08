@@ -1437,6 +1437,45 @@ describe("useImportJob wiring", () => {
     });
   });
 
+  it("says on the Media row that Media waits for the ffmpeg download (#1053)", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        onProgress?: (event: ImportProgressEvent) => void,
+      ) => {
+        await fn();
+        onProgress?.({
+          step: "media",
+          done: 0,
+          total: 0,
+          status: "Waiting for the ffmpeg download (12.0 MB of 30.0 MB)",
+        });
+        await held;
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+    let approved: Promise<void> = Promise.resolve();
+    act(() => {
+      approved = result.current.approve();
+    });
+
+    await waitFor(() =>
+      expect(result.current.steps[1]?.detail).toBe(
+        "Waiting for the ffmpeg download (12.0 MB of 30.0 MB)",
+      ),
+    );
+    expect(result.current.steps[1]?.status).toBe("active");
+    release();
+    await act(() => approved);
+  });
+
   it("writes an issue that arrives during Media into the directory before Media ends (#1479)", async () => {
     const mediaIssue: ImportIssueEvent = {
       kind: "skip",

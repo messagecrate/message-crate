@@ -515,6 +515,16 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
   return invoke("tools_status");
 }
 
+/**
+ * Check the Tools Directory again and download what is missing, as Try again
+ * on the Import form asks. Returns at once, with whether a check started:
+ * false when one was already running, which the window follows the same way,
+ * through `tools_status`.
+ */
+export async function invokeRetryToolDownloads(): Promise<boolean> {
+  return invoke("retry_tool_downloads");
+}
+
 /** Whether any of ffmpeg, ffprobe and wtsexporter is downloading now. */
 export function toolsDownloading(status: ToolsStatus): boolean {
   return [status.ffmpeg, status.ffprobe, status.wtsexporter].some(
@@ -525,9 +535,17 @@ export function toolsDownloading(status: ToolsStatus): boolean {
 /** The programs Convert and Compress run. */
 export type MediaToolName = "ffmpeg" | "ffprobe";
 
-/** Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used. */
+/**
+ * Which of ffmpeg and ffprobe, which Convert and Compress run, cannot be used.
+ * One still downloading can: the Media stage waits for it.
+ */
 export function ffmpegMissing(status: ToolsStatus): MediaToolName[] {
-  return (["ffmpeg", "ffprobe"] as const).filter((name) => status[name].state !== "found");
+  return (["ffmpeg", "ffprobe"] as const).filter((name) => !toolUsable(status[name]));
+}
+
+/** Whether an import can run a program: it is found, or downloading, which the import waits for. */
+export function toolUsable(status: ToolStatus): boolean {
+  return status.state === "found" || status.state === "downloading";
 }
 
 export interface HomeDirInfo {

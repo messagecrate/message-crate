@@ -2,8 +2,11 @@
 //! (#1053, `docs/adr/0019`).
 //!
 //! At every start the app checks the Tools Directory in the background and
-//! downloads what is missing or older than the release pinned here. Nothing
-//! waits for it, and a failed download is tried again at the next start.
+//! downloads what is missing or older than the release pinned here. Login
+//! and browsing don't wait for it, and a failed download is tried again at
+//! the next start, or when **Try again** on the Import form asks
+//! ([`retry`]). An import that needs a program still downloading waits for
+//! it ([`ToolDownloads::wait_for`]).
 //!
 //! - **ffmpeg and ffprobe** are not downloaded when both are on `PATH`,
 //!   because a person who installed ffmpeg chose it.
@@ -44,7 +47,8 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
@@ -552,31 +556,150 @@ pub enum DownloadState {
     },
 }
 
-/// The download state of each program, shared by the start-up check and
-/// `tools_status`. A program with no entry is not downloading and has not
-/// failed since the app started.
+/// The download state of each program, shared by the checks, `tools_status`
+/// and an import waiting for a program. A program with no entry is not
+/// downloading and has not failed since the app started.
 #[derive(Debug, Clone, Default)]
-pub struct ToolDownloads(Arc<Mutex<HashMap<Program, DownloadState>>>);
+pub struct ToolDownloads(Arc<Shared>);
+
+/// The states, and the signal a waiting import hears when one changes.
+#[derive(Debug, Default)]
+struct Shared {
+    states: Mutex<HashMap<Program, DownloadState>>,
+    changed: Condvar,
+}
+
+/// How often an import waiting for a download looks at its cancel flag when
+/// no state changes.
+const WAIT_TICK: Duration = Duration::from_millis(250);
 
 impl ToolDownloads {
+    fn states(&self) -> std::sync::MutexGuard<'_, HashMap<Program, DownloadState>> {
+        self.0.states.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Where `program`'s download stands, if anywhere.
     pub fn get(&self, program: Program) -> Option<DownloadState> {
-        self.0
-            .lock()
-            .expect("tool downloads lock")
-            .get(&program)
-            .cloned()
+        self.states().get(&program).cloned()
     }
 
     fn set(&self, program: Program, state: DownloadState) {
-        self.0
-            .lock()
-            .expect("tool downloads lock")
-            .insert(program, state);
+        self.states().insert(program, state);
+        self.0.changed.notify_all();
     }
 
     fn clear(&self, program: Program) {
-        self.0.lock().expect("tool downloads lock").remove(&program);
+        self.states().remove(&program);
+        self.0.changed.notify_all();
+    }
+
+    /// Wait while any of `programs` is downloading, so an import that needs
+    /// a program still downloading goes on once it has arrived (#1053).
+    ///
+    /// `waiting` hears the program waited for and its progress each time it
+    /// changes, for the import's progress line. `cancelled` is asked at
+    /// least every [`WAIT_TICK`], so a Cancel ends the wait.
+    ///
+    /// Returns at once when none of `programs` is downloading: the import
+    /// then finds the program or reports it missing as it always did.
+    ///
+    /// # Errors
+    ///
+    /// [`WaitError::Failed`] when a download waited for ended failed, with
+    /// its reason; [`WaitError::Cancelled`] when `cancelled` said so.
+    pub fn wait_for(
+        &self,
+        programs: &[Program],
+        cancelled: &dyn Fn() -> bool,
+        waiting: &mut dyn FnMut(Program, u64, Option<u64>),
+    ) -> Result<(), WaitError> {
+        let mut waited = Vec::new();
+        let mut states = self.states();
+        loop {
+            let downloading = programs
+                .iter()
+                .find_map(|&program| match states.get(&program) {
+                    Some(DownloadState::Downloading { received, total }) => {
+                        Some((program, *received, *total))
+                    }
+                    _ => None,
+                });
+            let Some((program, received, total)) = downloading else {
+                break;
+            };
+            if !waited.contains(&program) {
+                waited.push(program);
+            }
+            drop(states);
+            if cancelled() {
+                return Err(WaitError::Cancelled);
+            }
+            waiting(program, received, total);
+            states = self.states();
+            // Woken by any change, or after a tick to look at the cancel flag.
+            states = self
+                .0
+                .changed
+                .wait_timeout(states, WAIT_TICK)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        for program in waited {
+            if let Some(DownloadState::Failed { reason }) = states.get(&program) {
+                return Err(WaitError::Failed {
+                    program,
+                    reason: reason.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Why an import's wait for a download ended without the program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaitError {
+    /// The download waited for failed, for `reason`.
+    Failed {
+        /// The program whose download failed.
+        program: Program,
+        /// Why, as [`DownloadError`] says it.
+        reason: String,
+    },
+    /// The import was cancelled while it waited.
+    Cancelled,
+}
+
+impl fmt::Display for WaitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Failed { program, reason } => write!(
+                f,
+                "The {} download failed. {reason} The Import form's Try again downloads it again.",
+                program.name()
+            ),
+            Self::Cancelled => f.write_str("cancelled"),
+        }
+    }
+}
+
+impl std::error::Error for WaitError {}
+
+/// The progress line of an import waiting for `program`'s download:
+/// "Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".
+pub fn waiting_line(program: Program, received: u64, total: Option<u64>) -> String {
+    let name = program.name();
+    match total {
+        Some(total) if total > 0 => format!(
+            "Waiting for the {name} download ({} of {})",
+            media::format_bytes(received),
+            media::format_bytes(total)
+        ),
+        _ if received > 0 => format!(
+            "Waiting for the {name} download ({} so far)",
+            media::format_bytes(received)
+        ),
+        _ => format!("Waiting for the {name} download"),
     }
 }
 
@@ -612,21 +735,87 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// returns at once. When the lock can't be taken because the Tools Directory
 /// can't be written, the check goes on and its downloads say why.
 pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
-    let _lock = match lock_check(dir) {
+    let lock = match lock_check(dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return,
         Err(_) => None,
     };
+    check(dir, base, pinned, downloads, lock);
+}
+
+/// Start the check of `dir` again on a thread of its own, as **Try again**
+/// on the Import form asks (#1053), and return without waiting for it.
+///
+/// `not_found` are the programs the window says are not found. They show as
+/// downloading before this returns, so the window, which asks again only
+/// while a download runs, keeps asking until the check has decided each one.
+///
+/// `None`, starting nothing, when another check holds the lock: the
+/// start-up check, an earlier Try again, or another app's check. The window
+/// then follows the check already running.
+pub fn retry(
+    dir: PathBuf,
+    base: String,
+    pinned: Vec<Pinned>,
+    downloads: &ToolDownloads,
+    not_found: &[Program],
+) -> Option<JoinHandle<()>> {
+    let lock = match lock_check(&dir) {
+        Ok(Some(lock)) => Some(lock),
+        Ok(None) => return None,
+        Err(_) => None,
+    };
+    for pin in pinned.iter().filter(|pin| not_found.contains(&pin.program)) {
+        downloads.set(
+            pin.program,
+            DownloadState::Downloading {
+                received: 0,
+                total: None,
+            },
+        );
+    }
+    let check_downloads = downloads.clone();
+    let spawned = std::thread::Builder::new()
+        .name("tool-downloads-retry".into())
+        .spawn(move || check(&dir, &base, &pinned, &check_downloads, lock));
+    match spawned {
+        Ok(handle) => Some(handle),
+        Err(err) => {
+            for &program in not_found {
+                downloads.set(
+                    program,
+                    DownloadState::Failed {
+                        reason: DownloadError::CouldNotWrite(err.to_string()).to_string(),
+                    },
+                );
+            }
+            None
+        }
+    }
+}
+
+/// The check [`download_missing`] and [`retry`] run, holding `_lock`, or no
+/// lock when the Tools Directory can't be written. Every pinned program ends
+/// with its state decided: none when it is in place and runs, failed with
+/// the reason otherwise.
+fn check(
+    dir: &Path,
+    base: &str,
+    pinned: &[Pinned],
+    downloads: &ToolDownloads,
+    _lock: Option<File>,
+) {
     delete_leftovers(dir);
     let ffmpeg_on_path = media::ffmpeg_on_path();
     let mut manifest = read_manifest(dir);
     let mut wanted = Vec::new();
     for pin in pinned {
         if ffmpeg_on_path && matches!(pin.program, Program::Ffmpeg | Program::Ffprobe) {
+            downloads.clear(pin.program);
             continue;
         }
         match need(pin, dir, &manifest) {
-            Need::Keep => {}
+            Need::Keep => downloads.clear(pin.program),
             Need::Adopt => {
                 let path = dir.join(pin.program.file_name());
                 let _ = make_executable(&path);
@@ -634,7 +823,9 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
                     manifest.insert(pin.program, Written::of(pin, stamp));
                     let _ = write_manifest(dir, &manifest);
                 }
-                if !runs(pin.program, dir) {
+                if runs(pin.program, dir) {
+                    downloads.clear(pin.program);
+                } else {
                     downloads.set(pin.program, does_not_run(pin.program));
                 }
             }

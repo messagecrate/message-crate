@@ -780,6 +780,10 @@ function progressDetail(event: ImportProgressEvent): string {
       bytesTotal: event.bytes_total ?? last?.bytesTotal ?? 0,
     });
   }
+  // A step with nothing counted yet and a status says only the status: the
+  // Media stage waiting for ffmpeg's download says "Waiting for the ffmpeg
+  // download (12.0 MB of 30.0 MB)".
+  if (event.total === 0 && event.done === 0 && event.status) return event.status;
   const numbers = `${event.done.toLocaleString()}/${event.total.toLocaleString()}`;
   const counts = event.status ? `${numbers} (${event.status})` : numbers;
   return `${progressLabel(event.step, scratch.attachmentMode)}: ${counts}`;

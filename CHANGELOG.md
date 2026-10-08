@@ -21,6 +21,18 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **The Import form says when a program the import needs is
+  missing, with Try again.** A WhatsApp import needs wtsexporter, and
+  **Convert** and **Compress** need ffmpeg and ffprobe. When one hasn't been
+  downloaded or its download failed, the Import form names it and gives the
+  reason, with **Try again**, which downloads it at once, and a link to
+  Troubleshooting. A WhatsApp import can't start without wtsexporter. An
+  import with **Convert** or **Compress** still starts, as before. An import
+  started while its program is still downloading waits for it, and its
+  progress line says so, such as "Waiting for the wtsexporter download (12.0
+  MB of 30.0 MB)". When that download fails, the run fails with the reason
+  (#1053).
+
 - 2026-10-08: **The desktop app downloads ffmpeg, ffprobe and wtsexporter
   by itself.** Each time it starts, it downloads in the background whatever
   is missing from its Tools Directory, with no button and nothing to wait

@@ -804,3 +804,260 @@ fn every_platform_is_pinned() {
         }
     }
 }
+
+/// An import started while its program downloads waits, hears the
+/// download's progress, and goes on once the program has arrived.
+#[test]
+fn an_import_waits_for_a_download_and_goes_on_when_it_arrives() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Downloading {
+            received: 0,
+            total: None,
+        },
+    );
+    let mut heard = Vec::new();
+
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.set(
+                Program::Wtsexporter,
+                DownloadState::Downloading {
+                    received: 12_000_000,
+                    total: Some(30_000_000),
+                },
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.clear(Program::Wtsexporter);
+        });
+        let waited = downloads.wait_for(
+            &[Program::Wtsexporter],
+            &|| false,
+            &mut |program, received, total| {
+                heard.push(waiting_line(program, received, total));
+            },
+        );
+        assert_eq!(waited, Ok(()));
+    });
+
+    assert_eq!(
+        heard.first().unwrap(),
+        "Waiting for the wtsexporter download"
+    );
+    assert!(
+        heard.contains(&"Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".to_string()),
+        "the wait did not hear the progress: {heard:?}"
+    );
+}
+
+/// A download that fails while an import waits for it fails the import,
+/// with the download's reason.
+#[test]
+fn an_import_waiting_for_a_download_that_fails_fails_with_its_reason() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Ffprobe,
+        DownloadState::Downloading {
+            received: 10,
+            total: Some(100),
+        },
+    );
+
+    let waited = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.set(
+                Program::Ffprobe,
+                DownloadState::Failed {
+                    reason: "The download's server answered 404 Not Found.".into(),
+                },
+            );
+        });
+        downloads.wait_for(
+            &[Program::Ffmpeg, Program::Ffprobe],
+            &|| false,
+            &mut |_, _, _| {},
+        )
+    });
+
+    let err = waited.unwrap_err();
+    assert_eq!(
+        err,
+        WaitError::Failed {
+            program: Program::Ffprobe,
+            reason: "The download's server answered 404 Not Found.".into(),
+        }
+    );
+    assert!(
+        err.to_string().starts_with(
+            "The ffprobe download failed. The download's server answered 404 Not Found."
+        ),
+        "{err}"
+    );
+}
+
+/// A program not downloading is not waited for, and a failure from before
+/// the import started is the lookup's to report, not the wait's.
+#[test]
+fn an_import_does_not_wait_for_a_program_not_downloading() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+    let mut heard = 0;
+
+    let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {
+        heard += 1
+    });
+
+    assert_eq!(waited, Ok(()));
+    assert_eq!(heard, 0);
+}
+
+/// A Cancel ends the wait, though the download goes on.
+#[test]
+fn a_cancel_ends_the_wait() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Downloading {
+            received: 0,
+            total: None,
+        },
+    );
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let waited = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+        downloads.wait_for(
+            &[Program::Wtsexporter],
+            &|| cancel.load(std::sync::atomic::Ordering::Relaxed),
+            &mut |_, _, _| {},
+        )
+    });
+
+    assert_eq!(waited, Err(WaitError::Cancelled));
+}
+
+/// Try again runs the check once on a thread of its own and returns before
+/// the download ends, with the program already shown as downloading so the
+/// window keeps asking.
+#[test]
+fn try_again_runs_the_check_once_and_returns_at_once() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    let asked = server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(500))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+
+    let started = std::time::Instant::now();
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    )
+    .expect("a check started");
+    assert!(
+        started.elapsed() < Duration::from_millis(400),
+        "Try again waited for the download"
+    );
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Downloading { .. })
+    ));
+    check.join().unwrap();
+
+    asked.assert_calls(1);
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
+        b"wtsexporter"
+    );
+}
+
+/// Try again while a check holds the lock starts nothing: no second
+/// download, and the state the running check keeps is left alone.
+#[test]
+fn try_again_while_a_check_runs_starts_nothing() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+    let running = DownloadState::Downloading {
+        received: 5,
+        total: Some(10),
+    };
+    downloads.set(Program::Wtsexporter, running.clone());
+    let _held = lock_check(tools.path()).unwrap().expect("the lock is free");
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    );
+
+    assert!(check.is_none(), "a second check started");
+    asked.assert_calls(0);
+    assert_eq!(downloads.get(Program::Wtsexporter), Some(running));
+}
+
+/// A program the check finds in place loses the failure an earlier check
+/// left, so Try again after a file was put there by hand clears it.
+#[test]
+fn a_program_found_in_place_clears_an_earlier_failure() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    std::fs::write(
+        tools.path().join(Program::Wtsexporter.file_name()),
+        &published,
+    )
+    .unwrap();
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+
+    // No server: the file there is the pinned one, so nothing is asked for.
+    download_missing(
+        tools.path(),
+        "http://127.0.0.1:9",
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+}

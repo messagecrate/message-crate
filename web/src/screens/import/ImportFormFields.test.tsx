@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
+import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_CRYPT_KEY,
@@ -13,6 +14,7 @@ import {
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
+import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
 
@@ -20,8 +22,28 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
+/** The desktop process the form asks where wtsexporter, ffmpeg and ffprobe are. */
+const desktop = vi.hoisted(() => ({
+  isTauri: false,
+  toolsStatus: vi.fn(),
+  retry: vi.fn(),
+}));
+
+vi.mock("../../lib/tauri-check", () => ({
+  isTauri: () => desktop.isTauri,
+}));
+
+vi.mock("../../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+  invokeToolsStatus: () => desktop.toolsStatus(),
+  invokeRetryToolDownloads: () => desktop.retry(),
+}));
+
 afterEach(() => {
   cleanup();
+  desktop.isTauri = false;
+  desktop.toolsStatus.mockReset();
+  desktop.retry.mockReset();
 });
 
 const presentFile = { exists: true, isFile: true, isDirectory: false };
@@ -772,5 +794,155 @@ describe("ImportFormFields required marks", () => {
     }
 
     expect(marked).toEqual(needed.sort());
+  });
+});
+
+describe("ImportFormFields programs the import needs", () => {
+  const found = (path: string): ToolStatus => ({ state: "found", path });
+  const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
+    toolsDir: "/home/sam/message-crate/tools",
+    ffmpeg: found("/usr/bin/ffmpeg"),
+    ffprobe: found("/usr/bin/ffprobe"),
+    wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
+    ...over,
+  });
+  const readyWhatsapp: Partial<ImportFormFieldsProps> = {
+    source: "whatsapp-android",
+    backupPath: "/tmp/wa",
+    whatsappOwnerPhone: "+15555550100",
+    whatsappStats: {
+      backup: presentDir,
+      contactsDb: null,
+      media: null,
+      db: null,
+      hasMsgstoreDb: true,
+      cryptName: null,
+      backupEncrypted: null,
+    },
+  };
+
+  it("blocks a WhatsApp import whose wtsexporter download failed, with the reason and Try again", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({
+        wtsexporter: {
+          state: "downloadFailed",
+          reason: "No connection to the download's server: dns error.",
+        },
+      }),
+    );
+    renderForm(readyWhatsapp);
+
+    expect(
+      await screen.findByText(
+        "The wtsexporter download failed. No connection to the download's server: dns error. A WhatsApp import can't start without it.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
+      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+    );
+    expect(importButton()).toBeDisabled();
+  });
+
+  it("blocks a WhatsApp import while wtsexporter hasn't been downloaded", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({ wtsexporter: { state: "missing" } }));
+    renderForm(readyWhatsapp);
+
+    expect(
+      await screen.findByText(
+        "wtsexporter hasn't been downloaded. A WhatsApp import can't start without it.",
+      ),
+    ).toBeTruthy();
+    expect(importButton()).toBeDisabled();
+  });
+
+  it("blocks a WhatsApp import while wtsexporter can't be used", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({ wtsexporter: { state: "unusable", reason: "It is not executable." } }),
+    );
+    renderForm(readyWhatsapp);
+
+    expect(
+      await screen.findByText(/wtsexporter can't be used\. It is not executable\./),
+    ).toBeTruthy();
+    expect(importButton()).toBeDisabled();
+  });
+
+  it("lets a WhatsApp import start while wtsexporter downloads, saying it waits", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({
+        wtsexporter: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      }),
+    );
+    renderForm(readyWhatsapp);
+
+    expect(
+      await screen.findByText(
+        "wtsexporter is downloading: 12 MB of 30 MB (40%). The import waits for it.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(importButton()).toBeEnabled();
+  });
+
+  it("lets a WhatsApp import start once wtsexporter is found, and says nothing", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(status({}));
+    renderForm(readyWhatsapp);
+
+    await waitFor(() => expect(desktop.toolsStatus).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(importButton()).toBeEnabled();
+  });
+
+  it("says Convert needs ffmpeg without blocking the import", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({ ffmpeg: { state: "missing" }, ffprobe: { state: "missing" } }),
+    );
+    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+
+    expect(
+      await screen.findByText(
+        "ffmpeg isn't on PATH and hasn't been downloaded. ffprobe isn't on PATH and hasn't been downloaded. Convert and Compress need ffmpeg and ffprobe. Copy imports attachments as they are.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Troubleshooting" }).getAttribute("href")).toBe(
+      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found",
+    );
+    expect(importButton()).toBeEnabled();
+  });
+
+  it("Try again starts the download and follows it until the program arrives", async () => {
+    const user = setupUser();
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue(
+      status({ wtsexporter: { state: "downloadFailed", reason: "No connection." } }),
+    );
+    desktop.retry.mockImplementation(async () => {
+      // The desktop process shows the program as downloading before it answers.
+      desktop.toolsStatus
+        .mockResolvedValueOnce(
+          status({ wtsexporter: { state: "downloading", received: 0, total: null } }),
+        )
+        .mockResolvedValue(status({}));
+      return true;
+    });
+    renderForm(readyWhatsapp);
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    expect(desktop.retry).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/wtsexporter is downloading/)).toBeTruthy();
+    // Asked again while it downloads, until it is found.
+    await waitFor(() => expect(screen.queryByText(/wtsexporter is downloading/)).toBeNull(), {
+      timeout: 3000,
+    });
+    expect(desktop.toolsStatus.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(importButton()).toBeEnabled();
   });
 });

@@ -8,8 +8,13 @@
 //! where a program is run from.
 
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 
-use crate::tool_downloads::{DownloadState, Program, ToolDownloads};
+use message_crate_core::{CancelFlag, Cancelled};
+use tauri::AppHandle;
+
+use super::events::{self, ExtractProgressEvent};
+use crate::tool_downloads::{self, DownloadState, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
 ///
@@ -93,6 +98,89 @@ pub struct ToolsStatus {
 #[tauri::command]
 pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
     tools_status_with(&downloads)
+}
+
+/// Check the Tools Directory again and download what is missing, as **Try
+/// again** on the Import form asks (#1053). Returns at once: the check runs
+/// on a thread of its own, and the window follows it through
+/// [`tools_status`].
+///
+/// Returns whether a check started. `false` means one was already running
+/// (the start-up check or an earlier Try again), or the app has no Tools
+/// Directory; the window follows the running one the same way.
+#[tauri::command]
+pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool {
+    let Some(dir) = media::tools_dir() else {
+        return false;
+    };
+    let status = tools_status_with(&downloads);
+    let not_found: Vec<Program> = [
+        (Program::Ffmpeg, &status.ffmpeg),
+        (Program::Ffprobe, &status.ffprobe),
+        (Program::Wtsexporter, &status.wtsexporter),
+    ]
+    .into_iter()
+    .filter(|(_, status)| !matches!(status, ToolStatus::Found { .. }))
+    .map(|(program, _)| program)
+    .collect();
+    let pinned = tool_downloads::pinned_for(std::env::consts::OS, std::env::consts::ARCH);
+    tool_downloads::retry(
+        dir,
+        tool_downloads::GITHUB.to_string(),
+        pinned,
+        &downloads,
+        &not_found,
+    )
+    .is_some()
+}
+
+/// Wait while any of `programs` is downloading, before an import runs it
+/// (#1053). Each change of the wait goes to the window as an
+/// `extract:progress` event on `step`, whose status is the progress line:
+/// "Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".
+///
+/// # Errors
+///
+/// Returns [`Cancelled`] when the run is cancelled while it waits, and the
+/// failed download's reason when a download waited for fails.
+pub(crate) fn wait_for_downloads(
+    app: &AppHandle,
+    downloads: &ToolDownloads,
+    programs: &[Program],
+    cancel: &CancelFlag,
+    step: &str,
+) -> anyhow::Result<()> {
+    let mut last: Option<String> = None;
+    downloads
+        .wait_for(
+            programs,
+            &|| cancel.load(Ordering::Relaxed),
+            &mut |program, received, total| {
+                let line = tool_downloads::waiting_line(program, received, total);
+                if last.as_deref() == Some(line.as_str()) {
+                    return;
+                }
+                events::emit(app, events::PROGRESS, waiting_event(step, &line));
+                last = Some(line);
+            },
+        )
+        .map_err(|err| match err {
+            WaitError::Cancelled => anyhow::Error::new(Cancelled),
+            failed @ WaitError::Failed { .. } => anyhow::Error::new(failed),
+        })
+}
+
+/// The `extract:progress` event of a run waiting for a download: no counts,
+/// and the progress line as its status, which the window shows as it is.
+fn waiting_event(step: &str, line: &str) -> ExtractProgressEvent {
+    ExtractProgressEvent {
+        step: step.to_string(),
+        done: 0,
+        total: 0,
+        bytes_done: None,
+        bytes_total: None,
+        status: Some(line.to_string()),
+    }
 }
 
 /// [`tools_status`], with the downloads in `downloads`.

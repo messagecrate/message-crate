@@ -503,6 +503,8 @@ describe("ImportRunView", () => {
         /Media can't use ffprobe\. Put it beside ffmpeg, or put both in the Tools Directory\. Settings → System shows each program's state/,
       ),
     ).toBeInTheDocument();
+    // Beside the message, Try again downloads them from here (#1053).
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
   it("names both Media tools with and when neither can be used", () => {
