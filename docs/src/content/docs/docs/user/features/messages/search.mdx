@@ -74,6 +74,7 @@ On Contacts that is the Contact's name and Identities.
 On Conversations it is the title, and the names and Identities of the participants.
 On Messages it is the message's body, subject, and attachment file names, and every earlier version of an edited message, so a word an edit took out still finds the message.
 Such a message opens with its earlier versions shown and the matching one highlighted ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
+In the Messages list its row keeps the final text and adds a muted "Earlier version:" line under it, quoting the newest version that matched with the searched words in bold.
 A search finds a message by what it shows, so an Unsent message, which reads "Unsent" and nothing else, is not found by the text or attachments it hides, by plain words or by `body:`, `subject:`, `filename:` and the other attachment words.
 `unsent:yes` finds it.
 Everything else is a word, a colon, and a value.
