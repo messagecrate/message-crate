@@ -300,4 +300,24 @@ describe("MessageSearchRow", () => {
     expect(lines[1].textContent).toMatch(/ bar$/);
     expect([...lines[1].querySelectorAll("strong")].map((b) => b.textContent)).toEqual(["bar"]);
   });
+
+  it("quotes no older version for a searched word the final text already shows", () => {
+    renderRow(
+      message({
+        text: "foo now",
+        matched_earlier_version: true,
+        earlier_versions: [
+          { part_index: 0, text: "foo first", matched: true, edited_at: "2024-01-01T10:00:00Z" },
+          { part_index: 0, text: "bar later", matched: true, edited_at: "2024-01-01T11:00:00Z" },
+        ],
+      }),
+      [
+        { text: "foo", prefix: false },
+        { text: "bar", prefix: false },
+      ],
+    );
+    expect(screen.getAllByText(/^Earlier version:/).map((line) => line.textContent)).toEqual([
+      "Earlier version: bar later",
+    ]);
+  });
 });

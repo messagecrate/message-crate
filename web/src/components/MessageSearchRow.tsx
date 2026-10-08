@@ -60,14 +60,15 @@ function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
 /**
  * The earlier versions a search found `message` by that its row quotes, each
  * with the searched words its line is cut around: the newest matched
- * version, cut around all of them, and, for each searched word it does not
- * show, the newest matched version that holds the word, cut around the words
- * it is quoted for. None for a hit its final text matched, which the server
+ * version, cut around all of them, and, for each searched word neither it
+ * nor `shownText` (the final text as the row shows it) shows, the newest
+ * matched version that holds the word, cut around the words it is quoted for. None for a hit its final text matched, which the server
  * marks neither way (`docs/architecture/search.md`).
  */
 function versionsToQuote(
   message: Message,
   terms: readonly FreeTextTerm[],
+  shownText: string,
 ): [EarlierVersion, FreeTextTerm[]][] {
   if (!message.matched_earlier_version) return [];
   const matched = matchedNewestFirst(message);
@@ -75,7 +76,7 @@ function versionsToQuote(
   if (!first) return [];
   const quoted = new Map([[first, [...terms]]]);
   for (const term of terms) {
-    if (holds(first, term)) continue;
+    if (holds(first, term) || matchRanges(shownText, [term]).length > 0) continue;
     const version = matched.find((candidate) => holds(candidate, term));
     if (version) quoted.set(version, [...(quoted.get(version) ?? []), term]);
   }
@@ -116,7 +117,7 @@ export default function MessageSearchRow({
   const cut = snippet(unsent ? "" : messageRowText(message), terms);
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
-  const versionCuts = versionsToQuote(message, terms).map(([version, words]) => {
+  const versionCuts = versionsToQuote(message, terms, cut.text).map(([version, words]) => {
     const text = snippet(version.text, words).text;
     return {
       key: message.earlier_versions.indexOf(version),
