@@ -83,8 +83,7 @@ released versions carry their date on the heading.
   link needs a `wtsexporter` that records the quoted message's whole id,
   which only Message Crate's fork of WhatsApp Chat Exporter does, from its
   release `0.13.0-mc.2` on; a backup read by any other gives replies with no
-  link. The developer setup and the install line the app prints now install
-  that release (#1936).
+  link.
 - 2026-10-05: **Search finds unsent messages on their own.** On Messages,
   `unsent:yes` lists the messages their sender unsent, and `unsent:no`
   leaves them out. `deleted:yes` now lists only the messages deleted in the
@@ -321,6 +320,11 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- A `wtsexporter` installed before this release reads WhatsApp replies without
+  their link. Install Message Crate's fork of WhatsApp Chat Exporter, release
+  `0.13.0-mc.2`, with the line the WhatsApp import page gives
+  (`pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"`);
+  it replaces the old one (#1936).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

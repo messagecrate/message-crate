@@ -13,12 +13,12 @@ Two things make it hard:
 
 ## Install wtsexporter
 
-The desktop app runs `wtsexporter`, from the open-source WhatsApp Chat Exporter project.
+The desktop app runs `wtsexporter`, from the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter) project.
 Install it from Message Crate's fork, [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), at release `0.13.0-mc.2`, because only the fork records the ids a quoted reply is linked by.
-It needs Python, Git and [`pipx`](https://pipx.pypa.io/).
+It needs Python and [`pipx`](https://pipx.pypa.io/).
 
 ```bash title="Install wtsexporter"
-pipx install "whatsapp-chat-exporter[android_backup,crypt15] @ git+https://github.com/messagecrate/WhatsApp-Chat-Exporter@0.13.0-mc.2"
+pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"
 ```
 
 `wtsexporter --help` prints the program's options once it is installed.

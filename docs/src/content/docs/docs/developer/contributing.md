@@ -71,7 +71,7 @@ sudo apt install -y pipx
 pipx ensurepath
 
 # reopen the shell, or: source ~/.bashrc
-pipx install 'whatsapp-chat-exporter[android_backup,crypt15] @ git+https://github.com/messagecrate/WhatsApp-Chat-Exporter@0.13.0-mc.2'
+pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"
 pipx install sqlite-web
 ```
 
