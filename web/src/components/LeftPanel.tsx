@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
@@ -152,8 +152,10 @@ export default function LeftPanel({
     onDraggingChange,
   });
 
-  // Keep the header brand slot aligned with the nav while it resizes.
-  useEffect(() => {
+  // Keep the header brand slot aligned with the nav while it resizes. Set
+  // before the browser paints, so the slot's fallback, which knows nothing of
+  // the panel's floor beside a list, never shows for a frame.
+  useLayoutEffect(() => {
     document.documentElement.style.setProperty(LEFT_PANEL_WIDTH_VAR, `${width}px`);
   }, [width]);
 
