@@ -83,7 +83,9 @@ The desktop app finds the programs on `PATH`, else in its Tools Directory, and t
 [**Settings → System**](/docs/user/features/settings/system/#media) shows each under **Media**: `Found` with its path, its download's progress, why the download failed, `not found`, or `not used` with the reason.
 
 An Import Run looks for ffmpeg at the Staging Review, not when the run starts, because Staging copies the original files and needs neither program.
-When ffmpeg or ffprobe can't be used, the review names it, such as `Media can't use ffprobe. Put it in the Tools Directory, which Settings → System shows with the reason, then come back to Import.`, and the **Convert media** or **Compress media** button is disabled.
+When ffmpeg or ffprobe can't be used, the review names it, such as `Media can't use ffprobe.`, and the **Convert media** or **Compress media** button is disabled.
+The desktop app downloads both programs into the Tools Directory when it starts, so a program missing at the review is usually still downloading.
+When **Settings → System** says the download failed, the package manager commands above install ffmpeg and ffprobe instead.
 The run keeps waiting at the review until the program is there.
 
 ## The size limit
