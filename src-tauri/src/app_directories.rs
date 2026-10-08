@@ -164,7 +164,7 @@ mod tests {
     /// The Tools Directory is `tools` in the Message Crate Directory, and the
     /// app makes it and names it to its lookups when it starts (#1053).
     #[test]
-    fn the_tools_directory_is_made_and_searched() {
+    fn the_tools_directory_is_made_and_named_to_the_lookups() {
         let _lock = media::testutil::tools_test_lock();
         let home = tempfile::tempdir().unwrap();
         let tools = home.path().join("message-crate").join("tools");
