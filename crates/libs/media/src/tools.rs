@@ -259,12 +259,12 @@ fn find_tools(search_path: Option<&OsStr>, tools_dir: Option<&Path>) -> Result<F
         });
     }
     match (&path_ffmpeg, &path_ffprobe, &dir_ffmpeg, &dir_ffprobe) {
-        (Some(on_path), None, None, Some(in_dir)) => {
-            Err(split("ffmpeg", on_path, "ffprobe", in_dir))
-        }
-        (None, Some(on_path), Some(in_dir), None) => {
-            Err(split("ffprobe", on_path, "ffmpeg", in_dir))
-        }
+        (Some(on_path), None, None, Some(in_dir)) => Err(found_in_two_places_error(
+            "ffmpeg", on_path, "ffprobe", in_dir,
+        )),
+        (None, Some(on_path), Some(in_dir), None) => Err(found_in_two_places_error(
+            "ffprobe", on_path, "ffmpeg", in_dir,
+        )),
         _ => Ok(FfmpegTools {
             ffmpeg: path_ffmpeg.or(dir_ffmpeg),
             ffprobe: path_ffprobe.or(dir_ffprobe),
@@ -273,7 +273,12 @@ fn find_tools(search_path: Option<&OsStr>, tools_dir: Option<&Path>) -> Result<F
 }
 
 /// The error for ffmpeg and ffprobe found in two places.
-fn split(on_path: &str, path_copy: &Path, in_dir: &str, dir_copy: &Path) -> anyhow::Error {
+fn found_in_two_places_error(
+    on_path: &str,
+    path_copy: &Path,
+    in_dir: &str,
+    dir_copy: &Path,
+) -> anyhow::Error {
     anyhow::anyhow!(
         "{on_path} is on PATH at {} and {in_dir} is in the Tools Directory at {}. \
          Both must be on PATH or both in the Tools Directory.",
