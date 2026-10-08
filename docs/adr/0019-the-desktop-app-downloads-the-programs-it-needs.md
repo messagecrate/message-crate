@@ -89,7 +89,7 @@ run a version no release was tested with.
 
 ## Amended 2026-10-08: wtsexporter comes from Message Crate's fork
 
-The text above is kept as it was decided. Since 2026-10-02, the wtsexporter
+The text above is kept as it was decided. Since #2001, the wtsexporter
 the app downloads is a pinned release of Message Crate's fork,
 `messagecrate/WhatsApp-Chat-Exporter`, and not of
 `KnugiHK/WhatsApp-Chat-Exporter`. The fork adds to its JSON who sent each
