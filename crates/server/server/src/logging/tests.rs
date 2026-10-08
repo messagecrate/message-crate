@@ -147,6 +147,37 @@ fn the_subscriber_writes_lines_the_reader_reads_back() {
     );
 }
 
+/// The desktop app writes each Import Run's log with
+/// `message_crate_log_lines::format_lines`: a line it writes is the line the
+/// subscriber writes for the same time, level and text, and the server's
+/// reader reads it back.
+#[test]
+fn a_line_the_desktop_app_writes_is_a_line_the_subscriber_writes() {
+    let tmp = TempDir::new().unwrap();
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    tracing::subscriber::with_default(super::subscriber_for(files, "info"), || {
+        tracing::warn!("Did not upload a.jpg");
+    });
+    let number = file_numbers(tmp.path()).unwrap()[0];
+    let written = std::fs::read_to_string(tmp.path().join(file_name(number))).unwrap();
+    let parsed = message_crate_log_lines::parse_line(written.trim_end()).unwrap();
+    assert_eq!(
+        message_crate_log_lines::format_lines(parsed.time, parsed.level, parsed.text),
+        written
+    );
+
+    let run_log = message_crate_log_lines::format_lines(
+        "2026-10-08T12:00:00.123456Z",
+        LogLevel::Error,
+        "chat.jsonl failed: the server refused it",
+    );
+    std::fs::write(tmp.path().join(file_name(number + 1)), run_log).unwrap();
+    let (lines, _) = read_lines(tmp.path(), &query(1)).unwrap();
+    assert_eq!(lines[0].level, LogLevel::Error);
+    assert_eq!(lines[0].time, "2026-10-08T12:00:00.123456Z");
+    assert_eq!(lines[0].text, "chat.jsonl failed: the server refused it");
+}
+
 fn query(limit: usize) -> LogLinesQuery {
     LogLinesQuery {
         limit,

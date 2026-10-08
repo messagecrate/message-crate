@@ -1,18 +1,18 @@
 //! The lines of an Import Run's log, as the desktop app writes them into the
 //! Logs Directory and reads them back.
 //!
-//! Each line starts with its time in UTC (RFC 3339, microseconds) and its
-//! level, then the text, the way the server's own log does
-//! (`docs/architecture/server-log.md`), so one viewer reads both and the
-//! level filter means the same thing in each. Text that holds a line break is
-//! written as one line per part, each with the time and the level, so every
-//! line in the file is whole on its own.
+//! Each line is written and read in the format of the server's own log
+//! (`docs/architecture/server-log.md`), defined once in
+//! `message-crate-log-lines`, so one viewer reads both and the level filter
+//! means the same thing in each. A run log uses three of its levels.
 //!
 //! The first line of a log the desktop app starts says which account ran the
 //! run, on which server, as [`RunLogAccount`]: the listing reads it to show
 //! an account only its own runs' logs.
 
 use std::fmt;
+
+use message_crate_log_lines::{LogLevel, ParsedLine, format_lines, parse_line, time_now};
 
 /// How severe a line of an Import Run's log is.
 #[derive(
@@ -29,52 +29,41 @@ pub enum RunLogLevel {
     Info,
 }
 
-impl RunLogLevel {
-    /// The level as the line writes it, the way `tracing` names it.
-    fn word(self) -> &'static str {
-        match self {
-            Self::Error => "ERROR",
-            Self::Warn => "WARN",
-            Self::Info => "INFO",
+impl From<RunLogLevel> for LogLevel {
+    fn from(level: RunLogLevel) -> Self {
+        match level {
+            RunLogLevel::Error => Self::Error,
+            RunLogLevel::Warn => Self::Warn,
+            RunLogLevel::Info => Self::Info,
         }
     }
+}
 
-    /// The level a line names, or `None` for a word that is not one.
-    fn parse(word: &str) -> Option<Self> {
-        Some(match word {
-            "ERROR" => Self::Error,
-            "WARN" => Self::Warn,
-            "INFO" => Self::Info,
-            _ => return None,
-        })
+impl RunLogLevel {
+    /// The run log's level for a line at `level`, or `None` for `DEBUG` and
+    /// `TRACE`, which a run log never writes.
+    fn from_log_level(level: LogLevel) -> Option<Self> {
+        match level {
+            LogLevel::Error => Some(Self::Error),
+            LogLevel::Warn => Some(Self::Warn),
+            LogLevel::Info => Some(Self::Info),
+            LogLevel::Debug | LogLevel::Trace => None,
+        }
     }
 }
 
 impl fmt::Display for RunLogLevel {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.word())
+        f.write_str(LogLevel::from(*self).word())
     }
 }
 
 /// `text` at `level` as the lines of a run log, each ending in a line break,
-/// stamped with the time now. Empty when `text` holds nothing but white
-/// space, so a blank spacer line is not written.
+/// stamped with the time now ([`message_crate_log_lines::format_lines`]).
+/// Empty when `text` holds nothing but white space, so a blank spacer line is
+/// not written.
 pub fn format_run_log(level: RunLogLevel, text: &str) -> String {
-    let time = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
-    format_run_log_at(&time, level, text)
-}
-
-/// [`format_run_log`] at a fixed `time`, for the tests.
-fn format_run_log_at(time: &str, level: RunLogLevel, text: &str) -> String {
-    let mut out = String::new();
-    for part in text
-        .lines()
-        .map(str::trim_end)
-        .filter(|p| !p.trim().is_empty())
-    {
-        out.push_str(&format!("{time} {:>5} {part}\n", level.word()));
-    }
-    out
+    format_lines(&time_now(), level.into(), text)
 }
 
 /// One line of a run log, read back.
@@ -94,16 +83,20 @@ pub struct RunLogLine {
 /// `raw`, found at byte `offset`, as a line, or `None` when it does not
 /// start with an RFC 3339 time and a level.
 pub fn parse_run_log_line(offset: u64, raw: &str) -> Option<RunLogLine> {
-    let (time, rest) = raw.split_once(' ')?;
-    chrono::DateTime::parse_from_rfc3339(time).ok()?;
-    let rest = rest.trim_start();
-    let (level, text) = rest.split_once(' ').unwrap_or((rest, ""));
-    Some(RunLogLine {
-        id: offset,
-        time: time.to_string(),
-        level: RunLogLevel::parse(level)?,
-        text: text.to_string(),
-    })
+    RunLogLine::from_parsed(offset, &parse_line(raw)?)
+}
+
+impl RunLogLine {
+    /// `line`, found at byte `offset`, as a run log's line, or `None` when it
+    /// is at a level a run log never writes.
+    pub fn from_parsed(offset: u64, line: &ParsedLine<'_>) -> Option<Self> {
+        Some(Self {
+            id: offset,
+            time: line.time.to_string(),
+            level: RunLogLevel::from_log_level(line.level)?,
+            text: line.text.to_string(),
+        })
+    }
 }
 
 /// Which account ran an Import Run, on which server: the first line of the
@@ -150,33 +143,20 @@ impl RunLogAccount {
 mod tests {
     use super::*;
 
-    const TIME: &str = "2026-10-08T12:00:00.123456Z";
-
     #[test]
-    fn a_line_carries_its_time_and_level_and_reads_back() {
-        let text = format_run_log_at(TIME, RunLogLevel::Warn, "Did not upload a.jpg");
-        assert_eq!(text, format!("{TIME}  WARN Did not upload a.jpg\n"));
+    fn a_line_reads_back_at_its_level() {
+        let text = format_run_log(RunLogLevel::Warn, "Did not upload a.jpg");
         let line = parse_run_log_line(9, text.trim_end()).unwrap();
         assert_eq!(line.id, 9);
-        assert_eq!(line.time, TIME);
         assert_eq!(line.level, RunLogLevel::Warn);
         assert_eq!(line.text, "Did not upload a.jpg");
     }
 
     #[test]
-    fn text_over_several_lines_writes_each_with_its_time_and_level() {
-        let text = format_run_log_at(TIME, RunLogLevel::Info, "Summary\n\n  12 messages\n");
-        assert_eq!(
-            text,
-            format!("{TIME}  INFO Summary\n{TIME}  INFO   12 messages\n")
-        );
-        assert_eq!(format_run_log_at(TIME, RunLogLevel::Info, "  "), "");
-    }
-
-    #[test]
-    fn a_line_with_no_time_or_level_is_not_a_line() {
+    fn a_line_at_a_level_a_run_log_never_writes_is_not_a_run_log_line() {
+        let debug = format_lines("2026-10-08T12:00:00.123456Z", LogLevel::Debug, "x");
+        assert_eq!(parse_run_log_line(0, debug.trim_end()), None);
         assert_eq!(parse_run_log_line(0, "Conversations: 3"), None);
-        assert_eq!(parse_run_log_line(0, &format!("{TIME} DEBUG x")), None);
     }
 
     #[test]

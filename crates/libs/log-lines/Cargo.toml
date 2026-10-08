@@ -1,0 +1,23 @@
+[package]
+name = "message-crate-log-lines"
+version = "0.1.0"
+edition = "2024"
+description = "The line format of Message Crate's logs: how a line is written, read back, and paged newest first"
+license = "LicenseRef-FCL-1.0-ALv2"
+
+[dependencies]
+chrono = { workspace = true }
+serde = { workspace = true }
+utoipa = { version = "6", optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+# The server turns this on so `LogLevel` describes itself in the OpenAPI
+# document. The desktop app's crates leave it off and never build utoipa.
+default = []
+schema = ["dep:utoipa"]
+
+[lints]
+workspace = true

@@ -9,6 +9,7 @@ description = "Shared export pipeline, jobs, and form model for the Message Crat
 anyhow = { workspace = true }
 chrono = { workspace = true }
 message-csv = { path = "../../libs/csv", optional = true }
+message-crate-log-lines = { path = "../../libs/log-lines" }
 message-ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }

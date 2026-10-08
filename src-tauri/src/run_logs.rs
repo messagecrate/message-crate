@@ -8,16 +8,20 @@
 //! as one a run left before that line was written, is the owner's alone.
 //!
 //! The lines are read the way the server's log is read
-//! (`docs/architecture/server-log.md`): newest first, filtered by level and
-//! text, a page at a time from the id of the last line held. A line's id is
-//! its byte offset in the file, which never moves, because a log is only ever
-//! appended to.
+//! (`docs/architecture/server-log.md`), with the same reader
+//! (`message-crate-log-lines`): newest first, walking back from the id of the
+//! last line held a chunk at a time, filtered by level and text. A line's id
+//! is its byte offset in the file, which never moves, because a log is only
+//! ever appended to. A line still being written, with no line break yet, is
+//! left out until it is whole.
 
 use std::fs;
 use std::io::{self, Read as _};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
 use message_crate_core::{RunLogAccount, RunLogLevel, RunLogLine, parse_run_log_line};
+use message_crate_log_lines::{LineFilter, lines_backward, parse_line};
 use serde::{Deserialize, Serialize};
 
 /// How many lines at the start of a log are read for its account line.
@@ -157,37 +161,31 @@ pub fn read_lines(
     name: &str,
     query: &LinesQuery,
 ) -> Result<LinesPage, String> {
-    let text = read_whole(logs_dir, reader, name)?;
+    let path = readable_log(logs_dir, reader, name)?;
+    let could_not_read = |error: io::Error| format!("Could not read {name}: {error}");
+    let mut file = fs::File::open(&path).map_err(could_not_read)?;
+    let len = file.metadata().map_err(could_not_read)?.len();
+    let end = query.after.map_or(len, |after| after.min(len));
     let limit = query.limit.clamp(1, MAX_LIMIT);
-    let needle = query
-        .text
-        .as_deref()
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_lowercase);
-    let mut matching: Vec<RunLogLine> = Vec::new();
-    let mut offset = 0u64;
-    for raw in text.split_inclusive('\n') {
-        let start = offset;
-        offset += raw.len() as u64;
-        if query.after.is_some_and(|after| start >= after) {
-            break;
-        }
-        let Some(line) = parse_run_log_line(start, raw.trim_end_matches(['\n', '\r'])) else {
-            continue;
+    let filter = LineFilter::new(query.level.map(Into::into), query.text.as_deref());
+    let mut items: Vec<RunLogLine> = Vec::new();
+    lines_backward(&mut file, end, |offset, raw| {
+        let Some(line) = parse_line(raw)
+            .filter(|line| filter.matches(line))
+            .and_then(|line| RunLogLine::from_parsed(offset, &line))
+        else {
+            return ControlFlow::Continue(());
         };
-        if query.level.is_some_and(|level| line.level > level) {
-            continue;
+        items.push(line);
+        if items.len() > limit {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
         }
-        if let Some(needle) = &needle
-            && !line.text.to_lowercase().contains(needle.as_str())
-        {
-            continue;
-        }
-        matching.push(line);
-    }
-    let has_more = matching.len() > limit;
-    let items = matching.into_iter().rev().take(limit).collect();
+    })
+    .map_err(could_not_read)?;
+    let has_more = items.len() > limit;
+    items.truncate(limit);
     Ok(LinesPage {
         items,
         limit,

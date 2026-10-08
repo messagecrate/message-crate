@@ -233,3 +233,27 @@ fn a_run_log_is_still_listed_and_read_after_the_run_s_directory_is_deleted() {
     .unwrap();
     assert_eq!(page.items[0].text, "Conversations: 3");
 }
+
+#[test]
+fn a_line_still_being_written_is_left_out_of_the_page() {
+    let logs = tempfile::tempdir().unwrap();
+    let run_dir = Path::new("/staging/staging-sms-261006-120000");
+    RunLog::open(logs.path(), run_dir).line("Uploaded chat-1.jsonl");
+    let path = import_run_log(logs.path(), run_dir);
+    let mut text = fs::read_to_string(&path).unwrap();
+    text.push_str("2026-10-08T12:00:00.123456Z  INFO Uploaded cha");
+    fs::write(&path, text).unwrap();
+
+    let page = read_lines(
+        logs.path(),
+        &owner(),
+        "import-sms-261006-120000.log",
+        &LinesQuery {
+            limit: 10,
+            ..LinesQuery::default()
+        },
+    )
+    .unwrap();
+    let texts: Vec<_> = page.items.iter().map(|line| line.text.as_str()).collect();
+    assert_eq!(texts, ["Uploaded chat-1.jsonl"]);
+}
