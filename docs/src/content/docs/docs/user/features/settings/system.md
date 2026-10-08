@@ -53,7 +53,9 @@ When it is on, Import restores the last backup path used for each import source.
 One line per program reports the result:
 
 - A check mark with `Found ffmpeg` and the full path of the program.
-- A cross with `ffmpeg not found` and the Tools Directory to put it in.
+- A cross with `<program> not found` and where to put it.
+  A missing ffmpeg or ffprobe goes beside the other one, or both go in the Tools Directory, because the two are used only from one place.
+  A missing wtsexporter goes in the Tools Directory.
 - A cross with `<program> not used` and the reason.
   For ffmpeg and ffprobe, the reason is that they were found in two places, one only on `PATH` and the other only in the Tools Directory.
   For wtsexporter, the reason is that it has no permission to run.
