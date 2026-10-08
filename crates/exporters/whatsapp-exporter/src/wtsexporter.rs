@@ -8,7 +8,17 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-const PINNED_HINT: &str = "whatsapp-chat-exporter>=0.13";
+/// How to install the `wtsexporter` Message Crate reads: its fork at release
+/// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
+/// ids a quoted reply is linked by. Upstream records neither. The tag archive
+/// rather than a `git+` URL, so no Git is needed; `--force`, so an upstream
+/// `wtsexporter` already installed under the same name is replaced; double
+/// quotes, which cmd, PowerShell and bash all accept.
+const PINNED_HINT: &str = r#"pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz""#;
+
+/// The other way to get `wtsexporter`: a `wtsexporter_<platform>` file from the
+/// same release, renamed to the name `resolve_wtsexporter` looks for.
+const RELEASE_FILE_HINT: &str = "a wtsexporter_<platform> file from the messagecrate/WhatsApp-Chat-Exporter 0.13.0-mc.2 release, renamed to wtsexporter (wtsexporter.exe on Windows) and made executable (chmod +x on Linux and macOS)";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Platform {
@@ -71,7 +81,7 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
         }
         bail!(
             "WTSEXPORTER is set but not a file: {}. Install with \
-             pip install '{PINNED_HINT}' or place the release binary in cli/ next to this tool.",
+             `{PINNED_HINT}`, or put {RELEASE_FILE_HINT} in cli/ next to the app.",
             path.display()
         );
     }
@@ -113,9 +123,8 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
     }
 
     bail!(
-        "Could not find {executable}. Install with: pip install '{PINNED_HINT}' \
-         (or pip install 'whatsapp-chat-exporter[android_backup,crypt15]'), \
-         put the KnugiHK release binary in cli/ next to this tool / in MESSAGE_CRATE_BIN, \
+        "Could not find {executable}. Install with `{PINNED_HINT}`, \
+         put {RELEASE_FILE_HINT} in cli/ next to the app or in MESSAGE_CRATE_BIN, \
          or set WTSEXPORTER. Tried: {}",
         tried
             .iter()
@@ -153,9 +162,11 @@ pub(crate) fn run_wtsexporter(
         .output()
         .map_err(|err| {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
-                " (often a broken pipx/venv shim: the script exists but its Python interpreter does not — try `pipx reinstall whatsapp-chat-exporter` or set WTSEXPORTER to a working binary)"
+                format!(
+                    " (often a broken pipx/venv shim: the script exists but its Python interpreter does not. Run `pipx uninstall whatsapp-chat-exporter`, then `{PINNED_HINT}`; an older pipx cannot repair the broken venv in place. Or set WTSEXPORTER to a working binary)"
+                )
             } else {
-                ""
+                String::new()
             };
             anyhow::anyhow!("spawn {}: {err}{hint}", bin.display())
         })?;

@@ -338,9 +338,12 @@ nvm use 22
 
 **4. Optional helpers**
 
+`wtsexporter` comes from Message Crate's fork at release `0.13.0-mc.2`, because
+only the fork records the ids a WhatsApp reply is linked by.
+
 ```bash
 sudo apt install -y pipx && pipx ensurepath
-pipx install 'whatsapp-chat-exporter[android_backup,crypt15]'   # wtsexporter
+pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz"   # wtsexporter
 pipx install sqlite-web                                          # --sqlweb on port 8081
 cargo install cargo-llvm-cov --locked                             # ./scripts/coverage.sh
 cargo install cargo-mutants cargo-nextest --locked                # ./scripts/mutants.sh
