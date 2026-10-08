@@ -230,8 +230,8 @@ The approve button says what happens next: **Upload to Message Crate**, **Conver
 It stays disabled while an export or a conversion runs, since the desktop app runs one job at a time, and names the job it waits for.
 **Cancel this import** ends the run and deletes its directory.
 
-When **Convert** or **Compress & Convert** is chosen and ffmpeg can't be found, the approve button is disabled and the row says so.
-[Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) says where the ffmpeg directory is set.
+When **Convert** or **Compress & Convert** is chosen and ffmpeg or ffprobe can't be used, the approve button is disabled and the row names the program.
+[Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) says where the app looks for it.
 
 ### Media
 

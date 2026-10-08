@@ -109,10 +109,9 @@ A run can't be cancelled while `wtsexporter` is working. It ends when the progra
 Two of the **Attachments** choices on the Import form run `ffmpeg` and `ffprobe`, which the desktop app doesn't include.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) has the install commands.
 
-In the desktop app, **Settings → System** has **ffmpeg directory** under **Media**.
-Left empty, the app looks on the system `PATH`.
-A directory entered there must hold both programs.
-The lines under the field report each program as found, with its path, or not found.
+In the desktop app, **Settings → System** shows the Tools Directory under **Media**.
+The app looks on the system `PATH`, then in the Tools Directory, and takes both programs from the same one.
+The lines there report each program as found, with its path, not found, or not used, with the reason.
 
 ## Convert
 
