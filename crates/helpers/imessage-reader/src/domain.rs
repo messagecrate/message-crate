@@ -214,6 +214,7 @@ fn decrypt_to(backup: &Backup, file_id: &str, target: &Path) -> Result<(), Runti
 mod tests {
     use super::{decrypt_domain, domain_files, list_domain, open, target_path, total_bytes};
     use crate::error::IOS_BACKUP_PASSWORD_INCORRECT;
+    use chat_db_fixture::ios_backup::{BackupFile, Encryption, system_temp_turn, write_backup};
     use imessage_reader_protocol::BackupDomainRequest;
     use rusqlite::Connection;
     use std::{
@@ -266,6 +267,19 @@ mod tests {
         }
     }
 
+    /// One file of the made-up backup.
+    fn file<'a>(
+        domain: &'a str,
+        relative_path: &'a str,
+        bytes: Option<&'a [u8]>,
+    ) -> BackupFile<'a> {
+        BackupFile {
+            domain,
+            relative_path,
+            bytes,
+        }
+    }
+
     fn request(backup: &Path, password: &str, out: &Path) -> BackupDomainRequest {
         BackupDomainRequest {
             backup_path: backup.to_path_buf(),
@@ -282,26 +296,19 @@ mod tests {
     /// skipped rather than ending the run.
     #[test]
     fn an_encrypted_backup_gives_up_the_domain_and_nothing_else() {
+        let _turn = system_temp_turn();
         let backup = tempfile::tempdir().unwrap();
         let photo = vec![7u8; 100_000];
-        encrypted::write_backup(
+        write_backup(
             backup.path(),
-            "secret",
             &[
-                (
-                    DOMAIN,
-                    "ChatStorage.sqlite",
-                    Some(b"the database".as_slice()),
-                ),
-                (DOMAIN, "Message/Media/photo.jpg", Some(photo.as_slice())),
-                (DOMAIN, "Message/Media/empty.txt", Some(b"".as_slice())),
-                (DOMAIN, "Message/Media/gone.jpg", None),
-                (
-                    "HomeDomain",
-                    "Library/SMS/sms.db",
-                    Some(b"messages".as_slice()),
-                ),
+                file(DOMAIN, "ChatStorage.sqlite", Some(b"the database")),
+                file(DOMAIN, "Message/Media/photo.jpg", Some(&photo)),
+                file(DOMAIN, "Message/Media/empty.txt", Some(b"")),
+                file(DOMAIN, "Message/Media/gone.jpg", None),
+                file("HomeDomain", "Library/SMS/sms.db", Some(b"messages")),
             ],
+            Encryption::Password("secret"),
         );
         let out = tempfile::tempdir().unwrap();
         let request = request(backup.path(), "secret", out.path());
@@ -335,167 +342,13 @@ mod tests {
 
     #[test]
     fn a_wrong_password_is_refused_in_the_apps_words() {
+        let _turn = system_temp_turn();
         let backup = tempfile::tempdir().unwrap();
-        encrypted::write_backup(backup.path(), "secret", &[]);
+        write_backup(backup.path(), &[], Encryption::Password("secret"));
         let out = tempfile::tempdir().unwrap();
         let Err(err) = open(&request(backup.path(), "wrong", out.path())) else {
             panic!("a wrong password opened the backup");
         };
         assert_eq!(err.to_string(), IOS_BACKUP_PASSWORD_INCORRECT);
-    }
-
-    /// Writes an encrypted iPhone backup, small and made up, in the layout
-    /// `crabapple` reads: a key bag whose one class key is wrapped with the
-    /// password-derived key, a `Manifest.db` encrypted under that class, and
-    /// each file encrypted under its own wrapped key.
-    mod encrypted {
-        use aes_kw::{KeyInit, KwAes256};
-        use crabapple::backup::crypto::{aes_encrypt_cbc_with_padding, derive_key_from_password};
-        use plist::{Dictionary, Uid, Value};
-        use rusqlite::Connection;
-        use std::{fs, path::Path};
-
-        const CLASS: u32 = 3;
-        const CLASS_KEY: [u8; 32] = [0x11; 32];
-        const MANIFEST_KEY: [u8; 32] = [0x22; 32];
-        const FILE_KEY: [u8; 32] = [0x33; 32];
-
-        /// One file: domain, path inside it, and its bytes (`None` lists the
-        /// file in the manifest and leaves its bytes out of the backup).
-        pub(super) type File<'a> = (&'a str, &'a str, Option<&'a [u8]>);
-
-        pub(super) fn write_backup(root: &Path, password: &str, files: &[File<'_>]) {
-            let (dpsl, salt) = (b"dpsl-salt".as_slice(), b"salt".as_slice());
-            let master = derive_key_from_password(password.as_bytes(), dpsl, 2, salt, 2).unwrap();
-
-            let mut bag = Vec::new();
-            tlv(&mut bag, b"TYPE", &1u32.to_be_bytes());
-            tlv(&mut bag, b"UUID", &[0xAA; 16]);
-            tlv(&mut bag, b"WRAP", &0u32.to_be_bytes());
-            tlv(&mut bag, b"DPSL", dpsl);
-            tlv(&mut bag, b"DPIC", &2u32.to_be_bytes());
-            tlv(&mut bag, b"SALT", salt);
-            tlv(&mut bag, b"ITER", &2u32.to_be_bytes());
-            tlv(&mut bag, b"UUID", &[0xBB; 16]);
-            tlv(&mut bag, b"CLAS", &CLASS.to_be_bytes());
-            tlv(&mut bag, b"WRAP", &2u32.to_be_bytes());
-            tlv(&mut bag, b"WPKY", &wrap(master.as_ref(), &CLASS_KEY));
-
-            let mut lockdown = Dictionary::new();
-            for key in [
-                "BuildVersion",
-                "DeviceName",
-                "ProductType",
-                "ProductVersion",
-                "SerialNumber",
-                "UniqueDeviceID",
-            ] {
-                lockdown.insert(key.into(), Value::String("test".into()));
-            }
-            let mut manifest = Dictionary::new();
-            manifest.insert("IsEncrypted".into(), Value::Boolean(true));
-            manifest.insert("BackupKeyBag".into(), Value::Data(bag));
-            manifest.insert(
-                "ManifestKey".into(),
-                Value::Data(class_wrapped(&MANIFEST_KEY)),
-            );
-            manifest.insert("Lockdown".into(), Value::Dictionary(lockdown));
-            manifest.insert("Applications".into(), Value::Dictionary(Dictionary::new()));
-            Value::Dictionary(manifest)
-                .to_file_binary(root.join("Manifest.plist"))
-                .unwrap();
-
-            let plain_db = root.join("Manifest.plain.db");
-            let db = Connection::open(&plain_db).unwrap();
-            db.execute_batch(
-                "CREATE TABLE Files (fileID TEXT PRIMARY KEY, domain TEXT, relativePath TEXT,
-                                     flags INTEGER, file BLOB);",
-            )
-            .unwrap();
-            for (index, (domain, path, bytes)) in files.iter().enumerate() {
-                let file_id = format!("{index:040x}");
-                let size = bytes.map_or(1, <[u8]>::len) as u64;
-                db.execute(
-                    "INSERT INTO Files VALUES (?1, ?2, ?3, 1, ?4)",
-                    (&file_id, domain, path, metadata(size)),
-                )
-                .unwrap();
-                if let Some(bytes) = bytes {
-                    let directory = root.join(&file_id[..2]);
-                    fs::create_dir_all(&directory).unwrap();
-                    fs::write(directory.join(&file_id), encrypt(bytes, &FILE_KEY)).unwrap();
-                }
-            }
-            drop(db);
-            let plain = fs::read(&plain_db).unwrap();
-            fs::remove_file(&plain_db).unwrap();
-            fs::write(root.join("Manifest.db"), encrypt(&plain, &MANIFEST_KEY)).unwrap();
-        }
-
-        /// A file's `Manifest.db` metadata: the keyed archive iOS writes,
-        /// cut down to the fields `crabapple` reads.
-        fn metadata(size: u64) -> Vec<u8> {
-            let mut file = Dictionary::new();
-            for key in [
-                "LastModified",
-                "Flags",
-                "GroupID",
-                "LastStatusChange",
-                "Birth",
-                "Mode",
-                "InodeNumber",
-            ] {
-                file.insert(key.into(), Value::Integer(1.into()));
-            }
-            file.insert("Size".into(), Value::Integer(size.into()));
-            file.insert("ProtectionClass".into(), Value::Integer(CLASS.into()));
-            file.insert("EncryptionKey".into(), Value::Uid(Uid::new(2)));
-            let mut key = Dictionary::new();
-            key.insert("NS.data".into(), Value::Data(class_wrapped(&FILE_KEY)));
-            let mut top = Dictionary::new();
-            top.insert("root".into(), Value::Uid(Uid::new(1)));
-            let mut archive = Dictionary::new();
-            archive.insert("$top".into(), Value::Dictionary(top));
-            archive.insert(
-                "$objects".into(),
-                Value::Array(vec![
-                    Value::String("$null".into()),
-                    Value::Dictionary(file),
-                    Value::Dictionary(key),
-                ]),
-            );
-            let mut bytes = Vec::new();
-            Value::Dictionary(archive)
-                .to_writer_binary(&mut bytes)
-                .unwrap();
-            bytes
-        }
-
-        /// A key as the backup stores it: the protection class, then the key
-        /// wrapped with that class's key.
-        fn class_wrapped(key: &[u8; 32]) -> Vec<u8> {
-            let mut out = CLASS.to_le_bytes().to_vec();
-            out.extend(wrap(&CLASS_KEY, key));
-            out
-        }
-
-        fn wrap(kek: &[u8], key: &[u8; 32]) -> Vec<u8> {
-            let mut out = [0u8; 40];
-            KwAes256::new_from_slice(kek)
-                .unwrap()
-                .wrap_key(key, &mut out)
-                .unwrap();
-            out.to_vec()
-        }
-
-        fn encrypt(bytes: &[u8], key: &[u8; 32]) -> Vec<u8> {
-            aes_encrypt_cbc_with_padding(bytes, &key.to_vec().into()).unwrap()
-        }
-
-        fn tlv(out: &mut Vec<u8>, tag: &[u8; 4], value: &[u8]) {
-            out.extend(tag);
-            out.extend((value.len() as u32).to_be_bytes());
-            out.extend(value);
-        }
     }
 }

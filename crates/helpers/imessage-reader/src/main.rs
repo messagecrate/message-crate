@@ -54,6 +54,28 @@ fn fail(message: impl ToString) -> ! {
     std::process::exit(1)
 }
 
+/// Keep the temporary files `crabapple` writes in the directory `request`
+/// names: an identities request's or an export's scratch directory, or the
+/// directory a backup domain request decrypts into. A request that decrypts
+/// nothing names none. See [`backup::keep_temporary_files_in`].
+///
+/// It is private to this file, and its one caller is `main`, which calls it
+/// first, before anything has started a thread. That invariant is what the
+/// `unsafe` block below rests on. It is a function of its own, not a call
+/// in each arm of `main`, so a mutation test can remove it and the process
+/// test in `tests/temporary_files.rs` sees the difference.
+fn keep_temporary_files_for(request: &Request) {
+    let dir = match request {
+        Request::Identities(request) => &request.scratch_dir,
+        Request::Export(request) => &request.scratch_dir,
+        Request::BackupDomain(request) => &request.out_dir,
+        Request::Attachment { .. } | Request::DecryptDomain => return,
+    };
+    // SAFETY: this function's one caller, `main`, calls it first, while the
+    // process has one thread.
+    unsafe { backup::keep_temporary_files_in(dir) };
+}
+
 fn main() {
     let stdin = std::io::stdin();
     let mut lines = stdin.lock().lines();
@@ -65,6 +87,7 @@ fn main() {
     let request: Request = serde_json::from_str(&first)
         .unwrap_or_else(|e| fail(format!("the request is not valid JSON: {e}")));
 
+    keep_temporary_files_for(&request);
     match request {
         Request::Identities(request) => {
             let found = identities::identities(request).unwrap_or_else(|e| fail(e));

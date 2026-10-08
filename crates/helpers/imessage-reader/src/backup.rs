@@ -80,6 +80,36 @@ pub(crate) fn restrict_permissions(_file: &File) -> Result<(), RuntimeError> {
     Ok(())
 }
 
+/// Point this process's temporary directory at `dir`, the directory the app
+/// named in the request.
+///
+/// For an identities request or an export, `dir` is the request's own
+/// scratch directory, which the app deletes when the request ends. For a
+/// backup domain request it is the `out_dir` the domain is decrypted into:
+/// the WhatsApp import's work directory under the Scratch Directory, which
+/// the import deletes when it ends.
+///
+/// `crabapple` decrypts an encrypted backup's `Manifest.db` to one fixed name
+/// in the temporary directory, `crabapple-Manifest.db`, and removes it when
+/// the backup is dropped. Left at the system's temporary directory, two
+/// readers running at once write over each other's copy, and the decrypted
+/// manifest lands outside the directory the app deletes, where a reader that
+/// stops on an error while it holds the backup (`std::process::exit`, which
+/// drops nothing) leaves it.
+///
+/// # Safety
+///
+/// Changes the environment, so it must run while the process has one
+/// thread: `main` calls it before anything else.
+pub(crate) unsafe fn keep_temporary_files_in(dir: &Path) {
+    // `std::env::temp_dir` reads TMPDIR on Unix and TMP, then TEMP, on
+    // Windows.
+    for name in ["TMPDIR", "TMP", "TEMP"] {
+        // SAFETY: the caller runs this while the process has one thread.
+        unsafe { std::env::set_var(name, dir) };
+    }
+}
+
 /// Open the iOS backup using the password from options when encrypted.
 ///
 /// Returns `Ok(None)` for non-iOS platforms or unencrypted iOS backups.
