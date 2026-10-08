@@ -48,7 +48,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -131,22 +132,6 @@ released versions carry their date on the heading.
   Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
-
-- 2026-10-07: **A message recovered between two backups loses its Deleted
-  mark.** A message marked Deleted in the source app or Unsent kept the mark
-  after a newer backup that no longer marked it was imported, and when one
-  import held two backups of the same phone, the first file read decided the
-  mark and the other file's mark was lost. The newer backup now decides the
-  mark, mark or no mark, in one import or two and in either order. A backup
-  that records no date still only adds a mark and never clears one.
-
-- 2026-10-07: **A message unsent in part after the older backup takes the
-  newer backup's text.** When a newer backup of the same phone showed a part
-  of a message unsent and another part edited, the message kept the older
-  backup's text and earlier versions, because their edit times looked newer.
-  The newer backup now gives the message its text, earlier versions and
-  Unsent mark, whatever the edit times say. Between backups that record no
-  date, the copy with the newer edit still gives the text.
 
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored
