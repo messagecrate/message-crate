@@ -801,6 +801,7 @@ describe("ImportFormFields programs the import needs", () => {
   const found = (path: string): ToolStatus => ({ state: "found", path });
   const status = (over: Partial<ToolsStatus>): ToolsStatus => ({
     toolsDir: "/home/sam/message-crate/tools",
+    checking: false,
     ffmpeg: found("/usr/bin/ffmpeg"),
     ffprobe: found("/usr/bin/ffprobe"),
     wtsexporter: found("/home/sam/message-crate/tools/wtsexporter"),
@@ -887,6 +888,19 @@ describe("ImportFormFields programs the import needs", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     expect(importButton()).toBeEnabled();
+  });
+
+  it("keeps asking while the start-up check runs, and unblocks once wtsexporter arrives", async () => {
+    desktop.isTauri = true;
+    // Read before the check has looked at wtsexporter: missing, and checking.
+    desktop.toolsStatus
+      .mockResolvedValueOnce(status({ checking: true, wtsexporter: { state: "missing" } }))
+      .mockResolvedValue(status({}));
+    renderForm(readyWhatsapp);
+
+    expect(await screen.findByText(/wtsexporter hasn't been downloaded/)).toBeTruthy();
+    expect(importButton()).toBeDisabled();
+    await waitFor(() => expect(importButton()).toBeEnabled(), { timeout: 3000 });
   });
 
   it("lets a WhatsApp import start once wtsexporter is found, and says nothing", async () => {

@@ -4,12 +4,13 @@ import { keys } from "./queryKeys";
 import { invokeRetryToolDownloads, invokeToolsStatus, toolsDownloading } from "./tauri";
 import { isTauri } from "./tauri-check";
 
-/** How often the window asks the desktop process again while a download runs. */
-export const DOWNLOAD_POLL_MS = 1000;
+/** How often the window asks the desktop process again while a check or a download runs. */
+const DOWNLOAD_POLL_MS = 1000;
 
 /**
  * Where ffmpeg, ffprobe and wtsexporter are and how their downloads stand,
- * asked again each second while a download runs. Settings and the Import
+ * asked again each second while a check or a download runs: a program the
+ * check has not looked at yet shows as missing until it does. Settings and the Import
  * screen read the same entry. It belongs to this computer, not to an account,
  * so this is a plain `useQuery`; the browser has no desktop process to ask.
  */
@@ -20,7 +21,9 @@ export function useToolsStatus() {
     enabled: isTauri(),
     retry: false,
     refetchInterval: (query) =>
-      query.state.data && toolsDownloading(query.state.data) ? DOWNLOAD_POLL_MS : false,
+      query.state.data && (query.state.data.checking || toolsDownloading(query.state.data))
+        ? DOWNLOAD_POLL_MS
+        : false,
   });
 }
 

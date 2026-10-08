@@ -85,6 +85,10 @@ impl ToolStatus {
 pub struct ToolsStatus {
     /// The Tools Directory, `None` when the app has none (no home directory).
     pub tools_dir: Option<String>,
+    /// Whether a check of the Tools Directory runs in this process now, the
+    /// start-up check or Try again. A program it has not looked at yet shows
+    /// as missing, so the window keeps asking while this is true.
+    pub checking: bool,
     /// ffmpeg, from `PATH` or the Tools Directory.
     pub ffmpeg: ToolStatus,
     /// ffprobe, from `PATH` or the Tools Directory.
@@ -203,6 +207,7 @@ fn tools_status_with(downloads: &ToolDownloads) -> ToolsStatus {
     };
     ToolsStatus {
         tools_dir: media::tools_dir().map(|dir| dir.display().to_string()),
+        checking: downloads.checking(),
         ffmpeg: ffmpeg.with_download(downloads.get(Program::Ffmpeg)),
         ffprobe: ffprobe.with_download(downloads.get(Program::Ffprobe)),
         wtsexporter: wtsexporter.with_download(downloads.get(Program::Wtsexporter)),
@@ -218,6 +223,7 @@ mod tests {
     fn a_status_is_sent_as_its_state_and_path() {
         let status = ToolsStatus {
             tools_dir: Some("/home/sam/message-crate/tools".into()),
+            checking: true,
             ffmpeg: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffmpeg"))),
             ffprobe: ToolStatus::of(Some(PathBuf::from("/usr/bin/ffprobe"))),
             wtsexporter: ToolStatus::of(None),
@@ -226,6 +232,7 @@ mod tests {
             serde_json::to_value(&status).unwrap(),
             serde_json::json!({
                 "toolsDir": "/home/sam/message-crate/tools",
+                "checking": true,
                 "ffmpeg": { "state": "found", "path": "/usr/bin/ffmpeg" },
                 "ffprobe": { "state": "found", "path": "/usr/bin/ffprobe" },
                 "wtsexporter": { "state": "missing" },

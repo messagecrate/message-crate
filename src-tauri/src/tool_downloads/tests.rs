@@ -1061,3 +1061,69 @@ fn a_program_found_in_place_clears_an_earlier_failure() {
 
     assert_eq!(downloads.get(Program::Wtsexporter), None);
 }
+
+/// A check counts as running from Try again until it ends, so the window,
+/// which shows a program the check has not looked at yet as missing, keeps
+/// asking for the status meanwhile.
+#[test]
+fn a_check_counts_as_running_until_it_ends() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(200))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+    assert!(!downloads.checking());
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[],
+    )
+    .expect("a check started");
+    assert!(downloads.checking(), "Try again's check is not running");
+    check.join().unwrap();
+
+    assert!(!downloads.checking(), "the check still runs after it ended");
+}
+
+/// A check whose thread panics partway through a download leaves no program
+/// downloading: the program it marked fails as interrupted, and an import
+/// waiting for it wakes with that reason instead of waiting until Cancel.
+#[test]
+fn a_check_that_panics_mid_download_fails_the_download() {
+    let downloads = ToolDownloads::default();
+    let mut run = downloads.begin_check();
+    run.mark_downloading(Program::Wtsexporter);
+
+    let (panicked, waited) = std::thread::scope(|scope| {
+        let check = scope.spawn(move || {
+            let _run = run;
+            std::thread::sleep(Duration::from_millis(50));
+            panic!("the fake download panics");
+        });
+        let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {});
+        (check.join().is_err(), waited)
+    });
+
+    assert!(panicked);
+    assert_eq!(
+        waited,
+        Err(WaitError::Failed {
+            program: Program::Wtsexporter,
+            reason: "The download was interrupted.".into(),
+        })
+    );
+    assert!(!downloads.checking());
+}

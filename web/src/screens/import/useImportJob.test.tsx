@@ -262,6 +262,7 @@ const MIB = 1024 * 1024;
 function okProbe(): ToolsStatus {
   return {
     toolsDir: "/home/demo/message-crate/tools",
+    checking: false,
     ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
     ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
     wtsexporter: { state: "missing" },

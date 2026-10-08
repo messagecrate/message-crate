@@ -47,6 +47,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -372,6 +373,9 @@ pub enum DownloadError {
     CouldNotWrite(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
+    /// The check stopped partway through the download, such as on a panic
+    /// in its thread, so the download never ended.
+    Interrupted,
 }
 
 impl fmt::Display for DownloadError {
@@ -408,6 +412,7 @@ impl fmt::Display for DownloadError {
                 "wtsexporter in the Tools Directory doesn't run on this computer. \
                  See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app."
             ),
+            Self::Interrupted => f.write_str("The download was interrupted."),
         }
     }
 }
@@ -562,11 +567,64 @@ pub enum DownloadState {
 #[derive(Debug, Clone, Default)]
 pub struct ToolDownloads(Arc<Shared>);
 
-/// The states, and the signal a waiting import hears when one changes.
+/// The states, the signal a waiting import hears when one changes, and how
+/// many checks run in this process.
 #[derive(Debug, Default)]
 struct Shared {
     states: Mutex<HashMap<Program, DownloadState>>,
     changed: Condvar,
+    checks: AtomicUsize,
+}
+
+/// One check in this process, from the moment it is started until it ends,
+/// owned by the thread that runs it.
+///
+/// While one exists [`ToolDownloads::checking`] says so, and the window
+/// keeps asking for the status, because a program the check has not yet
+/// looked at shows as missing. When it is dropped, at the end of the check
+/// or on a panic in its thread, every program it marked as downloading that
+/// still is becomes failed with [`DownloadError::Interrupted`], so an
+/// import waiting for one wakes and the Import form offers Try again.
+#[derive(Debug)]
+struct CheckRun {
+    downloads: ToolDownloads,
+    marked: Vec<Program>,
+}
+
+impl CheckRun {
+    /// Show `program` as downloading, with nothing received yet.
+    fn mark_downloading(&mut self, program: Program) {
+        self.downloads.set(
+            program,
+            DownloadState::Downloading {
+                received: 0,
+                total: None,
+            },
+        );
+        if !self.marked.contains(&program) {
+            self.marked.push(program);
+        }
+    }
+}
+
+impl Drop for CheckRun {
+    fn drop(&mut self) {
+        {
+            let mut states = self.downloads.states();
+            for program in &self.marked {
+                if matches!(states.get(program), Some(DownloadState::Downloading { .. })) {
+                    states.insert(
+                        *program,
+                        DownloadState::Failed {
+                            reason: DownloadError::Interrupted.to_string(),
+                        },
+                    );
+                }
+            }
+        }
+        self.downloads.0.checks.fetch_sub(1, Ordering::SeqCst);
+        self.downloads.0.changed.notify_all();
+    }
 }
 
 /// How often an import waiting for a download looks at its cancel flag when
@@ -576,6 +634,22 @@ const WAIT_TICK: Duration = Duration::from_millis(250);
 impl ToolDownloads {
     fn states(&self) -> std::sync::MutexGuard<'_, HashMap<Program, DownloadState>> {
         self.0.states.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether a check runs in this process now, or has been started and not
+    /// yet taken the lock.
+    pub fn checking(&self) -> bool {
+        self.0.checks.load(Ordering::SeqCst) > 0
+    }
+
+    /// Start a check: [`Self::checking`] holds until the returned run is
+    /// dropped.
+    fn begin_check(&self) -> CheckRun {
+        self.0.checks.fetch_add(1, Ordering::SeqCst);
+        CheckRun {
+            downloads: self.clone(),
+            marked: Vec::new(),
+        }
     }
 
     /// Where `program`'s download stands, if anywhere.
@@ -735,12 +809,17 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// returns at once. When the lock can't be taken because the Tools Directory
 /// can't be written, the check goes on and its downloads say why.
 pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
+    run_check(dir, base, pinned, downloads.begin_check());
+}
+
+/// [`download_missing`], as `run`.
+fn run_check(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
     let lock = match lock_check(dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return,
         Err(_) => None,
     };
-    check(dir, base, pinned, downloads, lock);
+    check(dir, base, pinned, &mut run, lock);
 }
 
 /// Start the check of `dir` again on a thread of its own, as **Try again**
@@ -765,19 +844,13 @@ pub fn retry(
         Ok(None) => return None,
         Err(_) => None,
     };
+    let mut run = downloads.begin_check();
     for pin in pinned.iter().filter(|pin| not_found.contains(&pin.program)) {
-        downloads.set(
-            pin.program,
-            DownloadState::Downloading {
-                received: 0,
-                total: None,
-            },
-        );
+        run.mark_downloading(pin.program);
     }
-    let check_downloads = downloads.clone();
     let spawned = std::thread::Builder::new()
         .name("tool-downloads-retry".into())
-        .spawn(move || check(&dir, &base, &pinned, &check_downloads, lock));
+        .spawn(move || check(&dir, &base, &pinned, &mut run, lock));
     match spawned {
         Ok(handle) => Some(handle),
         Err(err) => {
@@ -794,17 +867,13 @@ pub fn retry(
     }
 }
 
-/// The check [`download_missing`] and [`retry`] run, holding `_lock`, or no
-/// lock when the Tools Directory can't be written. Every pinned program ends
-/// with its state decided: none when it is in place and runs, failed with
-/// the reason otherwise.
-fn check(
-    dir: &Path,
-    base: &str,
-    pinned: &[Pinned],
-    downloads: &ToolDownloads,
-    _lock: Option<File>,
-) {
+/// The check [`download_missing`] and [`retry`] run as `run`, holding
+/// `_lock`, or no lock when the Tools Directory can't be written. Every
+/// pinned program ends with its state decided: none when it is in place and
+/// runs, failed with the reason otherwise.
+fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: Option<File>) {
+    let downloads = run.downloads.clone();
+    let downloads = &downloads;
     delete_leftovers(dir);
     let ffmpeg_on_path = media::ffmpeg_on_path();
     let mut manifest = read_manifest(dir);
@@ -840,13 +909,7 @@ fn check(
     // first request, so Settings opened while a connection is made, or
     // between two downloads, keeps asking until the last one ends.
     for pin in &wanted {
-        downloads.set(
-            pin.program,
-            DownloadState::Downloading {
-                received: 0,
-                total: None,
-            },
-        );
+        run.mark_downloading(pin.program);
     }
     let fail_all = |err: DownloadError| {
         for pin in &wanted {
@@ -905,11 +968,15 @@ fn check(
 
 /// Start the check of the Tools Directory `dir` on a thread of its own, for
 /// this computer's platform, so login and browsing don't wait for it.
-pub fn start(dir: PathBuf, downloads: ToolDownloads) {
+///
+/// The check counts as running from before the thread starts, so a window
+/// that asks for the status at once keeps asking until the check ends.
+pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
     let pinned = pinned_for(std::env::consts::OS, std::env::consts::ARCH);
+    let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
         .name("tool-downloads".into())
-        .spawn(move || download_missing(&dir, GITHUB, &pinned, &downloads));
+        .spawn(move || run_check(&dir, GITHUB, &pinned, run));
 }
 
 #[cfg(test)]

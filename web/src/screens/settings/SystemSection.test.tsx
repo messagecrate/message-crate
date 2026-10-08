@@ -68,6 +68,7 @@ beforeEach(() => {
   toolsStatus.mockReset();
   toolsStatus.mockResolvedValue({
     toolsDir: "/home/demo/message-crate/tools",
+    checking: false,
     ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
     ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
     wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
@@ -302,6 +303,7 @@ describe("SystemSection", () => {
   it("says which program is missing", async () => {
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "missing" },
       ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
       wtsexporter: { state: "missing" },
@@ -325,6 +327,7 @@ describe("SystemSection", () => {
   it("says to put ffmpeg and ffprobe in the Tools Directory when neither is found", async () => {
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "missing" },
       ffprobe: { state: "missing" },
       wtsexporter: { state: "missing" },
@@ -347,6 +350,7 @@ describe("SystemSection", () => {
       "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is in the Tools Directory at /home/demo/message-crate/tools/ffprobe.";
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "unusable", reason },
       ffprobe: { state: "unusable", reason },
       wtsexporter: { state: "missing" },
@@ -364,9 +368,24 @@ describe("SystemSection", () => {
     expect(media?.querySelector("input")).toBeNull();
   });
 
+  it("asks again while a check runs, so a program it hasn't reached yet shows once it arrives", async () => {
+    toolsStatus.mockResolvedValueOnce({
+      toolsDir: "/home/demo/message-crate/tools",
+      checking: true,
+      ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "missing" },
+    });
+    render(<SystemSection />);
+    expect(await screen.findByLabelText(/wtsexporter not found/)).toBeTruthy();
+    // The next answer, a second later, has wtsexporter in place.
+    expect(await screen.findByLabelText(/Found wtsexporter/i, {}, { timeout: 3000 })).toBeTruthy();
+  });
+
   it("shows a download's progress, and asks again until it ends", async () => {
     toolsStatus.mockResolvedValueOnce({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 29 * 1024 * 1024 },
       ffprobe: { state: "downloading", received: 0, total: null },
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
@@ -383,6 +402,7 @@ describe("SystemSection", () => {
     const reason = "No connection to the download's server: error sending request.";
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
       ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
       wtsexporter: { state: "downloadFailed", reason },

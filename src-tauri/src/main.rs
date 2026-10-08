@@ -60,7 +60,7 @@ fn main() {
             // nothing waits for it (`tool_downloads`).
             if let Some(home) = dirs::home_dir() {
                 let tools = app_directories::use_tools_dir_in(&home);
-                tool_downloads::start(tools, app.state::<ToolDownloads>().inner().clone());
+                tool_downloads::start(tools, app.state::<ToolDownloads>().inner());
             }
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(run_directories::RECORD_FILE);

@@ -505,6 +505,11 @@ export type ToolStatus =
  */
 export interface ToolsStatus {
   toolsDir: string | null;
+  /**
+   * A check of the Tools Directory runs now, the start-up check or Try again.
+   * A program it has not looked at yet shows as missing until it does.
+   */
+  checking: boolean;
   ffmpeg: ToolStatus;
   ffprobe: ToolStatus;
   wtsexporter: ToolStatus;
