@@ -125,9 +125,10 @@ Each version becomes Apache 2.0 two years after its release.
 No. The self-hosted Message Crate is the product, not a trial, and the maintainer keeps their own messages in one.
 
 **Is it secure? Has it been audited?**
-The server has its own login, and security is a design priority, but no third party has audited the code.
-A Message Crate on a home network is reached over plain HTTP.
-Reaching one from the internet needs a reverse proxy with TLS in front of the server, as [Run on another machine](https://messagecrate.app/docs/user/features/owner/run-on-another-machine/) says.
+No third party has audited the code.
+Security is a design priority, but Message Crate is built for a home network, not for the open internet.
+Its login only keeps the accounts on one Message Crate apart, and the Demo Account logs in with an empty password.
+A Message Crate that must be reachable from the internet belongs behind a reverse proxy with TLS and the proxy's own authentication, as [Run on another machine](https://messagecrate.app/docs/user/features/owner/run-on-another-machine/) says.
 
 **Is it finished?**
 No. Message Crate is under heavy development on the way to 1.0.
