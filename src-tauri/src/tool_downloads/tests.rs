@@ -130,8 +130,12 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
     let target = tools.path().join(Program::Wtsexporter.file_name());
     std::fs::write(&target, b"old release").unwrap();
     let (old, _) = pin(Program::Wtsexporter, "r1", b"old release", false);
+    make_executable(&target).unwrap();
     let mut manifest = Manifest::new();
-    manifest.insert(Program::Wtsexporter, Written::of(&old, 11));
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&old, Stamp::at(&target).unwrap()),
+    );
     write_manifest(tools.path(), &manifest).unwrap();
     let (new, new_bytes) = pin(Program::Wtsexporter, "r2", b"new release", false);
     let downloads = ToolDownloads::default();
@@ -174,7 +178,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
     assert_eq!(downloads.get(Program::Wtsexporter), None);
     assert_eq!(
         read_manifest(tools.path()).get(&Program::Wtsexporter),
-        Some(&Written::of(&new, 11))
+        Some(&Written::of(&new, Stamp::at(&target).unwrap()))
     );
     assert_eq!(
         other_files(
@@ -297,13 +301,14 @@ fn the_pinned_program_the_app_wrote_is_kept() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let (pinned, published) = pin(Program::Wtsexporter, "r1", b"pinned", false);
-    std::fs::write(
-        tools.path().join(Program::Wtsexporter.file_name()),
-        b"pinned",
-    )
-    .unwrap();
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinned").unwrap();
+    make_executable(&target).unwrap();
     let mut manifest = Manifest::new();
-    manifest.insert(Program::Wtsexporter, Written::of(&pinned, 6));
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
     write_manifest(tools.path(), &manifest).unwrap();
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
@@ -318,44 +323,128 @@ fn the_pinned_program_the_app_wrote_is_kept() {
     asked.assert_calls(0);
 }
 
-/// ffmpeg put in the Tools Directory by hand and answering `-version` is
-/// left alone; one that does not run is downloaded over.
-#[cfg(unix)]
+/// A file put over the one the app wrote, the same size but not the same
+/// file, is not the app's: its stamp differs, and it is replaced.
 #[test]
-fn ffmpeg_put_there_by_hand_is_kept_while_it_runs() {
+fn a_file_put_over_the_apps_own_is_replaced() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    write_runnable(&tools.path().join("ffmpeg"));
-    std::fs::write(tools.path().join("ffprobe"), b"not a program").unwrap();
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinned").unwrap();
+    make_executable(&target).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+    write_manifest(tools.path(), &manifest).unwrap();
+    // Six other bytes, modified at another time.
+    std::fs::write(&target, b"theirs").unwrap();
+    File::options()
+        .write(true)
+        .open(&target)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(1_000_000))
+        .unwrap();
     let server = MockServer::start();
-    let (ffmpeg, ffmpeg_gz) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(b"ffmpeg"), true);
-    let (ffprobe, ffprobe_gz) = pin(Program::Ffprobe, "b6.1.1", &gzipped(b"ffprobe"), true);
-    let ffmpeg_asked = serve(&server, &ffmpeg, &ffmpeg_gz);
-    serve(&server, &ffprobe, &ffprobe_gz);
+    let asked = serve(&server, &pinned, &published);
 
     download_missing(
         tools.path(),
         &server.base_url(),
-        &[ffmpeg, ffprobe],
+        std::slice::from_ref(&pinned),
         &ToolDownloads::default(),
     );
 
-    ffmpeg_asked.assert_calls(0);
-    assert_eq!(
-        std::fs::read(tools.path().join("ffmpeg")).unwrap(),
-        b"#!/bin/sh\nexit 0\n"
-    );
-    assert_eq!(
-        std::fs::read(tools.path().join("ffprobe")).unwrap(),
-        b"ffprobe"
-    );
+    asked.assert_calls(1);
+    assert_eq!(std::fs::read(&target).unwrap(), b"pinned");
 }
 
-/// wtsexporter put there by hand is kept and recorded when it is the pinned
+/// ffmpeg and ffprobe put in the Tools Directory by hand are replaced by a
+/// good download, even when they run, because the Tools Directory belongs
+/// to the app. With no download to replace them they stay in use.
+#[cfg(unix)]
+#[test]
+fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let theirs = b"#!/bin/sh\n# theirs\nexit 0\n";
+    let ours = b"#!/bin/sh\n# pinned\nexit 0\n";
+    for name in ["ffmpeg", "ffprobe"] {
+        let path = tools.path().join(name);
+        std::fs::write(&path, theirs).unwrap();
+        make_executable(&path).unwrap();
+    }
+    let (ffmpeg, ffmpeg_gz) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(ours), true);
+    let (ffprobe, ffprobe_gz) = pin(Program::Ffprobe, "b6.1.1", &gzipped(ours), true);
+    let downloads = ToolDownloads::default();
+
+    // No network: what is there stays.
+    download_missing(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[ffmpeg.clone(), ffprobe.clone()],
+        &downloads,
+    );
+    for name in ["ffmpeg", "ffprobe"] {
+        assert_eq!(std::fs::read(tools.path().join(name)).unwrap(), theirs);
+    }
+
+    let server = MockServer::start();
+    serve(&server, &ffmpeg, &ffmpeg_gz);
+    serve(&server, &ffprobe, &ffprobe_gz);
+    download_missing(
+        tools.path(),
+        &server.base_url(),
+        &[ffmpeg, ffprobe],
+        &downloads,
+    );
+    for (name, program) in [("ffmpeg", Program::Ffmpeg), ("ffprobe", Program::Ffprobe)] {
+        assert_eq!(std::fs::read(tools.path().join(name)).unwrap(), ours);
+        assert_eq!(downloads.get(program), None);
+    }
+}
+
+/// A pinned file the app recorded that does not run is downloaded again,
+/// and when the download does not run either the failure says so.
+#[cfg(unix)]
+#[test]
+fn a_pinned_program_that_does_not_run_is_downloaded_again() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let not_a_program = b"not a program";
+    let (pinned, published) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(not_a_program), true);
+    let target = tools.path().join("ffmpeg");
+    std::fs::write(&target, not_a_program).unwrap();
+    make_executable(&target).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Ffmpeg,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+    write_manifest(tools.path(), &manifest).unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+
+    download_missing(tools.path(), &server.base_url(), &[pinned], &downloads);
+
+    asked.assert_calls(1);
+    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Ffmpeg) else {
+        panic!(
+            "the download did not fail: {:?}",
+            downloads.get(Program::Ffmpeg)
+        );
+    };
+    assert!(reason.contains("does not run"), "{reason}");
+}
+
+/// A program put there by hand is kept and recorded when it is the pinned
 /// file, and replaced when it is anything else, because its release can't
 /// be told from the file.
 #[test]
-fn wtsexporter_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
+fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let target = tools.path().join(Program::Wtsexporter.file_name());
@@ -373,7 +462,7 @@ fn wtsexporter_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
     asked.assert_calls(0);
     assert_eq!(
         read_manifest(tools.path()).get(&Program::Wtsexporter),
-        Some(&Written::of(&pinned, 6))
+        Some(&Written::of(&pinned, Stamp::at(&target).unwrap()))
     );
     asked.delete();
 

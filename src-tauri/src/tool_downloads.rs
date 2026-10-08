@@ -17,17 +17,20 @@
 //!
 //! Which file in the Tools Directory the app wrote is kept in
 //! [`MANIFEST_FILE`] beside the programs: the release, asset and checksum
-//! of each, with the size of the file written. A file whose size matches
-//! its entry is the app's, and is current when its entry names the pinned
-//! release, so no file is read again at start-up. A file with no entry, or
-//! one whose size has changed, was put there by someone else:
+//! of each, with the file's [`Stamp`]. One rule holds for all three
+//! programs, because the Tools Directory belongs to the app:
 //!
-//! - ffmpeg or ffprobe that answers `-version` is left in place, as one a
-//!   person linked in from Homebrew is.
-//! - wtsexporter is kept only when its SHA-256 is the pinned one, and is
-//!   then entered in the record. Any other wtsexporter is replaced, because
-//!   its release can't be told from the file and the import reads only the
-//!   pinned release's JSON.
+//! - **The pinned one stays.** A file is the pinned one when its entry
+//!   names the pinned release and its stamp is the one recorded, so no file
+//!   is read again at start-up. It stays while it runs; one that does not
+//!   run is downloaded again.
+//! - **A pinned file put there by hand is adopted.** A file with no entry
+//!   whose SHA-256 is the pinned one gets an entry. Only a pin that is not
+//!   gzipped can match, because a gzipped pin's checksum is of the `.gz`.
+//! - **Anything else is replaced** after a good download, whoever put it
+//!   there: a file from an older release, one with no entry, one whose
+//!   stamp changed. Until the download passes, the old file stays in use,
+//!   so with no internet a file put there by hand is still the one used.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
@@ -122,25 +125,66 @@ pub struct Written {
     pub asset: String,
     /// The asset's SHA-256.
     pub sha256: String,
-    /// The size of the program file written, which tells the app's file from
+    /// The program file as it was written, which tells the app's file from
     /// one put over it since.
-    pub size: u64,
+    pub stamp: Stamp,
 }
 
 impl Written {
-    /// What the app records after writing `pinned`'s program, `size` bytes.
-    fn of(pinned: &Pinned, size: u64) -> Self {
+    /// What the app records after writing `pinned`'s program, as `stamp`.
+    fn of(pinned: &Pinned, stamp: Stamp) -> Self {
         Self {
             release: pinned.release.to_string(),
             asset: pinned.asset.to_string(),
             sha256: pinned.sha256.to_string(),
-            size,
+            stamp,
         }
     }
 
     /// Whether this is the file `pinned` publishes.
     fn is(&self, pinned: &Pinned) -> bool {
         self.release == pinned.release && self.asset == pinned.asset && self.sha256 == pinned.sha256
+    }
+}
+
+/// What tells the file the app wrote from another put in its place, without
+/// reading it: a copy of the same size made since has a different modified
+/// time, and on Unix a different inode.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Stamp {
+    /// The file's size in bytes.
+    pub size: u64,
+    /// When the file was last modified, in nanoseconds since 1970, if the
+    /// platform says.
+    pub modified_ns: Option<u64>,
+    /// The file's inode, on Unix.
+    pub inode: Option<u64>,
+}
+
+impl Stamp {
+    /// The stamp of the file `metadata` describes.
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        let inode = {
+            use std::os::unix::fs::MetadataExt;
+            Some(metadata.ino())
+        };
+        #[cfg(not(unix))]
+        let inode = None;
+        Self {
+            size: metadata.len(),
+            modified_ns: metadata
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .and_then(|since| u64::try_from(since.as_nanos()).ok()),
+            inode,
+        }
+    }
+
+    /// The stamp of the file at `path`.
+    fn at(path: &Path) -> io::Result<Self> {
+        std::fs::metadata(path).map(|metadata| Self::of(&metadata))
     }
 }
 
@@ -172,46 +216,62 @@ fn write_manifest(dir: &Path, manifest: &Manifest) -> io::Result<()> {
 /// What the start-up check does with one pinned program.
 #[derive(Debug, PartialEq, Eq)]
 enum Need {
-    /// The file there stays.
+    /// The file there is the pinned one and runs: it stays.
     Keep,
     /// The file there is the pinned one, put there by someone else: it
     /// stays and goes into the record.
-    Adopt(Written),
-    /// The program is downloaded.
+    Adopt,
+    /// The program is downloaded, and replaces whatever is there once the
+    /// download passed.
     Download,
 }
 
 /// What to do about `pinned` in `dir`, given the record.
 fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
     let path = dir.join(pinned.program.file_name());
-    let Ok(metadata) = std::fs::metadata(&path) else {
+    let Ok(stamp) = Stamp::at(&path) else {
         return Need::Download;
     };
     if let Some(written) = manifest.get(&pinned.program)
-        && written.size == metadata.len()
+        && written.is(pinned)
+        && written.stamp == stamp
     {
-        // The app wrote it. A newer pin replaces it, whoever uses it.
-        return if written.is(pinned) {
+        return if runs(pinned.program, dir) {
             Need::Keep
         } else {
             Need::Download
         };
     }
-    match pinned.program {
-        Program::Ffmpeg | Program::Ffprobe => {
-            if media::tool_in_dir(dir, pinned.program.name()).is_some() {
-                Need::Keep
-            } else {
-                Need::Download
-            }
-        }
-        Program::Wtsexporter => match file_sha256(&path) {
-            Ok(sha256) if sha256 == pinned.sha256 => {
-                Need::Adopt(Written::of(pinned, metadata.len()))
-            }
-            _ => Need::Download,
-        },
+    if !pinned.gzip && file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.sha256) {
+        Need::Adopt
+    } else {
+        Need::Download
     }
+}
+
+/// Whether `program` in `dir` runs, as the lookup that uses it decides:
+/// ffmpeg and ffprobe answer `-version` (an answer `media` keeps until the
+/// file changes), and wtsexporter is a file with an executable bit, which
+/// is all its lookup asks because a `pipx` shim is slow to start.
+fn runs(program: Program, dir: &Path) -> bool {
+    match program {
+        Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),
+        Program::Wtsexporter => is_executable(&dir.join(program.file_name())),
+    }
+}
+
+/// Whether the file at `path` is a file with an executable bit.
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+/// Windows runs any `.exe`, so a file is enough.
+#[cfg(not(unix))]
+fn is_executable(path: &Path) -> bool {
+    path.is_file()
 }
 
 /// The SHA-256 of the file at `path`, in lowercase hex.
@@ -247,6 +307,8 @@ pub enum DownloadError {
     },
     /// The file could not be written to the Tools Directory.
     CouldNotWrite(String),
+    /// The file passed its checksum and is in place, and does not run.
+    DoesNotRun,
 }
 
 impl fmt::Display for DownloadError {
@@ -278,6 +340,7 @@ impl fmt::Display for DownloadError {
                     "The file could not be written to the Tools Directory: {why}."
                 )
             }
+            Self::DoesNotRun => write!(f, "The file was downloaded but does not run."),
         }
     }
 }
@@ -377,11 +440,14 @@ fn download(
     program.flush().map_err(write_error)?;
     program.as_file().sync_all().map_err(write_error)?;
     make_executable(program.path()).map_err(write_error)?;
-    let size = program.as_file().metadata().map_err(write_error)?.len();
+    let target = dir.join(pinned.program.file_name());
     program
-        .persist(dir.join(pinned.program.file_name()))
+        .persist(&target)
         .map_err(|err| write_error(err.error))?;
-    Ok(Written::of(pinned, size))
+    // Renaming keeps the size, modified time and inode, so the stamp taken
+    // now is the one the next start sees.
+    let stamp = Stamp::at(&target).map_err(write_error)?;
+    Ok(Written::of(pinned, stamp))
 }
 
 /// Give the file at `path` its executable bits.
@@ -457,10 +523,16 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
         }
         match need(pin, dir, &manifest) {
             Need::Keep => {}
-            Need::Adopt(written) => {
-                let _ = make_executable(&dir.join(pin.program.file_name()));
-                manifest.insert(pin.program, written);
-                let _ = write_manifest(dir, &manifest);
+            Need::Adopt => {
+                let path = dir.join(pin.program.file_name());
+                let _ = make_executable(&path);
+                if let Ok(stamp) = Stamp::at(&path) {
+                    manifest.insert(pin.program, Written::of(pin, stamp));
+                    let _ = write_manifest(dir, &manifest);
+                }
+                if !runs(pin.program, dir) {
+                    wanted.push(pin);
+                }
             }
             Need::Download => wanted.push(pin),
         }
@@ -501,7 +573,16 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
         match download(&client, &pin.url(base), pin, dir, &progress) {
             Ok(written) => {
                 manifest.insert(program, written);
-                downloads.clear(program);
+                if runs(program, dir) {
+                    downloads.clear(program);
+                } else {
+                    downloads.set(
+                        program,
+                        DownloadState::Failed {
+                            reason: DownloadError::DoesNotRun.to_string(),
+                        },
+                    );
+                }
                 if let Err(err) = write_manifest(dir, &manifest) {
                     // The program is in place and works; without the record
                     // the next start takes it as someone else's.
