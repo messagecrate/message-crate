@@ -254,7 +254,7 @@ pub fn transcode_staging(
     );
 
     let app_handle = app.clone();
-    let issues = events::issue_sink(&app);
+    let issues = events::run_issue_sink(&app, &run_log);
     spawn_job(app, job, move || {
         if media_stage_converts {
             events::log_to_run(

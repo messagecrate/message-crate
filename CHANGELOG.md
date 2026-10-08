@@ -21,6 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **Owner Home's Logs shows the server's log and the Import Run
+  logs on this computer.** The owner picks the server's log or, in the
+  desktop app, any Import Run's log on this computer, whoever ran it. An
+  account opens its own run's log from the run's row in Settings → Storage,
+  in the desktop app on the computer that ran the import. Both read the same
+  way: newest line first, older lines as the list scrolls, a level filter
+  (errors, warnings and up, or everything; it opens at warnings and up), a
+  search that narrows the lines as it is typed, and a download of the log as
+  it is. Each line of an Import Run's log now carries its time and level, the
+  run's Import Errors rows are in it, and its first line names the run, the
+  account that ran it and the server (#1665).
 - 2026-10-06: **A message recorded once to the second and once to the
   millisecond shows once.** Every message file now says whether each
   message's time has milliseconds or only whole seconds, as its backup app

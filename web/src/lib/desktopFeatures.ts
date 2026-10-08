@@ -53,3 +53,12 @@ export function importExportBlock(
 export function canUseConvert(isTauriApp: boolean): boolean {
   return isTauriApp;
 }
+
+/**
+ * Import Run logs stay on the computer that ran the import (#1665), so only
+ * the desktop app lists and reads them. In a browser the Logs panel offers
+ * the server's log alone.
+ */
+export function canReadImportRunLogs(isTauriApp: boolean): boolean {
+  return isTauriApp;
+}

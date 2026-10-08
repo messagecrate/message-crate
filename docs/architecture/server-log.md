@@ -105,7 +105,14 @@ requests, so no account reads it, and an API token never reads anything but
 its account's own data.
 
 The rule for an Import Run's log is separate: it stays on the computer that
-ran the import, and the account that ran the import reads it there.
+ran the import, and the owner and the account that ran the import read it
+there ([Import Run logs](import-run-logs.md)).
+
+Owner Home's **Logs** panel shows the log a page at a time: the newest lines
+first, older ones read as the list scrolls, filtered by level (errors,
+warnings and up, or everything, opening at warnings and up) and by the text
+typed into its search. Each file downloads as it is. Nothing reads new lines
+on its own: the panel shows the log as it was when it was read.
 
 ## What a line never holds
 

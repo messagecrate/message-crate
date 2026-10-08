@@ -38,6 +38,7 @@ import {
   invokePathStat,
   invokeReadImportRunRecord,
   invokeSaveImportRunRecord,
+  invokeStartImportRunLog,
   invokeSummarizeStaging,
   invokeTranscodeStaging,
   invokeUpload,
@@ -1394,6 +1395,22 @@ async function runMediaStage(
 }
 
 /**
+ * Start the new run's log in the Logs Directory with the line naming the
+ * account that runs it and the server, so the Logs panel shows the log to
+ * that account and the owner only (#1665). A log that cannot be started
+ * leaves the run going: its lines still reach the window.
+ */
+async function startRunLog(runDir: string, importRunId: number): Promise<void> {
+  const accountId = getAccountId();
+  if (accountId === null) return;
+  try {
+    await invokeStartImportRunLog(runDir, { importRunId, accountId, server: getBaseUrl() });
+  } catch (e) {
+    console.warn("The Import Run's log could not be started:", e);
+  }
+}
+
+/**
  * Fields extract needs for this form's source. The media fields go only to
  * a source whose form shows them, as the person chose them: extract checks
  * them before anything is staged and records them for the later stages.
@@ -1547,6 +1564,7 @@ async function runImport(
       );
       runId = importRun.id;
       store.set({ importRunId: runId });
+      await startRunLog(outputDir, runId);
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(runId, "write");
     }

@@ -12,6 +12,7 @@ mod pipeline;
 mod process;
 mod progress;
 mod run;
+mod run_log;
 mod scratch;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
@@ -49,6 +50,7 @@ pub use process::{
 };
 pub use progress::{ProgressEvent, ProgressSink, WriteStatus, emit_progress};
 pub use run::{finish_run, run_pipeline};
+pub use run_log::{RunLogAccount, RunLogLevel, RunLogLine, format_run_log, parse_run_log_line};
 pub use scratch::{
     ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, ScratchDir, WHATSAPP_DIRECTORY,
     sweep_scratch,

@@ -363,6 +363,7 @@ The heading of a finished run says how it ended.
 
 A run that ends deletes its directory, and the journal with it.
 Its log stays in the Logs Directory, `logs` in the operating system's app-data directory (`~/.local/share/app.messagecrate.desktop/logs` on Linux), and Message Crate never deletes it.
+The run's row in **Settings → Storage** opens it again later, and the Owner reads it under **Logs** on Owner Home.
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is cancelled or paused leaves its directory in place, because the staged files are what a resume reads.

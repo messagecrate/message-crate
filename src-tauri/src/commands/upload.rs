@@ -10,7 +10,7 @@ use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
 use super::paths::logs_dir;
-use crate::app_directories::import_run_log;
+use crate::app_directories::{RunLog, import_run_log};
 use crate::state::{AppState, JobName};
 
 /// Convert a report count to the `usize` the progress event uses.
@@ -104,11 +104,15 @@ pub fn upload(
     let job = start_job(&state, JobName::Upload)?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
+    // The error that stops the Upload goes into the run's log too, as
+    // Staging's and Media's do.
+    let run_log = RunLog::open(&logs, Path::new(&args.input_dir));
     spawn_job(app, job, move || {
-        let mut cfg = upload_config(args, &logs)?;
+        let mut cfg = upload_config(args, &logs).inspect_err(|error| run_log.error(error))?;
         cfg.cancel = Some(cancel);
         let mut progress = |event: ProgressEvent| forward_upload_event(&app_handle, event);
-        let report = run_push(&cfg, Some(&mut progress))?;
+        let report =
+            run_push(&cfg, Some(&mut progress)).inspect_err(|error| run_log.error(error))?;
         Ok(finished_upload_events(&report).1.to_string())
     });
     Ok(())

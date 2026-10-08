@@ -1920,6 +1920,7 @@ dependencies = [
  "message-csv",
  "message-ir",
  "obfuscate",
+ "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",

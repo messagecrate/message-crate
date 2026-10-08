@@ -34,6 +34,8 @@ const listAuditTrail = vi.hoisted(() => vi.fn());
 const listAccountAuditTrail = vi.hoisted(() => vi.fn());
 const listDeletedAccounts = vi.hoisted(() => vi.fn());
 const listApiTokens = vi.hoisted(() => vi.fn());
+const listServerLogLines = vi.hoisted(() => vi.fn());
+const listServerLogFiles = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/auth", () => ({
   useAuth: () => ({ logout: vi.fn(), updateToken: vi.fn(), accountId: 1 }),
@@ -64,6 +66,8 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   listAccountAuditTrail: (...a: unknown[]) => listAccountAuditTrail(...a),
   listDeletedAccounts: (...a: unknown[]) => listDeletedAccounts(...a),
   listApiTokens: (...a: unknown[]) => listApiTokens(...a),
+  listServerLogLines: (...a: unknown[]) => listServerLogLines(...a),
+  listServerLogFiles: (...a: unknown[]) => listServerLogFiles(...a),
 }));
 
 const anAccount = {
@@ -327,13 +331,30 @@ describe("OwnerHome", () => {
     expect(cells(rows[4])).toEqual(["All accounts", "5,678", "8.0 MB", "400 MB"]);
   });
 
-  it("opens /owner/logs on its name and loads nothing", () => {
+  it("opens /owner/logs on the server's log, at warnings and up", async () => {
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listServerLogFiles.mockResolvedValue([]);
+    listServerLogLines.mockResolvedValue({
+      items: [
+        {
+          id: 7,
+          time: "2026-10-08T12:00:00.000000Z",
+          level: "error",
+          text: "the database is locked",
+        },
+      ],
+      limit: 200,
+      has_more: false,
+    });
     renderHome(["/owner/logs"]);
 
     expect(selectedSection()).toBe("Logs");
     expect(screen.getByRole("heading", { name: "Logs" })).toBeInTheDocument();
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(listAccounts).not.toHaveBeenCalled();
+    expect(await screen.findByText("the database is locked")).toBeInTheDocument();
+    expect(listServerLogLines).toHaveBeenCalledWith(
+      expect.objectContaining({ level: "warn" }),
+      expect.anything(),
+    );
     expect(getServerSettings).not.toHaveBeenCalled();
   });
 

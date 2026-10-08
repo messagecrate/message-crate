@@ -503,7 +503,9 @@ _Avoid_: Export Folder, Downloads, Output Directory
 The directory where the desktop app keeps each Import Run's log, named for
 the run, such as `import-iphone-ios-261004-143000.log`. A log stays on the
 computer that ran the import and is never deleted, so it outlives the run's
-directory in the Staging Directory. It belongs in the Message Crate
+directory in the Staging Directory. Its first line names the run, the
+account that ran it and the server. The owner reads every log in it, and an
+account the logs of its own runs, in the desktop app on that computer. It belongs in the Message Crate
 Directory; until #1053 builds that, it is `logs` in the operating system's
 app-data directory. The server's own log is in the Data Directory.
 _Avoid_: Log Folder, Run Log Directory

@@ -81,6 +81,76 @@ export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
   return invoke("set_staging_root", { root });
 }
 
+/** Who ran an Import Run, on which server: the first line of the run's log. */
+export interface RunLogAccount {
+  importRunId: number;
+  accountId: number;
+  server: string;
+}
+
+/**
+ * Start a new Import Run's log with the line that names the account running
+ * it and the server, so the Logs panel shows the log to that account and the
+ * owner only.
+ */
+export async function invokeStartImportRunLog(
+  runDir: string,
+  account: RunLogAccount,
+): Promise<void> {
+  return invoke("start_import_run_log", { args: { runDir, account } });
+}
+
+/** Who is asking for the Import Run logs on this computer. */
+export interface RunLogReader {
+  /** The server the window is signed in to. */
+  server: string;
+  accountId: number;
+  /** The owner reads every run log; an account only those of its own runs. */
+  owner: boolean;
+}
+
+/** One Import Run log on this computer. */
+export interface RunLogEntry {
+  /** The file's name in the Logs Directory, which a download keeps. */
+  name: string;
+  /** Who ran the run, or null when the log does not say. */
+  account: RunLogAccount | null;
+  bytes: number;
+  /** When its last line was written, in UTC (RFC 3339). */
+  modifiedAt: string;
+}
+
+/** The Import Run logs on this computer that `reader` may read, newest first. */
+export async function invokeListImportRunLogs(reader: RunLogReader): Promise<RunLogEntry[]> {
+  return invoke("list_import_run_logs", { reader });
+}
+
+/** A page of a log's lines, newest first, the shape the server's log answers too. */
+export type RunLogLinesPage = components["schemas"]["ListLogLinesResponse"];
+
+/**
+ * A page of one Import Run log's lines, newest first: those at `level` and
+ * more severe (every line when absent), holding `text`, older than the line
+ * whose id is `after`.
+ */
+export async function invokeReadImportRunLogLines(
+  reader: RunLogReader,
+  name: string,
+  query: {
+    level?: components["schemas"]["LogLevel"];
+    text?: string;
+    after?: number;
+    limit: number;
+  },
+): Promise<RunLogLinesPage> {
+  return invoke("read_import_run_log_lines", { args: { reader, name, query } });
+}
+
+/** One Import Run log whole, as it is on disk, for a download. */
+export async function invokeReadImportRunLog(reader: RunLogReader, name: string): Promise<string> {
+  return invoke("read_import_run_log", { args: { reader, name } });
+}
+
 /**
  * The log of the Import Run whose directory is `runDir`, in the Logs
  * Directory, where it stays after the run's directory is deleted.

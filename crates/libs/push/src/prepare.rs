@@ -173,6 +173,8 @@ pub(crate) struct PreparedFile {
     pub profile: UploadProfile,
     pub total_started: Instant,
     pub assets: AssetTotals,
+    /// What the run went on without, such as a digest that did not match.
+    pub warnings: Vec<String>,
     pub log_lines: Vec<String>,
     pub attachment_skips: Vec<AttachmentSkip>,
 }
@@ -220,7 +222,8 @@ pub(crate) fn prepare_file(
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
-    let mut log_lines = scan.warnings;
+    let warnings = scan.warnings;
+    let mut log_lines = Vec::new();
     let mut assets = AssetTotals {
         skipped: scan.skipped,
         ..AssetTotals::default()
@@ -246,6 +249,7 @@ pub(crate) fn prepare_file(
         profile,
         total_started,
         assets,
+        warnings,
         log_lines,
         attachment_skips: scan.skips,
     })

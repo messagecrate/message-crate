@@ -11,7 +11,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use message_crate_core::count_of;
+use message_crate_core::{RunLogLevel, count_of, format_run_log};
 
 use crate::report::{
     FileResult, PushReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
@@ -105,7 +105,8 @@ pub(crate) struct AttachmentSkip {
     pub reason: String,
 }
 
-/// Append-only log file next to the export (also mirrored to progress callbacks).
+/// The run's append-only log file, each line stamped with its time and level
+/// (also mirrored to progress callbacks).
 struct LogWriter {
     file: File,
 }
@@ -124,9 +125,10 @@ impl LogWriter {
         Ok(Self { file })
     }
 
-    /// Write one line and flush so a crash still leaves the last message on disk.
-    fn line(&mut self, msg: &str) {
-        let _ = writeln!(self.file, "{msg}");
+    /// Write `msg` at `level`, stamped with the time, and flush so a crash
+    /// still leaves the last message on disk.
+    fn line(&mut self, level: RunLogLevel, msg: &str) {
+        let _ = self.file.write_all(format_run_log(level, msg).as_bytes());
         let _ = self.file.flush();
     }
 }
@@ -273,12 +275,23 @@ impl<'p, 'f> Reporter<'p, 'f> {
 
     /// Write to the log file only.
     pub(crate) fn log(&mut self, line: &str) {
-        self.log.line(line);
+        self.log_at(RunLogLevel::Info, line);
+    }
+
+    /// Write to the log file only, at `level`.
+    pub(crate) fn log_at(&mut self, level: RunLogLevel, line: &str) {
+        self.log.line(level, line);
     }
 
     /// Write to the log file and mirror the same text to the progress callback.
     pub(crate) fn show(&mut self, line: String) {
-        self.log.line(&line);
+        self.show_at(RunLogLevel::Info, line);
+    }
+
+    /// Write to the log file at `level` and mirror the same text to the
+    /// progress callback.
+    pub(crate) fn show_at(&mut self, level: RunLogLevel, line: String) {
+        self.log.line(level, &line);
         self.event(ProgressEvent::Log(line));
     }
 
@@ -326,7 +339,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     pub(crate) fn note_failed(&mut self, name: &str, error: &str, profile: Option<&UploadProfile>) {
         self.flush_file_counter();
         self.batcher.note_failed();
-        self.show(format!("{name} failed: {error}"));
+        self.show_at(RunLogLevel::Error, format!("{name} failed: {error}"));
         if let Some(profile) = profile {
             self.show(format_profile_line(name, profile));
         }
@@ -342,7 +355,10 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// Write Import Errors skip rows for attachments that were not uploaded.
     pub(crate) fn attachment_skips(&mut self, skips: &[AttachmentSkip]) {
         for skip in skips {
-            self.show(format!("Did not upload {}: {}", skip.item, skip.reason));
+            self.show_at(
+                RunLogLevel::Warn,
+                format!("Did not upload {}: {}", skip.item, skip.reason),
+            );
             self.event(ProgressEvent::Issue {
                 kind: "skip".into(),
                 step: "upload".into(),
@@ -501,9 +517,24 @@ mod tests {
             let mut reporter = Reporter::open(&log_path, Some(&mut cb)).unwrap();
             reporter.log("quiet");
             reporter.show("loud".into());
+            reporter.show_at(RunLogLevel::Warn, "careful".into());
         }
         let text = fs::read_to_string(&log_path).unwrap();
-        assert_eq!(text, "quiet\nloud\n");
+        let lines: Vec<(RunLogLevel, String)> = text
+            .lines()
+            .map(|raw| {
+                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
+                (line.level, line.text)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                (RunLogLevel::Info, "quiet".to_string()),
+                (RunLogLevel::Info, "loud".to_string()),
+                (RunLogLevel::Warn, "careful".to_string()),
+            ]
+        );
         let shown: Vec<String> = seen
             .into_iter()
             .map(|event| match event {
@@ -511,7 +542,7 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(shown, ["loud"]);
+        assert_eq!(shown, ["loud", "careful"]);
     }
 
     #[test]
