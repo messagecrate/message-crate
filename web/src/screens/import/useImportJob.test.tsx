@@ -54,6 +54,7 @@ const invokeImessageBackupIdentitiesMock = vi.fn();
 const loadAccountProfileMock = vi.fn();
 const readRunRecordMock = vi.fn();
 const saveRunRecordMock = vi.fn();
+const invokeStartImportRunLogMock = vi.fn();
 
 /**
  * `onExtractEvents` stands in for the real Tauri event listener. Its default
@@ -87,6 +88,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeCreateRunDir: (...args: unknown[]) => createRunDirMock(...args),
   invokeReadImportRunRecord: (...args: unknown[]) => readRunRecordMock(...args),
   invokeSaveImportRunRecord: (...args: unknown[]) => saveRunRecordMock(...args),
+  invokeStartImportRunLog: (...args: unknown[]) => invokeStartImportRunLogMock(...args),
   probeFfmpegTools: (...args: [string | null]) => probeFfmpegToolsMock(...args),
   invokeImessageBackupIdentities: (...args: unknown[]) =>
     invokeImessageBackupIdentitiesMock(...args),
@@ -323,6 +325,8 @@ describe("useImportJob wiring", () => {
     invokeUploadMock.mockReset();
     readRunRecordMock.mockReset();
     saveRunRecordMock.mockReset();
+    invokeStartImportRunLogMock.mockReset();
+    invokeStartImportRunLogMock.mockResolvedValue(undefined);
     invokeSummarizeStagingMock.mockReset();
     invokeSummarizeStagingMock.mockImplementation(async () =>
       stagingSummary({ mediaMode: stagedMode() }),
@@ -476,6 +480,29 @@ describe("useImportJob wiring", () => {
     expect(invokeExtractMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("done");
     expect(result.current.summaryView?.status).toBe("failed");
+  });
+
+  it("starts a new run's log with the run, the account and the Message Crate before Staging", async () => {
+    getServerStateMock.mockResolvedValue({
+      id: "0123456789abcdef0123456789abcdef",
+      asset_max_bytes: 512 * MIB,
+    });
+    createImportMock.mockResolvedValue({ id: 42 });
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form()));
+
+    expect(invokeStartImportRunLogMock).toHaveBeenCalledWith(
+      "/home/sam/message-crate/staging-iphone",
+      {
+        importRunId: 42,
+        accountId: 1,
+        server: "http://127.0.0.1:8080",
+        messageCrateId: "0123456789abcdef0123456789abcdef",
+      },
+    );
+    expect(invokeStartImportRunLogMock.mock.invocationCallOrder[0]).toBeLessThan(
+      invokeExtractMock.mock.invocationCallOrder[0] as number,
+    );
   });
 
   it("stops at the Staging Review instead of uploading", async () => {
