@@ -1,15 +1,23 @@
 //! Shared phone-number parsing for message converters.
 //!
-//! [`normalize_typed_handle`] is the one key a handle is stored and matched
-//! under: by the server, by the contacts book, and by [`OwnerHandleSet`].
+//! [`key_typed_handle`] is the one key a handle is stored and matched under:
+//! by the server, by the contacts book, and by [`OwnerHandleSet`].
 //! [`Handle::parse`] is where an exporter classifies an address before it
 //! keys it: a phone number, an email address, or a sender name.
+//!
+//! A number carries its country only when that is certain: written with its
+//! `+` code, or written without it in a country a person or the source
+//! stated ([`Country`]). Nothing here reads a country from the digits, so a
+//! number written `07700 900123` with no country stated keeps its digits
+//! (#1676).
 
-use std::fmt;
+mod countries;
 
 use anyhow::{Context, Result, bail};
 use message_ir::HandleType;
 use sha2::{Digest, Sha256};
+
+pub use countries::{COUNTRIES, Country, calling_code_of, country};
 
 /// Minimum digit length after stripping formatting.
 ///
@@ -17,37 +25,43 @@ use sha2::{Digest, Sha256};
 /// Rejects junk like `"4"` or `"06"`.
 const MIN_PHONE_DIGITS: usize = 4;
 
-/// Region rules for [`normalize_checked`] and [`normalize_guarded`].
+/// Which rules write a number in its `+` form, for [`normalize_checked`] and
+/// [`normalize_guarded`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PhoneRegion {
-    /// US NANP: certain only for 10 digits or 11 digits starting with `1`.
-    Usa,
-    /// International: certain only when the raw value has a leading `+`.
+    /// The number was written with a `+` before its first digit, so it names
+    /// its own country.
     International,
-}
-
-impl fmt::Display for PhoneRegion {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PhoneRegion::Usa => write!(f, "usa"),
-            PhoneRegion::International => write!(f, "international"),
-        }
-    }
+    /// The number was written without its `+` code, in the national form of
+    /// this country, which a person or the source stated.
+    Country(&'static Country),
+    /// The number was written without its `+` code, and nothing says which
+    /// country it belongs to.
+    Unknown,
 }
 
 impl PhoneRegion {
     /// Region for a raw value: a value with a `+` before its first digit
     /// names its country, so international rules apply (`+65 5555 0100`,
-    /// `(+44) 7700 900123`, `tel:+447700900123`); anything else is treated
-    /// as a US national number (this crate's home region).
-    pub fn for_raw(raw: &str) -> Self {
-        let before_first_digit = raw.split(|c: char| c.is_ascii_digit()).next();
-        if before_first_digit.is_some_and(|s| s.contains('+')) {
+    /// `(+44) 7700 900123`, `tel:+447700900123`). Anything else is in the
+    /// national form of `country`, or of no known country when `country` is
+    /// `None`. A number without `+` is never read as a US number by default
+    /// (#1676).
+    #[must_use]
+    pub fn for_raw(raw: &str, country: Option<&'static Country>) -> Self {
+        if written_with_plus(raw) {
             Self::International
         } else {
-            Self::Usa
+            country.map_or(Self::Unknown, Self::Country)
         }
     }
+}
+
+/// Whether a `+` comes before the first digit of `raw`.
+fn written_with_plus(raw: &str) -> bool {
+    raw.split(|c: char| c.is_ascii_digit())
+        .next()
+        .is_some_and(|s| s.contains('+'))
 }
 
 /// Strip non-digits and a leading US country code `1`.
@@ -164,30 +178,55 @@ pub fn split_country_calling_code(digits: &str, had_plus: bool) -> (&str, &str) 
 ///
 /// # Errors
 ///
-/// Returns the reason the value is not certain E.164 (empty, no digits, wrong
-/// digit count for the region, missing `+` in international mode, or a
-/// country code starting with 0 — 0 is the trunk prefix, so `+020…` would be
-/// fabricated).
+/// Returns the reason the value is not certain E.164: empty, no digits, no
+/// country known, the wrong digit count for the country, a missing `+` in
+/// international mode, or a country code starting with 0 (0 is the trunk
+/// prefix, so `+020…` would be fabricated).
 pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, String> {
     let raw = raw.trim();
     if raw.is_empty() {
         return Err("empty phone".into());
     }
     let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        return Err("no digits".into());
+    }
+    // A `+` names the number's own country, whatever country is stated.
+    let region = if written_with_plus(raw) {
+        PhoneRegion::International
+    } else {
+        region
+    };
     match region {
-        PhoneRegion::Usa => {
+        PhoneRegion::Unknown => Err("written without its country code, in no known country".into()),
+        PhoneRegion::Country(country) if country.calling_code == "1" => {
             if digits.len() == 10 {
                 Ok(format!("+1{digits}"))
             } else if digits.len() == 11 && digits.starts_with('1') {
                 Ok(format!("+{digits}"))
-            } else if digits.is_empty() {
-                Err("no digits".into())
             } else {
-                Err("USA needs 10 digits or 11 starting with 1".into())
+                Err(format!(
+                    "a number in {} has 10 digits, or 11 starting with 1",
+                    country.code
+                ))
+            }
+        }
+        PhoneRegion::Country(country) => {
+            let national = if country.trunk_prefix.is_empty() {
+                digits.as_str()
+            } else {
+                digits.strip_prefix(country.trunk_prefix).unwrap_or(&digits)
+            };
+            if national.len() < MIN_NATIONAL_DIGITS {
+                Err(format!("too few digits for a number in {}", country.code))
+            } else if country.calling_code.len() + national.len() > MAX_PHONE_DIGITS {
+                Err(format!("too many digits for a number in {}", country.code))
+            } else {
+                Ok(format!("+{}{national}", country.calling_code))
             }
         }
         PhoneRegion::International => {
-            if !raw.contains('+') {
+            if !written_with_plus(raw) {
                 Err("international mode requires a leading +".into())
             } else if digits.starts_with('0') {
                 // E.164 country codes never start with 0 (0 is the trunk
@@ -202,13 +241,17 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
     }
 }
 
-/// Result of [`normalize_guarded`]: the E.164 value when certain, plus a
-/// review note when the value is ambiguous.
+/// Result of [`normalize_guarded`]: the E.164 value and its calling code
+/// when certain, plus a review note when the value is ambiguous.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuardedNormalize {
-    /// The phone value to store: E.164 (`+1…`) when the parse was certain,
-    /// otherwise raw digits without a `+` prefix.
+    /// The phone value to store: E.164 (`+44…`) when the parse was certain,
+    /// otherwise the digits as written, without a `+`.
     pub normalized: String,
+    /// The country calling code of `normalized` without its `+` (`44`) when
+    /// the parse was certain and a country in [`COUNTRIES`] has that code;
+    /// empty otherwise.
+    pub region: String,
     /// `Some(reason)` when the value was ambiguous and stored digits-as-is;
     /// `None` when certain.
     pub note: Option<String>,
@@ -217,70 +260,98 @@ pub struct GuardedNormalize {
 /// E.164 when unambiguous for `region`, else digits-as-is plus a note.
 ///
 /// Rewrite to E.164 only when the parse is certain. Otherwise store the
-/// digits without adding a `+` prefix (a trunk-zero national number like
-/// `020 7946 0000` would otherwise become the invalid `+02079460000`) and
-/// attach a human-readable reason so the server can show it for review.
+/// digits as written, without adding a `+` prefix (a trunk-zero national
+/// number like `020 7946 0000` would otherwise become the invalid
+/// `+02079460000`), and attach a human-readable reason so the server can
+/// show it for review.
+#[must_use]
 pub fn normalize_guarded(raw: &str, region: PhoneRegion) -> GuardedNormalize {
     match normalize_checked(raw, region) {
         Ok(e164) => GuardedNormalize {
+            region: calling_code_of(&e164[1..]).unwrap_or_default().to_string(),
             normalized: e164,
             note: None,
         },
         Err(reason) => GuardedNormalize {
-            normalized: sanitize_number(raw).unwrap_or_default(),
+            normalized: digits_as_written(raw).unwrap_or_default(),
+            region: String::new(),
             note: Some(reason),
         },
     }
 }
 
-/// Guarded normalization with the region inferred from the raw value: the
-/// lenient one-argument policy loaders and exporters share.
-///
-/// Policy: [`PhoneRegion::for_raw`] picks the region (a `+`-prefixed value
-/// uses international rules, anything else US), then [`normalize_guarded`]
-/// yields E.164 when the parse is certain and the sanitized digits as-is
-/// otherwise — never a fabricated `+0…`. The result is empty when no usable
-/// digits survive (fewer than 4). The guard note is dropped; call
-/// [`normalize_guarded`] directly when the caller records the note.
-pub fn normalize_lenient(raw: &str) -> String {
-    normalize_guarded(raw, PhoneRegion::for_raw(raw)).normalized
+/// Every digit of `raw`, in order, with nothing taken off: a number whose
+/// country is unknown is stored as it was written (#1676). `None` when
+/// fewer than 4 digits remain.
+fn digits_as_written(raw: &str) -> Option<String> {
+    let digits: String = raw.chars().filter(|c| c.is_ascii_digit()).collect();
+    (digits.len() >= MIN_PHONE_DIGITS).then_some(digits)
 }
 
-/// Sanitize to US digits, then apply the guarded policy: the one-argument
-/// form for values already known to be phone-shaped digit strings.
-///
-/// Policy: `None` when [`sanitize_number`] finds no usable digits (fewer than
-/// 4 after stripping formatting and a leading US `1`). Otherwise the guarded
-/// form of the digits under [`PhoneRegion::Usa`]: `+1…` E.164 when the digit
-/// count is unambiguous, else the sanitized digits as-is (short codes and
-/// trunk-zero locals stay digits — never a fabricated `+0…`).
-pub fn normalize_digits_us(raw: &str) -> Option<String> {
-    let digits = sanitize_number(raw)?;
-    Some(normalize_guarded(&digits, PhoneRegion::Usa).normalized)
+/// A handle's key, with the country its number belongs to when that is
+/// certain. [`key_typed_handle`] gives it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypedKey {
+    /// The key the handle is stored and matched under.
+    pub key: String,
+    /// The country calling code of a phone number whose `+` form is the key,
+    /// without the `+` (`44`); empty for a number whose country is unknown,
+    /// and for every other type.
+    pub region: String,
+    /// Why a phone number's key is not its certain `+` form, when it is not.
+    pub note: Option<String>,
 }
 
 /// One normalization policy for a typed handle, shared by the server, the
 /// contacts book, and the exporters.
 ///
-/// Phone: guarded E.164 via [`normalize_guarded`] with [`PhoneRegion::for_raw`]
-/// (a `+`-prefixed value keeps international rules; anything else is treated
-/// as US), falling back to the trimmed raw value when no digits survive.
-/// Email: lowercased. Username/Other: verbatim (trimmed). The second value is
-/// the guard note, when the phone form was uncertain.
-pub fn normalize_typed_handle(raw: &str, handle_type: HandleType) -> (String, Option<String>) {
+/// Phone: guarded E.164 via [`normalize_guarded`] with [`PhoneRegion::for_raw`]:
+/// a `+`-prefixed value keeps its own country, a value without `+` is read
+/// in the national form of `country`, and with no country it keeps its
+/// digits as written. A value with no usable digits falls back to the
+/// trimmed raw value, unflagged. Email: lowercased. Username/Other: verbatim
+/// (trimmed).
+#[must_use]
+pub fn key_typed_handle(
+    raw: &str,
+    handle_type: HandleType,
+    country: Option<&'static Country>,
+) -> TypedKey {
     match handle_type {
         HandleType::Phone => {
-            let guarded = normalize_guarded(raw, PhoneRegion::for_raw(raw));
+            let guarded = normalize_guarded(raw, PhoneRegion::for_raw(raw, country));
             if guarded.normalized.is_empty() {
-                // No usable digits: fall back to the raw, unflagged.
-                (raw.trim().to_string(), None)
+                TypedKey {
+                    key: raw.trim().to_string(),
+                    region: String::new(),
+                    note: None,
+                }
             } else {
-                (guarded.normalized, guarded.note)
+                TypedKey {
+                    key: guarded.normalized,
+                    region: guarded.region,
+                    note: guarded.note,
+                }
             }
         }
-        HandleType::Email => (raw.trim().to_lowercase(), None),
-        HandleType::Username | HandleType::Other => (raw.trim().to_string(), None),
+        HandleType::Email => TypedKey {
+            key: raw.trim().to_lowercase(),
+            region: String::new(),
+            note: None,
+        },
+        HandleType::Username | HandleType::Other => TypedKey {
+            key: raw.trim().to_string(),
+            region: String::new(),
+            note: None,
+        },
     }
+}
+
+/// [`key_typed_handle`] with no country stated: the key and the note.
+#[must_use]
+pub fn normalize_typed_handle(raw: &str, handle_type: HandleType) -> (String, Option<String>) {
+    let typed = key_typed_handle(raw, handle_type, None);
+    (typed.key, typed.note)
 }
 
 /// An address as a source wrote it, classified once: what kind of address
@@ -304,14 +375,22 @@ impl Handle {
     /// - one written as a phone number (digits and phone punctuation, after
     ///   an optional `tel:`) is a phone number, keyed by
     ///   [`normalize_typed_handle`]: a `+` before the first digit keeps the
-    ///   country, a number without one is read by US rules, and a short code
-    ///   keeps its digits;
+    ///   country, and a number without one keeps its digits as written,
+    ///   because nothing at this point says which country it is in;
     /// - anything else is a sender name such as `AMAZON`, an identity of type
     ///   `other` keyed by the name as written.
     ///
     /// `None` when the value is blank.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
+        Self::parse_in(raw, None)
+    }
+
+    /// [`Handle::parse`] for a source whose phone's country is stated: a
+    /// number written without its `+` code is keyed in its `+` form in
+    /// `country` (#1676). With `None`, it keeps its digits as written.
+    #[must_use]
+    pub fn parse_in(raw: &str, country: Option<&'static Country>) -> Option<Self> {
         let value = raw.trim();
         if value.is_empty() {
             return None;
@@ -323,14 +402,20 @@ impl Handle {
         } else {
             HandleType::Other
         };
-        Some(Self::typed(value, kind))
+        Some(Self::typed_in(value, kind, country))
     }
 
     /// A handle of a kind the caller already knows.
+    #[cfg(test)]
     fn typed(raw: &str, kind: HandleType) -> Self {
+        Self::typed_in(raw, kind, None)
+    }
+
+    /// A handle of a kind the caller already knows, keyed in `country`.
+    fn typed_in(raw: &str, kind: HandleType, country: Option<&'static Country>) -> Self {
         Self {
             kind,
-            key: normalize_typed_handle(raw, kind).0,
+            key: key_typed_handle(raw, kind, country).key,
             raw: raw.trim().to_string(),
         }
     }
@@ -568,8 +653,10 @@ mod tests {
         let (uk, note) = normalize_typed_handle("+44 20 7946 0000", HandleType::Phone);
         assert_eq!(uk, "+442079460000");
         assert!(note.is_none());
-        let (us, _) = normalize_typed_handle("(555) 555-0100", HandleType::Phone);
-        assert_eq!(us, "+15555550100");
+        // Without `+` and with no country stated, the digits as written.
+        let (us, note) = normalize_typed_handle("(555) 555-0100", HandleType::Phone);
+        assert_eq!(us, "5555550100");
+        assert!(note.is_some());
         let (email, _) = normalize_typed_handle(" Bob@Example.COM ", HandleType::Email);
         assert_eq!(email, "bob@example.com");
         let (wordy, _) = normalize_typed_handle("no digits here", HandleType::Phone);
@@ -660,33 +747,38 @@ mod tests {
         assert_eq!(sanitize_number("73737").as_deref(), Some("73737"));
     }
 
+    fn us() -> PhoneRegion {
+        PhoneRegion::Country(country("US").unwrap())
+    }
+
     #[test]
     fn certain_usa() {
         assert_eq!(
-            normalize_checked("(542).555-0100", PhoneRegion::Usa)
-                .ok()
-                .as_deref(),
+            normalize_checked("(542).555-0100", us()).ok().as_deref(),
             Some("+15425550100")
         );
         assert_eq!(
-            normalize_checked("1-555-555-0121", PhoneRegion::Usa)
-                .ok()
-                .as_deref(),
+            normalize_checked("1-555-555-0121", us()).ok().as_deref(),
             Some("+15555550121")
         );
         assert!(
-            normalize_checked("1555-0145", PhoneRegion::Usa).is_err(),
+            normalize_checked("1555-0145", us()).is_err(),
             "too short for USA certainty"
         );
-        assert!(normalize_checked("+442079460750", PhoneRegion::Usa).is_err());
+        // A `+` names its own country, whatever country is stated.
+        assert_eq!(
+            normalize_checked("+442079460750", us()).ok().as_deref(),
+            Some("+442079460750")
+        );
     }
 
     #[test]
     fn guarded_certain_usa() {
-        let g = normalize_guarded("5555550100", PhoneRegion::Usa);
+        let g = normalize_guarded("5555550100", us());
         assert_eq!(g.normalized, "+15555550100");
+        assert_eq!(g.region, "1");
         assert_eq!(g.note, None);
-        let g = normalize_guarded("15555550100", PhoneRegion::Usa);
+        let g = normalize_guarded("15555550100", us());
         assert_eq!(g.normalized, "+15555550100");
         assert_eq!(g.note, None);
     }
@@ -695,6 +787,7 @@ mod tests {
     fn guarded_certain_plus_prefixed() {
         let g = normalize_guarded("+44 20 7946 0750", PhoneRegion::International);
         assert_eq!(g.normalized, "+442079460750");
+        assert_eq!(g.region, "44");
         assert_eq!(g.note, None);
     }
 
@@ -713,12 +806,20 @@ mod tests {
 
     #[test]
     fn guarded_trunk_zero_stays_digits_with_note() {
-        // `020 7946 0000` (11 digits not starting with 1): never `+02079460000`.
-        let g = normalize_guarded("020 7946 0000", PhoneRegion::Usa);
+        // `020 7946 0000` with no country stated: never `+02079460000`.
+        let g = normalize_guarded("020 7946 0000", PhoneRegion::Unknown);
+        assert_eq!(g.normalized, "02079460000");
+        assert_eq!(g.region, "");
+        assert_eq!(
+            g.note.as_deref(),
+            Some("written without its country code, in no known country")
+        );
+        // In the US, it is not a number at all.
+        let g = normalize_guarded("020 7946 0000", us());
         assert_eq!(g.normalized, "02079460000");
         assert_eq!(
             g.note.as_deref(),
-            Some("USA needs 10 digits or 11 starting with 1")
+            Some("a number in US has 10 digits, or 11 starting with 1")
         );
         // `442079460000` without `+`: ambiguous in both regions.
         let g = normalize_guarded("442079460000", PhoneRegion::International);
@@ -731,17 +832,25 @@ mod tests {
 
     #[test]
     fn guarded_region_for_raw() {
+        let gb = country("GB");
         assert_eq!(
-            PhoneRegion::for_raw("+15555550100"),
+            PhoneRegion::for_raw("+15555550100", gb),
             PhoneRegion::International
         );
         assert_eq!(
-            PhoneRegion::for_raw("  +44 20 7946 0750 "),
+            PhoneRegion::for_raw("  +44 20 7946 0750 ", None),
             PhoneRegion::International
         );
-        assert_eq!(PhoneRegion::for_raw("5555550100"), PhoneRegion::Usa);
-        assert_eq!(PhoneRegion::for_raw("020 7946 0000"), PhoneRegion::Usa);
-        assert_eq!(PhoneRegion::for_raw(""), PhoneRegion::Usa);
+        // A number without `+` is not read as a US number (#1676).
+        assert_eq!(
+            PhoneRegion::for_raw("5555550100", None),
+            PhoneRegion::Unknown
+        );
+        assert_eq!(PhoneRegion::for_raw("", None), PhoneRegion::Unknown);
+        assert_eq!(
+            PhoneRegion::for_raw("020 7946 0000", gb),
+            PhoneRegion::Country(gb.unwrap())
+        );
     }
 
     #[test]
@@ -775,47 +884,19 @@ mod tests {
             Err("international mode requires a leading +".into())
         );
         assert_eq!(
-            normalize_checked("", PhoneRegion::Usa),
+            normalize_checked("", PhoneRegion::Unknown),
             Err("empty phone".into())
         );
         assert_eq!(
-            normalize_checked("abc", PhoneRegion::Usa),
+            normalize_checked("abc", PhoneRegion::Unknown),
             Err("no digits".into())
         );
     }
 
     #[test]
-    fn lenient_one_arg_matches_guarded_for_raw() {
-        assert_eq!(normalize_lenient("(555) 555-0100"), "+15555550100");
-        assert_eq!(normalize_lenient("+44 20 7946 0750"), "+442079460750");
-        assert_eq!(normalize_lenient("020 7946 0000"), "02079460000");
-        assert_eq!(normalize_lenient("+02079460000"), "02079460000");
-        assert_eq!(normalize_lenient("7535"), "7535");
-        assert_eq!(normalize_lenient("no digits here"), "");
-    }
-
-    #[test]
-    fn digits_us_one_arg_sanitizes_then_guards() {
-        assert_eq!(
-            normalize_digits_us("+1 (555) 555-0100").as_deref(),
-            Some("+15555550100")
-        );
-        assert_eq!(normalize_digits_us("7535").as_deref(), Some("7535"));
-        assert_eq!(
-            normalize_digits_us("020 7946 0000").as_deref(),
-            Some("02079460000")
-        );
-        assert_eq!(normalize_digits_us("06"), None);
-        assert_eq!(normalize_digits_us(""), None);
-    }
-
-    #[test]
     fn primary_owner_handle_present_for_phone_sets() {
         let owners = OwnerHandleSet::from_phones(&["(555) 555-0100".into()]).unwrap();
-        assert_eq!(
-            owners.primary_owner_handle().as_deref(),
-            Some("+15555550100")
-        );
+        assert_eq!(owners.primary_owner_handle().as_deref(), Some("5555550100"));
         let trunk = OwnerHandleSet::from_phones(&["020 7946 0000".into()]).unwrap();
         assert_eq!(trunk.primary_owner_handle().as_deref(), Some("02079460000"));
         // Only a phone-free set has no primary owner handle.
@@ -918,6 +999,68 @@ mod tests {
         }
     }
 
+    fn keyed_in(raw: &str, code: &str) -> TypedKey {
+        key_typed_handle(raw, HandleType::Phone, country(code))
+    }
+
+    #[test]
+    fn a_national_number_in_a_stated_country_takes_its_plus_form() {
+        // The trunk prefix goes, and the calling code is the region.
+        let uk = keyed_in("07700 900123", "GB");
+        assert_eq!(
+            (uk.key.as_str(), uk.region.as_str(), uk.note),
+            ("+447700900123", "44", None)
+        );
+        // Written without the trunk prefix, it is the same number.
+        assert_eq!(keyed_in("7700900123", "GB").key, "+447700900123");
+        assert_eq!(keyed_in("(555) 555-0100", "US").key, "+15555550100");
+        assert_eq!(keyed_in("1 555 555 0100", "CA").key, "+15555550100");
+        // Russia dials 8 before a national number, Hungary 06.
+        assert_eq!(keyed_in("8 912 345 6789", "RU").key, "+79123456789");
+        assert_eq!(keyed_in("06 30 123 4567", "HU").key, "+36301234567");
+        // In Italy the leading 0 belongs to the number.
+        assert_eq!(keyed_in("06 1234 5678", "IT").key, "+390612345678");
+    }
+
+    #[test]
+    fn a_stated_country_never_overrides_a_plus_or_invents_a_short_code() {
+        let written = keyed_in("+6555550100", "GB");
+        assert_eq!(
+            (written.key.as_str(), written.region.as_str()),
+            ("+6555550100", "65")
+        );
+        let short = keyed_in("7535", "GB");
+        assert_eq!((short.key.as_str(), short.region.as_str()), ("7535", ""));
+        assert_eq!(
+            short.note.as_deref(),
+            Some("too few digits for a number in GB")
+        );
+        // An email address has no country.
+        let email = key_typed_handle("Jo@Example.com", HandleType::Email, country("GB"));
+        assert_eq!(
+            (email.key.as_str(), email.region.as_str()),
+            ("jo@example.com", "")
+        );
+    }
+
+    #[test]
+    fn a_handle_parsed_in_a_country_matches_the_plus_form() {
+        let national = Handle::parse("07700 900123").unwrap();
+        let full = Handle::parse("+447700900123").unwrap();
+        assert_ne!(national.key(), full.key(), "no country stated: two keys");
+        let gb = country("GB");
+        assert_eq!(
+            Handle::parse_in("07700 900123", gb).unwrap().key(),
+            full.key()
+        );
+        assert_eq!(
+            Handle::parse_in("+447700900123", gb).unwrap().key(),
+            full.key()
+        );
+        // The country never touches an email address or a sender name.
+        assert_eq!(Handle::parse_in("AMAZON", gb).unwrap().key(), "AMAZON");
+    }
+
     fn parsed(raw: &str) -> (HandleType, String) {
         let handle = Handle::parse(raw).unwrap();
         (handle.kind(), handle.key().to_string())
@@ -941,14 +1084,15 @@ mod tests {
     }
 
     #[test]
-    fn a_number_without_plus_is_read_as_a_us_number_and_a_short_code_keeps_its_digits() {
+    fn a_number_without_plus_keeps_its_digits_as_written() {
+        // No country is stated, so none is assumed: not the US either (#1676).
         assert_eq!(
             parsed("(555) 555-0100"),
-            (HandleType::Phone, "+15555550100".into())
+            (HandleType::Phone, "5555550100".into())
         );
         assert_eq!(
             parsed("15555550100"),
-            (HandleType::Phone, "+15555550100".into())
+            (HandleType::Phone, "15555550100".into())
         );
         assert_eq!(
             parsed("020 7946 0000"),
