@@ -77,13 +77,13 @@ fn no_ffmpeg_on_path(dir: &Path) -> media::testutil::ToolsHidden {
     media::testutil::locate_tools(OsString::new(), dir.to_path_buf())
 }
 
-/// The names in `dir` other than `keep`, to see that no temporary file was
-/// left behind.
+/// The names in `dir` other than `keep` and the lock file, to see that no
+/// temporary file was left behind.
 fn other_files(dir: &Path, keep: &[&str]) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| !keep.contains(&name.as_str()))
+        .filter(|name| name != LOCK_FILE && !keep.contains(&name.as_str()))
         .collect();
     names.sort();
     names
@@ -699,6 +699,55 @@ fn every_program_wanted_shows_as_downloading_before_its_request() {
         "wtsexporter was not downloading while it waited"
     );
     assert_eq!(downloads.get(Program::Wtsexporter), None);
+}
+
+/// A second app's check, started while the first one runs, does nothing:
+/// it neither downloads nor deletes the first one's temporary files.
+#[test]
+fn a_second_check_at_the_same_time_does_nothing() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    let asked = server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(500))
+            .body(published);
+    });
+    let first = ToolDownloads::default();
+    let second = ToolDownloads::default();
+    let base = server.base_url();
+    let dir = tools.path().to_path_buf();
+
+    std::thread::scope(|scope| {
+        let check =
+            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &first));
+        // The first check holds the lock once it shows a download.
+        while first.get(Program::Wtsexporter).is_none() {
+            assert!(!check.is_finished(), "the first check ended at once");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let other =
+            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &second));
+        other.join().unwrap();
+        assert!(
+            !check.is_finished(),
+            "the first check ended before the second"
+        );
+    });
+
+    asked.assert_calls(1);
+    assert_eq!(second.get(Program::Wtsexporter), None);
+    assert_eq!(first.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
+        b"wtsexporter"
+    );
 }
 
 /// With no network the check fails quietly, saying so, and leaves nothing.

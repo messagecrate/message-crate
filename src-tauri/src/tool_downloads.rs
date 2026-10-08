@@ -10,6 +10,10 @@
 //! - **Each file is pinned** to one release and one SHA-256 carried in
 //!   [`pins`]. A download that does not match is deleted and the failure
 //!   says the checksum did not match, because nobody clicked to start it.
+//! - **One check at a time.** The check holds a lock on [`LOCK_FILE`] in
+//!   the Tools Directory while it runs, and a second app open at the same
+//!   time skips its check, so neither deletes the other's temporary file
+//!   nor writes over the other's record.
 //! - **A file is replaced only after its successor passed.** The new file
 //!   is written under a temporary name in the Tools Directory, checked, and
 //!   then renamed over the old one, so a failed download leaves the old one
@@ -54,6 +58,9 @@ pub const GITHUB: &str = "https://github.com";
 
 /// The record of the files the app wrote, in the Tools Directory.
 pub const MANIFEST_FILE: &str = "manifest.json";
+
+/// The file the check holds a lock on while it runs, in the Tools Directory.
+pub const LOCK_FILE: &str = ".check.lock";
 
 /// The start of the temporary file the record is written to.
 const MANIFEST_TEMP_PREFIX: &str = ".manifest-";
@@ -580,11 +587,36 @@ fn does_not_run(program: Program) -> DownloadState {
     }
 }
 
+/// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
+/// another check holds it. The lock is let go when the file is closed.
+fn lock_check(dir: &Path) -> io::Result<Option<File>> {
+    std::fs::create_dir_all(dir)?;
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(dir.join(LOCK_FILE))?;
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
+        Err(std::fs::TryLockError::Error(err)) => Err(err),
+    }
+}
+
 /// Check `dir` against `pinned` and download, one after another, what is
 /// missing or not the pinned release, from `base`. ffmpeg and ffprobe are
 /// passed over when both are on `PATH`. Each download's progress and
 /// failure go to `downloads`, and each file written goes into the record.
+///
+/// Another app's check running on `dir` already does the work, so this one
+/// returns at once. When the lock can't be taken because the Tools Directory
+/// can't be written, the check goes on and its downloads say why.
 pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
+    let _lock = match lock_check(dir) {
+        Ok(Some(lock)) => Some(lock),
+        Ok(None) => return,
+        Err(_) => None,
+    };
     delete_leftovers(dir);
     let ffmpeg_on_path = media::ffmpeg_on_path();
     let mut manifest = read_manifest(dir);
