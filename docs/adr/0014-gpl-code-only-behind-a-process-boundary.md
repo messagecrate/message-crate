@@ -157,9 +157,13 @@ protocol crate depends on `serde` and `serde_json` alone.
 
 `crates/helpers/chat-db-fixture` writes the small `chat.db` both sides test
 against: the reader's own tests open it in process and the exporter's
-process-seam test spawns the built reader against it. It links rusqlite and
-nothing else, so it carries no GPL code into the exporter's test binary, and
-it is `MIT OR Apache-2.0` for the same reason the protocol crate is. It is a
+process-seam test spawns the built reader against it. It also puts that
+`chat.db` into an iPhone backup, plain or encrypted with a password in
+Apple's format, which the reader decrypts with `crabapple`. The encryption is
+written with the RustCrypto crates `crabapple` itself uses, not with
+`crabapple`, so the crate links rusqlite, plist and those permissive crates
+and no GPL code reaches the exporter's or `ios-backup`'s test binaries. It is
+`MIT OR Apache-2.0` for the same reason the protocol crate is. It is a
 dev-dependency only; no shipped binary links it.
 
 `crates/libs/ios-backup` is FCL and is the one crate that starts the reader.

@@ -161,6 +161,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-08: **Two reads of encrypted iPhone backups at once no longer
+  break each other.** Opening an encrypted backup decrypts its file list to
+  one fixed name in the computer's temporary directory, so two reads running
+  together, such as an Apple Messages import and a WhatsApp import from
+  encrypted backups, wrote over each other's copy and one failed. The file
+  list was also left behind when a read stopped on an error. It now goes into
+  the read's own directory under the Scratch Directory, which is deleted when
+  the read ends (#788).
+
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored
   message the text of a later edit, or added an attachment to it, the message
