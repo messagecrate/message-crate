@@ -2,7 +2,8 @@
 
 Where the desktop app keeps each Import Run's log, what a line of it holds,
 and who reads it. The decisions were made on #1340 and #1665; the code is
-`crates/core/message-crate-core/src/run_log.rs` (the line format),
+`crates/libs/log-lines` (the line format, shared with the server's log),
+`crates/core/message-crate-core/src/run_log.rs` (a run log's lines),
 `src-tauri/src/app_directories.rs` (writing) and `src-tauri/src/run_logs.rs`
 (listing and reading).
 
@@ -85,10 +86,30 @@ part, each with its time and level.
 
 ## Reading it
 
-The desktop app reads a run log the way the server reads its own: the newest
-lines first, filtered by level and text, a page at a time from the id of the
-last line held. A line's id is its byte offset in the file, which never moves,
-because the log is only ever appended to. A download is the file as it is.
+The desktop app reads a run log the way the server reads its own, with the
+same code (`crates/libs/log-lines`): the newest lines first, walking back
+from the id of the last line held a chunk at a time, filtered by level and
+text. A line's id is its byte offset in the file, which never moves, because
+the log is only ever appended to. A line still being written, with no line
+break yet, is left out until it is whole. A download is the file byte for
+byte.
+
+A log written before its lines carried a time and a level has no line the
+viewer can read. The viewer says so and offers the download, rather than
+saying no line matches the filter.
+
+## A filter, not a guard
+
+Who reads which log decides what each screen offers, not who can open a
+file. The window tells the desktop app which account is signed in, on which
+Message Crate, and whether it is the owner, and the desktop app takes its
+word. A run log is a plain file in the Logs Directory, which any program run
+by the computer's user can open.
+
+Why that is enough: everything on the computer runs as one user of the
+operating system, who can read the Logs Directory with or without Message
+Crate. The rule keeps one account's runs off another account's screens, as
+the server keeps one account's Import Runs from another.
 
 ## What a line holds
 
