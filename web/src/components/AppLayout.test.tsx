@@ -421,9 +421,9 @@ describe("AppLayout in a phone-width window (#1722)", () => {
       setWindowWidth(390);
       const { container } = renderLayout(entry);
 
-      // The navigation panel stops at its default width, the list and the
-      // right pane at their minimums, and the row scrolls sideways.
-      expect(navigationPanel().style.width).toBe("220px");
+      // The navigation panel, the list and the right pane each stop at their
+      // own minimums, and the row scrolls sideways.
+      expect(navigationPanel().style.width).toBe("160px");
       expect(container.querySelector("[data-list-column]")).toHaveStyle({ minWidth: "220px" });
       expect(container.querySelector("[data-right-pane]")).toHaveStyle({ minWidth: "320px" });
       expect(columnRow().className).toContain("overflow-x-auto");
@@ -443,7 +443,7 @@ describe("AppLayout in a phone-width window (#1722)", () => {
         </MemoryRouter>
       </Providers>,
     );
-    expect(navigationPanel().style.width).toBe("220px");
+    expect(navigationPanel().style.width).toBe("160px");
     expect(columnRow().className).toContain("overflow-x-auto");
     // The message route's columns sit in the row itself, with no wrapper
     // between that would clip them.
@@ -455,6 +455,15 @@ describe("AppLayout in a phone-width window (#1722)", () => {
     setWindowWidth(390);
     renderLayout("/settings");
     expect(navigationPanel().style.width).toBe("195px");
+  });
+
+  it("narrows a panel stored wide so the row fits a 1024 px window", () => {
+    // 1024 less the list's 220 and the right pane's 320, less the panel's and
+    // the list's 1 px dividers.
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "520");
+    setWindowWidth(1024);
+    renderLayout("/");
+    expect(navigationPanel().style.width).toBe("482px");
   });
 
   it("changes nothing in a 1280 px window", () => {

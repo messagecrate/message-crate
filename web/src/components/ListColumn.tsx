@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import ColumnResizeHandle from "./ColumnResizeHandle";
+import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
 import { useReportColumnResizing } from "./columnResizeState";
 import { useColumnResize } from "./useColumnResize";
 
@@ -30,7 +31,7 @@ export default function ListColumn({ children }: { children: ReactNode }) {
         maxWidth: `${width}px`,
         width: `${width}px`,
       }}
-      className="relative flex h-full flex-col overflow-hidden border-r border-border bg-panel text-text"
+      className={`relative flex h-full flex-col overflow-hidden ${COLUMN_DIVIDER_CLASS} bg-panel text-text`}
     >
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
 

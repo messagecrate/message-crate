@@ -11,6 +11,7 @@ import { useMessageTags } from "../lib/useMessageTags";
 import { useWindowWidth } from "../lib/useWindowWidth";
 import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
 import ColumnResizeHandle from "./ColumnResizeHandle";
+import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
 import { useReportColumnResizing } from "./columnResizeState";
 import GroupsNav from "./GroupsNav";
 import { EllipsisIcon, SearchIcon, TrashIcon } from "./icons";
@@ -115,7 +116,7 @@ function browseLinkClass(active: boolean): string {
 
 export default function LeftPanel({
   browseQuery,
-  windowFloor,
+  besideMinWidth,
 }: {
   /**
    * The query the conversation list is showing right now, or "" when the
@@ -125,11 +126,12 @@ export default function LeftPanel({
    */
   browseQuery: string;
   /**
-   * The narrowest a narrow window makes the panel; `LEFT_PANEL_MIN_WIDTH`
-   * when not given. Beside a list the page scrolls sideways instead of
-   * squeezing the panel below its default width (#1722).
+   * The width the columns beside the panel need, dividers included, on a
+   * screen with a list; not given on a screen without one. A narrow window
+   * narrows the panel first, down to `LEFT_PANEL_MIN_WIDTH`, and below that
+   * the area under the header scrolls sideways (#1722).
    */
-  windowFloor?: number;
+  besideMinWidth?: number;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -140,7 +142,7 @@ export default function LeftPanel({
   const onDraggingChange = useReportColumnResizing();
   // A narrow window caps the panel below its stored width, which comes back
   // when the window is wide enough again.
-  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth(), windowFloor);
+  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth(), besideMinWidth);
   const { width, dragging, handleHover, handleProps } = useColumnResize({
     storageKey: LEFT_PANEL_STORAGE_KEY,
     defaultWidth: LEFT_PANEL_DEFAULT_WIDTH,
@@ -216,7 +218,7 @@ export default function LeftPanel({
   return (
     <div
       style={{ flex: `0 0 ${width}px`, width: `${width}px` }}
-      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-panel text-text"
+      className={`relative flex h-full shrink-0 flex-col overflow-hidden ${COLUMN_DIVIDER_CLASS} bg-panel text-text`}
     >
       <div className={LIST_TOOLBAR_CLASS} aria-hidden />
       <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}>

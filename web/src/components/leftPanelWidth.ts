@@ -1,3 +1,5 @@
+import { COLUMN_DIVIDER_WIDTH } from "./columnDivider";
+
 /** Shared nav-column width bounds and persistence key (LeftPanel + AppHeader). */
 
 export const LEFT_PANEL_DEFAULT_WIDTH = 220;
@@ -15,16 +17,20 @@ export const LEFT_PANEL_WIDTH_VAR = "--left-panel-width";
 export const LEFT_PANEL_WINDOW_SHARE = 0.5;
 
 /**
- * The widest a window `windowWidth` pixels wide lets the navigation panel be:
- * the window's share, never below `floor`. A width is shown as the smaller of
- * this and the stored width, which `LEFT_PANEL_MAX_WIDTH` already bounds.
- * The floor is `LEFT_PANEL_MIN_WIDTH` on a screen with no list, so Settings
- * keeps room at phone width (#1718), and `LEFT_PANEL_DEFAULT_WIDTH` beside a
- * list, where the row under the header scrolls sideways instead (#1722).
+ * The widest a window `windowWidth` pixels wide lets the navigation panel be,
+ * never below `LEFT_PANEL_MIN_WIDTH`. A width is shown as the smaller of this
+ * and the stored width, which `LEFT_PANEL_MAX_WIDTH` already bounds.
+ *
+ * On a screen with no list the panel takes at most the window's share, so
+ * Settings keeps room at phone width (#1718). Beside a list it takes what the
+ * columns beside it leave, `besideMinWidth` and its own divider, so a panel
+ * stored wide gives way before the row under the header scrolls sideways
+ * (#1722).
  */
-export function leftPanelWindowMaxWidth(
-  windowWidth: number,
-  floor: number = LEFT_PANEL_MIN_WIDTH,
-): number {
-  return Math.max(floor, Math.floor(windowWidth * LEFT_PANEL_WINDOW_SHARE));
+export function leftPanelWindowMaxWidth(windowWidth: number, besideMinWidth?: number): number {
+  const room =
+    besideMinWidth === undefined
+      ? Math.floor(windowWidth * LEFT_PANEL_WINDOW_SHARE)
+      : windowWidth - besideMinWidth - COLUMN_DIVIDER_WIDTH;
+  return Math.max(LEFT_PANEL_MIN_WIDTH, room);
 }
