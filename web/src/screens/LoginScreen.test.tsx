@@ -356,7 +356,7 @@ describe("LoginScreen", () => {
     expect(setServer).not.toHaveBeenCalledWith(B);
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith(B);
     expect(setBaseUrlSpy).toHaveBeenCalledWith(A);
-    expect(retrySavedLogin).not.toHaveBeenCalledWith(B);
+    expect(retrySavedLogin).not.toHaveBeenCalled();
   });
 
   it("says a disconnected card is still disconnected when the new address does not answer either", async () => {
@@ -828,9 +828,10 @@ describe("LoginScreen", () => {
   });
 
   it("tries a login saved for the app's own address once the app is back on it", async () => {
-    // The saved address is elsewhere; the saved login was made at the app's
+    // The saved address is elsewhere. The saved login was made at the app's
     // own. Going back must take the person in without asking for the
-    // password the app already holds a token for.
+    // password the app already holds a token for. The connect on mount
+    // leaves the saved login alone: the startup check already judged it.
     tauriState.isTauri = true;
     authState.serverUrl = "http://crate.example:8080";
     stubServer();
@@ -838,8 +839,7 @@ describe("LoginScreen", () => {
     renderScreen();
 
     await screen.findByText("Connected to crate.example:8080");
-    expect(retrySavedLogin).toHaveBeenCalledWith("http://crate.example:8080");
-    retrySavedLogin.mockClear();
+    expect(retrySavedLogin).not.toHaveBeenCalled();
 
     await user.click(await screen.findByRole("button", { name: "Change server address" }));
     await user.click(
@@ -901,6 +901,22 @@ describe("LoginScreen", () => {
     await waitFor(() => expect(setServer).toHaveBeenCalledWith(""), { timeout: 3000 });
     expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
     expect(startLocalServer).not.toHaveBeenCalled();
+  });
+
+  it("offers no way back while the desktop app is on its own Message Crate, slash or not", async () => {
+    tauriState.isTauri = true;
+    authState.serverUrl = "http://127.0.0.1:8080/";
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+
+    await screen.findByText(/^Connected to /);
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+
+    expect(await screen.findByRole("heading", { name: "Server Address" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use the Message Crate on this computer" }),
+    ).toBeNull();
   });
 
   it("offers no way back while the website is on its own Message Crate", async () => {

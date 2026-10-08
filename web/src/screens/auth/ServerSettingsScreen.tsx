@@ -33,7 +33,7 @@ export interface ServerSettingsScreenProps {
    * address in use is another one: it is how a person returns from a Message
    * Crate elsewhere.
    */
-  useOwn?: { label: string; onPress: () => void };
+  backToOwn?: { label: string; onPress: () => void };
 }
 
 /**
@@ -50,7 +50,7 @@ export default function ServerSettingsScreen({
   onTest,
   onCancel,
   onSubmit,
-  useOwn,
+  backToOwn,
 }: ServerSettingsScreenProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -84,10 +84,10 @@ export default function ServerSettingsScreen({
         </Button>
       </div>
 
-      {useOwn ? (
+      {backToOwn ? (
         <div className="mt-4 text-center">
-          <PlainButton className={accentLink} onPress={useOwn.onPress}>
-            {useOwn.label}
+          <PlainButton className={accentLink} onPress={backToOwn.onPress}>
+            {backToOwn.label}
           </PlainButton>
         </div>
       ) : null}

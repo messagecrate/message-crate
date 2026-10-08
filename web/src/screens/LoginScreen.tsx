@@ -193,8 +193,13 @@ export default function LoginScreen() {
   // so only the newest may write.
   const connectRun = useRef(0);
   const connectAbort = useRef<AbortController | null>(null);
+  // `retryLogin` is for a return to an address, chosen again or back from
+  // being down: a login saved for it is tried once it answers. The connect
+  // on mount leaves a saved login alone, because the startup check already
+  // judged it; retrying there would send a login the server keeps failing
+  // round and round.
   const connect = useCallback(
-    async (url: string) => {
+    async (url: string, retryLogin = false) => {
       const trimmed = url.trim();
       const run = connectRun.current + 1;
       connectRun.current = run;
@@ -218,9 +223,8 @@ export default function LoginScreen() {
         setAuthServer(trimmed);
         dispatch({ type: "answered", address: trimmed });
         // A login saved for this address was never rejected by it, so it is
-        // checked now: a server that accepts it takes the person straight
-        // in, whether the address answered at last or was chosen again.
-        retrySavedLogin(trimmed);
+        // checked now: a server that accepts it takes the person straight in.
+        if (retryLogin) retrySavedLogin(trimmed);
         return;
       }
       // The app's own address answers once the app has started its server,
@@ -252,7 +256,7 @@ export default function LoginScreen() {
   useEffect(() => {
     const becameHealthy = previousHealth.current !== "ok" && health === "ok";
     previousHealth.current = health;
-    if (state === "disconnected" && becameHealthy) void connect(address);
+    if (state === "disconnected" && becameHealthy) void connect(address, true);
   }, [health, state, address, connect]);
 
   // The moment the app's own server answers, connect, rather than wait for
@@ -327,19 +331,22 @@ export default function LoginScreen() {
   // The way back from a Message Crate elsewhere: the desktop app's own, or
   // the website's own origin (the empty address). Offered only while the
   // address in use is another one, since the saved address outlives logout.
-  const ownAddress = isTauri() ? DEFAULT_TAURI_SERVER_URL : "";
-  const useOwn =
-    address === ownAddress
-      ? undefined
-      : {
-          label: isTauri()
-            ? "Use the Message Crate on this computer"
-            : "Use this website's own Message Crate",
-          onPress: () => {
-            closeSettings();
-            void connect(ownAddress);
-          },
-        };
+  const own = isTauri()
+    ? {
+        address: DEFAULT_TAURI_SERVER_URL,
+        label: "Use the Message Crate on this computer",
+        onIt: isOwnAddress(address),
+      }
+    : { address: "", label: "Use this website's own Message Crate", onIt: address === "" };
+  const backToOwn = own.onIt
+    ? undefined
+    : {
+        label: own.label,
+        onPress: () => {
+          closeSettings();
+          void connect(own.address, true);
+        },
+      };
 
   return (
     <div className={pageCenter}>
@@ -363,9 +370,9 @@ export default function LoginScreen() {
                 const next = draft.trim();
                 closeSettings();
                 // Confirming the address already connected is no change.
-                if (next !== address) void connect(next);
+                if (next !== address) void connect(next, true);
               }}
-              useOwn={useOwn}
+              backToOwn={backToOwn}
             />
           ) : (
             <>

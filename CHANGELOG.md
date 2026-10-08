@@ -236,7 +236,7 @@ released versions carry their date on the heading.
 - A desktop app that was pointed at a Message Crate on another computer
   opens on this computer's own once after upgrading, because the address is
   now saved apart from the login. Enter the address again under **Change
-  server address** and log in; from then on it is kept.
+  server address** and log in. From then on the app keeps it.
 - Message files exported before replies moved onto the message itself are
   refused when you import or convert them, rather than read with their
   replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and
