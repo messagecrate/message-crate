@@ -81,14 +81,21 @@ pub(crate) fn restrict_permissions(_file: &File) -> Result<(), RuntimeError> {
 }
 
 /// Point this process's temporary directory at `dir`, the directory the app
-/// named for the request and deletes when the request ends.
+/// named in the request.
+///
+/// For an identities request or an export, `dir` is the request's own
+/// scratch directory, which the app deletes when the request ends. For a
+/// backup domain request it is the `out_dir` the domain is decrypted into:
+/// the WhatsApp import's work directory under the Scratch Directory, which
+/// the import deletes when it ends.
 ///
 /// `crabapple` decrypts an encrypted backup's `Manifest.db` to one fixed name
 /// in the temporary directory, `crabapple-Manifest.db`, and removes it when
 /// the backup is dropped. Left at the system's temporary directory, two
 /// readers running at once write over each other's copy, and the decrypted
 /// manifest lands outside the directory the app deletes, where a reader that
-/// stops on an error (`std::process::exit`, which drops nothing) leaves it.
+/// stops on an error while it holds the backup (`std::process::exit`, which
+/// drops nothing) leaves it.
 ///
 /// # Safety
 ///

@@ -1,5 +1,6 @@
-//! The identities and export requests against an iPhone backup, through the
-//! real `imessage-reader` process, as the desktop app makes them.
+//! The identities, export and backup domain requests against an iPhone
+//! backup, through the real `imessage-reader` process, as the desktop app
+//! makes them.
 //!
 //! `chat_db_fixture::ios_backup` writes the backup from the fixture
 //! `chat.db`, once as it is and once encrypted with a password in Apple's
@@ -17,9 +18,9 @@ use std::{
 use chat_db_fixture::{
     OWNER, OWNER_EMAIL, PHOTO_BYTES,
     ios_backup::{
-        BACKUP_PASSWORD, DECRYPTED_MANIFEST_NAME, Encryption, HOME_DOMAIN, MEDIA_DOMAIN,
-        MESSAGES_DB_PATH, OneOpenBackup, PHOTO_PATH, one_open_backup_at_a_time, stored_path,
-        write_messages_backup, write_messages_backup_named,
+        BACKUP_PASSWORD, BackupFile, DECRYPTED_MANIFEST_NAME, Encryption, HOME_DOMAIN,
+        MEDIA_DOMAIN, MESSAGES_DB_PATH, OneOpenBackup, PHOTO_PATH, one_open_backup_at_a_time,
+        stored_path, write_backup, write_messages_backup, write_messages_backup_named,
     },
     listing::{file_names, paths_under},
 };
@@ -27,7 +28,10 @@ use imessage_reader_protocol::{
     AttachmentFile, Event, ExportRequest, IOS_BACKUP_PASSWORD_INCORRECT, IdentitiesRequest,
     Platform, Request, Source,
 };
-use ios_backup::{Helper, backup_identities, reader_build::build_imessage_reader};
+use ios_backup::{
+    DecryptedDomain, Helper, backup_identities, decrypt_ios_backup_domain,
+    reader_build::build_imessage_reader,
+};
 
 /// A backup in a directory that lives as long as the value.
 fn backup(encryption: Encryption<'_>) -> tempfile::TempDir {
@@ -361,6 +365,61 @@ fn an_export_decrypts_into_its_scratch_directory_and_the_photo_comes_out_whole()
     assert_eq!(
         file_names(scratch.path()),
         vec![path.file_name().unwrap().to_string_lossy().into_owned()]
+    );
+}
+
+/// The WhatsApp import decrypts WhatsApp's domain of an encrypted backup
+/// into its work directory through the reader. While the reader waits for
+/// the go, the backup's decrypted `Manifest.db` is in that work directory,
+/// not the system's temporary directory (#788). Once the domain is written,
+/// the reader has deleted it and only the domain is left.
+#[test]
+fn a_backup_domain_request_decrypts_into_the_directory_it_names() {
+    const WHATSAPP: &str = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared";
+    const CHAT_STORAGE: &[u8] = b"made-up ChatStorage.sqlite bytes";
+    build_imessage_reader();
+    let backup = tempfile::tempdir().unwrap();
+    write_backup(
+        backup.path(),
+        &[BackupFile {
+            domain: WHATSAPP,
+            relative_path: "ChatStorage.sqlite",
+            bytes: Some(CHAT_STORAGE),
+        }],
+        Encryption::Password(BACKUP_PASSWORD),
+    );
+    let work = tempfile::tempdir().unwrap();
+    let mut seen_before_the_go = Vec::new();
+
+    let written = decrypt_ios_backup_domain(
+        backup.path(),
+        BACKUP_PASSWORD,
+        WHATSAPP,
+        work.path(),
+        |_| {
+            seen_before_the_go = file_names(work.path());
+            Ok(())
+        },
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        seen_before_the_go,
+        vec![DECRYPTED_MANIFEST_NAME.to_string()]
+    );
+    assert_eq!(
+        written,
+        DecryptedDomain {
+            files: 1,
+            failures: 0
+        }
+    );
+    assert_eq!(file_names(work.path()), vec![WHATSAPP.to_string()]);
+    assert_eq!(
+        fs::read(work.path().join(WHATSAPP).join("ChatStorage.sqlite")).unwrap(),
+        CHAT_STORAGE
     );
 }
 
