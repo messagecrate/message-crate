@@ -179,6 +179,7 @@ Run the HTTP API. A database that does not exist yet is created with the Demo Ac
 * `--bind <BIND>` — Address to listen on (overrides `[server] bind`; default 127.0.0.1:8080)
 * `--static-dir <STATIC_DIR>` — Directory holding the built website (overrides `[server] static_dir`; default `static`)
 * `--cors-origin <ORIGIN>` — Another website allowed to call this API, added to `[server] cors_origins`; repeat for more than one. The packaged desktop app's own origins are always allowed
+* `--tools-dir <TOOLS_DIR>` — Look for ffmpeg and ffprobe in this directory when they are not on PATH. The desktop app passes its Tools Directory, where it keeps the copies it downloads; without it the server finds ffmpeg on PATH or makes no Previews or Thumbnails
 * `--exit-with-parent <PID>` — Stop, as on Ctrl-C or SIGTERM, once the process with this id is gone. The desktop app passes its own id, so a server it started does not outlive a crash of the app. Without it the server runs until it is stopped
 
 

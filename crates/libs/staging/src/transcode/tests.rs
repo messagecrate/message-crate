@@ -1235,11 +1235,14 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
 
         let message = err.to_string();
         assert!(
-            message.starts_with("ffmpeg/ffprobe are required to convert or compress attachments"),
+            message
+                .starts_with("ffmpeg and ffprobe are required to convert or compress attachments"),
             "{mode:?}: {message}"
         );
-        assert!(message.contains("ffmpeg not found"), "{mode:?}: {message}");
-        assert!(message.contains("ffprobe not found"), "{mode:?}: {message}");
+        assert!(
+            message.contains("ffmpeg and ffprobe were not found on PATH"),
+            "{mode:?}: {message}"
+        );
         assert_eq!(
             progress_calls, 0,
             "{mode:?}: the Media stage reported progress"

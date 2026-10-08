@@ -15,7 +15,7 @@ use crate::imports_api::ImportMode;
 use anyhow::{Result, bail};
 use clap::{Args, Command, CommandFactory, Parser, Subcommand};
 
-use crate::config::{Config, validate_source_id};
+use crate::config::{Config, ServeFlags, validate_source_id};
 use crate::dedupe::DedupeStats;
 use crate::open_db::OpenDb;
 use demo_seed::DemoSize;
@@ -252,6 +252,13 @@ pub struct ServeArgs {
     /// own origins are always allowed
     #[arg(long = "cors-origin", value_name = "ORIGIN")]
     pub cors_origins: Vec<String>,
+
+    /// Look for ffmpeg and ffprobe in this directory when they are not on
+    /// PATH. The desktop app passes its Tools Directory, where it keeps the
+    /// copies it downloads; without it the server finds ffmpeg on PATH or
+    /// makes no Previews or Thumbnails
+    #[arg(long)]
+    pub tools_dir: Option<PathBuf>,
 
     /// Stop, as on Ctrl-C or SIGTERM, once the process with this id is gone.
     /// The desktop app passes its own id, so a server it started does not
@@ -678,7 +685,7 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
 
 /// The config `serve` runs on: the directory `--data-dir` names, or else the
 /// config file, with the other flags applied over either. A relative
-/// `--static-dir` resolves where the config file's paths do; with
+/// `--static-dir` or `--tools-dir` resolves where the config file's paths do; with
 /// `--data-dir`, which reads no config file, that is the working directory,
 /// as for `--data-dir` itself.
 fn serve_config(args: ServeArgs) -> Result<Config> {
@@ -699,7 +706,15 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
             crate::config::config_root(&args.config)?,
         ),
     };
-    Ok(cfg.with_serve_overrides(&root, args.bind, args.static_dir, args.cors_origins))
+    Ok(cfg.with_serve_overrides(
+        &root,
+        ServeFlags {
+            bind: args.bind,
+            static_dir: args.static_dir,
+            cors_origins: args.cors_origins,
+            tools_dir: args.tools_dir,
+        },
+    ))
 }
 
 /// Make the Thumbnails and Previews of stored attachments.

@@ -16,7 +16,8 @@ use crate::config::{
 };
 
 /// Validation message when Convert or Compress is selected and ffmpeg is missing.
-pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe. Put them on PATH, or in the desktop app set the ffmpeg directory in Settings → System.";
+pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str =
+    "Convert and Compress need ffmpeg and ffprobe, on PATH or in the Tools Directory.";
 
 /// Which backup type the user selected (iMessage, WhatsApp, SMS Backup & Restore, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -586,9 +587,7 @@ impl Form {
         let obfuscate_active = self.obfuscate || !self.obfuscate_seed.trim().is_empty();
         // Obfuscate skips copy/convert, so ffmpeg is not required.
         if !obfuscate_active && mode.needs_tools() && !media::ffmpeg_available() {
-            errors.push(
-                "Convert/Compress require ffmpeg and ffprobe in lib/ (or beside the program), in MESSAGE_CRATE_BIN, or on PATH.".into(),
-            );
+            errors.push(CONVERT_COMPRESS_FFMPEG_REQUIRED.into());
         }
         self.media_config_for(matches!(mode, MediaMode::Compress), errors)
     }

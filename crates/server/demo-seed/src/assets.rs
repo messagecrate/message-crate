@@ -230,9 +230,7 @@ mod tests {
         let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
             return;
         };
-        let ffprobe = media::probe_ffmpeg_tools(None)
-            .ffprobe_path
-            .expect("the guard found ffprobe");
+        let ffprobe = media::ffprobe_path().expect("the guard found ffprobe");
 
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("voice.wav");

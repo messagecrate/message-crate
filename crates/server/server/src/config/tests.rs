@@ -160,6 +160,19 @@ fn a_config_with_an_unknown_key_is_refused_naming_the_key_and_its_section() {
     }
 }
 
+/// The Tools Directory comes only from `serve --tools-dir`, which the
+/// desktop app passes. A server started by hand finds ffmpeg on `PATH` or
+/// does without, so the config file has no key for it (#1053).
+#[test]
+fn a_config_cannot_name_a_tools_directory() {
+    let text = format!(
+        "{:#}",
+        load_text("[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\ntools_dir = \"tools\"\n")
+            .unwrap_err()
+    );
+    assert!(text.contains("`tools_dir`"), "{text}");
+}
+
 /// Every unknown key is named, not only the first.
 #[test]
 fn every_unknown_key_in_a_section_is_named() {

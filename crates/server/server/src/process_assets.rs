@@ -7,8 +7,8 @@
 //! stored under the fingerprint of its own bytes and named by the
 //! attachment rows of its original (`attachments.thumbnail_*` and
 //! `attachments.derived_*`). The conversions are the `media` crate's, which
-//! finds ffmpeg and ffprobe beside the binary, in `MESSAGE_CRATE_BIN`, or on
-//! `PATH`.
+//! finds ffmpeg and ffprobe on `PATH`, then in the Tools Directory the
+//! desktop app names with `serve --tools-dir`.
 //!
 //! Two callers run it: the `process-assets` command over every attachment,
 //! for rebuilding and repair, and the server's background pass over the

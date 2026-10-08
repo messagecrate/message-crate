@@ -536,8 +536,10 @@ _Avoid_: Cache Directory, Temp Folder, Temp Directory
 The directory inside the Message Crate Directory where the desktop app keeps
 the programs it downloads for itself: ffmpeg, ffprobe and wtsexporter. The
 app owns its contents and replaces them when a release needs a newer
-version. Decided, not built yet: #1053 tracks the work, and until it lands
-the app downloads nothing.
+version. ffmpeg and ffprobe are looked for on `PATH` and then here,
+wtsexporter only here, by the app and by the server it starts. The download
+is decided, not built yet: #1053 tracks the work, and until it lands the app
+downloads nothing.
 _Avoid_: Tools Folder, Bin Directory, ffmpeg directory
 
 **Apple Messages Reader**:

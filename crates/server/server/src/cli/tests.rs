@@ -622,6 +622,7 @@ fn serve_with_a_data_dir_needs_no_config_file() {
     assert_eq!(server.bind, "127.0.0.1:8080");
     assert_eq!(server.static_dir, PathBuf::from("static"));
     assert!(server.cors_origins.is_empty());
+    assert_eq!(server.tools_dir, None);
 
     let cfg = serve_config(serve_args(&[
         "--data-dir",
@@ -634,9 +635,15 @@ fn serve_with_a_data_dir_needs_no_config_file() {
         "http://localhost:5173",
         "--cors-origin",
         "http://127.0.0.1:5173",
+        "--tools-dir",
+        "/home/someone/message-crate/tools",
     ]))
     .unwrap();
     let server = cfg.require_server().unwrap();
+    assert_eq!(
+        server.tools_dir,
+        Some(PathBuf::from("/home/someone/message-crate/tools"))
+    );
     assert_eq!(server.bind, "0.0.0.0:9000");
     assert_eq!(server.static_dir, PathBuf::from("/opt/site"));
     assert_eq!(
@@ -673,11 +680,14 @@ async fn serve_flags_override_the_config_file_and_a_relative_data_dir_is_made_ab
         "127.0.0.1:9100",
         "--static-dir",
         "elsewhere",
+        "--tools-dir",
+        "tools",
     ]))
     .unwrap();
     let server = overridden.require_server().unwrap();
     assert_eq!(server.bind, "127.0.0.1:9100");
     assert_eq!(server.static_dir, temp.path().join("elsewhere"));
+    assert_eq!(server.tools_dir, Some(temp.path().join("tools")));
 
     let relative = serve_config(serve_args(&["--data-dir", "some/crate"])).unwrap();
     assert!(relative.paths.data_dir.is_absolute());

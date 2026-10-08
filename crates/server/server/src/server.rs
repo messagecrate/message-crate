@@ -1356,6 +1356,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     // through a first start's Demo Account build.
     let exit_with_parent = exit_with_parent.map(ParentWatch::start);
     let server = cfg.require_server()?.clone();
+    // The desktop app names its Tools Directory; ffmpeg is looked for on
+    // PATH first and there second, as the app looks (#1053).
+    media::set_tools_dir(server.tools_dir.clone());
     let bind = server.bind.clone();
     // Before the database is opened, so a database that fails to open is in
     // the server's log as well as on stderr.
@@ -1818,6 +1821,7 @@ pub(crate) fn test_app_state(pool: sqlx::SqlitePool, data_dir: &Path) -> AppStat
             cors_origins: Vec::new(),
             openapi_ui: false,
             static_dir: "static".into(),
+            tools_dir: None,
         }),
     };
     AppState::new(OpenDb { cfg, db: pool }, asset_uploads::DEFAULT_PART_SIZE)

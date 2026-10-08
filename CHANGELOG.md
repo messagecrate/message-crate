@@ -21,6 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **The desktop app looks for ffmpeg and wtsexporter in one
+  place, its Tools Directory.** ffmpeg and ffprobe are found on `PATH`, then
+  in `~/message-crate/tools`, and nowhere else; wtsexporter is found only in
+  `~/message-crate/tools`. The server the app starts looks in the same two
+  places, so the app and its server convert with the same ffmpeg; a server
+  started by hand finds ffmpeg on `PATH` or makes no Previews or Thumbnails.
+  **Settings → System → Media** has nothing to type any more: it names the
+  Tools Directory and shows, for ffmpeg, ffprobe and wtsexporter, the path
+  found or that the program is missing. The app does not download the
+  programs yet (#1053).
+
 - 2026-10-08: **A phone number written without its country code can be given
   its country.** The import form has a **Phone's country** under
   **Processing Options (Advanced)**: every number the import writes without a
@@ -320,6 +331,15 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- The **ffmpeg directory** field in Settings → System is gone, and the
+  `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
+  read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
+  or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
+  found: install ffmpeg on `PATH` or put both programs in
+  `~/message-crate/tools`. Put wtsexporter in
+  `~/message-crate/tools` too, because a WhatsApp import no longer finds it
+  on `PATH`. If you start the server with a script, it takes `serve
+  --tools-dir <directory>` for the same purpose (#1053).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

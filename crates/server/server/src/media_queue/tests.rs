@@ -659,9 +659,7 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
 /// A video that takes ffmpeg seconds to convert: the HEVC fixture played
 /// 8000 times over, copied rather than encoded, so it is made in an instant.
 fn long_video() -> Vec<u8> {
-    let ffmpeg = media::probe_ffmpeg_tools(None)
-        .ffmpeg_path
-        .expect("ffmpeg, which the guard found");
+    let ffmpeg = media::ffmpeg_path().expect("ffmpeg, which the guard found");
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("long.mov");
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/media/hevc.mov");

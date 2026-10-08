@@ -1,6 +1,6 @@
 ---
 title: System
-description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, the ffmpeg directory, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
+description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, where ffmpeg, ffprobe and wtsexporter were found, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
 ---
 
 The **System** tab of **Settings** holds the settings of one installed desktop app.
@@ -44,21 +44,18 @@ When it is on, Import restores the last backup path used for each import source.
 
 ## Media
 
-### ffmpeg directory
+**Media** shows where the desktop app found the programs it runs, and has nothing to change.
+`ffmpeg` and `ffprobe` convert and compress attachments, and are looked for on the system `PATH`, then in the Tools Directory.
+`wtsexporter` reads WhatsApp backups, and is looked for in the Tools Directory only.
 
-**ffmpeg directory** names a directory that holds both `ffmpeg` and `ffprobe`.
-The field is empty by default, and the app then finds both on the system `PATH`.
+**Tools directory** names the Tools Directory, `tools` in the Message Crate Directory, shown as `~/message-crate/tools`.
 
-The app checks the directory as soon as a path is entered.
-Two lines under the field report the result, one per tool:
+One line per program reports the result:
 
 - A check mark with `Found ffmpeg` and the full path of the program.
 - A cross with `ffmpeg not found`.
 
-The directory is saved only when both tools are found in it, because one without the other can't convert media.
-A saved directory is applied again each time the app starts.
-
-**Install help** opens [Attachments and media](/docs/user/features/messages/attachments-and-media/), which covers what the two tools are used for and how to install them.
+[Attachments and media](/docs/user/features/messages/attachments-and-media/) covers what ffmpeg and ffprobe are used for.
 
 ## Exports
 

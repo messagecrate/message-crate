@@ -444,7 +444,8 @@ export default function ImportRunView({
         ) : null}
         {toolsBlocked ? (
           <p className="m-0 text-[0.813rem] text-muted">
-            Media needs ffmpeg. Set its directory in Settings, then come back to Import.
+            Media needs ffmpeg. Install it on PATH or put it in the Tools Directory, then come back
+            to Import.
           </p>
         ) : null}
         <ReviewActions

@@ -31,6 +31,7 @@ import { sessionRefused } from "../../lib/sessionRefusal";
 import {
   type AttachmentForecast,
   awaitTauriJob,
+  ffmpegFound,
   invokeCreateRunDir,
   invokeDeleteRunDir,
   invokeExtract,
@@ -40,11 +41,11 @@ import {
   invokeSaveImportRunRecord,
   invokeStartImportRunLog,
   invokeSummarizeStaging,
+  invokeToolsStatus,
   invokeTranscodeStaging,
   invokeUpload,
   type OwnerIdentityCount,
   onExtractEvents,
-  probeFfmpegTools,
   type RunDirConfig,
   type SizeVerdict,
   type StagingSummary,
@@ -977,8 +978,7 @@ async function moveStageAtReview(
 async function mediaToolsMissingFor(mode: AttachmentMediaMode): Promise<boolean> {
   if (mediaJobVerb(mode) === null) return false;
   try {
-    const probe = await probeFfmpegTools(null);
-    return !probe.ok;
+    return !ffmpegFound(await invokeToolsStatus());
   } catch {
     return true;
   }

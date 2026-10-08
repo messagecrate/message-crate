@@ -19,9 +19,9 @@ import { ApiError } from "../../lib/api";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
 import type {
-  FfmpegToolsProbe,
   StagingSummary,
   TauriJobResult,
+  ToolsStatus,
   UploadFinishedReport,
 } from "../../lib/tauri";
 import type {
@@ -47,7 +47,7 @@ const invokeExtractMock = vi.fn();
 const invokeSummarizeStagingMock = vi.fn();
 const invokeTranscodeStagingMock = vi.fn();
 const invokeDeleteRunDirMock = vi.fn();
-const probeFfmpegToolsMock = vi.fn<(dir: string | null) => Promise<FfmpegToolsProbe>>();
+const toolsStatusMock = vi.fn<() => Promise<ToolsStatus>>();
 const setImportStageMock = vi.fn();
 const discardImportRunMock = vi.fn();
 const invokeImessageBackupIdentitiesMock = vi.fn();
@@ -89,7 +89,8 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeReadImportRunRecord: (...args: unknown[]) => readRunRecordMock(...args),
   invokeSaveImportRunRecord: (...args: unknown[]) => saveRunRecordMock(...args),
   invokeStartImportRunLog: (...args: unknown[]) => invokeStartImportRunLogMock(...args),
-  probeFfmpegTools: (...args: [string | null]) => probeFfmpegToolsMock(...args),
+  invokeToolsStatus: () => toolsStatusMock(),
+  ffmpegFound: (await importOriginal<typeof import("../../lib/tauri")>()).ffmpegFound,
   invokeImessageBackupIdentities: (...args: unknown[]) =>
     invokeImessageBackupIdentitiesMock(...args),
   onExtractEvents: (...args: [{ onProgress?: (event: ImportProgressEvent) => void }]) =>
@@ -258,13 +259,18 @@ function stagedMode(): AttachmentMediaMode {
 
 const MIB = 1024 * 1024;
 
-function okProbe(): FfmpegToolsProbe {
+function okProbe(): ToolsStatus {
   return {
-    ok: true,
-    ffmpeg_path: "/usr/bin/ffmpeg",
-    ffprobe_path: "/usr/bin/ffprobe",
-    error: null,
+    toolsDir: "/home/demo/message-crate/tools",
+    ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+    ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+    wtsexporter: { state: "missing" },
   };
+}
+
+/** ffmpeg on neither PATH nor the Tools Directory. */
+function ffmpegMissing(): ToolsStatus {
+  return { ...okProbe(), ffmpeg: { state: "missing" } };
 }
 
 const EXTRACT_RESULT: TauriJobResult = {
@@ -335,8 +341,8 @@ describe("useImportJob wiring", () => {
     invokeTranscodeStagingMock.mockReset();
     invokeDeleteRunDirMock.mockReset();
     invokeDeleteRunDirMock.mockResolvedValue(undefined);
-    probeFfmpegToolsMock.mockReset();
-    probeFfmpegToolsMock.mockResolvedValue(okProbe());
+    toolsStatusMock.mockReset();
+    toolsStatusMock.mockResolvedValue(okProbe());
     setImportStageMock.mockReset();
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
@@ -2174,17 +2180,12 @@ describe("useImportJob wiring", () => {
   it("never probes ffmpeg tools under copy mode, which never needs them", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
-    expect(probeFfmpegToolsMock).not.toHaveBeenCalled();
+    expect(toolsStatusMock).not.toHaveBeenCalled();
     expect(result.current.mediaToolsMissing).toBe(false);
   });
 
   it("flags missing ffmpeg tools at the Staging Review under convert", async () => {
-    probeFfmpegToolsMock.mockResolvedValue({
-      ok: false,
-      ffmpeg_path: null,
-      ffprobe_path: null,
-      error: "ffmpeg not found",
-    });
+    toolsStatusMock.mockResolvedValue(ffmpegMissing());
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.mediaToolsMissing).toBe(true);
@@ -2861,8 +2862,8 @@ describe("useImportJob resumeAtReview", () => {
     invokeSummarizeStagingMock.mockReset();
     invokeTranscodeStagingMock.mockReset();
     invokeDeleteRunDirMock.mockReset();
-    probeFfmpegToolsMock.mockReset();
-    probeFfmpegToolsMock.mockResolvedValue(okProbe());
+    toolsStatusMock.mockReset();
+    toolsStatusMock.mockResolvedValue(okProbe());
     setImportStageMock.mockReset();
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
@@ -3066,12 +3067,7 @@ describe("useImportJob resumeAtReview", () => {
   });
 
   it("falls back to the Staging Review instead of running the Media stage when ffmpeg is missing on a media resume", async () => {
-    probeFfmpegToolsMock.mockResolvedValue({
-      ok: false,
-      ffmpeg_path: null,
-      ffprobe_path: null,
-      error: "ffmpeg not found",
-    });
+    toolsStatusMock.mockResolvedValue(ffmpegMissing());
     invokeSummarizeStagingMock.mockResolvedValueOnce(
       stagingSummary({ mediaMode: "convert", conversations: 7 }),
     );
@@ -3115,7 +3111,7 @@ describe("useImportJob resumeAtReview", () => {
     expect(result.current.form?.attachmentMedia).toBe("compress");
     // compress needs ffmpeg, so the tools are checked, as for a run whose
     // form said compress.
-    expect(probeFfmpegToolsMock).toHaveBeenCalled();
+    expect(toolsStatusMock).toHaveBeenCalled();
 
     await act(() => result.current.approve());
     expect(invokeTranscodeStagingMock).toHaveBeenCalled();
@@ -3319,7 +3315,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     invokeUploadMock.mockReset();
     readRunRecordMock.mockReset();
     saveRunRecordMock.mockReset();
-    probeFfmpegToolsMock.mockResolvedValue(okProbe());
+    toolsStatusMock.mockResolvedValue(okProbe());
     setImportStageMock.mockReset();
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();

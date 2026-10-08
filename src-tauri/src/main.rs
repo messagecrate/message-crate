@@ -48,6 +48,12 @@ fn main() {
         // in the app-data directory; the Export Directory; and the start-up
         // sweep of the Scratch and Export Directories.
         .setup(|app| {
+            // ffmpeg and ffprobe are looked for on PATH, then in the Tools
+            // Directory; wtsexporter only there (#1053). Named before the
+            // server is started, which is told it too.
+            if let Some(home) = dirs::home_dir() {
+                app_directories::use_tools_dir_in(&home);
+            }
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(run_directories::RECORD_FILE);
             app.manage(RunDirectories::at(
@@ -62,8 +68,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::extract::extract,
             commands::extract::cancel,
-            commands::ffmpeg::probe_ffmpeg_tools,
-            commands::ffmpeg::set_ffmpeg_tools_dir,
             commands::format::format,
             commands::paths::home_dir,
             commands::paths::path_stat,
@@ -95,6 +99,7 @@ fn main() {
             commands::staging::delete_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
+            commands::tools::tools_status,
         ]);
 
     builder

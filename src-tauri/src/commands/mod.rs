@@ -15,13 +15,13 @@ pub mod events;
 pub mod export;
 pub mod exports;
 pub mod extract;
-pub mod ffmpeg;
 pub mod format;
 pub mod jobs;
 pub mod local_server;
 pub mod paths;
 pub mod run_logs;
 pub mod staging;
+pub mod tools;
 pub mod upload;
 
 /// Last log line from a job, or `fallback` when the job wrote none.

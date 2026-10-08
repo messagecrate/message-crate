@@ -56,72 +56,57 @@ impl WtsexporterArgs {
     }
 }
 
-/// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells out to):
-/// `WTSEXPORTER` → sibling of this exe → `cli/` next to the GUI →
-/// `MESSAGE_CRATE_BIN` → `PATH`.
-///
-/// # Errors
-///
-/// Returns an error when no usable binary is found.
-pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
-    if let Some(explicit) = env::var_os("WTSEXPORTER") {
-        let path = PathBuf::from(explicit);
-        if path.is_file() {
-            return Ok(path);
-        }
-        bail!(
-            "WTSEXPORTER is set but not a file: {}. Install with \
-             pip install '{PINNED_HINT}' or place the release binary in cli/ next to this tool.",
-            path.display()
-        );
-    }
-
-    let executable = if cfg!(windows) {
+/// The file name of `wtsexporter`, with `.exe` on Windows.
+fn executable_name() -> &'static str {
+    if cfg!(windows) {
         "wtsexporter.exe"
     } else {
         "wtsexporter"
+    }
+}
+
+/// Where `wtsexporter` is: the app's own copy in the Tools Directory the
+/// desktop app named with [`media::set_tools_dir`]. `None` when there is no
+/// Tools Directory or no file in it.
+pub fn wtsexporter_path() -> Option<PathBuf> {
+    wtsexporter_in(media::tools_dir().as_deref()).ok()
+}
+
+/// Locate `wtsexporter` (the Python WhatsApp export tool this crate shells
+/// out to) in the Tools Directory.
+///
+/// # Errors
+///
+/// Returns an error when it is not there.
+pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
+    wtsexporter_in(media::tools_dir().as_deref())
+}
+
+/// `wtsexporter` in `tools_dir`, and nowhere else: it is always the app's
+/// own copy, so neither `PATH` nor an environment variable is read (#1053).
+/// A `pipx` install whose Python has gone is still found on `PATH` and fails
+/// only when it is run (`docs/adr/0019`).
+///
+/// # Errors
+///
+/// Returns an error naming the Tools Directory when the file is not in it,
+/// or saying there is none.
+fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
+    let executable = executable_name();
+    let Some(tools_dir) = tools_dir else {
+        bail!(
+            "Could not find {executable}: no Tools Directory is set. The desktop app keeps \
+             {executable} in its Tools Directory."
+        );
     };
-    let mut tried = Vec::new();
-
-    if let Ok(current) = env::current_exe()
-        && let Some(dir) = current.parent()
-    {
-        let candidates = [dir.join(executable), dir.join("cli").join(executable)];
-        for candidate in candidates {
-            tried.push(candidate.clone());
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
+    let candidate = tools_dir.join(executable);
+    if candidate.is_file() {
+        return Ok(candidate);
     }
-
-    if let Some(extra) = env::var_os("MESSAGE_CRATE_BIN") {
-        let candidate = PathBuf::from(extra).join(executable);
-        tried.push(candidate.clone());
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-
-    if let Some(paths) = env::var_os("PATH") {
-        for directory in env::split_paths(&paths) {
-            let candidate = directory.join(executable);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-
     bail!(
-        "Could not find {executable}. Install with: pip install '{PINNED_HINT}' \
-         (or pip install 'whatsapp-chat-exporter[android_backup,crypt15]'), \
-         put the KnugiHK release binary in cli/ next to this tool / in MESSAGE_CRATE_BIN, \
-         or set WTSEXPORTER. Tried: {}",
-        tried
-            .iter()
-            .map(|p| p.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
+        "Could not find {executable} in the Tools Directory, {}. Put the program there; \
+         pip install '{PINNED_HINT}' installs it.",
+        tools_dir.display()
     );
 }
 
@@ -153,7 +138,7 @@ pub(crate) fn run_wtsexporter(
         .output()
         .map_err(|err| {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
-                " (often a broken pipx/venv shim: the script exists but its Python interpreter does not — try `pipx reinstall whatsapp-chat-exporter` or set WTSEXPORTER to a working binary)"
+                " (often a broken pipx/venv shim: the script exists but its Python interpreter does not — put a working wtsexporter in the Tools Directory)"
             } else {
                 ""
             };
@@ -471,9 +456,9 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
-        names_a_full_disk, resolve_forwarded_paths, run_wtsexporter, scratch_write_error,
-        wtsexporter_command,
+        Platform, WtsexporterArgs, android_crypt_backup, executable_name, extracts_ios_backup,
+        input_search_root, names_a_full_disk, resolve_forwarded_paths, run_wtsexporter,
+        scratch_write_error, wtsexporter_command, wtsexporter_in,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use std::fs;
@@ -1015,5 +1000,48 @@ mod tests {
             "create work/decryption.key".to_string(),
         );
         assert_eq!(denied.to_string(), "create work/decryption.key");
+    }
+
+    /// wtsexporter is always the app's own copy in the Tools Directory.
+    #[test]
+    fn wtsexporter_is_found_in_the_tools_directory() {
+        let tools = tempfile::tempdir().unwrap();
+        let program = tools.path().join(executable_name());
+        fs::write(&program, "").unwrap();
+
+        assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
+    }
+
+    /// A missing copy is reported as missing, naming the Tools Directory,
+    /// even when the old `WTSEXPORTER` and `MESSAGE_CRATE_BIN` variables name one (#1053).
+    #[test]
+    fn wtsexporter_is_looked_for_nowhere_but_the_tools_directory() {
+        let tools = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+        let other = elsewhere.path().join(executable_name());
+        fs::write(&other, "").unwrap();
+        // SAFETY: test-only env mutation, read by no other test in this crate.
+        unsafe {
+            std::env::set_var("WTSEXPORTER", &other);
+            std::env::set_var("MESSAGE_CRATE_BIN", elsewhere.path());
+        }
+
+        let err = wtsexporter_in(Some(tools.path())).expect_err("not in the Tools Directory");
+        let no_dir = wtsexporter_in(None).expect_err("no Tools Directory");
+        unsafe {
+            std::env::remove_var("WTSEXPORTER");
+            std::env::remove_var("MESSAGE_CRATE_BIN");
+        }
+
+        let message = err.to_string();
+        assert!(message.contains("Tools Directory"), "{message}");
+        assert!(
+            message.contains(&tools.path().display().to_string()),
+            "{message}"
+        );
+        assert!(
+            no_dir.to_string().contains("no Tools Directory"),
+            "{no_dir}"
+        );
     }
 }
