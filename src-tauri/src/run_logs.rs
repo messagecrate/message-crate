@@ -112,7 +112,8 @@ pub struct LinesPage {
 ///
 /// # Errors
 ///
-/// Returns an error when the directory or a log in it cannot be read.
+/// Returns an error when the directory cannot be read. A log in it that
+/// cannot be read is left out.
 pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
     let entries = match fs::read_dir(logs_dir) {
         Ok(entries) => entries,
@@ -120,19 +121,26 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
         Err(error) => return Err(error),
     };
     let mut logs = Vec::new();
-    for entry in entries {
-        let entry = entry?;
+    // An entry that cannot be read, or a log deleted since the directory was
+    // listed, is left out: one bad file does not empty the listing.
+    for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !is_run_log_name(&name) || !entry.file_type()?.is_file() {
+        if !is_run_log_name(&name) || !entry.file_type().is_ok_and(|kind| kind.is_file()) {
             continue;
         }
-        let path = entry.path();
-        let account = account_of(&path)?;
+        let Ok(account) = account_of(&entry.path()) else {
+            continue;
+        };
         if !reader.reads(account.as_ref()) {
             continue;
         }
-        let metadata = entry.metadata()?;
-        let modified: chrono::DateTime<chrono::Utc> = metadata.modified()?.into();
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let modified: chrono::DateTime<chrono::Utc> = modified.into();
         logs.push(RunLogEntry {
             name,
             account,
@@ -212,7 +220,9 @@ fn readable_log(logs_dir: &Path, reader: &Reader, name: &str) -> Result<PathBuf,
         return Err(format!("{name} is not an Import Run log"));
     }
     let path = logs_dir.join(name);
-    if !path.is_file() {
+    // Not `is_file`, which follows a symbolic link: a link named like a run
+    // log would read whatever it points at.
+    if !fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.is_file()) {
         return Err(format!(
             "No Import Run log named {name} is on this computer"
         ));

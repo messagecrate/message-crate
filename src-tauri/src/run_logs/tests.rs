@@ -257,3 +257,35 @@ fn a_line_still_being_written_is_left_out_of_the_page() {
     let texts: Vec<_> = page.items.iter().map(|line| line.text.as_str()).collect();
     assert_eq!(texts, ["Uploaded chat-1.jsonl"]);
 }
+
+#[cfg(unix)]
+#[test]
+fn a_log_that_cannot_be_read_is_left_out_of_the_listing() {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let logs = tempfile::tempdir().unwrap();
+    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, SERVER);
+    let locked = logs
+        .path()
+        .join(run_log(logs.path(), "sms-261006-120000", 2, SERVER));
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+    // Root reads a file whatever its mode says, and then the log is readable.
+    if fs::File::open(&locked).is_ok() {
+        return;
+    }
+
+    assert_eq!(names(&owner(), logs.path()), std::slice::from_ref(&alice));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_named_like_a_run_log_is_not_read() {
+    let logs = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let target = elsewhere.path().join("secret.txt");
+    fs::write(&target, "2026-10-08T12:00:00.123456Z  INFO secret\n").unwrap();
+    std::os::unix::fs::symlink(&target, logs.path().join("import-link-261004-143000.log")).unwrap();
+
+    assert!(names(&owner(), logs.path()).is_empty());
+    assert!(read_whole(logs.path(), &owner(), "import-link-261004-143000.log").is_err());
+}
