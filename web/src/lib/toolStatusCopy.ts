@@ -71,8 +71,18 @@ export function troubleshootingSection(name: ToolName): { heading: string; url: 
 /**
  * The sentence that sends a person to `name`'s troubleshooting section, word
  * for word as a run's failed-download error ends (`troubleshooting` in
- * src-tauri/src/tool_downloads.rs).
+ * src-tauri/src/tool_downloads.rs). Split around the section's heading, so
+ * Settings can set the heading as a link to `section.url`:
+ * `${before}${section.heading}${after}` is the sentence.
  */
-export function troubleshootingSentence(name: ToolName): string {
-  return `See "${troubleshootingSection(name).heading}" in Troubleshooting at messagecrate.app.`;
+export function troubleshootingSentence(name: ToolName): {
+  before: string;
+  section: { heading: string; url: string };
+  after: string;
+} {
+  return {
+    before: 'See "',
+    section: troubleshootingSection(name),
+    after: '" in Troubleshooting at messagecrate.app.',
+  };
 }

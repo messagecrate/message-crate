@@ -25,11 +25,7 @@ import {
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import {
-  toolStatusLine,
-  troubleshootingSection,
-  troubleshootingSentence,
-} from "../../lib/toolStatusCopy";
+import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
 import { accentLink } from "../../lib/uiStyles";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 
@@ -127,16 +123,16 @@ function statusExtra(
         toolsDir ? { text: "Put a copy in the Tools Directory", dir: toolsDir } : null,
       );
     case "downloadFailed": {
-      const section = troubleshootingSection(name);
+      const { before, section, after } = troubleshootingSentence(name);
       return {
-        label: `${DOWNLOAD_RETRIED} ${troubleshootingSentence(name)}`,
+        label: `${DOWNLOAD_RETRIED} ${before}${section.heading}${after}`,
         node: (
           <>
-            {DOWNLOAD_RETRIED} See "
+            {DOWNLOAD_RETRIED} {before}
             <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
               {section.heading}
             </a>
-            " in Troubleshooting at messagecrate.app.
+            {after}
           </>
         ),
       };
