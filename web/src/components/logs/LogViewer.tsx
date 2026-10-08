@@ -49,10 +49,16 @@ const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
 export default function LogViewer({
   source,
   downloads,
+  unreadable,
 }: {
   source: LogSource;
   /** The files the log downloads as. */
   downloads: LogDownload[];
+  /**
+   * Said in place of the lines when the log holds none with a time and a
+   * level, so the empty list does not blame the filter or the search.
+   */
+  unreadable?: string;
 }) {
   const [level, setLevel] = useState<LevelFilter>("warn");
   const [typed, setTyped] = useState("");
@@ -130,7 +136,9 @@ export default function LogViewer({
         />
         <LogDownloads downloads={downloads} />
       </div>
-      {lines.isPending ? (
+      {unreadable ? (
+        <p className="m-0 text-[0.813rem] text-muted">{unreadable}</p>
+      ) : lines.isPending ? (
         <p className="m-0 text-[0.813rem] text-muted">Reading the log…</p>
       ) : lines.error && items.length === 0 ? (
         <p role="alert" className="m-0 text-[0.813rem] text-danger">

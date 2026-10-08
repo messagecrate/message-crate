@@ -84,6 +84,10 @@ pub struct RunLogEntry {
     /// Whether the run imported into the Message Crate the reader is signed
     /// in to, so the window need not compare Message Crates itself.
     pub this_message_crate: bool,
+    /// Whether the log's first lines have a time and a level. A log written
+    /// before its lines carried them has none the viewer can read, though it
+    /// still downloads.
+    pub has_lines: bool,
     /// The file's size.
     pub bytes: u64,
     /// When the last line was written, in UTC (RFC 3339).
@@ -141,7 +145,7 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
         if !is_run_log_name(&name) || !entry.file_type().is_ok_and(|kind| kind.is_file()) {
             continue;
         }
-        let Ok(account) = account_of(&entry.path()) else {
+        let Ok(Head { account, has_lines }) = head_of(&entry.path()) else {
             continue;
         };
         if !reader.reads(account.as_ref()) {
@@ -160,6 +164,7 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
                 .as_ref()
                 .is_some_and(|account| reader.signed_in_to(account)),
             account,
+            has_lines,
             bytes: metadata.len(),
             modified_at: modified.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         });
@@ -243,7 +248,9 @@ fn readable_log(logs_dir: &Path, reader: &Reader, name: &str) -> Result<PathBuf,
             "No Import Run log named {name} is on this computer"
         ));
     }
-    let account = account_of(&path).map_err(|error| format!("Could not read {name}: {error}"))?;
+    let account = head_of(&path)
+        .map_err(|error| format!("Could not read {name}: {error}"))?
+        .account;
     if !reader.reads(account.as_ref()) {
         return Err(format!("{name} is the log of another account's Import Run"));
     }
@@ -260,22 +267,35 @@ fn is_run_log_name(name: &str) -> bool {
         && name != ".."
 }
 
-/// The account a log's first lines name, if they name one.
+/// What a log's first lines say: the account they name, if they name one,
+/// and whether any of them has a time and a level.
+struct Head {
+    account: Option<RunLogAccount>,
+    has_lines: bool,
+}
+
+/// The [`Head`] of the log at `path`.
 ///
 /// # Errors
 ///
 /// Returns an error when the log cannot be read.
-fn account_of(path: &Path) -> io::Result<Option<RunLogAccount>> {
+fn head_of(path: &Path) -> io::Result<Head> {
     let mut head = Vec::new();
     fs::File::open(path)?
         .take(ACCOUNT_LINE_BYTES)
         .read_to_end(&mut head)?;
     let head = String::from_utf8_lossy(&head);
-    Ok(head
+    let lines: Vec<_> = head
         .lines()
         .take(ACCOUNT_LINE_SEARCH)
         .filter_map(|raw| parse_run_log_line(0, raw))
-        .find_map(|line| RunLogAccount::parse(&line.text)))
+        .collect();
+    Ok(Head {
+        account: lines
+            .iter()
+            .find_map(|line| RunLogAccount::parse(&line.text)),
+        has_lines: !lines.is_empty(),
+    })
 }
 
 #[cfg(test)]

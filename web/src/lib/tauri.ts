@@ -123,6 +123,11 @@ export interface RunLogEntry {
   account: RunLogAccount | null;
   /** Whether the run imported into the Message Crate the reader is signed in to. */
   thisMessageCrate: boolean;
+  /**
+   * Whether its first lines have a time and a level. A log written before
+   * its lines carried them has none the viewer reads, though it downloads.
+   */
+  hasLines: boolean;
   bytes: number;
   /** When its last line was written, in UTC (RFC 3339). */
   modifiedAt: string;

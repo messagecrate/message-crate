@@ -50,6 +50,7 @@ describe("ImportRunLog", () => {
         name: "import-whatsapp-261004-143000.log",
         account: { importRunId: 42, accountId: 2, server: SERVER, messageCrateId: HERE },
         thisMessageCrate: true,
+        hasLines: true,
         bytes: 120,
         modifiedAt: "2026-10-04T14:35:00Z",
       },
@@ -63,6 +64,7 @@ describe("ImportRunLog", () => {
           messageCrateId: "fedcba9876543210fedcba9876543210",
         },
         thisMessageCrate: false,
+        hasLines: true,
         bytes: 80,
         modifiedAt: "2026-10-05T09:05:00Z",
       },
@@ -94,6 +96,29 @@ describe("ImportRunLog", () => {
       "import-whatsapp-261004-143000.log",
       expect.objectContaining({ level: "warn" }),
     );
+  });
+
+  it("says a log written before its lines had a level cannot be shown, and still downloads it", async () => {
+    invokeListImportRunLogs.mockResolvedValue([
+      {
+        name: "import-whatsapp-261004-143000.log",
+        account: { importRunId: 42, accountId: 2, server: SERVER, messageCrateId: HERE },
+        thisMessageCrate: true,
+        hasLines: false,
+        bytes: 120,
+        modifiedAt: "2026-10-04T14:35:00Z",
+      },
+    ]);
+    const user = setupUser();
+    renderRow(42);
+
+    await user.click(await screen.findByRole("button", { name: "Open this run's log" }));
+
+    expect(
+      await screen.findByText(/written before its lines carried a time and a level/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("No line at this level.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
   });
 
   it("offers nothing for a run whose log is not on this computer", async () => {

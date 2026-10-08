@@ -45,6 +45,7 @@ const ALICE_RUN = {
   name: "import-whatsapp-261004-143000.log",
   account: { importRunId: 42, accountId: 2, server: "http://127.0.0.1:8080", messageCrateId: HERE },
   thisMessageCrate: true,
+  hasLines: true,
   bytes: 120,
   modifiedAt: "2026-10-04T14:35:00Z",
 };

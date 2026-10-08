@@ -65,6 +65,13 @@ export function runLogSource(reader: RunLogReader, name: string): LogSource {
   };
 }
 
+/**
+ * What the viewer says for a run log whose lines have no time and level, in
+ * place of the lines: it was written before they carried them.
+ */
+export const UNREADABLE_RUN_LOG =
+  "This log was written before its lines carried a time and a level, so it cannot be shown here. Download it to read it.";
+
 /** The download of one Import Run's log, whole, under its own name. */
 export function runLogDownload(reader: RunLogReader, name: string): LogDownload {
   return { name, read: () => invokeReadImportRunLog(reader, name) };

@@ -315,3 +315,25 @@ fn a_download_is_the_log_byte_for_byte() {
         bytes
     );
 }
+
+#[test]
+fn a_log_with_no_line_the_viewer_reads_says_so_in_the_listing() {
+    let logs = tempfile::tempdir().unwrap();
+    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
+    fs::write(
+        logs.path().join("import-old-261001-080000.log"),
+        "Conversations: 1\n",
+    )
+    .unwrap();
+
+    let listed: Vec<_> = list(logs.path(), &owner())
+        .unwrap()
+        .into_iter()
+        .map(|entry| (entry.name, entry.has_lines))
+        .collect();
+    assert!(listed.contains(&(alice, true)), "{listed:?}");
+    assert!(
+        listed.contains(&("import-old-261001-080000.log".to_string(), false)),
+        "{listed:?}"
+    );
+}

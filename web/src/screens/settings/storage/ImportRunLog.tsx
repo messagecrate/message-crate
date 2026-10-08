@@ -4,6 +4,7 @@ import LogViewer from "../../../components/logs/LogViewer";
 import {
   runLogDownload,
   runLogSource,
+  UNREADABLE_RUN_LOG,
   useRunLogReader,
   useRunLogs,
 } from "../../../components/logs/logSource";
@@ -49,6 +50,7 @@ function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
         <LogViewer
           source={runLogSource(reader, log.name)}
           downloads={[runLogDownload(reader, log.name)]}
+          unreadable={log.hasLines ? undefined : UNREADABLE_RUN_LOG}
         />
       ) : null}
     </div>

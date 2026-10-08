@@ -6,6 +6,7 @@ import {
   runLogDownload,
   runLogSource,
   SERVER_LOG,
+  UNREADABLE_RUN_LOG,
   useRunLogReader,
   useRunLogs,
   useServerLogDownloads,
@@ -121,6 +122,7 @@ export function OwnerLogsPanel() {
             key={pickedRun.name}
             source={runLogSource(reader, pickedRun.name)}
             downloads={[runLogDownload(reader, pickedRun.name)]}
+            unreadable={pickedRun.hasLines ? undefined : UNREADABLE_RUN_LOG}
           />
         ) : (
           <LogViewer key={SERVER_KEY} source={SERVER_LOG} downloads={serverDownloads.downloads} />
