@@ -54,7 +54,9 @@ One line per program reports the result:
 
 - A check mark with `Found ffmpeg` and the full path of the program.
 - A cross with `ffmpeg not found` and the Tools Directory to put it in.
-- A cross with `ffmpeg not used` and the reason: ffmpeg and ffprobe found in two places, one only on `PATH` and the other only in the Tools Directory, or a `wtsexporter` without permission to run.
+- A cross with `<program> not used` and the reason.
+  For ffmpeg and ffprobe, the reason is that they were found in two places, one only on `PATH` and the other only in the Tools Directory.
+  For wtsexporter, the reason is that it has no permission to run.
 
 On macOS, an app opened from the Dock or Finder doesn't see the `PATH` a terminal sets, so ffmpeg and ffprobe installed with Homebrew are not found.
 Linking both into the Tools Directory makes them found, for example `ln -s /opt/homebrew/bin/ffmpeg /opt/homebrew/bin/ffprobe ~/message-crate/tools/` (`/usr/local/bin` on an Intel Mac).
