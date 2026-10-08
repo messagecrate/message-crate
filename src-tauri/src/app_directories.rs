@@ -28,7 +28,8 @@ pub const LOGS_DIRECTORY_NAME: &str = "logs";
 /// The Scratch Directory's name in the app-data directory.
 pub const SCRATCH_DIRECTORY_NAME: &str = "scratch";
 
-/// The Message Crate Directory's name in the home directory.
+/// The Message Crate Directory's name in the home directory. Until #1053
+/// moves staging into `staging/`, it is also the default Staging Directory.
 pub const MESSAGE_CRATE_DIRECTORY_NAME: &str = "message-crate";
 
 /// The Tools Directory's name in the Message Crate Directory.
