@@ -912,10 +912,8 @@ async fn flush_staging_message_chunk(
 /// versions and mark, mark or no mark, and one from an earlier backup gives
 /// neither (#1741, #1804). When either has no date, or the two dates are
 /// equal ([`db_staging::later_backup`]), the copy gives its text and earlier
-/// versions when it records a later edit, and its mark when it carries one;
-/// a dated copy gives a staged message without a date its date
-/// ([`db_staging::add_staged_copy_backup_date`]), so a later import compares
-/// with that date whichever file came first. A copy at the staged message's time that has milliseconds marks it
+/// versions when it records a later edit, and its mark when it carries one.
+/// A copy at the staged message's time that has milliseconds marks it
 /// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import
 /// of two backups then stores what two separate imports of them store, in
 /// either file order (#1806, #1837).
@@ -964,9 +962,6 @@ async fn add_staged_copy(
         }
         BackupOrder::Earlier => {}
         BackupOrder::Undecided => {
-            if let (None, Some(copy_backup)) = (&held_backup, staged_source.backup_taken_at) {
-                db_staging::add_staged_copy_backup_date(tx, staged, copy_backup).await?;
-            }
             if !row.msg.earlier_versions.is_empty() {
                 db_staging::take_later_staged_copy(
                     tx,
