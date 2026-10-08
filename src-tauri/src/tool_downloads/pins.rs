@@ -1,14 +1,18 @@
 //! The releases the app downloads ffmpeg, ffprobe and wtsexporter from, and
-//! the SHA-256 of each file, by platform. A newer pinned release is a change
-//! to this file alone (`docs/adr/0019`).
+//! the SHA-256 of each file, by platform. A newer pinned ffmpeg release is a
+//! change to this file alone (`docs/adr/0019`). A newer wtsexporter release
+//! is a change to this file, to the install hints in
+//! `crates/exporters/whatsapp-exporter/src/wtsexporter.rs`, and to the
+//! developer install in `AGENTS.md` and
+//! `docs/src/content/docs/docs/developer/contributing.md`, which name it.
 
 use super::{Pinned, Program};
 
 /// The project the ffmpeg and ffprobe files come from.
 const FFMPEG_STATIC: &str = "eugeneware/ffmpeg-static";
 
-/// The `ffmpeg-static` release pinned, named `b6.1.1`: its files report
-/// ffmpeg 7.0.2, a GPL build with `libx264` and `libx265`.
+/// The `ffmpeg-static` release pinned: its files report ffmpeg 7.0.2, a GPL
+/// build with `libx264` and `libx265`.
 const FFMPEG_RELEASE: &str = "b6.1.1";
 
 /// The project the wtsexporter files come from: Message Crate's fork, whose
@@ -31,11 +35,11 @@ struct FfmpegFiles {
     ffprobe: (&'static str, &'static str, &'static str),
 }
 
-/// The `ffmpeg-static` `b6.1.1` files, by platform.
+/// The files of the pinned `ffmpeg-static` release, by platform.
 ///
 /// The project publishes no checksum file. Each SHA-256 here was computed on
 /// 2026-10-08 by downloading the asset with
-/// `curl -L https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/<asset>`
+/// `curl -L https://github.com/eugeneware/ffmpeg-static/releases/download/<release>/<asset>`
 /// and running `sha256sum` on it; `gzip -t` passed on each. The program's
 /// SHA-256 was computed the same day by `gunzip -c <asset> | sha256sum`, so
 /// the app knows a copy put in the Tools Directory by hand for the pinned one.

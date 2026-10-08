@@ -51,7 +51,7 @@ When it is on, Import restores the last backup path used for each import source.
 Each time it starts, the desktop app downloads into the Tools Directory the programs that are missing there, in the background.
 Login and browsing don't wait for it.
 `ffmpeg` and `ffprobe` are not downloaded when both are on `PATH`, because the copy installed there is the one used.
-`ffmpeg` and `ffprobe` come from the `eugeneware/ffmpeg-static` release `b6.1.1`, and `wtsexporter` from Message Crate's fork, the `messagecrate/WhatsApp-Chat-Exporter` release `0.13.0-mc.2`.
+`ffmpeg` and `ffprobe` come from a pinned release of `eugeneware/ffmpeg-static`, and `wtsexporter` from a pinned release of Message Crate's fork, `messagecrate/WhatsApp-Chat-Exporter`.
 The app carries the SHA-256 checksum of every file it downloads, and refuses and deletes a file that doesn't match.
 
 The Tools Directory belongs to the app, and one rule holds for all three programs.
