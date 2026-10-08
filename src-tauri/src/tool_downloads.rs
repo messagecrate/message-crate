@@ -351,20 +351,14 @@ pub enum DownloadError {
 impl fmt::Display for DownloadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::NoNetwork(why) => write!(
-                f,
-                "No connection to the download's server: {why}. It is tried again the next time the app starts."
-            ),
+            Self::NoNetwork(why) => write!(f, "No connection to the download's server: {why}."),
             Self::Http(status) => {
                 let reason = reqwest::StatusCode::from_u16(*status)
                     .ok()
                     .and_then(|status| status.canonical_reason())
                     .map(|reason| format!(" {reason}"))
                     .unwrap_or_default();
-                write!(
-                    f,
-                    "The download's server answered {status}{reason}. It is tried again the next time the app starts."
-                )
+                write!(f, "The download's server answered {status}{reason}.")
             }
             Self::ChecksumMismatch { expected, actual } => write!(
                 f,
@@ -577,30 +571,22 @@ pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &T
     if wanted.is_empty() {
         return;
     }
-    let client = match download_client() {
-        Ok(client) => client,
-        Err(err) => {
-            for pin in wanted {
-                downloads.set(
-                    pin.program,
-                    DownloadState::Failed {
-                        reason: DownloadError::NoNetwork(error_chain(&err)).to_string(),
-                    },
-                );
-            }
-            return;
-        }
-    };
-    if let Err(err) = std::fs::create_dir_all(dir) {
-        for pin in wanted {
+    let fail_all = |err: DownloadError| {
+        for pin in &wanted {
             downloads.set(
                 pin.program,
                 DownloadState::Failed {
-                    reason: DownloadError::CouldNotWrite(err.to_string()).to_string(),
+                    reason: err.to_string(),
                 },
             );
         }
-        return;
+    };
+    let client = match download_client() {
+        Ok(client) => client,
+        Err(err) => return fail_all(DownloadError::NoNetwork(error_chain(&err))),
+    };
+    if let Err(err) = std::fs::create_dir_all(dir) {
+        return fail_all(DownloadError::CouldNotWrite(err.to_string()));
     }
     for pin in wanted {
         let program = pin.program;

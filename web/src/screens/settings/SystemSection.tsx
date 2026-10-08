@@ -64,6 +64,9 @@ function downloadProgress(received: number, total: number | null): string {
   return `${formatBytes(received)} of ${formatBytes(total)} (${percent}%)`;
 }
 
+/** Said once on every failed download's line, whatever the reason: each is retried. */
+const DOWNLOAD_RETRIED = "It is tried again the next time the app starts.";
+
 /** How often Settings asks the desktop process again while a download runs. */
 const DOWNLOAD_POLL_MS = 1000;
 
@@ -175,12 +178,13 @@ function ToolStatusRow({
       );
     }
     case "downloadFailed": {
-      const label = `${name} download failed. ${status.reason}`;
+      const label = `${name} download failed. ${status.reason} ${DOWNLOAD_RETRIED}`;
       return (
         <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
-            <code className="font-mono text-[0.7rem]">{name}</code> download failed. {status.reason}
+            <code className="font-mono text-[0.7rem]">{name}</code> download failed. {status.reason}{" "}
+            {DOWNLOAD_RETRIED}
           </span>
         </li>
       );

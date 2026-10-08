@@ -380,8 +380,7 @@ describe("SystemSection", () => {
   });
 
   it("says why a download failed", async () => {
-    const reason =
-      "No connection to the download's server: error sending request. It is tried again the next time the app starts.";
+    const reason = "No connection to the download's server: error sending request.";
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
       ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
@@ -389,7 +388,11 @@ describe("SystemSection", () => {
       wtsexporter: { state: "downloadFailed", reason },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText(`wtsexporter download failed. ${reason}`)).toBeTruthy();
+    expect(
+      await screen.findByLabelText(
+        `wtsexporter download failed. ${reason} It is tried again the next time the app starts.`,
+      ),
+    ).toBeTruthy();
   });
 
   it("says so when the desktop process cannot be asked", async () => {
