@@ -48,7 +48,8 @@ released versions carry their date on the heading.
   backup imported after a newer one changes nothing. Import details under
   Settings → Storage show the backup each import read and when it was made.
   Message files exported before they said when their backup was made are
-  refused, and the backup must be exported again with this build.
+  refused, and the backup must be exported again with this build (#1741,
+  #1804).
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
