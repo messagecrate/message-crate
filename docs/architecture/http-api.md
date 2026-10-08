@@ -37,6 +37,13 @@ hash of the original, and the attachment says whether each exists in
 Why: the client holds the original's hash and has no use for theirs, and
 another hash on the attachment would be another thing to address by.
 
+The Message Crate's own id, `id` on `GET /v1/server`, is not an address. It
+is an opaque string of 32 hexadecimal digits that the server writes when its
+database is made, and no route takes it in a URL. Why: it exists to tell two
+Message Crates apart, at one address or across a rebuilt database, whose
+integer ids start at the same numbers, so it must be random rather than
+counted, and a client only ever compares it.
+
 Rejected: the name in the path for Contact Groups and Message Tags. It keeps
 every reference to a group the same kind of thing, and it makes the rule
 "id, except where the name is unique". One rule is worth more than the
@@ -884,7 +891,9 @@ No compatibility alias, deprecation window or version handshake is ever added.
 
 The server says which code it runs, and an app says which code it is, and
 neither decides anything. `GET /v1/server` carries the server's Build in
-`version` and the Schema Fingerprint in `schema_fingerprint`. The desktop app
+`version`, the Schema Fingerprint in `schema_fingerprint`, and the Message
+Crate's id in `id`, which says which Message Crate answered, not which code
+it runs. The desktop app
 and the website send `x-message-crate-app` (`desktop` or `website`) and
 `x-message-crate-version` (their Build) on every request; the server records
 the pair on the account's session, rewrites it only when it changes, and shows

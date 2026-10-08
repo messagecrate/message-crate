@@ -149,7 +149,12 @@ One installation of the product: the thing a person claims, owns, and logs
 into. It holds many accounts and their messages, and each account's data is
 isolated from the others. The product carries the same name. "A Message
 Crate" or "this Message Crate" is one installation; "Message Crate" with no
-article is the product.
+article is the product. **The Message Crate's id** is 32 random hexadecimal
+digits the server writes when its database is made and never changes, and
+`GET /v1/server` answers it as `id`. It tells two Message Crates apart where
+their address and their integer ids cannot: two answering at one address, or
+one rebuilt with `create-database`, which counts its accounts and Import Runs
+from the same numbers again.
 _Avoid_: Vault, Crate on its own, Instance. The server is the running process
 and the database is the store; neither is a name for the installation.
 
