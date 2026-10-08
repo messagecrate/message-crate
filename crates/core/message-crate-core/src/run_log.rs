@@ -99,29 +99,42 @@ impl RunLogLine {
     }
 }
 
-/// Which account ran an Import Run, on which server: the first line of the
-/// run's log.
+/// Which account ran an Import Run, on which Message Crate: the first line
+/// of the run's log.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunLogAccount {
-    /// The Import Run's id on that server.
+    /// The Import Run's id on that Message Crate.
     pub import_run_id: i64,
-    /// The account that ran it, by its id on that server.
+    /// The account that ran it, by its id on that Message Crate.
     pub account_id: i64,
-    /// The address of the server the run imported into.
+    /// The address of the server the run imported into, for a person to
+    /// read. Two Message Crates can answer at one address, so it does not
+    /// say which one the run imported into: [`Self::message_crate_id`] does.
     pub server: String,
+    /// The id of the Message Crate the run imported into, as `GET /v1/server`
+    /// answers it: what tells account 7 of one Message Crate from account 7
+    /// of another, at the same address or not.
+    pub message_crate_id: String,
 }
 
 /// The words before the run's id in the account line.
 const ACCOUNT_LINE_START: &str = "Import Run ";
 
+/// The words before the Message Crate's id in the account line.
+const MESSAGE_CRATE_ID_START: &str = ", Message Crate ";
+
 impl RunLogAccount {
     /// The account line's text: `Import Run 42 by account 7 on
-    /// http://127.0.0.1:8080`.
+    /// http://127.0.0.1:8080, Message Crate 3f2a…`. The address is written
+    /// without a trailing slash.
     pub fn line_text(&self) -> String {
         format!(
-            "{ACCOUNT_LINE_START}{} by account {} on {}",
-            self.import_run_id, self.account_id, self.server
+            "{ACCOUNT_LINE_START}{} by account {} on {}{MESSAGE_CRATE_ID_START}{}",
+            self.import_run_id,
+            self.account_id,
+            self.server.trim().trim_end_matches('/'),
+            self.message_crate_id
         )
     }
 
@@ -130,11 +143,13 @@ impl RunLogAccount {
     pub fn parse(text: &str) -> Option<Self> {
         let rest = text.strip_prefix(ACCOUNT_LINE_START)?;
         let (import_run_id, rest) = rest.split_once(" by account ")?;
-        let (account_id, server) = rest.split_once(" on ")?;
+        let (account_id, rest) = rest.split_once(" on ")?;
+        let (server, message_crate_id) = rest.rsplit_once(MESSAGE_CRATE_ID_START)?;
         Some(Self {
             import_run_id: import_run_id.parse().ok()?,
             account_id: account_id.parse().ok()?,
             server: server.to_string(),
+            message_crate_id: message_crate_id.to_string(),
         })
     }
 }
@@ -164,11 +179,21 @@ mod tests {
         let account = RunLogAccount {
             import_run_id: 42,
             account_id: 7,
-            server: "http://127.0.0.1:8080".into(),
+            server: "http://127.0.0.1:8080/".into(),
+            message_crate_id: "3f2a".into(),
         };
         let text = account.line_text();
-        assert_eq!(text, "Import Run 42 by account 7 on http://127.0.0.1:8080");
-        assert_eq!(RunLogAccount::parse(&text), Some(account));
+        assert_eq!(
+            text,
+            "Import Run 42 by account 7 on http://127.0.0.1:8080, Message Crate 3f2a"
+        );
+        assert_eq!(
+            RunLogAccount::parse(&text),
+            Some(RunLogAccount {
+                server: "http://127.0.0.1:8080".into(),
+                ..account
+            })
+        );
         assert_eq!(RunLogAccount::parse("Import Run 42 completed"), None);
     }
 }

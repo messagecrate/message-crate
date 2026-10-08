@@ -263,7 +263,39 @@ fn quote_ident(name: &str) -> String {
 ///
 /// Returns an error when a DDL statement fails.
 pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
-    migrate_schema(conn).await
+    migrate_schema(conn).await?;
+    // Written once, when the database is made (or rebuilt), and never
+    // changed: what tells this Message Crate from another at the same
+    // address, or from the one this database replaced.
+    sqlx::query(
+        "INSERT OR IGNORE INTO schema_meta (key, value) VALUES ($1, lower(hex(randomblob(16))))",
+    )
+    .bind(MESSAGE_CRATE_ID_META_KEY)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
+/// The `schema_meta` key of this Message Crate's id ([`message_crate_id`]).
+const MESSAGE_CRATE_ID_META_KEY: &str = "message_crate_id";
+
+/// This Message Crate's id: 32 random hexadecimal digits written when its
+/// database is made. Two Message Crates answering at one address, such as the
+/// desktop app's own server and a Docker one at `127.0.0.1:8080`, or one
+/// rebuilt with `create-database`, have different ids, though their account
+/// and Import Run ids start at the same numbers.
+///
+/// # Errors
+///
+/// Returns an error when the query fails, or the database has no id because
+/// [`ensure_schema`] has not run on it.
+pub async fn message_crate_id(conn: &mut SqliteConnection) -> Result<String> {
+    Ok(
+        sqlx::query_scalar("SELECT value FROM schema_meta WHERE key = $1")
+            .bind(MESSAGE_CRATE_ID_META_KEY)
+            .fetch_one(&mut *conn)
+            .await?,
+    )
 }
 
 /// Marker that current full-text search (FTS) sync trigger definitions are installed.

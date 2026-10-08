@@ -34,18 +34,14 @@ function runKey(name: string): string {
 /**
  * How the picker names an Import Run log: the run, who ran it, and when its
  * last line was written. An account of this Message Crate goes by its
- * username; one of another server by its number and that server.
+ * username; one of another Message Crate by its number and that server's
+ * address.
  */
-function runLogLabel(
-  log: RunLogEntry,
-  server: string,
-  usernames: ReadonlyMap<number, string>,
-): string {
+function runLogLabel(log: RunLogEntry, usernames: ReadonlyMap<number, string>): string {
   const when = formatDateTime(log.modifiedAt);
   const account = log.account;
   if (!account) return `${log.name}, ${when}`;
-  const here = account.server.replace(/\/+$/, "") === server.replace(/\/+$/, "");
-  const who = here
+  const who = log.thisMessageCrate
     ? (usernames.get(account.accountId) ?? `account ${account.accountId}`)
     : `account ${account.accountId} on ${account.server}`;
   return `Import Run ${account.importRunId} by ${who}, ${when}`;
@@ -92,7 +88,7 @@ export function OwnerLogsPanel() {
                   Import Runs on this computer
                 </Header>
                 {runs.logs.map((log) => {
-                  const label = runLogLabel(log, reader.server, usernames);
+                  const label = runLogLabel(log, usernames);
                   return (
                     <ListBoxItem
                       key={log.name}

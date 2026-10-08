@@ -54,6 +54,12 @@ pub enum ServerState {
 /// The state of this Message Crate, for the screen a logged-out person sees.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct Server {
+    /// This Message Crate's id: 32 random hexadecimal digits written when
+    /// its database is made, and never changed. An app tells two Message
+    /// Crates at one address apart by it, such as one rebuilt with
+    /// `create-database`, whose account and Import Run ids start again at
+    /// the same numbers.
+    pub id: String,
     /// `unclaimed` shows Create Owner alone; `closed` shows Login alone;
     /// `open` shows Login and Create Account.
     pub state: ServerState,
@@ -100,8 +106,9 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 
 /// Report whether this Message Crate is unclaimed, closed, or open.
 ///
-/// Also reports the server's Build, its Schema Fingerprint, whether the Demo
-/// Account exists, and the attachment size limit.
+/// Also reports this Message Crate's id, the server's Build, its Schema
+/// Fingerprint, whether the Demo Account exists, and the attachment size
+/// limit.
 #[utoipa::path(
     get,
     path = "/v1/server",
@@ -111,6 +118,7 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, ApiError> {
     let mut conn = state.db.acquire().await?;
     Ok(Json(Server {
+        id: crate::db::schema::message_crate_id(&mut conn).await?,
         state: state_on_conn(&mut conn).await?,
         demo_account: !state.demo_build.is_building()
             && account_profile::username_for_account(&mut conn, account_profile::DEMO_ACCOUNT_ID)

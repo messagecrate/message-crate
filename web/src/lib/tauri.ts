@@ -81,11 +81,17 @@ export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
   return invoke("set_staging_root", { root });
 }
 
-/** Who ran an Import Run, on which server: the first line of the run's log. */
+/** Who ran an Import Run, on which Message Crate: the first line of the run's log. */
 export interface RunLogAccount {
   importRunId: number;
   accountId: number;
+  /** The server's address, for a person to read. */
   server: string;
+  /**
+   * The Message Crate's id, as `GET /v1/server` answers it: what tells two
+   * Message Crates at one address apart.
+   */
+  messageCrateId: string;
 }
 
 /**
@@ -102,8 +108,8 @@ export async function invokeStartImportRunLog(
 
 /** Who is asking for the Import Run logs on this computer. */
 export interface RunLogReader {
-  /** The server the window is signed in to. */
-  server: string;
+  /** The id of the Message Crate the window is signed in to. */
+  messageCrateId: string;
   accountId: number;
   /** The owner reads every run log; an account only those of its own runs. */
   owner: boolean;
@@ -115,6 +121,8 @@ export interface RunLogEntry {
   name: string;
   /** Who ran the run, or null when the log does not say. */
   account: RunLogAccount | null;
+  /** Whether the run imported into the Message Crate the reader is signed in to. */
+  thisMessageCrate: boolean;
   bytes: number;
   /** When its last line was written, in UTC (RFC 3339). */
   modifiedAt: string;

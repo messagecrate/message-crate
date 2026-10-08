@@ -8,15 +8,20 @@ use crate::app_directories::{RunLog, import_run_log};
 
 const SERVER: &str = "http://127.0.0.1:8080";
 
+/// The id of the Message Crate the reader is signed in to.
+const HERE: &str = "0123456789abcdef0123456789abcdef";
+
 /// The run whose directory is `staging-<label>`, its log started for
-/// `account_id` on `server`, with one line of its own.
-fn run_log(logs: &Path, label: &str, account_id: i64, server: &str) -> String {
+/// `account_id` on the Message Crate `message_crate_id`, with one line of its
+/// own.
+fn run_log(logs: &Path, label: &str, account_id: i64, message_crate_id: &str) -> String {
     let run_dir = Path::new("/staging").join(format!("staging-{label}"));
     let log = RunLog::open(logs, &run_dir);
     log.account(&RunLogAccount {
         import_run_id: account_id * 10,
         account_id,
-        server: server.into(),
+        server: SERVER.into(),
+        message_crate_id: message_crate_id.into(),
     });
     log.line(&format!("Conversations: {account_id}"));
     import_run_log(logs, &run_dir)
@@ -28,7 +33,7 @@ fn run_log(logs: &Path, label: &str, account_id: i64, server: &str) -> String {
 
 fn account(account_id: i64) -> Reader {
     Reader {
-        server: SERVER.into(),
+        message_crate_id: HERE.into(),
         account_id,
         owner: false,
     }
@@ -36,7 +41,7 @@ fn account(account_id: i64) -> Reader {
 
 fn owner() -> Reader {
     Reader {
-        server: SERVER.into(),
+        message_crate_id: HERE.into(),
         account_id: 1,
         owner: true,
     }
@@ -55,14 +60,15 @@ fn names(reader: &Reader, logs: &Path) -> Vec<String> {
 #[test]
 fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
     let logs = tempfile::tempdir().unwrap();
-    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, SERVER);
-    let bob = run_log(logs.path(), "iphone-ios-261005-090000", 3, SERVER);
-    // Account 2 of another server is another account.
+    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
+    let bob = run_log(logs.path(), "iphone-ios-261005-090000", 3, HERE);
+    // Account 2 of another Message Crate is another account, though that
+    // Message Crate answered at the same address.
     let elsewhere = run_log(
         logs.path(),
         "sms-261006-120000",
         2,
-        "http://192.168.1.20:8080",
+        "fedcba9876543210fedcba9876543210",
     );
     // A log that names no account, left before the account line was written.
     fs::write(
@@ -76,6 +82,13 @@ fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
         std::slice::from_ref(&alice)
     );
     assert_eq!(names(&account(3), logs.path()), std::slice::from_ref(&bob));
+    let here: Vec<_> = list(logs.path(), &owner())
+        .unwrap()
+        .into_iter()
+        .filter(|entry| entry.this_message_crate)
+        .map(|entry| entry.name)
+        .collect();
+    assert!(here.contains(&alice) && here.contains(&bob) && !here.contains(&elsewhere));
     let mut every = vec![
         alice,
         bob,
@@ -89,7 +102,7 @@ fn an_account_lists_its_own_run_logs_and_the_owner_lists_every_one() {
 #[test]
 fn an_account_cannot_read_another_account_s_run_log() {
     let logs = tempfile::tempdir().unwrap();
-    let bob = run_log(logs.path(), "iphone-ios-261005-090000", 3, SERVER);
+    let bob = run_log(logs.path(), "iphone-ios-261005-090000", 3, HERE);
     let query = LinesQuery {
         limit: 10,
         ..LinesQuery::default()
@@ -203,6 +216,7 @@ fn a_run_log_is_still_listed_and_read_after_the_run_s_directory_is_deleted() {
         import_run_id: 42,
         account_id: 2,
         server: SERVER.into(),
+        message_crate_id: HERE.into(),
     });
     log.line("Conversations: 3");
     drop(log);
@@ -264,10 +278,10 @@ fn a_log_that_cannot_be_read_is_left_out_of_the_listing() {
     use std::os::unix::fs::PermissionsExt as _;
 
     let logs = tempfile::tempdir().unwrap();
-    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, SERVER);
+    let alice = run_log(logs.path(), "whatsapp-261004-143000", 2, HERE);
     let locked = logs
         .path()
-        .join(run_log(logs.path(), "sms-261006-120000", 2, SERVER));
+        .join(run_log(logs.path(), "sms-261006-120000", 2, HERE));
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
     // Root reads a file whatever its mode says, and then the log is readable.
     if fs::File::open(&locked).is_ok() {

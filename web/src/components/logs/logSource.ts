@@ -1,4 +1,3 @@
-import { getBaseUrl } from "../../lib/api";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/auth";
 import { canReadImportRunLogs } from "../../lib/desktopFeatures";
@@ -19,6 +18,7 @@ import {
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { useIsOwner } from "../../lib/useIsOwner";
+import { useServerInfo } from "../../lib/useServerInfo";
 
 /** What the level filter shows: errors, warnings and up, or every line. */
 export type LevelFilter = "error" | "warn" | "all";
@@ -59,7 +59,7 @@ export const SERVER_LOG: LogSource = {
 /** One Import Run's log on this computer, read by `reader`. */
 export function runLogSource(reader: RunLogReader, name: string): LogSource {
   return {
-    key: ["logs", "run", reader.server, reader.owner, name],
+    key: ["logs", "run", reader.messageCrateId, reader.owner, name],
     // The desktop app cannot cancel the read, so the signal goes unused.
     readLines: (request) => invokeReadImportRunLogLines(reader, name, request),
   };
@@ -89,15 +89,19 @@ export function useServerLogDownloads(): { downloads: LogDownload[]; error: Erro
 
 /**
  * Who reads the Import Run logs on this computer: the signed-in account on
- * the server it is signed in to, and whether it is the owner, who reads every
- * one. Null in a browser, where no run log is, and before the profile says
- * whether the account is the owner.
+ * the Message Crate it is signed in to, and whether it is the owner, who reads
+ * every one. Null in a browser, where no run log is, and before the profile
+ * says whether the account is the owner and the server says its id.
  */
 export function useRunLogReader(): RunLogReader | null {
   const { accountId } = useAuth();
   const { isOwner, loading } = useIsOwner();
-  if (!canReadImportRunLogs(isTauri()) || accountId === null || loading) return null;
-  return { server: getBaseUrl(), accountId, owner: isOwner };
+  const server = useServerInfo();
+  const messageCrateId = server.data?.id;
+  if (!canReadImportRunLogs(isTauri()) || accountId === null || loading || !messageCrateId) {
+    return null;
+  }
+  return { messageCrateId, accountId, owner: isOwner };
 }
 
 /** The Import Run logs on this computer `reader` may read, newest first. */
@@ -107,7 +111,7 @@ export function useRunLogs(reader: RunLogReader | null): {
   error: Error | null;
 } {
   const listing = useRouteQuery(
-    ["logs", "runs", reader?.server, reader?.owner],
+    ["logs", "runs", reader?.messageCrateId, reader?.owner],
     () => (reader ? invokeListImportRunLogs(reader) : Promise.resolve([])),
     { enabled: reader !== null },
   );

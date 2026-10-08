@@ -3,9 +3,15 @@
 //!
 //! Who reads which log (decided on #1665): the owner reads every run log on
 //! this computer, whoever ran the import; an account reads the logs of the
-//! runs it ran on the server it is signed in to. A log names the account that
-//! ran it in its first line ([`RunLogAccount`]); a log that names none, such
-//! as one a run left before that line was written, is the owner's alone.
+//! runs it ran on the Message Crate it is signed in to. A log names the
+//! account that ran it, and the Message Crate's id, in its first line
+//! ([`RunLogAccount`]); a log that names none, such as one a run left before
+//! that line was written, is the owner's alone.
+//!
+//! This is a filter, not a guard. The window says who is asking
+//! ([`Reader`]) and the commands take its word, and a run log is a plain
+//! file that any program run by this computer's user can open. It decides
+//! which logs each screen offers, not who can read a file.
 //!
 //! The lines are read the way the server's log is read
 //! (`docs/architecture/server-log.md`), with the same reader
@@ -33,13 +39,14 @@ const ACCOUNT_LINE_BYTES: u64 = 16 * 1024;
 /// The most lines on one page.
 const MAX_LIMIT: usize = 500;
 
-/// Who is asking for the logs: the signed-in account, and whether it is the
-/// owner.
+/// Who is asking for the logs: the signed-in account, on which Message
+/// Crate, and whether it is the owner.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reader {
-    /// The address of the server the window is signed in to.
-    pub server: String,
+    /// The id of the Message Crate the window is signed in to, as
+    /// `GET /v1/server` answers it.
+    pub message_crate_id: String,
     /// The signed-in account.
     pub account_id: i64,
     /// Whether that account is the owner, who reads every log.
@@ -51,15 +58,17 @@ impl Reader {
     fn reads(&self, account: Option<&RunLogAccount>) -> bool {
         self.owner
             || account.is_some_and(|account| {
-                account.account_id == self.account_id && same_server(&account.server, &self.server)
+                account.account_id == self.account_id && self.signed_in_to(account)
             })
     }
-}
 
-/// Whether two server addresses name one server: the same text, apart from a
-/// trailing slash.
-fn same_server(a: &str, b: &str) -> bool {
-    a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
+    /// Whether the run `account` names imported into the Message Crate this
+    /// reader is signed in to. The address is not compared: the desktop
+    /// app's own server and a Docker one both answer at
+    /// `http://127.0.0.1:8080`, and one address can be written several ways.
+    fn signed_in_to(&self, account: &RunLogAccount) -> bool {
+        account.message_crate_id == self.message_crate_id
+    }
 }
 
 /// One Import Run log on this computer.
@@ -69,8 +78,12 @@ pub struct RunLogEntry {
     /// The file's name in the Logs Directory, such as
     /// `import-iphone-ios-261004-143000.log`. A download is named the same.
     pub name: String,
-    /// Who ran the run, on which server, or `None` when the log does not say.
+    /// Who ran the run, on which Message Crate, or `None` when the log does
+    /// not say.
     pub account: Option<RunLogAccount>,
+    /// Whether the run imported into the Message Crate the reader is signed
+    /// in to, so the window need not compare Message Crates itself.
+    pub this_message_crate: bool,
     /// The file's size.
     pub bytes: u64,
     /// When the last line was written, in UTC (RFC 3339).
@@ -143,6 +156,9 @@ pub fn list(logs_dir: &Path, reader: &Reader) -> io::Result<Vec<RunLogEntry>> {
         let modified: chrono::DateTime<chrono::Utc> = modified.into();
         logs.push(RunLogEntry {
             name,
+            this_message_crate: account
+                .as_ref()
+                .is_some_and(|account| reader.signed_in_to(account)),
             account,
             bytes: metadata.len(),
             modified_at: modified.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),

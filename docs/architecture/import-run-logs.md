@@ -47,18 +47,26 @@ the server already holds what is worth keeping from it.
 
 ## The account line
 
-The first line of a run's log names the run, the account that runs it and
-the server, written once the server has created the run and before Staging
-writes anything:
+The first line of a run's log names the run, the account that runs it, the
+server's address and the Message Crate's id, written once the server has
+created the run and before Staging writes anything:
 
 ```
-2026-10-04T14:30:00.123456Z  INFO Import Run 42 by account 7 on http://127.0.0.1:8080
+2026-10-04T14:30:00.123456Z  INFO Import Run 42 by account 7 on http://127.0.0.1:8080, Message Crate 3f2a9c…
 ```
 
 The listing reads it to decide who sees the log. The owner sees every log; an
-account sees a log whose line names its own id on the server it is signed in
-to, because account 7 of another server is another account. A log with no
-account line is the owner's alone.
+account sees a log whose line names its own id and the id of the Message
+Crate it is signed in to, because account 7 of another Message Crate is
+another account. A log with no account line is the owner's alone.
+
+Why the Message Crate's id and not the address: two Message Crates can answer
+at one address. The desktop app's own server and a Docker one both answer at
+`http://127.0.0.1:8080`, and a database rebuilt with `create-database` starts
+its account and Import Run ids at the same numbers again. The server writes
+the id (`GET /v1/server`, `id`) when its database is made and never changes
+it. The address is in the line for a person to read, and one address can be
+written several ways (`localhost` or `127.0.0.1`), so nothing compares it.
 
 ## One line per event, with its time and level
 

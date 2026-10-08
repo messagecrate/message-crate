@@ -1396,15 +1396,28 @@ async function runMediaStage(
 
 /**
  * Start the new run's log in the Logs Directory with the line naming the
- * account that runs it and the server, so the Logs panel shows the log to
- * that account and the owner only (#1665). A log that cannot be started
- * leaves the run going: its lines still reach the window.
+ * account that runs it and the Message Crate, so the Logs panel shows the log
+ * to that account and the owner only (#1665). A log that cannot be started
+ * leaves the run going: its lines still reach the window, and the log is the
+ * owner's alone.
  */
-async function startRunLog(runDir: string, importRunId: number): Promise<void> {
+async function startRunLog(
+  runDir: string,
+  importRunId: number,
+  messageCrateId: string,
+): Promise<void> {
   const accountId = getAccountId();
-  if (accountId === null) return;
+  if (accountId === null) {
+    console.warn("The Import Run's log names no account: no account is signed in.");
+    return;
+  }
   try {
-    await invokeStartImportRunLog(runDir, { importRunId, accountId, server: getBaseUrl() });
+    await invokeStartImportRunLog(runDir, {
+      importRunId,
+      accountId,
+      server: getBaseUrl(),
+      messageCrateId,
+    });
   } catch (e) {
     console.warn("The Import Run's log could not be started:", e);
   }
@@ -1487,6 +1500,9 @@ async function runImport(
   });
 
   let runId: number | null = null;
+  // The id of the Message Crate a new run imports into, for its log's first
+  // line. Read with the size limit below, so a new run asks the server once.
+  let messageCrateId = "";
 
   try {
     if (!token) throw new Error("Not authenticated");
@@ -1496,6 +1512,7 @@ async function runImport(
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
       const server = await endSessionIfRefused(() => getServerState());
+      messageCrateId = server.id;
       form = { ...form, assetMaxBytes: server.asset_max_bytes };
       scratch.form = form;
       store.set({ form });
@@ -1564,7 +1581,7 @@ async function runImport(
       );
       runId = importRun.id;
       store.set({ importRunId: runId });
-      await startRunLog(outputDir, runId);
+      await startRunLog(outputDir, runId, messageCrateId);
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(runId, "write");
     }

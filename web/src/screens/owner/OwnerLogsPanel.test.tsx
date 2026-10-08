@@ -12,14 +12,11 @@ const listServerLogLines = vi.hoisted(() => vi.fn());
 const listServerLogFiles = vi.hoisted(() => vi.fn());
 const listAccounts = vi.hoisted(() => vi.fn());
 const getAccountProfile = vi.hoisted(() => vi.fn());
+const getServerState = vi.hoisted(() => vi.fn());
 const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
 const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 1 }) }));
-vi.mock("../../lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/api")>()),
-  getBaseUrl: () => "http://127.0.0.1:8080",
-}));
 vi.mock("../../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
@@ -27,6 +24,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   listServerLogFiles: (...a: unknown[]) => listServerLogFiles(...a),
   listAccounts: (...a: unknown[]) => listAccounts(...a),
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),
+  getServerState: (...a: unknown[]) => getServerState(...a),
 }));
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
@@ -40,9 +38,13 @@ const page = (text: string) => ({
   has_more: false,
 });
 
+/** The id of the Message Crate the window is signed in to. */
+const HERE = "0123456789abcdef0123456789abcdef";
+
 const ALICE_RUN = {
   name: "import-whatsapp-261004-143000.log",
-  account: { importRunId: 42, accountId: 2, server: "http://127.0.0.1:8080" },
+  account: { importRunId: 42, accountId: 2, server: "http://127.0.0.1:8080", messageCrateId: HERE },
+  thisMessageCrate: true,
   bytes: 120,
   modifiedAt: "2026-10-04T14:35:00Z",
 };
@@ -61,6 +63,7 @@ describe("OwnerLogsPanel", () => {
     installIntersectionObserver();
     desktop.on = true;
     getAccountProfile.mockResolvedValue({ is_owner: true });
+    getServerState.mockResolvedValue({ id: HERE });
     listAccounts.mockResolvedValue([
       { account_id: 1, username: "root" },
       { account_id: 2, username: "alice" },
@@ -89,7 +92,7 @@ describe("OwnerLogsPanel", () => {
     // The owner reads every run log on this computer.
     await waitFor(() =>
       expect(invokeListImportRunLogs).toHaveBeenCalledWith({
-        server: "http://127.0.0.1:8080",
+        messageCrateId: HERE,
         accountId: 1,
         owner: true,
       }),
@@ -100,7 +103,7 @@ describe("OwnerLogsPanel", () => {
 
     expect(await screen.findByText("chat.jsonl failed: the server refused")).toBeInTheDocument();
     expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
-      { server: "http://127.0.0.1:8080", accountId: 1, owner: true },
+      { messageCrateId: HERE, accountId: 1, owner: true },
       ALICE_RUN.name,
       expect.objectContaining({ level: "warn" }),
     );

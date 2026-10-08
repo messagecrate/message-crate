@@ -21,22 +21,15 @@ export default function ImportRunLog({ importRunId }: { importRunId: number }) {
   return <RunLogOnThisComputer importRunId={importRunId} />;
 }
 
-/** Whether two server addresses name one server, apart from a trailing slash. */
-function sameServer(a: string, b: string): boolean {
-  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
-}
-
 function RunLogOnThisComputer({ importRunId }: { importRunId: number }) {
   const [open, setOpen] = useState(false);
   const reader = useRunLogReader();
   const { logs } = useRunLogs(reader);
-  const log =
-    reader &&
-    logs.find(
-      (entry) =>
-        entry.account?.importRunId === importRunId &&
-        sameServer(entry.account.server, reader.server),
-    );
+  // Run ids start again at 1 on every Message Crate, so the run's log is the
+  // one from this Message Crate with its id.
+  const log = logs.find(
+    (entry) => entry.thisMessageCrate && entry.account?.importRunId === importRunId,
+  );
   if (!reader || !log) return null;
   return (
     <div className="mt-4">

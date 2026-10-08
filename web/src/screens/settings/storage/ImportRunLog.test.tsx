@@ -9,18 +9,16 @@ import ImportRunLog from "./ImportRunLog";
 
 const desktop = vi.hoisted(() => ({ on: true }));
 const getAccountProfile = vi.hoisted(() => vi.fn());
+const getServerState = vi.hoisted(() => vi.fn());
 const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
 const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
 
 vi.mock("../../../lib/auth", () => ({ useAuth: () => ({ accountId: 2 }) }));
-vi.mock("../../../lib/api", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../lib/api")>()),
-  getBaseUrl: () => "http://127.0.0.1:8080",
-}));
 vi.mock("../../../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
 vi.mock("../../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/serverApi")>()),
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),
+  getServerState: (...a: unknown[]) => getServerState(...a),
 }));
 vi.mock("../../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../lib/tauri")>()),
@@ -29,6 +27,8 @@ vi.mock("../../../lib/tauri", async (importOriginal) => ({
 }));
 
 const SERVER = "http://127.0.0.1:8080";
+/** The id of the Message Crate the window is signed in to. */
+const HERE = "0123456789abcdef0123456789abcdef";
 
 function renderRow(importRunId: number) {
   render(
@@ -44,17 +44,25 @@ describe("ImportRunLog", () => {
     installIntersectionObserver();
     desktop.on = true;
     getAccountProfile.mockResolvedValue({ is_owner: false });
+    getServerState.mockResolvedValue({ id: HERE });
     invokeListImportRunLogs.mockResolvedValue([
       {
         name: "import-whatsapp-261004-143000.log",
-        account: { importRunId: 42, accountId: 2, server: SERVER },
+        account: { importRunId: 42, accountId: 2, server: SERVER, messageCrateId: HERE },
+        thisMessageCrate: true,
         bytes: 120,
         modifiedAt: "2026-10-04T14:35:00Z",
       },
-      // The same run number on another server is another run.
+      // Run 43 of another Message Crate at the same address is another run.
       {
         name: "import-sms-261005-090000.log",
-        account: { importRunId: 43, accountId: 2, server: "http://192.168.1.20:8080" },
+        account: {
+          importRunId: 43,
+          accountId: 2,
+          server: SERVER,
+          messageCrateId: "fedcba9876543210fedcba9876543210",
+        },
+        thisMessageCrate: false,
         bytes: 80,
         modifiedAt: "2026-10-05T09:05:00Z",
       },
@@ -79,7 +87,7 @@ describe("ImportRunLog", () => {
     await user.click(await screen.findByRole("button", { name: "Open this run's log" }));
 
     expect(await screen.findByText("a.jpg: missing")).toBeInTheDocument();
-    const reader = { server: SERVER, accountId: 2, owner: false };
+    const reader = { messageCrateId: HERE, accountId: 2, owner: false };
     expect(invokeListImportRunLogs).toHaveBeenCalledWith(reader);
     expect(invokeReadImportRunLogLines).toHaveBeenCalledWith(
       reader,

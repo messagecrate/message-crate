@@ -11369,7 +11369,7 @@
           "Server"
         ],
         "summary": "Report whether this Message Crate is unclaimed, closed, or open.",
-        "description": "Also reports the server's Build, its Schema Fingerprint, whether the Demo\nAccount exists, and the attachment size limit.",
+        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, whether the Demo Account exists, and the attachment size\nlimit.",
         "operationId": "get_server",
         "responses": {
           "200": {
@@ -18838,6 +18838,7 @@
         "type": "object",
         "description": "The state of this Message Crate, for the screen a logged-out person sees.",
         "required": [
+          "id",
           "state",
           "demo_account",
           "version",
@@ -18854,6 +18855,10 @@
           "demo_account": {
             "type": "boolean",
             "description": "Whether the Demo Account exists and is not being built. While it\ndoes, the screen offers a way into it beside whatever `state` shows:\nit has no password, so there is nothing to type. During a build it\nreads `false`, because the account cannot be entered until the build\nends."
+          },
+          "id": {
+            "type": "string",
+            "description": "This Message Crate's id: 32 random hexadecimal digits written when\nits database is made, and never changed. An app tells two Message\nCrates at one address apart by it, such as one rebuilt with\n`create-database`, whose account and Import Run ids start again at\nthe same numbers."
           },
           "schema_fingerprint": {
             "type": "integer",
