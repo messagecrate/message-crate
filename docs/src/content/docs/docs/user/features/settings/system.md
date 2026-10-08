@@ -48,7 +48,7 @@ When it is on, Import restores the last backup path used for each import source.
 `ffmpeg` and `ffprobe` convert and compress attachments, and are looked for on the system `PATH`, then in the Tools Directory.
 `wtsexporter` reads WhatsApp backups, and is looked for in the Tools Directory only.
 
-**Tools directory** names the Tools Directory, `tools` in the Message Crate Directory, shown as `~/message-crate/tools`.
+**Tools directory** shows the full path of the Tools Directory, `tools` in the Message Crate Directory, such as `/home/sam/message-crate/tools` on Linux.
 
 One line per program reports the result:
 
