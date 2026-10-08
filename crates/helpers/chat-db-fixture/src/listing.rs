@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Every file and directory under `dir`, at any depth, sorted. None when
+/// Every file and directory under `dir`, at any depth, sorted. Empty when
 /// `dir` is not there.
 ///
 /// Directories are listed too, so a request that leaves an empty directory
