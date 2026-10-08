@@ -31,10 +31,13 @@ export type LinesRequest = {
   limit: number;
 };
 
-/** One file a log downloads as, read whole when it is downloaded. */
+/**
+ * One file a log downloads as, read whole when it is downloaded: the server's
+ * as text, a run log's as its bytes.
+ */
 export type LogDownload = {
   name: string;
-  read: () => Promise<string>;
+  read: () => Promise<string | ArrayBuffer>;
 };
 
 /**

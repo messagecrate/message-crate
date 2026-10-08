@@ -289,3 +289,15 @@ fn a_link_named_like_a_run_log_is_not_read() {
     assert!(names(&owner(), logs.path()).is_empty());
     assert!(read_whole(logs.path(), &owner(), "import-link-261004-143000.log").is_err());
 }
+
+#[test]
+fn a_download_is_the_log_byte_for_byte() {
+    let logs = tempfile::tempdir().unwrap();
+    let bytes = b"2026-10-08T12:00:00.123456Z  INFO caf\xe9\n2026-10-08T12:00:01".to_vec();
+    fs::write(logs.path().join("import-sms-261006-120000.log"), &bytes).unwrap();
+
+    assert_eq!(
+        read_whole(logs.path(), &owner(), "import-sms-261006-120000.log").unwrap(),
+        bytes
+    );
+}

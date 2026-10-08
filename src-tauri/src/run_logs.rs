@@ -201,16 +201,16 @@ pub fn read_lines(
     })
 }
 
-/// The whole of the log `name` in `logs_dir`, as it is, for a download.
+/// The whole of the log `name` in `logs_dir`, byte for byte as it is on
+/// disk, for a download.
 ///
 /// # Errors
 ///
 /// Returns an error when `name` is not a run log `reader` may read, or the
 /// log cannot be read.
-pub fn read_whole(logs_dir: &Path, reader: &Reader, name: &str) -> Result<String, String> {
+pub fn read_whole(logs_dir: &Path, reader: &Reader, name: &str) -> Result<Vec<u8>, String> {
     let path = readable_log(logs_dir, reader, name)?;
-    let bytes = fs::read(&path).map_err(|error| format!("Could not read {name}: {error}"))?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    fs::read(&path).map_err(|error| format!("Could not read {name}: {error}"))
 }
 
 /// The path of the log `name` in `logs_dir`, when it is a run log there that

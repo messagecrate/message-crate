@@ -85,13 +85,19 @@ pub struct ReadLogArgs {
     pub name: String,
 }
 
-/// One Import Run log whole, as it is on disk, for the window to save.
+/// One Import Run log whole, byte for byte as it is on disk, for the window
+/// to save. The bytes reach the window as an `ArrayBuffer`, not as JSON
+/// text, so a byte that is not UTF-8 is kept and a large log is not copied
+/// into a string.
 ///
 /// # Errors
 ///
 /// Returns an error when the log is not one `reader` may read, or cannot be
 /// read.
 #[tauri::command(async)]
-pub fn read_import_run_log(app: tauri::AppHandle, args: ReadLogArgs) -> Result<String, String> {
-    run_logs::read_whole(&logs_dir(&app)?, &args.reader, &args.name)
+pub fn read_import_run_log(
+    app: tauri::AppHandle,
+    args: ReadLogArgs,
+) -> Result<tauri::ipc::Response, String> {
+    run_logs::read_whole(&logs_dir(&app)?, &args.reader, &args.name).map(tauri::ipc::Response::new)
 }

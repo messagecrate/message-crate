@@ -146,8 +146,11 @@ export async function invokeReadImportRunLogLines(
   return invoke("read_import_run_log_lines", { args: { reader, name, query } });
 }
 
-/** One Import Run log whole, as it is on disk, for a download. */
-export async function invokeReadImportRunLog(reader: RunLogReader, name: string): Promise<string> {
+/** One Import Run log whole, byte for byte as it is on disk, for a download. */
+export async function invokeReadImportRunLog(
+  reader: RunLogReader,
+  name: string,
+): Promise<ArrayBuffer> {
   return invoke("read_import_run_log", { args: { reader, name } });
 }
 
