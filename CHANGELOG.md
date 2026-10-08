@@ -100,12 +100,16 @@ released versions carry their date on the heading.
   again. That record now has a new name; one with the old name is ignored and
   can be deleted, and attachments already in the directory are still not
   fetched again.
-- 2026-10-07: **An Upload's log and report are named for Import.** The log
-  the Import Run view links to is now `message-crate-import.log`, and the
-  report beside it and the program name the server records on every Import
-  Run the desktop app starts say import where they said push, as the rest of
-  the product does. Files with the old names are not read and can be
-  deleted (#1926).
+- 2026-10-07: **An Upload's report says Import.** The report an Upload
+  writes beside its run, and the name the server keeps for the program that
+  ran each Import Run the desktop app starts, now say import where they said
+  push, the word Message Crate no longer uses for an Import Run. A report
+  with the old name is not read and can be deleted (#1926).
+
+### Fixes
+
+#### Accounts, Settings and screens
+
 - 2026-10-07: **The login card names the server it is connected to.** The
   card said only **Connected**, so a person could not tell whether the desktop
   app was on its own Message Crate or on one on another computer. It now reads
