@@ -196,8 +196,9 @@ A file with a mistake in it is refused whole, and each row at fault is listed wi
 
 A spreadsheet can save a phone number such as `+6555550100` as `6555550100`, without its `+`.
 A number written without `+` names the identity its contact already holds under `+` and those digits, so the contact keeps that identity.
-When the contact holds the number both ways, for example `+6555550100` and `+16555550100`, the file is refused, because the row cannot say which it means.
-Any other number without `+` is read as a US number when it has ten digits, and as its digits otherwise.
+When the contact holds the number both ways, for example `+6555550100` and `6555550100`, the file is refused, because the row cannot say which it means.
+Any other number without `+` is kept as its digits: the file does not say which country it is in, so it is never read as a US number.
+Its country can be picked afterwards on the Contacts screen.
 After the load, the section lists each number without `+` that it read with its `+` back, and each one that became a new identity.
 
 Contacts the file does not mention stay as they are.

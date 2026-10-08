@@ -21,6 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-08: **A phone number written without its country code can be given
+  its country.** The import form has a **Phone's country** under
+  **Processing Options (Advanced)**: every number the import writes without a
+  country code, such as `07700 900123`, is read as a number in that country,
+  so it is the same person as `+44 7700 900123`. A number whose country nobody
+  stated says **Country unknown** on the Contacts screen and under **My
+  Identities**, with **Pick country**. Picking one gives the number its full
+  form; when another identity already has that form, Message Crate says whose
+  it is and asks before it merges the two, their one-to-one conversations
+  with them (#1676).
+
 - 2026-10-06: **A message recorded once to the second and once to the
   millisecond shows once.** Every message file now says whether each
   message's time has milliseconds or only whole seconds, as its backup app
@@ -155,6 +166,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-08: **A number written without its country code is no longer read
+  as a US number.** A UK backup's `07700900123` and `+447700900123` were two
+  identities for one person, so their one-to-one conversation split in two,
+  and SMS Backup+ counted a group member with one number as having two. Such
+  a number now keeps its digits until its country is known, from the import
+  form or picked on the Contacts screen, and then it is one identity with its
+  full form. A ten-digit number without `+` is not taken for a US number
+  either: an import of a US phone's backup states the United States as the
+  phone's country to read `555 555 0100` as `+1 555 555 0100` (#1676).
+
 - 2026-10-07: **A message an import edits is no longer hidden behind a copy
   of its old text.** When an import set not to hide duplicates gave a stored
   message the text of a later edit, or added an attachment to it, the message
@@ -253,6 +274,11 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- A phone number written without its country code is no longer read as a
+  US number. Import a US phone's backup with **Phone's country** set to the
+  United States, or pick the country of each such number on the Contacts
+  screen. If you have a program that creates Import Runs through the HTTP
+  API, it states the country in `phone_country` (#1676).
 - The database format changed. **An existing Message Crate is rebuilt empty
   on first start and its messages must be imported again.**
 - A desktop app that was pointed at a Message Crate on another computer

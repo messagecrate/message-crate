@@ -41,7 +41,7 @@ Apple-only columns (`parts_json`, tapbacks, balloons, …) stay empty.
 
 ## How the exporter uses SMS fields
 
-- `address` → `chat_identifier` / participant handle, classified once by `phone::Handle::parse`: a number keeps the country its `+` names and is otherwise read as a US number, an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. Only a blank `address` is skipped, as `skipped_unknown_address`
+- `address` → `chat_identifier` / participant handle, classified once by `phone::Handle::parse`: a number keeps the country its `+` names and otherwise keeps its digits, until the Import Run or a person states its country (#1676), an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. Only a blank `address` is skipped, as `skipped_unknown_address`
 - `date` → `timestamp*` and `timestamp_unix_ms` (invalid or missing dates are skipped)
 - `type` `1` / `2` → `direction` incoming / outgoing; `3` (draft) and `4` (outbox) are skipped and counted as `skipped_draft_or_outbox`; other types are skipped and counted as `skipped_unknown_type`; raw value in `android_type`
 - `body` → `text` (character references and HTML entities decoded; a surrogate pair written as two references, such as `&#55357;&#56832;`, becomes one character; a reference that is not a character, such as `&#0;` or a lone surrogate, is dropped and counted as `dropped_character_references`. The message is kept, and the Import Run carries a note naming its file by its path, its time in UTC and its `address` as the file writes it)

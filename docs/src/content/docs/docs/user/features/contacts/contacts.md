@@ -96,6 +96,20 @@ An identity that is in a conversation goes to a new contact with no name, which 
 An identity in no conversation is deleted.
 A contact left with no identity is Unknown too.
 
+## Pick a number's country
+
+A backup often writes a phone number the way the phone showed it, without its country code: `07700 900123` rather than `+44 7700 900123`.
+Nothing in the backup says which country such a number is in, so Message Crate keeps it as the digits typed and never guesses one.
+It matches no number written with its country code, so `07700 900123` and `+44 7700 900123` are two identities, and a person known by both has two one-to-one conversations.
+
+The import form's **Phone's country**, under **Processing Options (Advanced)**, states the country once for a whole import: every number in it written without a country code is read as a number there.
+
+An identity whose country nobody stated says **Country unknown** under the number, with **Pick country**.
+Picking the country gives the number its full form, such as `+447700900123`.
+When another identity already has that form, the dialog says whose it is and asks before it goes on, because **Merge** makes the two one identity: their conversations and messages join, and the two one-to-one conversations become one.
+**My Identities** under Settings has the same note and link for the account's own numbers.
+A short code, such as `73737`, has no full form in any country and shows no note.
+
 Message Crate has no command that merges two contacts.
 Two contacts that are one person are joined by removing the identities from one and adding them to the other.
 
