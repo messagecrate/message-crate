@@ -78,9 +78,6 @@ class StubResizeObserver {
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
-  // jsdom lays nothing out and has no scrollIntoView, which the thread calls
-  // to land on the message a result opened at.
-  Element.prototype.scrollIntoView = () => {};
   getConversationMock.mockReset();
   listConversationMessagesMock.mockReset();
   trashConversationMock.mockReset();

@@ -123,6 +123,50 @@ describe("MessageThread", () => {
 });
 
 /**
+ * Opening a conversation at a message scrolls the thread to it and nothing
+ * else: in a narrow window the row under the header scrolls sideways (#1722),
+ * and moving it would pan the navigation panel and the list out of view.
+ */
+describe("MessageThread landing on a message", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  });
+
+  it.each([
+    // The message's top, 400 px below the thread's top, lands at the top.
+    ["start", 400],
+    // A 40 px message in a 300 px thread lands 130 px down.
+    ["center", 270],
+  ] as const)("scrolls only the thread to a message at %s", (align, scrollTop) => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: Element,
+    ) {
+      return (this.id === "row-2" ? { top: 500, height: 40 } : { top: 100, height: 0 }) as DOMRect;
+    });
+
+    render(
+      <MessageThread
+        {...baseProps}
+        messages={[
+          message({ id: 1, timestamp: "2026-08-11T15:00:00Z", text: "m1" }),
+          message({ id: 2, timestamp: "2026-08-11T15:05:00Z", text: "m2" }),
+          message({ id: 3, timestamp: "2026-08-11T15:06:00Z", text: "m3" }),
+        ]}
+        landing={{ seq: 1, to: { id: 2, align } }}
+      />,
+    );
+
+    const thread = document.getElementById("row-2")?.closest(".overflow-auto") as HTMLElement;
+    expect(thread.scrollTop).toBe(scrollTop);
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * Scrolling a long conversation loads only the Thumbnails of the messages
  * that come near the screen, measured against the thread's own scroll area
  * (`docs/architecture/media.md`, rule 5). Measured against the window, the

@@ -7,7 +7,7 @@ import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ListColumn from "./ListColumn";
 
 describe("ListColumn", () => {
-  it("prefers the stored width but can shrink below it", () => {
+  it("prefers the stored width but can shrink to its minimum", () => {
     localStorage.setItem("listColumnWidth:v1", "300");
     const { container } = render(
       <ColumnResizeProvider>
@@ -20,7 +20,7 @@ describe("ListColumn", () => {
     expect(column).toBeTruthy();
     expect(column).toHaveStyle({
       flex: "0 1 300px",
-      minWidth: "0px",
+      minWidth: "220px",
       maxWidth: "300px",
       width: "300px",
     });
