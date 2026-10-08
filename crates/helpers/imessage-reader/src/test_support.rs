@@ -9,7 +9,7 @@ use std::fs;
 use std::path::Path;
 
 use chat_db_fixture::ios_backup::{
-    Encryption, OneOpenBackup, one_open_backup_at_a_time, write_messages_backup,
+    Encryption, SystemTempTurn, system_temp_turn, write_messages_backup,
 };
 use chat_db_fixture::listing::{file_names, paths_under};
 use imessage_database::tables::{messages::Message, table::Table};
@@ -92,19 +92,18 @@ pub(crate) struct FixtureBackup {
     pub backup: TempDir,
     pub scratch: TempDir,
     /// Held for the fixture's life when the backup is encrypted.
-    _one_open: Option<OneOpenBackup>,
+    _turn: Option<SystemTempTurn>,
 }
 
 impl FixtureBackup {
     pub(crate) fn write(encryption: Encryption<'_>) -> Self {
-        let one_open =
-            matches!(encryption, Encryption::Password(_)).then(one_open_backup_at_a_time);
+        let turn = matches!(encryption, Encryption::Password(_)).then(system_temp_turn);
         let backup = tempfile::tempdir().expect("a temp dir");
         write_messages_backup(backup.path(), encryption);
         Self {
             backup,
             scratch: tempfile::tempdir().expect("a temp dir"),
-            _one_open: one_open,
+            _turn: turn,
         }
     }
 

@@ -75,7 +75,7 @@ pub const DECRYPTED_MANIFEST_NAME: &str = "crabapple-Manifest.db";
 /// threads of one binary, and test binaries side by side under
 /// cargo-nextest or in two worktrees, all lock one file in the system's
 /// temporary directory, so they take turns.
-pub struct OneOpenBackup {
+pub struct SystemTempTurn {
     /// The locked file; dropping it lets the next test go.
     _locked: fs::File,
 }
@@ -87,11 +87,11 @@ pub struct OneOpenBackup {
 ///
 /// Panics when the lock file cannot be created or locked.
 #[must_use]
-pub fn one_open_backup_at_a_time() -> OneOpenBackup {
-    let file = fs::File::create(std::env::temp_dir().join("chat-db-fixture-backup.lock"))
-        .expect("create the backup lock file");
-    file.lock().expect("lock the backup lock file");
-    OneOpenBackup { _locked: file }
+pub fn system_temp_turn() -> SystemTempTurn {
+    let file = fs::File::create(std::env::temp_dir().join("chat-db-fixture-system-temp.lock"))
+        .expect("create the system temp lock file");
+    file.lock().expect("lock the system temp lock file");
+    SystemTempTurn { _locked: file }
 }
 
 /// Whether, and how, a backup is encrypted.

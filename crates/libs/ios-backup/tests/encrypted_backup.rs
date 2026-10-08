@@ -19,8 +19,8 @@ use chat_db_fixture::{
     OWNER, OWNER_EMAIL, PHOTO_BYTES,
     ios_backup::{
         BACKUP_PASSWORD, BackupFile, DECRYPTED_MANIFEST_NAME, Encryption, HOME_DOMAIN,
-        MEDIA_DOMAIN, MESSAGES_DB_PATH, OneOpenBackup, PHOTO_PATH, one_open_backup_at_a_time,
-        stored_path, write_backup, write_messages_backup, write_messages_backup_named,
+        MEDIA_DOMAIN, MESSAGES_DB_PATH, PHOTO_PATH, SystemTempTurn, stored_path, system_temp_turn,
+        write_backup, write_messages_backup, write_messages_backup_named,
     },
     listing::{file_names, paths_under},
 };
@@ -58,13 +58,13 @@ fn left_in(scratch_root: &Path) -> Vec<PathBuf> {
 /// the test ends. A copy a killed test left keeps its name, so a copy the
 /// reader writes again shows as a newer modification time.
 struct SystemTemp {
-    _turn: OneOpenBackup,
+    _turn: SystemTempTurn,
     before: BTreeMap<String, Option<SystemTime>>,
 }
 
 impl SystemTemp {
     fn snapshot() -> Self {
-        let turn = one_open_backup_at_a_time();
+        let turn = system_temp_turn();
         Self {
             _turn: turn,
             before: decrypted_in_system_temp(),

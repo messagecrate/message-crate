@@ -214,9 +214,7 @@ fn decrypt_to(backup: &Backup, file_id: &str, target: &Path) -> Result<(), Runti
 mod tests {
     use super::{decrypt_domain, domain_files, list_domain, open, target_path, total_bytes};
     use crate::error::IOS_BACKUP_PASSWORD_INCORRECT;
-    use chat_db_fixture::ios_backup::{
-        BackupFile, Encryption, one_open_backup_at_a_time, write_backup,
-    };
+    use chat_db_fixture::ios_backup::{BackupFile, Encryption, system_temp_turn, write_backup};
     use imessage_reader_protocol::BackupDomainRequest;
     use rusqlite::Connection;
     use std::{
@@ -298,7 +296,7 @@ mod tests {
     /// skipped rather than ending the run.
     #[test]
     fn an_encrypted_backup_gives_up_the_domain_and_nothing_else() {
-        let _one_open = one_open_backup_at_a_time();
+        let _turn = system_temp_turn();
         let backup = tempfile::tempdir().unwrap();
         let photo = vec![7u8; 100_000];
         write_backup(
@@ -344,7 +342,7 @@ mod tests {
 
     #[test]
     fn a_wrong_password_is_refused_in_the_apps_words() {
-        let _one_open = one_open_backup_at_a_time();
+        let _turn = system_temp_turn();
         let backup = tempfile::tempdir().unwrap();
         write_backup(backup.path(), &[], Encryption::Password("secret"));
         let out = tempfile::tempdir().unwrap();
