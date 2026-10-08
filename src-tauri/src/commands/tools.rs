@@ -109,9 +109,14 @@ pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
 /// on a thread of its own, and the window follows it through
 /// [`tools_status`].
 ///
-/// Returns whether a check started. `false` means one was already running
-/// (the start-up check or an earlier Try again), or the app has no Tools
-/// Directory; the window follows the running one the same way.
+/// Returns whether a check started. `false` in three cases:
+///
+/// - a check was already running (the start-up check, an earlier Try again,
+///   or another app's), and the window follows it through `checking`;
+/// - the app has no Tools Directory (no home directory), which the status
+///   shows as `toolsDir: null`;
+/// - the check's thread could not be started, and each program it would
+///   have downloaded shows as a failed download with that reason.
 #[tauri::command]
 pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool {
     let Some(dir) = media::tools_dir() else {

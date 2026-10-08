@@ -373,6 +373,8 @@ pub enum DownloadError {
     CouldNotWrite(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
+    /// The check's thread could not be started, so nothing was downloaded.
+    CouldNotStart(String),
     /// The check stopped partway through the download, such as on a panic
     /// in its thread, so the download never ended.
     Interrupted,
@@ -412,6 +414,7 @@ impl fmt::Display for DownloadError {
                 "wtsexporter in the Tools Directory doesn't run on this computer. \
                  See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app."
             ),
+            Self::CouldNotStart(why) => write!(f, "The download could not be started: {why}."),
             Self::Interrupted => f.write_str("The download was interrupted."),
         }
     }
@@ -803,17 +806,13 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// Check `dir` against `pinned` and download, one after another, what is
 /// missing or not the pinned release, from `base`. ffmpeg and ffprobe are
 /// passed over when both are on `PATH`. Each download's progress and
-/// failure go to `downloads`, and each file written goes into the record.
+/// failure go to the downloads `run` belongs to, and each file written goes
+/// into the record.
 ///
 /// Another app's check running on `dir` already does the work, so this one
 /// returns at once. When the lock can't be taken because the Tools Directory
 /// can't be written, the check goes on and its downloads say why.
-pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
-    run_check(dir, base, pinned, downloads.begin_check());
-}
-
-/// [`download_missing`], as `run`.
-fn run_check(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
+fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
     let lock = match lock_check(dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return,
@@ -829,9 +828,11 @@ fn run_check(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
 /// downloading before this returns, so the window, which asks again only
 /// while a download runs, keeps asking until the check has decided each one.
 ///
-/// `None`, starting nothing, when another check holds the lock: the
-/// start-up check, an earlier Try again, or another app's check. The window
-/// then follows the check already running.
+/// `None` in two cases. Another check holds the lock (the start-up check,
+/// an earlier Try again, or another app's check): nothing starts, and the
+/// window follows the check already running. Or the check's thread could
+/// not be started: each program in `not_found` that has a pin fails with
+/// [`DownloadError::CouldNotStart`].
 pub fn retry(
     dir: PathBuf,
     base: String,
@@ -845,20 +846,27 @@ pub fn retry(
         Err(_) => None,
     };
     let mut run = downloads.begin_check();
-    for pin in pinned.iter().filter(|pin| not_found.contains(&pin.program)) {
-        run.mark_downloading(pin.program);
+    let marked: Vec<Program> = pinned
+        .iter()
+        .map(|pin| pin.program)
+        .filter(|program| not_found.contains(program))
+        .collect();
+    for &program in &marked {
+        run.mark_downloading(program);
     }
     let spawned = std::thread::Builder::new()
         .name("tool-downloads-retry".into())
         .spawn(move || check(&dir, &base, &pinned, &mut run, lock));
     match spawned {
         Ok(handle) => Some(handle),
+        // The run went with the closure that was never started, and its
+        // drop marked these as interrupted: the cause is the thread.
         Err(err) => {
-            for &program in not_found {
+            for program in marked {
                 downloads.set(
                     program,
                     DownloadState::Failed {
-                        reason: DownloadError::CouldNotWrite(err.to_string()).to_string(),
+                        reason: DownloadError::CouldNotStart(err.to_string()).to_string(),
                     },
                 );
             }
@@ -971,7 +979,7 @@ pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
     let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
         .name("tool-downloads".into())
-        .spawn(move || run_check(&dir, GITHUB, &pinned, run));
+        .spawn(move || download_missing(&dir, GITHUB, &pinned, run));
 }
 
 #[cfg(test)]

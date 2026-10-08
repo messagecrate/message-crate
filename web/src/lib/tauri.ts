@@ -522,9 +522,11 @@ export async function invokeToolsStatus(): Promise<ToolsStatus> {
 
 /**
  * Check the Tools Directory again and download what is missing, as Try again
- * on the Import form asks. Returns at once, with whether a check started:
- * false when one was already running, which the window follows the same way,
- * through `tools_status`.
+ * on the Import form asks. Returns at once, with whether a check started.
+ * False in three cases: a check was already running, which `tools_status`
+ * shows as `checking`; the app has no Tools Directory (`toolsDir` is null);
+ * or the check's thread could not be started, which each program it would
+ * have downloaded shows as a failed download with that reason.
  */
 export async function invokeRetryToolDownloads(): Promise<boolean> {
   return invoke("retry_tool_downloads");

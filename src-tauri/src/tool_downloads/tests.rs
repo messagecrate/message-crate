@@ -77,6 +77,11 @@ fn no_ffmpeg_on_path(dir: &Path) -> media::testutil::ToolsHidden {
     media::testutil::locate_tools(OsString::new(), dir.to_path_buf())
 }
 
+/// [`download_missing`] as one check of `downloads`, on this thread.
+fn check_now(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
+    download_missing(dir, base, pinned, downloads.begin_check());
+}
+
 /// The names in `dir` other than `keep` and the lock file, to see that no
 /// temporary file was left behind.
 fn other_files(dir: &Path, keep: &[&str]) -> Vec<String> {
@@ -107,7 +112,7 @@ fn a_download_whose_checksum_does_not_match_is_refused() {
     serve(&server, &pinned, b"a file changed on the way");
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -151,7 +156,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // 404 Not Found: the old file stays.
     let server = MockServer::start();
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -165,7 +170,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // A file that does not match: the old file stays.
     let mut wrong = serve(&server, &new, b"not the new release");
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -177,7 +182,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // A good download replaces it, and the record names the new release.
     serve(&server, &new, &new_bytes);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -209,7 +214,7 @@ fn a_gzipped_program_is_unpacked_and_made_executable() {
     let server = MockServer::start();
     serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -238,7 +243,7 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -285,7 +290,7 @@ fn ffmpeg_on_path_is_not_downloaded() {
     let ffprobe_asked = serve(&server, &ffprobe, &ffprobe_gz);
     let wts_asked = serve(&server, &wts, &wts_bytes);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe, wts],
@@ -316,7 +321,7 @@ fn ffmpeg_on_path_without_ffprobe_is_downloaded() {
     serve(&server, &ffmpeg, &ffmpeg_gz);
     serve(&server, &ffprobe, &ffprobe_gz);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe],
@@ -352,7 +357,7 @@ fn the_pinned_program_the_app_wrote_is_kept() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -389,7 +394,7 @@ fn a_file_put_over_the_apps_own_is_replaced() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -420,7 +425,7 @@ fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
     let downloads = ToolDownloads::default();
 
     // No network: what is there stays.
-    download_missing(
+    check_now(
         tools.path(),
         "http://127.0.0.1:9",
         &[ffmpeg.clone(), ffprobe.clone()],
@@ -433,7 +438,7 @@ fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
     let server = MockServer::start();
     serve(&server, &ffmpeg, &ffmpeg_gz);
     serve(&server, &ffprobe, &ffprobe_gz);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe],
@@ -460,7 +465,7 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
 
     for _start in 0..2 {
         let downloads = ToolDownloads::default();
-        download_missing(
+        check_now(
             tools.path(),
             &server.base_url(),
             std::slice::from_ref(&pinned),
@@ -496,7 +501,7 @@ fn a_pinned_program_put_there_by_hand_that_does_not_run_is_not_downloaded() {
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -527,7 +532,7 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -570,7 +575,7 @@ fn a_changed_stamp_on_the_pinned_program_is_recorded_again() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -599,7 +604,7 @@ fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
     let mut asked = serve(&server, &pinned, &published);
 
     std::fs::write(&target, b"pinned").unwrap();
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -614,7 +619,7 @@ fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
 
     std::fs::write(&target, b"a pipx shim, or an older release").unwrap();
     let asked = serve(&server, &pinned, &published);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -640,7 +645,7 @@ fn an_interrupted_downloads_leftovers_are_deleted() {
         std::fs::write(tools.path().join(name), b"left").unwrap();
     }
 
-    download_missing(
+    check_now(
         tools.path(),
         "http://127.0.0.1:9",
         &[],
@@ -680,7 +685,7 @@ fn every_program_wanted_shows_as_downloading_before_its_request() {
 
     let mut seen_waiting = false;
     std::thread::scope(|scope| {
-        let check = scope.spawn(|| download_missing(&dir, &base, &[ffmpeg, wts], &downloads));
+        let check = scope.spawn(|| check_now(&dir, &base, &[ffmpeg, wts], &downloads));
         while !check.is_finished() {
             if downloads.get(Program::Wtsexporter)
                 == Some(DownloadState::Downloading {
@@ -725,15 +730,13 @@ fn a_second_check_at_the_same_time_does_nothing() {
     let dir = tools.path().to_path_buf();
 
     std::thread::scope(|scope| {
-        let check =
-            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &first));
+        let check = scope.spawn(|| check_now(&dir, &base, std::slice::from_ref(&pinned), &first));
         // The first check holds the lock once it shows a download.
         while first.get(Program::Wtsexporter).is_none() {
             assert!(!check.is_finished(), "the first check ended at once");
             std::thread::sleep(Duration::from_millis(1));
         }
-        let other =
-            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &second));
+        let other = scope.spawn(|| check_now(&dir, &base, std::slice::from_ref(&pinned), &second));
         other.join().unwrap();
         assert!(
             !check.is_finished(),
@@ -759,7 +762,7 @@ fn no_network_is_a_failed_download_that_says_so() {
     let downloads = ToolDownloads::default();
 
     // Port 9 on this computer, where nothing listens.
-    download_missing(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
+    check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
 
     let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
         panic!("the download did not fail");
@@ -1052,7 +1055,7 @@ fn a_program_found_in_place_clears_an_earlier_failure() {
     );
 
     // No server: the file there is the pinned one, so nothing is asked for.
-    download_missing(
+    check_now(
         tools.path(),
         "http://127.0.0.1:9",
         std::slice::from_ref(&pinned),
