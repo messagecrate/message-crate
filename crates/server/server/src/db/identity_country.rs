@@ -3,7 +3,7 @@
 //! the two become one (#1676).
 //!
 //! A number whose country nobody stated is stored as the digits typed, with
-//! no region, and matches no `+` number (`docs/architecture/
+//! no `+`, and matches no `+` number (`docs/architecture/
 //! contacts-identities-and-messages.md`, "A phone number carries its
 //! country"). Once a person picks the country, the number is the `+` form
 //! that country gives it. The identity is rewritten in place when no other
@@ -16,6 +16,8 @@ use anyhow::Result;
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::{self, IdentityGoes, Origin};
+use crate::db::{account_profile, handles};
+use crate::dedupe::HAS_CONTENT_KEY_SQL;
 
 /// Why a country cannot be picked for an identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,8 +39,6 @@ pub struct PlusForm {
     pub handle_id: i64,
     /// The number in its `+` form, such as `+447700900123`.
     pub key: String,
-    /// The country calling code of `key`, without the `+`.
-    pub region: String,
     /// The identity on the same service that already holds `key`.
     pub existing: Option<i64>,
 }
@@ -55,41 +55,25 @@ pub async fn plus_form(
     handle_id: i64,
     country: &'static phone::Country,
 ) -> Result<Result<PlusForm, CountryRefusal>> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
-        "SELECT raw, handle_type, service, region FROM handles WHERE account_id = $1 AND id = $2",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .fetch_optional(&mut *conn)
-    .await?;
-    let Some((raw, handle_type, service, region)) = row else {
+    let Some(row) = handles::keyed_row(conn, account_id, handle_id).await? else {
         return Ok(Err(CountryRefusal::CountryKnown));
     };
-    if handle_type != message_ir::IdentityType::Phone.as_str() || !region.is_empty() {
+    // A key that starts with `+` names its country already.
+    if row.handle_type != message_ir::IdentityType::Phone.as_str() || row.key.starts_with('+') {
         return Ok(Err(CountryRefusal::CountryKnown));
     }
-    let typed = phone::key_typed_handle(&raw, message_ir::IdentityType::Phone, Some(country));
+    let typed = phone::key_typed_handle(&row.raw, message_ir::IdentityType::Phone, Some(country));
     if !typed.key.starts_with('+') {
         let reason = typed
             .note
-            .unwrap_or_else(|| format!("{raw} has no + form in {}", country.code));
+            .unwrap_or_else(|| format!("{} has no + form in {}", row.raw, country.code));
         return Ok(Err(CountryRefusal::NoPlusForm(reason)));
     }
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM handles
-         WHERE account_id = $1 AND normalized = $2 AND handle_type = 'phone' AND service = $3
-           AND id <> $4",
-    )
-    .bind(account_id)
-    .bind(&typed.key)
-    .bind(&service)
-    .bind(handle_id)
-    .fetch_optional(&mut *conn)
-    .await?;
+    let existing =
+        handles::phone_holding_key(conn, account_id, &typed.key, &row.service, handle_id).await?;
     Ok(Ok(PlusForm {
         handle_id,
         key: typed.key,
-        region: typed.region,
         existing,
     }))
 }
@@ -117,30 +101,51 @@ pub async fn holder(
     handle_id: i64,
 ) -> Result<Holder> {
     if let Some(contact_id) = contacts::contact_id_for_handle(conn, account_id, handle_id).await? {
-        let name: String = sqlx::query_scalar(
-            "SELECT preferred_name FROM contacts WHERE account_id = $1 AND id = $2",
-        )
-        .bind(account_id)
-        .bind(contact_id)
-        .fetch_one(&mut *conn)
-        .await?;
+        let name = contacts::preferred_name(conn, account_id, contact_id).await?;
         return Ok(Holder::Contact(contact_id, name));
     }
-    let own: bool = sqlx::query_scalar(
-        "SELECT EXISTS (SELECT 1 FROM account_handles WHERE account_id = $1 AND handle_id = $2)",
+    Ok(
+        if account_profile::is_account_identity(conn, account_id, handle_id).await? {
+            Holder::Account
+        } else {
+            Holder::Nobody
+        },
     )
+}
+
+/// The messages whose content keys name the identity `handle_id`, among
+/// those a dedupe has keyed: every message of a conversation it is the chat
+/// handle of, a member of, or a sender in. A content key is made from the
+/// chat handle's key, the sender's and a group's members' (`dedupe.rs`,
+/// `ContentKeyInputs::load`), so when the identity's key or the identity
+/// itself changes, every one of these needs its key again.
+async fn messages_keyed_by(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT m.id FROM messages m
+         WHERE m.account_id = $1 AND {HAS_CONTENT_KEY_SQL}
+           AND m.conversation_id IN (
+             SELECT id FROM conversations WHERE account_id = $1 AND chat_handle_id = $2
+             UNION SELECT conversation_id FROM participants WHERE handle_id = $2
+             UNION SELECT conversation_id FROM messages
+                   WHERE account_id = $1 AND sender_handle_id = $2)
+         ORDER BY m.id",
+    ))
     .bind(account_id)
     .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await?;
-    Ok(if own { Holder::Account } else { Holder::Nobody })
+    .fetch_all(&mut *conn)
+    .await?)
 }
 
 /// Give the identity its `+` form. With no identity holding that form, the
 /// row is rewritten in place. Otherwise the identity merges into the one
-/// that does: see [`merge_into`]. Answers the messages whose conversation or
-/// sender changed and that a dedupe had keyed, whose duplicate flags the
-/// caller must put right.
+/// that does: see [`merge_into`]. Answers the messages a dedupe had keyed
+/// whose keys named the number, whose duplicate flags the caller must put
+/// right: every message of a conversation the number is the chat handle
+/// of, a member of, or a sender in ([`messages_keyed_by`]).
 ///
 /// `edited_contact` is the contact whose screen picked the country, when it
 /// was a contact's: the merged identity goes on it, from whatever contact
@@ -157,22 +162,12 @@ pub async fn give_country(
     form: &PlusForm,
     edited_contact: Option<i64>,
 ) -> Result<Vec<i64>> {
-    let Some(into) = form.existing else {
-        sqlx::query(
-            "UPDATE handles
-             SET normalized = $3, region = $4, normalized_note = NULL,
-                 last_modified = datetime('now')
-             WHERE account_id = $1 AND id = $2",
-        )
-        .bind(account_id)
-        .bind(form.handle_id)
-        .bind(&form.key)
-        .bind(&form.region)
-        .execute(&mut *conn)
-        .await?;
-        return Ok(Vec::new());
-    };
-    merge_into(conn, account_id, form.handle_id, into, edited_contact).await
+    let changed = messages_keyed_by(conn, account_id, form.handle_id).await?;
+    match form.existing {
+        None => handles::set_plus_form(conn, account_id, form.handle_id, &form.key).await?,
+        Some(into) => merge_into(conn, account_id, form.handle_id, into, edited_contact).await?,
+    }
+    Ok(changed)
 }
 
 /// Move everything that names identity `from` to identity `into`, then
@@ -189,20 +184,7 @@ async fn merge_into(
     from: i64,
     into: i64,
     edited_contact: Option<i64>,
-) -> Result<Vec<i64>> {
-    // The messages whose keys change: those that will sit in another
-    // conversation or name another sender. Only those a dedupe keyed matter.
-    let changed: Vec<i64> = sqlx::query_scalar(
-        "SELECT m.id FROM messages m
-         JOIN conversations c ON c.id = m.conversation_id
-         WHERE m.account_id = $1 AND m.content_key IS NOT NULL
-           AND (c.chat_handle_id = $2 OR m.sender_handle_id = $2)",
-    )
-    .bind(account_id)
-    .bind(from)
-    .fetch_all(&mut *conn)
-    .await?;
-
+) -> Result<()> {
     merge_conversation(conn, account_id, from, into).await?;
 
     // A conversation that lists both keeps the seat `into` has.
@@ -273,7 +255,7 @@ async fn merge_into(
     if let Some(contact_id) = from_contact.filter(|&c| Some(c) != keep_on) {
         contacts::delete_if_empty(conn, account_id, contact_id).await?;
     }
-    Ok(changed)
+    Ok(())
 }
 
 /// Join the one-to-one conversation keyed by `from` to the one keyed by
@@ -320,7 +302,21 @@ async fn merge_conversation(
             .execute(&mut *conn)
             .await?;
     }
-    // The conversation that stays keeps its own trash state.
+    // The merged conversation is in the Trash only when both were: a live
+    // conversation brings the other out with it, because emptying the Trash
+    // would otherwise delete its messages for good.
+    let source_trashed: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM trashed_conversations WHERE conversation_id = $1)",
+    )
+    .bind(source)
+    .fetch_one(&mut *conn)
+    .await?;
+    if !source_trashed {
+        sqlx::query("DELETE FROM trashed_conversations WHERE conversation_id = $1")
+            .bind(target)
+            .execute(&mut *conn)
+            .await?;
+    }
     for statement in [
         "DELETE FROM trashed_conversations WHERE conversation_id = $1",
         "DELETE FROM conversations WHERE id = $1",
@@ -331,32 +327,4 @@ async fn merge_conversation(
             .await?;
     }
     Ok(())
-}
-
-/// The id of the account's own identity shown as `address` on `service`,
-/// or on the phone service first and then WhatsApp when `service` is `None`.
-///
-/// # Errors
-///
-/// Returns an error when the statement fails.
-pub async fn account_identity_id(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    address: &str,
-    service: Option<message_ir::IdentityService>,
-) -> Result<Option<i64>> {
-    let id = sqlx::query_scalar(
-        "SELECT h.id FROM account_handles ah
-         JOIN handles h ON h.id = ah.handle_id
-         WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
-           AND ($3 IS NULL OR h.service = $3)
-         ORDER BY CASE h.service WHEN 'phone' THEN 0 ELSE 1 END
-         LIMIT 1",
-    )
-    .bind(account_id)
-    .bind(address.trim())
-    .bind(service.map(message_ir::IdentityService::as_str))
-    .fetch_optional(&mut *conn)
-    .await?;
-    Ok(id)
 }

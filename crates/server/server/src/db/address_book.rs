@@ -20,7 +20,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::{self, Origin};
-use crate::db::handles;
 use crate::db::named_membership;
 use crate::db::{WriteTx, begin_write};
 
@@ -974,16 +973,12 @@ async fn apply(
                 None => {
                     sqlx::query_scalar(
                         "INSERT INTO handles
-                           (account_id, raw, normalized, region, handle_type, service, origin)
-                         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+                           (account_id, raw, normalized, handle_type, service, origin)
+                         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
                     )
                     .bind(account_id)
                     .bind(&identity.written)
                     .bind(&identity.key.normalized)
-                    .bind(handles::region_of_key(
-                        &identity.key.normalized,
-                        identity.key.handle_type,
-                    ))
                     .bind(identity.key.handle_type)
                     .bind(identity.key.service.as_str())
                     .bind(Origin::AddressBook.as_str())

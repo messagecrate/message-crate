@@ -137,6 +137,57 @@ pub fn is_account_identity_sql(handle: &str, account_id: &str) -> String {
     )
 }
 
+/// True when the `handles` row `handle_id` is one of the account's
+/// identities, by [`is_account_identity_sql`]'s match.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn is_account_identity(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT EXISTS (SELECT 1 FROM handles h WHERE h.account_id = $1 AND h.id = $2 AND {})",
+        is_account_identity_sql("h", "$1"),
+    ))
+    .bind(account_id)
+    .bind(handle_id)
+    .fetch_one(&mut *conn)
+    .await?)
+}
+
+/// The id of the account's own identity shown as `address` on `service`,
+/// or on the phone service first and then WhatsApp when `service` is `None`.
+/// A row keyed `address` comes before one only written that way, so a
+/// number whose country is unknown is found before the `+` form a run in a
+/// stated country gave the same digits.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn account_identity_id(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    address: &str,
+    service: Option<IdentityService>,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "SELECT h.id FROM account_handles ah
+         JOIN handles h ON h.id = ah.handle_id
+         WHERE ah.account_id = $1 AND (h.raw = $2 OR h.normalized = $2)
+           AND ($3 IS NULL OR h.service = $3)
+         ORDER BY h.normalized = $2 DESC, CASE h.service WHEN 'phone' THEN 0 ELSE 1 END
+         LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(address.trim())
+    .bind(service.map(IdentityService::as_str))
+    .fetch_optional(&mut *conn)
+    .await?)
+}
+
 /// Ensure an `accounts` row exists at `account_id`, with the id as its stub
 /// username. The demo reset and the tests use it to place a row at a chosen
 /// id, and the import and export paths call it before they write for an

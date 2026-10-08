@@ -2932,6 +2932,36 @@ export interface components {
             start_date: string | null;
         };
         /**
+         * @description Who holds an identity: a contact, the account itself, or nobody. The
+         *     `holder` of an `identity-exists` problem.
+         */
+        IdentityHolder: {
+            /**
+             * Format: int64
+             * @description The contact's id.
+             */
+            contact_id: number;
+            /**
+             * @description Names this form, `contact`. A contact: the identity is on it. The other forms are `account` and `nobody`.
+             * @enum {string}
+             */
+            kind: "contact";
+            /** @description The contact's name; empty for a contact with no name. */
+            name: string;
+        } | {
+            /**
+             * @description Names this form, `account`. The account itself: the identity is one of its own. The other forms are `contact` and `nobody`.
+             * @enum {string}
+             */
+            kind: "account";
+        } | {
+            /**
+             * @description Names this form, `nobody`. Nobody: the identity is on no contact and is not the account's. The other forms are `contact` and `account`.
+             * @enum {string}
+             */
+            kind: "nobody";
+        };
+        /**
          * @description The service an identity is on, as a request names it and the profile
          *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
          *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
@@ -4968,7 +4998,8 @@ export interface components {
          *
          *     The extension members belong to the types named here: `word` and
          *     `did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,
-         *     `line` to `malformed-body` and `validation-failed` from an import batch.
+         *     `line` to `malformed-body` and `validation-failed` from an import batch,
+         *     `holder` to `identity-exists`.
          */
         Problem: {
             /**
@@ -4986,6 +5017,11 @@ export interface components {
              *     `validation-failed`.
              */
             errors?: string[] | null;
+            /**
+             * @description `identity-exists`: who already holds the `+` form the picked country
+             *     gives the number.
+             */
+            holder?: components["schemas"]["IdentityHolder"] | null;
             /**
              * Format: int64
              * @description `malformed-body` from an import batch: the line of the request body

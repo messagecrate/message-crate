@@ -189,7 +189,7 @@ CREATE TABLE IF NOT EXISTS imports (
     dedupe INTEGER NOT NULL DEFAULT 0,
     -- The country the run states for every phone number its files write
     -- without a + code, as an ISO 3166-1 alpha-2 code ('GB'). NULL when the
-    -- import form named none: such a number keeps its digits and no region
+    -- import form named none: such a number keeps its digits and no + form
     -- (#1676). Stated once, when the run is created.
     phone_country TEXT,
     -- Run status (for example running, completed, failed, cancelled).

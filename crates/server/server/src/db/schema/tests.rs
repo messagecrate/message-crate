@@ -311,7 +311,6 @@ async fn assert_current_schema_contract(conn: &mut SqliteConnection) {
             "account_id",
             "raw",
             "normalized",
-            "region",
             "normalized_note",
             "handle_type",
             "service",

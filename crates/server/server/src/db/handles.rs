@@ -47,7 +47,7 @@ impl HandleIdCache {
 ///
 /// Phone: E.164 when the raw is unambiguous: written with its `+`, or
 /// written without it in `country`, the country a run or a person stated.
-/// Otherwise the digits as written, with a review note and no region:
+/// Otherwise the digits as written, with a review note and no `+`:
 /// `020 7946 0000` with no country is `02079460000`, never `+02079460000`
 /// and never a US number (#1676). Email: lowercased. Username/Other:
 /// verbatim (trimmed).
@@ -57,21 +57,6 @@ pub fn normalize_handle(
     country: Option<&'static phone::Country>,
 ) -> phone::TypedKey {
     phone::key_typed_handle(raw, handle_type, country)
-}
-
-/// The region a stored key carries: the calling code of a phone key written
-/// in its `+` form, else empty. For a row whose key was made elsewhere, such
-/// as an address book load.
-#[must_use]
-pub fn region_of_key(normalized: &str, handle_type: &str) -> String {
-    match normalized.strip_prefix('+') {
-        Some(digits) if handle_type == IdentityType::Phone.as_str() => {
-            phone::calling_code_of(digits)
-                .unwrap_or_default()
-                .to_string()
-        }
-        _ => String::new(),
-    }
 }
 
 /// The shape of an address the source did not type: [`phone::Handle::parse`],
@@ -211,6 +196,97 @@ pub async fn existing_handle_id(
     Ok(id)
 }
 
+/// One `handles` row as a country pick reads it: the address as written,
+/// its type, its service, and its key.
+#[derive(Debug, Clone)]
+pub struct KeyedRow {
+    /// The address exactly as the source wrote it.
+    pub raw: String,
+    /// `phone`, `email`, `username` or `other`.
+    pub handle_type: String,
+    /// `phone` or `whatsapp`.
+    pub service: String,
+    /// The key it is matched under (`normalized`).
+    pub key: String,
+}
+
+/// The account's `handles` row `handle_id`, if it has one.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn keyed_row(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+) -> Result<Option<KeyedRow>> {
+    let row: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT raw, handle_type, service, normalized FROM handles
+         WHERE account_id = $1 AND id = $2",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(row.map(|(raw, handle_type, service, key)| KeyedRow {
+        raw,
+        handle_type,
+        service,
+        key,
+    }))
+}
+
+/// The account's phone identity on `service` keyed `key`, other than
+/// `except`, if there is one.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn phone_holding_key(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    key: &str,
+    service: &str,
+    except: i64,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM handles
+         WHERE account_id = $1 AND normalized = $2 AND handle_type = 'phone' AND service = $3
+           AND id <> $4",
+    )
+    .bind(account_id)
+    .bind(key)
+    .bind(service)
+    .bind(except)
+    .fetch_optional(&mut *conn)
+    .await?)
+}
+
+/// Give the account's `handles` row `handle_id` the key `key`, a phone
+/// number's `+` form, and clear its review note: its country is now known.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn set_plus_form(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    handle_id: i64,
+    key: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE handles
+         SET normalized = $3, normalized_note = NULL, last_modified = datetime('now')
+         WHERE account_id = $1 AND id = $2",
+    )
+    .bind(account_id)
+    .bind(handle_id)
+    .bind(key)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Insert or reuse a `handles` row for an address no run or person stated a
 /// country for. Returns the id and whether this call newly inserted a
 /// flagged (review-note) row.
@@ -237,21 +313,19 @@ pub async fn upsert_handle_row_in(
 ) -> Result<(i64, bool)> {
     let phone::TypedKey {
         key: normalized,
-        region,
         note,
     } = normalize_handle(raw, handle_type, country);
     let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let service_str = platform.as_str();
     let inserted = sqlx::query(
         "INSERT INTO handles
-           (account_id, raw, normalized, region, normalized_note, handle_type, service)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (account_id, raw, normalized, normalized_note, handle_type, service)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING",
     )
     .bind(account_id)
     .bind(raw)
     .bind(normalized.as_str())
-    .bind(region.as_str())
     .bind(note.as_deref())
     .bind(handle_type.as_str())
     .bind(service_str)
@@ -336,11 +410,18 @@ pub struct Identity {
     pub orphaned_messages: u64,
 }
 
-/// Whether the `handles` row `h` is a phone number whose country is unknown:
-/// stored as the digits typed, with no region, and long enough to have a `+`
-/// form once a country is picked (`phone`'s minimum of 7 national digits).
-pub const COUNTRY_UNKNOWN_SQL: &str = "(h.handle_type = 'phone' AND h.region = '' \
-     AND h.normalized NOT LIKE '+%' AND length(h.normalized) >= 7)";
+/// Whether the `handles` row `h` is a phone number whose country is unknown,
+/// as a SQL condition: stored as the digits typed, with no `+`, and long
+/// enough to have a `+` form once a country is picked
+/// ([`phone::MIN_NATIONAL_DIGITS`]).
+#[must_use]
+pub fn country_unknown_sql() -> String {
+    format!(
+        "(h.handle_type = 'phone' AND h.normalized NOT LIKE '+%' \
+         AND length(h.normalized) >= {})",
+        phone::MIN_NATIONAL_DIGITS
+    )
+}
 
 /// Whose identities [`identities`] reads.
 #[derive(Debug, Clone, Copy)]
@@ -412,7 +493,7 @@ pub async fn identities(conn: &mut SqliteConnection, of: IdentitiesOf) -> Result
             ),
         ),
     };
-    let country_unknown = COUNTRY_UNKNOWN_SQL;
+    let country_unknown = country_unknown_sql();
     let sql = format!(
         "WITH linked AS ({linked})
          SELECT h.normalized,

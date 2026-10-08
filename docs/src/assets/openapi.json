@@ -15184,6 +15184,70 @@
           }
         }
       },
+      "IdentityHolder": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A contact: the identity is on it.",
+            "required": [
+              "contact_id",
+              "name",
+              "kind"
+            ],
+            "properties": {
+              "contact_id": {
+                "type": "integer",
+                "format": "int64",
+                "description": "The contact's id."
+              },
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `contact`. A contact: the identity is on it. The other forms are `account` and `nobody`.",
+                "enum": [
+                  "contact"
+                ]
+              },
+              "name": {
+                "type": "string",
+                "description": "The contact's name; empty for a contact with no name."
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "The account itself: the identity is one of its own.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `account`. The account itself: the identity is one of its own. The other forms are `contact` and `nobody`.",
+                "enum": [
+                  "account"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Nobody: the identity is on no contact and is not the account's.",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "description": "Names this form, `nobody`. Nobody: the identity is on no contact and is not the account's. The other forms are `contact` and `account`.",
+                "enum": [
+                  "nobody"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Who holds an identity: a contact, the account itself, or nobody. The\n`holder` of an `identity-exists` problem."
+      },
       "IdentityService": {
         "type": "string",
         "description": "The service an identity is on, as a request names it and the profile\nreports it: `phone` or `whatsapp`. `phone` is Text Message, which carries\nSMS, MMS, iMessage and RCS, and reaches an email address through iMessage.\nThe service never decides the identity's type, which comes from the\naddress.",
@@ -18820,7 +18884,7 @@
       },
       "Problem": {
         "type": "object",
-        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,\n`line` to `malformed-body` and `validation-failed` from an import batch.",
+        "description": "An RFC 7807 problem document: the body of every failure the server answers,\nserved as `application/problem+json` (`docs/architecture/http-api.md`).\n\n`type` is the URL of the page describing this kind of failure, one page per\ntype, or `about:blank` for an internal error. A validation failure carries\n`errors`, every field that failed, in place of `detail`. Every problem\nrepeats the response's `x-request-id` as `request_id`, so the person\nreading the failure and the operator reading the log are looking at the\nsame request.\n\nThe extension members belong to the types named here: `word` and\n`did_you_mean` to `search-query-invalid`, `retry_after` to `rate-limited`,\n`line` to `malformed-body` and `validation-failed` from an import batch,\n`holder` to `identity-exists`.",
         "required": [
           "type",
           "title",
@@ -18850,6 +18914,17 @@
               "type": "string"
             },
             "description": "Every rule the request broke, one sentence each. Only on\n`validation-failed`."
+          },
+          "holder": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityHolder"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`identity-exists`: who already holds the `+` form the picked country\ngives the number."
           },
           "line": {
             "type": [

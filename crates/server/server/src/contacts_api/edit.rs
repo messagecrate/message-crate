@@ -33,9 +33,8 @@ pub enum ContactEditError {
     /// The request asks for something the server will not do, and the person
     /// can fix it by changing the request. The sentence is written for them.
     Refused(String),
-    /// The country picked for a number gives it a `+` form another identity
-    /// holds, and the request did not ask to merge them.
-    IdentityExists(String),
+    /// A country could not be picked for one of the contact's numbers.
+    Country(CountryError),
     /// Something failed that changing the request would not help. The cause
     /// goes to the log, not to the person.
     Failed(anyhow::Error),
@@ -59,7 +58,7 @@ impl From<ContactEditError> for ApiError {
     fn from(error: ContactEditError) -> Self {
         match error {
             ContactEditError::Refused(message) => Self::validation(message),
-            ContactEditError::IdentityExists(message) => Self::IdentityExists(message),
+            ContactEditError::Country(error) => error.into(),
             ContactEditError::Failed(cause) => Self::Internal(cause),
         }
     }
@@ -187,12 +186,10 @@ impl ContactEditor<'_> {
         set: &SetIdentityCountryRequest,
     ) -> Result<bool, ContactEditError> {
         let whose = Whose::Contact(self.contact_id);
-        match set_identity_country(&mut *self.conn, self.account_id, whose, set).await {
-            Ok(()) => self.touched().await,
-            Err(CountryError::Refused(message)) => Err(ContactEditError::Refused(message)),
-            Err(CountryError::Exists(message)) => Err(ContactEditError::IdentityExists(message)),
-            Err(CountryError::Failed(cause)) => Err(ContactEditError::Failed(cause)),
-        }
+        set_identity_country(&mut *self.conn, self.account_id, whose, set)
+            .await
+            .map_err(ContactEditError::Country)?;
+        self.touched().await
     }
 
     /// Name the contact.

@@ -4,13 +4,16 @@
 //! [`SetIdentityCountryRequest`] and run [`set_identity_country`]; the
 //! statements are in `db::identity_country` (#1676).
 
+use message_crate_api_types::IdentityHolder;
 use message_ir::IdentityService;
 use serde::Deserialize;
 use sqlx::SqliteConnection;
 
+use crate::db::account_profile;
 use crate::db::contacts::{self, OnService};
 use crate::db::handles::ApiIdentityService;
 use crate::db::identity_country::{self, CountryRefusal, Holder};
+use crate::imports_api::with_yourself;
 
 /// A country picked for one phone number written without its `+` code.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -43,29 +46,36 @@ pub enum Whose {
 }
 
 /// Why a country was not picked.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum CountryError {
     /// The request asks for something the server will not do; the sentence
     /// is written for the person.
+    #[error("{0}")]
     Refused(String),
     /// Another identity holds the `+` form and the request did not ask to
-    /// merge; the sentence names it.
-    Exists(String),
+    /// merge: the sentence names it, and `holder` says who holds it.
+    #[error("{detail}")]
+    Exists {
+        /// The sentence, naming the number, its `+` form and who holds it.
+        detail: String,
+        /// Who holds the `+` form.
+        holder: IdentityHolder,
+    },
+    /// The request cannot be done from where it was sent: a number on a
+    /// contact whose `+` form is one of the account's own identities.
+    #[error("{0}")]
+    Conflict(String),
     /// Something failed that changing the request would not help.
-    Failed(anyhow::Error),
-}
-
-impl From<anyhow::Error> for CountryError {
-    fn from(error: anyhow::Error) -> Self {
-        Self::Failed(error)
-    }
+    #[error(transparent)]
+    Failed(#[from] anyhow::Error),
 }
 
 impl From<CountryError> for crate::server::ApiError {
     fn from(error: CountryError) -> Self {
         match error {
             CountryError::Refused(message) => Self::validation(message),
-            CountryError::Exists(message) => Self::IdentityExists(message),
+            CountryError::Exists { detail, holder } => Self::IdentityExists { detail, holder },
+            CountryError::Conflict(message) => Self::StateConflict(message),
             CountryError::Failed(cause) => Self::Internal(cause),
         }
     }
@@ -106,7 +116,7 @@ pub async fn set_identity_country(
         .await?
         .map(|(id, _)| id),
         Whose::Account => {
-            identity_country::account_identity_id(conn, account_id, address, service).await?
+            account_profile::account_identity_id(conn, account_id, address, service).await?
         }
     };
     let Some(handle_id) = handle_id else {
@@ -128,23 +138,51 @@ pub async fn set_identity_country(
             )));
         }
     };
-    if let Some(existing) = form.existing.filter(|_| !request.merge) {
-        let who = match identity_country::holder(conn, account_id, existing).await? {
-            Holder::Contact(_, name) if name.is_empty() => "a contact with no name".to_string(),
-            Holder::Contact(_, name) => name,
-            Holder::Account => "this account, as one of its own identities".to_string(),
-            Holder::Nobody => "no contact".to_string(),
-        };
-        return Err(CountryError::Exists(format!(
-            "{address} in {} is {}, which is already an identity of {who}.",
+    let holder = match form.existing {
+        Some(existing) => Some(identity_country::holder(conn, account_id, existing).await?),
+        None => None,
+    };
+    if matches!(whose, Whose::Contact(_)) && holder == Some(Holder::Account) {
+        // Joining a contact's number to the account holder's own makes its
+        // conversations ones with yourself and takes the number off the
+        // contact, so it is done where the account's identities are.
+        return Err(CountryError::Conflict(format!(
+            "{address} in {} is {}, which is one of this account's own identities. \
+             Add {address} to My Identities and pick its country there to join the two.",
             country.code, form.key
         )));
+    }
+    if let Some(holder) = holder.filter(|_| !request.merge) {
+        let held = match &holder {
+            Holder::Contact(_, name) if name.is_empty() => {
+                "another identity of a contact with no name".to_string()
+            }
+            Holder::Contact(_, name) => format!("another identity of {name}"),
+            Holder::Account => "one of this account's own identities".to_string(),
+            Holder::Nobody => "another identity, on no contact".to_string(),
+        };
+        return Err(CountryError::Exists {
+            detail: format!(
+                "{address} in {} is {}, which is already {held}.",
+                country.code, form.key
+            ),
+            holder: match holder {
+                Holder::Contact(contact_id, name) => IdentityHolder::Contact { contact_id, name },
+                Holder::Account => IdentityHolder::Account,
+                Holder::Nobody => IdentityHolder::Nobody,
+            },
+        });
     }
     let edited_contact = match whose {
         Whose::Contact(contact_id) => Some(contact_id),
         Whose::Account => None,
     };
+    // A merge can make one of the account's identities the chat handle of a
+    // one-to-one conversation, or a member of a group, so the with-yourself
+    // rule runs again around it, as it does for any identity change (#1662).
+    let before = with_yourself::before_identity_change(conn, account_id).await?;
     let changed = identity_country::give_country(conn, account_id, &form, edited_contact).await?;
+    with_yourself::follow_identities(conn, before).await?;
     // A merged conversation or sender changes the content keys of the
     // messages that moved, so their duplicate flags are worked out again.
     crate::dedupe::dedupe_changed_messages(

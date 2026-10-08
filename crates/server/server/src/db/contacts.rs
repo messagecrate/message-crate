@@ -316,6 +316,26 @@ pub async fn contact_id_for_handle(
     Ok(found)
 }
 
+/// The contact's name as it is shown, empty for a contact with no name.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails or the contact is not the
+/// account's.
+pub async fn preferred_name(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    contact_id: i64,
+) -> Result<String> {
+    Ok(
+        sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE account_id = $1 AND id = $2")
+            .bind(account_id)
+            .bind(contact_id)
+            .fetch_one(&mut *conn)
+            .await?,
+    )
+}
+
 /// True when the contact belongs to this account and is not in the trash.
 ///
 /// # Errors
@@ -352,7 +372,10 @@ pub enum OnService {
 }
 
 /// Id and service of the handle row for `raw` that is linked to this
-/// contact, if any, picked among its services as `on` says.
+/// contact, if any, picked among its services as `on` says. A row keyed
+/// `raw` comes before one only written that way, so a number whose country
+/// is unknown is found before the `+` form a run in a stated country gave
+/// the same digits.
 ///
 /// # Errors
 ///
@@ -379,7 +402,7 @@ pub async fn linked_handle_id(
          WHERE ch.account_id = $1 AND ch.contact_id = $2
            AND (h.raw = $3 OR h.normalized = $3)
            AND (NOT $5 OR h.service = $4)
-         ORDER BY CASE
+         ORDER BY h.normalized = $3 DESC, CASE
              WHEN h.service = $4 THEN 0
              WHEN h.service = 'phone' THEN 1
              WHEN h.service = 'whatsapp' THEN 2

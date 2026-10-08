@@ -569,14 +569,9 @@ enum ProfileUpdateError {
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
-    /// A country could not be picked for an identity; the sentence is
-    /// written for the person.
-    #[error("{0}")]
-    CountryRefused(String),
-    /// The country picked gives the number a `+` form another identity
-    /// holds, and the request did not ask to merge them.
-    #[error("{0}")]
-    IdentityExists(String),
+    /// A country could not be picked for one of the account's numbers.
+    #[error(transparent)]
+    Country(crate::identity_country::CountryError),
     /// Database failure.
     #[error(transparent)]
     Db(#[from] anyhow::Error),
@@ -592,9 +587,8 @@ impl From<ProfileUpdateError> for ApiError {
     fn from(e: ProfileUpdateError) -> Self {
         match e {
             err @ (ProfileUpdateError::ServiceCannotCarry(_)
-            | ProfileUpdateError::UnknownTimeZone(_)
-            | ProfileUpdateError::CountryRefused(_)) => Self::validation(err.to_string()),
-            ProfileUpdateError::IdentityExists(message) => Self::IdentityExists(message),
+            | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
+            ProfileUpdateError::Country(error) => error.into(),
             ProfileUpdateError::Db(err) => Self::Internal(err),
         }
     }
@@ -693,19 +687,10 @@ async fn update_profile_in(
     )
     .await?;
     if let Some(set) = &req.set_identity_country {
-        use crate::identity_country::{CountryError, Whose, set_identity_country};
-        // A merge can make one of the account's identities the chat handle
-        // of a one-to-one conversation, so the with-yourself rule runs again
-        // around it, as it does for any identity change (#1662).
-        let before = with_yourself::before_identity_change(tx, account_id).await?;
+        use crate::identity_country::{Whose, set_identity_country};
         set_identity_country(tx, account_id, Whose::Account, set)
             .await
-            .map_err(|error| match error {
-                CountryError::Refused(message) => ProfileUpdateError::CountryRefused(message),
-                CountryError::Exists(message) => ProfileUpdateError::IdentityExists(message),
-                CountryError::Failed(cause) => ProfileUpdateError::Db(cause),
-            })?;
-        with_yourself::follow_identities(tx, before).await?;
+            .map_err(ProfileUpdateError::Country)?;
     }
     // An account saving its own profile is what profile setup is, so it no
     // longer owes one. Cleared in the same transaction as the change it
