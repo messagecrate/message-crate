@@ -36,7 +36,7 @@ Adding the phone's number to the profile under **Settings → Profile** is the b
 
 **Attachments** stays on **Copy**, which uploads every photo, video, and file as it is.
 
-**Convert** and **Compress & Convert** need the separate program ffmpeg, so they are left for a later import.
+**Convert** and **Compress & Convert** need ffmpeg, a separate program the desktop app downloads in the background when it starts, so they are left for a later import.
 With **Copy**, a browser shows the formats it can show. Some iPhone photos and videos are in formats that not every browser displays, and those stay that way.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice does.
 
