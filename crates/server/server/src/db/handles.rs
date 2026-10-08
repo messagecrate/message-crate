@@ -95,11 +95,13 @@ pub fn check_service_carries(
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
 //
-// The HTTP API's enum, published in the OpenAPI reference as
+// This is the HTTP API's enum; the OpenAPI reference publishes it as
 // `IdentityService`. `message_ir::IdentityService` is the conversation file's
 // enum of the same two services, whose `parse` reads every word but
 // `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
-// two.
+// two. The `Api` prefix keeps the two apart in Rust, because one bare name
+// would mean either enum depending on a file's imports
+// (docs/architecture/http-api.md, "Code").
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
