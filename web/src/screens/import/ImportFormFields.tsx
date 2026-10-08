@@ -32,8 +32,10 @@ import { showsAttachmentOptions } from "../../lib/importSource";
 import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
+import { toolUsable } from "../../lib/tauri";
 import type { AttachmentMediaMode } from "../../lib/types";
 import { accentLink } from "../../lib/uiStyles";
+import { useToolsStatus } from "../../lib/useToolsStatus";
 import {
   isWhatsappMethod,
   WHATSAPP_METHODS,
@@ -58,6 +60,8 @@ import {
   StackedField,
   sectionGap,
 } from "./ImportFormUi";
+import { MissingProgramNotice } from "./MissingProgramNotice";
+import { mediaJobVerb } from "./reviewForecast";
 
 export type ImportFormFieldsProps = {
   source: string;
@@ -386,8 +390,18 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const runningJob = useDesktopJob();
   const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;
 
+  // A WhatsApp import runs wtsexporter and can't start without it; one still
+  // downloading is waited for. Convert and Compress run ffmpeg and ffprobe
+  // after Staging, so a missing one is said here and blocks nothing yet.
+  const tools = useToolsStatus().data ?? null;
+  const wtsexporterBlocked =
+    whatsappMethod !== null && tools !== null && !toolUsable(tools.wtsexporter);
+  const mediaRunsFfmpeg =
+    showsAttachmentOptions(props.source) && mediaJobVerb(props.attachmentMedia) !== null;
+
   const canImport =
     blockedBy === null &&
+    !wtsexporterBlocked &&
     (imessageReadiness
       ? imessageReadiness.enabled && !props.running
       : whatsappReadiness
@@ -858,6 +872,13 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         <p role="status" className="mt-2 mb-0 text-[0.813rem] text-muted">
           {desktopJobRunningText(blockedBy, "Import")}
         </p>
+      ) : null}
+
+      {tools && whatsappMethod !== null ? (
+        <MissingProgramNotice programs={["wtsexporter"]} status={tools} need="whatsapp" />
+      ) : null}
+      {tools && mediaRunsFfmpeg ? (
+        <MissingProgramNotice programs={["ffmpeg", "ffprobe"]} status={tools} need="media" />
       ) : null}
 
       <div className="mt-2 flex gap-3">

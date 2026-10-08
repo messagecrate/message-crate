@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -32,9 +32,22 @@ vi.mock("../../lib/openPath", () => ({
   openPathInExplorer: (...args: unknown[]) => openPathInExplorer(...args),
 }));
 
+/** The desktop process the review asks where ffmpeg and ffprobe are; off unless a test turns it on. */
+const desktop = vi.hoisted(() => ({
+  isTauri: false,
+  toolsStatus: vi.fn(),
+  retry: vi.fn(),
+}));
+
+vi.mock("../../lib/tauri-check", () => ({
+  isTauri: () => desktop.isTauri,
+}));
+
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
   invokeImportRunLog: (runDir: string) => invokeImportRunLog(runDir),
+  invokeToolsStatus: () => desktop.toolsStatus(),
+  invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
 vi.mock("../../lib/auth", () => ({
@@ -221,6 +234,9 @@ describe("ImportRunView", () => {
   afterEach(() => {
     cleanup();
     invokeImportRunLog.mockClear();
+    desktop.isTauri = false;
+    desktop.toolsStatus.mockReset();
+    desktop.retry.mockReset();
   });
 
   it("lists every stage and review of the run, in order", () => {
@@ -503,6 +519,77 @@ describe("ImportRunView", () => {
         /Media can't use ffprobe\. Put it beside ffmpeg, or put both in the Tools Directory\. Settings → System shows each program's state/,
       ),
     ).toBeInTheDocument();
+    // Beside the message, Try again downloads them from here (#1053).
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("Try again at the review unblocks it once the programs arrive (#1053)", async () => {
+    const user = setupUser();
+    desktop.isTauri = true;
+    const tools = (ffprobe: ToolStatus): ToolsStatus => ({
+      toolsDir: "/home/sam/message-crate/tools",
+      checking: false,
+      ffmpeg: { state: "found", path: "/home/sam/message-crate/tools/ffmpeg" },
+      ffprobe,
+      wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
+    });
+    desktop.toolsStatus.mockResolvedValue(
+      tools({ state: "downloadFailed", reason: "No connection." }),
+    );
+    desktop.retry.mockImplementation(async () => {
+      desktop.toolsStatus
+        .mockResolvedValueOnce(tools({ state: "downloading", received: 0, total: null }))
+        .mockResolvedValue(
+          tools({ state: "found", path: "/home/sam/message-crate/tools/ffprobe" }),
+        );
+      return "started";
+    });
+    renderView({
+      phase: "staging_review",
+      running: false,
+      steps: stepsAt("convert", { Staging: "done" }),
+      stagingSummary: staged(),
+      reviewWaiting: "staging",
+      mediaToolsMissing: ["ffprobe"],
+    });
+    expect(screen.getByRole("button", { name: "Convert media" })).toBeDisabled();
+
+    await user.click(await screen.findByRole("button", { name: "Try again" }));
+
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled(),
+      { timeout: 3000 },
+    );
+    expect(desktop.retry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Media can't use ffprobe/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  it("leaves the review open while ffmpeg downloads, since Media waits for it (#1053)", async () => {
+    desktop.isTauri = true;
+    desktop.toolsStatus.mockResolvedValue({
+      toolsDir: "/home/sam/message-crate/tools",
+      checking: false,
+      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
+      wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
+    } satisfies ToolsStatus);
+    renderView({
+      phase: "staging_review",
+      running: false,
+      steps: stepsAt("convert", { Staging: "done" }),
+      stagingSummary: staged(),
+      reviewWaiting: "staging",
+      // What the run found when it reached the review: ffmpeg not there yet.
+      mediaToolsMissing: ["ffmpeg"],
+    });
+
+    await waitFor(() => expect(desktop.toolsStatus).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Convert media" })).toBeEnabled(),
+    );
+    expect(screen.queryByText(/Media can't use ffmpeg/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
   it("names both Media tools with and when neither can be used", () => {

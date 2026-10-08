@@ -5,6 +5,16 @@ use std::ffi::OsString;
 use httpmock::prelude::*;
 
 /// The SHA-256 of `bytes`, in lowercase hex.
+impl Retry {
+    /// The check's thread, when one started.
+    fn started(self) -> Option<JoinHandle<()>> {
+        match self {
+            Self::Started(handle) => Some(handle),
+            Self::AlreadyRunning | Self::CouldNotStart => None,
+        }
+    }
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
 }
@@ -77,6 +87,11 @@ fn no_ffmpeg_on_path(dir: &Path) -> media::testutil::ToolsHidden {
     media::testutil::locate_tools(OsString::new(), dir.to_path_buf())
 }
 
+/// [`download_missing`] as one check of `downloads`, on this thread.
+fn check_now(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
+    download_missing(dir, base, pinned, downloads.begin_check());
+}
+
 /// The names in `dir` other than `keep` and the lock file, to see that no
 /// temporary file was left behind.
 fn other_files(dir: &Path, keep: &[&str]) -> Vec<String> {
@@ -107,7 +122,7 @@ fn a_download_whose_checksum_does_not_match_is_refused() {
     serve(&server, &pinned, b"a file changed on the way");
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -151,7 +166,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // 404 Not Found: the old file stays.
     let server = MockServer::start();
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -165,7 +180,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // A file that does not match: the old file stays.
     let mut wrong = serve(&server, &new, b"not the new release");
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -177,7 +192,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
 
     // A good download replaces it, and the record names the new release.
     serve(&server, &new, &new_bytes);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&new),
@@ -209,7 +224,7 @@ fn a_gzipped_program_is_unpacked_and_made_executable() {
     let server = MockServer::start();
     serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -238,7 +253,7 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -285,7 +300,7 @@ fn ffmpeg_on_path_is_not_downloaded() {
     let ffprobe_asked = serve(&server, &ffprobe, &ffprobe_gz);
     let wts_asked = serve(&server, &wts, &wts_bytes);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe, wts],
@@ -316,7 +331,7 @@ fn ffmpeg_on_path_without_ffprobe_is_downloaded() {
     serve(&server, &ffmpeg, &ffmpeg_gz);
     serve(&server, &ffprobe, &ffprobe_gz);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe],
@@ -352,7 +367,7 @@ fn the_pinned_program_the_app_wrote_is_kept() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -389,7 +404,7 @@ fn a_file_put_over_the_apps_own_is_replaced() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -420,7 +435,7 @@ fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
     let downloads = ToolDownloads::default();
 
     // No network: what is there stays.
-    download_missing(
+    check_now(
         tools.path(),
         "http://127.0.0.1:9",
         &[ffmpeg.clone(), ffprobe.clone()],
@@ -433,7 +448,7 @@ fn ffmpeg_put_there_by_hand_is_replaced_after_a_good_download() {
     let server = MockServer::start();
     serve(&server, &ffmpeg, &ffmpeg_gz);
     serve(&server, &ffprobe, &ffprobe_gz);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[ffmpeg, ffprobe],
@@ -460,7 +475,7 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
 
     for _start in 0..2 {
         let downloads = ToolDownloads::default();
-        download_missing(
+        check_now(
             tools.path(),
             &server.base_url(),
             std::slice::from_ref(&pinned),
@@ -496,7 +511,7 @@ fn a_pinned_program_put_there_by_hand_that_does_not_run_is_not_downloaded() {
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -527,7 +542,7 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -570,7 +585,7 @@ fn a_changed_stamp_on_the_pinned_program_is_recorded_again() {
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
 
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -599,7 +614,7 @@ fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
     let mut asked = serve(&server, &pinned, &published);
 
     std::fs::write(&target, b"pinned").unwrap();
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         std::slice::from_ref(&pinned),
@@ -614,7 +629,7 @@ fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
 
     std::fs::write(&target, b"a pipx shim, or an older release").unwrap();
     let asked = serve(&server, &pinned, &published);
-    download_missing(
+    check_now(
         tools.path(),
         &server.base_url(),
         &[pinned],
@@ -640,7 +655,7 @@ fn an_interrupted_downloads_leftovers_are_deleted() {
         std::fs::write(tools.path().join(name), b"left").unwrap();
     }
 
-    download_missing(
+    check_now(
         tools.path(),
         "http://127.0.0.1:9",
         &[],
@@ -680,7 +695,7 @@ fn every_program_wanted_shows_as_downloading_before_its_request() {
 
     let mut seen_waiting = false;
     std::thread::scope(|scope| {
-        let check = scope.spawn(|| download_missing(&dir, &base, &[ffmpeg, wts], &downloads));
+        let check = scope.spawn(|| check_now(&dir, &base, &[ffmpeg, wts], &downloads));
         while !check.is_finished() {
             if downloads.get(Program::Wtsexporter)
                 == Some(DownloadState::Downloading {
@@ -725,15 +740,13 @@ fn a_second_check_at_the_same_time_does_nothing() {
     let dir = tools.path().to_path_buf();
 
     std::thread::scope(|scope| {
-        let check =
-            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &first));
+        let check = scope.spawn(|| check_now(&dir, &base, std::slice::from_ref(&pinned), &first));
         // The first check holds the lock once it shows a download.
         while first.get(Program::Wtsexporter).is_none() {
             assert!(!check.is_finished(), "the first check ended at once");
             std::thread::sleep(Duration::from_millis(1));
         }
-        let other =
-            scope.spawn(|| download_missing(&dir, &base, std::slice::from_ref(&pinned), &second));
+        let other = scope.spawn(|| check_now(&dir, &base, std::slice::from_ref(&pinned), &second));
         other.join().unwrap();
         assert!(
             !check.is_finished(),
@@ -759,7 +772,7 @@ fn no_network_is_a_failed_download_that_says_so() {
     let downloads = ToolDownloads::default();
 
     // Port 9 on this computer, where nothing listens.
-    download_missing(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
+    check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
 
     let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
         panic!("the download did not fail");
@@ -803,4 +816,408 @@ fn every_platform_is_pinned() {
             );
         }
     }
+}
+
+/// An import started while its program downloads waits, hears the
+/// download's progress, and goes on once the program has arrived.
+#[test]
+fn an_import_waits_for_a_download_and_goes_on_when_it_arrives() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Downloading {
+            received: 0,
+            total: None,
+        },
+    );
+    let mut heard = Vec::new();
+
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.set(
+                Program::Wtsexporter,
+                DownloadState::Downloading {
+                    received: 12_000_000,
+                    total: Some(30_000_000),
+                },
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.clear(Program::Wtsexporter);
+        });
+        let waited = downloads.wait_for(
+            &[Program::Wtsexporter],
+            &|| false,
+            &mut |program, received, total| {
+                heard.push((program, received, total));
+            },
+        );
+        assert_eq!(waited, Ok(()));
+    });
+
+    assert_eq!(heard.first(), Some(&(Program::Wtsexporter, 0, None)));
+    assert!(
+        heard.contains(&(Program::Wtsexporter, 12_000_000, Some(30_000_000))),
+        "the wait did not hear the progress: {heard:?}"
+    );
+}
+
+/// A download that fails while an import waits for it fails the import,
+/// with the download's reason.
+#[test]
+fn an_import_waiting_for_a_download_that_fails_fails_with_its_reason() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Ffprobe,
+        DownloadState::Downloading {
+            received: 10,
+            total: Some(100),
+        },
+    );
+
+    let waited = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            downloads.set(
+                Program::Ffprobe,
+                DownloadState::Failed {
+                    reason: "The download's server answered 404 Not Found.".into(),
+                },
+            );
+        });
+        downloads.wait_for(
+            &[Program::Ffmpeg, Program::Ffprobe],
+            &|| false,
+            &mut |_, _, _| {},
+        )
+    });
+
+    let err = waited.unwrap_err();
+    assert_eq!(
+        err,
+        WaitError::Failed {
+            program: Program::Ffprobe,
+            reason: "The download's server answered 404 Not Found.".into(),
+        }
+    );
+    // The run's error sends the person to the troubleshooting section.
+    assert_eq!(
+        err.to_string(),
+        "The ffprobe download failed. The download's server answered 404 Not Found. \
+         Try again on the Import form downloads it again. \
+         See \"ffmpeg or ffprobe not found\" in Troubleshooting at messagecrate.app."
+    );
+}
+
+/// A program not downloading is not waited for, and a failure from before
+/// the import started is the lookup's to report, not the wait's.
+#[test]
+fn an_import_does_not_wait_for_a_program_not_downloading() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+    let mut heard = 0;
+
+    let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {
+        heard += 1
+    });
+
+    assert_eq!(waited, Ok(()));
+    assert_eq!(heard, 0);
+}
+
+/// A Cancel ends the wait, though the download goes on.
+#[test]
+fn a_cancel_ends_the_wait() {
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Downloading {
+            received: 0,
+            total: None,
+        },
+    );
+    let cancel = std::sync::atomic::AtomicBool::new(false);
+
+    let waited = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(50));
+            cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+        downloads.wait_for(
+            &[Program::Wtsexporter],
+            &|| cancel.load(std::sync::atomic::Ordering::Relaxed),
+            &mut |_, _, _| {},
+        )
+    });
+
+    assert_eq!(waited, Err(WaitError::Cancelled));
+}
+
+/// Try again runs the check once on a thread of its own and returns before
+/// the download ends, with the program already shown as downloading so the
+/// window keeps asking.
+#[test]
+fn try_again_runs_the_check_once_and_returns_at_once() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    let asked = server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(500))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+
+    let started = std::time::Instant::now();
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    )
+    .started()
+    .expect("a check started");
+    assert!(
+        started.elapsed() < Duration::from_millis(400),
+        "Try again waited for the download"
+    );
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Downloading { .. })
+    ));
+    check.join().unwrap();
+
+    asked.assert_calls(1);
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
+        b"wtsexporter"
+    );
+}
+
+/// Try again while a check holds the lock starts nothing: no second
+/// download, and the state the running check keeps is left alone.
+#[test]
+fn try_again_while_a_check_runs_starts_nothing() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+    let running = DownloadState::Downloading {
+        received: 5,
+        total: Some(10),
+    };
+    downloads.set(Program::Wtsexporter, running.clone());
+    let _held = lock_check(tools.path()).unwrap().expect("the lock is free");
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    );
+
+    assert!(
+        matches!(check, Retry::AlreadyRunning),
+        "a second check started"
+    );
+    asked.assert_calls(0);
+    assert_eq!(downloads.get(Program::Wtsexporter), Some(running));
+}
+
+/// A program the check finds in place loses the failure an earlier check
+/// left, so Try again after a file was put there by hand clears it.
+#[test]
+fn a_program_found_in_place_clears_an_earlier_failure() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    std::fs::write(
+        tools.path().join(Program::Wtsexporter.file_name()),
+        &published,
+    )
+    .unwrap();
+    let downloads = ToolDownloads::default();
+    downloads.set(
+        Program::Wtsexporter,
+        DownloadState::Failed {
+            reason: "no network".into(),
+        },
+    );
+
+    // No server: the file there is the pinned one, so nothing is asked for.
+    check_now(
+        tools.path(),
+        "http://127.0.0.1:9",
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+}
+
+/// A check counts as running from Try again until it ends, so the window,
+/// which shows a program the check has not looked at yet as missing, keeps
+/// asking for the status meanwhile.
+#[test]
+fn a_check_counts_as_running_until_it_ends() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(200))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+    assert!(!downloads.checking());
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[],
+    )
+    .started()
+    .expect("a check started");
+    assert!(downloads.checking(), "Try again's check is not running");
+    check.join().unwrap();
+
+    assert!(!downloads.checking(), "the check still runs after it ended");
+}
+
+/// A check whose thread panics partway through a download leaves no program
+/// downloading: the program it marked fails as interrupted, and an import
+/// waiting for it wakes with that reason instead of waiting until Cancel.
+#[test]
+fn a_check_that_panics_mid_download_fails_the_download() {
+    let downloads = ToolDownloads::default();
+    let mut run = downloads.begin_check();
+    run.mark_downloading(Program::Wtsexporter);
+
+    let (panicked, waited) = std::thread::scope(|scope| {
+        let check = scope.spawn(move || {
+            let _run = run;
+            std::thread::sleep(Duration::from_millis(50));
+            panic!("the fake download panics");
+        });
+        let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {});
+        (check.join().is_err(), waited)
+    });
+
+    assert!(panicked);
+    assert_eq!(
+        waited,
+        Err(WaitError::Failed {
+            program: Program::Wtsexporter,
+            reason: "The download was interrupted.".into(),
+        })
+    );
+    assert!(!downloads.checking());
+}
+
+/// A download that arrives and runs is not a failed download when its
+/// record can't be written: the program is found, and an import waiting for
+/// it goes on.
+#[test]
+fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    // A directory where the record goes: renaming the record over it fails.
+    std::fs::create_dir(tools.path().join(MANIFEST_FILE)).unwrap();
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let server = MockServer::start();
+    let path = format!(
+        "/{}/releases/download/{}/{}",
+        pinned.repo, pinned.release, pinned.asset
+    );
+    server.mock(|when, then| {
+        when.method(GET).path(path);
+        then.status(200)
+            .delay(Duration::from_millis(100))
+            .body(published);
+    });
+    let downloads = ToolDownloads::default();
+
+    let check = retry(
+        tools.path().to_path_buf(),
+        server.base_url(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+    )
+    .started()
+    .expect("a check started");
+    let waited = downloads.wait_for(&[Program::Wtsexporter], &|| false, &mut |_, _, _| {});
+    check.join().unwrap();
+
+    assert_eq!(waited, Ok(()));
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert!(runs(Program::Wtsexporter, tools.path()));
+}
+
+/// A Try again whose thread can't start fails each program it marked with
+/// that reason, and no program is ever shown as interrupted on the way, so
+/// an import waiting for one wakes with the real cause.
+#[test]
+fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
+    let tools = tempfile::tempdir().unwrap();
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let downloads = ToolDownloads::default();
+    let mut seen = None;
+
+    let retried = retry_with(
+        tools.path().to_path_buf(),
+        "http://127.0.0.1:9".into(),
+        vec![pinned],
+        &downloads,
+        &[Program::Wtsexporter],
+        |work| {
+            // A failed start drops the work without running it.
+            drop(work);
+            seen = downloads.get(Program::Wtsexporter);
+            Err(io::Error::other("no threads left"))
+        },
+    );
+
+    assert!(matches!(retried, Retry::CouldNotStart));
+    assert!(
+        matches!(seen, Some(DownloadState::Downloading { .. })),
+        "the program was {seen:?} before the start failed"
+    );
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::CouldNotStart("no threads left".into()).to_string(),
+        })
+    );
+    assert!(!downloads.checking());
 }

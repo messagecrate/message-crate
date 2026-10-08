@@ -40,6 +40,7 @@ use super::paths::{logs_dir, scratch_dir};
 use crate::app_directories::RunLog;
 use crate::run_directories::RunDirectories;
 use crate::state::{AppState, JobName};
+use crate::tool_downloads::{Program, ToolDownloads};
 
 /// Ask this process to stop the job that is running. Does nothing when no
 /// job runs.
@@ -160,6 +161,7 @@ pub struct ExtractArgs {
 pub fn extract(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     directories: tauri::State<'_, RunDirectories>,
+    downloads: tauri::State<'_, ToolDownloads>,
     app: tauri::AppHandle,
     args: ExtractArgs,
 ) -> Result<(), String> {
@@ -201,7 +203,9 @@ pub fn extract(
     let job = start_job(&state, JobName::Staging)?;
 
     let app_handle = app.clone();
-    config.cancel = Some(job.cancel_flag());
+    let cancel = job.cancel_flag();
+    config.cancel = Some(cancel.clone());
+    let downloads = downloads.inner().clone();
     // Two channels, two jobs: log lines are for the person reading the log
     // panel, progress events are for the bar. Nothing reads counts out of
     // the prose.
@@ -217,6 +221,16 @@ pub fn extract(
     config.issues = Some(events::run_issue_sink(&app_handle, &run_log));
 
     spawn_job(app, job, move || {
+        // A program still downloading is waited for, and the wait is the
+        // Staging row's progress line (#1053).
+        super::tools::wait_for_downloads(
+            &app_handle,
+            &downloads,
+            programs_run_by(&config.source),
+            &cancel,
+            "setup",
+        )
+        .inspect_err(|error| run_log.error(error))?;
         let run_result = run_staging(&config, &output_dir, &media_settings)
             .inspect_err(|error| run_log.error(error))?;
         let payload = finished_payload(&run_result);
@@ -492,6 +506,17 @@ fn build_exporter_config(
 
     form.to_config(exporter, scratch_dir)
         .map_err(|errors| errors.join("; "))
+}
+
+/// The programs the Tools Directory holds that `source`'s exporter runs: a
+/// WhatsApp import runs wtsexporter. Staging copies attachments as they are
+/// whatever the person chose, so it never runs ffmpeg; the Media stage does
+/// (`transcode_staging`).
+fn programs_run_by(source: &SourceConfig) -> &'static [Program] {
+    match source {
+        SourceConfig::Whatsapp(_) => &[Program::Wtsexporter],
+        _ => &[],
+    }
 }
 
 /// Call the exporter that matches `config.source`.

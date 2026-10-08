@@ -8,6 +8,8 @@ use message_crate_core::{IssueSink, ProgressEvent, ProgressSink, RunIssue, Write
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
+use crate::tool_downloads::Program;
+
 /// One log line for the UI's log panel. Payload: `String`.
 pub const LOG: &str = "extract:log";
 /// Progress-bar numbers. Payload: [`ExtractProgressEvent`].
@@ -92,6 +94,12 @@ pub struct ExtractProgressEvent {
     /// Extra step status the UI shows. On `setup` it is the step's label.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// The program the run waits for while it downloads (#1053). The event
+    /// then has no counts, `bytes_done` is how much has arrived and
+    /// `bytes_total` the file's size when the server said, and the window
+    /// says "Waiting for the <program> download" with them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<Program>,
 }
 
 impl ExtractProgressEvent {
@@ -104,6 +112,7 @@ impl ExtractProgressEvent {
             bytes_done: None,
             bytes_total: None,
             status: None,
+            waiting: None,
         }
     }
 }

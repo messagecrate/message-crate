@@ -68,6 +68,7 @@ beforeEach(() => {
   toolsStatus.mockReset();
   toolsStatus.mockResolvedValue({
     toolsDir: "/home/demo/message-crate/tools",
+    checking: false,
     ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
     ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
     wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
@@ -302,6 +303,7 @@ describe("SystemSection", () => {
   it("says which program is missing", async () => {
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "missing" },
       ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
       wtsexporter: { state: "missing" },
@@ -325,6 +327,7 @@ describe("SystemSection", () => {
   it("says to put ffmpeg and ffprobe in the Tools Directory when neither is found", async () => {
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "missing" },
       ffprobe: { state: "missing" },
       wtsexporter: { state: "missing" },
@@ -347,6 +350,7 @@ describe("SystemSection", () => {
       "ffmpeg is on PATH at /usr/bin/ffmpeg and ffprobe is in the Tools Directory at /home/demo/message-crate/tools/ffprobe.";
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "unusable", reason },
       ffprobe: { state: "unusable", reason },
       wtsexporter: { state: "missing" },
@@ -364,25 +368,57 @@ describe("SystemSection", () => {
     expect(media?.querySelector("input")).toBeNull();
   });
 
+  it("asks again while a check runs, so a program it hasn't reached yet shows once it arrives", async () => {
+    toolsStatus.mockResolvedValueOnce({
+      toolsDir: "/home/demo/message-crate/tools",
+      checking: true,
+      ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "missing" },
+    });
+    render(<SystemSection />);
+    expect(await screen.findByLabelText(/wtsexporter not found/)).toBeTruthy();
+    // The next answer, a second later, has wtsexporter in place.
+    expect(await screen.findByLabelText(/Found wtsexporter/i, {}, { timeout: 3000 })).toBeTruthy();
+  });
+
   it("shows a download's progress, and asks again until it ends", async () => {
     toolsStatus.mockResolvedValueOnce({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 29 * 1024 * 1024 },
       ffprobe: { state: "downloading", received: 0, total: null },
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
     });
     render(<SystemSection />);
-    expect(await screen.findByLabelText("Downloading ffmpeg - 12 MB of 29 MB (41%)")).toBeTruthy();
-    expect(screen.getByLabelText("Downloading ffprobe - 0 B so far")).toBeTruthy();
+    expect(await screen.findByLabelText("Downloading ffmpeg: 12 MB of 29 MB (41%).")).toBeTruthy();
+    expect(screen.getByLabelText("Downloading ffprobe: 0 B so far.")).toBeTruthy();
     // The next answer, a second later, has both in place.
     expect(await screen.findByLabelText(/Found ffmpeg/i, {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByLabelText(/Found ffprobe/i)).toBeTruthy();
+  });
+
+  it("says a program the app has no download for goes in the Tools Directory by hand", async () => {
+    toolsStatus.mockResolvedValue({
+      toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
+      ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
+      ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
+      wtsexporter: { state: "unavailable" },
+    });
+    render(<SystemSection />);
+    expect(
+      await screen.findByLabelText(
+        "wtsexporter not found, and the app has no download of it for this computer. Put a copy in the Tools Directory, /home/demo/message-crate/tools.",
+      ),
+    ).toBeTruthy();
   });
 
   it("says why a download failed", async () => {
     const reason = "No connection to the download's server: error sending request.";
     toolsStatus.mockResolvedValue({
       toolsDir: "/home/demo/message-crate/tools",
+      checking: false,
       ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
       ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
       wtsexporter: { state: "downloadFailed", reason },
@@ -390,9 +426,14 @@ describe("SystemSection", () => {
     render(<SystemSection />);
     expect(
       await screen.findByLabelText(
-        `wtsexporter download failed. ${reason} It is tried again the next time the app starts.`,
+        `wtsexporter download failed. ${reason} It is tried again the next time the app starts, or with Try again on the Import form. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Import can't find wtsexporter" }).getAttribute("href"),
+    ).toBe(
+      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+    );
   });
 
   it("says so when the desktop process cannot be asked", async () => {

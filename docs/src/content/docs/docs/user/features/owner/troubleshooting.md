@@ -98,6 +98,11 @@ Import continues once the field is empty.
 
 A WhatsApp import runs a separate program, `wtsexporter`, which the desktop app downloads when it starts.
 [**Settings → System**](/docs/user/features/settings/system/#media) shows whether it arrived, or why the download failed, and [WhatsApp](/docs/user/import-sources/whatsapp/#wtsexporter) says where it comes from.
+The Import form names the program and the reason, and its **Try again** downloads it at once instead of at the next start.
+
+The app has no `wtsexporter` download for some computers, such as Linux on ARM.
+There the Import form says so and offers no **Try again**, because nothing can be downloaded.
+A `wtsexporter` put in the Tools Directory by hand is used instead.
 
 ### A WhatsApp import doesn't stop when cancelled
 
@@ -112,6 +117,7 @@ Two of the **Attachments** choices on the Import form run `ffmpeg` and `ffprobe`
 In the desktop app, **Settings → System** shows the Tools Directory under **Media**.
 The app looks on the system `PATH`, then in the Tools Directory, and takes both programs from the same one.
 The lines there report each program as found, with its path, not found, or not used, with the reason.
+When a download failed, **Try again** on the Import form, or at the Staging Review, downloads the program at once instead of at the next start.
 
 ## Convert
 

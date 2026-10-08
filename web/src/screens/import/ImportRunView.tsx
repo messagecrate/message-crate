@@ -14,11 +14,13 @@ import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import {
   type AttachmentForecast,
+  ffmpegMissing,
   invokeImportRunLog,
   type MediaToolName,
   type StagingSummary,
 } from "../../lib/tauri";
 import type { AttachmentMediaMode } from "../../lib/types";
+import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import {
   type ImportPhase,
@@ -34,6 +36,7 @@ import {
   runHeading,
   sourceDisplayName,
 } from "./importRunCopy";
+import { TryAgain } from "./MissingProgramNotice";
 import { ExpandableFactRow, FactGroup, FactGroups, FactList, FactRow } from "./RunFacts";
 import { estimatePiles, estimatesHeading, filesOverLimit } from "./reviewForecast";
 import type { ImportJobFormValues } from "./useImportJob";
@@ -340,6 +343,9 @@ export default function ImportRunView({
   const hasMedia = steps.some((step) => step.label === MEDIA_LABEL);
   const uploadStep = steps.find((step) => step.label === UPLOAD_LABEL);
   const mediaStep = steps.find((step) => step.label === MEDIA_LABEL);
+  // Read live, so Try again at the review unblocks it once the programs
+  // arrive; `mediaToolsMissing` is what the run found when it got here.
+  const liveTools = useToolsStatus().data;
 
   // One button under two names: it cancels a Stage before the Upload and
   // pauses the Upload, which resumes later.
@@ -396,7 +402,8 @@ export default function ImportRunView({
     const contacts = summary.contactIdentifiers.length;
     const heading = estimatesHeading(mode);
     const piles = heading && !mediaPartiallyRan ? estimatePiles(summary) : [];
-    const missingTools = heading != null ? (mediaToolsMissing ?? []) : [];
+    const missingTools =
+      heading == null ? [] : liveTools ? ffmpegMissing(liveTools) : (mediaToolsMissing ?? []);
     const toolsBlocked = missingTools.length > 0;
     return (
       <WaitingBody>
@@ -461,6 +468,7 @@ export default function ImportRunView({
             back to Import.
           </p>
         ) : null}
+        {toolsBlocked ? <TryAgain need="media" /> : null}
         <ReviewActions
           approveLabel={APPROVE_LABEL[mode]}
           onApprove={onApprove}

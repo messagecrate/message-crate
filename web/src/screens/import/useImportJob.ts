@@ -55,6 +55,7 @@ import {
   type UploadFinishedReport,
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
+import { waitingLine } from "../../lib/toolStatusCopy";
 import type {
   AttachmentMediaMode,
   ConversationStatus,
@@ -769,6 +770,10 @@ function rowDetail(event: ImportProgressEvent): string {
 
 /** The detail line for one progress event. */
 function progressDetail(event: ImportProgressEvent): string {
+  // A run waiting for a download, on the Setup or the Media row, says only that.
+  if (event.waiting) {
+    return waitingLine(event.waiting, event.bytes_done ?? 0, event.bytes_total ?? null);
+  }
   if (event.step === "setup") return setupDetail(event);
   if (event.step === "attachments") {
     const last = scratch.lastAttachmentProgress;

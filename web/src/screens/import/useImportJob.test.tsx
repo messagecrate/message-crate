@@ -262,6 +262,7 @@ const MIB = 1024 * 1024;
 function okProbe(): ToolsStatus {
   return {
     toolsDir: "/home/demo/message-crate/tools",
+    checking: false,
     ffmpeg: { state: "found", path: "/usr/bin/ffmpeg" },
     ffprobe: { state: "found", path: "/usr/bin/ffprobe" },
     wtsexporter: { state: "missing" },
@@ -809,6 +810,49 @@ describe("useImportJob wiring", () => {
     release();
     await act(() => started);
     expect(result.current.phase).toBe("staging_review");
+  });
+
+  it("says on the Staging row that a WhatsApp import waits for the wtsexporter download (#1053)", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runMock.mockReset();
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        onProgress?: (event: ImportProgressEvent) => void,
+      ) => {
+        await fn();
+        // The JSON `waiting_event` sends, as
+        // `a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes`
+        // in src-tauri/src/commands/tools.rs asserts it.
+        onProgress?.({
+          step: "setup",
+          done: 0,
+          total: 0,
+          bytes_done: 12_582_912,
+          bytes_total: 31_457_280,
+          waiting: "wtsexporter",
+        });
+        await held;
+        return EXTRACT_RESULT;
+      },
+    );
+    const { result } = renderHook(() => useImportJob());
+    let started: Promise<void> = Promise.resolve();
+    act(() => {
+      started = result.current.startImport(form({ attachmentMedia: "copy" }));
+    });
+    await waitFor(() =>
+      expect(result.current.steps[0]?.detail).toBe(
+        "Waiting for the wtsexporter download: 12 MB of 30 MB (40%)",
+      ),
+    );
+    expect(result.current.steps[0]?.status).toBe("active");
+    release();
+    await act(() => started);
   });
 
   it("keeps a line per stage on the Staging row while they run together", async () => {
@@ -1435,6 +1479,51 @@ describe("useImportJob wiring", () => {
         expect.objectContaining({ issues: [sent] }),
       );
     });
+  });
+
+  it("says on the Media row that Media waits for the ffmpeg download (#1053)", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        onProgress?: (event: ImportProgressEvent) => void,
+      ) => {
+        await fn();
+        // The JSON `waiting_event` sends before the first byte arrives, as
+        // `a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes`
+        // in src-tauri/src/commands/tools.rs asserts it, then one with bytes.
+        onProgress?.({ step: "media", done: 0, total: 0, bytes_done: 0, waiting: "ffmpeg" });
+        onProgress?.({
+          step: "media",
+          done: 0,
+          total: 0,
+          bytes_done: 12_582_912,
+          bytes_total: 31_457_280,
+          waiting: "ffmpeg",
+        });
+        await held;
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+    let approved: Promise<void> = Promise.resolve();
+    act(() => {
+      approved = result.current.approve();
+    });
+
+    await waitFor(() =>
+      expect(result.current.steps[1]?.detail).toBe(
+        "Waiting for the ffmpeg download: 12 MB of 30 MB (40%)",
+      ),
+    );
+    expect(result.current.steps[1]?.status).toBe("active");
+    release();
+    await act(() => approved);
   });
 
   it("writes an issue that arrives during Media into the directory before Media ends (#1479)", async () => {

@@ -66,13 +66,16 @@ One line per program reports the result:
 - A cross with `<program> not found` and where to put it.
   A missing ffmpeg or ffprobe goes beside the other one, or both go in the Tools Directory, because the two are used only from one place.
   A missing wtsexporter goes in the Tools Directory.
+- A cross with `<program> not found, and the app has no download of it for this computer` and where to put a copy by hand.
+  The app has no wtsexporter download for Linux on ARM.
 - A cross with `<program> not used` and the reason.
   For ffmpeg and ffprobe, the reason is that they were found in two places, one only on `PATH` and the other only in the Tools Directory.
   For wtsexporter, the reason is that it has no permission to run.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
-- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a program in the Tools Directory that doesn't run on this computer.
-  A failed download is tried again the next time the app starts.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, or a program in the Tools Directory that doesn't run on this computer.
+  A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form.
+  The line ends with a link to the program's section in [Troubleshooting](/docs/user/features/owner/troubleshooting/#import).
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
   While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.

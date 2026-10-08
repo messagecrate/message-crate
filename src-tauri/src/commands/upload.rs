@@ -29,6 +29,7 @@ fn finished_upload_events(
         bytes_done: None,
         bytes_total: None,
         status: None,
+        waiting: None,
     };
     let summary = serde_json::json!({
         "summary": format!(
@@ -214,6 +215,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
                     bytes_done: None,
                     bytes_total: None,
                     status: None,
+                    waiting: None,
                 },
             );
         }

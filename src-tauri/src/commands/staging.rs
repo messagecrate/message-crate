@@ -38,6 +38,7 @@ use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
 use crate::run_directories::{self, RunDirectories, StagingRoot};
 use crate::state::{AppState, JobName};
+use crate::tool_downloads::{Program, ToolDownloads};
 
 /// The directory `summarize_staging`, `transcode_staging`, `delete_run_dir`
 /// and the Import Run record commands act on.
@@ -158,6 +159,7 @@ pub async fn summarize_staging(
                     bytes_done: None,
                     bytes_total: None,
                     status: None,
+                    waiting: None,
                 },
             );
         })
@@ -241,6 +243,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 pub fn transcode_staging(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     directories: tauri::State<'_, RunDirectories>,
+    downloads: tauri::State<'_, ToolDownloads>,
     app: tauri::AppHandle,
     args: RunDirArgs,
 ) -> Result<(), String> {
@@ -255,8 +258,19 @@ pub fn transcode_staging(
 
     let app_handle = app.clone();
     let issues = events::run_issue_sink(&app, &run_log);
+    let downloads = downloads.inner().clone();
     spawn_job(app, job, move || {
         if media_stage_converts {
+            // ffmpeg or ffprobe still downloading is waited for, and the
+            // wait is the Media row's progress line (#1053).
+            super::tools::wait_for_downloads(
+                &app_handle,
+                &downloads,
+                &[Program::Ffmpeg, Program::Ffprobe],
+                &cancel,
+                "media",
+            )
+            .inspect_err(|error| run_log.error(error))?;
             events::log_to_run(
                 &app_handle,
                 &run_log,
@@ -284,6 +298,7 @@ pub fn transcode_staging(
                         bytes_done: None,
                         bytes_total: None,
                         status: None,
+                        waiting: None,
                     },
                 );
             },
