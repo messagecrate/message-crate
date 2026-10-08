@@ -742,3 +742,43 @@ fn a_staged_jsonl_attachment_that_is_not_utf8_does_not_fail_the_count() {
 
     assert_eq!(counts, (1, 1));
 }
+
+/// A WhatsApp import waits for wtsexporter's download, and no other source
+/// waits for a program: Staging runs ffmpeg for none of them (#1053).
+#[test]
+fn only_a_whatsapp_import_waits_for_a_download() {
+    use message_crate_core::{
+        AppleConfig, FormatConfig, GoSmsProConfig, ImazingConfig, OpenExtractConfig,
+        SmsBackupPlusConfig, SmsBackupRestoreConfig, WhatsappConfig,
+    };
+    let none: &[Program] = &[];
+    let sources = [
+        SourceConfig::GoSmsPro(GoSmsProConfig {
+            owner_phones: Vec::new(),
+        }),
+        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+            owner_phones: Vec::new(),
+        }),
+        SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
+            owner_phones: Vec::new(),
+            owner_emails: Vec::new(),
+            phone_country: None,
+            verbose: false,
+            include_summary: false,
+        }),
+        SourceConfig::OpenExtract(OpenExtractConfig::default()),
+        SourceConfig::Imazing(ImazingConfig::default()),
+        SourceConfig::Apple(AppleConfig::default()),
+        SourceConfig::Format(FormatConfig::default()),
+    ];
+    for source in &sources {
+        assert_eq!(programs_run_by(source), none, "{source:?}");
+    }
+    for platform in [WhatsappPlatform::Android, WhatsappPlatform::Ios] {
+        let source = SourceConfig::Whatsapp(WhatsappConfig {
+            platform: Some(platform),
+            ..WhatsappConfig::default()
+        });
+        assert_eq!(programs_run_by(&source), [Program::Wtsexporter]);
+    }
+}

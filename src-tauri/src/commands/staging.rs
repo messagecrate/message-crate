@@ -159,6 +159,7 @@ pub async fn summarize_staging(
                     bytes_done: None,
                     bytes_total: None,
                     status: None,
+                    waiting: None,
                 },
             );
         })
@@ -297,6 +298,7 @@ pub fn transcode_staging(
                         bytes_done: None,
                         bytes_total: None,
                         status: None,
+                        waiting: None,
                     },
                 );
             },

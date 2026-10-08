@@ -839,18 +839,15 @@ fn an_import_waits_for_a_download_and_goes_on_when_it_arrives() {
             &[Program::Wtsexporter],
             &|| false,
             &mut |program, received, total| {
-                heard.push(waiting_line(program, received, total));
+                heard.push((program, received, total));
             },
         );
         assert_eq!(waited, Ok(()));
     });
 
-    assert_eq!(
-        heard.first().unwrap(),
-        "Waiting for the wtsexporter download"
-    );
+    assert_eq!(heard.first(), Some(&(Program::Wtsexporter, 0, None)));
     assert!(
-        heard.contains(&"Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".to_string()),
+        heard.contains(&(Program::Wtsexporter, 12_000_000, Some(30_000_000))),
         "the wait did not hear the progress: {heard:?}"
     );
 }

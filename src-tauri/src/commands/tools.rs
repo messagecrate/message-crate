@@ -165,10 +165,16 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> bool 
     .is_some()
 }
 
+/// How far a download waited for moves before the window hears of it again,
+/// so a download heard of at every 64 KiB read doesn't send an event each.
+const WAITING_STEP_BYTES: u64 = 256 * 1024;
+
 /// Wait while any of `programs` is downloading, before an import runs it
-/// (#1053). Each change of the wait goes to the window as an
-/// `extract:progress` event on `step`, whose status is the progress line:
-/// "Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".
+/// (#1053). The wait goes to the window as `extract:progress` events on
+/// `step` ([`waiting_event`]): one when it starts, and one each time the
+/// program waited for changes or its download moves by
+/// [`WAITING_STEP_BYTES`]. The window writes the progress line from them,
+/// in the byte format the Import form uses.
 ///
 /// # Errors
 ///
@@ -181,18 +187,22 @@ pub(crate) fn wait_for_downloads(
     cancel: &CancelFlag,
     step: &str,
 ) -> anyhow::Result<()> {
-    let mut last: Option<String> = None;
+    let mut last: Option<(Program, u64, Option<u64>)> = None;
     downloads
         .wait_for(
             programs,
             &|| cancel.load(Ordering::Relaxed),
             &mut |program, received, total| {
-                let line = tool_downloads::waiting_line(program, received, total);
-                if last.as_deref() == Some(line.as_str()) {
+                let now = (program, received, total);
+                if !worth_sending(last, now) {
                     return;
                 }
-                events::emit(app, events::PROGRESS, waiting_event(step, &line));
-                last = Some(line);
+                events::emit(
+                    app,
+                    events::PROGRESS,
+                    waiting_event(step, program, received, total),
+                );
+                last = Some(now);
             },
         )
         .map_err(|err| match err {
@@ -201,16 +211,34 @@ pub(crate) fn wait_for_downloads(
         })
 }
 
-/// The `extract:progress` event of a run waiting for a download: no counts,
-/// and the progress line as its status, which the window shows as it is.
-fn waiting_event(step: &str, line: &str) -> ExtractProgressEvent {
+/// Whether the wait at `now` is news to the window, which last heard `last`.
+fn worth_sending(
+    last: Option<(Program, u64, Option<u64>)>,
+    now: (Program, u64, Option<u64>),
+) -> bool {
+    let Some((program, received, total)) = last else {
+        return true;
+    };
+    program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
+}
+
+/// The `extract:progress` event of a run on `step` waiting for `program`'s
+/// download, `received` bytes in of `total`: marked by `waiting`, with no
+/// counts and the bytes in `bytes_done` and `bytes_total`.
+fn waiting_event(
+    step: &str,
+    program: Program,
+    received: u64,
+    total: Option<u64>,
+) -> ExtractProgressEvent {
     ExtractProgressEvent {
         step: step.to_string(),
         done: 0,
         total: 0,
-        bytes_done: None,
-        bytes_total: None,
-        status: Some(line.to_string()),
+        bytes_done: Some(received),
+        bytes_total: total,
+        status: None,
+        waiting: Some(program),
     }
 }
 
@@ -250,6 +278,63 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStat
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A run waiting for a download is sent marked by the program, with its
+    /// bytes and no counts: the shape `progressDetail` in
+    /// `web/src/screens/import/useImportJob.ts` reads, whose tests feed the
+    /// same JSON.
+    #[test]
+    fn a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes() {
+        assert_eq!(
+            serde_json::to_value(waiting_event(
+                "setup",
+                Program::Wtsexporter,
+                12 * 1024 * 1024,
+                Some(30 * 1024 * 1024)
+            ))
+            .unwrap(),
+            serde_json::json!({
+                "step": "setup",
+                "done": 0,
+                "total": 0,
+                "bytes_done": 12_582_912,
+                "bytes_total": 31_457_280,
+                "waiting": "wtsexporter",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(waiting_event("media", Program::Ffmpeg, 0, None)).unwrap(),
+            serde_json::json!({
+                "step": "media",
+                "done": 0,
+                "total": 0,
+                "bytes_done": 0,
+                "waiting": "ffmpeg",
+            })
+        );
+    }
+
+    /// The window hears of a wait when it starts, when the program or the
+    /// size changes, and when the download moves by a step, not at every
+    /// read.
+    #[test]
+    fn a_wait_is_sent_when_it_moves_by_a_step() {
+        let first = (Program::Ffmpeg, 0, Some(10_000_000));
+        assert!(worth_sending(None, first));
+        assert!(!worth_sending(
+            Some(first),
+            (Program::Ffmpeg, 64 * 1024, Some(10_000_000))
+        ));
+        assert!(worth_sending(
+            Some(first),
+            (Program::Ffmpeg, WAITING_STEP_BYTES, Some(10_000_000))
+        ));
+        assert!(worth_sending(
+            Some(first),
+            (Program::Ffprobe, 0, Some(10_000_000))
+        ));
+        assert!(worth_sending(Some(first), (Program::Ffmpeg, 0, None)));
+    }
 
     /// The window reads `state` and, for a found program, `path`.
     #[test]

@@ -1,8 +1,9 @@
 import Button from "../../components/Button";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
+import { downloadProgress } from "../../lib/toolStatusCopy";
 import { accentLink } from "../../lib/uiStyles";
-import { downloadProgress, useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
+import { useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
 
 /** A program the Import form can need. */
 export type ProgramName = "ffmpeg" | "ffprobe" | "wtsexporter";

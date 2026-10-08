@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatBytes } from "./attachmentProgressCopy";
 import { keys } from "./queryKeys";
 import { invokeRetryToolDownloads, invokeToolsStatus, toolsDownloading } from "./tauri";
 import { isTauri } from "./tauri-check";
@@ -39,11 +38,4 @@ export function useRetryToolDownloads() {
     mutationFn: invokeRetryToolDownloads,
     onSettled: () => client.invalidateQueries({ queryKey: keys.desktopToolsStatus.all }),
   });
-}
-
-/** A download's progress: "12 MB of 29 MB (41%)", or "12 MB so far" with no total. */
-export function downloadProgress(received: number, total: number | null): string {
-  if (total == null || total <= 0) return `${formatBytes(received)} so far`;
-  const percent = Math.min(100, Math.floor((received / total) * 100));
-  return `${formatBytes(received)} of ${formatBytes(total)} (${percent}%)`;
 }

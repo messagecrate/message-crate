@@ -1,4 +1,5 @@
 import type { components } from "./serverApi.types";
+import type { ToolName } from "./tauri";
 
 type Schema = components["schemas"];
 
@@ -103,6 +104,11 @@ export interface ImportProgressEvent {
   bytes_done?: number;
   bytes_total?: number;
   status?: string;
+  /**
+   * The program the run waits for while it downloads (#1053). The event then
+   * has no counts, and `bytes_done` and `bytes_total` are the download's.
+   */
+  waiting?: ToolName;
 }
 
 /**

@@ -812,6 +812,49 @@ describe("useImportJob wiring", () => {
     expect(result.current.phase).toBe("staging_review");
   });
 
+  it("says on the Staging row that a WhatsApp import waits for the wtsexporter download (#1053)", async () => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    runMock.mockReset();
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        onProgress?: (event: ImportProgressEvent) => void,
+      ) => {
+        await fn();
+        // The JSON `waiting_event` sends, as
+        // `a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes`
+        // in src-tauri/src/commands/tools.rs asserts it.
+        onProgress?.({
+          step: "setup",
+          done: 0,
+          total: 0,
+          bytes_done: 12_582_912,
+          bytes_total: 31_457_280,
+          waiting: "wtsexporter",
+        });
+        await held;
+        return EXTRACT_RESULT;
+      },
+    );
+    const { result } = renderHook(() => useImportJob());
+    let started: Promise<void> = Promise.resolve();
+    act(() => {
+      started = result.current.startImport(form({ attachmentMedia: "copy" }));
+    });
+    await waitFor(() =>
+      expect(result.current.steps[0]?.detail).toBe(
+        "Waiting for the wtsexporter download: 12 MB of 30 MB (40%)",
+      ),
+    );
+    expect(result.current.steps[0]?.status).toBe("active");
+    release();
+    await act(() => started);
+  });
+
   it("keeps a line per stage on the Staging row while they run together", async () => {
     // Reading messages, copying attachments, and writing conversation files
     // report at the same time. With one shared line, each event replaced the
@@ -1450,11 +1493,17 @@ describe("useImportJob wiring", () => {
         onProgress?: (event: ImportProgressEvent) => void,
       ) => {
         await fn();
+        // The JSON `waiting_event` sends before the first byte arrives, as
+        // `a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes`
+        // in src-tauri/src/commands/tools.rs asserts it, then one with bytes.
+        onProgress?.({ step: "media", done: 0, total: 0, bytes_done: 0, waiting: "ffmpeg" });
         onProgress?.({
           step: "media",
           done: 0,
           total: 0,
-          status: "Waiting for the ffmpeg download (12.0 MB of 30.0 MB)",
+          bytes_done: 12_582_912,
+          bytes_total: 31_457_280,
+          waiting: "ffmpeg",
         });
         await held;
         return { summary: "Transcode finished.", transcode: undefined };
@@ -1469,7 +1518,7 @@ describe("useImportJob wiring", () => {
 
     await waitFor(() =>
       expect(result.current.steps[1]?.detail).toBe(
-        "Waiting for the ffmpeg download (12.0 MB of 30.0 MB)",
+        "Waiting for the ffmpeg download: 12 MB of 30 MB (40%)",
       ),
     );
     expect(result.current.steps[1]?.status).toBe("active");

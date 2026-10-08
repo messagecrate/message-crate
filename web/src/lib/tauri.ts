@@ -505,6 +505,9 @@ export type ToolStatus =
  * for on PATH, then in the Tools Directory, and are taken from one place;
  * wtsexporter only from the Tools Directory.
  */
+/** A program the desktop app keeps in its Tools Directory, as `tools_status` names it. */
+export type ToolName = "ffmpeg" | "ffprobe" | "wtsexporter";
+
 export interface ToolsStatus {
   toolsDir: string | null;
   /**

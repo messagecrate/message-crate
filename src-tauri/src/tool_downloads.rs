@@ -762,24 +762,6 @@ impl fmt::Display for WaitError {
 
 impl std::error::Error for WaitError {}
 
-/// The progress line of an import waiting for `program`'s download:
-/// "Waiting for the wtsexporter download (12.0 MB of 30.0 MB)".
-pub fn waiting_line(program: Program, received: u64, total: Option<u64>) -> String {
-    let name = program.name();
-    match total {
-        Some(total) if total > 0 => format!(
-            "Waiting for the {name} download ({} of {})",
-            media::format_bytes(received),
-            media::format_bytes(total)
-        ),
-        _ if received > 0 => format!(
-            "Waiting for the {name} download ({} so far)",
-            media::format_bytes(received)
-        ),
-        _ => format!("Waiting for the {name} download"),
-    }
-}
-
 /// The state of `program` in place that does not run.
 fn does_not_run(program: Program) -> DownloadState {
     DownloadState::Failed {

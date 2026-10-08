@@ -226,7 +226,7 @@ pub fn extract(
         super::tools::wait_for_downloads(
             &app_handle,
             &downloads,
-            programs_run_by(&config),
+            programs_run_by(&config.source),
             &cancel,
             "setup",
         )
@@ -508,12 +508,12 @@ fn build_exporter_config(
         .map_err(|errors| errors.join("; "))
 }
 
-/// The programs the Tools Directory holds that `config`'s exporter runs: a
+/// The programs the Tools Directory holds that `source`'s exporter runs: a
 /// WhatsApp import runs wtsexporter. Staging copies attachments as they are
 /// whatever the person chose, so it never runs ffmpeg; the Media stage does
 /// (`transcode_staging`).
-fn programs_run_by(config: &ExporterConfig) -> &'static [Program] {
-    match config.source {
+fn programs_run_by(source: &SourceConfig) -> &'static [Program] {
+    match source {
         SourceConfig::Whatsapp(_) => &[Program::Wtsexporter],
         _ => &[],
     }

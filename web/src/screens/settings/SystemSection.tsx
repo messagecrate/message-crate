@@ -24,7 +24,8 @@ import {
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import { downloadProgress, useToolsStatus } from "../../lib/useToolsStatus";
+import { downloadProgress } from "../../lib/toolStatusCopy";
+import { useToolsStatus } from "../../lib/useToolsStatus";
 
 const sectionHeading = "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
 
