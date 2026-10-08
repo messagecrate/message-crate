@@ -58,11 +58,7 @@ export function ContactDrawerHandles({
     setAdding,
     busy,
     error: mutationError,
-    failure,
-    countryTarget,
-    setCountryTarget,
-    requestPickCountry,
-    confirmCountry,
+    countryPick,
     removeTarget,
     setRemoveTarget,
     requestRemoveHandle,
@@ -106,18 +102,20 @@ export function ContactDrawerHandles({
         totalConversations={conversations}
         emptyText={loading ? "Loading…" : "No identities"}
         onRemove={requestRemove}
-        onPickCountry={(row) => requestPickCountry({ address: row.address, service: row.service })}
+        onPickCountry={(row) => {
+          if (!busy) countryPick.request({ address: row.address, service: row.service });
+        }}
         onBrowse={onBrowse ? (row) => onBrowse({ kind: "all", handle: row.address }) : undefined}
       />
       <IdentityCountryDialog
-        open={countryTarget !== null}
-        address={countryTarget?.address ?? ""}
+        open={countryPick.target !== null}
+        address={countryPick.target?.address ?? ""}
         busy={busy}
-        error={countryTarget ? failure : null}
+        error={countryPick.error}
         onClose={() => {
-          if (!busy) setCountryTarget(null);
+          if (!busy) countryPick.close();
         }}
-        onPick={confirmCountry}
+        onPick={(args) => void countryPick.confirm(args)}
       />
       <AddIdentityDialog
         open={adding}

@@ -5,6 +5,7 @@ import Checkbox from "../../components/Checkbox";
 import PasswordField from "../../components/PasswordField";
 import PathPicker from "../../components/PathPicker";
 import PhoneTokenField, { type PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
+import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import TimeZoneField from "../../components/TimeZoneField";
 import {
@@ -28,7 +29,7 @@ import {
   isImessageMethod,
 } from "../../lib/imessageImport";
 import { showsAttachmentOptions } from "../../lib/importSource";
-import { type PhoneCountryChoice, phoneCountryLabel } from "../../lib/phoneCountries";
+import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import type { AttachmentMediaMode } from "../../lib/types";
@@ -165,16 +166,7 @@ function PhoneCountryField({
           >
             Not stated
           </ListBoxItem>,
-          ...countries.map((c) => (
-            <ListBoxItem
-              key={c.code}
-              id={c.code}
-              textValue={c.name}
-              className={selectItemClassName}
-            >
-              {phoneCountryLabel(c)}
-            </ListBoxItem>
-          )),
+          ...phoneCountryItems(countries),
         ]}
       </Select>
       <p className={hintStyle}>

@@ -1,10 +1,11 @@
 import { useEffect, useId, useState } from "react";
 import { ApiError } from "../lib/api";
-import { phoneCountryLabel, usePhoneCountries } from "../lib/phoneCountries";
+import { usePhoneCountries } from "../lib/phoneCountries";
 import { Z_POPOVER_IN_MODAL } from "../lib/zLayers";
 import Button from "./Button";
 import ModalShell, { DialogError, DialogFooter } from "./ModalShell";
-import Select, { ListBoxItem, selectItemClassName } from "./Select";
+import { phoneCountryItems } from "./phoneCountryItems";
+import Select from "./Select";
 
 const fieldLabelClass = "mb-1 block text-[0.813rem] font-medium text-text";
 const selectTriggerClass =
@@ -94,16 +95,7 @@ export default function IdentityCountryDialog({
           popoverClassName={Z_POPOVER_IN_MODAL}
           className="block w-full min-w-0"
         >
-          {countries.map((c) => (
-            <ListBoxItem
-              key={c.code}
-              id={c.code}
-              textValue={c.name}
-              className={selectItemClassName}
-            >
-              {phoneCountryLabel(c)}
-            </ListBoxItem>
-          ))}
+          {phoneCountryItems(countries)}
         </Select>
       </div>
 

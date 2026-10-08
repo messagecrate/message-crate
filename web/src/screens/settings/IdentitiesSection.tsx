@@ -4,6 +4,7 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityCountryDialog from "../../components/IdentityCountryDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
+import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { identityType } from "../../lib/backupIdentity";
 import {
@@ -76,9 +77,10 @@ export function IdentitiesSection({
   const [addError, setAddError] = useState("");
   const [removeTarget, setRemoveTarget] = useState<Identity | null>(null);
   const [removeError, setRemoveError] = useState("");
-  const [countryTarget, setCountryTarget] = useState<Identity | null>(null);
-  const [countryError, setCountryError] = useState<Error | null>(null);
   const busy = updateProfile.isPending;
+  const countryPick = useIdentityCountryPick((pick) =>
+    updateProfile.mutateAsync({ set_identity_country: pick }),
+  );
 
   // Until the server answers, the profile's own identities are shown with no
   // counts, so the table never waits on a fetch and never shows a number
@@ -155,37 +157,6 @@ export function IdentitiesSection({
     }
   };
 
-  /**
-   * Pick the country of one of the account's numbers written without its `+`
-   * code. With `merge`, it joins the identity the server named as holding its
-   * `+` form.
-   */
-  const confirmCountry = async ({ country, merge }: { country: string; merge: boolean }) => {
-    if (!countryTarget) return;
-    setCountryError(null);
-    try {
-      await updateProfile.mutateAsync({
-        set_identity_country: {
-          address: countryTarget.address,
-          service: listedServerService(countryTarget.service),
-          country,
-          merge,
-        },
-      });
-      setCountryTarget(null);
-    } catch (e) {
-      setCountryError(e instanceof Error ? e : new Error(String(e)));
-    }
-  };
-
-  const requestPickCountry = (row: IdentityRow) => {
-    const target = rows.find((r) => r.address === row.address && r.service === row.service);
-    if (target) {
-      setCountryError(null);
-      setCountryTarget(target);
-    }
-  };
-
   const requestRemove = (row: IdentityRow) => {
     const target = rows.find((r) => r.address === row.address && r.service === row.service);
     if (target) {
@@ -214,7 +185,11 @@ export function IdentitiesSection({
           busy={busy}
           emptyText="No identities yet."
           onRemove={fixed ? undefined : requestRemove}
-          onPickCountry={fixed ? undefined : requestPickCountry}
+          onPickCountry={
+            fixed
+              ? undefined
+              : (row) => countryPick.request({ address: row.address, service: row.service })
+          }
         />
       </div>
       <div className="mt-3 mb-6">
@@ -236,14 +211,14 @@ export function IdentitiesSection({
       </div>
 
       <IdentityCountryDialog
-        open={countryTarget !== null}
-        address={countryTarget?.address ?? ""}
+        open={countryPick.target !== null}
+        address={countryPick.target?.address ?? ""}
         busy={busy}
-        error={countryError}
+        error={countryPick.error}
         onClose={() => {
-          if (!busy) setCountryTarget(null);
+          if (!busy) countryPick.close();
         }}
-        onPick={(args) => void confirmCountry(args)}
+        onPick={(args) => void countryPick.confirm(args)}
       />
       <AddIdentityDialog
         open={adding}
