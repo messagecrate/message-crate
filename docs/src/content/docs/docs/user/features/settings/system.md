@@ -77,8 +77,8 @@ One line per program reports the result:
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
   While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.
 
-On macOS, an app opened from the Dock or Finder doesn't see the `PATH` a terminal sets, so ffmpeg and ffprobe installed with Homebrew are not found, and the app downloads its own into the Tools Directory.
-A link to the Homebrew copies put in the Tools Directory is replaced by the pinned files at the next start with an internet connection.
+On macOS, an app opened from the Dock or Finder doesn't see the `PATH` Homebrew sets in a terminal, so it doesn't find ffmpeg and ffprobe installed with Homebrew.
+It downloads its own copies into the Tools Directory instead, and nothing needs doing.
 
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) covers what ffmpeg and ffprobe are used for.
 
