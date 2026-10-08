@@ -1098,25 +1098,15 @@ mod tests {
     }
 
     /// A missing copy is reported as missing, naming the Tools Directory,
-    /// even when the old `WTSEXPORTER` and `MESSAGE_CRATE_BIN` variables name one (#1053).
+    /// and a copy outside it is not found (#1053).
     #[test]
     fn wtsexporter_is_looked_for_nowhere_but_the_tools_directory() {
         let tools = tempfile::tempdir().unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
-        let other = elsewhere.path().join(executable_name());
-        fs::write(&other, "").unwrap();
-        // SAFETY: test-only env mutation, read by no other test in this crate.
-        unsafe {
-            std::env::set_var("WTSEXPORTER", &other);
-            std::env::set_var("MESSAGE_CRATE_BIN", elsewhere.path());
-        }
+        write_with_mode(&elsewhere.path().join(executable_name()), 0o755);
 
         let err = wtsexporter_in(Some(tools.path())).expect_err("not in the Tools Directory");
         let no_dir = wtsexporter_in(None).expect_err("no Tools Directory");
-        unsafe {
-            std::env::remove_var("WTSEXPORTER");
-            std::env::remove_var("MESSAGE_CRATE_BIN");
-        }
 
         let message = err.to_string();
         assert!(message.contains("Tools Directory"), "{message}");
