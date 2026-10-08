@@ -225,4 +225,26 @@ describe("MessageSearchRow", () => {
       "Earlier version: imprudent at last",
     );
   });
+
+  it("quotes a version for each searched word only an older matched version holds, newest first", () => {
+    renderRow(
+      message({
+        text: "Nothing here",
+        matched_earlier_version: true,
+        earlier_versions: [
+          { part_index: 0, text: "alpha first", matched: true, edited_at: "2024-01-01T10:00:00Z" },
+          { part_index: 0, text: "alpha again", matched: true, edited_at: "2024-01-01T11:00:00Z" },
+          { part_index: 0, text: "beta last", matched: true, edited_at: "2024-01-01T12:00:00Z" },
+        ],
+      }),
+      [
+        { text: "alpha", prefix: false },
+        { text: "beta", prefix: false },
+      ],
+    );
+    expect(screen.getAllByText(/^Earlier version:/).map((line) => line.textContent)).toEqual([
+      "Earlier version: beta last",
+      "Earlier version: alpha again",
+    ]);
+  });
 });

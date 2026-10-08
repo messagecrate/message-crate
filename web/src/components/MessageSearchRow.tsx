@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
-import { type MatchRange, snippet } from "../lib/messageMatch";
+import { type MatchRange, matchRanges, snippet } from "../lib/messageMatch";
 import { messageConversationName, messageRowText, messageSenderName } from "../lib/messageRowText";
 import { useTimeZone } from "../lib/timeZone";
 import { listRowDivider } from "../lib/tw";
@@ -51,13 +51,30 @@ function newest(versions: readonly EarlierVersion[]): EarlierVersion | undefined
 }
 
 /**
- * The newest earlier version a search found `message` by: of the versions
- * marked `matched`, the newest by `isNewer`. None for a hit its final text
- * matched, which the server marks neither way (`docs/architecture/search.md`).
+ * The earlier versions a search found `message` by that its row quotes: the
+ * newest version marked `matched`, then, while a searched word some matched
+ * version holds is not yet quoted, the newest matched version holding one,
+ * so each such word shows once. None for a hit its final text matched,
+ * which the server marks neither way (`docs/architecture/search.md`).
  */
-function newestMatchedVersion(message: Message): EarlierVersion | undefined {
-  if (!message.matched_earlier_version) return undefined;
-  return newest(message.earlier_versions.filter((version) => version.matched));
+function versionsToQuote(message: Message, terms: readonly FreeTextTerm[]): EarlierVersion[] {
+  if (!message.matched_earlier_version) return [];
+  const matched = message.earlier_versions.filter((version) => version.matched);
+  const termsIn = (version: EarlierVersion) =>
+    terms.filter((term) => matchRanges(version.text, [term]).length > 0);
+  const missing = new Set(matched.flatMap(termsIn));
+  const quoted: EarlierVersion[] = [];
+  for (let next = newest(matched); next; ) {
+    quoted.push(next);
+    for (const term of termsIn(next)) missing.delete(term);
+    next = newest(
+      matched.filter(
+        (version) =>
+          !quoted.includes(version) && termsIn(version).some((term) => missing.has(term)),
+      ),
+    );
+  }
+  return quoted;
 }
 
 /**
@@ -74,7 +91,8 @@ function newestMatchedVersion(message: Message): EarlierVersion | undefined {
  * A message the search found only by an earlier version keeps its final text,
  * with a muted "Earlier version: …" line under it quoting the newest version
  * that matched, cut and in bold the same way, so the row shows why it is a
- * hit (#1785).
+ * hit (#1785). When matched versions hold different searched words, a line
+ * follows for each further version needed to show every one of those words.
  */
 export default function MessageSearchRow({
   message,
@@ -93,8 +111,10 @@ export default function MessageSearchRow({
   const cut = snippet(unsent ? "" : messageRowText(message), terms);
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
-  const matchedVersion = newestMatchedVersion(message);
-  const versionCut = matchedVersion ? snippet(matchedVersion.text, terms) : null;
+  const versionCuts = versionsToQuote(message, terms).map((version) => ({
+    key: message.earlier_versions.indexOf(version),
+    ...snippet(version.text, terms),
+  }));
 
   return (
     <PlainButton
@@ -130,11 +150,14 @@ export default function MessageSearchRow({
           </span>
         ) : null}
       </span>
-      {versionCut ? (
-        <span className="line-clamp-2 min-w-0 break-words text-[0.75rem] text-muted">
+      {versionCuts.map((versionCut) => (
+        <span
+          key={versionCut.key}
+          className="line-clamp-2 min-w-0 break-words text-[0.75rem] text-muted"
+        >
           Earlier version: {boldRanges(versionCut.text, versionCut.ranges)}
         </span>
-      ) : null}
+      ))}
       {deletedInSource ? (
         <span className="text-[0.75rem] text-muted">{deletedInSourceText(message.source)}</span>
       ) : null}
