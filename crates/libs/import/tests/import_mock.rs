@@ -1,10 +1,10 @@
-//! Mock HTTP server tests for login, JSON Lines push, and journal skip.
+//! Mock HTTP server tests for login, JSON Lines import, and journal skip.
 //!
 //! JSON Lines means one JSON object per line. The journal is
 //! `.import-state.jsonl`, a local log of which conversations and files
 //! were already uploaded.
 
-use message_crate_push::ImportMode;
+use message_crate_import::ImportMode;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_push::{
-    AuthError, FileStatus, ProgressEvent, PushConfig, PushReport, authenticate, run,
+use message_crate_import::{
+    AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, authenticate, run,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
@@ -98,8 +98,8 @@ fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
 }
 
 /// The server's answer to `POST /v1/imports`: an Import Run with `id`. Every
-/// push starts one, so every test mocks it; the batches then go to
-/// `/v1/imports/{id}/batches`. A test that checks how the push completes the
+/// import starts one, so every test mocks it; the batches then go to
+/// `/v1/imports/{id}/batches`. A test that checks how the import completes the
 /// run mocks `/v1/imports/{id}/complete` itself.
 fn mock_import_start(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
     server.mock(|when, then| {
@@ -111,7 +111,7 @@ fn mock_import_start(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
 }
 
 /// An Import Run with `id` that the server starts and, at the end of the
-/// push, completes. A push that started its own run fails when the server
+/// import, completes. An import that started its own run fails when the server
 /// refuses to complete it, so every such test needs the completion too.
 fn mock_import_start_and_complete(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
     server.mock(|when, then| {
@@ -134,10 +134,10 @@ fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
     }
 }
 
-/// Push config with no retries, pointed at a mock server URL. Attachments are
+/// Import config with no retries, pointed at a mock server URL. Attachments are
 /// not skipped (`skip_attachments: false`).
-fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
-    PushConfig {
+fn text_only_config(dir: &Path, base_url: String) -> ImportConfig {
+    ImportConfig {
         input: dir.to_path_buf(),
         base_url,
         token: "mc_test".into(),
@@ -150,12 +150,12 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 1,
-        prepare_ahead: message_crate_push::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_push::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_push::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_push::DEFAULT_ASSET_MAX_BYTES,
-        report_path: Some(dir.join("message-crate-push-report.json")),
-        log_path: Some(dir.join("message-crate-push.log")),
+        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
+        report_path: Some(dir.join("message-crate-import-report.json")),
+        log_path: Some(dir.join("message-crate-import.log")),
         journal_path: Some(dir.join(".import-state.jsonl")),
         cancel: None,
         import_id: None,
@@ -164,11 +164,11 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
 
 /// The Upload's log that `text_only_config` names under `dir`.
 fn read_log(dir: &Path) -> String {
-    fs::read_to_string(dir.join("message-crate-push.log")).unwrap()
+    fs::read_to_string(dir.join("message-crate-import.log")).unwrap()
 }
 
 /// Run the Upload `cfg` describes, with the lines the desktop app shows.
-fn run_showing(cfg: &PushConfig) -> (PushReport, Vec<String>) {
+fn run_showing(cfg: &ImportConfig) -> (ImportReport, Vec<String>) {
     let mut shown = Vec::new();
     let report = {
         let mut progress = |event| {
@@ -182,7 +182,7 @@ fn run_showing(cfg: &PushConfig) -> (PushReport, Vec<String>) {
 }
 
 #[test]
-fn authenticate_and_push_text_only_conversation() {
+fn authenticate_and_import_text_only_conversation() {
     let server = MockServer::start();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -355,7 +355,7 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
 
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         import_id: Some(99),
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -381,11 +381,11 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
     );
 }
 
-/// A push that started its own Import Run completes it once, with the
-/// bytes the push sent. The server counts the run's messages and
+/// An import that started its own Import Run completes it once, with the
+/// bytes the import sent. The server counts the run's messages and
 /// attachments itself.
 #[test]
-fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
+fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
     const PHOTO: &[u8] = b"photo bytes";
     let server = MockServer::start();
     let _auth = mock_session(&server);
@@ -431,10 +431,10 @@ fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
     assert_eq!(complete.calls(), 1, "the Import Run is completed once");
 }
 
-/// A push whose only batch fails still completes its Import Run, as failed,
+/// An import whose only batch fails still completes its Import Run, as failed,
 /// so the server does not show it as running.
 #[test]
-fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
+fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
@@ -522,12 +522,12 @@ fn a_refused_completion_is_an_error_the_upload_returns() {
         "one sentence that names the run once"
     );
     let written: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
+        &fs::read_to_string(dir.path().join("message-crate-import-report.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(
         written["ok"], false,
-        "the report on disk does not call the push a success"
+        "the report on disk does not call the import a success"
     );
     assert_eq!(
         written["completion_refused"], true,
@@ -543,7 +543,7 @@ fn a_refused_completion_is_an_error_the_upload_returns() {
 fn run_paused_upload(
     server: &MockServer,
     dir: &Path,
-) -> (anyhow::Result<PushReport>, Option<PushReport>) {
+) -> (anyhow::Result<ImportReport>, Option<ImportReport>) {
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/42/batches");
         then.status(200).json_body(json!({
@@ -556,7 +556,7 @@ fn run_paused_upload(
     write_jsonl(dir, &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
     let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -615,7 +615,7 @@ fn a_paused_upload_whose_completion_is_refused_returns_its_report() {
     let finished = finished.expect("the Upload says it finished");
     assert!(finished.cancelled && finished.completion_refused);
     let written: serde_json::Value = serde_json::from_str(
-        &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
+        &fs::read_to_string(dir.path().join("message-crate-import-report.json")).unwrap(),
     )
     .unwrap();
     assert_eq!(written["cancelled"], true);
@@ -696,7 +696,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
     // A directory where the report file should be makes the write fail.
     let report_path = dir.path().join("report-is-a-directory");
     fs::create_dir(&report_path).unwrap();
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         report_path: Some(report_path),
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -950,10 +950,10 @@ fn directory_with_a_bad_middle_file(dir: &Path) {
     write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
 }
 
-/// A file that fails to prepare is reported and the push goes on: the good
+/// A file that fails to prepare is reported and the import goes on: the good
 /// files around it still share one request.
 #[test]
-fn a_push_imports_the_files_after_a_bad_one() {
+fn an_import_imports_the_files_after_a_bad_one() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -1048,12 +1048,12 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     assert_eq!(import.calls(), 2);
 }
 
-/// A replace push wipes the source on the server, so it ignores the journal
+/// A replace import wipes the source on the server, so it ignores the journal
 /// even without `force`: every message already sent goes out again.
 /// Otherwise the journaled messages would be skipped and the wipe would
 /// leave them missing.
 #[test]
-fn a_replace_push_ignores_the_journal_and_sends_every_message_again() {
+fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     let server = MockServer::start();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -1082,7 +1082,7 @@ fn a_replace_push_ignores_the_journal_and_sends_every_message_again() {
     assert!(run(&cfg, None).unwrap().ok);
     assert_eq!(import.calls(), 1);
 
-    let replace = PushConfig {
+    let replace = ImportConfig {
         mode: ImportMode::Replace,
         force: false,
         ..cfg
@@ -1090,7 +1090,7 @@ fn a_replace_push_ignores_the_journal_and_sends_every_message_again() {
     let report = run(&replace, None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);
-    assert_eq!(import.calls(), 2, "the replace push sends both messages");
+    assert_eq!(import.calls(), 2, "the replace import sends both messages");
     assert_eq!(report.conversations_skipped, 0);
     assert_eq!(report.messages_attempted, 2);
 }
@@ -1152,9 +1152,9 @@ fn profiles_attachment_upload_phases() {
     });
     write_jsonl(dir.path(), &doc);
 
-    let report_path = dir.path().join("message-crate-push-report.json");
-    let log_path = dir.path().join("message-crate-push.log");
-    let cfg = PushConfig {
+    let report_path = dir.path().join("message-crate-import-report.json");
+    let log_path = dir.path().join("message-crate-import.log");
+    let cfg = ImportConfig {
         input: dir.path().to_path_buf(),
         base_url: server.base_url(),
         token: "mc_test".into(),
@@ -1167,10 +1167,10 @@ fn profiles_attachment_upload_phases() {
         max_retries: 0,
         batch_size: 50,
         asset_upload_workers: 2,
-        prepare_ahead: message_crate_push::DEFAULT_PREPARE_AHEAD,
-        prepare_workers: message_crate_push::DEFAULT_PREPARE_WORKERS,
-        asset_multipart_threshold: message_crate_push::MAX_PROXY_BODY_BYTES,
-        asset_max_bytes: message_crate_push::DEFAULT_ASSET_MAX_BYTES,
+        prepare_ahead: message_crate_import::DEFAULT_PREPARE_AHEAD,
+        prepare_workers: message_crate_import::DEFAULT_PREPARE_WORKERS,
+        asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
+        asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
         report_path: Some(report_path.clone()),
         log_path: Some(log_path.clone()),
         journal_path: Some(dir.path().join(".import-state.jsonl")),
@@ -1939,7 +1939,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
 
 /// When the first conversation's upload of a shared file fails, its claim on
 /// the file is released, so the next conversation uploads it in the same
-/// push rather than skipping it as already in flight.
+/// import rather than skipping it as already in flight.
 ///
 /// The server refuses the first PUT and accepts every later one. With one
 /// prepare worker the conversations run one after the other, so the second
@@ -1958,7 +1958,7 @@ fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
         doc.messages[0].attachments = vec![ir_attachment("attachments/shared.txt", digest.clone())];
         write_jsonl(dir.path(), &doc);
     }
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         prepare_workers: 1,
         ..text_only_config(dir.path(), base_url)
     };
@@ -2127,7 +2127,7 @@ fn a_conversation_waits_for_a_shared_attachment_another_is_uploading() {
     let (base_url, events) = serve_a_held_first_upload("200 OK");
     let dir = tempdir().unwrap();
     two_conversations_sharing_a_file(dir.path());
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         prepare_workers: 2,
         batch_size: 100_000,
         ..text_only_config(dir.path(), base_url)
@@ -2159,7 +2159,7 @@ fn a_conversation_uploads_a_shared_attachment_whose_upload_failed_elsewhere() {
     let (base_url, events) = serve_a_held_first_upload("503 Service Unavailable");
     let dir = tempdir().unwrap();
     two_conversations_sharing_a_file(dir.path());
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         prepare_workers: 2,
         batch_size: 100_000,
         ..text_only_config(dir.path(), base_url)
@@ -2571,10 +2571,10 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     );
 }
 
-/// A text-only push sends each message with its text and GUID but without
+/// A text-only import sends each message with its text and GUID but without
 /// its attachments, uploads nothing, and journals the message's own GUID.
 #[test]
-fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
+fn an_import_that_skips_attachments_sends_text_and_uploads_nothing() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -2604,7 +2604,7 @@ fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
         hex::encode(Sha256::digest(b"photo bytes")),
     )];
     write_jsonl(dir.path(), &doc);
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         skip_attachments: true,
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -2613,7 +2613,7 @@ fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
 
     assert!(report.ok, "{:?}", report.results);
     assert_eq!(import.calls(), 1);
-    assert_eq!(assets.calls(), 0, "a text-only push uploads no file");
+    assert_eq!(assets.calls(), 0, "a text-only import uploads no file");
     assert_eq!(report.assets_uploaded, 0);
     assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
     let log = read_log(dir.path());
@@ -2736,7 +2736,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         max_retries: 2,
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -2744,7 +2744,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     // The first retry waits at least 500 ms, so there is time to swap the
     // 503 for a 200 once the first attempt has landed.
     let (report, accepted_calls) = std::thread::scope(|scope| {
-        let pusher = scope.spawn(|| run(&cfg, None).unwrap());
+        let importer = scope.spawn(|| run(&cfg, None).unwrap());
         wait_for_first_call(&busy);
         busy.delete();
         let accepted = server.mock(|when, then| {
@@ -2755,7 +2755,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
                 "conversations": 1
             }));
         });
-        let report = pusher.join().unwrap();
+        let report = importer.join().unwrap();
         (report, accepted.calls())
     });
 
@@ -2773,14 +2773,14 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
 }
 
-/// A cancel that arrives while the push is under way sends no further batch:
+/// A cancel that arrives while the import is under way sends no further batch:
 /// the report is not ok, and the journal leaves the unsent conversations for
-/// the next push.
+/// the next import.
 ///
 /// Guards the cancel check before each batch POST. Without it, the batch
 /// already packed when the cancel arrived still goes out.
 #[test]
-fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
+fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -2798,7 +2798,7 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
     let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -2817,7 +2817,7 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
     };
     let report = run(&cfg, Some(&mut on_progress)).unwrap();
 
-    assert!(!report.ok, "a cancelled push is not ok");
+    assert!(!report.ok, "a cancelled import is not ok");
     assert!(
         report.cancelled,
         "the report says the cancel flag stopped it"
@@ -2847,14 +2847,14 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
     assert_eq!(resumed_import.calls(), 2);
 }
 
-/// Every conversation of a cancelled push is in one category of the report:
+/// Every conversation of a cancelled import is in one category of the report:
 /// `ok + failed + skipped + cancelled = total`, with one result row per file.
 ///
 /// Guards the report of a paused Upload. Without a result for each file the
 /// pause left unsent, the counts add up to less than the total and nothing in
 /// the report names those files.
 #[test]
-fn a_cancelled_push_reports_every_conversation_in_one_category() {
+fn a_cancelled_import_reports_every_conversation_in_one_category() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -2873,7 +2873,7 @@ fn a_cancelled_push_reports_every_conversation_in_one_category() {
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550104", "guid-4"));
     let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -2919,7 +2919,7 @@ fn a_cancelled_push_reports_every_conversation_in_one_category() {
 
 /// A conversation whose messages were partly queued when the stop came is
 /// counted as cancelled, and the journal does not mark it done, so a resumed
-/// push sends the rest of it.
+/// import sends the rest of it.
 ///
 /// Guards the `Abort` path in `consume_result`, which returns before the
 /// file's result is written: without a result the file falls out of every
@@ -2951,7 +2951,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     doc.messages.extend([second, third]);
     write_jsonl(dir.path(), &doc);
     let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -2960,10 +2960,10 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     };
 
     let report = std::thread::scope(|scope| {
-        let pusher = scope.spawn(|| run(&cfg, None).unwrap());
+        let importer = scope.spawn(|| run(&cfg, None).unwrap());
         wait_for_first_call(&first_batch);
         cancel.store(true, Ordering::SeqCst);
-        pusher.join().unwrap()
+        importer.join().unwrap()
     });
 
     assert_eq!(first_batch.calls(), 1, "no batch is sent after the cancel");
@@ -3017,17 +3017,17 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
     let cancel = Arc::new(AtomicBool::new(false));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         cancel: Some(cancel.clone()),
         ..text_only_config(dir.path(), server.base_url())
     };
 
     let report = std::thread::scope(|scope| {
-        let pusher = scope.spawn(|| run(&cfg, None).unwrap());
+        let importer = scope.spawn(|| run(&cfg, None).unwrap());
         wait_for_first_call(&batch);
         cancel.store(true, Ordering::SeqCst);
-        pusher.join().unwrap()
+        importer.join().unwrap()
     });
 
     assert_eq!(batch.calls(), 1);
@@ -3086,7 +3086,7 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     second.guid = "second-message".into();
     doc.messages.push(second);
     write_jsonl(dir.path(), &doc);
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -3114,14 +3114,14 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
     );
 }
 
-/// After one batch fails, a second push on the same directory sends only the
+/// After one batch fails, a second import on the same directory sends only the
 /// failed conversation's messages, and the journal then has every file ok.
 ///
 /// Guards the resume path after a partial failure: a failed file wrongly
 /// journaled as ok would never be sent again, and a lost journal entry for a
 /// good file would send it twice.
 #[test]
-fn a_second_push_sends_only_the_conversation_whose_batch_failed() {
+fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -3208,7 +3208,7 @@ fn a_second_push_sends_only_the_conversation_whose_batch_failed() {
 /// A 2xx means the server did the work. When its body cannot be read, the
 /// batch is not posted again as if the request had failed in transit: the
 /// conversation fails once with a sentence saying the answer was unreadable,
-/// and the next push sends it again for the server to dedupe.
+/// and the next import sends it again for the server to dedupe.
 #[test]
 fn an_unreadable_2xx_answer_is_not_retried() {
     let server = MockServer::start();
@@ -3221,7 +3221,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         max_retries: 2,
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -3242,7 +3242,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 /// A server that answers each request on its own connection and closes it.
 /// The batch POST gets a `200 OK` whose headers promise a body the server
 /// never sends, so the client fails while reading it; the other routes a
-/// push calls, the run's completion among them, get their usual answers.
+/// import calls, the run's completion among them, get their usual answers.
 /// Returns the base URL and a count of batch POSTs.
 fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
     use std::io::{BufRead, BufReader, Read};
@@ -3308,7 +3308,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         max_retries: 2,
         ..text_only_config(dir.path(), base_url)
     };
@@ -3336,7 +3336,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
 ///
 /// Guards the flush-then-add step in `queue_chunk`. A chunk dropped after
 /// the forced flush never reaches the server, yet its conversation would be
-/// journaled as done, so a later push would never send it.
+/// journaled as done, so a later import would never send it.
 #[test]
 fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     let server = MockServer::start();
@@ -3375,7 +3375,7 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     reply.timestamp_unix_ms += 1_000;
     two_messages.messages.push(reply);
     write_jsonl(dir.path(), &two_messages);
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 2,
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -3393,10 +3393,10 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     assert_eq!(guids, vec!["guid-a1", "guid-b1", "guid-b2"]);
 }
 
-/// The desktop app sets no journal path, so the journal a second push reads
-/// is the one the first push wrote inside the export directory.
+/// The desktop app sets no journal path, so the journal a second import reads
+/// is the one the first import wrote inside the export directory.
 #[test]
-fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_directory() {
+fn an_import_with_no_journal_path_keeps_its_journal_in_the_export_directory() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -3420,13 +3420,13 @@ fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_directory() {
     let second = run(&cfg, None).unwrap();
     assert!(second.ok);
     assert_eq!(second.conversations_skipped, 1);
-    assert_eq!(import.calls(), 1, "the second push sends nothing");
+    assert_eq!(import.calls(), 1, "the second import sends nothing");
 }
 
 /// A batch of 100 messages or more is sent while later conversations are
-/// still being prepared. That early send succeeding must not end the push.
+/// still being prepared. That early send succeeding must not end the import.
 #[test]
-fn a_push_goes_on_after_sending_a_large_batch_early() {
+fn an_import_goes_on_after_sending_a_large_batch_early() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);
@@ -3457,7 +3457,7 @@ fn a_push_goes_on_after_sending_a_large_batch_early() {
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
     let mut cfg = text_only_config(dir.path(), server.base_url());
-    cfg.batch_size = message_crate_push::DEFAULT_BATCH_SIZE;
+    cfg.batch_size = message_crate_import::DEFAULT_BATCH_SIZE;
     cfg.prepare_ahead = 1;
 
     let report = run(&cfg, None).unwrap();
@@ -3471,7 +3471,7 @@ fn a_push_goes_on_after_sending_a_large_batch_early() {
 /// The default size limit is for files no server would take. A photo of a
 /// few MiB is far under it and must be uploaded, not skipped as too large.
 #[test]
-fn a_push_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
+fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     let photo = vec![0x5a_u8; 2 * 1024 * 1024];
     let digest = hex::encode(Sha256::digest(&photo));
 
@@ -3504,7 +3504,7 @@ fn a_push_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     write_jsonl(dir.path(), &doc);
 
     let mut cfg = text_only_config(dir.path(), server.base_url());
-    cfg.asset_max_bytes = message_crate_push::DEFAULT_ASSET_MAX_BYTES;
+    cfg.asset_max_bytes = message_crate_import::DEFAULT_ASSET_MAX_BYTES;
     let report = run(&cfg, None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);
@@ -3512,16 +3512,16 @@ fn a_push_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     assert_eq!(report.assets_uploaded, 1);
 }
 
-/// A session the server stops accepting part-way through stops the push the
+/// A session the server stops accepting part-way through stops the import the
 /// way a cancel does (#1491): nothing after the refused batch is sent, no
 /// conversation is recorded as failed for the refusal, the report says the
-/// session was refused, and a later push sends what the refused batch
+/// session was refused, and a later import sends what the refused batch
 /// carried and what came after it.
 ///
 /// Guards against recording every remaining conversation as failed while the
-/// push keeps sending a token the server has ended.
+/// import keeps sending a token the server has ended.
 #[test]
-fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
+fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let accepted = server.mock(|when, then| {
@@ -3549,7 +3549,7 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
@@ -3570,7 +3570,7 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
     assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
     assert!(
         report.cancelled,
-        "a refused session stops the push as a pause"
+        "a refused session stops the import as a pause"
     );
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
@@ -3602,10 +3602,10 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
 }
 
 /// An attachment upload the server refuses because the session ended stops
-/// the push the same way: the conversation it belongs to is left for the
-/// next push, not recorded as failed (#1491).
+/// the import the same way: the conversation it belongs to is left for the
+/// next import, not recorded as failed (#1491).
 #[test]
-fn a_refused_attachment_upload_stops_the_push_and_fails_no_conversation() {
+fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _head = server.mock(|when, then| {
@@ -3623,7 +3623,7 @@ fn a_refused_attachment_upload_stops_the_push_and_fails_no_conversation() {
 
     let dir = tempdir().unwrap();
     two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         import_id: Some(7),
         ..text_only_config(dir.path(), server.base_url())
     };
@@ -3637,11 +3637,11 @@ fn a_refused_attachment_upload_stops_the_push_and_fails_no_conversation() {
     assert_eq!(batches.calls(), 0);
 }
 
-/// A session that has already ended when the push starts is refused at its
-/// first request. That stops the push as a pause too, with every
-/// conversation left for the next push, rather than failing it (#1491).
+/// A session that has already ended when the import starts is refused at its
+/// first request. That stops the import as a pause too, with every
+/// conversation left for the next import, rather than failing it (#1491).
 #[test]
-fn a_session_refused_at_login_stops_the_push_as_a_pause() {
+fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     let server = MockServer::start();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -3659,7 +3659,7 @@ fn a_session_refused_at_login_stops_the_push_as_a_pause() {
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    let cfg = PushConfig {
+    let cfg = ImportConfig {
         import_id: Some(7),
         ..text_only_config(dir.path(), server.base_url())
     };

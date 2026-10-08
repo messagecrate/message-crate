@@ -1,6 +1,6 @@
 //! Known answers for the file hash the rest of the product keys on.
 //!
-//! `file_sha256` is behind every digest check and asset key in push, staging
+//! `file_sha256` is behind every digest check and asset key in import, staging
 //! and transcode. A change to it silently re-keys everything already in a
 //! database, so it is pinned to values computed outside Rust (Python's
 //! `hashlib`). The message id's known answers are in `identity.rs`.

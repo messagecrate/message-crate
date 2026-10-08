@@ -1,10 +1,10 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
-use message_crate_push::ImportMode;
+use message_crate_import::ImportMode;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_crate_push::{FileStatus, ProgressEvent, PushConfig, run as run_push};
+use message_crate_import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
 
 use super::events;
 use super::events::ExtractProgressEvent;
@@ -20,7 +20,7 @@ fn as_usize(value: u64) -> usize {
 
 /// Progress bar update and finished JSON payload after an Upload completes.
 fn finished_upload_events(
-    report: &message_crate_push::PushReport,
+    report: &message_crate_import::ImportReport,
 ) -> (ExtractProgressEvent, serde_json::Value) {
     let progress = ExtractProgressEvent {
         step: "upload".into(),
@@ -108,14 +108,14 @@ pub fn upload(
         let mut cfg = upload_config(args, &logs)?;
         cfg.cancel = Some(cancel);
         let mut progress = |event: ProgressEvent| forward_upload_event(&app_handle, event);
-        let report = run_push(&cfg, Some(&mut progress))?;
+        let report = run_import(&cfg, Some(&mut progress))?;
         Ok(finished_upload_events(&report).1.to_string())
     });
     Ok(())
 }
 
 /// The Upload settings the desktop app uses. They differ from the
-/// `message_crate_push::DEFAULT_*` constants because desktop imports are many
+/// `message_crate_import::DEFAULT_*` constants because desktop imports are many
 /// small files over a local network; each number says why.
 ///
 /// The attachment size limit comes from the media settings Staging recorded
@@ -131,11 +131,11 @@ pub fn upload(
 ///
 /// Returns an error when the directory holds no readable media settings,
 /// because its Staging never finished.
-fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<PushConfig> {
+fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConfig> {
     let input = PathBuf::from(&args.input_dir);
     let recorded = message_staging::read_media_settings(&input)?;
     let log_path = Some(import_run_log(logs_dir, &input));
-    Ok(PushConfig {
+    Ok(ImportConfig {
         input,
         base_url: args.base_url,
         token: args.token,
@@ -147,15 +147,15 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<PushConfig
         trust_export: args.trust_export,
         verify_digests: false,
         max_retries: 3,
-        // Pack until message_crate_push::MAX_IMPORT_BODY_BYTES (64 MiB); do not stop at a message count.
-        batch_size: message_crate_push::NO_MESSAGE_COUNT_LIMIT,
+        // Pack until message_crate_import::MAX_IMPORT_BODY_BYTES (64 MiB); do not stop at a message count.
+        batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
         // Above DEFAULT_ASSET_UPLOAD_WORKERS (8): desktop imports are often many small files.
         asset_upload_workers: 16,
         // Above DEFAULT_PREPARE_AHEAD (3): hide more hashing behind in-flight imports.
         prepare_ahead: 8,
         // Above DEFAULT_PREPARE_WORKERS (2): more of the prepare-ahead queue runs at once.
         prepare_workers: 4,
-        // Below message_crate_push::MAX_PROXY_BODY_BYTES (90 MiB):
+        // Below message_crate_import::MAX_PROXY_BODY_BYTES (90 MiB):
         // desktop uploads switch to multipart sooner so a large attachment
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,
@@ -252,7 +252,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
 mod tests {
     use super::*;
     use httpmock::prelude::*;
-    use message_crate_push::{FileResult, PushReport};
+    use message_crate_import::{FileResult, ImportReport};
     use message_ir::{
         ConversationMeta, ConversationStats, ExportMeta, IrConversationType, IrDirection,
         IrMessage, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
@@ -426,7 +426,7 @@ mod tests {
         server: &MockServer,
         run_dir: &Path,
         logs: &Path,
-    ) -> message_crate_push::PushReport {
+    ) -> message_crate_import::ImportReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "token": "mc_test",
@@ -437,7 +437,7 @@ mod tests {
             "importId": 7,
         }))
         .unwrap();
-        run_push(&upload_config(args, logs).unwrap(), None).unwrap()
+        run_import(&upload_config(args, logs).unwrap(), None).unwrap()
     }
 
     /// A resumed Upload runs over the run directory the interrupted Upload
@@ -473,7 +473,7 @@ mod tests {
         let report = upload_to(&server, run_dir.path(), logs.path());
         assert!(report.ok, "{:?}", report.results);
         assert!(
-            !run_dir.path().join(message_crate_push::LOG_NAME).exists(),
+            !run_dir.path().join(message_crate_import::LOG_NAME).exists(),
             "no log in the run's directory"
         );
         run_dir.close().unwrap();
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn finished_upload_event_reports_complete_upload_and_totals() {
-        let report = PushReport {
+        let report = ImportReport {
             ok: true,
             cancelled: false,
             session_refused: false,

@@ -14400,7 +14400,7 @@
               "string",
               "null"
             ],
-            "description": "Name of the program that runs the import, such as\n`message-crate-push`, stored on the run as given. Null when the\nrequest leaves it out."
+            "description": "Name of the program that runs the import, such as\n`message-crate-import`, stored on the run as given. Null when the\nrequest leaves it out."
           }
         }
       },
@@ -15518,7 +15518,7 @@
               "string",
               "null"
             ],
-            "description": "Importing tool, e.g. `message-crate-push`."
+            "description": "Importing tool, e.g. `message-crate-import`."
           },
           "upload_ms": {
             "type": [
@@ -16260,7 +16260,7 @@
               "string",
               "null"
             ],
-            "description": "Importing tool, e.g. `message-crate-push`."
+            "description": "Importing tool, e.g. `message-crate-import`."
           },
           "upload_ms": {
             "type": [
@@ -17772,7 +17772,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Importing tool, e.g. `message-crate-push`."
+                  "description": "Importing tool, e.g. `message-crate-import`."
                 },
                 "upload_ms": {
                   "type": [
@@ -18372,7 +18372,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Importing tool, e.g. `message-crate-push`."
+                  "description": "Importing tool, e.g. `message-crate-import`."
                 },
                 "upload_ms": {
                   "type": [

@@ -1,7 +1,7 @@
 //! Typed login failures from `GET /v1/session`.
 //!
 //! Each variant has a stable `kind()` string for tests, and its `Display`
-//! text is the message the desktop app shows. The push and the Export send a
+//! text is the message the desktop app shows. The Upload and the Export send a
 //! session token, so no text names an API token.
 
 use crate::retry::HttpError;

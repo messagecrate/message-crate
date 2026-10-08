@@ -28,9 +28,11 @@ pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;
 pub use message_crate_http::AuthInfo;
 pub use progress::{FileStatus, ProgressEvent, ProgressFn};
-pub use report::{FileResult, PushReport, UploadProfile, format_duration_ms, format_push_summary};
+pub use report::{
+    FileResult, ImportReport, UploadProfile, format_duration_ms, format_import_summary,
+};
 pub use run::{
     DEFAULT_ASSET_MAX_BYTES, DEFAULT_ASSET_UPLOAD_WORKERS, DEFAULT_BATCH_SIZE,
-    DEFAULT_PREPARE_AHEAD, DEFAULT_PREPARE_WORKERS, MAX_IMPORT_BODY_BYTES, MAX_PROXY_BODY_BYTES,
-    NO_MESSAGE_COUNT_LIMIT, PushConfig, authenticate, run,
+    DEFAULT_PREPARE_AHEAD, DEFAULT_PREPARE_WORKERS, ImportConfig, MAX_IMPORT_BODY_BYTES,
+    MAX_PROXY_BODY_BYTES, NO_MESSAGE_COUNT_LIMIT, authenticate, run,
 };

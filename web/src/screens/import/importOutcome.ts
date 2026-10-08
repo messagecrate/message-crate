@@ -47,7 +47,7 @@ const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
  * attachment as `row`, an approved plan's forecast row.
  *
  * An Upload issue's `item` is `"{conversationFile}:{relativePath}"`
- * (the `AttachmentSkip` that `crates/libs/push/src/prepare.rs` builds), not a bare
+ * (the `AttachmentSkip` that `crates/libs/import/src/prepare.rs` builds), not a bare
  * path, so exact equality against `row.path`/`row.name` only catches the
  * simple case. `item.endsWith(...)` catches the compound form without the
  * conversation-name prefix tripping it up. `stableStem`
