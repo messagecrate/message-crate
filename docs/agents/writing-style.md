@@ -203,10 +203,13 @@ username a person is reached at is a **handle** in the database (`handles`,
 in the UI, the published documentation, the HTTP API and the conversation
 file. The conversation file, its CSV, EML and mbox forms, the Apple Messages
 Reader's protocol and the staging summary say `identity`, in their Rust
-fields as on disk. The shared enums are named for the file, `IdentityType`
-and `IdentityService`, and the server's handle code uses them under those
-names. Neither is a stale name: the database and the code over it
-are not renamed to `identity`, and UI copy does not say "handle".
+fields as on disk. Neither is a stale name: the database and the code over it
+are not renamed to `identity`, and UI copy does not say "handle". The shared
+enums are named for the file, `IdentityType` and `IdentityService`, and the
+server's handle code uses them under those names. The HTTP API's own enum is
+`ApiIdentityService`, published as `IdentityService`: it takes only `phone`
+and `whatsapp` and refuses any other word, where the shared enum reads any
+other word as `phone`.
 
 A stale name met in passing is fixed, not matched.
 
