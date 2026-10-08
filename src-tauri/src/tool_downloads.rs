@@ -584,8 +584,8 @@ struct Shared {
 /// While one exists [`ToolDownloads::checking`] says so, and the window
 /// keeps asking for the status, because a program the check has not yet
 /// looked at shows as missing. When it is dropped, at the end of the check
-/// or on a panic in its thread, every program it marked as downloading that
-/// still is becomes failed with [`DownloadError::Interrupted`], so an
+/// or on a panic in its thread, every program it marked that is still
+/// downloading becomes failed with [`DownloadError::Interrupted`], so an
 /// import waiting for one wakes and the Import form offers Try again.
 #[derive(Debug)]
 struct CheckRun {
@@ -917,8 +917,9 @@ fn retry_with(
 /// pinned program ends with its state decided: none when it is in place and
 /// runs, failed with the reason otherwise.
 fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: Option<File>) {
-    let downloads = run.downloads.clone();
-    let downloads = &downloads;
+    // A clone of the handle (one `Arc`), because `run` is borrowed mutably
+    // below to mark the programs wanted as downloading.
+    let downloads = &run.downloads.clone();
     delete_leftovers(dir);
     let ffmpeg_on_path = media::ffmpeg_on_path();
     let mut manifest = read_manifest(dir);
