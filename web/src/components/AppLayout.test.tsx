@@ -466,10 +466,25 @@ describe("AppLayout in a phone-width window (#1722)", () => {
     expect(navigationPanel().style.width).toBe("482px");
   });
 
-  it("changes nothing in a 1280 px window", () => {
-    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
-    setWindowWidth(1280);
-    renderLayout("/");
-    expect(navigationPanel().style.width).toBe("300px");
-  });
+  // jsdom lays nothing out, so whether the row scrolls at 1280 px is measured
+  // in a browser; this test holds the widths the row is built from.
+  it.each([
+    ["300", "300px"],
+    ["520", "520px"],
+  ])(
+    "keeps a panel stored at %s and the list's stored width in a 1280 px window",
+    (stored, shown) => {
+      localStorage.setItem(LEFT_PANEL_STORAGE_KEY, stored);
+      localStorage.setItem("listColumnWidth:v1", "300");
+      setWindowWidth(1280);
+      const { container } = renderLayout("/");
+      expect(navigationPanel().style.width).toBe(shown);
+      expect(container.querySelector("[data-list-column]")).toHaveStyle({
+        flex: "0 1 300px",
+        width: "300px",
+      });
+      // The right pane takes the rest of the row.
+      expect(container.querySelector("[data-right-pane]")?.className).toContain("flex-1");
+    },
+  );
 });
