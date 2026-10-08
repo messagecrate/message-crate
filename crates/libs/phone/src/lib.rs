@@ -237,27 +237,26 @@ pub fn normalize_checked(raw: &str, region: PhoneRegion) -> Result<String, Strin
 /// follows is a calling code and number ([`dialled_abroad`]): `00 44 7700
 /// 900123` in the United Kingdom, `0011 44 …` in Australia, `8 10 44 …` in
 /// Russia. Otherwise the country's trunk prefix is dropped (`07700 900123` in
-/// the United Kingdom). A number that starts with the country's own calling
-/// code was written in full without its `+` (`447700900123`) only when what
-/// follows the code is as long as the country's numbers are and the digits
-/// as a whole are not: `55 99123 4567` in Brazil is a national number with
-/// the area code 55. Anything else is the national number.
+/// the United Kingdom).
+///
+/// A number that starts with the country's own calling code may have been
+/// written in full without its `+` ([`with_calling_code`]). It is read so
+/// when the trunk prefix is kept after the code (`44 (0)7700 900123`), or
+/// when what follows the code is as long as the country's numbers are and
+/// the digits as a whole are not (`447700900123`). When both readings have a
+/// valid length, as `49 151 23456789` has in Germany, the number is refused
+/// rather than guessed: it could be either. When only the whole is valid,
+/// it is the national number: `55 99123 4567` in Brazil has the area code
+/// 55. Anything else is the national number.
 fn in_country(digits: &str, country: &Country) -> Result<String, String> {
     if let Some(international) = after_international_prefix(digits, country) {
         return dialled_abroad(international, country);
     }
     let trunk = country.trunk_prefix;
-    let national_length =
-        |n: &str| u8::try_from(n.len()).is_ok_and(|len| country.national_lengths.contains(&len));
     let national = if !trunk.is_empty() && digits.starts_with(trunk) {
         &digits[trunk.len()..]
-    } else if let Some(rest) = digits
-        .strip_prefix(country.calling_code)
-        .filter(|rest| national_length(rest) && !national_length(digits))
-    {
-        rest
     } else {
-        digits
+        with_calling_code(digits, country)?.unwrap_or(digits)
     };
     if national.len() < MIN_NATIONAL_DIGITS {
         Err(format!("too few digits for a number in {}", country.code))
@@ -265,6 +264,31 @@ fn in_country(digits: &str, country: &Country) -> Result<String, String> {
         Err(format!("too many digits for a number in {}", country.code))
     } else {
         Ok(format!("+{}{national}", country.calling_code))
+    }
+}
+
+/// The national number of `digits` read as written with `country`'s calling
+/// code and no `+`, when that is the reading: `None` when it is not, and a
+/// refusal when the digits read as well either way ([`in_country`]).
+fn with_calling_code<'a>(digits: &'a str, country: &Country) -> Result<Option<&'a str>, String> {
+    let national_length =
+        |n: &str| u8::try_from(n.len()).is_ok_and(|len| country.national_lengths.contains(&len));
+    let Some(rest) = digits.strip_prefix(country.calling_code) else {
+        return Ok(None);
+    };
+    let trunk = country.trunk_prefix;
+    if let Some(after_trunk) = rest.strip_prefix(trunk).filter(|_| !trunk.is_empty()) {
+        // `44 (0)7700 900123`: the trunk prefix kept after the code says the
+        // number was written in full.
+        return Ok(national_length(after_trunk).then_some(after_trunk));
+    }
+    match (national_length(rest), national_length(digits)) {
+        (true, false) => Ok(Some(rest)),
+        (true, true) => Err(format!(
+            "{digits} could be +{cc}{digits} or +{cc}{rest}; pick its country or write it with +",
+            cc = country.calling_code
+        )),
+        (false, _) => Ok(None),
     }
 }
 
@@ -1168,6 +1192,43 @@ mod tests {
         assert_eq!(keyed_in("55 99123 4567", "BR").key, "+5555991234567");
         // An Indian mobile number that starts with 91 is a national number.
         assert_eq!(keyed_in("9112345678", "IN").key, "+919112345678");
+    }
+
+    #[test]
+    fn a_number_that_reads_as_well_either_way_is_refused() {
+        // Germany, Austria and Italy have numbers of both lengths, so the
+        // digits could be national or written with the calling code.
+        for (raw, code, national, full) in [
+            (
+                "49 151 23456789",
+                "DE",
+                "+494915123456789",
+                "+4915123456789",
+            ),
+            ("43 664 1234567", "AT", "+43436641234567", "+436641234567"),
+            ("39 333 1234567", "IT", "+39393331234567", "+393331234567"),
+        ] {
+            let refused = keyed_in(raw, code);
+            let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+            assert_eq!(refused.key, digits, "{raw} in {code}");
+            assert_eq!(
+                refused.note.as_deref(),
+                Some(
+                    format!(
+                        "{digits} could be {national} or {full}; \
+                         pick its country or write it with +"
+                    )
+                    .as_str()
+                ),
+                "{raw} in {code}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_trunk_prefix_kept_after_the_calling_code_is_dropped() {
+        assert_eq!(keyed_in("44 (0)7700 900123", "GB").key, "+447700900123");
+        assert_eq!(keyed_in("49 (0)151 23456789", "DE").key, "+4915123456789");
     }
 
     #[test]
