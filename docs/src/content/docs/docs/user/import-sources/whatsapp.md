@@ -16,6 +16,8 @@ Two things make it hard:
 The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records the ids a quoted reply is linked by.
 Each time it starts, the desktop app downloads the pinned release into its Tools Directory when it isn't there, in the background, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
 The app runs `wtsexporter` only from the Tools Directory, never from `PATH`.
+A WhatsApp import can't start without it, and the Import form names the reason and offers **Try again**.
+An import started while `wtsexporter` is still downloading waits for the download, and its progress line says so.
 A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
 
 ## WhatsApp on Android

@@ -85,8 +85,9 @@ The desktop app finds the programs on `PATH`, else in its Tools Directory, and t
 With **Convert** or **Compress** chosen, the Import form says when ffmpeg or ffprobe can't be used, and why, but the run still starts, because Staging copies the original files and needs neither program.
 At the Staging Review, the review names the program, such as `Media can't use ffprobe.`, and the **Convert media** or **Compress media** button is disabled.
 **Try again**, on the form and at the review, downloads the program into the Tools Directory at once.
-A program still downloading doesn't stop the review: Media waits for the download, and its progress line says so.
-When the download fails again, the package manager commands above install ffmpeg and ffprobe instead.
+A program still downloading doesn't stop the review.
+Media waits for the download, and its progress line says so.
+When the download fails, the package manager commands above install ffmpeg and ffprobe instead.
 The run keeps waiting at the review until the program is there.
 
 ## The size limit

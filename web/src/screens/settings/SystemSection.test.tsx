@@ -426,7 +426,7 @@ describe("SystemSection", () => {
     render(<SystemSection />);
     expect(
       await screen.findByLabelText(
-        `wtsexporter download failed. ${reason} It is tried again the next time the app starts. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
+        `wtsexporter download failed. ${reason} It is tried again the next time the app starts, or with Try again on the Import form. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
       ),
     ).toBeTruthy();
     expect(

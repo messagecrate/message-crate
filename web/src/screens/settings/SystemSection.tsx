@@ -60,7 +60,8 @@ function stagingHelpExample(stagingDir: string, defaultDir: string): string {
 }
 
 /** Said once on every failed download's line, whatever the reason: each is retried. */
-const DOWNLOAD_RETRIED = "It is tried again the next time the app starts.";
+const DOWNLOAD_RETRIED =
+  "It is tried again the next time the app starts, or with Try again on the Import form.";
 
 /**
  * Where to put a program that is missing, as the words before the Tools

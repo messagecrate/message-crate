@@ -29,9 +29,9 @@ released versions carry their date on the heading.
   Troubleshooting. A WhatsApp import can't start without wtsexporter. An
   import with **Convert** or **Compress** still starts, as before. An import
   started while its program is still downloading waits for it, and its
-  progress line says so, such as "Waiting for the wtsexporter download (12.0
-  MB of 30.0 MB)". When that download fails, the run fails with the reason
-  (#1053).
+  progress line says so, such as "Waiting for the wtsexporter download: 12 MB
+  of 30 MB (40%)". When that download fails, the run fails with the reason
+  and names the troubleshooting section (#1053).
 
 - 2026-10-08: **The desktop app downloads ffmpeg, ffprobe and wtsexporter
   by itself.** Each time it starts, it downloads in the background whatever
