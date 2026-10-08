@@ -66,6 +66,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = "message-crate-auth";
 
 /**
+ * The server address, a setting of its own. It is kept apart from the saved
+ * login so that logging out, or a session the server refuses, leaves it as
+ * it is: the next start opens on the login card for the same Message Crate,
+ * and the desktop app starts its own only when this is its own address
+ * (#1972).
+ */
+const SERVER_ADDRESS_KEY = "message-crate-server-address";
+
+/**
  * How long logout waits for a running Upload to pause before it revokes the
  * session anyway (#1491). A push that does not stop must not keep the person
  * logged in; the Upload then resumes from what its journal recorded as sent.
@@ -99,6 +108,19 @@ function loadPersisted(): { serverUrl: string; token: string; accountId: number 
     token: parsed.token,
     accountId: parsed.accountId,
   };
+}
+
+/**
+ * The saved server address. Empty when none is saved, or when the saved one
+ * is the website's own origin.
+ */
+function loadServerAddress(): string {
+  return readPref(SERVER_ADDRESS_KEY) ?? "";
+}
+
+/** Save the server address for the next start. */
+function saveServerAddress(url: string) {
+  writePref(SERVER_ADDRESS_KEY, url);
 }
 
 /** Write the current login to browser storage. Passwords are never stored. */
@@ -156,9 +178,12 @@ function SessionProvider({
   // Incremented on login and logout so an older profile request is ignored.
   const authEpoch = useRef(0);
   const [state, setState] = useState<AuthState>(() => {
+    const serverUrl = loadServerAddress();
     const persisted = loadPersisted();
     // An empty server URL is allowed: it means "same host as this page".
-    if (persisted?.token && typeof persisted.serverUrl === "string") {
+    // A login saved for another address is left alone, so a token only ever
+    // goes to the server that issued it.
+    if (persisted?.token && persisted.serverUrl === serverUrl) {
       // Apply before children mount. Otherwise Contact Groups loads without
       // a token, fails, and the sidebar stays on "No group" only.
       setBaseUrl(persisted.serverUrl);
@@ -172,7 +197,7 @@ function SessionProvider({
       };
     }
     return {
-      serverUrl: typeof persisted?.serverUrl === "string" ? persisted.serverUrl : "",
+      serverUrl,
       token: null,
       accountId: null,
       isAuthenticated: false,
@@ -237,6 +262,7 @@ function SessionProvider({
 
   const setServer = useCallback((url: string) => {
     setBaseUrl(url);
+    saveServerAddress(url);
     setState((s) => ({ ...s, serverUrl: url }));
   }, []);
 
@@ -278,6 +304,7 @@ function SessionProvider({
         accountId,
         isAuthenticated: true,
       };
+      saveServerAddress(serverUrl);
       persistState(newState);
       setState(newState);
       setRestored(true);
@@ -300,7 +327,10 @@ function SessionProvider({
     });
   }, []);
 
-  /** Forget the login on this side: token, cached data, and the saved login. */
+  /**
+   * Forget the login on this side: token, cached data, and the saved login.
+   * The server address stays: it is a setting, not part of the login.
+   */
   const clearSession = useCallback(() => {
     authEpoch.current++;
     setToken(null);
