@@ -409,11 +409,10 @@ impl fmt::Display for DownloadError {
                  Install it with your package manager instead; the app uses the copy on PATH.",
                 program = program.name()
             ),
-            Self::DoesNotRun(Program::Wtsexporter) => write!(
-                f,
-                "wtsexporter in the Tools Directory doesn't run on this computer. \
-                 See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app."
-            ),
+            // The run's error and Settings add the troubleshooting section.
+            Self::DoesNotRun(Program::Wtsexporter) => {
+                f.write_str("wtsexporter in the Tools Directory doesn't run on this computer.")
+            }
             Self::CouldNotStart(why) => write!(f, "The download could not be started: {why}."),
             Self::Interrupted => f.write_str("The download was interrupted."),
         }
@@ -752,8 +751,9 @@ impl fmt::Display for WaitError {
         match self {
             Self::Failed { program, reason } => write!(
                 f,
-                "The {} download failed. {reason} The Import form's Try again downloads it again.",
-                program.name()
+                "The {} download failed. {reason} Try again on the Import form downloads it again. {}",
+                program.name(),
+                troubleshooting(*program)
             ),
             Self::Cancelled => f.write_str("cancelled"),
         }
@@ -761,6 +761,17 @@ impl fmt::Display for WaitError {
 }
 
 impl std::error::Error for WaitError {}
+
+/// The sentence that sends a person to the user guide's troubleshooting
+/// section for `program`, which says how to install it or where to put a
+/// copy by hand. The Import form and Settings link the same section.
+pub fn troubleshooting(program: Program) -> String {
+    let section = match program {
+        Program::Ffmpeg | Program::Ffprobe => "ffmpeg or ffprobe not found",
+        Program::Wtsexporter => "Import can't find wtsexporter",
+    };
+    format!("See \"{section}\" in Troubleshooting at messagecrate.app.")
+}
 
 /// The state of `program` in place that does not run.
 fn does_not_run(program: Program) -> DownloadState {

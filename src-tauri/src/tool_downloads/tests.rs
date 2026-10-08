@@ -890,11 +890,12 @@ fn an_import_waiting_for_a_download_that_fails_fails_with_its_reason() {
             reason: "The download's server answered 404 Not Found.".into(),
         }
     );
-    assert!(
-        err.to_string().starts_with(
-            "The ffprobe download failed. The download's server answered 404 Not Found."
-        ),
-        "{err}"
+    // The run's error sends the person to the troubleshooting section.
+    assert_eq!(
+        err.to_string(),
+        "The ffprobe download failed. The download's server answered 404 Not Found. \
+         Try again on the Import form downloads it again. \
+         See \"ffmpeg or ffprobe not found\" in Troubleshooting at messagecrate.app."
     );
 }
 

@@ -24,7 +24,12 @@ import {
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import { downloadProgress } from "../../lib/toolStatusCopy";
+import {
+  downloadProgress,
+  troubleshootingSection,
+  troubleshootingSentence,
+} from "../../lib/toolStatusCopy";
+import { accentLink } from "../../lib/uiStyles";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 
 const sectionHeading = "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
@@ -187,13 +192,18 @@ function ToolStatusRow({
       );
     }
     case "downloadFailed": {
-      const label = `${name} download failed. ${status.reason} ${DOWNLOAD_RETRIED}`;
+      const label = `${name} download failed. ${status.reason} ${DOWNLOAD_RETRIED} ${troubleshootingSentence(name)}`;
+      const section = troubleshootingSection(name);
       return (
         <li className="flex items-start gap-1.5 text-[0.75rem] text-text" aria-label={label}>
           <XIcon size={14} className="mt-0.5 shrink-0 text-danger" />
           <span>
             <code className="font-mono text-[0.7rem]">{name}</code> download failed. {status.reason}{" "}
-            {DOWNLOAD_RETRIED}
+            {DOWNLOAD_RETRIED} See "
+            <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
+              {section.heading}
+            </a>
+            " in Troubleshooting at messagecrate.app.
           </span>
         </li>
       );

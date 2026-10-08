@@ -426,9 +426,14 @@ describe("SystemSection", () => {
     render(<SystemSection />);
     expect(
       await screen.findByLabelText(
-        `wtsexporter download failed. ${reason} It is tried again the next time the app starts.`,
+        `wtsexporter download failed. ${reason} It is tried again the next time the app starts. See "Import can't find wtsexporter" in Troubleshooting at messagecrate.app.`,
       ),
     ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Import can't find wtsexporter" }).getAttribute("href"),
+    ).toBe(
+      "https://messagecrate.app/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter",
+    );
   });
 
   it("says so when the desktop process cannot be asked", async () => {

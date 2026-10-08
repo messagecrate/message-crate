@@ -22,3 +22,27 @@ export function waitingLine(name: ToolName, received: number, total: number | nu
   if (received <= 0 && (total == null || total <= 0)) return lead;
   return `${lead}: ${downloadProgress(received, total)}`;
 }
+
+const TROUBLESHOOTING = "https://messagecrate.app/docs/user/features/owner/troubleshooting/";
+
+/** The user guide's troubleshooting section for `name`: its heading and its address. */
+export function troubleshootingSection(name: ToolName): { heading: string; url: string } {
+  return name === "wtsexporter"
+    ? {
+        heading: "Import can't find wtsexporter",
+        url: `${TROUBLESHOOTING}#import-cant-find-wtsexporter`,
+      }
+    : {
+        heading: "ffmpeg or ffprobe not found",
+        url: `${TROUBLESHOOTING}#ffmpeg-or-ffprobe-not-found`,
+      };
+}
+
+/**
+ * The sentence that sends a person to `name`'s troubleshooting section, word
+ * for word as a run's failed-download error ends (`troubleshooting` in
+ * src-tauri/src/tool_downloads.rs).
+ */
+export function troubleshootingSentence(name: ToolName): string {
+  return `See "${troubleshootingSection(name).heading}" in Troubleshooting at messagecrate.app.`;
+}

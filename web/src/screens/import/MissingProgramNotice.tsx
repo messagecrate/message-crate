@@ -1,7 +1,7 @@
 import Button from "../../components/Button";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
-import { downloadProgress } from "../../lib/toolStatusCopy";
+import { downloadProgress, troubleshootingSection } from "../../lib/toolStatusCopy";
 import { accentLink } from "../../lib/uiStyles";
 import { useRetryToolDownloads, useToolsStatus } from "../../lib/useToolsStatus";
 
@@ -11,11 +11,9 @@ export type ProgramName = "ffmpeg" | "ffprobe" | "wtsexporter";
 /** What a program is needed for: a WhatsApp import, or Convert and Compress. */
 export type ProgramNeed = "whatsapp" | "media";
 
-const TROUBLESHOOTING = "https://messagecrate.app/docs/user/features/owner/troubleshooting/";
-
 /** The troubleshooting section for what `need` runs. */
 function troubleshootingUrl(need: ProgramNeed): string {
-  return `${TROUBLESHOOTING}#${need === "whatsapp" ? "import-cant-find-wtsexporter" : "ffmpeg-or-ffprobe-not-found"}`;
+  return troubleshootingSection(need === "whatsapp" ? "wtsexporter" : "ffmpeg").url;
 }
 
 /** One program's state, as a sentence; null when it is found. */
