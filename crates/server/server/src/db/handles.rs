@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use message_ir::IdentityType;
+use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -46,10 +46,10 @@ pub fn handle_type_of(address: &str) -> IdentityType {
 pub fn handle_type_on(
     address: &str,
     stated: Option<IdentityType>,
-    service: message_ir::IdentityService,
+    service: IdentityService,
 ) -> IdentityType {
     match (service, stated.unwrap_or_else(|| handle_type_of(address))) {
-        (message_ir::IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
+        (IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
         (_, kind) => kind,
     }
 }
@@ -74,11 +74,11 @@ pub struct EmailOnWhatsapp {
 /// [`EmailOnWhatsapp`] for an email address on WhatsApp.
 pub fn check_service_carries(
     address: &str,
-    service: message_ir::IdentityService,
+    service: IdentityService,
     handle_type: IdentityType,
 ) -> std::result::Result<(), EmailOnWhatsapp> {
     match (service, handle_type) {
-        (message_ir::IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
+        (IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
             address: address.to_string(),
         }),
         _ => Ok(()),
@@ -95,34 +95,37 @@ pub fn check_service_carries(
 // `whatsap` put an identity on Text Message without a word (#1630), and
 // `email` lived on as a second name for `phone` (#1631).
 //
-// `message_ir::IdentityService` is the conversation file's enum of the same
-// two services, whose `parse` reads every word but `whatsapp` and `wa` as
-// `phone`; the `From` impls below convert between the two.
+// The HTTP API's enum, published in the OpenAPI reference as
+// `IdentityService`. `message_ir::IdentityService` is the conversation file's
+// enum of the same two services, whose `parse` reads every word but
+// `whatsapp` and `wa` as `phone`; the `From` impls below convert between the
+// two.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, utoipa::ToSchema,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum IdentityService {
+#[schema(as = IdentityService)]
+pub enum ApiIdentityService {
     /// Text Message: SMS, MMS, iMessage and RCS.
     Phone,
     /// WhatsApp.
     Whatsapp,
 }
 
-impl From<message_ir::IdentityService> for IdentityService {
-    fn from(service: message_ir::IdentityService) -> Self {
-        match service {
-            message_ir::IdentityService::Phone => Self::Phone,
-            message_ir::IdentityService::Whatsapp => Self::Whatsapp,
-        }
-    }
-}
-
-impl From<IdentityService> for message_ir::IdentityService {
+impl From<IdentityService> for ApiIdentityService {
     fn from(service: IdentityService) -> Self {
         match service {
             IdentityService::Phone => Self::Phone,
             IdentityService::Whatsapp => Self::Whatsapp,
+        }
+    }
+}
+
+impl From<ApiIdentityService> for IdentityService {
+    fn from(service: ApiIdentityService) -> Self {
+        match service {
+            ApiIdentityService::Phone => Self::Phone,
+            ApiIdentityService::Whatsapp => Self::Whatsapp,
         }
     }
 }
@@ -137,7 +140,7 @@ pub async fn existing_handle_id(
     conn: &mut SqliteConnection,
     account_id: i64,
     raw: &str,
-    service: message_ir::IdentityService,
+    service: IdentityService,
 ) -> Result<Option<i64>> {
     let raw = raw.trim();
     let key = phone::Handle::parse(raw).map_or_else(|| raw.to_string(), phone::Handle::into_key);
@@ -166,9 +169,7 @@ pub async fn upsert_handle_row(
     service: Option<&str>,
 ) -> Result<(i64, bool)> {
     let (normalized, note) = normalize_handle(raw, handle_type);
-    let platform = message_ir::IdentityService::parse(
-        service.unwrap_or(message_ir::IdentityService::Phone.as_str()),
-    );
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let service_str = platform.as_str();
     let inserted = sqlx::query(
         "INSERT INTO handles (account_id, raw, normalized, normalized_note, handle_type, service)
@@ -209,9 +210,7 @@ pub async fn upsert_handle_row_cached(
     service: Option<&str>,
 ) -> Result<(i64, bool, bool)> {
     let (normalized, _) = normalize_handle(raw, handle_type);
-    let platform = message_ir::IdentityService::parse(
-        service.unwrap_or(message_ir::IdentityService::Phone.as_str()),
-    );
+    let platform = IdentityService::parse(service.unwrap_or(IdentityService::Phone.as_str()));
     let key = (
         account_id.to_string(),
         normalized,

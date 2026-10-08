@@ -1,12 +1,12 @@
 //! Account rows, profile fields, and message deletion.
 
 use anyhow::{Context, Result, bail};
-use message_ir::IdentityType;
+use message_ir::{IdentityService, IdentityType};
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
-use crate::db::handles::{IdentityService, normalize_handle, upsert_handle_row};
+use crate::db::handles::{ApiIdentityService, normalize_handle, upsert_handle_row};
 use crate::db::schema;
 
 /// Contact points linked to an account, for profile display.
@@ -31,7 +31,7 @@ pub struct AccountPhone {
     pub address: String,
     /// The services the number is an identity under, `phone` (Text Message)
     /// before `whatsapp`. Never empty.
-    pub services: Vec<IdentityService>,
+    pub services: Vec<ApiIdentityService>,
 }
 
 /// Load the email and phone handles linked to an account. Both default to empty
@@ -79,7 +79,7 @@ async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<
     .await?;
     let mut phones: Vec<AccountPhone> = Vec::new();
     for (address, service) in rows {
-        let service = IdentityService::from(message_ir::IdentityService::parse(&service));
+        let service = ApiIdentityService::from(IdentityService::parse(&service));
         match phones.last_mut() {
             Some(phone) if phone.address == address => phone.services.push(service),
             _ => phones.push(AccountPhone {
@@ -831,7 +831,7 @@ pub async fn unlink_account_handle(
     account_id: i64,
     raw: &str,
     handle_type: IdentityType,
-    service: message_ir::IdentityService,
+    service: IdentityService,
 ) -> Result<bool> {
     let (normalized, _) = normalize_handle(raw, handle_type);
     let is_email = matches!(handle_type, IdentityType::Email);
@@ -886,7 +886,7 @@ mod tests {
             profile.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![IdentityService::Phone],
+                services: vec![ApiIdentityService::Phone],
             }]
         );
     }
@@ -1079,7 +1079,7 @@ mod tests {
             loaded.phones,
             vec![AccountPhone {
                 address: "+15555550100".to_string(),
-                services: vec![IdentityService::Phone],
+                services: vec![ApiIdentityService::Phone],
             }]
         );
         assert_eq!(

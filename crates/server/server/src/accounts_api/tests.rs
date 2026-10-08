@@ -2362,15 +2362,15 @@ async fn apply_profile_update_sets_name_and_handles() {
         &[
             LinkAccountIdentityRequest {
                 address: "+1 (555) 555-0100".into(),
-                service: IdentityService::Phone,
+                service: ApiIdentityService::Phone,
             },
             LinkAccountIdentityRequest {
                 address: "Alex@Example.com".into(),
-                service: IdentityService::Phone,
+                service: ApiIdentityService::Phone,
             },
             LinkAccountIdentityRequest {
                 address: "+15555550199".into(),
-                service: IdentityService::Whatsapp,
+                service: ApiIdentityService::Whatsapp,
             },
         ],
         &[],
@@ -2384,13 +2384,13 @@ async fn apply_profile_update_sets_name_and_handles() {
         loaded
             .phones
             .iter()
-            .any(|p| p.address == "+15555550100" && p.services == [IdentityService::Phone])
+            .any(|p| p.address == "+15555550100" && p.services == [ApiIdentityService::Phone])
     );
     assert!(
         loaded
             .phones
             .iter()
-            .any(|p| p.address == "+15555550199" && p.services == [IdentityService::Whatsapp])
+            .any(|p| p.address == "+15555550199" && p.services == [ApiIdentityService::Whatsapp])
     );
     assert!(loaded.emails.iter().any(|e| e == "alex@example.com"));
 
@@ -2459,8 +2459,8 @@ async fn apply_profile_update_removes_handles() {
     let account_id = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let both = [
-        ("+15555550100", IdentityService::Phone),
-        ("alex@example.com", IdentityService::Phone),
+        ("+15555550100", ApiIdentityService::Phone),
+        ("alex@example.com", ApiIdentityService::Phone),
     ];
     apply_profile_update(
         &mut conn,
@@ -2488,14 +2488,14 @@ async fn apply_profile_update_removes_handles() {
     assert!(loaded.emails.is_empty());
 }
 
-fn link(address: &str, service: IdentityService) -> LinkAccountIdentityRequest {
+fn link(address: &str, service: ApiIdentityService) -> LinkAccountIdentityRequest {
     LinkAccountIdentityRequest {
         address: address.into(),
         service,
     }
 }
 
-fn unlink(address: &str, service: IdentityService) -> UnlinkAccountIdentityRequest {
+fn unlink(address: &str, service: ApiIdentityService) -> UnlinkAccountIdentityRequest {
     UnlinkAccountIdentityRequest {
         address: address.into(),
         service,
@@ -2529,8 +2529,8 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
     let account_id = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let both = [
-        link("+15555550100", IdentityService::Phone),
-        link("+15555550100", IdentityService::Whatsapp),
+        link("+15555550100", ApiIdentityService::Phone),
+        link("+15555550100", ApiIdentityService::Whatsapp),
     ];
 
     apply_profile_update(&mut conn, account_id, None, None, &both, &[])
@@ -2542,7 +2542,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", IdentityService::Whatsapp)],
+        &[unlink("+15555550100", ApiIdentityService::Whatsapp)],
     )
     .await
     .unwrap();
@@ -2560,7 +2560,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", IdentityService::Phone)],
+        &[unlink("+15555550100", ApiIdentityService::Phone)],
     )
     .await
     .unwrap();
@@ -2592,7 +2592,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         account_id,
         None,
         None,
-        &[link("+15555550100", IdentityService::Whatsapp)],
+        &[link("+15555550100", ApiIdentityService::Whatsapp)],
         &[],
     )
     .await
@@ -2604,7 +2604,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", IdentityService::Whatsapp)],
+        &[unlink("+15555550100", ApiIdentityService::Whatsapp)],
     )
     .await
     .unwrap();
@@ -2629,7 +2629,7 @@ async fn profile_update_rolls_back_when_a_service_cannot_carry_the_identity() {
             preferred_name: Some(Some("Changed Name".into())),
             identities: vec![LinkAccountIdentityRequest {
                 address: "alice@example.com".into(),
-                service: IdentityService::Whatsapp,
+                service: ApiIdentityService::Whatsapp,
             }],
             ..UpdateAccountRequest::default()
         },

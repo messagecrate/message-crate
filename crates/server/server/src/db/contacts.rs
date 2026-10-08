@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use chrono::Utc;
+use message_ir::IdentityService;
 use sqlx::SqliteConnection;
 
 use crate::search::emit::NOT_TRASHED_CONTACT;
@@ -344,10 +345,10 @@ pub async fn live_contact_exists(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnService {
     /// Only the row on this service.
-    Only(message_ir::IdentityService),
+    Only(IdentityService),
     /// The row on this service when there is one, else the phone row, then
     /// WhatsApp, then anything else. `None` names no service to prefer.
-    Preferring(Option<message_ir::IdentityService>),
+    Preferring(Option<IdentityService>),
 }
 
 /// Id and service of the handle row for `raw` that is linked to this
@@ -362,7 +363,7 @@ pub async fn linked_handle_id(
     contact_id: i64,
     raw: &str,
     on: OnService,
-) -> Result<Option<(i64, message_ir::IdentityService)>> {
+) -> Result<Option<(i64, IdentityService)>> {
     let needle = raw.trim();
     if needle.is_empty() {
         return Ok(None);
@@ -389,11 +390,11 @@ pub async fn linked_handle_id(
     .bind(account_id)
     .bind(contact_id)
     .bind(needle)
-    .bind(service.map(message_ir::IdentityService::as_str))
+    .bind(service.map(IdentityService::as_str))
     .bind(only)
     .fetch_optional(&mut *conn)
     .await?;
-    Ok(row.map(|(id, service)| (id, message_ir::IdentityService::parse(&service))))
+    Ok(row.map(|(id, service)| (id, IdentityService::parse(&service))))
 }
 
 /// Where an identity goes when it leaves its contact.

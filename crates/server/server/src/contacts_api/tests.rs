@@ -1441,7 +1441,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1490,7 +1490,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: detail.identities[0].address.clone(),
                     address: "sam@example.com".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
             },
@@ -1516,7 +1516,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "sam@example.com".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
             },
         )
@@ -1536,7 +1536,7 @@ async fn add_identity(
     account: i64,
     contact_id: i64,
     raw: &str,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) {
     assert!(
         mutate_committed(
@@ -1585,15 +1585,15 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
 
     for (raw, service, expected) in [
-        ("+15555550138", Some(IdentityService::Whatsapp), "phone"),
-        ("+15555550139", Some(IdentityService::Phone), "phone"),
+        ("+15555550138", Some(ApiIdentityService::Whatsapp), "phone"),
+        ("+15555550139", Some(ApiIdentityService::Phone), "phone"),
         ("+15555550140", None, "phone"),
-        ("tel:+15555550141", Some(IdentityService::Phone), "phone"),
-        ("ada@example.com", Some(IdentityService::Phone), "email"),
+        ("tel:+15555550141", Some(ApiIdentityService::Phone), "phone"),
+        ("ada@example.com", Some(ApiIdentityService::Phone), "email"),
         ("sam@example.com", None, "email"),
         ("sam", None, "other"),
-        ("sam.lee", Some(IdentityService::Phone), "other"),
-        ("sam#1234", Some(IdentityService::Whatsapp), "other"),
+        ("sam.lee", Some(ApiIdentityService::Phone), "other"),
+        ("sam#1234", Some(ApiIdentityService::Whatsapp), "other"),
     ] {
         add_identity(&mut conn, account, contact_id, raw, service).await;
         assert_eq!(
@@ -1622,7 +1622,7 @@ async fn an_email_address_is_not_added_on_whatsapp() {
             name: None,
             add_identity: Some(AddContactIdentityRequest {
                 address: "ann@example.com".into(),
-                service: Some(IdentityService::Whatsapp),
+                service: Some(ApiIdentityService::Whatsapp),
             }),
             update_identity: None,
             remove_identity: None,
@@ -1661,7 +1661,7 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
         account,
         contact_id,
         "123456789012345@lid",
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
 
@@ -1695,7 +1695,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1710,7 +1710,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: "+15555550143".into(),
                     address: "+15555550143".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 remove_identity: None,
             },
@@ -1723,7 +1723,7 @@ async fn naming_a_handle_again_on_its_service_keeps_one_row() {
         account,
         contact_id,
         "+15555550143",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1752,7 +1752,7 @@ async fn contact_on_whatsapp(conn: &mut SqliteConnection, account: i64) -> i64 {
         account,
         contact_id,
         "+15555550100",
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
     contact_id
@@ -1763,7 +1763,7 @@ async fn replace_identity(
     conn: &mut SqliteConnection,
     account: i64,
     contact_id: i64,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) {
     let answer = try_replace_identity(conn, account, contact_id, "+15555550101", service).await;
     assert!(matches!(answer, Ok(true)), "{answer:?}");
@@ -1776,7 +1776,7 @@ async fn try_replace_identity(
     account: i64,
     contact_id: i64,
     address: &str,
-    service: Option<IdentityService>,
+    service: Option<ApiIdentityService>,
 ) -> Result<bool, ContactEditError> {
     mutate_committed(
         conn,
@@ -1847,7 +1847,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         account,
         contact_id,
         "+15555550100",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -1855,7 +1855,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         &mut conn,
         account,
         contact_id,
-        Some(IdentityService::Whatsapp),
+        Some(ApiIdentityService::Whatsapp),
     )
     .await;
 
@@ -1884,7 +1884,7 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
         account,
         contact_id,
         "+15555550102",
-        Some(IdentityService::Phone),
+        Some(ApiIdentityService::Phone),
     )
     .await;
 
@@ -2047,7 +2047,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2070,7 +2070,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -2096,7 +2096,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some(IdentityService::Phone),
+                    service: Some(ApiIdentityService::Phone),
                 }),
             },
         )
