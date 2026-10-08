@@ -87,6 +87,14 @@ impl DataSource {
                         }
                     };
 
+                    // `ios-backup`'s test
+                    // `an_identities_request_decrypts_into_its_scratch_directory_while_it_runs`
+                    // relies on this line staying between decrypting the
+                    // Contacts database and deleting it: it gives the backup
+                    // a device name longer than a pipe holds, so the reader
+                    // stops here until the app reads its output, and lists
+                    // the scratch directory meanwhile. Moved, that test
+                    // times out waiting for the Contacts copy.
                     emit_log(format!(
                         "Decrypted iOS backup: {} (version {})\n",
                         backup.lockdown().device_name,

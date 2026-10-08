@@ -139,7 +139,10 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
 /// The backup's device name is longer than a pipe holds. The reader logs it
 /// after decrypting both databases and before deleting the Contacts copy,
 /// so it stops on that line until this side reads its output, and the test
-/// lists the scratch directory in between.
+/// lists the scratch directory in between. Two things hold that up: the log
+/// line's place in `imessage-reader`'s `DataSource::from`, which says so
+/// there, and `Helper` reading the reader's stdout only inside `next_event`.
+/// When either changes, `wait_for_file` times out naming the Contacts copy.
 #[test]
 fn an_identities_request_decrypts_into_its_scratch_directory_while_it_runs() {
     build_imessage_reader();
@@ -186,7 +189,9 @@ fn wait_for_file(dir: &Path, prefix: &str) -> Vec<String> {
         }
         assert!(
             Instant::now() < deadline,
-            "no {prefix} file in {}: {names:?}",
+            "no {prefix} file in {}: {names:?}. The reader must stop on its \
+             \"Decrypted iOS backup\" log line (imessage-reader/src/data_source.rs) \
+             while the copy is there.",
             dir.display()
         );
         std::thread::sleep(Duration::from_millis(10));
