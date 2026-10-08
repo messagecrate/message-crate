@@ -68,12 +68,15 @@ vi.mock("./messageTags", () => ({
 }));
 
 const STORAGE_KEY = "message-crate-auth";
+const SERVER_ADDRESS_KEY = "message-crate-server-address";
 
-function seedSession() {
+/** A saved login for `serverUrl`, with that address saved as the server address. */
+function seedSession(serverUrl = "http://127.0.0.1:8080") {
+  localStorage.setItem(SERVER_ADDRESS_KEY, serverUrl);
   localStorage.setItem(
     STORAGE_KEY,
     JSON.stringify({
-      serverUrl: "http://127.0.0.1:8080",
+      serverUrl,
       token: "session-token",
       accountId: 7,
       needsOnboarding: false,
@@ -410,6 +413,90 @@ describe("AuthProvider restoring a saved login", () => {
       result.current.retrySavedLogin("http://elsewhere.example:8080");
     });
 
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(get).not.toHaveBeenCalled();
+    expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");
+  });
+});
+
+describe("AuthProvider keeping the server address", () => {
+  const ELSEWHERE = "http://crate.example:8080";
+
+  beforeEach(() => {
+    localStorage.clear();
+    currentToken = null;
+    get.mockReset();
+    post.mockReset();
+    getProfile.mockReset();
+    isTauri.mockReset();
+    isTauri.mockReturnValue(false);
+    post.mockResolvedValue({ ok: true });
+    getProfile.mockResolvedValue({ preferred_name: "Sam", phones: ["+1"], emails: [] });
+  });
+
+  async function renderAuth() {
+    const { AuthProvider, useAuth } = await import("./auth");
+    return renderHook(() => useAuth(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <Providers>
+          <AuthProvider>{children}</AuthProvider>
+        </Providers>
+      ),
+    });
+  }
+
+  /** The server address the app starts with next time. */
+  async function addressAtNextStart() {
+    const { result, unmount } = await renderAuth();
+    const address = result.current.serverUrl;
+    unmount();
+    return address;
+  }
+
+  it("remembers an address chosen before any login", async () => {
+    const { result, unmount } = await renderAuth();
+    act(() => {
+      result.current.setServer(ELSEWHERE);
+    });
+    unmount();
+
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("keeps the address after logout", async () => {
+    seedSession(ELSEWHERE);
+    get.mockResolvedValue({ account_id: 7 });
+    const { result, unmount } = await renderAuth();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+
+    await act(async () => {
+      await result.current.logout();
+    });
+    unmount();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("keeps the address when the server refuses the saved login", async () => {
+    seedSession(ELSEWHERE);
+    const { ApiError } = await import("./api");
+    get.mockRejectedValue(new ApiError(401, "Unauthorized"));
+    const { result, unmount } = await renderAuth();
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    unmount();
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(await addressAtNextStart()).toBe(ELSEWHERE);
+  });
+
+  it("does not restore a login saved for another address", async () => {
+    seedSession(ELSEWHERE);
+    localStorage.setItem(SERVER_ADDRESS_KEY, "http://127.0.0.1:8080");
+
+    const { result } = await renderAuth();
+
+    expect(result.current.serverUrl).toBe("http://127.0.0.1:8080");
     expect(result.current.isAuthenticated).toBe(false);
     expect(get).not.toHaveBeenCalled();
     expect(localStorage.getItem(STORAGE_KEY)).toContain("session-token");

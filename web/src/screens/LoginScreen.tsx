@@ -153,13 +153,10 @@ export default function LoginScreen() {
   // The address the card is after: the one being tried, or the one it is on.
   const target = connection.trying ?? address;
   const [draft, setDraft] = useState(address);
-  // The desktop app opens on this card only for its own Message Crate. An
-  // address the person entered is theirs to confirm at every start, and the
-  // connection screen is also the way back to the app's own.
-  const [settingsOpen, setSettingsOpen] = useState(() => isTauri() && !isOwnAddress(address));
-  // True until that first connection screen is left: the address it shows is
-  // already the saved one, and using it as it stands is a real choice there.
-  const [confirmingAtStart, setConfirmingAtStart] = useState(settingsOpen);
+  // The card opens for the saved address, whichever it is. Change server
+  // address opens the connection screen, which is also the way back to the
+  // desktop app's own.
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // What Test reported for the address currently typed, or null when it has
   // not been tested since the last edit.
   const [tested, setTested] = useState<ServerConnection | null>(null);
@@ -196,8 +193,13 @@ export default function LoginScreen() {
   // so only the newest may write.
   const connectRun = useRef(0);
   const connectAbort = useRef<AbortController | null>(null);
+  // `retryLogin` is for a return to an address, chosen again or back from
+  // being down: a login saved for it is tried once it answers. The connect
+  // on mount leaves a saved login alone, because the startup check already
+  // judged it; retrying there would send a login the server keeps failing
+  // round and round.
   const connect = useCallback(
-    async (url: string) => {
+    async (url: string, retryLogin = false) => {
       const trimmed = url.trim();
       const run = connectRun.current + 1;
       connectRun.current = run;
@@ -220,6 +222,9 @@ export default function LoginScreen() {
         setDraft(trimmed);
         setAuthServer(trimmed);
         dispatch({ type: "answered", address: trimmed });
+        // A login saved for this address was never rejected by it, so it is
+        // checked now: a server that accepts it takes the person straight in.
+        if (retryLogin) retrySavedLogin(trimmed);
         return;
       }
       // The app's own address answers once the app has started its server,
@@ -231,7 +236,7 @@ export default function LoginScreen() {
       if (isTauri() && isOwnAddress(trimmed) && startUnderWay) return;
       dispatch({ type: "noAnswer", address: trimmed });
     },
-    [setAuthServer],
+    [setAuthServer, retrySavedLogin],
   );
 
   // Resolve the server once on mount; Change server address calls `connect` again.
@@ -251,13 +256,8 @@ export default function LoginScreen() {
   useEffect(() => {
     const becameHealthy = previousHealth.current !== "ok" && health === "ok";
     previousHealth.current = health;
-    if (state === "disconnected" && becameHealthy) {
-      void connect(address);
-      // A login saved before the server went quiet was never rejected, so it
-      // is checked now; a server that accepts it takes the person straight in.
-      retrySavedLogin(address);
-    }
-  }, [health, state, address, connect, retrySavedLogin]);
+    if (state === "disconnected" && becameHealthy) void connect(address, true);
+  }, [health, state, address, connect]);
 
   // The moment the app's own server answers, connect, rather than wait for
   // the health probe's next turn.
@@ -320,16 +320,33 @@ export default function LoginScreen() {
   // card back to "connecting", re-probe the same server, and land where it
   // started. Either way there is nothing to apply, so the button is disabled
   // until the field holds a different address.
-  // The one exception is the connection screen the desktop app opens on:
-  // there the saved address is the one being offered.
-  const canApplyDraft = trimmedDraft !== "" && (trimmedDraft !== address || confirmingAtStart);
+  const canApplyDraft = trimmedDraft !== "" && trimmedDraft !== address;
 
   const closeSettings = () => {
     testRun.current += 1;
     setTested(null);
     setSettingsOpen(false);
-    setConfirmingAtStart(false);
   };
+
+  // The way back from a Message Crate elsewhere: the desktop app's own, or
+  // the website's own origin (the empty address). Offered only while the
+  // address in use is another one, since the saved address outlives logout.
+  const own = isTauri()
+    ? {
+        address: DEFAULT_TAURI_SERVER_URL,
+        label: "Use the Message Crate on this computer",
+        onIt: isOwnAddress(address),
+      }
+    : { address: "", label: "Use this website's own Message Crate", onIt: address === "" };
+  const backToOwn = own.onIt
+    ? undefined
+    : {
+        label: own.label,
+        onPress: () => {
+          closeSettings();
+          void connect(own.address, true);
+        },
+      };
 
   return (
     <div className={pageCenter}>
@@ -353,16 +370,9 @@ export default function LoginScreen() {
                 const next = draft.trim();
                 closeSettings();
                 // Confirming the address already connected is no change.
-                if (next !== address) void connect(next);
+                if (next !== address) void connect(next, true);
               }}
-              onUseOwn={
-                isTauri() && !isOwnAddress(address)
-                  ? () => {
-                      closeSettings();
-                      void connect(DEFAULT_TAURI_SERVER_URL);
-                    }
-                  : undefined
-              }
+              backToOwn={backToOwn}
             />
           ) : (
             <>
