@@ -24,7 +24,7 @@ pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://g
 `wtsexporter --help` prints the program's options once it is installed.
 
 The desktop app runs `wtsexporter` only from its Tools Directory, which [**Settings → System**](/docs/user/features/settings/system/#media) shows, and never from `PATH`.
-After the install, a link in the Tools Directory points it at the `pipx` install:
+After the install, a link in the Tools Directory points to the `pipx` install of `wtsexporter`:
 
 ```bash title="Linux and macOS"
 mkdir -p ~/message-crate/tools
