@@ -59,9 +59,10 @@ fn fail(message: impl ToString) -> ! {
 /// directory a backup domain request decrypts into. A request that decrypts
 /// nothing names none. See [`backup::keep_temporary_files_in`].
 ///
-/// Safe to call only from `main` before anything starts a thread, which is
-/// the one place it is called. It is a function of its own, not a call in
-/// each arm of `main`, so a mutation test can remove it and the process
+/// It is private to this file, and its one caller is `main`, which calls it
+/// first, before anything has started a thread. That invariant is what the
+/// `unsafe` block below rests on. It is a function of its own, not a call
+/// in each arm of `main`, so a mutation test can remove it and the process
 /// test in `tests/temporary_files.rs` sees the difference.
 fn keep_temporary_files_for(request: &Request) {
     let dir = match request {
@@ -70,7 +71,8 @@ fn keep_temporary_files_for(request: &Request) {
         Request::BackupDomain(request) => &request.out_dir,
         Request::Attachment { .. } | Request::DecryptDomain => return,
     };
-    // SAFETY: `main` calls this before anything has started a thread.
+    // SAFETY: this function's one caller, `main`, calls it first, while the
+    // process has one thread.
     unsafe { backup::keep_temporary_files_in(dir) };
 }
 
