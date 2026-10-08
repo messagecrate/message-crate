@@ -185,10 +185,14 @@ mod tests {
     /// The balloon id Messages stores on a handwritten message.
     const HANDWRITING_BALLOON: &str = "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.Handwriting.HandwritingProvider";
 
+    /// The ROWID of the row [`insert_hello_row`] adds, past the fixture's
+    /// last message ROWID (18).
+    const HELLO_ROWID: i64 = 100;
+
     /// Add a message row to the fixture's first chat that carries the
     /// "hello" handwriting payload under the given balloon id, and return
     /// it as the reader loads it.
-    fn stage_hello_payload(
+    fn insert_hello_row(
         fixture: &FixtureDb,
         session: &MailSession,
         guid: &str,
@@ -198,16 +202,25 @@ mod tests {
         db.execute(
             "INSERT INTO message (ROWID, guid, text, service, handle_id, date, is_from_me,
                  item_type, associated_message_type, balloon_bundle_id, payload_data)
-             VALUES (100, ?1, NULL, 'iMessage', 1, 1, 0, 0, 0, ?2, ?3)",
-            rusqlite::params![guid, balloon_bundle_id, HELLO_PAYLOAD],
+             VALUES (?1, ?2, NULL, 'iMessage', 1, ?3, 0, 0, 0, ?4, ?5)",
+            rusqlite::params![
+                HELLO_ROWID,
+                guid,
+                chat_db_fixture::apple_nanos(600_001_000),
+                balloon_bundle_id,
+                HELLO_PAYLOAD
+            ],
         )
         .expect("insert the message row");
-        db.execute("INSERT INTO chat_message_join VALUES (1, 100, 1)", [])
-            .expect("join the message to a chat");
+        db.execute(
+            "INSERT INTO chat_message_join VALUES (1, ?1, 1)",
+            [HELLO_ROWID],
+        )
+        .expect("join the message to a chat");
         FixtureDb::messages(session)
             .into_iter()
             .find(|message| message.guid == guid)
-            .expect("the staged row")
+            .expect("the inserted row")
     }
 
     /// A handwritten message has no attachment rows, so its one attachment
@@ -216,7 +229,7 @@ mod tests {
     fn a_handwritten_message_is_one_svg_attachment() {
         let fixture = FixtureDb::write();
         let session = fixture.session();
-        let message = stage_hello_payload(&fixture, &session, "hw-guid", Some(HANDWRITING_BALLOON));
+        let message = insert_hello_row(&fixture, &session, "hw-guid", Some(HANDWRITING_BALLOON));
 
         let (_parts, records) = collect_parts_and_attachments(&session, &message).unwrap();
         assert_eq!(records.len(), 1, "one attachment: {records:?}");
@@ -233,15 +246,25 @@ mod tests {
     }
 
     /// The same payload under another balloon id is not handwriting, so no
-    /// SVG is made from it.
+    /// SVG is made from it. One id is a built-in balloon provider; the other
+    /// is another app's extension under the same
+    /// `MSMessageExtensionBalloonPlugin` prefix as handwriting.
     #[test]
     fn a_payload_that_is_not_handwriting_renders_no_svg() {
-        let fixture = FixtureDb::write();
-        let session = fixture.session();
-        let message = stage_hello_payload(&fixture, &session, "not-hw-guid", None);
+        for balloon in [
+            "com.apple.messages.URLBalloonProvider",
+            "com.apple.messages.MSMessageExtensionBalloonPlugin:0000000000:com.apple.messages.Polls",
+        ] {
+            let fixture = FixtureDb::write();
+            let session = fixture.session();
+            let message = insert_hello_row(&fixture, &session, "not-hw-guid", Some(balloon));
 
-        assert!(try_handwriting_svg(&session, &message).is_none());
-        let (_parts, records) = collect_parts_and_attachments(&session, &message).unwrap();
-        assert!(records.is_empty(), "no attachments: {records:?}");
+            assert!(
+                try_handwriting_svg(&session, &message).is_none(),
+                "{balloon} is not handwriting"
+            );
+            let (_parts, records) = collect_parts_and_attachments(&session, &message).unwrap();
+            assert!(records.is_empty(), "{balloon}: no attachments: {records:?}");
+        }
     }
 }
