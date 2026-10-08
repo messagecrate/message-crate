@@ -632,6 +632,32 @@ pub async fn take_staged_copy_from_later_backup(
     Ok(())
 }
 
+/// Give the staged message `staged`, staged from a file without a backup
+/// date, the date `backup_taken_at` of another copy of it from the same
+/// import. The two dates cannot decide which copy is later ([`later_backup`]),
+/// but the message keeps the one date it has whichever file was read first,
+/// so a later import compares its backup with that date in either file
+/// order.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn add_staged_copy_backup_date(
+    conn: &mut SqliteConnection,
+    staged: i64,
+    backup_taken_at: &str,
+) -> Result<()> {
+    sqlx::query(
+        "UPDATE staging_messages SET backup_taken_at = $1 \
+         WHERE id = $2 AND backup_taken_at IS NULL",
+    )
+    .bind(backup_taken_at)
+    .bind(staged)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Give the staged message `staged` the mark `deletion` of another copy of
 /// it from the same import, when the two backups' dates cannot decide
 /// ([`later_backup`]): a copy that carries a mark adds it, and one with

@@ -440,6 +440,55 @@ async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
     }
 }
 
+/// One import holds a dated file and an undated one: the staged message
+/// keeps the dated file's date in either file order, so a later import
+/// compares against it. Import 1 holds backup A, dated earlier with no
+/// mark, and a file without a date that marks the message Unsent, so the
+/// mark adds. Import 2 is backup C, made later, with no mark: it clears
+/// the mark whichever file import 1 read first.
+#[tokio::test]
+async fn one_import_of_a_dated_and_an_undated_file_keeps_the_date_in_either_order() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "back again",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let dated = file("a-earlier.jsonl", Some(EARLIER_BACKUP), None);
+    let undated = file("b-undated.jsonl", None, Some(Deletion::Unsent));
+    let later = file("c-later.jsonl", Some(LATER_BACKUP), None);
+    for (name, first) in [
+        ("dated-first.db", [dated.clone(), undated.clone()]),
+        ("undated-first.db", [undated.clone(), dated.clone()]),
+    ] {
+        let db = tmp.path().join(name);
+        import(&db, &assets, tmp.path(), &first).await;
+        let held_first = held(&db).await;
+        assert_eq!(held_first.deletion.as_deref(), Some("unsent"), "{name}");
+        assert_eq!(
+            held_first.backup_taken_at.as_deref(),
+            Some(EARLIER_BACKUP_AT),
+            "{name}"
+        );
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&later)).await;
+        let held_after = held(&db).await;
+        assert_eq!(held_after.deletion, None, "{name}");
+        assert_eq!(
+            held_after.backup_taken_at.as_deref(),
+            Some(LATER_BACKUP_AT),
+            "{name}"
+        );
+    }
+}
+
 /// Two backups in one import give the message the later backup's text, and
 /// so the later backup's duplicate flag: with another source holding the
 /// later text, the dedupe hides one of the two, in either file order, and
