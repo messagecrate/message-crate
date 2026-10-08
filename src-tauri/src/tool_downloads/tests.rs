@@ -474,7 +474,7 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
         };
         assert_eq!(
             reason,
-            "ffmpeg was downloaded but doesn't run on this computer. \
+            "ffmpeg in the Tools Directory doesn't run on this computer. \
              Install it with your package manager instead; the app uses the copy on PATH."
         );
     }

@@ -395,13 +395,13 @@ impl fmt::Display for DownloadError {
             }
             Self::DoesNotRun(program @ (Program::Ffmpeg | Program::Ffprobe)) => write!(
                 f,
-                "{program} was downloaded but doesn't run on this computer. \
+                "{program} in the Tools Directory doesn't run on this computer. \
                  Install it with your package manager instead; the app uses the copy on PATH.",
                 program = program.name()
             ),
             Self::DoesNotRun(Program::Wtsexporter) => write!(
                 f,
-                "wtsexporter was downloaded but doesn't run on this computer. \
+                "wtsexporter in the Tools Directory doesn't run on this computer. \
                  See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app."
             ),
         }

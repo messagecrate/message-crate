@@ -71,7 +71,7 @@ One line per program reports the result:
   For wtsexporter, the reason is that it has no permission to run.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
-- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a program that was downloaded but doesn't run on this computer.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a program in the Tools Directory that doesn't run on this computer.
   A failed download is tried again the next time the app starts.
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
