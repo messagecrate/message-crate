@@ -13,9 +13,8 @@ release and one checksum, and a file that doesn't match is refused.
 wtsexporter is always the app's own copy. ffmpeg is not downloaded when it is
 on `PATH`.
 
-Built in #1053's third step. The app records the release and checksum of
-each file it wrote in `manifest.json` in the Tools Directory, so a start
-needs no file read again to know a program is the pinned one.
+Built in #2001. The app records beside the programs which release and
+checksum each file it wrote came from.
 
 ## Why
 
@@ -67,9 +66,7 @@ would be a second way to say the same thing.
 On a new computer, the first WhatsApp import and the first Media Stage need
 an internet connection, and both depend on two GitHub projects keeping their
 release files in place: `eugeneware/ffmpeg-static` and
-`messagecrate/WhatsApp-Chat-Exporter`, Message Crate's fork of the WhatsApp
-Chat Exporter. The fork is the source because the original's JSON does not
-say who sent a group message. When a download fails the app says so only
+`KnugiHK/WhatsApp-Chat-Exporter`. When a download fails the app says so only
 where the program is needed, and the user guide's troubleshooting section
 tells a person how to install ffmpeg with a package manager or put either
 program in the Tools Directory by hand. Convert needs no connection. It
@@ -89,3 +86,14 @@ release and checksum for every platform, in one pull request.
 
 ffmpeg from `PATH` is whatever version the person installed, so the app can
 run a version no release was tested with.
+
+## Amended 2026-10-08: wtsexporter comes from Message Crate's fork
+
+The text above is kept as it was decided. Since 2026-10-02, the wtsexporter
+the app downloads is a pinned release of Message Crate's fork,
+`messagecrate/WhatsApp-Chat-Exporter`, and not of
+`KnugiHK/WhatsApp-Chat-Exporter`. The fork adds to its JSON who sent each
+message and who is in each group, because the original's JSON does not say
+who sent a group message and the import needs to know. The fork's changes stay
+in the fork, and the fork is archived once the original has everything
+Message Crate needs (#1053). Nothing else in this decision changed.

@@ -539,8 +539,8 @@ app owns its contents and replaces them when a release needs a newer
 version. ffmpeg and ffprobe are looked for on `PATH` and then here,
 wtsexporter only here, by the app and by the server it starts. The app
 downloads what is missing here at every start, each file pinned to one
-release and checksum, and records what it wrote in `manifest.json` beside
-the programs.
+release and checksum, and keeps a record beside the programs of what it
+wrote.
 _Avoid_: Tools Folder, Bin Directory, ffmpeg directory
 
 **Apple Messages Reader**:
