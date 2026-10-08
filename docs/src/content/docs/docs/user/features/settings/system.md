@@ -55,9 +55,7 @@ Login and browsing don't wait for it.
 The app carries the SHA-256 checksum of every file it downloads, and refuses and deletes a file that doesn't match.
 
 The Tools Directory belongs to the app, and one rule holds for all three programs.
-A program there is kept when it is the file the app downloaded from the pinned release, unchanged since, and it runs.
-Anything else there under a program's name is replaced by the pinned file, whoever put it there: a file from an older release, a copy put there by hand, or the app's own file when it doesn't run.
-A copy put there by hand whose checksum is the pinned file's is kept, because it is the pinned file.
+A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
 The old file is replaced only after the new one has arrived and passed its checksum, so with no internet, or after a failed download, the old one stays in use.
 
 **Tools directory** shows the full path of the Tools Directory, `tools` in the Message Crate Directory, such as `/home/sam/message-crate/tools` on Linux.
@@ -73,8 +71,10 @@ One line per program reports the result:
   For wtsexporter, the reason is that it has no permission to run.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
-- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a file that was downloaded but doesn't run.
-  The download is tried again the next time the app starts.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, or a program that was downloaded but doesn't run on this computer.
+  A failed download is tried again the next time the app starts.
+  A program that doesn't run is not downloaded again, because the download would be the same file.
+  For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.
   While an older copy is in place, the line shows that copy as found instead, because the old copy is still the one used.
 
 On macOS, an app opened from the Dock or Finder doesn't see the `PATH` a terminal sets, so ffmpeg and ffprobe installed with Homebrew are not found, and the app downloads its own into the Tools Directory.
