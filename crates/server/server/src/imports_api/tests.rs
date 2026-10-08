@@ -3312,7 +3312,7 @@ async fn a_replace_run_deletes_only_its_own_sources_old_messages() {
 
 /// The import body is JSON Lines and nothing else. `multipart/form-data`
 /// used to be accepted (a `jsonl` field plus `file` parts) but nothing
-/// sent it: message-crate-push posts JSON Lines and uploads attachments through
+/// sent it: message-crate-import posts JSON Lines and uploads attachments through
 /// `/v1/assets`. The wrong media type is a 415, not a 400: the request is
 /// well formed, it is simply not something this route reads.
 #[tokio::test]

@@ -1,7 +1,7 @@
-//! Blocking HTTP client helpers and retry classification for the push and export
+//! Blocking HTTP client helpers and retry classification for the import and export
 //! crates.
 //!
-//! `message-crate-push` and `message-crate-export` both talk to the server through one
+//! `message-crate-import` and `message-crate-export` both talk to the server through one
 //! [`HttpSession`] (built on [`build_client`]), log in through
 //! [`auth_check`], share [`truncate`] for error snippets, and classify
 //! retryable failures through `classify_retry` / `with_retries`.

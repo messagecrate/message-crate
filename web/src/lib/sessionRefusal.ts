@@ -1,11 +1,11 @@
 /**
  * A session the server refused to an Import Run, as the login sees it.
  *
- * The run's server calls do not go through TanStack Query: the push sends
+ * The run's server calls do not go through TanStack Query: the Upload sends
  * its own requests from the desktop side, and the run's own calls go
  * straight through `serverApi.ts`. So the query
  * client's `onUnauthorized` never sees their refusals, and the session has to
- * end here instead, as a query the server refuses ends it: for the push
+ * end here instead, as a query the server refuses ends it: for the Upload
  * (#1491), and for the run's own calls (#1677).
  *
  * `auth.tsx` registers how to end the session here, and the run in

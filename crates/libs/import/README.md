@@ -1,4 +1,4 @@
-# message-crate-push
+# message-crate-import
 
 Import a Message Crate JSON Lines export directory into a running server.
 
@@ -7,7 +7,7 @@ The desktop app **Import** screen uses this crate as a library. Create an API to
 ## Build and test
 
 ```bash
-cargo test -p message-crate-push
+cargo test -p message-crate-import
 ```
 
 Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).

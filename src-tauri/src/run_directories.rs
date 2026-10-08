@@ -777,7 +777,7 @@ mod tests {
     fn a_file_inside_a_made_directory_is_openable_and_one_beside_it_is_not() {
         let scratch = Scratch::new();
         let run = scratch.directories.create("whatsapp", NOW).unwrap();
-        let log = run.join("message-crate-push.log");
+        let log = run.join("message-crate-import.log");
         let beside = run.parent().unwrap().join("notes.txt");
         fs::write(&beside, "").unwrap();
 

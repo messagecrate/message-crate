@@ -101,6 +101,11 @@ released versions carry their date on the heading.
   again. That record now has a new name; one with the old name is ignored and
   can be deleted, and attachments already in the directory are still not
   fetched again.
+- 2026-10-07: **An Upload's report says Import.** The report an Upload
+  writes beside its run, and the name the server keeps for the program that
+  ran each Import Run the desktop app starts, now say import where they said
+  push, the word Message Crate no longer uses for an Import Run. A report
+  with the old name is not read and can be deleted (#1926).
 
 ### Fixes
 

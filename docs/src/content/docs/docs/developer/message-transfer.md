@@ -11,7 +11,7 @@ A phone backup is a copy of chats sitting on a computer. The server is a separat
 
 1. A converter reads the backup. In the desktop app this runs as the first step of **Import**.
 2. The converter writes a directory of chat files, plus photos and other attachments in an `attachments/` directory.
-3. Import loads that directory into a server that is already running. In the desktop app this is the **Import** screen, which uses the `message-crate-push` library.
+3. Import loads that directory into a server that is already running. In the desktop app this is the **Import** screen, which uses the `message-crate-import` library.
 
 ```mermaid
 flowchart LR
@@ -74,6 +74,6 @@ These do not read a phone backup. They load or save the chat-file directory, or 
 
 | Library | What it does |
 |---------|----------------|
-| `message-crate-push` | Loads a chat-file directory into a running server. Used by **Import**. |
+| `message-crate-import` | Loads a chat-file directory into a running server. Used by **Import**. |
 | `message-crate-export` | Writes a chat-file directory from a running server. Used by **Export**. |
 | `message-reexport` | Turns an existing Message Crate export directory into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |

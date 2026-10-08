@@ -30,7 +30,7 @@ pub const MAX_PAGE_LIMIT: usize = 500;
 pub const TOOL_NAME: &str = "message-crate-export";
 /// Default number of workers that fetch Assets in parallel.
 pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
-/// Extra tries for transient HTTP failures, matching the message-crate-push default.
+/// Extra tries for transient HTTP failures, matching the message-crate-import default.
 const MAX_RETRIES: u32 = 3;
 
 /// Settings for one Export Run (output directory, URL, search, flags).

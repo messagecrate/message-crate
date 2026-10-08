@@ -11,7 +11,7 @@ Input structure and attribute meanings: [input format](/docs/developer/formats/s
 
 Source XML → `ConversationDocument` → packaging.
 
-The desktop app's Import screen always writes JSON Lines, one file per conversation, because Import and Push read conversation files in that form. Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
+The desktop app's Import screen always writes JSON Lines, one file per conversation, because Import reads conversation files in that form. Every other format (JSON, CSV, EML, MBOX, SMS Backup & Restore XML) is a rewrite of that output through [Convert](/docs/developer/formats/convert/), which Export and **Settings → Convert** run.
 
 In CSV form: one file per conversation. Decoded MMS media under `attachments/` when copying/embedding. Filenames: 1:1 → `+E164.csv`; untitled groups → `group_+A_+B_….csv`. The XML form is a single SyncTech `smses.xml`.
 
