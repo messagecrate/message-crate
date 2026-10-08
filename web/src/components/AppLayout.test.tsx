@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
@@ -8,6 +8,7 @@ import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
 import AppLayout from "./AppLayout";
+import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
 
 // The lists, the header and the drawers fetch their own data; this file is
 // about what the layout does to the URL, so they stand in as nothing, except
@@ -385,5 +386,70 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     expect(screen.getByTestId("location").textContent).toBe(
       "/messages/6?q=ada&view=messages&at=77",
     );
+  });
+});
+
+describe("AppLayout in a phone-width window (#1722)", () => {
+  const wideWindow = window.innerWidth;
+
+  function setWindowWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+
+  afterEach(() => {
+    setWindowWidth(wideWindow);
+    localStorage.clear();
+  });
+
+  function navigationPanel(): HTMLElement {
+    return screen.getByRole("separator", { name: "Resize navigation panel" })
+      .parentElement as HTMLElement;
+  }
+
+  function columnRow(container: HTMLElement): HTMLElement {
+    return container.querySelector("[data-column-row]") as HTMLElement;
+  }
+
+  it.each(["/", "/contacts", "/trash"])(
+    "keeps every column's width on %s and scrolls the row sideways",
+    (entry) => {
+      localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+      setWindowWidth(390);
+      const { container } = renderLayout(entry);
+
+      // The navigation panel stops at its default width, the list and the
+      // right pane at their minimums, and the row is as wide as all three.
+      expect(navigationPanel().style.width).toBe("220px");
+      expect(container.querySelector("[data-list-column]")).toHaveStyle({ minWidth: "220px" });
+      expect(container.querySelector("[data-right-pane]")).toHaveStyle({ minWidth: "320px" });
+      const row = columnRow(container);
+      expect(row).toHaveStyle({ minWidth: "762px" });
+      expect(row.parentElement?.className).toContain("overflow-x-auto");
+    },
+  );
+
+  it("keeps the same row for an open conversation", () => {
+    setWindowWidth(390);
+    const { container } = renderLayout("/messages/6");
+    expect(navigationPanel().style.width).toBe("220px");
+    expect(columnRow(container)).toHaveStyle({ minWidth: "762px" });
+  });
+
+  it("leaves Settings to fit the window, with the panel at half its width", () => {
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+    setWindowWidth(390);
+    const { container } = renderLayout("/settings");
+    expect(navigationPanel().style.width).toBe("195px");
+    expect(columnRow(container).style.minWidth).toBe("");
+  });
+
+  it("changes nothing in a 1280 px window", () => {
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+    setWindowWidth(1280);
+    renderLayout("/");
+    expect(navigationPanel().style.width).toBe("300px");
   });
 });

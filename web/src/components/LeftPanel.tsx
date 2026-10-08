@@ -115,6 +115,7 @@ function browseLinkClass(active: boolean): string {
 
 export default function LeftPanel({
   browseQuery,
+  windowFloor,
 }: {
   /**
    * The query the conversation list is showing right now, or "" when the
@@ -123,6 +124,12 @@ export default function LeftPanel({
    * is one click and the file holds the conversations that list showed.
    */
   browseQuery: string;
+  /**
+   * The narrowest a narrow window makes the panel; `LEFT_PANEL_MIN_WIDTH`
+   * when not given. Beside a list the page scrolls sideways instead of
+   * squeezing the panel below its default width (#1722).
+   */
+  windowFloor?: number;
 }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -133,7 +140,7 @@ export default function LeftPanel({
   const onDraggingChange = useReportColumnResizing();
   // A narrow window caps the panel below its stored width, which comes back
   // when the window is wide enough again.
-  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth());
+  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth(), windowFloor);
   const { width, dragging, handleHover, handleProps } = useColumnResize({
     storageKey: LEFT_PANEL_STORAGE_KEY,
     defaultWidth: LEFT_PANEL_DEFAULT_WIDTH,

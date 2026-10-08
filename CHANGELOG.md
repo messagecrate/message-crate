@@ -114,6 +114,13 @@ released versions carry their date on the heading.
   gives them, without the scheme. Connecting, Disconnected and Not tested name
   the server the same way, and **Connection Status** on the **Server Address**
   screen names the address in the field (#1973).
+- 2026-10-07: **Conversations, Contacts and Trash keep their list in a
+  narrow window.** In a window 390 px wide the list column shrank to 1 px and
+  the right pane was cut off at the window's edge. The navigation panel now
+  stops at its default width of 220 px beside a list, the list at 220 px and
+  the right pane at 320 px, and a window narrower than the three scrolls the
+  page sideways to reach the right pane. Settings, Import and Export still fit
+  the window. Phone layouts come later (#1722).
 
 #### Desktop app
 
