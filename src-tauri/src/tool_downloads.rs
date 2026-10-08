@@ -52,6 +52,43 @@ pub const GITHUB: &str = "https://github.com";
 /// The record of the files the app wrote, in the Tools Directory.
 pub const MANIFEST_FILE: &str = "manifest.json";
 
+/// The start of the temporary file the record is written to.
+const MANIFEST_TEMP_PREFIX: &str = ".manifest-";
+
+/// The steps a program's download writes a temporary file for: the file as
+/// it arrives, and the program it unpacks to.
+const TEMP_STEPS: [&str; 2] = ["download", "unpack"];
+
+/// The start of the temporary file `program`'s download writes at `step`.
+fn temp_prefix(program: Program, step: &str) -> String {
+    format!(".{}.{step}-", program.name())
+}
+
+/// Delete the temporary files an interrupted check left in `dir`. A
+/// temporary file is deleted when the check that wrote it ends, but an app
+/// closed or killed mid-download runs no clean-up, and each one left is up
+/// to about 110 MB.
+fn delete_leftovers(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefixes: Vec<String> = [Program::Ffmpeg, Program::Ffprobe, Program::Wtsexporter]
+        .into_iter()
+        .flat_map(|program| TEMP_STEPS.map(|step| temp_prefix(program, step)))
+        .chain([MANIFEST_TEMP_PREFIX.to_string()])
+        .collect();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if prefixes
+            .iter()
+            .any(|prefix| name.starts_with(prefix.as_str()))
+        {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
 /// A program the app keeps in the Tools Directory.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -204,7 +241,7 @@ fn read_manifest(dir: &Path) -> Manifest {
 /// half-written record is never read.
 fn write_manifest(dir: &Path, manifest: &Manifest) -> io::Result<()> {
     let mut file = tempfile::Builder::new()
-        .prefix(".manifest-")
+        .prefix(MANIFEST_TEMP_PREFIX)
         .tempfile_in(dir)?;
     serde_json::to_writer_pretty(&mut file, manifest)?;
     file.as_file().sync_all()?;
@@ -397,9 +434,8 @@ fn download(
         return Err(DownloadError::Http(status.as_u16()));
     }
     let total = response.content_length();
-    let name = pinned.program.name();
     let mut arrived = tempfile::Builder::new()
-        .prefix(&format!(".{name}.download-"))
+        .prefix(&temp_prefix(pinned.program, "download"))
         .tempfile_in(dir)
         .map_err(write_error)?;
     let mut hasher = Sha256::new();
@@ -427,7 +463,7 @@ fn download(
     }
     let mut program = if pinned.gzip {
         let mut unpacked = tempfile::Builder::new()
-            .prefix(&format!(".{name}.unpack-"))
+            .prefix(&temp_prefix(pinned.program, "unpack"))
             .tempfile_in(dir)
             .map_err(write_error)?;
         let packed = arrived.as_file_mut();
@@ -514,6 +550,7 @@ impl ToolDownloads {
 /// passed over when both are on `PATH`. Each download's progress and
 /// failure go to `downloads`, and each file written goes into the record.
 pub fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
+    delete_leftovers(dir);
     let ffmpeg_on_path = media::ffmpeg_on_path();
     let mut manifest = read_manifest(dir);
     let mut wanted = Vec::new();

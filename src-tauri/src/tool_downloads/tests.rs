@@ -478,6 +478,35 @@ fn a_program_put_there_by_hand_is_kept_only_when_it_is_the_pinned_file() {
     assert_eq!(std::fs::read(&target).unwrap(), b"pinned");
 }
 
+/// The temporary files an interrupted check left are deleted at the next
+/// start, and nothing else in the Tools Directory is.
+#[test]
+fn an_interrupted_downloads_leftovers_are_deleted() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    for name in [
+        ".ffmpeg.download-a1b2c3",
+        ".ffprobe.unpack-d4e5f6",
+        ".wtsexporter.download-g7h8i9",
+        ".manifest-j0k1l2",
+        "notes.txt",
+    ] {
+        std::fs::write(tools.path().join(name), b"left").unwrap();
+    }
+
+    download_missing(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[],
+        &ToolDownloads::default(),
+    );
+
+    assert_eq!(
+        other_files(tools.path(), &[]),
+        vec!["notes.txt".to_string()]
+    );
+}
+
 /// With no network the check fails quietly, saying so, and leaves nothing.
 #[test]
 fn no_network_is_a_failed_download_that_says_so() {
