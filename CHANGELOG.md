@@ -194,10 +194,11 @@ released versions carry their date on the heading.
   until it was opened. Searching `imprudent delighted` on the Demo Account
   listed "You have delighted us long enough." with "delighted" in bold and
   nothing for "imprudent". The row now keeps the final text and adds a muted
-  line, "Earlier version: So imprudent a match on both sides!", quoting the
-  newest version that matched, with the searched words in bold. When matched
-  versions hold different searched words, the row adds one such line per
-  version until each of those words shows once (#1785).
+  line for each earlier version it quotes, here "Earlier version: So
+  imprudent a match on both sides!", with the searched words in bold. The
+  row quotes the newest matched earlier version, and, for each searched word
+  that neither that version nor the final text shows, the newest matched
+  version that holds the word (#1785).
 
 - 2026-10-07: **A contact's and an identity's counts include orphaned
   messages.** Since orphaned messages got conversations of their own, the

@@ -58,12 +58,14 @@ function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
 }
 
 /**
- * The earlier versions a search found `message` by that its row quotes, each
- * with the searched words its line is cut around: the newest matched
- * version, cut around all of them, and, for each searched word neither it
- * nor `shownText` (the final text as the row shows it) shows, the newest
- * matched version that holds the word, cut around the words it is quoted for. None for a hit its final text matched, which the server
- * marks neither way (`docs/architecture/search.md`).
+ * The earlier versions `message`'s row quotes, each with the searched words
+ * its line is cut around. The row quotes the newest matched earlier version,
+ * and, for each searched word that neither that version nor the final text
+ * shows, the newest matched version that holds the word. The first is cut
+ * around every searched word, each other around the words it is quoted for.
+ * `shownText` is the final text as the row shows it. None for a hit its
+ * final text matched, which the server marks neither way
+ * (`docs/architecture/search.md`).
  */
 function versionsToQuote(
   message: Message,
@@ -94,11 +96,12 @@ function versionsToQuote(
  * <source>" line under it; an Unsent one reads "Unsent" in place of its text
  * and attachments, because its sender took all of it back.
  *
- * A message the search found only by an earlier version keeps its final text,
- * with a muted "Earlier version: …" line under it quoting the newest version
- * that matched, cut and in bold the same way, so the row shows why it is a
- * hit (#1785). When matched versions hold different searched words, a line
- * follows for each further version needed to show every one of those words.
+ * A message the search found by an earlier version keeps its final text,
+ * with a muted "Earlier version: …" line under it for each version it
+ * quotes, cut and in bold the same way, so the row shows why it is a hit
+ * (#1785). The row quotes the newest matched earlier version, and, for each
+ * searched word that neither that version nor the final text shows, the
+ * newest matched version that holds the word.
  */
 export default function MessageSearchRow({
   message,

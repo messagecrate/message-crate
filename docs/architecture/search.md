@@ -260,14 +260,18 @@ than a column of `messages_fts`: one index row per version is what lets the
 answer name the version, and a word typed in an earlier version and in the
 final text is told apart by asking the final text's index alone (#1143,
 #1644). The web app opens such a hit with the matching version shown
-(#1648). Its row in the Messages list keeps the final text and quotes,
-under it, the newest version marked `matched`, so the row shows the word
-that found it (#1785). Within one part the later version in the list is
-the newer, because the list is oldest first within each part. Across parts
-the later `edited_at` is the newer when both versions carry one, and the
-later in the list otherwise. When matched versions hold different words of
-the query, the row adds the newest matched version holding a word not yet
-quoted, until every word some matched version holds shows once.
+(#1648). Its row in the Messages list keeps the final text and adds a
+muted "Earlier version:" line under it for each version it quotes, so the
+row shows the words that found it (#1785). The row quotes the newest
+matched earlier version, and, for each searched word that neither that
+version nor the final text shows, the newest matched version that holds
+the word. The newest version is the one with the latest time. A version's
+time is its `edited_at`. A version without one takes the time of the
+nearest version before it in the same part of the message's
+`earlier_versions` that has one, and a version with none before it is
+older than every dated version. Of two versions with the same time, the
+later in `earlier_versions` is the newer, because the server lists each
+part's versions oldest first.
 
 **A message's earlier versions are the ones it shows, and a duplicate's
 count for the copy shown.** A message shows its own earlier versions, or,
