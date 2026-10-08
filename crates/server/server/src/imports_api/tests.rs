@@ -5714,7 +5714,6 @@ async fn import_notes_to_yourself(
     fixture: &crate::test_support::TestFixture,
     token: &str,
 ) -> i64 {
-    let path = batches_path(state, token, "whatsapp").await;
     let message = |guid: &str, sender: Option<&str>| {
         let message = message_line(guid, "Note to self")
             .at(1_400_773_261_000)
@@ -5742,6 +5741,19 @@ async fn import_notes_to_yourself(
             .line(),
     ]
     .concat();
+    import_whatsapp(state, token, body).await;
+    sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE h.normalized = '+15555550199'",
+    )
+    .fetch_one(&mut *fixture.conn().await)
+    .await
+    .unwrap()
+}
+
+/// Import `body`, a WhatsApp conversation file, in one completed Import Run.
+async fn import_whatsapp(state: &crate::server::AppState, token: &str, body: String) {
+    let path = batches_path(state, token, "whatsapp").await;
     let (status, text) =
         crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
     assert!(status.is_success(), "{status} {text}");
@@ -5752,13 +5764,79 @@ async fn import_notes_to_yourself(
         serde_json::json!({ "status": "completed" }),
     )
     .await;
+}
+
+/// Link (`field` `identities`) or remove (`remove_identities`) the holder's
+/// number `+15555550199` on WhatsApp as an identity of the `importer`
+/// account.
+async fn change_holder_identity(
+    state: &crate::server::AppState,
+    fixture: &crate::test_support::TestFixture,
+    token: &str,
+    field: &str,
+) {
+    let account_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'importer'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    let _: serde_json::Value = patch_json(
+        state,
+        &format!("/v1/accounts/{account_id}"),
+        token,
+        serde_json::json!({ field: [{ "address": "+15555550199", "service": "whatsapp" }] }),
+    )
+    .await;
+}
+
+/// The contact on the holder's number `+15555550199`, if any.
+async fn holder_contact(fixture: &crate::test_support::TestFixture) -> Option<i64> {
     sqlx::query_scalar(
-        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+        "SELECT ch.contact_id FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id
          WHERE h.normalized = '+15555550199'",
     )
-    .fetch_one(&mut *fixture.conn().await)
+    .fetch_optional(&mut *fixture.conn().await)
     .await
     .unwrap()
+}
+
+/// The participants of `conversation_id` as (number, name the backup or the
+/// contact gave), by number.
+async fn participants_of(
+    fixture: &crate::test_support::TestFixture,
+    conversation_id: i64,
+) -> Vec<(String, Option<String>)> {
+    sqlx::query_as(
+        "SELECT h.normalized, p.name_alias FROM participants p
+         JOIN handles h ON h.id = p.handle_id
+         WHERE p.conversation_id = $1
+         ORDER BY h.normalized",
+    )
+    .bind(conversation_id)
+    .fetch_all(&mut *fixture.conn().await)
+    .await
+    .unwrap()
+}
+
+/// A one-to-one conversation at the holder's number `+15555550199`, its
+/// header listing the holder as `holder_name` and, when given, `other` too,
+/// with one received note.
+fn notes_to_yourself_file(holder_name: Option<&str>, other: Option<&str>) -> String {
+    let mut header =
+        conversation_header("whatsapp", "+15555550199").participant("+15555550199", holder_name);
+    if let Some(other) = other {
+        header = header.participant(other, None);
+    }
+    [
+        header.line(),
+        message_line("note-received", "Note to self")
+            .at(1_400_773_261_000)
+            .service(IrService::Whatsapp)
+            .kind(IrMessageKind::Unknown)
+            .sender("+15555550199")
+            .line(),
+    ]
+    .concat()
 }
 
 /// What the account holds about the holder's number: the participants rows
@@ -5893,6 +5971,171 @@ async fn removing_an_identity_after_an_import_gives_its_conversations_their_part
     let unknown: serde_json::Value =
         get_json(&state, "/v1/contacts?q=group%3Aunknown", &token).await;
     assert!(unknown.to_string().contains("+15555550199"), "{unknown}");
+}
+
+/// The id of the one conversation at `chat`.
+async fn conversation_at(fixture: &crate::test_support::TestFixture, chat: &str) -> i64 {
+    sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE h.normalized = $1",
+    )
+    .bind(chat)
+    .fetch_one(&mut *fixture.conn().await)
+    .await
+    .unwrap()
+}
+
+/// A contact an import named for the holder is kept when the holder's number
+/// becomes an identity: an address book load renames a contact without
+/// changing its origin, so the name may be the person's, and deleting the
+/// contact would lose it. Its participant still goes (#1662).
+#[tokio::test]
+async fn linking_an_identity_keeps_a_named_holder_contact() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(
+        &state,
+        &token,
+        notes_to_yourself_file(Some("Me (work)"), None),
+    )
+    .await;
+    let conversation_id = conversation_at(&fixture, "+15555550199").await;
+    let contact_id = holder_contact(&fixture)
+        .await
+        .expect("the import made a contact");
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+
+    assert_eq!(holder_contact(&fixture).await, Some(contact_id));
+    let name: String = sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
+        .bind(contact_id)
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    assert_eq!(name, "Me (work)");
+    assert_eq!(participants_of(&fixture, conversation_id).await, vec![]);
+}
+
+/// A holder contact the person put in the Trash is kept, with its Trash
+/// entry, when the holder's number becomes an identity (#1662).
+#[tokio::test]
+async fn linking_an_identity_keeps_a_trashed_holder_contact() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(&state, &token, notes_to_yourself_file(None, None)).await;
+    let contact_id = holder_contact(&fixture)
+        .await
+        .expect("the import made a contact");
+    let status = crate::test_support::post_status(
+        &state,
+        &format!("/v1/contacts/{contact_id}/trash"),
+        &token,
+        serde_json::json!({}),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+
+    assert_eq!(holder_contact(&fixture).await, Some(contact_id));
+    let trashed: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM trashed_contacts WHERE contact_id = $1")
+            .bind(contact_id)
+            .fetch_one(&mut *fixture.conn().await)
+            .await
+            .unwrap();
+    assert_eq!(trashed, 1);
+}
+
+/// Linking the holder's number drops only the participants at an identity,
+/// as an import does: another participant the header listed in the same
+/// conversation stays, with its contact (#1662).
+#[tokio::test]
+async fn linking_an_identity_keeps_the_other_participants() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(
+        &state,
+        &token,
+        notes_to_yourself_file(None, Some("+15555550102")),
+    )
+    .await;
+    let conversation_id = conversation_at(&fixture, "+15555550199").await;
+    assert_eq!(participants_of(&fixture, conversation_id).await.len(), 2);
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+
+    assert_eq!(
+        participants_of(&fixture, conversation_id).await,
+        vec![("+15555550102".to_string(), None)]
+    );
+    assert_eq!(holder_contact(&fixture).await, None);
+}
+
+/// A group imported before the holder's number was linked lists the holder
+/// as a participant. Once the number is an identity the holder is no
+/// participant of it, as an import after the link would write it, and the
+/// contact the import made for the holder goes (#1093, #1662).
+#[tokio::test]
+async fn linking_an_identity_takes_the_holder_off_its_groups() {
+    let (state, fixture, token) = importer().await;
+    let body = [
+        conversation_header("whatsapp", "group-1662@g.us")
+            .group()
+            .title("Family")
+            .participant("+15555550199", None)
+            .participant("+15555550101", Some("Ada"))
+            .line(),
+        message_line("group-hi", "hi")
+            .at(1_400_773_262_000)
+            .service(IrService::Whatsapp)
+            .sender("+15555550101")
+            .line(),
+    ]
+    .concat();
+    import_whatsapp(&state, &token, body).await;
+    let conversation_id: i64 =
+        sqlx::query_scalar("SELECT id FROM conversations WHERE group_title = 'Family'")
+            .fetch_one(&mut *fixture.conn().await)
+            .await
+            .unwrap();
+    assert_eq!(participants_of(&fixture, conversation_id).await.len(), 2);
+    assert!(holder_contact(&fixture).await.is_some());
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+
+    assert_eq!(
+        participants_of(&fixture, conversation_id).await,
+        vec![("+15555550101".to_string(), Some("Ada".to_string()))]
+    );
+    assert_eq!(holder_contact(&fixture).await, None);
+}
+
+/// Linking the holder's number by mistake and removing it again gives the
+/// conversation its participant back under the name the backup gave it: the
+/// named contact was kept, and the participant takes its name (#1662).
+#[tokio::test]
+async fn removing_an_identity_linked_by_mistake_keeps_the_backups_name() {
+    let (state, fixture, token) = importer().await;
+    import_whatsapp(
+        &state,
+        &token,
+        notes_to_yourself_file(Some("Work phone"), None),
+    )
+    .await;
+    let conversation_id = conversation_at(&fixture, "+15555550199").await;
+    let contact_id = holder_contact(&fixture)
+        .await
+        .expect("the import made a contact");
+    let before = participants_of(&fixture, conversation_id).await;
+    assert_eq!(
+        before,
+        vec![("+15555550199".to_string(), Some("Work phone".to_string()))]
+    );
+
+    change_holder_identity(&state, &fixture, &token, "identities").await;
+    assert_eq!(participants_of(&fixture, conversation_id).await, vec![]);
+    change_holder_identity(&state, &fixture, &token, "remove_identities").await;
+
+    assert_eq!(participants_of(&fixture, conversation_id).await, before);
+    assert_eq!(holder_contact(&fixture).await, Some(contact_id));
 }
 
 /// Start an Import Run and complete it with `issues` skips, returning its id.

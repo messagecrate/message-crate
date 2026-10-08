@@ -593,6 +593,114 @@ pub async fn delete_contact(
     Ok(())
 }
 
+/// The contacts on one of the account's identities that its conversations
+/// point to: a participant at the identity, the chat handle of a
+/// conversation with yourself, or the sender of a received row in one. These
+/// are the contacts an import made for the holder before the identity was
+/// linked (#1662).
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn on_holder_identities_in_conversations(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<Vec<i64>> {
+    let with_yourself = crate::db::conversations::is_with_yourself_sql("c");
+    Ok(sqlx::query_scalar(&format!(
+        "SELECT DISTINCT ch.contact_id
+         FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id
+         WHERE ch.account_id = $1 AND {holder}
+           AND (EXISTS (SELECT 1 FROM participants p
+                        JOIN conversations c ON c.id = p.conversation_id
+                        WHERE c.account_id = $1 AND p.handle_id = h.id)
+                OR EXISTS (SELECT 1 FROM conversations c
+                           WHERE c.account_id = $1 AND c.chat_handle_id = h.id
+                             AND {with_yourself})
+                OR EXISTS (SELECT 1 FROM messages m
+                           JOIN conversations c ON c.id = m.conversation_id
+                           WHERE m.account_id = $1 AND m.sender_handle_id = h.id
+                             AND m.is_from_me = 0 AND {with_yourself}))
+         ORDER BY ch.contact_id",
+        holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
+    ))
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await?)
+}
+
+/// Delete the holder's `contact_id`, with [`delete_contact`], when an import
+/// made it and nobody has touched it since, and nothing outside the
+/// conversations with yourself refers to it. Returns true when it went.
+///
+/// Untouched means all of these hold:
+///
+/// - its origin is `import`, so the person never typed its name;
+/// - it carries no name. An address book load renames a contact without
+///   changing its origin, so a name cannot be told to be the backup's;
+/// - it is not in the Trash, and not in a Contact Group the person made.
+///
+/// Referred to means an identity on it that is not one of the account's, or
+/// an identity on it that is a participant, a sender or a reactor, or a
+/// one-to-one chat handle, in any conversation not with yourself or in an
+/// import being staged.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn delete_untouched_holder_contact(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    contact_id: i64,
+) -> Result<bool> {
+    let deletable: bool = sqlx::query_scalar(&format!(
+        "SELECT EXISTS (
+           SELECT 1 FROM contacts ct
+           WHERE ct.account_id = $1 AND ct.id = $2
+             AND ct.origin = 'import' AND ct.preferred_name = ''
+             AND NOT EXISTS (SELECT 1 FROM trashed_contacts tc
+                             WHERE tc.account_id = $1 AND tc.contact_id = $2)
+             AND NOT EXISTS (SELECT 1 FROM contact_group_members gm
+                             JOIN contact_groups g ON g.id = gm.group_id
+                             WHERE gm.contact_id = $2 AND g.kind = 'manual')
+             AND NOT EXISTS (
+               SELECT 1 FROM contact_handles ch
+               JOIN handles h ON h.id = ch.handle_id
+               WHERE ch.account_id = $1 AND ch.contact_id = $2
+                 AND (NOT {holder}
+                      OR EXISTS (SELECT 1 FROM participants WHERE handle_id = h.id)
+                      OR EXISTS (SELECT 1 FROM staging_participants WHERE handle_id = h.id)
+                      OR EXISTS (SELECT 1 FROM staging_messages
+                                 WHERE account_id = $1 AND sender_handle_id = h.id)
+                      OR EXISTS (SELECT 1 FROM staging_tapbacks WHERE sender_handle_id = h.id)
+                      OR EXISTS (SELECT 1 FROM staging_conversations
+                                 WHERE account_id = $1 AND chat_handle_id = h.id)
+                      OR EXISTS (SELECT 1 FROM messages m
+                                 JOIN conversations c ON c.id = m.conversation_id
+                                 WHERE m.account_id = $1 AND m.sender_handle_id = h.id
+                                   AND NOT {with_yourself})
+                      OR EXISTS (SELECT 1 FROM tapbacks t
+                                 JOIN messages m ON m.id = t.message_id
+                                 JOIN conversations c ON c.id = m.conversation_id
+                                 WHERE t.sender_handle_id = h.id AND NOT {with_yourself})
+                      OR EXISTS (SELECT 1 FROM conversations c
+                                 WHERE c.account_id = $1 AND c.chat_handle_id = h.id
+                                   AND c.conversation_type = 'individual' COLLATE NOCASE
+                                   AND NOT {with_yourself}))))",
+        holder = crate::db::account_profile::is_account_identity_sql("h", "$1"),
+        with_yourself = crate::db::conversations::is_with_yourself_sql("c"),
+    ))
+    .bind(account_id)
+    .bind(contact_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    if deletable {
+        delete_contact(conn, account_id, contact_id).await?;
+    }
+    Ok(deletable)
+}
+
 /// The identities `contact_id` holds, in the order they were linked.
 ///
 /// # Errors

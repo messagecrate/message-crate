@@ -602,11 +602,10 @@ async fn apply_profile_update(
     // The rule an import applies to a conversation with yourself is run
     // again over the account's conversations once its identities change,
     // so their participants and the holder's contact follow the list (#1662).
-    let changes_identities = !identities.is_empty() || !remove_identities.is_empty();
-    let with_yourself_before = if changes_identities {
-        with_yourself::conversations_with_yourself(conn, account_id).await?
+    let with_yourself_before = if identities.is_empty() && remove_identities.is_empty() {
+        None
     } else {
-        Vec::new()
+        Some(with_yourself::before_identity_change(conn, account_id).await?)
     };
 
     for entry in remove_identities {
@@ -637,8 +636,8 @@ async fn apply_profile_update(
         .await?;
     }
 
-    if changes_identities {
-        with_yourself::follow_identities(conn, account_id, &with_yourself_before).await?;
+    if let Some(before) = with_yourself_before {
+        with_yourself::follow_identities(conn, before).await?;
     }
     Ok(())
 }
