@@ -12,7 +12,7 @@
 
 <h1 align="center">Message Crate</h1>
   <p align="center">
-    Your chat history, on a server you run yourself.
+    Your messages, out of the apps.
     <br />
     <br />
     <a href="https://messagecrate.app/docs/user/"><strong>Explore the docs »</strong></a>
@@ -32,9 +32,11 @@
     <li><a href="#about-the-project">About The Project</a></li>
     <li><a href="#who-the-project-is-for">Who The Project Is For</a></li>
     <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#faq">FAQ</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#additional-documentation">Additional documentation</a></li>
     <li><a href="#license">License</a></li>
+    <li><a href="#how-message-crate-is-built">How Message Crate Is Built</a></li>
     <li><a href="#project-status">Project Status</a></li>
     <li><a href="#maintainers">Maintainers</a></li>
     <li><a href="#related-projects">Related Projects</a></li>
@@ -45,30 +47,35 @@
 
 [![Docker][Docker]][Docker-url] [![React][React.js]][React-url] [![Rust][Rust-dev]][Rust-url] [![SQLite][SQLite]][SQLite-url] [![Tauri][Tauri]][Tauri-url] [![Vite][Vite]][Vite-url]
 
-Message Crate copies your conversations out of chat apps and phone backups — iMessage, WhatsApp, Android SMS — and stores them in a self-hosted, searchable archive that you control. Read old threads in a browser, search years of messages, and export them as ordinary files whenever you like.
+Message Crate copies conversations out of chat apps and phone backups (iMessage, WhatsApp, Android SMS) and stores them in a searchable archive on a computer its owner controls.
+Old threads open in a browser, years of messages are searchable, and everything exports back out as ordinary files.
+
+Message Crate runs on the owner's own hardware.
+There is no cloud service, no account with Bitrealm, and no AI feature in the product.
+Messages never leave the computer they are imported on, unless the owner runs the server on another computer of their own.
 
 ### Project Details
 
 The Message Crate software has three parts:
 
-- **Backend** - The core system that runs on your computer. It keeps you logged in, stores your messages, and powers the search feature.
-- **Desktop App** - A program that imports your messages into Message Crate from phone backups and app exports. You can also view, organize, and export your messages from here.
-- **Website** - The desktop app in a web browser, for reading, searching, and organizing your messages. Importing, exporting, and converting need the desktop app.
+- **Backend** - The server. It stores the messages, keeps accounts logged in, and runs the search.
+- **Desktop App** - The program that imports messages into a Message Crate from phone backups and app exports. It also reads, organizes, and exports them.
+- **Website** - The same screens in a web browser, for reading, searching, and organizing messages. Importing, exporting, and converting need the desktop app, because they read and write files on the computer.
 
-You can bring in:
+Message Crate imports:
 
 - Apple Messages from an iPhone backup, or from Messages on a Mac
 - Android texts and picture messages from an SMS Backup & Restore file
 - WhatsApp from an iPhone backup or from WhatsApp's Android files
 
-A few older export formats still work if that is all you have left.
+A few older export formats still import, for anyone whose phone is long gone and only an old export remains.
 
-Once messages are imported you can:
+Once messages are imported:
 
-- Read threads the way you would in an app or on a phone, including group chats. Photos, videos, and other attachments are included.
-- Search across years of conversations
-- Save a copy back out as ordinary files if you want a directory on disk
-- Combine texts from more than one phone or app into one archive
+- Threads read the way they did in the app or on the phone, including group chats. Photos, videos, and other attachments are included.
+- Search covers years of conversations
+- Export saves a copy back out as ordinary files in a directory on disk
+- Texts from more than one phone or app combine into one archive
 
 ## Who The Project Is For
 
@@ -76,9 +83,55 @@ This project is for people who want a personal copy of their phone messages. Tha
 
 ## Getting Started
 
-Follow the [User Guide](https://messagecrate.app/docs/user/try/what-is-message-crate/) to run the demo and import your own data.
+The [User Guide](https://messagecrate.app/docs/user/try/what-is-message-crate/) starts with the demo data and ends with an import of the reader's own backup.
+
+Which way to run it depends on who uses it:
+
+| Situation | What to run |
+|---|---|
+| One person, one computer | The desktop app. It starts a Message Crate on that computer, and a browser on the same computer can open it too. |
+| Several people, or a computer that is always on | The server in Docker, following [Run Message Crate with Docker](https://messagecrate.app/docs/user/features/owner/run-with-docker/). Any browser on the home network opens it, and the desktop app connects to it for imports. |
+
+It is the same archive, the same search, and the same exports either way.
 
 The [Developer Guide](https://messagecrate.app/docs/developer/) covers setting up a local development environment and compiling from source.
+
+## FAQ
+
+**Is there a cloud version?**
+No. Message Crate runs on a computer its owner controls, and there is no hosted service and no account with Bitrealm.
+
+**Does Message Crate use AI?**
+No. The product has no AI feature, and no message is sent to an AI service.
+AI is used to build the product, as [How Message Crate Is Built](#how-message-crate-is-built) describes.
+
+**Where do the messages go?**
+Into a SQLite database and an attachment directory on the computer that runs the server.
+The user guide's [What Message Crate is](https://messagecrate.app/docs/user/try/what-is-message-crate/) page describes the pieces.
+
+**Is Docker required?**
+No. The desktop app carries the server and starts it.
+Docker is for a Message Crate shared by several people or kept on a computer that is always on.
+
+**Can the messages be taken back out?**
+Yes. [Export](https://messagecrate.app/docs/user/features/messages/export/) writes them as ordinary files: JSON, JSONL, CSV, EML, or MBOX.
+Nothing is locked in.
+
+**Is it open source?**
+No. It is source-available under the Fair Core License, as [License](#license) explains: the code can be read, changed, built, and run for the reader's own use, but not offered as a competing product.
+Each version becomes Apache 2.0 two years after its release.
+
+**Will the free, self-hosted version go away?**
+No. The self-hosted Message Crate is the product, not a trial, and the maintainer keeps their own messages in one.
+
+**Is it secure? Has it been audited?**
+The server has its own login, and security is a design priority, but no third party has audited the code.
+A Message Crate on a home network is reached over plain HTTP.
+Reaching one from the internet needs a reverse proxy with TLS in front of the server, as [Run on another machine](https://messagecrate.app/docs/user/features/owner/run-on-another-machine/) says.
+
+**Is it finished?**
+No. Message Crate is under heavy development on the way to 1.0.
+It works today, and screens, formats, and settings still change between releases.
 
 ## Contributing
 
@@ -93,9 +146,21 @@ Most documentation lives in the guidebook at [messagecrate.app](https://messagec
 
 ## License
 
-Message Crate is **source-available, not open source**. It is distributed under the [Fair Core License 1.0](LICENSE.md) (`FCL-1.0-ALv2`): you can read the code, change it, build it, and run it for yourself, but you may not offer it as a product that competes with Message Crate. Two years after each version is released, that version becomes available under the Apache License 2.0.
+Message Crate is **source-available, not open source**. It is distributed under the [Fair Core License 1.0](LICENSE.md) (`FCL-1.0-ALv2`): the code can be read, changed, built, and run for the reader's own use, but not offered as a product that competes with Message Crate. Two years after each version is released, that version becomes available under the Apache License 2.0.
 
 See [LICENSE.md](LICENSE.md) for the full terms.
+
+## How Message Crate Is Built
+
+AI agents write most of the code, and that is not hidden.
+Message Crate was built agent-first from the start, rather than written by hand and then reviewed by an AI.
+
+The maintainer defines the architecture, records the decisions in the repository's design documents and ADRs, and reviews the larger changes.
+Not every pull request gets a line-by-line human review.
+CI is the gate: every change passes formatting, lints, the test suites, and the license checks before it reaches `main`.
+
+None of this touches the product's data.
+The messages in a Message Crate are never sent to an AI service, because the product has no AI feature.
 
 ## Project Status
 
