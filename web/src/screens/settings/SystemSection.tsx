@@ -16,6 +16,7 @@ import {
   setLocalServerOpenToNetwork,
   setOpenToNetwork,
 } from "../../lib/localServer";
+import { keys } from "../../lib/queryKeys";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   invokeExportDirectory,
@@ -423,7 +424,7 @@ export function SystemSection() {
   // Where the programs are belongs to this computer, not to an account, so
   // this is a plain `useQuery`, asked again each second while a download runs.
   const toolsQuery = useQuery({
-    queryKey: ["desktop", "tools-status"],
+    queryKey: keys.desktopToolsStatus.all,
     queryFn: invokeToolsStatus,
     enabled: isTauri(),
     retry: false,
