@@ -15,7 +15,13 @@ const selectValueClass = "!text-[0.875rem] !font-normal !leading-none";
 /** The problem type the server answers when another identity holds the `+` form. */
 const IDENTITY_EXISTS = "identity-exists";
 
-/** The question a refused pick asks, when the refusal is that the `+` form is held. */
+/**
+ * The question a refused pick asks, when the refusal is that the `+` form is
+ * held. It is the problem's `detail`, which names the number, its `+` form
+ * and who holds it in one sentence. The problem's `holder` extension says who
+ * holds it for a program; this dialog reads nothing it does not already show,
+ * so `holder` is for other clients.
+ */
 function mergeQuestion(error: Error | null): string | null {
   return error instanceof ApiError && error.type === IDENTITY_EXISTS
     ? (error.detail ?? error.message)

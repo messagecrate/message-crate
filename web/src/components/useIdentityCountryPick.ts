@@ -19,7 +19,9 @@ export interface IdentityCountryTarget {
  *
  * `send` sends the pick and settles when the server has answered. The dialog
  * closes when it succeeds and stays open on a refusal, which it shows, so a
- * merge question can be answered and a failure retried.
+ * merge question can be answered and a failure retried. The refusal is kept
+ * whole: the dialog asks with its `detail`, and its `holder` extension is
+ * left for other clients (`IdentityCountryDialog`).
  */
 export function useIdentityCountryPick(send: (pick: IdentityCountryPick) => Promise<unknown>) {
   const [target, setTarget] = useState<IdentityCountryTarget | null>(null);
