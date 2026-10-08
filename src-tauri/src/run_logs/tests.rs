@@ -337,3 +337,18 @@ fn a_log_with_no_line_the_viewer_reads_says_so_in_the_listing() {
         "{listed:?}"
     );
 }
+
+#[test]
+fn a_log_with_untimed_lines_first_and_timed_lines_later_has_lines() {
+    let logs = tempfile::tempdir().unwrap();
+    let mut text = String::new();
+    for n in 0..2_000 {
+        text.push_str(&format!("Uploaded chat-{n}.jsonl before the upgrade\n"));
+    }
+    text.push_str("2026-10-08T12:00:00.123456Z  INFO Resumed after the upgrade\n");
+    fs::write(logs.path().join("import-resumed-261001-080000.log"), text).unwrap();
+
+    let listed = list(logs.path(), &owner()).unwrap();
+    assert_eq!(listed.len(), 1);
+    assert!(listed[0].has_lines);
+}

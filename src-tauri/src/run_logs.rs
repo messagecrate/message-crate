@@ -22,7 +22,7 @@
 //! left out until it is whole.
 
 use std::fs;
-use std::io::{self, Read as _};
+use std::io::{self, Read as _, Seek as _, SeekFrom};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 
@@ -267,21 +267,24 @@ fn is_run_log_name(name: &str) -> bool {
         && name != ".."
 }
 
-/// What a log's first lines say: the account they name, if they name one,
-/// and whether any of them has a time and a level.
+/// What a log's first and last lines say: the account the first name, if
+/// they name one, and whether any of them has a time and a level.
 struct Head {
     account: Option<RunLogAccount>,
     has_lines: bool,
 }
 
-/// The [`Head`] of the log at `path`.
+/// The [`Head`] of the log at `path`. A run started before its lines carried
+/// a time and a level, and resumed after, has untimed lines first and timed
+/// ones after, so the last lines are read too.
 ///
 /// # Errors
 ///
 /// Returns an error when the log cannot be read.
 fn head_of(path: &Path) -> io::Result<Head> {
+    let mut file = fs::File::open(path)?;
     let mut head = Vec::new();
-    fs::File::open(path)?
+    (&mut file)
         .take(ACCOUNT_LINE_BYTES)
         .read_to_end(&mut head)?;
     let head = String::from_utf8_lossy(&head);
@@ -290,12 +293,34 @@ fn head_of(path: &Path) -> io::Result<Head> {
         .take(ACCOUNT_LINE_SEARCH)
         .filter_map(|raw| parse_run_log_line(0, raw))
         .collect();
+    let has_lines = !lines.is_empty() || tail_has_lines(&mut file)?;
     Ok(Head {
         account: lines
             .iter()
             .find_map(|line| RunLogAccount::parse(&line.text)),
-        has_lines: !lines.is_empty(),
+        has_lines,
     })
+}
+
+/// Whether one of the whole lines in the last [`ACCOUNT_LINE_BYTES`] of
+/// `file` has a time and a level.
+fn tail_has_lines(file: &mut fs::File) -> io::Result<bool> {
+    let len = file.metadata()?.len();
+    let start = len.saturating_sub(ACCOUNT_LINE_BYTES);
+    let mut tail = Vec::new();
+    file.seek(SeekFrom::Start(start))?;
+    file.take(ACCOUNT_LINE_BYTES).read_to_end(&mut tail)?;
+    // A window that starts inside the file starts inside a line.
+    let whole = if start == 0 {
+        &tail[..]
+    } else {
+        tail.iter()
+            .position(|b| *b == b'\n')
+            .map_or(&[][..], |newline| &tail[newline + 1..])
+    };
+    Ok(String::from_utf8_lossy(whole)
+        .lines()
+        .any(|raw| parse_run_log_line(0, raw).is_some()))
 }
 
 #[cfg(test)]
