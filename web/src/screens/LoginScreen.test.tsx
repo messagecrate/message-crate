@@ -356,7 +356,7 @@ describe("LoginScreen", () => {
     expect(setServer).not.toHaveBeenCalledWith(B);
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith(B);
     expect(setBaseUrlSpy).toHaveBeenCalledWith(A);
-    expect(retrySavedLogin).not.toHaveBeenCalled();
+    expect(retrySavedLogin).not.toHaveBeenCalledWith(B);
   });
 
   it("says a disconnected card is still disconnected when the new address does not answer either", async () => {
@@ -827,6 +827,30 @@ describe("LoginScreen", () => {
     expect(setBaseUrlSpy).not.toHaveBeenCalledWith("http://crate.example:8080");
   });
 
+  it("tries a login saved for the app's own address once the app is back on it", async () => {
+    // The saved address is elsewhere; the saved login was made at the app's
+    // own. Going back must take the person in without asking for the
+    // password the app already holds a token for.
+    tauriState.isTauri = true;
+    authState.serverUrl = "http://crate.example:8080";
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+
+    await screen.findByText("Connected to crate.example:8080");
+    expect(retrySavedLogin).toHaveBeenCalledWith("http://crate.example:8080");
+    retrySavedLogin.mockClear();
+
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Use the Message Crate on this computer" }),
+    );
+
+    await waitFor(() => expect(retrySavedLogin).toHaveBeenCalledWith("http://127.0.0.1:8080"), {
+      timeout: 3000,
+    });
+  });
+
   it("says why the app's own Message Crate did not start, when asked to go back to it", async () => {
     tauriState.isTauri = true;
     authState.serverUrl = "http://crate.example:8080";
@@ -858,5 +882,41 @@ describe("LoginScreen", () => {
 
     expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Server Address" })).toBeNull();
+  });
+
+  it("offers the website's own Message Crate as the way back from an address elsewhere", async () => {
+    // The saved address outlives logout, so a website once pointed at a
+    // Message Crate that has since gone away needs a way back to its own.
+    authState.serverUrl = "http://old.example:8080";
+    serveAt((address) => (address === "" ? { state: "open" } : "down"));
+    const user = setupUser();
+    renderScreen();
+
+    await screen.findByText(/^Disconnected from /);
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Use this website's own Message Crate" }),
+    );
+
+    await waitFor(() => expect(setServer).toHaveBeenCalledWith(""), { timeout: 3000 });
+    expect(await screen.findByText(/^Connected to /)).toBeInTheDocument();
+    expect(startLocalServer).not.toHaveBeenCalled();
+  });
+
+  it("offers no way back while the website is on its own Message Crate", async () => {
+    stubServer();
+    const user = setupUser();
+    renderScreen();
+
+    await screen.findByText(/^Connected to /);
+    await user.click(await screen.findByRole("button", { name: "Change server address" }));
+
+    expect(await screen.findByRole("heading", { name: "Server Address" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use this website's own Message Crate" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Use the Message Crate on this computer" }),
+    ).toBeNull();
   });
 });

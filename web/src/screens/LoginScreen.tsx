@@ -217,6 +217,10 @@ export default function LoginScreen() {
         setDraft(trimmed);
         setAuthServer(trimmed);
         dispatch({ type: "answered", address: trimmed });
+        // A login saved for this address was never rejected by it, so it is
+        // checked now: a server that accepts it takes the person straight
+        // in, whether the address answered at last or was chosen again.
+        retrySavedLogin(trimmed);
         return;
       }
       // The app's own address answers once the app has started its server,
@@ -228,7 +232,7 @@ export default function LoginScreen() {
       if (isTauri() && isOwnAddress(trimmed) && startUnderWay) return;
       dispatch({ type: "noAnswer", address: trimmed });
     },
-    [setAuthServer],
+    [setAuthServer, retrySavedLogin],
   );
 
   // Resolve the server once on mount; Change server address calls `connect` again.
@@ -248,13 +252,8 @@ export default function LoginScreen() {
   useEffect(() => {
     const becameHealthy = previousHealth.current !== "ok" && health === "ok";
     previousHealth.current = health;
-    if (state === "disconnected" && becameHealthy) {
-      void connect(address);
-      // A login saved before the server went quiet was never rejected, so it
-      // is checked now; a server that accepts it takes the person straight in.
-      retrySavedLogin(address);
-    }
-  }, [health, state, address, connect, retrySavedLogin]);
+    if (state === "disconnected" && becameHealthy) void connect(address);
+  }, [health, state, address, connect]);
 
   // The moment the app's own server answers, connect, rather than wait for
   // the health probe's next turn.
@@ -325,6 +324,23 @@ export default function LoginScreen() {
     setSettingsOpen(false);
   };
 
+  // The way back from a Message Crate elsewhere: the desktop app's own, or
+  // the website's own origin (the empty address). Offered only while the
+  // address in use is another one, since the saved address outlives logout.
+  const ownAddress = isTauri() ? DEFAULT_TAURI_SERVER_URL : "";
+  const useOwn =
+    address === ownAddress
+      ? undefined
+      : {
+          label: isTauri()
+            ? "Use the Message Crate on this computer"
+            : "Use this website's own Message Crate",
+          onPress: () => {
+            closeSettings();
+            void connect(ownAddress);
+          },
+        };
+
   return (
     <div className={pageCenter}>
       <div className={authCard}>
@@ -349,14 +365,7 @@ export default function LoginScreen() {
                 // Confirming the address already connected is no change.
                 if (next !== address) void connect(next);
               }}
-              onUseOwn={
-                isTauri() && !isOwnAddress(address)
-                  ? () => {
-                      closeSettings();
-                      void connect(DEFAULT_TAURI_SERVER_URL);
-                    }
-                  : undefined
-              }
+              useOwn={useOwn}
             />
           ) : (
             <>

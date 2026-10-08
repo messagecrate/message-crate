@@ -28,11 +28,12 @@ export interface ServerSettingsScreenProps {
   onCancel: () => void;
   onSubmit: () => void;
   /**
-   * Go back to the Message Crate the desktop app starts for itself. Given
-   * only in the desktop app, and only while the address in use is another one:
-   * it is how a person returns from a Message Crate elsewhere.
+   * Go back to the Message Crate this app or website is part of: the one the
+   * desktop app starts for itself, or the website's own. Given only while the
+   * address in use is another one: it is how a person returns from a Message
+   * Crate elsewhere.
    */
-  onUseOwn?: () => void;
+  useOwn?: { label: string; onPress: () => void };
 }
 
 /**
@@ -49,7 +50,7 @@ export default function ServerSettingsScreen({
   onTest,
   onCancel,
   onSubmit,
-  onUseOwn,
+  useOwn,
 }: ServerSettingsScreenProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -83,10 +84,10 @@ export default function ServerSettingsScreen({
         </Button>
       </div>
 
-      {onUseOwn ? (
+      {useOwn ? (
         <div className="mt-4 text-center">
-          <PlainButton className={accentLink} onPress={onUseOwn}>
-            Use the Message Crate on this computer
+          <PlainButton className={accentLink} onPress={useOwn.onPress}>
+            {useOwn.label}
           </PlainButton>
         </div>
       ) : null}
