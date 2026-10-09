@@ -124,6 +124,17 @@ describe("LeftPanel", () => {
     expect(row?.className).not.toContain("pl-[calc(15px+0.5rem)]");
   });
 
+  it("pads every section the same, so the gaps between them match", () => {
+    renderPanel();
+    // The section a heading sits in: heading button → grid row → section.
+    const sectionOf = (name: string) =>
+      screen.getByRole("button", { name }).parentElement?.parentElement;
+    const groups = sectionOf("Contact Groups");
+    expect(groups?.className).toBeTruthy();
+    expect(sectionOf("Saved Searches")?.className).toBe(groups?.className);
+    expect(sectionOf("Message Tags")?.className).toBe(groups?.className);
+  });
+
   it("indents named saved searches like nested group rows", () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },

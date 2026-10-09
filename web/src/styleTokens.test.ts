@@ -263,3 +263,15 @@ describe("the range pill's room", () => {
     expect(classes).toContain(`h-${size}`);
   });
 });
+
+describe("a button takes its parent's font", () => {
+  // theme.css loads Tailwind's theme and utilities layers and not its
+  // preflight, so nothing resets a <button>'s font to its parent's. Without
+  // this rule, a label inside a nested button (a Contact Group, Saved Search,
+  // or Message Tag row in the left panel) falls back to the browser's control
+  // font, smaller than the 14px the row sets (#2006).
+  it("through the base button rule in theme.css", () => {
+    const rule = /^\s*button\s*\{([^}]*)\}/m.exec(themeCss)?.[1] ?? "";
+    expect(rule.replace(/\s+/g, " ")).toContain("font: inherit;");
+  });
+});
