@@ -296,6 +296,13 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-09: **The left panel's rows are one size, and its sections one gap
+  apart.** A named Contact Group, Saved Search, or Message Tag was drawn
+  smaller than the rows around it, such as **Unknown** and **No Contact
+  Group**, and the space above Saved Searches and above Message Tags differed
+  from the space above the other sections. Every row is now the same size,
+  and each section sits the same distance below the one above it.
+
 - 2026-10-07: **A hit found by an earlier version says so in the Messages
   list.** A search finds a message when one of its earlier versions holds a
   searched word, but the row showed only the final text, so a word only an

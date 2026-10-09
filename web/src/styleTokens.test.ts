@@ -15,6 +15,16 @@ import { Z_CONTACT_DRAWER, Z_DRAWER_SCRIM, Z_MODAL, Z_RESIZE_HANDLE } from "./li
 const SRC = new URL("./", import.meta.url);
 const themeCss = readFileSync(new URL("theme.css", SRC), "utf8");
 
+/**
+ * The rule in theme.css whose selector is `selector`, from its `{` to its own
+ * `}`: the first closing brace after it, which holds for a rule with no nested
+ * braces, whether at the top level or indented inside a layer.
+ */
+function block(selector: string): string {
+  const start = themeCss.indexOf(`${selector} {`);
+  return start < 0 ? "" : themeCss.slice(start, themeCss.indexOf("}", start));
+}
+
 /** Every .ts/.tsx source under src/, tests left out, as [path, text]. */
 function sources(): [string, string][] {
   return readdirSync(SRC, { recursive: true, encoding: "utf8" })
@@ -97,10 +107,6 @@ describe("colors are theme tokens", () => {
   // A black shadow tuned for the light theme all but disappears on the dark
   // theme's dark surfaces, so the dark theme sets each shadow itself (#1525).
   it("the dark theme sets every shadow itself", () => {
-    const block = (selector: string) => {
-      const start = themeCss.indexOf(`${selector} {`);
-      return start < 0 ? "" : themeCss.slice(start, themeCss.indexOf("\n}", start));
-    };
     const shadows = (css: string) =>
       [...css.matchAll(/^\s+(--elevation-[\w-]+):/gm)].map((m) => m[1]).sort();
     const root = shadows(block(":root"));
@@ -261,5 +267,16 @@ describe("the range pill's room", () => {
     const markup = renderToStaticMarkup(createElement(RangePillSpacer));
     const classes = /class="([^"]*)"/.exec(markup)?.[1]?.split(" ") ?? [];
     expect(classes).toContain(`h-${size}`);
+  });
+});
+
+describe("a button takes its parent's font", () => {
+  // theme.css loads Tailwind's theme and utilities layers and not its
+  // preflight, so nothing resets a <button>'s font to its parent's. Without
+  // this rule, a label inside a nested button (a Contact Group, Saved Search,
+  // or Message Tag row in the left panel) falls back to the browser's control
+  // font, smaller than the 14px the row sets (#2006).
+  it("through the base button rule in theme.css", () => {
+    expect(block("button").replace(/\s+/g, " ")).toContain("font: inherit;");
   });
 });
