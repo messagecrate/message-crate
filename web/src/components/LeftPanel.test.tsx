@@ -126,13 +126,11 @@ describe("LeftPanel", () => {
 
   it("pads every section the same, so the gaps between them match", () => {
     renderPanel();
-    // The section a heading sits in: heading button → grid row → section.
-    const sectionOf = (name: string) =>
-      screen.getByRole("button", { name }).parentElement?.parentElement;
+    const sectionOf = (name: string) => screen.getByRole("region", { name });
     const groups = sectionOf("Contact Groups");
-    expect(groups?.className).toBeTruthy();
-    expect(sectionOf("Saved Searches")?.className).toBe(groups?.className);
-    expect(sectionOf("Message Tags")?.className).toBe(groups?.className);
+    expect(groups.className).toBeTruthy();
+    expect(sectionOf("Saved Searches").className).toBe(groups.className);
+    expect(sectionOf("Message Tags").className).toBe(groups.className);
   });
 
   it("indents named saved searches like nested group rows", () => {

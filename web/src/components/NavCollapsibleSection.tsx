@@ -74,7 +74,7 @@ export default function NavCollapsibleSection({
   );
 
   return (
-    <div className={className}>
+    <section aria-label={title} className={className}>
       <div className={`mb-1 ${NAV_SECTION_GRID_CLASS}`}>
         {showAdd ? (
           <PlainButton
@@ -101,6 +101,6 @@ export default function NavCollapsibleSection({
         ) : null}
       </div>
       {open ? children : null}
-    </div>
+    </section>
   );
 }

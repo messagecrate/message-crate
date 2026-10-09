@@ -342,13 +342,13 @@
   }
 
   /* Prefer <Button> (all:unset) for solid CTAs — WebKit/Tauri often ignores
-   native button backgrounds while still applying text color.
-   Tailwind's preflight is not loaded, so a button's font is reset here:
-   without it a label inside a nested button is drawn in the browser's
-   control font, smaller than the row it sits in. */
+   native button backgrounds while still applying text color. */
   button {
     appearance: none;
     -webkit-appearance: none;
+    /* Tailwind's preflight is not loaded, so a button's font is reset here.
+       Without it a label inside a nested button is drawn in the browser's
+       control font, smaller than the row it sits in. */
     font: inherit;
     background-color: var(--elevated);
     color: var(--text);
