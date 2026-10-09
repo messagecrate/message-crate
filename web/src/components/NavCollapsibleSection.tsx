@@ -24,6 +24,9 @@ function writeOpen(id: string, open: boolean) {
  * When addLabel and onAdd are set, the trailing plus creates an item;
  * otherwise the 1.5rem trailing slot stays as an empty spacer so titles align,
  * and the heading button covers that slot so the whole row toggles.
+ * The block is a section named after its title, so a screen reader lists
+ * Contact Groups, Saved Searches, and Message Tags among the page's
+ * landmarks, and a test can ask for a section by name.
  */
 export default function NavCollapsibleSection({
   id,

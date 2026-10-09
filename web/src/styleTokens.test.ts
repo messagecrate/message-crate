@@ -15,10 +15,14 @@ import { Z_CONTACT_DRAWER, Z_DRAWER_SCRIM, Z_MODAL, Z_RESIZE_HANDLE } from "./li
 const SRC = new URL("./", import.meta.url);
 const themeCss = readFileSync(new URL("theme.css", SRC), "utf8");
 
-/** The rule in theme.css whose selector is `selector`, from its `{` to its `}`. */
+/**
+ * The rule in theme.css whose selector is `selector`, from its `{` to its own
+ * `}`: the first closing brace after it, which holds for a rule with no nested
+ * braces, whether at the top level or indented inside a layer.
+ */
 function block(selector: string): string {
   const start = themeCss.indexOf(`${selector} {`);
-  return start < 0 ? "" : themeCss.slice(start, themeCss.indexOf("\n}", start));
+  return start < 0 ? "" : themeCss.slice(start, themeCss.indexOf("}", start));
 }
 
 /** Every .ts/.tsx source under src/, tests left out, as [path, text]. */
