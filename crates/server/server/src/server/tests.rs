@@ -19,6 +19,15 @@ fn jsonl_content_type_accepts_x_ndjson() {
     assert!(!is_jsonl_content_type("application/json"));
 }
 
+#[tokio::test]
+async fn run_blocking_answers_a_panicked_task_as_an_internal_error_naming_it() {
+    let answer = run_blocking("upload read", || -> Result<(), ApiError> { panic!("boom") }).await;
+    let Err(ApiError::Internal(err)) = answer else {
+        panic!("expected an internal error, got {answer:?}");
+    };
+    assert!(err.to_string().starts_with("upload read task: "), "{err}");
+}
+
 #[test]
 fn error_chain_keeps_every_context_layer() {
     let err = anyhow::Error::new(std::io::Error::other("disk full"))

@@ -26,7 +26,7 @@ use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
-    content_type_base, discard_body, read_body_limited, resolve_import_account,
+    content_type_base, discard_body, read_body_limited, resolve_import_account, run_blocking,
     stream_body_to_file, upload_content_type,
 };
 
@@ -638,12 +638,11 @@ async fn resolve_asset_lookup(
 
     let cfg = Arc::clone(&state.cfg);
     let sha_lookup = sha256.clone();
-    let existing = tokio::task::spawn_blocking(move || {
+    let existing = run_blocking("asset lookup", move || {
         let assets_dir = cfg.paths.assets_dir_for_account(account);
-        lookup_by_sha256(&assets_dir, &sha_lookup)
+        Ok::<_, ApiError>(lookup_by_sha256(&assets_dir, &sha_lookup))
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))?;
+    .await?;
     Ok((account, existing))
 }
 
@@ -877,9 +876,10 @@ pub(crate) async fn lookup_for_read(
 ) -> Result<Option<StoredAsset>, ApiError> {
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha256 = sha256.clone();
-    tokio::task::spawn_blocking(move || lookup_by_sha256_unverified(&assets_dir, &sha256))
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))
+    run_blocking("asset lookup", move || {
+        Ok::<_, ApiError>(lookup_by_sha256_unverified(&assets_dir, &sha256))
+    })
+    .await
 }
 
 /// Answer the file at `path` in `mime_type`, or `application/octet-stream`
@@ -1075,7 +1075,7 @@ pub(crate) async fn replace_asset(
     let sha = sha256.clone();
     let tmp_for_store = tmp_path.clone();
     let assets_dir_store = assets_dir.clone();
-    let stored = tokio::task::spawn_blocking(move || {
+    let stored = run_blocking("asset upload", move || {
         std::fs::create_dir_all(&assets_dir_store)
             .with_context(|| format!("create {}", assets_dir_store.display()))?;
         store_verified(
@@ -1091,8 +1091,7 @@ pub(crate) async fn replace_asset(
     // body that does not match the fingerprint included, leaves it, and it
     // is removed here before the answer, so a refused upload keeps nothing.
     let _ = tokio::fs::remove_file(&tmp_path).await;
-    let (stored, already_present) =
-        stored.map_err(|e| ApiError::Internal(anyhow::anyhow!("asset upload task: {e}")))??;
+    let (stored, already_present) = stored?;
     // A racing upload of the same bytes may have stored them first; then
     // this request made nothing.
     if already_present {
@@ -1188,11 +1187,10 @@ pub(crate) async fn create_asset_upload(
     let bytes = body.bytes;
     let sha = sha256.clone();
     let limits = state.upload_limits().await?;
-    let result = tokio::task::spawn_blocking(move || {
+    let result = run_blocking("upload start", move || {
         asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload start task: {e}")))??;
+    .await?;
 
     // Only a fresh upload is a creation. An asset already in the store made
     // nothing, so it answers 200 OK with where the bytes already are.
@@ -1259,11 +1257,10 @@ pub(crate) async fn replace_asset_upload_part(
         let assets_dir = assets_dir.clone();
         let sha = sha256.clone();
         let uid = upload_id.clone();
-        tokio::task::spawn_blocking(move || {
+        run_blocking("upload part", move || {
             asset_uploads::session_part_size(&assets_dir, &sha, &uid)
         })
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload part task: {e}")))??
+        .await?
     };
     let declared = headers
         .get(header::CONTENT_LENGTH)
@@ -1277,11 +1274,10 @@ pub(crate) async fn replace_asset_upload_part(
     let body = read_body_limited(request.into_body(), part_size).await?;
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let written = tokio::task::spawn_blocking(move || {
+    let written = run_blocking("upload part", move || {
         asset_uploads::put_part(&assets_dir, &sha, &uid, part, &body)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload part task: {e}")))??;
+    .await?;
     Ok(Json(ReplaceAssetUploadPartResponse {
         part,
         bytes: written,
@@ -1346,11 +1342,10 @@ pub(crate) async fn complete_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let (stored, already_present) = tokio::task::spawn_blocking(move || {
+    let (stored, already_present) = run_blocking("upload complete", move || {
         asset_uploads::complete_upload(&assets_dir, &sha, &uid)
     })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload complete task: {e}")))??;
+    .await?;
 
     // A racing single PUT of the same bytes may have stored them first; then
     // this completion made nothing.
@@ -1407,10 +1402,10 @@ pub(crate) async fn get_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let manifest =
-        tokio::task::spawn_blocking(move || asset_uploads::read_upload(&assets_dir, &sha, &uid))
-            .await
-            .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload read task: {e}")))??;
+    let manifest = run_blocking("upload read", move || {
+        asset_uploads::read_upload(&assets_dir, &sha, &uid)
+    })
+    .await?;
     Ok(Json(AssetUpload {
         upload_id,
         sha256: manifest.sha256,
@@ -1445,9 +1440,10 @@ pub(crate) async fn delete_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    tokio::task::spawn_blocking(move || asset_uploads::abort_upload(&assets_dir, &sha, &uid))
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("upload abort task: {e}")))??;
+    run_blocking("upload abort", move || {
+        asset_uploads::abort_upload(&assets_dir, &sha, &uid)
+    })
+    .await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
