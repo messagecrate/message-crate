@@ -57,7 +57,9 @@ export function MessagesByAccountSection({ storage }: { storage: ServerStorage }
               <td className={`${tdClass} ${numberCellClass} font-semibold`}>
                 {storage.message_count.toLocaleString()}
               </td>
-              <td className={`${tdClass} ${numberCellClass} font-semibold`}>{formatBytes(totalText)}</td>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
+                {formatBytes(totalText)}
+              </td>
               <td className={`${tdClass} ${numberCellClass} font-semibold`}>
                 {formatBytes(storage.messages_bytes)}
               </td>
