@@ -37,23 +37,17 @@ One exchange with one person or group, holding its messages and
 participants. It is the unit the product acts on: tagging and trashing
 resolve to whole conversations, and searching resolves to whole
 conversations unless the person asks for messages.
+
 A Conversation the source records as a group (a WhatsApp group, an Apple
 Messages group) is a **group conversation**, whatever the number of other
-people in it, because the source app showed it to the person as a group.
+people in it, because the source app showed it to the person as one.
 A source that records no groups (an SMS or MMS backup, an iMazing or
-OpenExtract export) holds only who took part, so there two or more other
-people make a group conversation.
-An SMS or MMS backup counts everyone a message names, sender and recipients.
-iMazing and OpenExtract count who wrote, so a group in which only one other
-person wrote comes through as one-to-one, and iMazing also takes a session
-named for its members ("Ada & Bo") as a group.
-The count leaves out the account holder, which needs their own number or
-address, so a backup that gives neither can turn a one-to-one conversation
-into a group or a group into a one-to-one conversation.
-Every other Conversation, except one of Orphaned messages, is a
-**one-to-one conversation**, so an MMS message with one other recipient
-belongs to the one-to-one conversation with that person.
-A Conversation of Orphaned messages is neither.
+OpenExtract export) names only who took part, so there two or more other
+people it names make a group conversation, and an MMS group left with one
+other person comes through as a one-to-one conversation.
+Every other Conversation is a **one-to-one conversation**, apart from a
+Conversation of Orphaned messages, which is neither.
+
 The search words for the three are `kind:group`, `kind:direct`
 and `kind:orphaned`, short because they are typed; everything a person reads
 says "group conversation" and "one-to-one conversation", never "group chat",
