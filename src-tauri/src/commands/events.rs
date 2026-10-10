@@ -249,6 +249,13 @@ pub(crate) fn log_to_run(app: &AppHandle, run_log: &crate::app_directories::RunL
     emit(app, LOG, line);
 }
 
+/// Send `text` to the window's log and add it to the Import Run's log as a
+/// warning.
+pub(crate) fn warn_to_run(app: &AppHandle, run_log: &crate::app_directories::RunLog, text: String) {
+    run_log.warn(&text);
+    emit(app, LOG, text);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

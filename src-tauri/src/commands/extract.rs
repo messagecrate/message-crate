@@ -214,9 +214,16 @@ pub fn extract(
     let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
     let log_app = app_handle.clone();
     let sink_log = run_log.clone();
-    config.log = Some(LogSink::new(move |line: &str| {
-        events::log_to_run(&log_app, &sink_log, line.to_string());
-    }));
+    let warn_app = app_handle.clone();
+    let warn_log = run_log.clone();
+    config.log = Some(
+        LogSink::new(move |line: &str| {
+            events::log_to_run(&log_app, &sink_log, line.to_string());
+        })
+        .with_warnings(move |text: &str| {
+            events::warn_to_run(&warn_app, &warn_log, text.to_string());
+        }),
+    );
     config.progress = Some(events::progress_sink(&app_handle));
     config.issues = Some(events::run_issue_sink(&app_handle, &run_log));
 
