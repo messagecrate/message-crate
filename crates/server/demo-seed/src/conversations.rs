@@ -23,7 +23,7 @@ use crate::assets::{JPG_PHOTOS, OTHER_ATTACHMENTS};
 use crate::config::SeedConfig;
 use crate::corpus::Corpus;
 use crate::personas::{
-    Contact, EMPTY_GROUP_HANDLE, EMPTY_GROUP_MEMBERS, EMPTY_THREAD_HANDLE, ORPHAN_SENDER,
+    Contact, EMPTY_GROUP_HANDLE, EMPTY_GROUP_MEMBERS, EMPTY_ONE_TO_ONE_HANDLE, ORPHAN_SENDER,
     OWNER_EMAIL, OWNER_PHONE, Roster, Unassigned,
 };
 use crate::phones;
@@ -196,7 +196,7 @@ impl<R: Rng> Seeder<'_, R> {
         if self.cfg.edge_cases.empty_individual {
             self.create_empty_conversation_file(
                 staging.imessage,
-                EMPTY_THREAD_HANDLE,
+                EMPTY_ONE_TO_ONE_HANDLE,
                 IrConversationType::Individual,
                 &[],
             )?;
@@ -1561,14 +1561,14 @@ mod tests {
             "/dev/full",
             staging.join(format!(
                 "empty-{}.jsonl",
-                sanitize_filename(EMPTY_THREAD_HANDLE)
+                sanitize_filename(EMPTY_ONE_TO_ONE_HANDLE)
             )),
         )
         .expect("link the conversation file to /dev/full");
 
         let result = seeder.create_empty_conversation_file(
             &staging,
-            EMPTY_THREAD_HANDLE,
+            EMPTY_ONE_TO_ONE_HANDLE,
             IrConversationType::Individual,
             &[],
         );
