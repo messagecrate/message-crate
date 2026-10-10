@@ -9,7 +9,7 @@ import { ConvertSection } from "./ConvertSection";
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
 const invokeFormat = vi.hoisted(() => vi.fn());
 const invokeCancel = vi.hoisted(() => vi.fn());
-const awaitTauriJob = vi.hoisted(() => vi.fn());
+const awaitDesktopJob = vi.hoisted(() => vi.fn());
 const invokeCreateExportDir = vi.hoisted(() => vi.fn());
 const invokeFinishExportDir = vi.hoisted(() => vi.fn());
 const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
@@ -32,7 +32,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
     invokeCancel: (...args: unknown[]) => invokeCancel(...args),
     // The job's name comes first; the mocks below take what follows it.
-    awaitTauriJob: (_job: string, ...args: unknown[]) => awaitTauriJob(...args),
+    awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
     onExtractEvents: vi.fn(async () => () => {}),
   };
 });
@@ -55,8 +55,8 @@ beforeEach(() => {
   });
   invokeFinishExportDir.mockResolvedValue(CONVERT_DIR);
   invokeDiscardExportDir.mockResolvedValue(undefined);
-  // The hook's `run` goes through awaitTauriJob: call the invoke and resolve.
-  awaitTauriJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
+  // The hook's `run` goes through awaitDesktopJob: call the invoke and resolve.
+  awaitDesktopJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
     await invokeFn();
     return { summary: "Format conversion complete." };
   });
@@ -126,7 +126,7 @@ describe("ConvertSection", () => {
   });
 
   it("deletes its own directory when the conversion fails", async () => {
-    awaitTauriJob.mockImplementation(async () => {
+    awaitDesktopJob.mockImplementation(async () => {
       throw new Error("no conversation files in /home/demo/empty");
     });
     const user = setupUser();
@@ -194,7 +194,7 @@ describe("ConvertSection", () => {
   });
 
   it("reports the failure rather than claiming the conversion finished", async () => {
-    awaitTauriJob.mockImplementation(async () => {
+    awaitDesktopJob.mockImplementation(async () => {
       throw new Error("input and output directories must be different");
     });
     const user = await fillDirectories("/home/demo/link-to-export", "/home/demo/export");
@@ -225,7 +225,7 @@ describe("ConvertSection", () => {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await held;
       await invokeFn();
       return { summary: "Format conversion complete." };

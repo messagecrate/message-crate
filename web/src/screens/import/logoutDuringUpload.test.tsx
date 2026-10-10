@@ -13,7 +13,7 @@
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, getToken } from "../../lib/api";
-import type { TauriJobResult, UploadFinishedReport } from "../../lib/tauri";
+import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
 import { setupUser } from "../../test/user";
 
 /** Every call that matters to the order, in the order it was made. */
@@ -28,13 +28,13 @@ const cancelMock = vi.fn();
 const deleteRunDirMock = vi.fn();
 
 /** Settles the running Upload with the report the desktop side sends. */
-let finishUpload: ((result: TauriJobResult) => void) | null = null;
+let finishUpload: ((result: DesktopJobResult) => void) | null = null;
 
 vi.mock("../../lib/tauri", () => ({
-  awaitTauriJob: async (_job: string, invokeFn: () => Promise<void>) => {
+  awaitDesktopJob: async (_job: string, invokeFn: () => Promise<void>) => {
     await invokeFn();
     calls.push("upload started");
-    return new Promise<TauriJobResult>((resolve) => {
+    return new Promise<DesktopJobResult>((resolve) => {
       finishUpload = resolve;
     });
   },
