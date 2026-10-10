@@ -1,8 +1,7 @@
 import { useMemo, useState } from "react";
-import AddIdentityDialog from "../../components/AddIdentityDialog";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import IdentityCountryDialog from "../../components/IdentityCountryDialog";
+import IdentityDialogs from "../../components/IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import { useIdentityCountryPick } from "../../components/useIdentityCountryPick";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
@@ -210,25 +209,14 @@ export function IdentitiesSection({
         )}
       </div>
 
-      <IdentityCountryDialog
-        open={countryPick.target !== null}
-        address={countryPick.target?.address ?? ""}
+      <IdentityDialogs
+        countryPick={countryPick}
         busy={busy}
-        error={countryPick.error}
-        onClose={() => {
-          if (!busy) countryPick.close();
-        }}
-        onPick={(args) => void countryPick.confirm(args)}
-      />
-      <AddIdentityDialog
-        open={adding}
-        busy={busy}
-        error={addError}
+        adding={adding}
+        addError={addError}
         existing={rows}
-        onClose={() => {
-          if (!busy) setAdding(false);
-        }}
-        onConfirm={(args) => void confirmAdd(args)}
+        onCloseAdd={() => setAdding(false)}
+        onConfirmAdd={(args) => void confirmAdd(args)}
       />
       <ConfirmDialog
         open={removeTarget !== null}
