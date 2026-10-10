@@ -129,23 +129,8 @@ pub(crate) fn referenced_attachment_indices(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::attachment;
     use imessage_database::tables::messages::models::AttachmentMeta;
-
-    fn stub_attachment(guid: Option<&str>) -> Attachment {
-        Attachment {
-            rowid: 0,
-            guid: guid.map(str::to_string),
-            filename: None,
-            uti: None,
-            mime_type: None,
-            transfer_name: None,
-            total_bytes: 0,
-            is_sticker: false,
-            hide_attachment: 0,
-            emoji_description: None,
-            copied_path: None,
-        }
-    }
 
     fn att_range(guid: Option<&str>) -> AttributedRange {
         AttributedRange::attachment(
@@ -161,9 +146,9 @@ mod tests {
     #[test]
     fn positional_skips_guid_claimed_indices() {
         let attachments = vec![
-            stub_attachment(Some("guid-a")),
-            stub_attachment(Some("guid-b")),
-            stub_attachment(None),
+            attachment(Some("guid-a")),
+            attachment(Some("guid-b")),
+            attachment(None),
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
         // First body range points at attachment 0 by GUID.
@@ -181,9 +166,9 @@ mod tests {
     #[test]
     fn positional_takes_the_next_unclaimed_row_when_every_row_has_a_guid() {
         let attachments = vec![
-            stub_attachment(Some("guid-a")),
-            stub_attachment(Some("guid-b")),
-            stub_attachment(Some("guid-c")),
+            attachment(Some("guid-a")),
+            attachment(Some("guid-b")),
+            attachment(Some("guid-c")),
         ];
         let mut resolver = AttachmentResolver::new(&attachments);
         assert_eq!(resolver.resolve(&att_range(Some("guid-a"))), 0);
@@ -199,7 +184,7 @@ mod tests {
     /// when it comes before them.
     #[test]
     fn positional_takes_an_earlier_unclaimed_guid_row_before_running_out() {
-        let attachments = vec![stub_attachment(Some("guid-a")), stub_attachment(None)];
+        let attachments = vec![attachment(Some("guid-a")), attachment(None)];
         let mut resolver = AttachmentResolver::new(&attachments);
         assert_eq!(resolver.resolve(&att_range(None)), 1);
         assert_eq!(resolver.resolve(&att_range(None)), 0);
@@ -213,7 +198,7 @@ mod tests {
         let fixture = crate::test_support::FixtureDb::write();
         let session = fixture.session();
         let mut message = crate::test_support::FixtureDb::messages(&session).remove(1);
-        let attachments = vec![stub_attachment(None), stub_attachment(Some("guid-b"))];
+        let attachments = vec![attachment(None), attachment(Some("guid-b"))];
 
         message.components = vec![BubbleComponent::Run(vec![
             att_range(Some("guid-b")),

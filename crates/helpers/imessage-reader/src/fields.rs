@@ -453,6 +453,7 @@ pub(crate) fn parse_thread_part(part: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::attachment;
     use imessage_database::{
         message_types::{
             edited::{EditStatus, EditedEvent, EditedMessagePart},
@@ -510,22 +511,6 @@ mod tests {
         Message {
             balloon_bundle_id: Some(bundle_id.to_string()),
             ..message()
-        }
-    }
-
-    fn attachment(guid: Option<&str>) -> Attachment {
-        Attachment {
-            rowid: 0,
-            guid: guid.map(str::to_string),
-            filename: None,
-            uti: None,
-            mime_type: None,
-            transfer_name: None,
-            total_bytes: 0,
-            is_sticker: false,
-            hide_attachment: 0,
-            emoji_description: None,
-            copied_path: None,
         }
     }
 

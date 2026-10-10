@@ -191,23 +191,7 @@ pub async fn record(
     original_sha: &str,
     file: &VersionFile,
 ) -> Result<u64, sqlx::Error> {
-    let [sha_column, path_column, mime_column] = version.columns();
-    let mut tx = begin_write(conn).await?;
-    let done = sqlx::query(&format!(
-        "UPDATE attachments
-         SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
-         WHERE sha256 = $4
-           AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
-    ))
-    .bind(&file.sha256)
-    .bind(&file.assets_path)
-    .bind(&file.mime_type)
-    .bind(original_sha)
-    .bind(account_id)
-    .execute(&mut *tx)
-    .await?;
-    tx.commit().await?;
-    Ok(done.rows_affected())
+    point_rows(conn, version, account_id, original_sha, file, false).await
 }
 
 /// Record on every attachment row of `account_id` for the original
@@ -257,13 +241,34 @@ pub async fn share(
     original_sha: &str,
     file: &VersionFile,
 ) -> Result<u64, sqlx::Error> {
+    point_rows(conn, version, account_id, original_sha, file, true).await
+}
+
+/// Point the attachment rows of `account_id` for the original
+/// `original_sha` at `file` as its `version`, and answer how many rows it
+/// pointed. When `only_unset` is true, rows that already name a `version`
+/// are left alone. [`record`] and [`share`] are this one statement, so a
+/// change to how a version is pointed at is made once.
+async fn point_rows(
+    conn: &mut SqliteConnection,
+    version: Version,
+    account_id: i64,
+    original_sha: &str,
+    file: &VersionFile,
+    only_unset: bool,
+) -> Result<u64, sqlx::Error> {
     let [sha_column, path_column, mime_column] = version.columns();
+    let unset_filter = if only_unset {
+        format!("AND COALESCE({path_column}, '') = ''")
+    } else {
+        String::new()
+    };
     let mut tx = begin_write(conn).await?;
     let done = sqlx::query(&format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
          WHERE sha256 = $4
-           AND COALESCE({path_column}, '') = ''
+           {unset_filter}
            AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
     ))
     .bind(&file.sha256)
