@@ -16,8 +16,8 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, bail};
 
-use crate::Kind;
-use crate::tools::{ffprobe_available, probe_video, require_ffmpeg, run_ffmpeg_until};
+use crate::tools::{ffprobe_available, require_ffmpeg, run_ffmpeg_until};
+use crate::{Kind, probe_media};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -99,7 +99,7 @@ pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
     if !ffprobe_available() {
         return None;
     }
-    Some(probe_video(src).is_ok_and(|probe| probe.codec == "h264"))
+    Some(probe_media(src).is_ok_and(|probe| probe.codec == "h264"))
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the

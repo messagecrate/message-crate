@@ -1,4 +1,7 @@
-//! Read one media file's shape with ffprobe, for the size forecast.
+//! Read one media file's shape with ffprobe: for the size forecast, the
+//! Media stage's compression, and the check whether a browser plays an MP4.
+//! [`probe_media`] is the only place ffprobe runs, so all three judge a file
+//! the same way.
 
 use std::path::Path;
 use std::process::Command;
@@ -10,7 +13,7 @@ use crate::tools::ffprobe_command;
 /// What ffprobe reports about one media file's first video stream.
 ///
 /// Stills have a stream too, with no frame rate.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct MediaProbe {
     /// Codec as ffprobe spells it, lowercased: `hevc`, `h264`, `mjpeg`, `png`.
     pub codec: String,
@@ -186,5 +189,44 @@ mod tests {
         assert_eq!(probe.height, 48);
         let fps = probe.fps.expect("a real video reports a frame rate");
         assert!((fps - 25.0).abs() < 0.01, "fps was {fps}");
+    }
+
+    /// A file name that is not UTF-8 is passed to ffprobe as it is. A probe
+    /// that sent it as text once sent an empty name instead, so compression
+    /// and the browser-playable check read such a video as unknown.
+    #[cfg(unix)]
+    #[test]
+    fn probes_a_file_whose_name_is_not_utf8() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        use crate::tools::run_ffmpeg;
+
+        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let made = dir.path().join("clip.mp4");
+        run_ffmpeg(&[
+            "-y".into(),
+            "-f".into(),
+            "lavfi".into(),
+            "-i".into(),
+            "testsrc=size=32x24:rate=10".into(),
+            "-frames:v".into(),
+            "2".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-c:v".into(),
+            "libx264".into(),
+            made.to_string_lossy().into_owned(),
+        ])
+        .expect("generate probe fixture");
+        let path = dir.path().join(OsStr::from_bytes(b"clip-\xff.mp4"));
+        std::fs::rename(&made, &path).unwrap();
+
+        let probe = probe_media(&path).expect("probe a file with a non-UTF-8 name");
+        assert_eq!(probe.codec, "h264");
+        assert_eq!((probe.width, probe.height), (32, 24));
     }
 }

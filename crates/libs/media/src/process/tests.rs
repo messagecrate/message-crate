@@ -415,7 +415,7 @@ fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
 
     assert_eq!(new_rel.as_deref(), Some("attachments/clip.mp4"));
     assert!(!mov.exists(), "the .mov was left behind");
-    let probe = probe_video(&attachments.join("clip.mp4")).unwrap();
+    let probe = probe_media(&attachments.join("clip.mp4")).unwrap();
     assert_eq!(probe.codec, "h264", "a remux keeps the stream");
 }
 
@@ -440,7 +440,7 @@ fn compress_only_remuxes_a_video_under_the_minimum_size() {
     let new_rel = process_single(dir.path(), &mov, MediaMode::Compress, &opts);
     assert_eq!(new_rel.as_deref(), Some("attachments/small.mp4"));
     assert!(!mov.exists());
-    let probe = probe_video(&attachments.join("small.mp4")).unwrap();
+    let probe = probe_media(&attachments.join("small.mp4")).unwrap();
     assert_eq!(
         probe.codec, "h264",
         "a small video is remuxed, not re-encoded"
