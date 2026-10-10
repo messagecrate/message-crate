@@ -17,19 +17,11 @@ use message_crate_serve_protocol::LISTENING_LINE;
 // (#1898). A test binary uses only some of them, so the rest would warn as
 // dead code there.
 #[allow(dead_code)]
+#[path = "../../src/test_support/client.rs"]
+pub mod client;
+#[allow(dead_code)]
 #[path = "../../src/test_support/lines.rs"]
 pub mod lines;
-
-/// An HTTP client for a test's calls to the server it started, built without
-/// root certificates like the unit tests' `test_support::http_client`: every
-/// call is plain HTTP to 127.0.0.1.
-#[allow(dead_code)]
-pub fn http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .tls_built_in_root_certs(false)
-        .build()
-        .expect("build the test HTTP client")
-}
 
 /// How long a server on an empty database may take to listen or to exit.
 pub const WAIT: Duration = Duration::from_secs(60);

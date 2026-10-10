@@ -17,7 +17,7 @@ const SECOND: i64 = 1_426_183_462_000;
 
 /// POST `body` to `path` and answer the JSON the server sends back.
 async fn post(base: &str, path: &str, token: Option<&str>, body: Value) -> Value {
-    let mut request = common::http_client()
+    let mut request = common::client::http_client()
         .post(format!("{base}{path}"))
         .json(&body);
     if let Some(token) = token {
@@ -48,7 +48,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     )
     .await;
     let owner = claimed["token"].as_str().unwrap().to_string();
-    let response = common::http_client()
+    let response = common::client::http_client()
         .patch(format!("{base}/v1/server/settings"))
         .bearer_auth(&owner)
         .json(&json!({ "public_registration": true }))
@@ -115,7 +115,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
         .unwrap();
     assert_eq!(report.messages_failed, 0, "{report:?}");
 
-    let page: Value = common::http_client()
+    let page: Value = common::client::http_client()
         .get(format!("{base}/v1/messages"))
         .bearer_auth(&token)
         .send()
