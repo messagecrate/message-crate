@@ -113,7 +113,7 @@ export function ContactDrawerHandles({
         addError={mutationError}
         existing={handleRows}
         onCloseAdd={() => setAdding(false)}
-        onConfirmAdd={(args) => void confirmAdd(args)}
+        onConfirmAdd={confirmAdd}
       />
       <ConfirmDialog
         open={removeTarget !== null}

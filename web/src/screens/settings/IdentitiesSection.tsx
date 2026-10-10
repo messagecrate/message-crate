@@ -216,7 +216,7 @@ export function IdentitiesSection({
         addError={addError}
         existing={rows}
         onCloseAdd={() => setAdding(false)}
-        onConfirmAdd={(args) => void confirmAdd(args)}
+        onConfirmAdd={confirmAdd}
       />
       <ConfirmDialog
         open={removeTarget !== null}
