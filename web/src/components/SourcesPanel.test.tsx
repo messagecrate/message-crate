@@ -38,4 +38,17 @@ describe("SourcesPanel", () => {
     expect(screen.getByText("1 unique (33.3% of unique messages)")).toBeTruthy();
     expect(screen.getAllByText("2 messages")).toHaveLength(2);
   });
+
+  it("says there is no source data, without a full stop, when the conversation has none", async () => {
+    getSources.mockResolvedValue([]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    render(
+      <QueryClientProvider client={client}>
+        <SourcesPanel conversationId={1} onClose={() => {}} />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText("No source data available")).toBeTruthy();
+  });
 });

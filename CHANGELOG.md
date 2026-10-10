@@ -229,6 +229,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The time zone picker and Sources end an empty-state
+  message without a full stop.** The time zone picker said "No time zone
+  matches." when nothing matched what was typed, and Sources said "No
+  source data available." for a conversation with no source data. Both now
+  end without one, like the empty lists in Contacts and Trash (#2469).
 - 2026-10-10: **API Tokens, Identities, Export History, Import History,
   the largest attachments in Storage, the Audit Trail and the log viewer
   end an empty-list message without a full stop.** They ended theirs with
