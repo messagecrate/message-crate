@@ -1,5 +1,6 @@
+import { formatBytes } from "../../../lib/formatBytes";
 import { countOf } from "../../../lib/plural";
-import { formatBytes, sectionHint, sectionTitle } from "./storageUtils";
+import { sectionHint, sectionTitle } from "./storageUtils";
 
 /**
  * What the account holds: attachment bytes over the message, attachment,

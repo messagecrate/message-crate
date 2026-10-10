@@ -1,6 +1,6 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { formatBytes } from "../../../lib/formatBytes";
 import { tdClass, tdMuted } from "../../settings/apiTokensUtils";
-import { formatBytes } from "../../settings/storage/storageUtils";
 import { rowStripe, thClass, thSeparator } from "../ownerTableStyles";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";

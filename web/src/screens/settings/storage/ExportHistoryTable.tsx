@@ -1,9 +1,9 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { formatBytes } from "../../../lib/formatBytes";
 import PageControl from "./PageControl";
 import type { ExportRow } from "./storageUtils";
 import {
   describeExportRun,
-  formatBytes,
   formatImportDate,
   RUN_PAGE_SIZE,
   sectionHint,
