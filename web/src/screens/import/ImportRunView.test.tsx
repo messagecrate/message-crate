@@ -77,7 +77,6 @@ function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues
     ownerPhones: [],
     ownerEmails: [],
     obfuscate: false,
-    isAndroidSms: false,
     attachmentRoot: "",
     appleContacts: "",
     whatsappKey: "",

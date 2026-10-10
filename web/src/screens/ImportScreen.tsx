@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { phoneNumbers, profileAddresses } from "../lib/account";
-import { isAndroidSmsSource, needsOwnerEmails, splitEmails } from "../lib/androidSmsSources";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
 import {
   emptyImessagePathStats,
   IMESSAGE_DEFAULT_METHOD,
-  IMESSAGE_SOURCE_ID,
-  type ImessageMethodId,
   imessageStatsForMethod,
   isImessageMethod,
   macMessagesDbPath,
@@ -16,6 +13,8 @@ import {
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
+import { importSourceById, importSourceFor } from "../lib/importSources";
+import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
@@ -41,9 +40,6 @@ import {
   emptyWhatsappPathStats,
   isWhatsappMethod,
   WHATSAPP_CRYPT_NAMES,
-  WHATSAPP_DEFAULT_METHOD,
-  WHATSAPP_SOURCE_ID,
-  type WhatsappMethodId,
 } from "../lib/whatsappImport";
 import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
@@ -240,8 +236,9 @@ export default function ImportScreen() {
   const ownerPhonesSeededRef = useRef(false);
   const ownerEmailsSeededRef = useRef(false);
   const whatsappOwnerPhoneSeededRef = useRef(false);
-  const lastImessageMethodRef = useRef<ImessageMethodId>(IMESSAGE_DEFAULT_METHOD);
-  const lastWhatsappMethodRef = useRef<WhatsappMethodId>(WHATSAPP_DEFAULT_METHOD);
+  // The method last picked for each source with several, by source id, so
+  // picking the source again returns to it.
+  const lastMethodRef = useRef<Record<string, string>>({});
   const sourceChangeGenRef = useRef(0);
 
   const [resume, setResume] = useState<ResumeDecision>(NO_RESUME);
@@ -458,7 +455,8 @@ export default function ImportScreen() {
   // and the one WhatsApp number (Android's only source, iPhone's fallback).
   useEffect(() => {
     const isWhatsapp = isWhatsappMethod(source);
-    if (!isAndroidSmsSource(source) && !isWhatsapp) {
+    const descriptor = importSourceFor(source);
+    if (!descriptor.asksOwnerPhones && !isWhatsapp) {
       setProfilePhones([]);
       setProfilePhonesReady(false);
       setProfilePhonesError(false);
@@ -467,7 +465,7 @@ export default function ImportScreen() {
       whatsappOwnerPhoneSeededRef.current = false;
       return;
     }
-    const wantsEmails = needsOwnerEmails(source);
+    const wantsEmails = descriptor.asksOwnerEmails;
     let cancelled = false;
     setProfilePhonesReady(false);
     setProfilePhonesError(false);
@@ -629,16 +627,12 @@ export default function ImportScreen() {
   }
 
   function handleSourceChange(next: string): void {
-    const resolved =
-      next === IMESSAGE_SOURCE_ID
-        ? lastImessageMethodRef.current
-        : next === WHATSAPP_SOURCE_ID
-          ? lastWhatsappMethodRef.current
-          : next;
+    // `next` is a source id from the source list, or a method from Platform.
+    const picked = importSourceById(next);
+    const resolved = picked ? (lastMethodRef.current[picked.id] ?? picked.defaultMethod) : next;
     const gen = ++sourceChangeGenRef.current;
     setSource(resolved);
-    if (isImessageMethod(resolved)) lastImessageMethodRef.current = resolved;
-    if (isWhatsappMethod(resolved)) lastWhatsappMethodRef.current = resolved;
+    lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     setPathStats(emptyImessagePathStats());
     setWhatsappStats(emptyWhatsappPathStats());
     if (resolved !== "whatsapp-ios") setWhatsappBusiness(false);
@@ -711,8 +705,6 @@ export default function ImportScreen() {
       setImporterExtraPath(source, "whatsappDb", path);
     }
   };
-
-  const isAndroidSms = isAndroidSmsSource(source);
 
   return (
     <div className={`min-w-0 p-6 ${phase === "form" ? "max-w-[640px]" : "max-w-5xl"}`}>
@@ -796,7 +788,6 @@ export default function ImportScreen() {
               obfuscate,
               timeZone,
               phoneCountry,
-              isAndroidSms,
               attachmentRoot,
               appleContacts,
               whatsappKey,

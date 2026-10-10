@@ -108,7 +108,6 @@ const form = {
   ownerPhones: [],
   ownerEmails: [],
   obfuscate: false,
-  isAndroidSms: false,
   attachmentRoot: "",
   appleContacts: "",
   whatsappKey: "",

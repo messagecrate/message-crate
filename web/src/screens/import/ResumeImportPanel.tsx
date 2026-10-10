@@ -3,7 +3,7 @@ import Button from "../../components/Button";
 import PasswordField from "../../components/PasswordField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
-import type { SnapshotSecret } from "./formSnapshot";
+import type { SnapshotSecret } from "../../lib/importSources/types";
 import { hintStyle, StackedField } from "./ImportFormUi";
 import type { ResumeDecision } from "./resumeDecision";
 
