@@ -86,15 +86,18 @@
 //! the work pending and the resumed Media stage reports it again. A row's item is
 //! the conversation file and the original's staged path, which no other
 //! file in the conversation shares. A file an earlier attempt could not convert
-//! is settled again by a later attempt, which first sends a [`RESOLVED`] row
-//! for it: the earlier row no longer holds, whatever the later attempt does.
+//! is settled again by a later attempt, which first sends a
+//! [`RunIssueKind::Resolved`] row for it: the earlier row no longer holds,
+//! whatever the later attempt does.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode, TranscodeOutcome};
-use message_crate_core::{CancelFlag, IssueSink, RunIssue, check_cancel, emit_issue, mime_for_rel};
+use message_crate_core::{
+    CancelFlag, IssueSink, RunIssue, RunIssueKind, check_cancel, emit_issue, mime_for_rel,
+};
 use message_ir::{ConversationDocument, IrAttachment};
 
 use message_ir_format::read_conversation_jsonl;
@@ -230,7 +233,7 @@ pub fn transcode_staged(
                         &doc,
                         recorded_rel,
                         recorded_rel,
-                        RESOLVED,
+                        RunIssueKind::Resolved,
                         "is tried again",
                     ),
                 );
@@ -683,7 +686,7 @@ fn apply_transcode(
                     doc,
                     recorded_rel,
                     &item_rel,
-                    SKIP,
+                    RunIssueKind::Skip,
                     &format!("could not be converted, so the original file is kept: {err:#}"),
                 ),
             );
@@ -805,14 +808,6 @@ fn apply_transcode(
     }
 }
 
-/// The `kind` of a row for an attachment the Media stage left without a converted
-/// file.
-pub const SKIP: &str = "skip";
-
-/// The `kind` of a row that says an earlier row about the same item no
-/// longer holds. The window drops the earlier row and keeps no row for it.
-pub const RESOLVED: &str = "resolved";
-
 /// The attachments in `doc` recorded at `recorded_rel`.
 fn recorded_at<'a>(
     doc: &'a ConversationDocument,
@@ -844,7 +839,7 @@ fn media_issue(
     doc: &ConversationDocument,
     recorded_rel: &str,
     item_rel: &str,
-    kind: &str,
+    kind: RunIssueKind,
     what: &str,
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
@@ -852,7 +847,7 @@ fn media_issue(
         .find_map(|att| att.original_name.as_deref().and_then(message_ir::trimmed))
         .unwrap_or("The attachment");
     RunIssue {
-        kind: kind.into(),
+        kind,
         step: "media".into(),
         item: format!("{conversation}:{item_rel}"),
         reason: format!("{name} {what}"),
@@ -875,7 +870,7 @@ fn too_large_issue(
         doc,
         recorded_rel,
         item_rel,
-        SKIP,
+        RunIssueKind::Skip,
         &format!(
             "is {size} bytes ({} MiB) after conversion, over the attachment size limit, so it \
              was left out",
@@ -951,7 +946,7 @@ fn apply_unrecoverable(
             doc,
             recorded_rel,
             recorded_rel,
-            SKIP,
+            RunIssueKind::Skip,
             "was lost when an earlier Media Stage stopped partway, so it was left out",
         ),
     );

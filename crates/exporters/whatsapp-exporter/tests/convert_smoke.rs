@@ -59,7 +59,7 @@ fn copies_ios_style_media_true_data_paths() {
             "name": "Media Peer",
             "type": "ios",
             "media_base": format!("{media_base}/"),
-            "messages": {
+            "members": null, "messages": {
                 "M1": {
                     "from_me": false,
                     "timestamp": 1609459200,
@@ -72,7 +72,11 @@ fn copies_ios_style_media_true_data_paths() {
                     "caption": "look at this",
                     "sticker": false,
                     "reply": null,
-                    "reactions": {}
+                    "reactions": {},
+                    "sender_jid": null,
+                    "sender_lid": null,
+                    "sender_contact_name": null,
+                    "sender_push_name": null
                 }
             }
         }
@@ -143,6 +147,17 @@ fn convert_to_documents(
     message_crate_core::ExportReport,
     std::collections::BTreeMap<String, message_ir::ConversationDocument>,
 ) {
+    convert_with_owner(json, None)
+}
+
+/// [`convert_to_documents`], with the owner's number as the run knows it.
+fn convert_with_owner(
+    json: &serde_json::Value,
+    owner_identity: Option<&str>,
+) -> (
+    message_crate_core::ExportReport,
+    std::collections::BTreeMap<String, message_ir::ConversationDocument>,
+) {
     let dir = tempfile::tempdir().expect("tempdir");
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, json.to_string()).expect("write json");
@@ -152,7 +167,7 @@ fn convert_to_documents(
         output: &out,
         transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
-        owner_identity: None,
+        owner_identity: owner_identity.map(str::to_string),
         backup_taken_at_unix_ms: None,
         output_format: OutputFormat::Json,
         cancel: None,
@@ -183,7 +198,11 @@ fn row(key_id: &str, timestamp: serde_json::Value, data: serde_json::Value) -> s
         "caption": null,
         "sticker": false,
         "reply": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
     })
 }
 
@@ -200,7 +219,7 @@ fn messages_keep_their_time_and_their_identity() {
     let json = serde_json::json!({
         "15555550122@s.whatsapp.net": {
             "name": "Sam Example",
-            "messages": {
+            "members": null, "messages": {
                 "K1": row("K1", 1_609_459_200.into(), "Hello".into()),
                 "K2": ok_twice,
                 "K3": ok_again,
@@ -248,48 +267,229 @@ fn messages_keep_their_time_and_their_identity() {
     );
 }
 
-/// An incoming one-to-one message is from the peer, named by the chat. A
-/// group message is from the member's phone, and the group's roster lists
-/// the members who wrote.
+/// `tests/fixtures/senders.json`, converted with the owner `+15555550100`,
+/// keyed by chat identifier.
+fn senders_fixture() -> std::collections::BTreeMap<String, message_ir::ConversationDocument> {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/senders.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
+            .expect("parse fixture");
+    convert_with_owner(&json, Some("+15555550100")).1
+}
+
+/// Each participant as (identity, type, name).
+fn roster(
+    doc: &message_ir::ConversationDocument,
+) -> Vec<(Option<&str>, Option<message_ir::IdentityType>, Option<&str>)> {
+    doc.conversation
+        .participants
+        .iter()
+        .map(|p| {
+            (
+                p.identity.as_deref(),
+                p.identity_type,
+                p.display_name.as_deref(),
+            )
+        })
+        .collect()
+}
+
+/// The message in `doc` whose text is `text`, as (sender identity, sender
+/// name).
+fn sender_of<'a>(
+    doc: &'a message_ir::ConversationDocument,
+    text: &str,
+) -> (Option<&'a str>, Option<&'a str>) {
+    let msg = message_of(doc, text);
+    (
+        msg.sender_identity.as_deref(),
+        msg.sender_display_name.as_deref(),
+    )
+}
+
+/// A group sender's number comes only from a `sender_jid` that is a phone
+/// id, and `sender` is never read as a number: its 15 digits on a message
+/// from an `@lid` id are not a phone number. The name is the first of
+/// `sender_contact_name`, `sender` when it is a name, and
+/// `sender_push_name`. A sender whose `sender_jid` is still an `@lid` id
+/// has no number, and is written under that id, typed `other` (#1092), so
+/// a sender with no name keeps their sender.
 #[test]
-fn senders_and_the_roster_are_the_peers_phones() {
-    let mut group_row = row("G1", 1_609_632_000.into(), "Group hello".into());
-    group_row["sender"] = "15555550133@s.whatsapp.net".into();
-    // A row with a time no calendar can hold is dropped whole, so its
-    // sender doesn't join the roster either.
-    let mut dropped_row = row("G2", 1e18.into(), "never".into());
-    dropped_row["sender"] = "15555550144@s.whatsapp.net".into();
+fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
+    let documents = senders_fixture();
+    let club = &documents["120363042222222222@g.us"];
+
+    assert_eq!(
+        sender_of(club, "From a member with a contact name"),
+        (Some("+15555550133"), Some("Ada Lovelace")),
+        "the contact name comes before sender and the push name"
+    );
+    assert_eq!(
+        sender_of(club, "From someone who is not a member"),
+        (Some("+15555550155"), Some("Cy")),
+        "digits in sender are not a name, so the push name is"
+    );
+    assert_eq!(
+        sender_of(club, "From an @lid id the backup maps to a phone id"),
+        (Some("+15555550166"), None),
+        "the phone id behind an @lid id gives the number, and the lid digits in sender give none"
+    );
+    assert_eq!(
+        sender_of(club, "From an @lid id the backup cannot map"),
+        (Some("123456789012345@lid"), Some("Lid Person")),
+        "an @lid id is no phone number"
+    );
+    assert_eq!(
+        sender_of(club, "From an @lid id with no name"),
+        (Some("555555555555555@lid"), None)
+    );
+    assert_eq!(
+        sender_of(club, "From a sender named in sender"),
+        (Some("+15555550177"), Some("Dee")),
+        "a name in sender comes before the push name"
+    );
+    assert_eq!(
+        sender_of(club, "From nobody the backup names"),
+        (None, None)
+    );
+}
+
+/// A group has one participant per member, with a number and a name where
+/// the JSON has them, a member who never wrote included. Each sender who is
+/// not a member is added. The owner's own member entry is left out, because
+/// the owner is never a participant of their own conversation.
+#[test]
+fn a_group_has_its_members_and_its_other_senders_as_participants() {
+    use message_ir::IdentityType::{Other, Phone};
+    let documents = senders_fixture();
+    let club = &documents["120363042222222222@g.us"];
+    assert_eq!(
+        roster(club),
+        vec![
+            (Some("+15555550133"), Some(Phone), Some("Ada Lovelace")),
+            (Some("+15555550144"), Some(Phone), Some("Benny")),
+            (Some("123456789012345@lid"), Some(Other), Some("Lid Person")),
+            (Some("+15555550155"), Some(Phone), Some("Cy")),
+            (Some("+15555550166"), Some(Phone), None),
+            (Some("+15555550177"), Some(Phone), Some("Dee")),
+            (Some("555555555555555@lid"), Some(Other), None),
+            // Another person with the same name stays another participant.
+            (Some("666666666666666@lid"), Some(Other), Some("Lid Person")),
+        ]
+    );
+}
+
+/// A group whose `members` is `null` had no member table to read, so its
+/// senders are all its participants.
+#[test]
+fn a_group_with_no_member_table_has_its_senders_as_participants() {
+    use message_ir::IdentityType::Phone;
+    let documents = senders_fixture();
+    assert_eq!(
+        roster(&documents["120363042333333333@g.us"]),
+        vec![(Some("+15555550188"), Some(Phone), Some("Ed Example"))]
+    );
+}
+
+/// A one-to-one chat's participant and the sender of its incoming messages
+/// is the peer, named by the chat.
+#[test]
+fn a_one_to_one_participant_has_the_chat_name() {
+    use message_ir::IdentityType::Phone;
+    let documents = senders_fixture();
+    let sam = &documents["+15555550122"];
+    assert_eq!(
+        roster(sam),
+        vec![(Some("+15555550122"), Some(Phone), Some("Sam Example"))]
+    );
+    assert_eq!(
+        sender_of(sam, "Hello from Sam"),
+        (Some("+15555550122"), Some("Sam Example"))
+    );
+}
+
+/// A row with a time no calendar can hold is dropped whole, so its sender
+/// doesn't join the group's participants either.
+#[test]
+fn a_dropped_row_adds_no_participant() {
+    let mut kept = row("G1", 1_609_632_000.into(), "Group hello".into());
+    kept["sender_jid"] = "15555550133@s.whatsapp.net".into();
+    let mut dropped = row("G2", 1e18.into(), "never".into());
+    dropped["sender_jid"] = "15555550144@s.whatsapp.net".into();
     let json = serde_json::json!({
-        "15555550122@s.whatsapp.net": {
-            "name": "Sam Example",
-            "messages": { "K1": row("K1", 1_609_459_200.into(), "Hello".into()) }
-        },
         "120363042111111111@g.us": {
             "name": "Family Chat",
-            "messages": { "G1": group_row, "G2": dropped_row }
+            "members": null, "messages": { "G1": kept, "G2": dropped }
         }
     });
 
     let (_, documents) = convert_to_documents(&json);
-    let direct = &documents["+15555550122"].messages[0];
-    assert_eq!(direct.sender_identity.as_deref(), Some("+15555550122"));
-    assert_eq!(direct.sender_display_name.as_deref(), Some("Sam Example"));
-
-    let group = documents
-        .values()
-        .find(|doc| doc.conversation.group_title.as_deref() == Some("Family Chat"))
-        .expect("the group");
-    assert_eq!(
-        group.messages[0].sender_identity.as_deref(),
-        Some("+15555550133")
-    );
-    let roster: Vec<_> = group
-        .conversation
-        .participants
-        .iter()
-        .filter_map(|p| p.identity.as_deref())
+    let identities: Vec<_> = roster(&documents["120363042111111111@g.us"])
+        .into_iter()
+        .map(|(identity, _, _)| identity)
         .collect();
-    assert_eq!(roster, vec!["+15555550133"]);
+    assert_eq!(identities, vec![Some("+15555550133")]);
+}
+
+/// A `result.json` from upstream WhatsApp Chat Exporter has no sender ids,
+/// names or group members, and is refused with a message that names the
+/// fork, rather than read the old way. A file that lacks only `members`, or
+/// only one sender field, is refused the same way.
+#[test]
+fn a_json_without_the_forks_fields_is_refused() {
+    let mut upstream_row = row("K1", 1_609_459_200.into(), "Hello".into());
+    for field in [
+        "sender_jid",
+        "sender_lid",
+        "sender_contact_name",
+        "sender_push_name",
+    ] {
+        upstream_row.as_object_mut().unwrap().remove(field);
+    }
+    let mut no_push_name = row("K1", 1_609_459_200.into(), "Hello".into());
+    no_push_name
+        .as_object_mut()
+        .unwrap()
+        .remove("sender_push_name");
+    let cases = [
+        serde_json::json!({
+            "15555550122@s.whatsapp.net": { "name": "Sam", "messages": { "K1": upstream_row } }
+        }),
+        serde_json::json!({
+            "15555550122@s.whatsapp.net": {
+                "name": "Sam",
+                "messages": { "K1": row("K1", 1_609_459_200.into(), "Hello".into()) }
+            }
+        }),
+        serde_json::json!({
+            "15555550122@s.whatsapp.net": {
+                "name": "Sam", "members": null, "messages": { "K1": no_push_name }
+            }
+        }),
+    ];
+    for json in cases {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let json_path = dir.path().join("result.json");
+        fs::write(&json_path, json.to_string()).expect("write json");
+        let err = convert_json(ConvertRequest {
+            json_path: &json_path,
+            output: &dir.path().join("out"),
+            transforms: ExportTransforms::none(),
+            media_search_roots: &[],
+            owner_identity: None,
+            backup_taken_at_unix_ms: None,
+            output_format: OutputFormat::Json,
+            cancel: None,
+            resume: false,
+            issues: None,
+        })
+        .expect_err("refused");
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("messagecrate/WhatsApp-Chat-Exporter"),
+            "{json}: {text}"
+        );
+    }
 }
 
 /// A number or a boolean in `data` is the message's text, a caption the
@@ -309,7 +509,7 @@ fn a_body_that_is_not_a_string_is_kept_and_missing_media_is_dropped() {
     let json = serde_json::json!({
         "15555550122@s.whatsapp.net": {
             "name": "Sam Example",
-            "messages": {
+            "members": null, "messages": {
                 "K1": row("K1", 1_609_459_200.into(), 42.into()),
                 "K2": row("K2", 1_609_459_201.into(), true.into()),
                 "K3": missing_flag,
@@ -347,7 +547,7 @@ fn a_media_path_in_the_media_field_is_copied() {
     let mut photo = row("K1", 1_609_459_200.into(), serde_json::Value::Null);
     photo["media"] = "photo.jpg".into();
     let json = serde_json::json!({
-        "15555550122@s.whatsapp.net": { "name": "Sam Example", "messages": { "K1": photo } }
+        "15555550122@s.whatsapp.net": { "name": "Sam Example", "members": null, "messages": { "K1": photo } }
     });
     let json_path = dir.path().join("result.json");
     fs::write(&json_path, json.to_string()).expect("write json");
@@ -376,7 +576,7 @@ fn photo_only_chat() -> serde_json::Value {
     photo["media"] = true.into();
     photo["mime"] = "image/jpeg".into();
     serde_json::json!({
-        "15555550122@s.whatsapp.net": { "name": "Sam Example", "messages": { "K1": photo } }
+        "15555550122@s.whatsapp.net": { "name": "Sam Example", "members": null, "messages": { "K1": photo } }
     })
 }
 
@@ -433,7 +633,7 @@ fn a_lid_chat_has_its_id_as_an_other_participant() {
     let json = serde_json::json!({
         "123456@lid": {
             "name": "Lid Peer",
-            "messages": { "L1": row("L1", 1_609_459_200.into(), "Hello".into()) }
+            "members": null, "messages": { "L1": row("L1", 1_609_459_200.into(), "Hello".into()) }
         }
     });
 
@@ -463,18 +663,18 @@ fn status_updates_and_channel_posts_are_skipped_and_counted() {
     let json = serde_json::json!({
         "status@broadcast": {
             "name": null,
-            "messages": {
+            "members": null, "messages": {
                 "S1": row("S1", 1_609_459_200.into(), "my status".into()),
                 "S2": row("S2", 1_609_459_201.into(), "another status".into()),
             }
         },
         "120363000000000001@newsletter": {
             "name": "A Channel",
-            "messages": { "N1": row("N1", 1_609_459_200.into(), "a post".into()) }
+            "members": null, "messages": { "N1": row("N1", 1_609_459_200.into(), "a post".into()) }
         },
         "15555550122@s.whatsapp.net": {
             "name": "Sam Example",
-            "messages": { "K1": row("K1", 1_609_459_200.into(), "Hello".into()) }
+            "members": null, "messages": { "K1": row("K1", 1_609_459_200.into(), "Hello".into()) }
         }
     });
 

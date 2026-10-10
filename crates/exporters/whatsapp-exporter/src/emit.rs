@@ -1,10 +1,13 @@
 //! Convert wtsexporter JSON into the shared conversation structure, then write
 //! the chosen output format via [`ExportWriter`].
 
-use crate::jid::{chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164};
+use crate::jid::{
+    PHONE_PUNCTUATION, chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164,
+    phone_id_to_e164,
+};
 use crate::parse::{
-    ChatJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store, media_path,
-    message_text, timestamp_ms, timestamp_secs,
+    ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
+    media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
@@ -18,7 +21,7 @@ use message_ir::{
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use serde_json::Map;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -82,6 +85,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let copy_attachments = writer.copies_attachments();
     let mut report = ExportReport::with_issues(issues.cloned());
     let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
+    let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
 
     for (jid, chat) in store {
         message_crate_core::check_cancel(cancel)?;
@@ -93,18 +97,21 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
             report.bump(counter, chat.messages.len() as u64);
             continue;
         }
-        if let Some((chat_id, convo)) = ingest_chat(
+        if let Some((chat_id, convo, roster)) = ingest_chat(
             &jid,
             &chat,
+            owner_identity.as_deref(),
             copy_attachments,
             media_search_roots,
             &mut report,
         ) {
+            rosters.insert(chat_id.clone(), roster);
             conversations.insert(chat_id, convo);
         }
     }
 
     let hooks = WhatsappProjection {
+        rosters,
         export: message_crate_core::export_meta(
             EXPORT_SOURCE,
             EXPORT_TOOL,
@@ -175,31 +182,34 @@ pub(crate) const SKIPPED_CHANNEL_POSTS: Counter = Counter::new(
     "Skipped {n} channel posts",
 );
 
-/// Ingest one WhatsApp chat JSON into a pending conversation (messages + media).
+/// Ingest one WhatsApp chat JSON into a pending conversation (messages +
+/// media), with the conversation's participants.
 fn ingest_chat(
     jid: &str,
     chat: &ChatJson,
+    owner: Option<&str>,
     copy_attachments: bool,
     media_search_roots: &[PathBuf],
     report: &mut ExportReport,
-) -> Option<(String, PendingConversation)> {
+) -> Option<(String, PendingConversation, Vec<IrParticipant>)> {
     let group = is_group_jid(jid);
     let chat_id = chat_id_from_jid(jid);
-    let group_title = if group {
-        chat.name.as_deref().and_then(message_ir::nonempty)
-    } else {
-        None
-    };
+    let chat_name = chat.name.as_deref().and_then(message_ir::nonempty);
+    let group_title = if group { chat_name.clone() } else { None };
 
-    let mut peer_phones: BTreeSet<String> = BTreeSet::new();
-    if !group && let Some(e164) = jid_to_e164(jid) {
-        peer_phones.insert(e164);
+    let mut roster = Roster::new(owner);
+    if group {
+        // `null` means the backup's member table was not read: the group's
+        // senders below are then all that is known of its people.
+        for member in chat.members.get().into_iter().flatten() {
+            roster.add(Person::member(member));
+        }
+    } else {
+        roster.add_peer(jid, &chat_id, chat_name.clone());
     }
 
     let mut pending = PendingConversation::new(chat_id.clone(), group, group_title, Vec::new());
     pending.extra.insert("whatsapp_jid".into(), jid.to_string());
-
-    let display_fallback = chat.name.clone().unwrap_or_default();
 
     for msg in chat.messages.values() {
         let Some(ts_raw) = msg.timestamp else {
@@ -213,11 +223,21 @@ fn ingest_chat(
         }
 
         let is_from_me = msg.from_me;
-        let (sender_identity, sender_display_name) =
-            resolve_sender(msg, is_from_me, &chat_id, &display_fallback, group);
-        if group && let Some(e164) = msg.sender.as_deref().and_then(jid_to_e164) {
-            peer_phones.insert(e164);
-        }
+        let (sender_identity, sender_display_name) = if is_from_me {
+            (String::new(), None)
+        } else if group {
+            let sender = Person::sender(msg);
+            let identity = sender
+                .identity
+                .as_ref()
+                .map(|(identity, _)| identity.clone())
+                .unwrap_or_default();
+            let name = sender.name.clone();
+            roster.add(sender);
+            (identity, name)
+        } else {
+            (chat_id.clone(), chat_name.clone())
+        };
 
         let text = message_text(msg);
         let (attachments, media_source) = match media_path(msg) {
@@ -236,11 +256,7 @@ fn ingest_chat(
             sort_key: timestamp_ms(ts_raw),
             is_from_me,
             sender_identity,
-            sender_display_name: if sender_display_name.is_empty() {
-                None
-            } else {
-                Some(sender_display_name)
-            },
+            sender_display_name,
             text,
             attachments,
             extra: {
@@ -275,39 +291,173 @@ fn ingest_chat(
         return None;
     }
 
-    pending.participant_e164s = peer_phones.into_iter().collect();
-    Some((chat_id, pending))
+    let participants = roster.participants;
+    // The phone numbers name an untitled group's file.
+    pending.participant_e164s = participants
+        .iter()
+        .filter(|p| p.identity_type == Some(IdentityType::Phone))
+        .filter_map(|p| p.identity.clone())
+        .collect();
+    Some((chat_id, pending, participants))
 }
 
-/// Sender handle and display name for a WhatsApp message (empty when from me).
-fn resolve_sender(
-    msg: &MessageJson,
-    is_from_me: bool,
-    chat_id: &str,
-    chat_name: &str,
-    group: bool,
-) -> (String, String) {
-    if is_from_me {
-        return (String::new(), String::new());
-    }
-    if group {
-        // Real JID / phone sender → E.164 handle. Display-name senders (e.g. a
-        // group member's name) leave the handle empty; only the display name is set.
-        let sender = msg.sender.as_deref().unwrap_or_default();
-        match jid_to_e164(sender) {
-            Some(e164) => (e164, String::new()),
-            None => (String::new(), sender.to_string()),
+/// One person of a group as the fork's JSON gives them: a member entry or a
+/// message's sender.
+struct Person {
+    /// Their WhatsApp id: the phone id, or an `@lid` id the backup could not
+    /// map to one. `None` when the backup names no sender.
+    jid: Option<String>,
+    /// What they are written as: the phone number of a phone id, typed
+    /// `phone`, or else the raw id typed `other`, because the exporter knows
+    /// an `@lid` id is no phone number. The one-to-one chat with the same
+    /// person writes the same id ([`Roster::add_peer`]), so both are one
+    /// identity.
+    identity: Option<(String, IdentityType)>,
+    name: Option<String>,
+}
+
+impl Person {
+    fn new(jid: Option<&str>, name: Option<String>) -> Self {
+        let jid = jid.and_then(message_ir::nonempty);
+        let identity = jid.as_deref().map(|jid| match phone_id_to_e164(jid) {
+            Some(number) => (number, IdentityType::Phone),
+            None => (jid.to_string(), IdentityType::Other),
+        });
+        Self {
+            jid,
+            identity,
+            name,
         }
-    } else {
-        let handle = if chat_id.starts_with('+') {
-            chat_id.to_string()
-        } else {
-            msg.sender
-                .as_deref()
-                .and_then(jid_to_e164)
-                .unwrap_or_else(|| chat_id.to_string())
+    }
+
+    /// A member entry, named by the owner's address book first and the
+    /// member's own profile second.
+    fn member(member: &MemberJson) -> Self {
+        Self::new(
+            member.jid.as_deref(),
+            first_name([member.contact_name.as_deref(), member.push_name.as_deref()]),
+        )
+    }
+
+    /// A received group message's sender. The number comes only from
+    /// `sender_jid`, and only when it is a phone id: `sender` is never read
+    /// as a number, because its digits may be an `@lid` id's. The name is
+    /// the first of `sender_contact_name`, `sender` when it is a name, and
+    /// `sender_push_name`.
+    fn sender(msg: &MessageJson) -> Self {
+        Self::new(
+            msg.sender_jid.get().map(String::as_str),
+            first_name([
+                msg.sender_contact_name.get().map(String::as_str),
+                msg.sender.as_deref().filter(|sender| is_a_name(sender)),
+                msg.sender_push_name.get().map(String::as_str),
+            ]),
+        )
+    }
+}
+
+/// The first of `names` that is not blank, trimmed.
+fn first_name<const N: usize>(names: [Option<&str>; N]) -> Option<String> {
+    names.into_iter().flatten().find_map(message_ir::nonempty)
+}
+
+/// True when wtsexporter's `sender` holds a name rather than an id or the
+/// digits of one.
+fn is_a_name(sender: &str) -> bool {
+    let sender = sender.trim();
+    !sender.is_empty()
+        && !sender.contains('@')
+        && !sender
+            .chars()
+            .all(|c| c.is_ascii_digit() || PHONE_PUNCTUATION.contains(&c))
+}
+
+/// The participants of one conversation, in the order they are met: a
+/// group's members first, then each sender who is not one of them. The
+/// owner of the phone is never a participant of their own conversation, so
+/// a member or sender with the owner's number is left out.
+struct Roster<'a> {
+    owner: Option<&'a str>,
+    participants: Vec<IrParticipant>,
+    /// Index into `participants` of each person already added.
+    seen: BTreeMap<PersonKey, usize>,
+}
+
+/// What tells two people of one conversation apart: their WhatsApp id, or
+/// their name when the JSON gives no id for them.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum PersonKey {
+    Jid(String),
+    Name(String),
+}
+
+impl<'a> Roster<'a> {
+    fn new(owner: Option<&'a str>) -> Self {
+        Self {
+            owner,
+            participants: Vec::new(),
+            seen: BTreeMap::new(),
+        }
+    }
+
+    /// Add `person`, or give the participant already there their name when
+    /// it has none. A person with neither an id nor a name has nothing to
+    /// write.
+    fn add(&mut self, person: Person) {
+        let Person {
+            jid,
+            identity,
+            name,
+        } = person;
+        if let Some((number, IdentityType::Phone)) = &identity
+            && self.is_owner(number)
+        {
+            return;
+        }
+        let key = match (jid, &name) {
+            (Some(jid), _) => PersonKey::Jid(jid),
+            (None, Some(name)) => PersonKey::Name(name.clone()),
+            (None, None) => return,
         };
-        (handle, chat_name.to_string())
+        if let Some(&at) = self.seen.get(&key) {
+            let known = &mut self.participants[at];
+            if known.display_name.is_none() {
+                known.display_name = name;
+            }
+            return;
+        }
+        self.seen.insert(key, self.participants.len());
+        let (identity, identity_type) = identity.unzip();
+        self.participants.push(IrParticipant {
+            identity,
+            display_name: name,
+            identity_type,
+        });
+    }
+
+    /// A one-to-one chat's one participant, named by the chat. A chat whose
+    /// id is not a phone id, such as an internal `@lid` id, has its raw id
+    /// typed `other`, because the exporter knows it is no phone number and
+    /// no WhatsApp id is an email address.
+    fn add_peer(&mut self, jid: &str, chat_id: &str, name: Option<String>) {
+        let identity_type = if jid_to_e164(jid).is_some() {
+            IdentityType::Phone
+        } else {
+            IdentityType::Other
+        };
+        self.participants.push(IrParticipant {
+            identity: Some(chat_id.to_string()),
+            display_name: name,
+            identity_type: Some(identity_type),
+        });
+    }
+
+    /// True when `number` is the owner's, compared by digits, so a number
+    /// typed on the form with spaces still matches.
+    fn is_owner(&self, number: &str) -> bool {
+        let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
+        self.owner
+            .is_some_and(|owner| digits(owner) == digits(number))
     }
 }
 
@@ -488,6 +638,8 @@ fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
 /// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
 struct WhatsappProjection {
     export: ExportMeta,
+    /// Each conversation's participants, by chat id.
+    rosters: BTreeMap<String, Vec<IrParticipant>>,
 }
 
 impl ProjectionHooks for WhatsappProjection {
@@ -563,30 +715,9 @@ impl ProjectionHooks for WhatsappProjection {
         }
     }
 
-    /// The raw E.164 roster, without display names: peer names live on the
-    /// messages instead. A one-to-one chat whose JID is not a phone number,
-    /// such as an internal `@lid` id, has its raw id as its one participant,
-    /// typed `other`. The `@` in the id would otherwise make the server read
-    /// it as an email address, and no WhatsApp id is one.
-    fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
-        let mut participants: Vec<IrParticipant> = convo
-            .participant_e164s
-            .iter()
-            .filter(|h| !h.is_empty())
-            .map(|h| IrParticipant {
-                identity: Some(h.clone()),
-                display_name: None,
-                identity_type: Some(IdentityType::Phone),
-            })
-            .collect();
-        if !convo.is_group && jid_to_e164(convo.extra_str("whatsapp_jid")).is_none() {
-            participants.push(IrParticipant {
-                identity: Some(chat_id.to_string()),
-                display_name: None,
-                identity_type: Some(IdentityType::Other),
-            });
-        }
-        participants
+    /// The participants [`ingest_chat`] gathered for the chat ([`Roster`]).
+    fn participants(&self, chat_id: &str, _convo: &PendingConversation) -> Vec<IrParticipant> {
+        self.rosters.get(chat_id).cloned().unwrap_or_default()
     }
 
     fn group_title(&self, convo: &PendingConversation) -> Option<String> {

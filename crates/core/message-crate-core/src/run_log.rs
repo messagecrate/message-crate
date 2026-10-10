@@ -14,6 +14,8 @@ use std::fmt;
 
 use message_crate_log_lines::{LogLevel, ParsedLine, format_lines, parse_line, time_now};
 
+use crate::RunIssueKind;
+
 /// How severe a line of an Import Run's log is.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
@@ -48,6 +50,19 @@ impl RunLogLevel {
             LogLevel::Warn => Some(Self::Warn),
             LogLevel::Info => Some(Self::Info),
             LogLevel::Debug | LogLevel::Trace => None,
+        }
+    }
+}
+
+impl From<RunIssueKind> for RunLogLevel {
+    /// The level a row of the Import Run's record is logged at: an error as
+    /// an error, a skip as a warning, and a note or a resolved row as
+    /// something the run did.
+    fn from(kind: RunIssueKind) -> Self {
+        match kind {
+            RunIssueKind::Error => Self::Error,
+            RunIssueKind::Skip => Self::Warn,
+            RunIssueKind::Note | RunIssueKind::Resolved => Self::Info,
         }
     }
 }

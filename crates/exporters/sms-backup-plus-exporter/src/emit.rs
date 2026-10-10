@@ -12,7 +12,8 @@ use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, LogSink,
-    OutputFormat, RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
+    OutputFormat, RunIssue, RunIssueKind, count_of, emit_issue, emit_log, prepare_outputs,
+    project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -359,7 +360,7 @@ fn project_and_count(
         if is_group && msg.direction == IrDirection::Incoming && msg.sender_identity.is_none() {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             emit_issue(report.issues.as_ref(), RunIssue {
-                kind: "skip".into(),
+                kind: RunIssueKind::Skip,
                 step: "parse".into(),
                 item: format!("{eml_path} (sender)"),
                 reason: "The sender of this group message could not be read and was left out. The message itself is kept.".into(),
