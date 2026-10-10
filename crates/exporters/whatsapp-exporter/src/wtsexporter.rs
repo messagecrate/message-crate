@@ -10,7 +10,8 @@ use std::process::{Command, Stdio};
 
 /// How to install the `wtsexporter` Message Crate reads: its fork at release
 /// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
-/// ids a quoted reply is linked by. Upstream records neither. The tag archive
+/// ids a quoted reply is linked by, and `reaction_details`, each reaction
+/// under the reactor's id. Upstream records none of them. The tag archive
 /// rather than a `git+` URL, so no Git is needed; `--force`, so an upstream
 /// `wtsexporter` already installed under the same name is replaced; double
 /// quotes, which cmd, PowerShell and bash all accept.
