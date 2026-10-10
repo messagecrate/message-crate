@@ -7,28 +7,14 @@
 
 mod common;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
+use common::claim::claimed_with_account;
 use common::lines::{conversation_header, message_line};
 use common::{empty_message_crate, listen, serve};
 
 /// 2015-03-12T18:04:22Z.
 const SECOND: i64 = 1_426_183_462_000;
-
-/// POST `body` to `path` and answer the JSON the server sends back.
-async fn post(base: &str, path: &str, token: Option<&str>, body: Value) -> Value {
-    let mut request = common::client::http_client()
-        .post(format!("{base}{path}"))
-        .json(&body);
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
-    }
-    let response = request.send().await.unwrap();
-    let status = response.status();
-    let text = response.text().await.unwrap();
-    assert!(status.is_success(), "{path}: {status} {text}");
-    serde_json::from_str(&text).unwrap()
-}
 
 /// An SMS Backup+ backup that holds one message twice, once timed to the
 /// second and once to the millisecond, is shown once, with its
@@ -40,37 +26,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
     let (_server, address) = listen(&mut serve(&data_dir, &static_dir));
     let base = format!("http://{address}");
 
-    let claimed = post(
-        &base,
-        "/v1/server/claim",
-        None,
-        json!({ "username": "keeper", "password": "Owner-Pw-7q2Lx9Vb" }),
-    )
-    .await;
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let response = common::client::http_client()
-        .patch(format!("{base}/v1/server/settings"))
-        .bearer_auth(&owner)
-        .json(&json!({ "public_registration": true }))
-        .send()
-        .await
-        .unwrap();
-    assert!(response.status().is_success());
-    post(
-        &base,
-        "/v1/accounts",
-        None,
-        json!({ "username": "alice", "password": "Alice-Pw-3kN8wZr4" }),
-    )
-    .await;
-    let session = post(
-        &base,
-        "/v1/session",
-        None,
-        json!({ "username": "alice", "password": "Alice-Pw-3kN8wZr4" }),
-    )
-    .await;
-    let token = session["token"].as_str().unwrap().to_string();
+    let token = claimed_with_account(&base).await.alice_token;
 
     let input = root.path().join("export");
     std::fs::create_dir_all(&input).unwrap();

@@ -1,6 +1,6 @@
-//! Starting `message-crate-server serve` as the desktop app does, and the
-//! lines of a JSON Lines batch to send it, shared by the tests that run the
-//! binary.
+//! Starting `message-crate-server serve` as the desktop app does, the lines
+//! of a JSON Lines batch to send it, and the calls that claim it, shared by
+//! the tests that run the binary.
 
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
@@ -22,6 +22,10 @@ pub mod client;
 #[allow(dead_code)]
 #[path = "../../src/test_support/lines.rs"]
 pub mod lines;
+
+// Only the tests that call the server use it.
+#[allow(dead_code)]
+pub mod claim;
 
 /// How long a server on an empty database may take to listen or to exit.
 pub const WAIT: Duration = Duration::from_secs(60);
