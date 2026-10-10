@@ -24,7 +24,7 @@ pub(crate) fn is_channel_jid(jid: &str) -> bool {
 const USER_JID_DOMAIN: &str = "s.whatsapp.net";
 
 /// Characters a phone-number sender may carry besides its digits.
-const PHONE_PUNCTUATION: [char; 5] = ['+', '-', '(', ')', ' '];
+pub(crate) const PHONE_PUNCTUATION: [char; 5] = ['+', '-', '(', ')', ' '];
 
 /// Map a user JID or a phone-number sender to E.164 (the international
 /// phone-number format that starts with +).
@@ -61,6 +61,16 @@ pub(crate) fn jid_to_e164(jid: &str) -> Option<String> {
         Some(format!("+{digits}"))
     } else {
         None
+    }
+}
+
+/// The phone number of a phone id (`…@s.whatsapp.net`) in E.164, and `None`
+/// for anything else: an `@lid` id, a group id, or bare digits, which may be
+/// the digits of an `@lid` id rather than a phone number.
+pub(crate) fn phone_id_to_e164(jid: &str) -> Option<String> {
+    match jid.trim().split_once('@') {
+        Some((_, USER_JID_DOMAIN)) => jid_to_e164(jid),
+        _ => None,
     }
 }
 
@@ -122,6 +132,20 @@ mod tests {
             })
             .collect();
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// Only a phone id gives a number. Bare digits are not one, because an
+    /// `@lid` id's 13 to 15 digits look like a phone number.
+    #[test]
+    fn only_a_phone_id_gives_a_number() {
+        assert_eq!(
+            phone_id_to_e164("15555550133@s.whatsapp.net").as_deref(),
+            Some("+15555550133")
+        );
+        assert_eq!(phone_id_to_e164("123456789012345"), None);
+        assert_eq!(phone_id_to_e164("+15555550133"), None);
+        assert_eq!(phone_id_to_e164("123456789012345@lid"), None);
+        assert_eq!(phone_id_to_e164("120363042@g.us"), None);
     }
 
     #[test]
