@@ -1,3 +1,4 @@
+import { countOf } from "../../lib/plural";
 import type { components } from "../../lib/serverApi.types";
 
 /** One identity as the server lists it, with its messages. */
@@ -9,8 +10,7 @@ export type Identity = components["schemas"]["Identity"];
  */
 export function messagesPhrase(identity: Identity): string | null {
   const parts: string[] = [];
-  const count = (n: number, kind: string) =>
-    `${n.toLocaleString()} ${kind} message${n === 1 ? "" : "s"}`;
+  const count = (n: number, kind: string) => countOf(n, `${kind} message`);
   if (identity.direct_messages > 0) parts.push(count(identity.direct_messages, "direct"));
   if (identity.group_messages > 0) parts.push(count(identity.group_messages, "group"));
   if (identity.orphaned_messages > 0) parts.push(count(identity.orphaned_messages, "orphaned"));

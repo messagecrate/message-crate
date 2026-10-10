@@ -218,6 +218,10 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Removing an identity from a contact writes a large count
+  with a separator.** The confirm dialog said it would unlink "1234
+  conversations"; it now writes "1,234 conversations", with the separator of
+  the language the browser or desktop app is set to (#2397).
 - 2026-10-10: **Trash, Export History and the Audit Trail write a large
   count the way Storage does.** Trash wrote "1234 conversations" where the
   storage screens wrote "1,234 messages". Every count in Trash, the count of

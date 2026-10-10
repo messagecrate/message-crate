@@ -2,6 +2,7 @@ import { type ReactNode, useMemo } from "react";
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatOfferedServiceLabel } from "../lib/offeredService";
+import { countOf } from "../lib/plural";
 import { useTimeZone } from "../lib/timeZone";
 import { focusRing } from "../lib/uiStyles";
 import Button from "./Button";
@@ -157,9 +158,7 @@ export default function IdentityTable({
         <Count
           value={row.conversations}
           loading={loading}
-          browseLabel={`Open ${row.conversations.toLocaleString()} conversation${
-            row.conversations === 1 ? "" : "s"
-          }`}
+          browseLabel={`Open ${countOf(row.conversations, "conversation")}`}
           onBrowse={browse}
         />
       </Cell>
