@@ -2,7 +2,7 @@ import { EXPORT_SOURCES, type ImportSourceId } from "../exportSources";
 import { GO_SMS_PRO_SOURCE, SMS_BACKUP_PLUS_SOURCE, SMS_BACKUP_RESTORE_SOURCE } from "./androidSms";
 import { IMESSAGE_SOURCE } from "./imessage";
 import { IMAZING_SOURCE, OPENEXTRACT_SOURCE } from "./pathOnlySources";
-import type { ImportSourceDescriptor } from "./types";
+import type { ImportMethod, ImportSourceDescriptor } from "./types";
 import { WHATSAPP_SOURCE } from "./whatsapp";
 
 /**
@@ -25,9 +25,20 @@ export const IMPORT_SOURCES: readonly ImportSourceDescriptor[] = EXPORT_SOURCES.
   (s) => DESCRIPTORS[s.id],
 );
 
+/** The method with this id and the source it belongs to, or undefined for an id no source has. */
+export function findImportMethod(
+  id: string,
+): { source: ImportSourceDescriptor; method: ImportMethod } | undefined {
+  for (const source of IMPORT_SOURCES) {
+    const method = source.methods.find((m) => m.id === id);
+    if (method !== undefined) return { source, method };
+  }
+  return undefined;
+}
+
 /** The source a method belongs to, or undefined for an id no source has. */
 export function findImportSource(method: string): ImportSourceDescriptor | undefined {
-  return IMPORT_SOURCES.find((s) => s.methods.some((m) => m.id === method));
+  return findImportMethod(method)?.source;
 }
 
 /** True for the id of a method some source in `IMPORT_SOURCES` has. */

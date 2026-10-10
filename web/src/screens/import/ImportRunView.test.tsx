@@ -197,6 +197,14 @@ describe("runHeading and the operation line", () => {
     expect(sourceDisplayName("sms-backup-restore")).toBe("SMS Backup & Restore");
   });
 
+  it("names a method by its source alone where the source has one, and with the method's label otherwise", () => {
+    expect(sourceDisplayName("imessage-macos")).toBe("Apple Messages · Mac Messages");
+    expect(sourceDisplayName("imessage-jailbreak")).toBe("Apple Messages · Jailbroken iPhone");
+    expect(sourceDisplayName("whatsapp-ios")).toBe("WhatsApp · iPhone");
+    expect(sourceDisplayName("imazing")).toBe("iMazing");
+    expect(sourceDisplayName("sms-backup-plus")).toBe("SMS Backup+");
+  });
+
   it("leads with what was imported once the run is done", () => {
     expect(runHeading("done", form(), finished(), "Import complete")).toBe(
       "Imported 47,910 messages",
