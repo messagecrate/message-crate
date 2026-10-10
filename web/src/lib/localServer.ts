@@ -1,6 +1,11 @@
-import { invoke } from "@tauri-apps/api/core";
 import { DEFAULT_TAURI_SERVER_URL } from "./authGuards";
 import { readPref, removePref, writePref } from "./storage";
+import {
+  invokeLocalServerStatus,
+  invokeOpenDataDirectory,
+  invokeSetOpenToNetwork,
+  invokeStartLocalServer,
+} from "./tauri";
 
 /**
  * The Message Crate the desktop app starts for itself. The app ships the
@@ -34,7 +39,7 @@ export function isOwnAddress(url: string): boolean {
  * a Message Crate the app found is asked again whether it still answers.
  */
 export async function startLocalServer(): Promise<LocalServerStatus> {
-  return invoke<LocalServerStatus>("start_local_server", { openToNetwork: getOpenToNetwork() });
+  return invokeStartLocalServer(getOpenToNetwork());
 }
 
 const OPEN_TO_NETWORK_KEY = "mc-local-server-open-to-network";
@@ -63,15 +68,15 @@ export function setOpenToNetwork(on: boolean): void {
  * runs, and a Message Crate the app only found is left as it is.
  */
 export async function setLocalServerOpenToNetwork(on: boolean): Promise<LocalServerStatus> {
-  return invoke<LocalServerStatus>("set_open_to_network", { openToNetwork: on });
+  return invokeSetOpenToNetwork(on);
 }
 
 /** Read the state of the app's own Message Crate without starting it. */
 export async function localServerStatus(): Promise<LocalServerStatus> {
-  return invoke<LocalServerStatus>("local_server_status");
+  return invokeLocalServerStatus();
 }
 
 /** Open the directory holding the app's own database and attachments. */
 export async function openDataDirectory(): Promise<void> {
-  await invoke("open_data_directory");
+  await invokeOpenDataDirectory();
 }

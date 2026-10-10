@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invokeOpenPath } from "./tauri";
 import { isTauri } from "./tauri-check";
 
 /**
@@ -13,5 +13,5 @@ export async function openPathInExplorer(path: string): Promise<void> {
   if (!isTauri()) {
     throw new Error("Opening directories requires the desktop app");
   }
-  await invoke("open_path", { path: trimmed });
+  await invokeOpenPath(trimmed);
 }

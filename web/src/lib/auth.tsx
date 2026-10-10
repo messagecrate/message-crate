@@ -1,5 +1,4 @@
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   createContext,
   type ReactNode,
@@ -19,7 +18,7 @@ import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import { getSession, logout as serverLogout } from "./serverApi";
 import { onSessionRefused } from "./sessionRefusal";
 import { readPref, removePref, writePref } from "./storage";
-import { invokeDeleteRunDir } from "./tauri";
+import { destroyWindow, invokeDeleteRunDir, onWindowCloseRequested } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 
@@ -469,8 +468,7 @@ function SessionProvider({
 
     void (async () => {
       try {
-        const win = getCurrentWindow();
-        unlisten = await win.onCloseRequested(async (event) => {
+        unlisten = await onWindowCloseRequested(async (event) => {
           event.preventDefault();
           if (closingRef.current) return;
           closingRef.current = true;
@@ -478,7 +476,7 @@ function SessionProvider({
             // No pause: closing the window ends the Upload with the app, and
             // the run resumes from what the Upload's journal recorded as sent.
             await revokeSession();
-            await win.destroy();
+            await destroyWindow();
           } catch {
             // Destroy failed or window already gone — allow another close attempt.
             closingRef.current = false;
