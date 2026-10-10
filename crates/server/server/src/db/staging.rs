@@ -1100,7 +1100,7 @@ pub async fn max_message_id(conn: &mut SqliteConnection) -> Result<i64> {
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
+async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM attachments")
             .fetch_one(&mut *conn)
@@ -1839,6 +1839,9 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
 /// What [`promote_attachments`] did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PromotedAttachments {
+    /// The highest attachment id before the insert: every row inserted is
+    /// above it.
+    pub attachments_before: i64,
     /// Production rows stored without a file that took the file from a
     /// staged row.
     pub filled: u64,
@@ -1965,22 +1968,48 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// Insert the staged attachments under their production messages: fill in
 /// the stored rows another copy has the file for
 /// ([`fill_attachments_sql`]), then insert the rows the message does not
-/// hold yet ([`insert_new_attachments_sql`]).
+/// hold yet ([`insert_new_attachments_sql`]). Every row it fills or inserts
+/// takes the Import Run of its staged message as its `import_id`, so the
+/// server queues its Asset when the run ends
+/// (`db::media_queue::queue_import_run`), even when an earlier run created
+/// the message (#1946).
 ///
 /// # Errors
 ///
 /// Returns an error when a statement fails.
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
+    let attachments_before = max_attachment_id(conn).await?;
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let filled = sqlx::query(&fill_attachments_sql("attachments", &staged))
-        .execute(&mut *conn)
-        .await?
-        .rows_affected();
+    let filled_ids: Vec<i64> = sqlx::query_scalar(&format!(
+        "{} RETURNING id",
+        fill_attachments_sql("attachments", &staged)
+    ))
+    .fetch_all(&mut *conn)
+    .await?;
+    let filled = filled_ids.len() as u64;
     let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
         .execute(&mut *conn)
         .await?
         .rows_affected();
-    Ok(PromotedAttachments { filled, inserted })
+    sqlx::query(
+        r"
+        UPDATE attachments
+        SET import_id = sm.import_id
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE mm.prod_id = attachments.message_id
+          AND (attachments.id > $1 OR attachments.id IN (SELECT value FROM json_each($2)))
+        ",
+    )
+    .bind(attachments_before)
+    .bind(serde_json::to_string(&filled_ids)?)
+    .execute(&mut *conn)
+    .await?;
+    Ok(PromotedAttachments {
+        attachments_before,
+        filled,
+        inserted,
+    })
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any

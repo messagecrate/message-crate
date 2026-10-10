@@ -427,7 +427,6 @@ impl Promote<'_> {
     /// the existing messages that gained an attachment.
     async fn promote_attachments(&mut self) -> Result<i64> {
         let phase = self.begin("Writing the import's attachments…");
-        let attachments_before = staging::max_attachment_id(self.tx).await?;
         let promoted = staging::promote_attachments(self.tx).await?;
         self.stats.attachments = promoted.inserted;
         self.done(
@@ -446,7 +445,7 @@ impl Promote<'_> {
                 ),
             ),
         );
-        Ok(attachments_before)
+        Ok(promoted.attachments_before)
     }
 
     /// Insert the staged tapbacks under their production messages.

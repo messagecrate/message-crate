@@ -155,8 +155,7 @@ released versions carry their date on the heading.
   the Message Crate it starts convert with the same ffmpeg. **Settings →
   System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
   wtsexporter, where each was found, that it is missing and where to put
-  it, or why it is not used. The app does not download the programs yet
-  (#1053).
+  it, or why it is not used (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
@@ -264,6 +263,13 @@ released versions carry their date on the heading.
   milliseconds.** Every Apple Messages time was cut to the second, though
   the Messages database holds it to the nanosecond. A message now shows
   its time with its milliseconds, as WhatsApp messages do (#1970).
+- 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
+  backup was imported again and now held a photo or video that was missing
+  the first time, the import gave the stored message its file but never
+  queued it, so it got no Thumbnail or Preview, and the viewer did not open
+  it, until `process-assets` was run by hand. The server now makes the
+  Thumbnails and Previews of every attachment an import adds or fills in,
+  whichever import first brought the message (#1946).
 - 2026-10-09: **A file without a backup date imported beside a dated one
   gives the same result in any order.** When one import held a dated backup
   and a message file that says nothing about when its backup was made, such
@@ -467,16 +473,20 @@ released versions carry their date on the heading.
   `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
   read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
   or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
-  found: install ffmpeg on `PATH` or put both programs in
-  `~/message-crate/tools`. Put wtsexporter in
-  `~/message-crate/tools` too, because a WhatsApp import no longer finds it
-  on `PATH`. If you start the server with a script, it takes `serve
-  --tools-dir <directory>` for the same purpose (#1053).
+  found, and a WhatsApp import no longer finds wtsexporter on `PATH`. The
+  desktop app downloads all three into its Tools Directory when it starts,
+  ffmpeg and ffprobe only when they aren't installed on `PATH`, so nothing
+  needs doing. Without a connection, Troubleshooting in the user
+  guide says which files to put there by hand. If you start the server with
+  a script, it takes `serve --tools-dir <directory>` for the same purpose
+  (#1053).
 - A WhatsApp `result.json` that a `wtsexporter` from before this release
   wrote is refused, because it records no group members and no sender's
   name beside their number. The desktop app replaces an older `wtsexporter`
   in its Tools Directory with Message Crate's own on its next start with an
-  internet connection. Run the WhatsApp import again from the backup rather
+  internet connection, except on Linux on ARM, where it has no download of
+  its own and Troubleshooting in the user guide says how to install
+  wtsexporter by hand. Run the WhatsApp import again from the backup rather
   than from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the

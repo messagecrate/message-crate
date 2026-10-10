@@ -13,14 +13,16 @@ Two things make it hard:
 
 ## wtsexporter
 
-The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records who sent each group message, the members of each group, and the ids a quoted reply is linked by.
+A WhatsApp import runs `wtsexporter`, from [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), Message Crate's fork of the open-source WhatsApp Chat Exporter.
+The fork is the one used because only it records who sent each group message, the members of each group, and the ids a quoted reply is linked by.
 Import refuses a `result.json` that another `wtsexporter` wrote, and names the fork, because without those fields a group message's sender is a name or a number, never both, and the number can be an internal WhatsApp id rather than a phone number.
 
-Each time it starts, the desktop app downloads the pinned release into its Tools Directory when it isn't there, in the background, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
-The app runs `wtsexporter` only from the Tools Directory, never from `PATH`.
-A WhatsApp import can't start without it, and the Import form names the reason and offers **Try again**.
+Each time the desktop app starts, it downloads the fork's pinned release into its Tools Directory, in the background, when it isn't already there.
+Nothing needs installing, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
+A WhatsApp import can't start without `wtsexporter`, and the Import form then names the reason and offers **Try again**.
 An import started while `wtsexporter` is still downloading waits for the download, and its progress line says so.
-A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
+
+When the download fails, or the computer has no download, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) says what to do.
 
 ## Who is imported
 
@@ -70,7 +72,7 @@ The labels inside WhatsApp change between versions.
 
 A rooted phone gives access to WhatsApp's private storage, where the unencrypted `msgstore.db` and the `key` file live under `/data/data/com.whatsapp/`.
 Rooting differs for every phone model and is outside this guide.
-The [WhatsApp Chat Exporter documentation](https://github.com/KnugiHK/WhatsApp-Chat-Exporter) describes which files to copy.
+The [WhatsApp Chat Exporter documentation](https://github.com/messagecrate/WhatsApp-Chat-Exporter) describes which files to copy.
 
 ### Fill in the Import form for Android
 

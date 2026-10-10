@@ -135,9 +135,13 @@ server in Docker and the server the desktop app starts both do it.
 `process-assets` stays, for rebuilding the Thumbnails and Previews and for
 repairing missing ones.
 
-How: an Import Run that ends, completed or discarded, adds the Assets its
-messages name to the `media_queue` table, one row per account and
-fingerprint, and wakes the pass. The `import` command adds its run's Assets
+How: an Import Run that ends, completed or discarded, adds the Assets of
+the attachment rows it wrote to the `media_queue` table, one row per account
+and fingerprint, and wakes the pass. The rows it wrote are those it added and
+the stored rows it gave their missing file, which each name the run in
+`attachments.import_id`, whichever run created their message: a backup
+imported again in Append mode with a photo that was missing the first time
+queues that photo (#1946). The `import` command adds its run's Assets
 the same way, and the next `serve` works on them. The pass runs on a thread
 of its own, so a long conversion never holds a request. It takes the Assets
 oldest first, makes what each still needs, shares a Thumbnail or Preview the
