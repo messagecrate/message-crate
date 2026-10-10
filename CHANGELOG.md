@@ -223,6 +223,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **WhatsApp people are imported with their numbers and names,
+  and every group with its members.** A group message's sender had a name or
+  a number, never both, some numbers were made from WhatsApp's internal ids
+  and reached nobody, no group listed its members, and every one-to-one
+  contact had no name and was listed under Unknown. Each sender now has the
+  phone number the backup holds and the name from the phone's address book,
+  or else the one they set in WhatsApp. A group's participants are its
+  members, including those who never wrote, and anyone else who wrote in it.
+  A one-to-one contact has the chat's name. A WhatsApp file that another
+  version of wtsexporter wrote is refused, naming Message Crate's own (#1092).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,

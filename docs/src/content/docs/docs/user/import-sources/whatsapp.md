@@ -13,7 +13,18 @@ Two things make it hard:
 
 ## wtsexporter
 
-The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records the ids a quoted reply is linked by.
+The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records who sent each group message, the members of each group, and the ids a quoted reply is linked by.
+Import refuses a `result.json` that another `wtsexporter` wrote, and names the fork, because without those fields a group message's sender is a name or a number, never both, and the number can be an internal WhatsApp id rather than a phone number.
+
+## Who is imported
+
+Each person keeps the phone number and the name the backup holds for them.
+
+- A group's participants are its members, including a member who never wrote, and anyone else who wrote in it. The phone's owner is not one of them. A group whose member list the backup doesn't hold has the people who wrote in it.
+- A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported by name.
+- A name is the one in the phone's address book first, then the name the person set in their own WhatsApp profile.
+- A one-to-one chat's person has the chat's name.
+- Some old group messages name no sender in the backup, and are imported with none.
 Each time it starts, the desktop app downloads the pinned release into its Tools Directory when it isn't there, in the background, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
 The app runs `wtsexporter` only from the Tools Directory, never from `PATH`.
 A WhatsApp import can't start without it, and the Import form names the reason and offers **Try again**.
@@ -91,7 +102,7 @@ When the backup doesn't hold it, Import uses **WhatsApp phone number** under **P
 - A run can't be cancelled while `wtsexporter` is working, or while an encrypted iPhone backup is being decrypted. It ends when that step finishes.
 - Using files from two different backups together fails, because a key decrypts only the backup it was made with.
 - Status updates aren't imported, because a Status is a post to many people that expires after 24 hours, not a conversation. The run summary counts them, as in `Skipped 4 status updates`. A reply to someone's Status is a message in the chat with that person and is imported.
-- A quoted reply is linked to the message it quotes only when that message is in the same chat of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message. Linking also needs a `wtsexporter` that records the quoted message's whole id. Only Message Crate's fork, [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), records it, from release `0.13.0-mc.2` on. With any other `wtsexporter`, every reply names no message.
+- A quoted reply is linked to the message it quotes only when that message is in the same chat of the same backup, because the reply names it by the id the backup gave it there. A reply whose quoted message isn't there is imported as a reply that names no message.
 - Channel posts aren't imported, because a Channel is a one-way feed from a publisher that nobody can write back to. The run summary counts them, as in `Skipped 3 channel posts`.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).

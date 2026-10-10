@@ -1,0 +1,218 @@
+{
+  "120363042222222222@g.us": {
+    "name": "Book Club",
+    "type": "ios",
+    "members": [
+      {
+        "jid": "15555550100@s.whatsapp.net",
+        "lid": null,
+        "contact_name": null,
+        "push_name": "Owner Profile",
+        "active": true,
+        "admin": true
+      },
+      {
+        "jid": "15555550133@s.whatsapp.net",
+        "lid": null,
+        "contact_name": "Ada Lovelace",
+        "push_name": "ada",
+        "active": true,
+        "admin": false
+      },
+      {
+        "jid": "15555550144@s.whatsapp.net",
+        "lid": "222222222222222@lid",
+        "contact_name": null,
+        "push_name": "Benny",
+        "active": false,
+        "admin": false
+      },
+      {
+        "jid": "123456789012345@lid",
+        "lid": "123456789012345@lid",
+        "contact_name": null,
+        "push_name": "Lid Person",
+        "active": true,
+        "admin": false
+      }
+    ],
+    "messages": {
+      "M1": {
+        "from_me": false,
+        "timestamp": 1609459200,
+        "time": "00:00",
+        "key_id": "M1",
+        "data": "From a member with a contact name",
+        "sender": "Ada L",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "15555550133@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": "Ada Lovelace",
+        "sender_push_name": "ada"
+      },
+      "M2": {
+        "from_me": false,
+        "timestamp": 1609459260,
+        "time": "00:01",
+        "key_id": "M2",
+        "data": "From someone who is not a member",
+        "sender": "15555550155",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "15555550155@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": "Cy"
+      },
+      "M3": {
+        "from_me": false,
+        "timestamp": 1609459320,
+        "time": "00:02",
+        "key_id": "M3",
+        "data": "From an @lid id the backup maps to a phone id",
+        "sender": "987654321098765",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "15555550166@s.whatsapp.net",
+        "sender_lid": "987654321098765@lid",
+        "sender_contact_name": null,
+        "sender_push_name": null
+      },
+      "M4": {
+        "from_me": false,
+        "timestamp": 1609459380,
+        "time": "00:03",
+        "key_id": "M4",
+        "data": "From an @lid id the backup cannot map",
+        "sender": "123456789012345",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "123456789012345@lid",
+        "sender_lid": "123456789012345@lid",
+        "sender_contact_name": null,
+        "sender_push_name": "Lid Person"
+      },
+      "M5": {
+        "from_me": false,
+        "timestamp": 1609459440,
+        "time": "00:04",
+        "key_id": "M5",
+        "data": "From a sender named in sender",
+        "sender": "Dee",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "15555550177@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": "dee_profile"
+      },
+      "M6": {
+        "from_me": false,
+        "timestamp": 1609459500,
+        "time": "00:05",
+        "key_id": "M6",
+        "data": "From nobody the backup names",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
+      },
+      "M7": {
+        "from_me": true,
+        "timestamp": 1609459560,
+        "time": "00:06",
+        "key_id": "M7",
+        "data": "From the owner",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
+      }
+    }
+  },
+  "120363042333333333@g.us": {
+    "name": "No Member Table",
+    "type": "ios",
+    "members": null,
+    "messages": {
+      "N1": {
+        "from_me": false,
+        "timestamp": 1609459200,
+        "time": "00:00",
+        "key_id": "N1",
+        "data": "The senders are all that is known",
+        "sender": "Ed",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "15555550188@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": "Ed Example",
+        "sender_push_name": null
+      }
+    }
+  },
+  "15555550122@s.whatsapp.net": {
+    "name": "Sam Example",
+    "type": "ios",
+    "members": null,
+    "messages": {
+      "D1": {
+        "from_me": false,
+        "timestamp": 1609459200,
+        "time": "00:00",
+        "key_id": "D1",
+        "data": "Hello from Sam",
+        "sender": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
+      }
+    }
+  }
+}
