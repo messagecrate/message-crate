@@ -733,14 +733,14 @@ fn replace_original(original: &Path, produced: &Path) -> Result<PathBuf> {
     // power loss cannot leave an empty file where the original was.
     let final_path = if original.extension().and_then(|e| e.to_str()) == Some(target_ext) {
         // The rename replaces the original in one step.
-        message_ir::rename_into_place(produced, original)?;
+        file_io::rename_into_place(produced, original)?;
         original.to_path_buf()
     } else {
         let dest = sibling_with_ext(original, target_ext);
         if dest.exists() && dest != produced {
             let _ = fs::remove_file(&dest);
         }
-        message_ir::rename_into_place(produced, &dest)?;
+        file_io::rename_into_place(produced, &dest)?;
         let _ = fs::remove_file(original);
         dest
     };

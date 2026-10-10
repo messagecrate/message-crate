@@ -548,7 +548,7 @@ impl DigestResolver {
         }
 
         let disk_digest =
-            message_ir::file_sha256(abs).with_context(|| format!("{name}: hash {rel}"))?;
+            file_io::file_sha256(abs).with_context(|| format!("{name}: hash {rel}"))?;
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {

@@ -4,6 +4,7 @@ members = [
     "crates/libs/phone",
     "crates/libs/csv",
     "crates/libs/ir",
+    "crates/libs/file-io",
     "crates/libs/ir-format",
     "crates/libs/staging",
     "crates/libs/reexport",
@@ -41,6 +42,7 @@ exclude = ["src-tauri"]
 
 [workspace.dependencies]
 message-ir = { path = "crates/libs/ir" }
+file-io = { path = "crates/libs/file-io" }
 contacts = { path = "crates/libs/contacts" }
 phone = { path = "crates/libs/phone" }
 # Declared once here and inherited with `workspace = true`; a member adds only

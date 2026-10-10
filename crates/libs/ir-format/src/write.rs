@@ -102,7 +102,7 @@ pub fn write_format(
 fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Result<PathBuf> {
     let path = output_dir.join(format!("{}.json", doc.filename_stem()));
     let json = serde_json::to_vec_pretty(doc).context("serialize ConversationDocument")?;
-    message_ir::write_atomic(&path, |out| {
+    file_io::write_atomic(&path, |out| {
         out.write_all(&json)?;
         out.write_all(b"\n")?;
         Ok(())
@@ -121,7 +121,7 @@ fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Res
 ///
 /// Returns an error when the file cannot be created, serialized, or renamed.
 pub fn write_conversation_jsonl_to(path: &Path, doc: &ConversationDocument) -> Result<()> {
-    message_ir::write_atomic(path, |out| {
+    file_io::write_atomic(path, |out| {
         let header = ConversationHeader::from_document(doc);
         serde_json::to_writer(&mut *out, &header).context("serialize JSONL header")?;
         out.write_all(b"\n")?;
@@ -228,7 +228,7 @@ pub(crate) fn write_conversation_csv(
         .map(|ms| ms.to_string())
         .unwrap_or_default();
 
-    message_ir::write_atomic(&path, |out| {
+    file_io::write_atomic(&path, |out| {
         let mut wtr = csv::Writer::from_writer(out);
         wtr.write_record(CSV_HEADERS)
             .with_context(|| format!("write header {}", path.display()))?;

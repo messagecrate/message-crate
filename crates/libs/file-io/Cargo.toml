@@ -1,0 +1,17 @@
+[package]
+name = "file-io"
+version = "0.1.0"
+edition = "2024"
+description = "Write a file so a power loss never leaves it cut off, and hash a file without reading it into memory"
+license = "LicenseRef-FCL-1.0-ALv2"
+
+[dependencies]
+anyhow = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

@@ -177,8 +177,6 @@ fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
     assert!(empty_map.is_empty());
 }
 
-mod digests;
-
 /// A blank field is no mark, each mark reads back from its own text, and any
 /// other text is refused by name.
 #[test]

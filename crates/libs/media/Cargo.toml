@@ -8,7 +8,7 @@ license = "LicenseRef-FCL-1.0-ALv2"
 [dependencies]
 anyhow = { workspace = true }
 csv = { workspace = true }
-message-ir = { workspace = true }
+file-io = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
