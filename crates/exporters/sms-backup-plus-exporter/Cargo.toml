@@ -12,7 +12,7 @@ csv = { workspace = true }
 hex = { workspace = true }
 mail = { path = "../../libs/mail" }
 mail-builder = "1.0.0"
-mailparse = "0.17.0"
+mailparse = "0.18.0"
 message-crate-core = { path = "../../core/message-crate-core" }
 message-ir = { path = "../../libs/ir" }
 mms-parts = { path = "../../libs/mms-parts" }
