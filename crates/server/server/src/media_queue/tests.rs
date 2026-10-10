@@ -785,10 +785,10 @@ fn a_missing_program_is_named_as_not_found() {
 }
 
 /// What a backup holds of the photo of `g-photo` in [`import_photo_run`].
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy)]
 enum Photo {
     /// The message has no attachment.
-    None,
+    NotListed,
     /// The attachment is listed, but the backup did not hold its file.
     Missing,
     /// The attachment and its file, uploaded first.
@@ -815,27 +815,27 @@ async fn import_photo_run(
     .await;
     let run = run["id"].as_i64().unwrap();
     let listed = attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg");
-    let attached = if photo == Photo::Present {
-        let (status, text) = crate::test_support::put_raw(
-            state,
-            &format!("/v1/assets/{sha}"),
-            &alice.token,
-            "image/jpeg",
-            bytes,
-        )
-        .await;
-        assert!(status.is_success(), "upload: {status} {text}");
-        Some(message_ir::IrAttachment {
-            digest_sha256: Some(sha.clone()),
-            ..listed
-        })
-    } else if photo == Photo::Missing {
-        Some(message_ir::IrAttachment {
+    let attached = match photo {
+        Photo::Present => {
+            let (status, text) = crate::test_support::put_raw(
+                state,
+                &format!("/v1/assets/{sha}"),
+                &alice.token,
+                "image/jpeg",
+                bytes,
+            )
+            .await;
+            assert!(status.is_success(), "upload: {status} {text}");
+            Some(message_ir::IrAttachment {
+                digest_sha256: Some(sha.clone()),
+                ..listed
+            })
+        }
+        Photo::Missing => Some(message_ir::IrAttachment {
             missing_reason: Some("not_exported".into()),
             ..listed
-        })
-    } else {
-        None
+        }),
+        Photo::NotListed => None,
     };
     let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     let message = message_line("g-photo", "a photo").sender("+15555550123");
@@ -880,6 +880,14 @@ async fn a_run_that_gives_a_stored_attachment_its_file_queues_the_asset() {
         .await
         .unwrap();
     assert_eq!(queued_sha, vec![sha]);
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        messages, 1,
+        "the second run met the message the first stored"
+    );
 }
 
 /// A backup imported again in Append mode now lists a JPEG on a message
@@ -890,7 +898,7 @@ async fn a_run_that_gives_a_stored_attachment_its_file_queues_the_asset() {
 async fn a_run_that_adds_an_attachment_to_a_stored_message_queues_the_asset() {
     let (fixture, alice) = fixture_with_account().await;
     let state = &fixture.state;
-    import_photo_run(&fixture, &alice, Photo::None).await;
+    import_photo_run(&fixture, &alice, Photo::NotListed).await;
 
     let sha = import_photo_run(&fixture, &alice, Photo::Present).await;
 
@@ -899,6 +907,14 @@ async fn a_run_that_adds_an_attachment_to_a_stored_message_queues_the_asset() {
         .await
         .unwrap();
     assert_eq!(queued_sha, vec![sha]);
+    let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        messages, 1,
+        "the second run met the message the first stored"
+    );
 }
 
 /// The Asset the second run queues in

@@ -1031,7 +1031,7 @@ pub async fn max_message_id(conn: &mut SqliteConnection) -> Result<i64> {
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
+async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM attachments")
             .fetch_one(&mut *conn)
