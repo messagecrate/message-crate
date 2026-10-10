@@ -107,7 +107,7 @@ export default function TimeZoneField({
         <ListBox
           className="max-h-72 overflow-auto outline-none"
           renderEmptyState={() => (
-            <div className="px-2 py-1 text-[0.875rem] text-muted">No time zone matches.</div>
+            <div className="px-2 py-1 text-[0.875rem] text-muted">No time zone matches</div>
           )}
         >
           {!query && (
