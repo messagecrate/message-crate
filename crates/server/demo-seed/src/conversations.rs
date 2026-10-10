@@ -496,7 +496,8 @@ impl<R: Rng> Seeder<'_, R> {
                             seeder.decorate_android_message(&mut msg, i, msg_count);
                         }
                         SourceFlavor::Whatsapp => {
-                            // WhatsApp conversations skip iMessage-only fields such as tapbacks and replies.
+                            // WhatsApp conversations skip iMessage-only fields such as tapbacks
+                            // and replies.
                         }
                     }
                     seeder.emit(file, msg)?;
@@ -987,8 +988,9 @@ impl<R: Rng> Seeder<'_, R> {
     }
 
     /// Add photos, other files, tapbacks, replies, and occasional SMS/RCS
-    /// labels to an iMessage. `origin_guid` is the thread every few messages
-    /// reply to; this call may replace it.
+    /// labels to an iMessage. `origin_guid` is the message every few messages
+    /// reply to, the first message of an Apple Messages reply in a thread; this
+    /// call may replace it.
     fn decorate_message(
         &mut self,
         msg: &mut IrMessage,
