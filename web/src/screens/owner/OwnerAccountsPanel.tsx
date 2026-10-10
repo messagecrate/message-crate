@@ -4,8 +4,8 @@ import { GearIcon } from "../../components/icons";
 import NavGlyphButton from "../../components/NavGlyphButton";
 import ScrollingTableCard from "../../components/ScrollingTableCard";
 import { formatDateTime } from "../../lib/formatDate";
-import { tdClass, tdMuted } from "../settings/apiTokensUtils";
-import { rowStripe, thClass, thSeparator } from "./ownerTableStyles";
+import { tdClass, tdMutedClass } from "../settings/apiTokensUtils";
+import { rowStripeClass, thClass, thSeparatorClass } from "./ownerTableStyles";
 import { type ManagedAccount, useOwnerAccounts } from "./useOwnerAccounts";
 
 /** Columns the table has, which the "no match" row spans. */
@@ -64,8 +64,8 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
               {/* The gear column has no heading; each gear is labelled with its account. */}
               <td className="w-6 py-2 pl-3" />
               <th className={thClass}>User</th>
-              <th className={`${thClass} ${thSeparator}`}>Status</th>
-              <th className={`${thClass} ${thSeparator}`}>Last login</th>
+              <th className={`${thClass} ${thSeparatorClass}`}>Status</th>
+              <th className={`${thClass} ${thSeparatorClass}`}>Last login</th>
             </tr>
           </thead>
           <tbody>
@@ -74,7 +74,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
               return (
                 <tr
                   key={account.account_id}
-                  className={`group border-t border-border ${rowStripe}`}
+                  className={`group border-t border-border ${rowStripeClass}`}
                 >
                   <td className="w-6 py-2 pl-3 align-middle">
                     <NavGlyphButton
@@ -91,8 +91,10 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                       <div className="text-[0.75rem] text-muted">{preferredName}</div>
                     ) : null}
                   </td>
-                  <td className={account.disabled ? tdClass : tdMuted}>{statusLabel(account)}</td>
-                  <td className={`${tdMuted} whitespace-nowrap`}>
+                  <td className={account.disabled ? tdClass : tdMutedClass}>
+                    {statusLabel(account)}
+                  </td>
+                  <td className={`${tdMutedClass} whitespace-nowrap`}>
                     {account.last_login_at ? formatDateTime(account.last_login_at) : "Never"}
                   </td>
                 </tr>
@@ -100,7 +102,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
             })}
             {shown.length === 0 && needle ? (
               <tr className="border-t border-border">
-                <td className={tdMuted} colSpan={COLUMN_COUNT}>
+                <td className={tdMutedClass} colSpan={COLUMN_COUNT}>
                   No account matches “{filter.trim()}”.
                 </td>
               </tr>

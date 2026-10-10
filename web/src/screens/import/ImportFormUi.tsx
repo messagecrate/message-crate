@@ -15,10 +15,10 @@ export const ATTACHMENT_OPTIONS: { id: AttachmentMediaMode; label: string }[] = 
 
 export const RESOLUTION_OPTIONS = ["720p", "1080p", "4k"];
 
-export const fieldStyle = textInputClassName;
-export const hintStyle = "mt-1 text-[0.75rem] text-muted";
+export const fieldClass = textInputClassName;
+export const hintClass = "mt-1 text-[0.75rem] text-muted";
 
-export const sectionGap = "mb-[1.1rem]";
+export const sectionGapClass = "mb-[1.1rem]";
 
 /** Stacked label + control; thin wrap around FormField. */
 export function StackedField({
