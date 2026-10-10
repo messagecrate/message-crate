@@ -1919,7 +1919,12 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
             ),
         ] {
             let (status, text) = patch_raw(&state, &path, token, body).await;
-            let problem = expect_problem(status, &text, ProblemType::DemoAccountProtected);
+            let problem = expect_problem_for(
+                &format!("{who} changing its {field}"),
+                status,
+                &text,
+                ProblemType::DemoAccountProtected,
+            );
             assert!(
                 problem
                     .sentence()

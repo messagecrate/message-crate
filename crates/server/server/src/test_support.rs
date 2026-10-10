@@ -475,7 +475,7 @@ pub fn expect_problem(
     text: &str,
     kind: crate::problem::ProblemType,
 ) -> message_crate_api_types::Problem {
-    expect_problem_for("", status, text, kind)
+    check_problem(status, text, kind, text)
 }
 
 /// [`expect_problem`] for a check made more than once, such as in a loop:
@@ -486,11 +486,16 @@ pub fn expect_problem_for(
     text: &str,
     kind: crate::problem::ProblemType,
 ) -> message_crate_api_types::Problem {
-    let context = if what.is_empty() {
-        text.to_string()
-    } else {
-        format!("{what}: {text}")
-    };
+    check_problem(status, text, kind, &format!("{what}: {text}"))
+}
+
+/// The checks of [`expect_problem`], with `context` in every failure.
+fn check_problem(
+    status: StatusCode,
+    text: &str,
+    kind: crate::problem::ProblemType,
+    context: &str,
+) -> message_crate_api_types::Problem {
     let problem = problem(text);
     assert_eq!(status, kind.status(), "{context}");
     assert_eq!(problem.status, kind.status().as_u16(), "{context}");

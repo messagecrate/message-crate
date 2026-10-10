@@ -7,9 +7,7 @@ use crate::imports_api::{
     update_import,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{
-    expect_problem, expect_problem_for, expect_problem_response, http_client,
-};
+use crate::test_support::{expect_problem, expect_problem_for, http_client};
 use axum::extract::State;
 use tempfile::TempDir;
 
@@ -1061,8 +1059,16 @@ async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
         Some("invalid username or password")
     );
 
-    for _ in 1..crate::credentials::AUTH_RATE_MAX {
-        expect_problem_response(login().await.unwrap(), ProblemType::InvalidCredentials).await;
+    for attempt in 1..crate::credentials::AUTH_RATE_MAX {
+        let wrong = login().await.unwrap();
+        let status = wrong.status();
+        let text = wrong.text().await.unwrap();
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
     }
     let limited = login().await.unwrap();
     let retry_after: u64 = limited.headers()[header::RETRY_AFTER]

@@ -193,10 +193,9 @@ async fn a_server_can_only_be_claimed_once() {
     let state = fixture.state.clone();
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let (status, text) = post_json_raw(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
     )
     .await;
@@ -263,10 +262,9 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
     .unwrap();
     let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_json_raw(
+        post_logged_out(
             &state,
             "/v1/server/claim",
-            "",
             serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
         ),
     )
@@ -288,10 +286,9 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     let state = fixture.state.clone();
 
     // The owner must have a password.
-    let (status, text) = post_json_raw(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "keeper", "password": "" }),
     )
     .await;
@@ -982,12 +979,11 @@ fn long_bundle(
 
 /// Ask for a build of the medium set and return the answer.
 async fn start_demo_build(state: &AppState, token: &str) -> (StatusCode, String) {
-    crate::test_support::put_raw(
+    crate::test_support::put_json_raw(
         state,
         "/v1/server/demo-account",
         token,
-        "application/json",
-        r#"{"size":"medium"}"#,
+        serde_json::json!({ "size": "medium" }),
     )
     .await
 }

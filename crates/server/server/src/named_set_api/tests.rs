@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, delete_raw, delete_status, expect_problem, get_json, get_raw, get_status,
-    patch_failure, patch_json, patch_raw, post_created_json, post_json_raw, register_via_api,
-    test_fixture,
+    RegisteredAccount, delete_raw, delete_status, expect_problem, expect_problem_for, get_json,
+    get_raw, get_status, patch_failure, patch_json, patch_raw, post_created_json, post_json_raw,
+    register_via_api, test_fixture,
 };
 
 /// Which collection a case runs against. Every case runs for both, except
@@ -163,13 +163,13 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
 
         let (status, text) =
             post_json_raw(state, kind.base(), &user.token, json!({ "name": "family" })).await;
-        expect_problem(status, &text, ProblemType::NameTaken);
+        expect_problem_for(kind.base(), status, &text, ProblemType::NameTaken);
         let (status, text) =
             post_json_raw(state, kind.base(), &user.token, json!({ "name": "Trash" })).await;
-        expect_problem(status, &text, ProblemType::ValidationFailed);
+        expect_problem_for(kind.base(), status, &text, ProblemType::ValidationFailed);
         let (status, text) =
             post_json_raw(state, kind.base(), &user.token, json!({ "name": "  " })).await;
-        expect_problem(status, &text, ProblemType::ValidationFailed);
+        expect_problem_for(kind.base(), status, &text, ProblemType::ValidationFailed);
         let (status, text) = patch_raw(
             state,
             &format!("{}/{work}", kind.base()),
@@ -177,7 +177,7 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
             json!({ "name": "FAMILY" }),
         )
         .await;
-        expect_problem(status, &text, ProblemType::NameTaken);
+        expect_problem_for(kind.base(), status, &text, ProblemType::NameTaken);
         let (status, text) = patch_raw(
             state,
             &format!("{}/{work}", kind.base()),
@@ -185,7 +185,7 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
             json!({ "name": "" }),
         )
         .await;
-        expect_problem(status, &text, ProblemType::ValidationFailed);
+        expect_problem_for(kind.base(), status, &text, ProblemType::ValidationFailed);
     }
 }
 
@@ -200,7 +200,12 @@ async fn a_contact_group_cannot_be_named_unknown_or_none() {
     for name in ["Unknown", "unknown", "UNKNOWN", "none", "None", "NONE"] {
         let sentence = format!("\"{name}\" is a reserved Contact Group");
         let (status, text) = post_json_raw(state, base, &user.token, json!({ "name": name })).await;
-        let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
+        let problem = expect_problem_for(
+            &format!("create {name}"),
+            status,
+            &text,
+            ProblemType::ValidationFailed,
+        );
         assert_eq!(problem.sentence(), sentence, "create {name}");
 
         assert_eq!(

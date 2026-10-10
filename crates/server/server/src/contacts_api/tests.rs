@@ -3132,12 +3132,11 @@ async fn the_contact_list_is_a_page_and_summaries_are_items() {
 #[tokio::test]
 async fn summaries_of_no_contacts_are_refused() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/contacts/summaries",
         &user.token,
-        "application/json",
-        r#"{"ids":[]}"#,
+        serde_json::json!({ "ids": [] }),
     )
     .await;
     crate::test_support::expect_problem(
