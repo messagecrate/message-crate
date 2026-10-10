@@ -28,7 +28,8 @@ booleans — `rust`, `web`, `docs`, `docker` — and the heavy jobs read them:
 Two classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
 `scripts/openapi-typescript/`, set `web`, not `rust`, because the `web` job is
-the one that runs them; every other path under `scripts/` falls to `rust`. `docker` is true for `docker/`, the root and per-crate Cargo manifests,
+the one that runs them; every other path under `scripts/` falls to `rust`.
+`docker` is true for `docker/`, the root and per-crate Cargo manifests,
 `Cargo.lock`, `rust-toolchain.toml` and `config/config.docker.toml`: the
 files the Dockerfile copies or reads, and so the only files that can stop the
 image building while the Rust jobs stay green. Before `docker-build` existed
@@ -48,8 +49,9 @@ for the API type generator in `scripts/openapi-typescript/`, and
 advisory except the ones it lists as having no patched version. It is
 triggered by a pull request that touches a dependency manifest or lockfile
 (`Cargo.toml`, `Cargo.lock`, and the `src-tauri`, `web/`, `docs/` and
-`scripts/openapi-typescript/` manifests and lockfiles), the cargo-deny config `deny.toml`, `audit.yml`
-itself or `scripts/audit-docs.sh`, by a weekly schedule, and by hand.
+`scripts/openapi-typescript/` manifests and lockfiles), the cargo-deny config
+`deny.toml`, `audit.yml` itself or `scripts/audit-docs.sh`, by a weekly
+schedule, and by hand.
 
 Test coverage lives in `coverage.yml` for the same reason seen from the other
 side: it is a report that never fails a pull request, so it has no place in a

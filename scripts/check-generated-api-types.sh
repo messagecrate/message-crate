@@ -24,7 +24,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 GENERATED="web/src/lib/serverApi.types.ts"
-SPEC="docs/src/assets/openapi.json"
 
 if [[ ! -f "${GENERATED}" ]]; then
   echo "missing ${GENERATED}; run: (cd web && npm run gen:api)" >&2
@@ -38,9 +37,10 @@ npm run --prefix scripts/openapi-typescript --silent generate -- "${tmp}" >/dev/
 
 if ! diff -u "${GENERATED}" "${tmp}"; then
   echo >&2
-  echo "${GENERATED} is out of date with ${SPEC}." >&2
+  echo "${GENERATED} is out of date with the OpenAPI document" >&2
+  echo "that the generate script in scripts/openapi-typescript/ reads." >&2
   echo "run: (cd web && npm run gen:api)" >&2
   exit 1
 fi
 
-echo "${GENERATED} matches ${SPEC}"
+echo "${GENERATED} matches the OpenAPI document"
