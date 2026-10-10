@@ -19,7 +19,7 @@ use message_staging::{
 };
 use phone::{Handle, OwnerHandleSet};
 use sbr::{
-    AttachmentBlob, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
+    AttachmentBytes, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -301,20 +301,20 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
 ///
 /// Returns an error when a payload cannot be written to the spool.
 fn queue_attachments(
-    blobs: &[AttachmentBlob],
+    attachments: &[AttachmentBytes],
     spool: Option<&AttachmentSpool>,
 ) -> Result<Vec<PendingAttachment>> {
-    blobs
+    attachments
         .iter()
-        .map(|blob| {
+        .map(|attachment| {
             if let Some(spool) = spool {
-                spool.put(&blob.data)?;
+                spool.put(&attachment.data)?;
             }
             Ok(PendingAttachment {
-                original_name: blob.original_name.clone(),
-                mime_type: blob.mime_type.clone(),
-                digest: blob.digest_hex.clone(),
-                size_bytes: blob.data.len() as u64,
+                original_name: attachment.original_name.clone(),
+                mime_type: attachment.mime_type.clone(),
+                digest: attachment.digest_hex.clone(),
+                size_bytes: attachment.data.len() as u64,
             })
         })
         .collect()

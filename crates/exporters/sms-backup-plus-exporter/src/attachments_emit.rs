@@ -1,12 +1,12 @@
-//! Attachment helpers: queue blobs as [`PendingAttachment`] metadata during
-//! parse.
+//! Attachment helpers: queue decoded attachments as [`PendingAttachment`]
+//! metadata during parse.
 
-use crate::types::AttachmentBlob;
+use crate::types::AttachmentBytes;
 use anyhow::Result;
 use message_ir::PendingAttachment;
 use message_staging::AttachmentSpool;
 
-/// Queue attachment blobs as metadata, each with its payload's size whether
+/// Queue decoded attachments as metadata, each with its payload's size whether
 /// or not the run copies it. With a `spool`, each payload is written to it
 /// here, so no attachment's bytes stay in memory until the shared runner
 /// writes them.
@@ -15,25 +15,25 @@ use message_staging::AttachmentSpool;
 ///
 /// Returns an error when a payload cannot be written to the spool.
 pub(super) fn queue_attachments(
-    blobs: &[AttachmentBlob],
+    attachments: &[AttachmentBytes],
     spool: Option<&AttachmentSpool>,
 ) -> Result<Vec<PendingAttachment>> {
-    blobs
+    attachments
         .iter()
-        .map(|blob| {
+        .map(|attachment| {
             let digest = match spool {
-                Some(spool) if !blob.data.is_empty() => spool.put(&blob.data)?,
-                _ => blob.digest_hex.clone(),
+                Some(spool) if !attachment.data.is_empty() => spool.put(&attachment.data)?,
+                _ => attachment.digest_hex.clone(),
             };
             Ok(PendingAttachment {
                 rel_path: String::new(),
-                content_type: blob.mime_type.clone().unwrap_or_default(),
+                content_type: attachment.mime_type.clone().unwrap_or_default(),
                 digest_sha256: Some(digest),
-                name_hint: blob
+                name_hint: attachment
                     .original_name
                     .clone()
-                    .or_else(|| Some(blob.filename.clone())),
-                size_bytes: Some(blob.data.len() as u64),
+                    .or_else(|| Some(attachment.filename.clone())),
+                size_bytes: Some(attachment.data.len() as u64),
             })
         })
         .collect()

@@ -35,7 +35,7 @@ pub(crate) struct MmsPart {
 
 /// Decoded MMS attachment with a content-addressed filename.
 #[derive(Debug, Clone)]
-pub struct AttachmentBlob {
+pub struct AttachmentBytes {
     /// Content-addressed filename (`<sha256><ext>`).
     pub filename: String,
     /// Original part name from the XML, when present.
@@ -167,13 +167,13 @@ fn part_content<'a>(part: &MmsPart, decoded: &'a DecodedPartData) -> mms_parts::
     }
 }
 
-/// The message text and attachment blobs the MMS parts make, by the rules of
+/// The message text and decoded attachments the MMS parts make, by the rules of
 /// [`mms_parts`], and how many parts it left out because their `data` is not
 /// base64.
 pub(crate) fn mms_body(
     parts: &[MmsPart],
     decoded: &[DecodedPartData],
-) -> (String, Vec<AttachmentBlob>, u64) {
+) -> (String, Vec<AttachmentBytes>, u64) {
     let shaped: Vec<mms_parts::Part<'_>> = parts
         .iter()
         .zip(decoded)
@@ -198,15 +198,15 @@ pub(crate) fn mms_body(
                 ),
                 _ => return None,
             };
-            Some(attachment_blob(&parts[index], bytes, digest_hex))
+            Some(attachment_bytes(&parts[index], bytes, digest_hex))
         })
         .collect();
     (body.text, attachments, body.unreadable.len() as u64)
 }
 
-/// One attachment blob, named by its digest and the extension its type gives.
-fn attachment_blob(part: &MmsPart, data: Arc<[u8]>, digest_hex: String) -> AttachmentBlob {
-    AttachmentBlob {
+/// One decoded attachment, named by its digest and the extension its type gives.
+fn attachment_bytes(part: &MmsPart, data: Arc<[u8]>, digest_hex: String) -> AttachmentBytes {
+    AttachmentBytes {
         filename: format!("{digest_hex}{}", extension(part)),
         original_name: valid_filename(&part.name)
             .or_else(|| valid_filename(&part.cl))

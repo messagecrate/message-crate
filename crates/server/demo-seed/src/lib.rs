@@ -197,7 +197,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
         corpus::Corpus::load_pride_and_prejudice().context("load public-domain message corpus")?;
     let names = names::NameBank::load_default().context("load name lists")?;
 
-    let attachment_digests = assets::write_attachment_blobs(&imessage_attachments)?;
+    let attachment_digests = assets::write_attachment_files(&imessage_attachments)?;
     // Copy the same attachment files into the Android and WhatsApp directories so
     // those conversations can point at the same relative paths.
     copy_dir_files(&imessage_attachments, &sbr_attachments, cancel)?;
