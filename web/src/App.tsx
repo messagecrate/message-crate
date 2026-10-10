@@ -3,8 +3,14 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiTokenRevealProvider } from "./components/ApiTokenRevealDialog";
 import AppLayout from "./components/AppLayout";
 import { AuthGuard } from "./components/AuthGuard";
+import {
+  ContactsRoute,
+  ConversationsRoute,
+  FullScreenRoute,
+  OpenConversationRoute,
+  TrashRoute,
+} from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
-import MessageRoute from "./components/MessageRoute";
 import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { ThemeProvider } from "./lib/ThemeProvider";
@@ -27,7 +33,8 @@ const ExportScreen = lazy(() => import("./screens/ExportScreen"));
 const SettingsScreen = lazy(() => import("./screens/SettingsScreen"));
 const TrashScreen = lazy(() => import("./screens/TrashScreen"));
 
-function AppRoutes() {
+/** Every route of the app; exported so tests drive the real route table. */
+export function AppRoutes() {
   const { isAuthenticated } = useAuth();
   const { isOwner } = useIsOwner();
   const { needsSetup: needsOnboarding } = useNeedsProfileSetup();
@@ -71,46 +78,56 @@ function AppRoutes() {
             </TimeZoneProvider>
           }
         >
-          <Route index element={null} />
-          <Route path="contacts" element={null} />
-          <Route path="group/:slug" element={null} />
-          <Route path="no-group" element={null} />
-          <Route path="unknown" element={null} />
-          <Route path="tag/:slug" element={null} />
-          <Route path="no-tag" element={null} />
+          {/* Each route's element renders the columns beside the navigation
+              panel and tells the layout what the header searches. */}
+          <Route index element={<ConversationsRoute />} />
+          <Route path="tag/:slug" element={<ConversationsRoute />} />
+          <Route path="no-tag" element={<ConversationsRoute untagged />} />
+          <Route path="contacts" element={<ContactsRoute />} />
+          <Route path="group/:slug" element={<ContactsRoute />} />
+          <Route path="no-group" element={<ContactsRoute group="none" />} />
+          <Route path="unknown" element={<ContactsRoute group="unknown" />} />
           <Route
             path="trash"
             element={
-              <Suspense fallback={null}>
-                <TrashScreen />
-              </Suspense>
+              <TrashRoute>
+                <Suspense fallback={null}>
+                  <TrashScreen />
+                </Suspense>
+              </TrashRoute>
             }
           />
           <Route
             path="import"
             element={
-              <ImportExportRoute feature="import">
-                <ImportScreen />
-              </ImportExportRoute>
+              <FullScreenRoute>
+                <ImportExportRoute feature="import">
+                  <ImportScreen />
+                </ImportExportRoute>
+              </FullScreenRoute>
             }
           />
           <Route
             path="export"
             element={
-              <ImportExportRoute feature="export">
-                <ExportScreen />
-              </ImportExportRoute>
+              <FullScreenRoute>
+                <ImportExportRoute feature="export">
+                  <ExportScreen />
+                </ImportExportRoute>
+              </FullScreenRoute>
             }
           />
           <Route
             path="settings"
             element={
-              <Suspense fallback={null}>
-                <SettingsScreen />
-              </Suspense>
+              <FullScreenRoute>
+                <Suspense fallback={null}>
+                  <SettingsScreen />
+                </Suspense>
+              </FullScreenRoute>
             }
           />
-          <Route path="messages/:conversationId" element={<MessageRoute />} />
+          <Route path="messages/:conversationId" element={<OpenConversationRoute />} />
         </Route>
       </Route>
 
