@@ -197,7 +197,6 @@ impl<R: Rng> Seeder<'_, R> {
                 IrConversationType::Individual,
                 &[],
             )?;
-            self.stats.conversation_files += 1;
         }
         if self.cfg.edge_cases.empty_group {
             self.create_empty_conversation_file(
@@ -206,7 +205,6 @@ impl<R: Rng> Seeder<'_, R> {
                 IrConversationType::Group,
                 &EMPTY_GROUP_MEMBERS,
             )?;
-            self.stats.conversation_files += 1;
         }
 
         // WhatsApp threads reuse the contact's phone number. Import treats them as
@@ -439,6 +437,19 @@ impl<R: Rng> Seeder<'_, R> {
         Ok(file)
     }
 
+    /// Flush a finished conversation file and count it. Every generator ends
+    /// each of its files here, so a write that fails in the buffer's last
+    /// flush stops the seed instead of leaving a cut-off file behind.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the buffered lines cannot be written.
+    fn finish_conversation_file(&mut self, file: BufWriter<File>) -> Result<()> {
+        close_jsonl(file)?;
+        self.stats.conversation_files += 1;
+        Ok(())
+    }
+
     /// Write one one-to-one conversation for a single backup source.
     ///
     /// # Errors
@@ -491,7 +502,7 @@ impl<R: Rng> Seeder<'_, R> {
             }
             self.emit(&mut file, msg)?;
         }
-        self.stats.conversation_files += 1;
+        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -586,7 +597,7 @@ impl<R: Rng> Seeder<'_, R> {
             );
             self.emit(&mut file, msg)?;
         }
-        self.stats.conversation_files += 1;
+        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -633,7 +644,7 @@ impl<R: Rng> Seeder<'_, R> {
             self.decorate_android_message(&mut msg, j, overlap.extra_n);
             self.emit(&mut file, msg)?;
         }
-        self.stats.conversation_files += 1;
+        self.finish_conversation_file(file)?;
         Ok(())
     }
 }
@@ -709,7 +720,7 @@ impl<R: Rng> Seeder<'_, R> {
             }
             self.emit(&mut file, msg)?;
         }
-        self.stats.conversation_files += 1;
+        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -820,7 +831,7 @@ impl<R: Rng> Seeder<'_, R> {
             }
             self.emit(&mut file, msg)?;
         }
-        self.stats.conversation_files += 1;
+        self.finish_conversation_file(file)?;
         Ok(())
     }
 }
@@ -918,7 +929,7 @@ impl<R: Rng> Seeder<'_, R> {
             for msg in messages {
                 self.emit(&mut file, msg)?;
             }
-            self.stats.conversation_files += 1;
+            self.finish_conversation_file(file)?;
         }
         Ok(())
     }
@@ -930,7 +941,7 @@ impl<R: Rng> Seeder<'_, R> {
     ///
     /// Returns an error if the file cannot be written.
     fn create_empty_conversation_file(
-        &self,
+        &mut self,
         staging: &Path,
         chat_id: &str,
         conversation_type: IrConversationType,
@@ -943,7 +954,7 @@ impl<R: Rng> Seeder<'_, R> {
                 display_name: None,
             })
             .collect();
-        self.create_conversation_file(
+        let file = self.create_conversation_file(
             &staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id))),
             ConversationFileHeader {
                 chat_id,
@@ -955,7 +966,7 @@ impl<R: Rng> Seeder<'_, R> {
                 owner_identity: OWNER_PHONE,
             },
         )?;
-        Ok(())
+        self.finish_conversation_file(file)
     }
 
     /// Add photos, other files, tapbacks, replies, and occasional SMS/RCS
@@ -1102,6 +1113,16 @@ fn maybe_mark_as_sms_or_rcs(msg: &mut IrMessage, fraction: f64, rng: &mut impl R
 fn open_jsonl(path: &Path) -> Result<BufWriter<File>> {
     let f = File::create(path).with_context(|| format!("create {}", path.display()))?;
     Ok(BufWriter::new(f))
+}
+
+/// Flush a conversation file's buffered lines and return any error. Dropping
+/// a `BufWriter` flushes it too, but ignores the error.
+///
+/// # Errors
+///
+/// Returns an error if the buffered lines cannot be written.
+fn close_jsonl(mut file: BufWriter<File>) -> Result<()> {
+    file.flush().context("flush conversation file")
 }
 
 /// Write one message as a JSON line. Empty iMessage extras are dropped first.
@@ -1496,4 +1517,24 @@ fn sanitize_filename(s: &str) -> String {
             _ => '_',
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A line still in the buffer when the disk is full is reported, not
+    /// dropped with the writer. `/dev/full` fails every write with ENOSPC.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_failed_last_write_is_an_error() {
+        let mut file = BufWriter::new(
+            fs::OpenOptions::new()
+                .write(true)
+                .open("/dev/full")
+                .expect("open /dev/full"),
+        );
+        writeln!(file, "{{}}").expect("the line fits in the buffer");
+        assert!(close_jsonl(file).is_err());
+    }
 }
