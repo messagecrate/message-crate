@@ -1,7 +1,7 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
 import { formatBytes } from "../../../lib/formatBytes";
 import PageControl from "./PageControl";
-import type { ExportRow } from "./storageUtils";
+import type { ListedExportRun } from "./storageUtils";
 import {
   describeExportRun,
   formatImportDate,
@@ -17,7 +17,7 @@ import {
  * The word the table shows for a run's status. Every status is named: one the
  * server adds fails the type-check at `satisfies never` until it has a case.
  */
-function statusLabel(status: ExportRow["status"]): string {
+function statusLabel(status: ListedExportRun["status"]): string {
   switch (status) {
     case "running":
       return "Running";
@@ -45,7 +45,7 @@ export default function ExportHistoryTable({
   onPageChange,
 }: {
   /** The runs on this page. */
-  exports: ExportRow[];
+  exports: ListedExportRun[];
   /** How many runs the account has, across every page. */
   total: number;
   page: number;
