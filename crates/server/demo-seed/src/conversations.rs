@@ -107,7 +107,7 @@ pub struct StagingDirs<'a> {
 /// Write every conversation file into the three backup directories and return counts.
 ///
 /// One-to-one contacts are split into iMessage-only, Android-only, and overlap.
-/// Unassigned handles, groups, orphaned messages, empty threads, and WhatsApp
+/// Unassigned handles, groups, orphaned messages, empty conversations, and WhatsApp
 /// copies are written after that, in that order.
 ///
 /// # Errors
@@ -210,7 +210,7 @@ impl<R: Rng> Seeder<'_, R> {
             )?;
         }
 
-        // WhatsApp threads reuse the contact's phone number. Import treats them as
+        // WhatsApp conversations reuse the contact's phone number. Import treats them as
         // a separate platform on the same person.
         for contact in roster.contacts.iter().filter(|c| c.has_whatsapp) {
             stop_if_cancelled(self.cancel)?;
@@ -496,7 +496,7 @@ impl<R: Rng> Seeder<'_, R> {
                             seeder.decorate_android_message(&mut msg, i, msg_count);
                         }
                         SourceFlavor::Whatsapp => {
-                            // WhatsApp threads skip iMessage-only fields such as tapbacks and replies.
+                            // WhatsApp conversations skip iMessage-only fields such as tapbacks and replies.
                         }
                     }
                     seeder.emit(file, msg)?;
