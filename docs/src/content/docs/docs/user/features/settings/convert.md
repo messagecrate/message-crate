@@ -44,7 +44,7 @@ A conversion that fails or is cancelled deletes that directory.
 ## What it reads
 
 The input format is detected from the directory, not chosen.
-Convert reads the six formats Export writes:
+Convert reads six of the seven formats Export writes, all but **EML (SMS Backup+)**:
 
 | Format | Recognised by |
 |---|---|
