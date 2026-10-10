@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
+use crate::progress::Progress;
 use crate::test_support::{MessageRow, conversation_header, message_line};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
@@ -1512,7 +1513,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
     // The import stops at the first row it cannot read, so an `Ok` here is
     // the "no failed rows" of the whole bundle; the counts below say that
     // nothing was skipped on the way in either.
-    let import = import_demo_sources(&cfg, &build, &prepared, DEMO_ACCOUNT_ID)
+    let import = import_demo_sources(&cfg, &build, &prepared, DEMO_ACCOUNT_ID, Progress::Log)
         .await
         .expect("import every source of the generated bundle");
     assert_eq!(import.files as usize, contents.files, "every file imported");
@@ -1534,7 +1535,7 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
         .await
         .expect("open the imported database");
     let mut conn = pool.acquire().await.expect("acquire");
-    let dedupe = dedupe::dedupe_cross_source(&mut conn, DEMO_ACCOUNT_ID, None, 2)
+    let dedupe = dedupe::dedupe_cross_source(&mut conn, DEMO_ACCOUNT_ID, None, 2, Progress::Log)
         .await
         .expect("dedupe across sources");
 
@@ -1726,7 +1727,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
     seed_demo_account(&build, DEMO_ACCOUNT_ID, &prepared.seed)
         .await
         .expect("seed the demo account");
-    import_demo_sources(&cfg, &build, &prepared, DEMO_ACCOUNT_ID)
+    import_demo_sources(&cfg, &build, &prepared, DEMO_ACCOUNT_ID, Progress::Log)
         .await
         .expect("import every source of the generated bundle");
 
@@ -2476,8 +2477,14 @@ async fn another_account_writes_between_the_demo_builds_import_batches() {
         .await
         .expect("open a second pool");
     let mut writes = 0;
-    let import =
-        import_demo_sources_with(&cfg, &build.db, &prepared, DEMO_ACCOUNT_ID, 1, async || {
+    let import = import_demo_sources_with(
+        &cfg,
+        &build.db,
+        &prepared,
+        DEMO_ACCOUNT_ID,
+        1,
+        Progress::Log,
+        async || {
             let mut conn = others.acquire().await?;
             sqlx::query("PRAGMA busy_timeout = 0")
                 .execute(&mut *conn)
@@ -2489,9 +2496,10 @@ async fn another_account_writes_between_the_demo_builds_import_batches() {
                 .execute(&mut *conn)
                 .await?;
             Ok(())
-        })
-        .await
-        .expect("the build imports every source, and every write between batches succeeds");
+        },
+    )
+    .await
+    .expect("the build imports every source, and every write between batches succeeds");
 
     assert_eq!(
         writes, 4,
@@ -2530,7 +2538,7 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
         &prepared,
         DEMO_ACCOUNT_ID,
         AuditActor::CommandLine,
-        Vacuum::Skip,
+        BuildRun::Serve,
         &AtomicBool::new(false),
     )
     .await
@@ -2586,7 +2594,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         &prepared,
         DEMO_ACCOUNT_ID,
         AuditActor::Server,
-        Vacuum::Skip,
+        BuildRun::Serve,
         &AtomicBool::new(false),
     )
     .await

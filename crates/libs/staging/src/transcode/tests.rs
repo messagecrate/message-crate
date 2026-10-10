@@ -291,12 +291,12 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
     let conversation = jsonl.file_name().unwrap().to_str().unwrap();
     assert_eq!(
         (
-            issues[0].kind.as_str(),
+            issues[0].kind,
             issues[0].step.as_str(),
             issues[0].item.clone()
         ),
         (
-            "skip",
+            RunIssueKind::Skip,
             "media",
             format!("{conversation}:attachments/broken.png")
         )
@@ -340,8 +340,11 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
     let conversation = jsonl.file_name().unwrap().to_str().unwrap();
     assert_eq!(issues.len(), 1, "{issues:?}");
     assert_eq!(
-        (issues[0].kind.as_str(), issues[0].item.clone()),
-        ("skip", format!("{conversation}:attachments/photo.png"))
+        (issues[0].kind, issues[0].item.clone()),
+        (
+            RunIssueKind::Skip,
+            format!("{conversation}:attachments/photo.png")
+        )
     );
     assert!(
         issues[0]
@@ -369,18 +372,18 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
     transcode_staged(dir.path(), &opts, None, Some(&sink), &mut |_| {}).unwrap();
 
     let conversation = jsonl.file_name().unwrap().to_str().unwrap();
-    let rows: Vec<(String, String)> = issues
+    let rows: Vec<(RunIssueKind, String)> = issues
         .lock()
         .unwrap()
         .iter()
-        .map(|issue| (issue.kind.clone(), issue.item.clone()))
+        .map(|issue| (issue.kind, issue.item.clone()))
         .collect();
     let item = format!("{conversation}:attachments/broken.png");
     assert_eq!(
         rows,
         [
-            (RESOLVED.to_string(), item.clone()),
-            ("skip".to_string(), item)
+            (RunIssueKind::Resolved, item.clone()),
+            (RunIssueKind::Skip, item)
         ]
     );
 }
@@ -410,16 +413,16 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
 
     assert_eq!(report.converted + report.repointed, 2, "{report:?}");
     let conversation_b = jsonl_b.file_name().unwrap().to_str().unwrap();
-    let rows: Vec<(String, String)> = issues
+    let rows: Vec<(RunIssueKind, String)> = issues
         .lock()
         .unwrap()
         .iter()
-        .map(|issue| (issue.kind.clone(), issue.item.clone()))
+        .map(|issue| (issue.kind, issue.item.clone()))
         .collect();
     assert_eq!(
         rows,
         [(
-            RESOLVED.to_string(),
+            RunIssueKind::Resolved,
             format!("{conversation_b}:attachments/photo.png")
         )]
     );

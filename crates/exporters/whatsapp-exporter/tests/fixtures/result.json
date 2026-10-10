@@ -15,7 +15,11 @@
         "caption": null,
         "sticker": false,
         "reply": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       },
       "BBB": {
         "from_me": true,
@@ -29,9 +33,14 @@
         "caption": null,
         "sticker": false,
         "reply": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       }
-    }
+    },
+    "members": null
   },
   "120363042111111111@g.us": {
     "name": "Family Chat",
@@ -43,13 +52,17 @@
         "time": "00:00",
         "key_id": "CCC",
         "data": "Group hello",
-        "sender": "15555550133@s.whatsapp.net",
+        "sender": "15555550133",
         "media": false,
         "mime": null,
         "caption": null,
         "sticker": false,
         "reply": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": "15555550133@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": "Ada"
       },
       "DDD": {
         "from_me": true,
@@ -63,8 +76,13 @@
         "caption": null,
         "sticker": false,
         "reply": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       }
-    }
+    },
+    "members": null
   }
 }

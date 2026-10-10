@@ -8,7 +8,6 @@
 //! batches posted into it, live at the end of this module.
 
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -31,7 +30,9 @@ use crate::db::engine;
 use crate::db::imports::{self, CompleteImportArgs};
 use crate::db::maintenance;
 use crate::db::schema;
+use crate::progress::Progress;
 use media::MediaMode;
+use message_crate_api_types::RunIssueKind;
 
 pub mod contact_name;
 pub mod failure;
@@ -86,6 +87,9 @@ pub struct ImportOptions<'a> {
     /// without a `+` code; `None` keeps such a number's digits as written
     /// (#1676).
     pub phone_country: Option<&'static phone::Country>,
+    /// Where the import says how far it has got: standard output for the
+    /// `import` command, the server's log for everything else.
+    pub progress: Progress,
 }
 
 /// Path/mode fields for [`ImportOptions::fixed`].
@@ -112,7 +116,8 @@ pub struct FixedImportArgs<'a> {
 }
 
 impl<'a> ImportOptions<'a> {
-    /// HTTP / tests / reset-demo: fixed source + assets dir, copy media.
+    /// HTTP / tests / reset-demo: fixed source + assets dir, copy media,
+    /// progress in the server's log.
     pub fn fixed(args: FixedImportArgs<'a>) -> Self {
         Self {
             assets_dir: args.assets_dir,
@@ -126,6 +131,7 @@ impl<'a> ImportOptions<'a> {
             media: MediaMode::Clone,
             wipe_sources: None,
             phone_country: args.phone_country,
+            progress: Progress::Log,
         }
     }
 }
@@ -297,8 +303,8 @@ pub(crate) async fn import_jsonl_files(
         .await
         .with_context(|| format!("failed to open database {}", db_path.display()))?;
     let mut conn = pool.acquire().await?;
-    println!("  Opened the database at {}", db_path.display());
-    let _ = io::stdout().flush();
+    opts.progress
+        .say(format_args!("Opened the database at {}", db_path.display()));
     Ok(import_jsonl_files_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await?)
 }
 
@@ -324,23 +330,20 @@ pub async fn import_jsonl_files_on_conn(
     let wipe_sources = prepare_import(conn, opts, schema_mode)
         .await
         .map_err(ImportError::Internal)?;
-    say(&format!(
-        "  Importing {}",
+    opts.progress.say(format_args!(
+        "Importing {}",
         crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
     ));
     if opts.mode == ImportMode::Replace && !wipe_sources.is_empty() {
         let names = wipe_sources.join(", ");
-        say(&format!(
-            "  {}",
-            crate::counts::words(
-                wipe_sources.len() as u64,
-                &format!(
-                    "The account's messages from source {names} are deleted if the import succeeds"
-                ),
-                &format!(
-                    "The account's messages from the {{n}} sources {names} are deleted if the import succeeds"
-                ),
-            )
+        opts.progress.say(crate::counts::words(
+            wipe_sources.len() as u64,
+            &format!(
+                "The account's messages from source {names} are deleted if the import succeeds"
+            ),
+            &format!(
+                "The account's messages from the {{n}} sources {names} are deleted if the import succeeds"
+            ),
         ));
     }
 
@@ -352,7 +355,7 @@ pub async fn import_jsonl_files_on_conn(
     // Stats on already-committed rows so promote's guid join can use the
     // indexes. Outside the transaction, because a failed ANALYZE is only a
     // warning.
-    maintenance::analyze_import_tables(conn).await;
+    maintenance::analyze_import_tables(conn, opts.progress).await;
 
     // Staging and promote share one transaction. Staging makes contacts and,
     // by ADR-0013, discards trashed ones; none of that may outlive a promote
@@ -368,8 +371,8 @@ pub async fn import_jsonl_files_on_conn(
     }
     let asset_stats = stage_all_files(&mut tx, paths, opts, &mut counts, started).await?;
 
-    say(&format!(
-        "  Writing what the files hold into the account, {:.0} s after the import started…",
+    opts.progress.say(format_args!(
+        "Writing what the files hold into the account, {:.0} s after the import started…",
         started.elapsed().as_secs_f64()
     ));
     promote_step(&mut tx, opts, &wipe_sources, &mut counts).await?;
@@ -383,8 +386,8 @@ pub async fn import_jsonl_files_on_conn(
     counts.assets_copied = asset_stats.copied;
     counts.assets_deduped = asset_stats.deduped;
     counts.assets_missing = asset_stats.missing;
-    say(&format!(
-        "  The import finished in {:.1} s, with {}, {}, {} and {}",
+    opts.progress.say(format_args!(
+        "The import finished in {:.1} s, with {}, {}, {} and {}",
         started.elapsed().as_secs_f64(),
         words(counts.files, "1 file", "{n} files"),
         words(counts.messages, "1 message", "{n} messages"),
@@ -416,19 +419,13 @@ async fn prepare_import(
     crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
 
     if schema_mode == ImportSchemaMode::Ensure {
-        say("  Checking the database schema and clearing the account's staging tables…");
+        opts.progress
+            .say("Checking the database schema and clearing the account's staging tables…");
     } else {
-        say("  Clearing the account's staging tables…");
+        opts.progress.say("Clearing the account's staging tables…");
     }
     crate::db::staging::reset_for_account(conn, opts.account_id).await?;
     sources_to_wipe(opts)
-}
-
-/// Print one progress line and flush, so a long import shows movement even
-/// when stdout is a pipe.
-fn say(line: &str) {
-    println!("{line}");
-    let _ = io::stdout().flush();
 }
 
 /// The source ids a replace-mode import wipes once staging succeeds: the
@@ -502,8 +499,8 @@ async fn stage_all_files(
         let n = idx + 1;
         if n == 1 || n == total_files || n % progress_every == 0 {
             let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
-            say(&format!(
-                "  Read {name}, file {n} of {total_files}. So far: {}, {}, {} and {}, in {:.0} s",
+            opts.progress.say(format_args!(
+                "Read {name}, file {n} of {total_files}. So far: {}, {}, {} and {}, in {:.0} s",
                 words(counts.messages, "1 message", "{n} messages"),
                 words(counts.attachments, "1 attachment", "{n} attachments"),
                 words(asset_stats.copied, "1 Asset copied", "{n} Assets copied"),
@@ -536,6 +533,7 @@ async fn promote_step(
         opts.account_id,
         opts.fill_content_keys,
         wipe_sources,
+        opts.progress,
     )
     .await?;
     counts.messages_deduped += promote_stats.messages_deduped;
@@ -771,9 +769,11 @@ fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssueRequest {
     /// `error` when the item failed, or `skip` when the run left it out
-    /// without importing it, such as an attachment it did not upload. Any
-    /// other word is refused with `422 Unprocessable Entity`.
-    pub(crate) kind: String,
+    /// without importing it, such as an attachment it did not upload. Every
+    /// other kind is refused with `422 Unprocessable Entity`: a note goes in
+    /// `notes`, and the desktop app applies a `resolved` row to the record
+    /// before it sends it.
+    pub(crate) kind: RunIssueKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an
@@ -783,9 +783,20 @@ pub(crate) struct ImportIssueRequest {
     pub(crate) reason: String,
 }
 
+/// Refuse an issue that is not an Import Error: the run stores only
+/// `error` and `skip` rows as its issues. Checked before a connection is
+/// opened, so a refused request writes nothing.
 fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
     for issue in issues {
-        crate::db::imports::validate_issue_kind(&issue.kind)?;
+        match issue.kind {
+            RunIssueKind::Error | RunIssueKind::Skip => {}
+            RunIssueKind::Note | RunIssueKind::Resolved => {
+                return Err(ApiError::validation(format!(
+                    "invalid import issue kind '{}'; expected 'error' or 'skip'",
+                    issue.kind
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -876,7 +887,7 @@ pub(crate) struct ImportNote {
 pub(crate) struct ImportIssue {
     /// `error` when the item failed, or `skip` when the run left it out
     /// without importing it.
-    pub(crate) kind: String,
+    pub(crate) kind: RunIssueKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an
@@ -1850,7 +1861,16 @@ async fn run_import_path(
     .await;
     let counts = import_result?;
     let dedupe_stats = if do_dedupe {
-        Some(dedupe::dedupe_cross_source(&mut conn, account, None, dedupe::NEAR_WINDOW_SECS).await?)
+        Some(
+            dedupe::dedupe_cross_source(
+                &mut conn,
+                account,
+                None,
+                dedupe::NEAR_WINDOW_SECS,
+                Progress::Log,
+            )
+            .await?,
+        )
     } else {
         None
     };

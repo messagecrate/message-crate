@@ -70,12 +70,24 @@ const COUNT_FIELDS = [
   "attachmentsUploaded",
 ] as const;
 
+/** Every kind a row can have, so a stored issue's `kind` is checked against it. */
+const ISSUE_KINDS: Record<ImportIssue["kind"], true> = {
+  skip: true,
+  error: true,
+  note: true,
+  resolved: true,
+};
+
+function isIssueKind(value: unknown): value is ImportIssue["kind"] {
+  return typeof value === "string" && Object.hasOwn(ISSUE_KINDS, value);
+}
+
 /** One issue read back from disk, or `undefined` when it is not one. */
 function readIssue(value: unknown): ImportIssue | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const r = value as Record<string, unknown>;
   if (
-    typeof r.kind !== "string" ||
+    !isIssueKind(r.kind) ||
     !isIssueStage(r.stage) ||
     typeof r.item !== "string" ||
     typeof r.reason !== "string"
