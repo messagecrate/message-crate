@@ -179,7 +179,7 @@ where
 /// Write `events` to a temp file and rename it over the journal (lock held),
 /// synced, so a power loss leaves the old journal or the whole new one.
 fn write_unlocked<E: Serialize>(path: &Path, events: &[E]) -> Result<()> {
-    message_ir::write_atomic(path, |out| {
+    file_io::write_atomic(path, |out| {
         for event in events {
             serde_json::to_writer(&mut *out, event).context("serialize journal event")?;
             out.write_all(b"\n")?;

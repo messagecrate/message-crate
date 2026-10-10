@@ -306,7 +306,7 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
             Need::DoesNotRun
         };
     }
-    if file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
+    if file_io::file_sha256(&path).is_ok_and(|sha256| sha256 == pinned.program_sha256) {
         Need::Adopt
     } else {
         Need::Download
@@ -336,22 +336,6 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(not(unix))]
 fn is_executable(path: &Path) -> bool {
     path.is_file()
-}
-
-/// The SHA-256 of the file at `path`, in lowercase hex.
-fn file_sha256(path: &Path) -> io::Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        match file.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => hasher.update(&buffer[..read]),
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => {}
-            Err(err) => return Err(err),
-        }
-    }
-    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Why a download failed, as Settings shows it.
@@ -508,7 +492,7 @@ fn download(
         packed.rewind().map_err(write_error)?;
         io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
         unpacked.flush().map_err(write_error)?;
-        let actual = file_sha256(unpacked.path()).map_err(write_error)?;
+        let actual = file_io::file_sha256(unpacked.path()).map_err(write_error)?;
         if actual != pinned.program_sha256 {
             return Err(DownloadError::ChecksumMismatch {
                 expected: pinned.program_sha256.to_string(),
