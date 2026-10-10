@@ -3,9 +3,8 @@
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
-import { attachment } from "../../test/apiShapes";
+import { attachment, imessageMessage as message } from "../../test/apiShapes";
 import { BUBBLES, renderBubbleInUtc as renderInUtc } from "../../test/bubbles";
-import { sampleMessage as message } from "../../test/messages";
 
 afterEach(() => {
   cleanup();
@@ -32,7 +31,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => 
   it("keeps the text of a message Deleted in the source app, muted in a dashed outline, and names the source beside its time", () => {
     renderInUtc(Bubble, message({ source, service, deletion: "deleted_in_source_app" }));
 
-    const bubble = markedBubble("See you at noon");
+    const bubble = markedBubble("hi");
     expect(bubble).toHaveClass("text-muted");
     const note = screen.getByText(`· Deleted in ${label}`);
     expect(note.parentElement?.textContent).toMatch(/3:04/);
@@ -53,7 +52,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => 
     renderInUtc(Bubble, message({ source, service, deletion: "unsent" }));
 
     expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
-    expect(screen.queryByText("See you at noon")).not.toBeInTheDocument();
+    expect(screen.queryByText("hi")).not.toBeInTheDocument();
   });
 
   it("draws the attachments of a message Deleted in the source app inside its dashed outline, with no text", () => {
@@ -91,7 +90,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => 
         text: "",
         attachments: [ATTACHMENT],
         tapbacks: [
-          { emoji: null, is_from_me: false, kind: "loved", part_index: 0, sender: "+15555550100" },
+          { emoji: null, is_from_me: false, kind: "loved", part_index: 0, sender: "+1555" },
         ],
         deletion: "unsent",
       }),
@@ -105,7 +104,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => 
   it("draws an unmarked message with no dashed outline and no note", () => {
     renderInUtc(Bubble, message({ source, service }));
 
-    expect(screen.getByText("See you at noon").closest(".border-dashed")).toBeNull();
+    expect(screen.getByText("hi").closest(".border-dashed")).toBeNull();
     expect(screen.queryByText(/Deleted in|Unsent/)).not.toBeInTheDocument();
   });
 });
