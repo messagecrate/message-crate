@@ -1,6 +1,6 @@
 # message-csv
 
-CSV helpers shared by converters: the attachment and participant JSON cells, CSV reading helpers, and UTC offsets and time zones.
+CSV helpers shared by converters: the attachment and participant JSON cells and CSV reading helpers.
 
 `message-ir-format` and several exporters use this crate.
 

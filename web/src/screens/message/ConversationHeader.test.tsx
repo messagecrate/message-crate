@@ -60,7 +60,7 @@ const PROFILE = {
 function groupChat(): Conversation {
   return conversation({
     is_group: true,
-    label: "Book Club",
+    shown_title: "Book Club",
     participants: [
       participant({ name: "Me", identity: "+1 (555) 010-0", contact_id: 1 }),
       participant({ name: "Ada", identity: "+15550120", contact_id: 2 }),
@@ -79,7 +79,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label: "Chat 42",
+    shown_title: "Chat 42",
     tags: [],
     ...overrides,
   };

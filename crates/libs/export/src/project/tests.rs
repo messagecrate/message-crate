@@ -532,7 +532,7 @@ fn seed_message_with_participant(participant: Participant) -> Message {
             conversation_type: "individual".into(),
             is_group: false,
             group_title: None,
-            label: None,
+            shown_title: None,
             participants: vec![participant],
         },
         attachments: vec![],

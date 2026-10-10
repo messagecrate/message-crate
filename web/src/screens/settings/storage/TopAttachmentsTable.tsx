@@ -55,7 +55,7 @@ export default function TopAttachmentsTable({
                       {row.original_name || row.mime_type || `Attachment ${row.id}`}
                     </td>
                     {showConversation ? (
-                      <td className={tdClass}>{row.conversation_title || row.chat_identifier}</td>
+                      <td className={tdClass}>{row.group_title || row.chat_identifier}</td>
                     ) : null}
                     <td className={`${tdClass} text-right tabular-nums`}>
                       {formatBytes(row.size_bytes)}

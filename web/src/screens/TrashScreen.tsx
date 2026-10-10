@@ -220,7 +220,7 @@ export default function TrashScreen() {
   const offerEmptyTrash = !nothingInTrash || searching;
 
   const selectedName =
-    selected?.label ||
+    selected?.shown_title ||
     (selected?.is_group
       ? countOf(selected.participants.length, "participant")
       : selected?.participants[0]?.name) ||
