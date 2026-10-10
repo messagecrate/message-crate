@@ -86,8 +86,9 @@
 //! the work pending and the resumed Media stage reports it again. A row's item is
 //! the conversation file and the original's staged path, which no other
 //! file in the conversation shares. A file an earlier attempt could not convert
-//! is settled again by a later attempt, which first sends a [`RunIssueKind::Resolved`] row
-//! for it: the earlier row no longer holds, whatever the later attempt does.
+//! is settled again by a later attempt, which first sends a
+//! [`RunIssueKind::Resolved`] row for it: the earlier row no longer holds,
+//! whatever the later attempt does.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
