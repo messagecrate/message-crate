@@ -272,6 +272,17 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **Apple Messages from an older Mac or iPhone keep their times
+  in whole seconds.** A Messages database from before macOS 10.13 and iOS 11
+  stores each message's time in whole seconds, and the import said those
+  times had milliseconds. It now says they are whole seconds, as it does for
+  a message whose date the database holds in a form that could only be read
+  to the second. A message also held with milliseconds by another backup of
+  the same phone is then shown once (#1970).
+- 2026-10-09: **Apple Messages from a newer Mac or iPhone keep their
+  milliseconds.** Every Apple Messages time was cut to the second, though
+  the Messages database holds it to the nanosecond. A message now shows
+  its time with its milliseconds, as WhatsApp messages do (#1970).
 - 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
   backup was imported again and now held a photo or video that was missing
   the first time, the import gave the stored message its file but never

@@ -1,6 +1,7 @@
 use super::*;
 use message_crate_core::testutil::names_in;
 use message_crate_core::{AppleConfig, MediaConfig, OutputFormat};
+use message_ir::TimePrecision;
 use std::{fs, path::Path};
 
 fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
@@ -340,6 +341,7 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
             chat_identifier: "+15555550122".into(),
             guid: "g1".into(),
             timestamp_unix_ms: 1_609_459_200_000,
+            time_precision: TimePrecision::Milliseconds,
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
@@ -500,6 +502,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
             chat_identifier: "+15555550122".into(),
             guid: guid.into(),
             timestamp_unix_ms,
+            time_precision: TimePrecision::Milliseconds,
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
@@ -587,6 +590,7 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
             chat_identifier: "+15555550122".into(),
             guid: "g1".into(),
             timestamp_unix_ms: 1_609_459_200_000,
+            time_precision: TimePrecision::Milliseconds,
             outgoing: false,
             service: "iMessage".into(),
             message_kind: "imessage".into(),

@@ -296,6 +296,24 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
     db_path
 }
 
+/// Set the `date` of the message `guid` in the `chat.db` at `db_path` to
+/// `date`, as it is stored: nanoseconds since 2001 from macOS 10.13 and iOS
+/// 11 on, seconds in an older database.
+///
+/// # Panics
+///
+/// Panics when the database cannot be written or holds no such message.
+pub fn set_message_date(db_path: &Path, guid: &str, date: i64) {
+    let db = Connection::open(db_path).expect("open chat.db");
+    let changed = db
+        .execute(
+            "UPDATE message SET date = ?1 WHERE guid = ?2",
+            rusqlite::params![date, guid],
+        )
+        .expect("set the message date");
+    assert_eq!(changed, 1, "chat.db holds one message {guid}");
+}
+
 /// A `message_summary_info` property list, as XML, for a message of `parts`
 /// parts of which those in `unsent` were unsent: `otr` holds one entry per
 /// part and `rp` lists the unsent ones, the two keys Messages reads for an
