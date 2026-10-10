@@ -2,12 +2,12 @@ import { Fragment } from "react";
 import type { ImportSummaryView } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { formatBytes } from "../../../lib/formatBytes";
 import { focusRing } from "../../../lib/uiStyles";
 import ImportDetailPanel from "./ImportDetailPanel";
 import PageControl from "./PageControl";
 import type { AccountImportRun, ListedImportRun } from "./storageUtils";
 import {
-  formatBytes,
   formatImportDate,
   RUN_PAGE_SIZE,
   sectionHint,
