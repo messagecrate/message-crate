@@ -42,7 +42,7 @@ async fn call(
     token: Option<&str>,
     body: Option<(&str, Vec<u8>)>,
 ) -> (reqwest::StatusCode, Value) {
-    let mut request = reqwest::Client::new().request(method, format!("{base}{path}"));
+    let mut request = common::http_client().request(method, format!("{base}{path}"));
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }
