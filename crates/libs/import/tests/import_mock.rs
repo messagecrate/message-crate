@@ -135,7 +135,7 @@ fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
 }
 
 /// Import config with no retries, pointed at a mock server URL.
-fn text_only_config(dir: &Path, base_url: String) -> ImportConfig {
+fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
     ImportConfig {
         input: dir.to_path_buf(),
         base_url,
@@ -156,7 +156,7 @@ fn text_only_config(dir: &Path, base_url: String) -> ImportConfig {
     }
 }
 
-/// The Upload's log that `text_only_config` names under `dir`.
+/// The Upload's log that `mock_server_config` names under `dir`.
 fn read_log(dir: &Path) -> String {
     log_text(&dir.join("message-crate-import.log"))
 }
@@ -237,7 +237,7 @@ fn authenticate_and_import_text_only_conversation() {
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
 
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     let (report, shown) = run_showing(&cfg);
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1);
@@ -295,7 +295,7 @@ fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     let journal = dir.path().join(".import-state.jsonl");
     fs::write(&journal, "{not json\n").unwrap();
 
-    let (report, shown) = run_showing(&text_only_config(dir.path(), server.base_url()));
+    let (report, shown) = run_showing(&mock_server_config(dir.path(), server.base_url()));
 
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1, "the conversation is sent again");
@@ -365,7 +365,7 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
 
     let cfg = ImportConfig {
         import_id: Some(99),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
     let report = run(&cfg, None).unwrap();
 
@@ -433,7 +433,7 @@ fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
     doc.messages[0].attachments = vec![ir_attachment("attachments/photo.txt", digest.clone())];
     write_jsonl(dir.path(), &doc);
 
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);
     assert_eq!(complete.calls(), 1, "the Import Run is completed once");
@@ -464,7 +464,7 @@ fn an_import_where_nothing_lands_completes_its_import_run_as_failed() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(!report.ok);
     assert_eq!(complete.calls(), 1, "the Import Run is completed as failed");
@@ -513,7 +513,7 @@ fn a_refused_completion_is_an_error_the_upload_returns() {
         }
     };
     let error = run(
-        &text_only_config(dir.path(), server.base_url()),
+        &mock_server_config(dir.path(), server.base_url()),
         Some(&mut on_progress),
     )
     .expect_err("a refused completion fails the Upload");
@@ -569,7 +569,7 @@ fn run_paused_upload(
         prepare_ahead: 1,
         prepare_workers: 1,
         cancel: Some(cancel.clone()),
-        ..text_only_config(dir, server.base_url())
+        ..mock_server_config(dir, server.base_url())
     };
     let mut finished = None;
     let mut on_progress = |event: ProgressEvent| match event {
@@ -703,7 +703,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
     write_jsonl(dir.path(), &sample_doc());
     // A directory where the report file goes makes the write fail.
     fs::create_dir(dir.path().join(message_crate_import::REPORT_NAME)).unwrap();
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     let error = run(&cfg, None).expect_err("a refused completion fails the Upload");
 
     let message = format!("{error:#}");
@@ -746,7 +746,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
     write_jsonl(dir.path(), &first);
     write_jsonl(dir.path(), &second);
 
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 2);
@@ -800,7 +800,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.mode = ImportMode::Replace;
     cfg.batch_size = 2;
 
@@ -850,7 +850,7 @@ fn failed_combined_request_only_fails_its_files() {
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 2;
 
     let report = run(&cfg, None).unwrap();
@@ -923,7 +923,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
     }
     fs::write(dir.path().join(&second_name), text).unwrap();
 
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(!report.ok);
     assert_eq!(refused.calls(), 1);
@@ -976,7 +976,7 @@ fn an_import_imports_the_files_after_a_bad_one() {
     let dir = tempdir().unwrap();
     directory_with_a_bad_middle_file(dir.path());
 
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(!report.ok);
     assert_eq!(import.calls(), 1);
@@ -1006,7 +1006,7 @@ fn resumes_message_batches_from_compacted_journal() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
 
@@ -1040,7 +1040,7 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc_for("+15555550101", " "));
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
 
@@ -1082,7 +1082,7 @@ fn a_replace_import_ignores_the_journal_and_sends_every_message_again() {
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     assert!(run(&cfg, None).unwrap().ok);
     assert_eq!(import.calls(), 1);
 
@@ -1307,7 +1307,7 @@ fn puts_two_new_assets_after_one_preflight_head() {
         }));
     });
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     cfg.asset_upload_workers = 1;
     let report = run(&cfg, None).unwrap();
@@ -1394,7 +1394,7 @@ fn heads_later_assets_after_put_reports_already_present() {
         }));
     });
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     cfg.asset_upload_workers = 1;
     let report = run(&cfg, None).unwrap();
@@ -1463,7 +1463,7 @@ fn preflight_head_skips_puts_when_first_asset_already_present() {
         }));
     });
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     // Parallel workers would both PUT before a post-PUT flag is visible.
     cfg.asset_upload_workers = 2;
@@ -1569,7 +1569,7 @@ fn multipart_upload_when_over_proxy_threshold() {
     });
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     cfg.asset_multipart_threshold = 20; // force multipart for 40-byte file
     let report = run(&cfg, None).unwrap();
@@ -1660,7 +1660,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
     });
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     cfg.asset_multipart_threshold = 8;
     let report = run(&cfg, None).unwrap();
@@ -1763,7 +1763,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     ));
     write_jsonl(dir.path(), &doc);
 
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
     assert!(report.ok, "{report:?}");
     assert_eq!(put.calls(), 2);
@@ -1874,7 +1874,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
     write_jsonl(dir.path(), &doc_a);
     write_jsonl(dir.path(), &doc_b);
 
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
     let report = run(&cfg, None).unwrap();
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 2);
@@ -1910,7 +1910,7 @@ fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
     }
     let cfg = ImportConfig {
         prepare_workers: 1,
-        ..text_only_config(dir.path(), base_url)
+        ..mock_server_config(dir.path(), base_url)
     };
 
     let report = run(&cfg, None).unwrap();
@@ -2080,7 +2080,7 @@ fn a_conversation_waits_for_a_shared_attachment_another_is_uploading() {
     let cfg = ImportConfig {
         prepare_workers: 2,
         batch_size: 100_000,
-        ..text_only_config(dir.path(), base_url)
+        ..mock_server_config(dir.path(), base_url)
     };
 
     let report = run(&cfg, None).unwrap();
@@ -2112,7 +2112,7 @@ fn a_conversation_uploads_a_shared_attachment_whose_upload_failed_elsewhere() {
     let cfg = ImportConfig {
         prepare_workers: 2,
         batch_size: 100_000,
-        ..text_only_config(dir.path(), base_url)
+        ..mock_server_config(dir.path(), base_url)
     };
 
     let report = run(&cfg, None).unwrap();
@@ -2221,7 +2221,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     ];
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
     cfg.asset_max_bytes = 16; // BIG exceeds; SMALL does not
 
@@ -2354,7 +2354,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     ];
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
 
     let mut issues = Vec::new();
@@ -2424,7 +2424,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
     }];
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
 
     let mut issues = Vec::new();
@@ -2493,7 +2493,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     }];
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.force = true;
 
     let mut issues = Vec::new();
@@ -2559,7 +2559,7 @@ fn conversations_from_two_sources_go_out_in_separate_requests() {
     other.export.source = "whatsapp".into();
     write_jsonl(dir.path(), &other);
 
-    let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
+    let report = run(&mock_server_config(dir.path(), server.base_url()), None).unwrap();
 
     assert!(report.ok, "{:?}", report.results);
     assert_eq!(sms.calls(), 1);
@@ -2638,7 +2638,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     write_jsonl(dir.path(), &sample_doc());
     let cfg = ImportConfig {
         max_retries: 2,
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     // The first retry waits at least 500 ms, so there is time to swap the
@@ -2703,7 +2703,7 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
         prepare_ahead: 1,
         prepare_workers: 1,
         cancel: Some(cancel.clone()),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     // Cancel as soon as the first conversation is on the server.
@@ -2778,7 +2778,7 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
         prepare_ahead: 1,
         prepare_workers: 1,
         cancel: Some(cancel.clone()),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let flag = cancel.clone();
@@ -2856,7 +2856,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
         prepare_ahead: 1,
         prepare_workers: 1,
         cancel: Some(cancel.clone()),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = std::thread::scope(|scope| {
@@ -2920,7 +2920,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     let cfg = ImportConfig {
         batch_size: 1,
         cancel: Some(cancel.clone()),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = std::thread::scope(|scope| {
@@ -2991,7 +2991,7 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
         prepare_ahead: 1,
         prepare_workers: 1,
         import_id: Some(7),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = run(&cfg, None).unwrap();
@@ -3051,7 +3051,7 @@ fn a_second_import_sends_only_the_conversation_whose_batch_failed() {
     write_jsonl(dir.path(), &sample_doc());
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = 1;
 
     let first = run(&cfg, None).unwrap();
@@ -3123,7 +3123,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
     write_jsonl(dir.path(), &sample_doc());
     let cfg = ImportConfig {
         max_retries: 2,
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = run(&cfg, None).unwrap();
@@ -3210,7 +3210,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
     write_jsonl(dir.path(), &sample_doc());
     let cfg = ImportConfig {
         max_retries: 2,
-        ..text_only_config(dir.path(), base_url)
+        ..mock_server_config(dir.path(), base_url)
     };
 
     let report = run(&cfg, None).unwrap();
@@ -3277,7 +3277,7 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     write_jsonl(dir.path(), &two_messages);
     let cfg = ImportConfig {
         batch_size: 2,
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = run(&cfg, None).unwrap();
@@ -3311,7 +3311,7 @@ fn an_import_keeps_its_journal_in_the_export_directory() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let cfg = text_only_config(dir.path(), server.base_url());
+    let cfg = mock_server_config(dir.path(), server.base_url());
 
     assert!(run(&cfg, None).unwrap().ok);
     assert!(dir.path().join(".import-state.jsonl").is_file());
@@ -3355,7 +3355,7 @@ fn an_import_goes_on_after_sending_a_large_batch_early() {
     write_jsonl(dir.path(), &large);
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.batch_size = message_crate_import::DEFAULT_BATCH_SIZE;
     cfg.prepare_ahead = 1;
 
@@ -3402,7 +3402,7 @@ fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     doc.messages[0].attachments = vec![ir_attachment("attachments/photo.jpg", digest)];
     write_jsonl(dir.path(), &doc);
 
-    let mut cfg = text_only_config(dir.path(), server.base_url());
+    let mut cfg = mock_server_config(dir.path(), server.base_url());
     cfg.asset_max_bytes = message_crate_import::DEFAULT_ASSET_MAX_BYTES;
     let report = run(&cfg, None).unwrap();
 
@@ -3453,7 +3453,7 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
         prepare_ahead: 1,
         prepare_workers: 1,
         import_id: Some(7),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let (report, shown) = run_showing(&cfg);
@@ -3524,7 +3524,7 @@ fn a_refused_attachment_upload_stops_the_import_and_fails_no_conversation() {
     two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
     let cfg = ImportConfig {
         import_id: Some(7),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let report = run(&cfg, None).unwrap();
@@ -3560,7 +3560,7 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
     let cfg = ImportConfig {
         import_id: Some(7),
-        ..text_only_config(dir.path(), server.base_url())
+        ..mock_server_config(dir.path(), server.base_url())
     };
 
     let (report, shown) = run_showing(&cfg);
@@ -3617,7 +3617,7 @@ fn the_phone_country_is_stated_on_the_import_run() {
     write_jsonl(tmp.path(), &sample_doc());
     let cfg = ImportConfig {
         phone_country: Some("GB".into()),
-        ..text_only_config(tmp.path(), server.base_url())
+        ..mock_server_config(tmp.path(), server.base_url())
     };
     run(&cfg, None).unwrap();
     start.assert();

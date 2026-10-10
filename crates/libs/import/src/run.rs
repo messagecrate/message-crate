@@ -267,7 +267,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let mut out = Reporter::open(&paths.log, progress)?;
 
     check_cancel(cfg.cancel.as_ref())?;
-    let files = list_jsonl_files(&paths.input, &[&paths.journal, &paths.report, &paths.log])?;
+    let files = list_jsonl_files(&paths.input, &[&paths.log])?;
     if files.is_empty() {
         bail!(
             "no .jsonl files under {} (export with JSONL in the Export tab first)",

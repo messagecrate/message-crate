@@ -518,8 +518,9 @@ impl DigestResolver {
         rel: &str,
         warn: &mut dyn FnMut(String),
     ) -> Result<String> {
-        // Fast path: another conversation already hashed this absolute path
-        // during this run. Always trust the cache — it was computed from disk.
+        // Fast path: another conversation already resolved this absolute path
+        // during this run, to the export's recorded SHA-256 or a hash of the
+        // file. The server checks the bytes when they are uploaded.
         if let Some(digest) = self.cached(abs) {
             return Ok(digest);
         }
