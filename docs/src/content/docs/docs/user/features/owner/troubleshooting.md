@@ -15,7 +15,7 @@ For the Message Crate the desktop app starts, the card says what went wrong in p
 
 For a Message Crate in Docker:
 
-1. `docker ps` lists the running containers. `message-crate` must be among them.
+1. `docker ps` lists the running containers. `message-crate` must be among them, and its status must read `(healthy)`. `(health: starting)` means the server is still starting, which takes longest on the first start, while it builds the Demo Account. `(unhealthy)` means the process runs but the server has stopped answering, and `docker restart message-crate` starts it again.
 2. `docker logs message-crate` shows what the server printed, including why it stopped.
 3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. The app keeps the address after logging out and opens on the login card for it at the next start. It starts its own Message Crate only when the address is its own, `http://127.0.0.1:8080`.
 

@@ -83,4 +83,15 @@ USER node
 EXPOSE 8080
 VOLUME ["/app/data"]
 
+# Docker marks the container unhealthy when the server stops answering, so
+# `docker ps` and anything in front of the container can tell a server that
+# hangs from one that runs. The probe asks /health on the port
+# config/config.docker.toml binds, with the node this base image already
+# carries, so the image needs no curl. The first start seeds the Demo Account
+# before the server listens, and a failed probe inside --start-period does
+# not count against --retries, so that seed never marks the container
+# unhealthy.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint-release.sh"]
