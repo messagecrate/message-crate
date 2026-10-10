@@ -63,22 +63,38 @@ impl MergedArchive for SmsBackupPlusArchive {
     ) -> Result<()> {
         fs::create_dir_all(output_dir)
             .with_context(|| format!("create {}", output_dir.display()))?;
-        let (kept, left_out) = sms_and_mms_conversations(documents)?;
-        if left_out > 0 {
-            report.bump(NOT_SMS_OR_MMS_LEFT_OUT, left_out);
-        }
-        for doc in &kept {
-            self.write_conversation(output_dir, doc, report)?;
+        let directories = conversation_directories(documents)?;
+        for (doc, directory) in documents.iter().zip(directories) {
+            let messages: Vec<IrMessage> = doc
+                .messages
+                .iter()
+                .filter(|message| message.is_sms_or_mms())
+                .cloned()
+                .collect();
+            let left_out = doc.messages.len() - messages.len();
+            if left_out > 0 {
+                report.bump(NOT_SMS_OR_MMS_LEFT_OUT, left_out as u64);
+            }
+            let Some(directory) = directory else {
+                continue;
+            };
+            let kept = ConversationDocument {
+                schema_version: doc.schema_version,
+                export: doc.export.clone(),
+                conversation: doc.conversation.clone(),
+                messages,
+                packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
+            };
+            self.write_conversation(&output_dir.join(directory), &kept, output_dir, report)?;
         }
         Ok(())
     }
 
     /// The directory of every conversation [`write`](Self::write) writes.
     fn outputs(&self, documents: &[ConversationDocument]) -> Result<Vec<String>> {
-        let (kept, _) = sms_and_mms_conversations(documents)?;
-        Ok(kept
-            .iter()
-            .map(ConversationDocument::filename_stem)
+        Ok(conversation_directories(documents)?
+            .into_iter()
+            .flatten()
             .collect())
     }
 
@@ -87,54 +103,52 @@ impl MergedArchive for SmsBackupPlusArchive {
     }
 }
 
-/// The conversations the archive writes: every document that has an SMS or
-/// MMS, holding only those messages, each named so that no two share a
-/// directory. Also the number of other messages left out.
+/// For each of `documents`, in order, the name of the directory the archive
+/// writes it into, or `None` for a document with no SMS or MMS, which the
+/// archive leaves out. The names are told apart as the EML archive tells its
+/// own apart, so no two conversations share a directory. Only the
+/// conversations are copied, never their messages.
 ///
 /// # Errors
 ///
 /// Returns an error when two conversations would still share a directory.
-fn sms_and_mms_conversations(
-    documents: &[ConversationDocument],
-) -> Result<(Vec<ConversationDocument>, u64)> {
-    let mut left_out = 0;
-    let mut kept = Vec::with_capacity(documents.len());
-    for doc in documents {
-        let messages: Vec<IrMessage> = doc
-            .messages
-            .iter()
-            .filter(|message| message.is_sms_or_mms())
-            .cloned()
-            .collect();
-        left_out += (doc.messages.len() - messages.len()) as u64;
-        if messages.is_empty() {
-            continue;
-        }
-        kept.push(ConversationDocument {
-            schema_version: doc.schema_version,
-            export: doc.export.clone(),
-            conversation: doc.conversation.clone(),
-            messages,
-            packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
-        });
-    }
-    let mut docs: Vec<&mut ConversationDocument> = kept.iter_mut().collect();
+fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Option<String>>> {
+    let mut written: Vec<(usize, ConversationDocument)> = documents
+        .iter()
+        .enumerate()
+        .filter(|(_, doc)| doc.messages.iter().any(IrMessage::is_sms_or_mms))
+        .map(|(index, doc)| {
+            let named = ConversationDocument {
+                schema_version: doc.schema_version,
+                export: doc.export.clone(),
+                conversation: doc.conversation.clone(),
+                messages: Vec::new(),
+                packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
+            };
+            (index, named)
+        })
+        .collect();
+    let mut docs: Vec<&mut ConversationDocument> = written.iter_mut().map(|(_, doc)| doc).collect();
     give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
-    Ok((kept, left_out))
+    let mut directories = vec![None; documents.len()];
+    for (index, doc) in written {
+        directories[index] = Some(doc.filename_stem());
+    }
+    Ok(directories)
 }
 
 impl SmsBackupPlusArchive {
-    /// One directory of `.eml` files, named and ordered as the EML archive
-    /// names and orders its own.
+    /// Write the messages of `doc` into `directory`, one `.eml` each, named
+    /// and ordered as the EML archive names and orders its own. Attachments
+    /// are read relative to `output_dir`.
     fn write_conversation(
         &self,
-        output_dir: &Path,
+        directory: &Path,
         doc: &ConversationDocument,
+        output_dir: &Path,
         report: &mut ExportReport,
     ) -> Result<()> {
-        let directory = output_dir.join(doc.filename_stem());
-        fs::create_dir_all(&directory)
-            .with_context(|| format!("create {}", directory.display()))?;
+        fs::create_dir_all(directory).with_context(|| format!("create {}", directory.display()))?;
         let conversation = Conversation::of(doc);
         let mut ordered: Vec<&IrMessage> = doc.messages.iter().collect();
         ordered.sort_by(|a, b| {
