@@ -707,7 +707,7 @@ fn a_gif_declared_in_capitals_or_with_parameters_is_not_converted() {
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
 #[test]
-fn kind_of_falls_back_to_the_attachment_names_for_an_extensionless_blob() {
+fn kind_of_falls_back_to_the_attachment_names_for_an_extensionless_asset() {
     let canonical = PathBuf::from(format!("ab/{SHA}"));
     for (name, expected) in [
         ("voice-note.amr", Some(Kind::Audio)),

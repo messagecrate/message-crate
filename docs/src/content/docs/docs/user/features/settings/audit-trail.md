@@ -38,3 +38,4 @@ Moving conversations to the trash and back, tags, Saved Searches, contact names,
 Nobody can change or delete an entry, the Owner included.
 Deleting an account keeps its entries and runs under its old username, adds an **Account deleted** entry, and drops each Export Run's search text.
 Refused logins for a username no account has are kept for 90 days.
+When what was typed could not be a username, such as a password typed into the username field, the entry says **not a valid username** and keeps none of the text.

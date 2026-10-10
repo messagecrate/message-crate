@@ -675,7 +675,7 @@ impl<'a> Export<'a> {
 /// used in its place.
 ///
 /// The first message to mention a sha256 decides the path it is fetched to;
-/// the server stores one blob per fingerprint for the account, whatever the
+/// the server stores one Asset per fingerprint for the account, whatever the
 /// source, so later mentions are the same file. A later mention under
 /// another path goes into `other_paths`, because staging names a file by
 /// date and fingerprint and one file sent on two days has two paths.

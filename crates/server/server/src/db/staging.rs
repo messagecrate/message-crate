@@ -238,7 +238,7 @@ pub struct StagingMessage<'a> {
     pub backup_taken_at: Option<&'a StoredTime>,
 }
 
-/// One attachment row as the import stages it: the stored blob's digest,
+/// One attachment row as the import stages it: the stored Asset's digest,
 /// path and type when the file was stored, the record's own type and
 /// missing reason when it was not.
 pub struct StagingAttachment {

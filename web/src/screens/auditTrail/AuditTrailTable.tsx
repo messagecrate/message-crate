@@ -12,7 +12,8 @@ import { AUDIT_TRAIL_PAGE_SIZE } from "./useAuditTrail";
 
 /** The Account column: the username, marked when the account has since been deleted. */
 function accountCell(entry: AuditEntry) {
-  // Opening and closing the Message Crate to new accounts is about no account.
+  // Opening and closing the Message Crate to new accounts is about no account,
+  // and a refused login that typed no valid username keeps none.
   if (!entry.username) return <span className="text-muted">—</span>;
   // A refused login for an unknown username never had an account to lose.
   const deleted = entry.account_id == null && entry.reason !== "unknown_username";
