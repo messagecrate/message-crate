@@ -62,6 +62,18 @@ import {
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
 
+/**
+ * The four attachment choices: what happens to attachments, and the three
+ * limits Compress works to. The names match the import's form values, so the
+ * choices spread into them as they are.
+ */
+export type AttachmentChoices = {
+  attachmentMedia: AttachmentMediaMode;
+  maxResolution: string;
+  maxFps: string;
+  minSizeMb: string;
+};
+
 export type ImportFormFieldsProps = {
   source: string;
   onSourceChange: (source: string) => void;
@@ -92,14 +104,8 @@ export type ImportFormFieldsProps = {
   whatsappOwnerPhone: string;
   onWhatsappOwnerPhoneChange: (value: string) => void;
   whatsappStats: WhatsappPathStats;
-  attachmentMedia: AttachmentMediaMode;
-  onAttachmentMediaChange: (mode: AttachmentMediaMode) => void;
-  maxResolution: string;
-  onMaxResolutionChange: (value: string) => void;
-  maxFps: string;
-  onMaxFpsChange: (value: string) => void;
-  minSizeMb: string;
-  onMinSizeMbChange: (value: string) => void;
+  attachments: AttachmentChoices;
+  onAttachmentsChange: (attachments: AttachmentChoices) => void;
   ownerPhones: string[];
   onOwnerPhonesChange: (phones: string[]) => void;
   /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
@@ -225,24 +231,19 @@ function FieldStatus({ message }: { message: string | undefined }) {
 }
 
 function AttachmentFields(props: {
-  attachmentMedia: AttachmentMediaMode;
-  onAttachmentMediaChange: (mode: AttachmentMediaMode) => void;
+  attachments: AttachmentChoices;
+  onAttachmentsChange: (attachments: AttachmentChoices) => void;
   showCompress: boolean;
-  maxResolution: string;
-  onMaxResolutionChange: (value: string) => void;
-  maxFps: string;
-  onMaxFpsChange: (value: string) => void;
-  minSizeMb: string;
-  onMinSizeMbChange: (value: string) => void;
 }) {
+  const { attachments, onAttachmentsChange } = props;
   return (
     <>
       <StackedField label="Attachments">
         <Select
-          selectedKey={props.attachmentMedia}
+          selectedKey={attachments.attachmentMedia}
           onSelectionChange={(k) => {
             const mode = parseSelectKey(k, ["copy", "convert", "compress", "skip"] as const);
-            if (mode) props.onAttachmentMediaChange(mode);
+            if (mode) onAttachmentsChange({ ...attachments, attachmentMedia: mode });
           }}
           aria-label="Attachments"
           triggerClassName="!bg-bg"
@@ -253,15 +254,17 @@ function AttachmentFields(props: {
             </ListBoxItem>
           ))}
         </Select>
-        <p className={hintStyle}>{attachmentHelp[props.attachmentMedia]}</p>
+        <p className={hintStyle}>{attachmentHelp[attachments.attachmentMedia]}</p>
       </StackedField>
 
       {props.showCompress && (
         <div className="mb-[1.1rem] ml-4">
           <StackedField label="Target resolution">
             <Select
-              selectedKey={props.maxResolution}
-              onSelectionChange={(k) => props.onMaxResolutionChange(String(k))}
+              selectedKey={attachments.maxResolution}
+              onSelectionChange={(k) =>
+                onAttachmentsChange({ ...attachments, maxResolution: String(k) })
+              }
               aria-label="Target resolution"
               triggerClassName="!bg-bg"
             >
@@ -279,8 +282,8 @@ function AttachmentFields(props: {
           <StackedField label="Max FPS">
             <input
               type="text"
-              value={props.maxFps}
-              onChange={(e) => props.onMaxFpsChange(e.target.value)}
+              value={attachments.maxFps}
+              onChange={(e) => onAttachmentsChange({ ...attachments, maxFps: e.target.value })}
               className={fieldStyle}
             />
             <p className={hintStyle}>
@@ -290,8 +293,8 @@ function AttachmentFields(props: {
           <StackedField label="Minimum Video File Size (Megabytes)">
             <input
               type="text"
-              value={props.minSizeMb}
-              onChange={(e) => props.onMinSizeMbChange(e.target.value)}
+              value={attachments.minSizeMb}
+              onChange={(e) => onAttachmentsChange({ ...attachments, minSizeMb: e.target.value })}
               className={fieldStyle}
             />
             <p className={hintStyle}>Only re-encode videos above this size.</p>
@@ -340,7 +343,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const whatsappKeyRequired = whatsappMethod
     ? whatsappCryptRequired(props.whatsappStats.hasMsgstoreDb, props.whatsappStats.cryptName)
     : false;
-  const showCompress = showsAttachmentOptions(props.source) && props.attachmentMedia === "compress";
+  const showCompress =
+    showsAttachmentOptions(props.source) && props.attachments.attachmentMedia === "compress";
   const phoneFieldRef = useRef<PhoneTokenFieldHandle>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
   const [mismatchAck, setMismatchAck] = useState(false);
@@ -397,7 +401,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const wtsexporterBlocked =
     whatsappMethod !== null && tools !== null && !toolUsable(tools.wtsexporter);
   const mediaRunsFfmpeg =
-    showsAttachmentOptions(props.source) && mediaJobVerb(props.attachmentMedia) !== null;
+    showsAttachmentOptions(props.source) &&
+    mediaJobVerb(props.attachments.attachmentMedia) !== null;
 
   const canImport =
     blockedBy === null &&
@@ -430,15 +435,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
   const attachmentFields = (
     <AttachmentFields
-      attachmentMedia={props.attachmentMedia}
-      onAttachmentMediaChange={props.onAttachmentMediaChange}
+      attachments={props.attachments}
+      onAttachmentsChange={props.onAttachmentsChange}
       showCompress={showCompress}
-      maxResolution={props.maxResolution}
-      onMaxResolutionChange={props.onMaxResolutionChange}
-      maxFps={props.maxFps}
-      onMaxFpsChange={props.onMaxFpsChange}
-      minSizeMb={props.minSizeMb}
-      onMinSizeMbChange={props.onMinSizeMbChange}
     />
   );
 

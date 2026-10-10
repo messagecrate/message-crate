@@ -17,7 +17,10 @@ import {
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
-import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
+import ImportFormFields, {
+  type AttachmentChoices,
+  type ImportFormFieldsProps,
+} from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -49,6 +52,13 @@ afterEach(() => {
 
 const presentFile = { exists: true, isFile: true, isDirectory: false };
 const presentDir = { exists: true, isFile: false, isDirectory: true };
+
+const copyAttachments: AttachmentChoices = {
+  attachmentMedia: "copy",
+  maxResolution: "720p",
+  maxFps: "30",
+  minSizeMb: "20",
+};
 
 function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
   const props: ImportFormFieldsProps = {
@@ -85,14 +95,8 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
     onWhatsappOwnerPhoneChange: vi.fn(),
     onWhatsappBusinessChange: vi.fn(),
     whatsappStats: emptyWhatsappPathStats(),
-    attachmentMedia: "copy",
-    onAttachmentMediaChange: vi.fn(),
-    maxResolution: "720p",
-    onMaxResolutionChange: vi.fn(),
-    maxFps: "30",
-    onMaxFpsChange: vi.fn(),
-    minSizeMb: "20",
-    onMinSizeMbChange: vi.fn(),
+    attachments: copyAttachments,
+    onAttachmentsChange: vi.fn(),
     ownerPhones: [],
     onOwnerPhonesChange: vi.fn(),
     ownerEmails: "",
@@ -190,6 +194,17 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.queryByLabelText("Attachment directory")).toBeNull();
     expect(screen.queryByLabelText("Apple Contacts file")).toBeNull();
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
+  });
+
+  it("hands back every attachment choice when one of them changes", async () => {
+    const user = setupUser();
+    const onAttachmentsChange = vi.fn();
+    const compress: AttachmentChoices = { ...copyAttachments, attachmentMedia: "compress" };
+    renderForm({ attachments: compress, onAttachmentsChange });
+
+    await user.type(screen.getByLabelText("Max FPS"), "6");
+
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxFps: "306" });
   });
 
   it("shows optional attachment directory on Mac Messages", () => {
@@ -958,7 +973,10 @@ describe("ImportFormFields programs the import needs", () => {
         ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
       }),
     );
-    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+    renderForm({
+      ...readyWhatsapp,
+      attachments: { ...copyAttachments, attachmentMedia: "convert" },
+    });
 
     expect(
       await screen.findByText("Downloading ffmpeg: 12 MB of 30 MB (40%). Media waits for ffmpeg."),
@@ -971,7 +989,10 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.toolsStatus.mockResolvedValue(
       status({ ffmpeg: { state: "missing" }, ffprobe: { state: "missing" } }),
     );
-    renderForm({ ...readyWhatsapp, attachmentMedia: "convert" });
+    renderForm({
+      ...readyWhatsapp,
+      attachments: { ...copyAttachments, attachmentMedia: "convert" },
+    });
 
     expect(
       await screen.findByText(
