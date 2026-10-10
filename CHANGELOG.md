@@ -142,6 +142,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **Apple Messages and WhatsApp check an optional path the same
+  way.** The Import form's check of an optional path is now one check that
+  both imports use, so they can no longer drift apart. Nothing changes on
+  screen (#2141).
 - 2026-10-10: **An SMS Backup & Restore group conversation is identified
   the way the SMS Backup+ and GO SMS Pro imports identify theirs.** The
   three imports now share one rule, so they can no longer drift apart. Each

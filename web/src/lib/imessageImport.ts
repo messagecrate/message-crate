@@ -1,3 +1,5 @@
+import { checkOptionalPath, PATH_MISSING, type PathStat } from "./pathChecks";
+
 export const IMESSAGE_SOURCE_ID = "imessage";
 
 export const IMESSAGE_DEFAULT_METHOD = "imessage-ios";
@@ -46,12 +48,6 @@ export function imessageVisiblePlatforms(
   return IMESSAGE_METHODS.filter((m) => m.id !== "imessage-jailbreak");
 }
 
-export type PathStat = {
-  exists: boolean;
-  isFile: boolean;
-  isDirectory: boolean;
-};
-
 export type ImessagePathStats = {
   backup: PathStat | null;
   attachmentRoot: PathStat | null;
@@ -78,7 +74,6 @@ export function imessageStatsForMethod(
   };
 }
 
-export const IMESSAGE_ERR_PATH_MISSING = "This path does not exist.";
 export const IMESSAGE_ERR_IPHONE_PATH_IS_FILE = "Pick the backup directory.";
 export const IMESSAGE_ERR_MAC_PATH_IS_DIR = "Pick chat.db.";
 export const IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR = "Pick sms.db.";
@@ -99,34 +94,6 @@ type ImessageCanImportArgs = {
 
 type ImessageImportErrorKey = "backupPath" | "attachmentRoot" | "appleContacts" | "backupPassword";
 
-function checkOptionalPath(
-  path: string,
-  stat: PathStat | null,
-  errors: Partial<Record<ImessageImportErrorKey, string>>,
-  key: "attachmentRoot" | "appleContacts",
-  fileError: string,
-  expectDirectory: boolean,
-): void {
-  const trimmed = path.trim();
-  if (trimmed === "") {
-    return;
-  }
-  if (stat === null) {
-    return;
-  }
-  if (!stat.exists) {
-    errors[key] = IMESSAGE_ERR_PATH_MISSING;
-    return;
-  }
-  if (expectDirectory) {
-    if (stat.isFile) {
-      errors[key] = fileError;
-    }
-  } else if (stat.isDirectory) {
-    errors[key] = fileError;
-  }
-}
-
 export function imessageCanImport(args: ImessageCanImportArgs): {
   enabled: boolean;
   errors: Partial<Record<ImessageImportErrorKey, string>>;
@@ -144,7 +111,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
 
   const backupStat = args.stats.backup;
   if (!backupStat.exists) {
-    errors.backupPath = IMESSAGE_ERR_PATH_MISSING;
+    errors.backupPath = PATH_MISSING;
   } else {
     switch (args.method) {
       case "imessage-ios":
