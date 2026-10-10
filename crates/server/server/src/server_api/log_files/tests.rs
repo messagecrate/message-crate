@@ -9,8 +9,8 @@ use serde_json::Value;
 use crate::logging::log_dir;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, serve, small_log_files,
-    test_fixture, write_log_line as write,
+    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, http_client, serve,
+    small_log_files, test_fixture, write_log_line as write,
 };
 
 /// The owner lists the files newest first and downloads one whole, as a
@@ -40,7 +40,7 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
     assert_eq!(newest["bytes"], on_disk.len());
 
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/server/log-files/{}", server.base(), ids[0]))
         .bearer_auth(&owner.token)
         .send()

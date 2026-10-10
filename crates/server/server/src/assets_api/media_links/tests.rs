@@ -6,13 +6,13 @@ use crate::assets_api::tests::{
     ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{RegisteredAccount, expect_problem};
+use crate::test_support::{RegisteredAccount, expect_problem, http_client};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the
 /// `Location`, and the body.
 async fn mint(state: &AppState, sha256: &str, token: &str) -> (StatusCode, Option<String>, String) {
     let server = crate::test_support::serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/assets/{sha256}/media-links", server.base()))
         .bearer_auth(token)
         .send()

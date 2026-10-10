@@ -38,6 +38,7 @@ use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
+use crate::test_support::http_client;
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
 /// "Naming a route").
@@ -593,7 +594,7 @@ async fn call_with(
     headers: &[(&str, &str)],
 ) -> Answer {
     let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
-    let mut request = reqwest::Client::new().request(method, world.url(path));
+    let mut request = http_client().request(method, world.url(path));
     for (name, value) in headers {
         request = request.header(*name, *value);
     }

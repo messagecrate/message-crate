@@ -6,4 +6,9 @@ disallowed-methods = [
     { path = "sqlx::Connection::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
     { path = "sqlx::Acquire::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
     { path = "sqlx::Pool::begin", reason = "a deferred transaction fails when another write lands between its read and its write; use crate::db::begin_write" },
+    # A test's client builds without root certificates, because reading the
+    # system's certificate store costs about 23 ms a client. Each of these
+    # builds a client that reads it.
+    { path = "reqwest::Client::new", reason = "reads the system's certificate store, about 23 ms a client; use test_support::http_client, or common::client::http_client under tests/" },
+    { path = "reqwest::get", reason = "reads the system's certificate store, about 23 ms a client; use test_support::http_client, or common::client::http_client under tests/" },
 ]

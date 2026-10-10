@@ -42,7 +42,7 @@ async fn call(
     token: Option<&str>,
     body: Option<(&str, Vec<u8>)>,
 ) -> (reqwest::StatusCode, Value) {
-    let mut request = reqwest::Client::new().request(method, format!("{base}{path}"));
+    let mut request = common::client::http_client().request(method, format!("{base}{path}"));
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }
@@ -237,7 +237,9 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     .await;
     assert_eq!(status, S::CREATED, "{link}");
     let media_link = link["url"].as_str().unwrap().to_string();
-    let bytes = reqwest::get(format!("{base}{media_link}"))
+    let bytes = common::client::http_client()
+        .get(format!("{base}{media_link}"))
+        .send()
         .await
         .unwrap()
         .bytes()

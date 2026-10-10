@@ -6,8 +6,8 @@ use message_ir::IdentityType;
 
 use crate::db::account_profile;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, post_json, post_status,
-    register_via_api, stored_time, test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, http_client, post_json,
+    post_status, register_via_api, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -2572,7 +2572,7 @@ async fn get_address_book(
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
     let server = crate::test_support::serve(&fixture.state).await;
-    let mut request = reqwest::Client::new()
+    let mut request = http_client()
         .post(format!("{}/v1/contacts/address-book", server.base()))
         .bearer_auth(&account.token)
         .json(&body);
@@ -3559,7 +3559,7 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
     let q = format!("groups:{values}");
     assert!(q.len() <= 2048, "{}", q.len());
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/contacts", server.base()))
         .query(&[("q", q.as_str())])
         .bearer_auth(&user.token)

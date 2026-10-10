@@ -4,7 +4,7 @@ use crate::progress::Progress;
 use crate::test_support::{
     ConversationHeaderLine, MessageLine, RegisteredAccount, TestFixture,
     assert_every_person_is_on_a_contact, attachment, conversation_header, fixture_with_account,
-    get_json, import_ada_conversation, import_jsonl_text, message_line, patch_json,
+    get_json, http_client, import_ada_conversation, import_jsonl_text, message_line, patch_json,
     post_created_json, post_json, test_fixture,
 };
 use message_ir::{
@@ -3171,7 +3171,7 @@ async fn a_batch_posted_again_after_a_gateway_timeout_stores_each_message_once()
     let server = crate::test_support::serve_router(app).await;
     let body = replace_run_batch("+15555550107", &["g-a", "g-b", "g-c"]);
     let post = || {
-        reqwest::Client::new()
+        http_client()
             .post(format!("{}{path}", server.base()))
             .bearer_auth(&token)
             .header(reqwest::header::CONTENT_TYPE, "application/jsonl")

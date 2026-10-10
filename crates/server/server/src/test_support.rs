@@ -15,8 +15,10 @@ use tempfile::TempDir;
 
 use crate::server::{AppState, http_app};
 
+mod client;
 mod lines;
 
+pub use client::http_client;
 pub use lines::{
     ConversationHeaderLine, MessageLine, attachment, conversation_header, message_line,
 };
@@ -213,7 +215,7 @@ async fn request(
     body: Option<(&str, reqwest::Body)>,
 ) -> (StatusCode, String) {
     let server = serve(state).await;
-    let mut req = reqwest::Client::new().request(method, format!("{}{path}", server.base()));
+    let mut req = http_client().request(method, format!("{}{path}", server.base()));
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
@@ -259,7 +261,7 @@ pub async fn register_via_api(
     password: &str,
 ) -> RegisteredAccount {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/accounts", server.base()))
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
@@ -342,7 +344,7 @@ pub async fn login_status(state: &AppState, username: &str, password: &str) -> S
 /// (`token`, `account_id`, `username`).
 pub async fn log_in(state: &AppState, username: &str, password: &str) -> serde_json::Value {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/session", server.base()))
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
@@ -411,7 +413,7 @@ pub async fn post_created_json<T: DeserializeOwned>(
     body: serde_json::Value,
 ) -> (String, T) {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}{path}", server.base()))
         .bearer_auth(token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")

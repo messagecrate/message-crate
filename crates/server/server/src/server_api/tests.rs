@@ -3,8 +3,9 @@ use std::sync::atomic::AtomicBool;
 
 use super::*;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, patch_status, post_status,
-    post_status_logged_out, register_via_api, seed_conversation, stored_time, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, http_client, patch_status,
+    post_status, post_status_logged_out, register_via_api, seed_conversation, stored_time,
+    test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -148,7 +149,7 @@ async fn claiming_an_unowned_server_creates_the_owner_and_signs_them_in() {
     let state = fixture.state.clone();
 
     let server = crate::test_support::serve(&state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/server/claim", server.base()))
         .json(&serde_json::json!({ "username": "keeper", "password": "hunter2hunter2" }))
         .send()

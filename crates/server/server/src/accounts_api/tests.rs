@@ -7,10 +7,10 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, log_in, login_status, message_line,
-    patch_failure, patch_json, patch_raw, patch_status, post_created_json, post_logged_out,
-    post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status, register_via_api,
-    seed_conversation, seed_one_message, stored_time, test_fixture,
+    fixture_with_account, get_json, get_raw, get_status, http_client, log_in, login_status,
+    message_line, patch_failure, patch_json, patch_raw, patch_status, post_created_json,
+    post_logged_out, post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status,
+    register_via_api, seed_conversation, seed_one_message, stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
@@ -1538,7 +1538,7 @@ async fn a_delete_body_without_a_content_type_is_a_415() {
     seed_one_message(&state, alice.account_id).await;
     let server = crate::test_support::serve(&state).await;
 
-    let response = reqwest::Client::new()
+    let response = http_client()
         .delete(format!("{}{path}", server.base()))
         .bearer_auth(&alice.token)
         .body(r#"{"confirm": true}"#)
@@ -2707,7 +2707,7 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
 
     let server = crate::test_support::serve(&state).await;
-    let status = reqwest::Client::new()
+    let status = http_client()
         .get(format!("{}/v1/session", server.base()))
         .bearer_auth(&bob.token)
         .header(crate::server::APP_HEADER, "desktop")

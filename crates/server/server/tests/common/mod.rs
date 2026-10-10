@@ -17,6 +17,9 @@ use message_crate_serve_protocol::LISTENING_LINE;
 // (#1898). A test binary uses only some of them, so the rest would warn as
 // dead code there.
 #[allow(dead_code)]
+#[path = "../../src/test_support/client.rs"]
+pub mod client;
+#[allow(dead_code)]
 #[path = "../../src/test_support/lines.rs"]
 pub mod lines;
 
