@@ -113,16 +113,16 @@ const FFMPEG_FILES: &[FfmpegFiles] = &[
         ),
     },
     WINDOWS_X64,
-    // Windows on ARM runs the x64 build, under emulation. Whether it runs
-    // there is not checked yet (#1053).
+    // Windows on ARM gets the x64 files, which Windows runs under
+    // emulation. Whether they run there is not checked yet (#2370).
     FfmpegFiles {
         arch: "aarch64",
         ..WINDOWS_X64
     },
 ];
 
-/// The Windows x64 entry of [`FFMPEG_FILES`], whose doc says how its
-/// SHA-256 values were computed.
+/// The Windows x64 entry of [`FFMPEG_FILES`]. The doc comment on
+/// [`FFMPEG_FILES`] says how these SHA-256 values were computed.
 const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
     os: "windows",
     arch: "x86_64",
