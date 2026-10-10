@@ -514,9 +514,9 @@ impl ProjectionHooks for WhatsappProjection {
 
     /// The raw E.164 roster, without display names: peer names live on the
     /// messages instead. A one-to-one chat whose JID is not a phone number,
-    /// such as an internal `@lid` id, has its raw id as its one participant,
-    /// typed `other`. The `@` in the id would otherwise make the server read
-    /// it as an email address, and no WhatsApp id is one.
+    /// such as an internal `@lid` id, has its raw id as its one participant.
+    /// The server types it `other`, because WhatsApp carries no email
+    /// address (#1671).
     fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         let mut participants: Vec<IrParticipant> = convo
             .participant_e164s
