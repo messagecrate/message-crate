@@ -981,16 +981,20 @@ impl<'a> StartedUpload<'a> {
         }
     }
 
+    /// This upload's URL with `rest` appended, or the asset's own URL when
+    /// `rest` is empty.
+    fn url(&self, rest: &str) -> String {
+        format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha)
+    }
+
     /// `PUT` each part at the part size the upload opened with, each of which
-    /// must answer `200 OK`, then `complete` the upload, which must answer
-    /// `201 Created`, and read the asset back, which must answer `200 OK`.
-    async fn send_parts_and_complete(self) -> UploadOutcome {
+    /// must answer `200 OK`.
+    async fn send_parts(&self) {
         let client = http_client();
-        let url = |rest: &str| format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha);
         let upload_id = &self.upload_id;
         for (index, chunk) in self.bytes.chunks(self.part_size).enumerate() {
             let response = client
-                .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
+                .put(self.url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
                 .bearer_auth(self.token)
                 .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
                 .body(chunk.to_vec())
@@ -999,6 +1003,15 @@ impl<'a> StartedUpload<'a> {
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK, "part {}", index + 1);
         }
+    }
+
+    /// [`Self::send_parts`], then `complete` the upload, which must answer
+    /// `201 Created`, and read the asset back, which must answer `200 OK`.
+    async fn send_parts_and_complete(self) -> UploadOutcome {
+        self.send_parts().await;
+        let client = http_client();
+        let url = |rest: &str| self.url(rest);
+        let upload_id = &self.upload_id;
         let response = client
             .post(url(&format!("/uploads/{upload_id}/complete")))
             .bearer_auth(self.token)
@@ -1233,18 +1246,9 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-
-    let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
+    let upload = StartedUpload::start(&server, &user.token, &bytes).await;
+    let url = |rest: &str| upload.url(rest);
+    let upload_id = &upload.upload_id;
 
     let response = client
         .put(url(&format!("/uploads/{upload_id}/parts/1")))
@@ -1257,7 +1261,7 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
-    let session = asset_uploads::session_dir(&assets_dir, &sha, &upload_id);
+    let session = asset_uploads::session_dir(&assets_dir, &sha, upload_id);
     assert!(session.join("manifest.json").is_file());
     assert!(session.join("part-0001").is_file());
 
@@ -1410,29 +1414,10 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-
-    let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-    for (index, chunk) in bytes.chunks(16).enumerate() {
-        let response = client
-            .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
-            .bearer_auth(&user.token)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(chunk.to_vec())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
+    let upload = StartedUpload::start(&server, &user.token, &bytes).await;
+    let url = |rest: &str| upload.url(rest);
+    let upload_id = &upload.upload_id;
+    upload.send_parts().await;
 
     let response = client
         .put(url(""))
@@ -1458,7 +1443,7 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
     assert!(
-        !asset_uploads::session_dir(&assets_dir, &sha, &upload_id).exists(),
+        !asset_uploads::session_dir(&assets_dir, &sha, upload_id).exists(),
         "the stale session must be dropped"
     );
 }
