@@ -238,7 +238,7 @@ export async function invokeSummarizeStaging(config: RunDirConfig): Promise<Stag
 /**
  * Run the Media stage over a staged directory, after the Staging Review
  * approves it. Reports through the `extract:*` events like every other long
- * job, so `awaitTauriJob` drives it exactly as it drives extract and the Upload.
+ * job, so `awaitDesktopJob` drives it exactly as it drives extract and the Upload.
  */
 export async function invokeTranscodeStaging(config: RunDirConfig): Promise<void> {
   return invoke("transcode_staging", {
@@ -335,7 +335,7 @@ export interface TranscodeFinishedReport {
   bytes_after: number;
 }
 
-export interface TauriJobResult {
+export interface DesktopJobResult {
   summary: string;
   report?: UploadFinishedReport;
   extraction?: {
@@ -664,7 +664,7 @@ export function onExtractEvents(callbacks: {
  * `job` names the screen's job while it runs (`desktopJob.ts`), so the other
  * screens keep their Start buttons off until it ends.
  */
-export async function awaitTauriJob(
+export async function awaitDesktopJob(
   job: DesktopJobName,
   invokeFn: () => Promise<void>,
   onLog?: (line: string) => void,
@@ -672,11 +672,11 @@ export async function awaitTauriJob(
   onIssue?: (event: ImportIssueEvent) => void,
   onFileDone?: (event: ImportFileDoneEvent) => void,
   onFileWritten?: (event: ImportFileWrittenEvent) => void,
-): Promise<TauriJobResult> {
+): Promise<DesktopJobResult> {
   let unlisten: UnlistenFn | undefined;
   const release = holdDesktopJob(job);
   try {
-    return await new Promise<TauriJobResult>((resolve, reject) => {
+    return await new Promise<DesktopJobResult>((resolve, reject) => {
       void (async () => {
         try {
           unlisten = await onExtractEvents({
@@ -685,7 +685,7 @@ export async function awaitTauriJob(
             onIssue,
             onFileDone,
             onFileWritten,
-            onFinished: (summary) => resolve(parseTauriJobResult(summary)),
+            onFinished: (summary) => resolve(parseDesktopJobResult(summary)),
             onError: (err) => reject(new Error(err.user_message ?? err.detail)),
           });
           await invokeFn();
@@ -739,7 +739,7 @@ function isTranscodeFinishedReport(value: unknown): value is TranscodeFinishedRe
 }
 
 /** Turn a finished-job summary string into a structured result when it is JSON. */
-export function parseTauriJobResult(summary: string): TauriJobResult {
+export function parseDesktopJobResult(summary: string): DesktopJobResult {
   try {
     const parsed: unknown = JSON.parse(summary);
     if (!isRecord(parsed)) return { summary };

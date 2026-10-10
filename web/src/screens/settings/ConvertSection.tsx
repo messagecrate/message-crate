@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
+import DesktopJobFormShell from "../../components/DesktopJobFormShell";
 import ExportFormatSelect from "../../components/ExportFormatSelect";
 import FormRow from "../../components/FormRow";
 import PathPicker from "../../components/PathPicker";
-import TauriJobFormShell from "../../components/TauriJobFormShell";
-import { useTauriJob } from "../../hooks/useTauriJob";
+import { useRunDesktopJob } from "../../hooks/useRunDesktopJob";
 import { writeInExportDir } from "../../lib/exportDir";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
@@ -34,7 +34,7 @@ export function ConvertSection() {
   const [log, setLog] = useState<string[]>([]);
   // The directory and format each conversion was started with, so the success
   // message names what was written even after the form changes.
-  const { running, finished, run, cancel } = useTauriJob<{
+  const { running, finished, run, cancel } = useRunDesktopJob<{
     outputDir: string;
     format: ExportFormat;
   }>({ job: "Convert" });
@@ -94,7 +94,7 @@ export function ConvertSection() {
   };
 
   return (
-    <TauriJobFormShell
+    <DesktopJobFormShell
       className="max-w-[700px]"
       job="Convert"
       startLabel="Convert"
@@ -146,6 +146,6 @@ export function ConvertSection() {
         </p>
       ) : null}
       <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running} />
-    </TauriJobFormShell>
+    </DesktopJobFormShell>
   );
 }
