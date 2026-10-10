@@ -60,7 +60,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Telegram** | no | no | no | no | no | no | no |
 | **Slack** | no | no | no | no | no | no | no |
 | **`participants_json`** | yes (unified CSV) | yes | yes | yes | yes | yes | yes |
-| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | reactions in `source_fields_json` | each message's `reactions` (`reactions_json` in CSV) |
+| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | each message's `reactions` (`reactions_json` in CSV), each under the reactor's WhatsApp id | each message's `reactions` (`reactions_json` in CSV) |
 | **Deleted in the source app / Unsent** | no | no | no | no | no | no | each message's `deletion` (`deletion` in CSV) |
 | **Edits / replies** | no | no | no | no | raw dates / free-text | each message's `reply_to` (`is_reply` / `reply_to_guid` in CSV) | each message's earlier versions in `edits` (`earlier_versions_json` in CSV) / each message's `reply_to` (`is_reply` / `reply_to_guid` / `reply_to_part` in CSV) |
 | **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` (in `source_fields_json`) | `parts_json`, `app_json`, … |

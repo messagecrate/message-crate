@@ -19,8 +19,8 @@ use std::sync::{Arc, Mutex};
 
 use media::{CompressOptions, MaxResolution};
 use message_crate_core::{
-    ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, LogSink, OutputFormat,
-    RunResult, SourceConfig, WhatsappPlatform,
+    ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, OutputFormat, RunResult,
+    SourceConfig, WhatsappPlatform,
 };
 use message_staging::TranscodeOptions;
 
@@ -212,11 +212,7 @@ pub fn extract(
     // The same lines go into the run's log in the Logs Directory, which
     // outlives the run's directory.
     let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
-    let log_app = app_handle.clone();
-    let sink_log = run_log.clone();
-    config.log = Some(LogSink::new(move |line: &str| {
-        events::log_to_run(&log_app, &sink_log, line.to_string());
-    }));
+    config.log = Some(events::run_log_sink(&app_handle, &run_log));
     config.progress = Some(events::progress_sink(&app_handle));
     config.issues = Some(events::run_issue_sink(&app_handle, &run_log));
 

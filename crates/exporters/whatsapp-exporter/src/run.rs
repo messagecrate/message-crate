@@ -132,7 +132,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             }
         }
         message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let log = run_wtsexporter(&bin, &args, &json_out)?;
+        let log = run_wtsexporter(&bin, &args, &json_out, config.log.as_ref())?;
         message_crate_core::check_cancel(config.cancel.as_ref())?;
 
         if !log.trim().is_empty() {

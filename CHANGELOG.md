@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-09: **A WhatsApp import brings each reaction in under the person
+  who reacted.** A WhatsApp conversation from an Android phone or an iPhone
+  now shows its reactions, each stored under the reactor's phone number, or
+  under their internal WhatsApp id when the backup has no number for them.
+  Your own reactions are yours. Reactions that were taken back are left out.
+  The copy of the reactor names and emoji that a conversation file kept
+  beside each WhatsApp message (`reactions` in `source.fields`) is gone,
+  because the reactions themselves are on the message (#1646).
+
 - 2026-10-08: **The Import form says when a program the import needs is
   missing, with Try again.** A WhatsApp import needs wtsexporter, and
   **Convert** and **Compress** need ffmpeg and ffprobe. When one hasn't been
@@ -247,6 +256,13 @@ released versions carry their date on the heading.
   until a dated backup says the same. A conversation exported while one of
   its messages holds such a mark or text carries no backup date, so
   importing the export again keeps those rules (#1989).
+- 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
+  wtsexporter's output named a full disk, the import asked to free space on
+  the Scratch Directory's disk. The output itself was lost. So a full disk
+  elsewhere, such as the one that holds the system's temporary files, could
+  not be told apart. The import still asks to free space on the Scratch
+  Directory's disk. The Import Run's log now also holds everything a failed
+  wtsexporter run printed, as warnings (#1938).
 - 2026-10-09: **A resumed import drops a Staging Error about a file it then
   reads clean.** When Staging could not read a file of the backup, such as a
   mail file on a network drive that dropped, and the run was paused and
