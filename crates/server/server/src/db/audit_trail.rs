@@ -29,7 +29,7 @@ use sqlx::{Row, SqliteConnection};
 
 use message_crate_api_types::{ExportQueryList, ExportStatus};
 
-use crate::credentials::is_valid_username;
+use crate::credentials::{is_valid_username, normalize_username};
 use crate::db::account_profile;
 use crate::db::address_book::LoadMode;
 use crate::db::exports::ExportScopeKind;
@@ -777,9 +777,8 @@ pub async fn record_refused_login(
     reason: AuditReason,
     app: Option<&ConnectingApp>,
 ) -> Result<()> {
-    // `is_valid_username` checks the trimmed text, so the trimmed text is
-    // what is kept.
-    let typed = is_valid_username(typed_username).then_some(typed_username.trim());
+    let typed = normalize_username(typed_username);
+    let typed = is_valid_username(&typed).then_some(typed.as_str());
     let entry = NewEntry {
         action: AuditAction::LoginRefused,
         actor: AuditActor::Anonymous,
