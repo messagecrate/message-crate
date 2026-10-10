@@ -5,6 +5,7 @@
 
 mod addresses;
 mod conversations;
+mod mms_box;
 mod owner;
 mod parts;
 mod read;

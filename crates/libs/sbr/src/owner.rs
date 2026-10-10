@@ -8,7 +8,7 @@ use std::path::Path;
 use message_ir::IdentityType;
 
 use crate::addresses::{MMS_ADDR_FROM, address_handle};
-use crate::read::MMS_BOX_SENT;
+use crate::mms_box;
 use crate::xml::{attrs, get};
 
 /// Infer owner phones from nested `<addr type="137">` elements in sent MMS.
@@ -24,7 +24,7 @@ pub fn infer_owner_phones(path: &Path) -> Result<Vec<String>> {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => {
                 match e.name().as_ref().to_ascii_lowercase().as_str() {
-                    "mms" => in_sent = get(&attrs(&e, &mut 0), "msg_box").trim() == MMS_BOX_SENT,
+                    "mms" => in_sent = get(&attrs(&e, &mut 0), "msg_box").trim() == mms_box::SENT,
                     "addr" if in_sent => {
                         let a = attrs(&e, &mut 0);
                         if get(&a, "type").trim() == MMS_ADDR_FROM {
@@ -49,4 +49,25 @@ pub fn infer_owner_phones(path: &Path) -> Result<Vec<String>> {
     let mut ranked: Vec<_> = counts.into_iter().collect();
     ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     Ok(ranked.into_iter().map(|(phone, _)| phone).collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn infers_owner_from_nested_addr() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("smses.xml");
+        std::fs::write(&path, r#"<smses><mms msg_box="2"><parts/><addrs><addr address="+15555550100" type="137"/></addrs></mms></smses>"#).unwrap();
+        assert_eq!(infer_owner_phones(&path).unwrap(), vec!["+15555550100"]);
+    }
+
+    #[test]
+    fn an_owner_outside_the_us_is_inferred_with_its_country() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("smses.xml");
+        std::fs::write(&path, r#"<smses><mms msg_box="2"><parts/><addrs><addr address="+447700900456" type="137"/></addrs></mms></smses>"#).unwrap();
+        assert_eq!(infer_owner_phones(&path).unwrap(), vec!["+447700900456"]);
+    }
 }
