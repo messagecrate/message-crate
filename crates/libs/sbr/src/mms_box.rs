@@ -41,7 +41,7 @@ impl MmsBox {
 
     /// Whether the message was never sent: a draft, or a message in the
     /// outbox, failed, or queued. The reader skips these.
-    pub(crate) fn is_unsent(self) -> bool {
+    pub(crate) fn is_never_sent(self) -> bool {
         matches!(
             self,
             Self::Draft | Self::Outbox | Self::Failed | Self::Queued
@@ -63,11 +63,11 @@ mod tests {
     }
 
     #[test]
-    fn only_draft_outbox_failed_and_queued_are_unsent() {
-        let unsent: Vec<&str> = ["1", "2", "3", "4", "5", "6"]
+    fn only_draft_outbox_failed_and_queued_are_never_sent() {
+        let never_sent: Vec<&str> = ["1", "2", "3", "4", "5", "6"]
             .into_iter()
-            .filter(|v| MmsBox::parse(v).is_some_and(MmsBox::is_unsent))
+            .filter(|v| MmsBox::parse(v).is_some_and(MmsBox::is_never_sent))
             .collect();
-        assert_eq!(unsent, ["3", "4", "5", "6"]);
+        assert_eq!(never_sent, ["3", "4", "5", "6"]);
     }
 }
