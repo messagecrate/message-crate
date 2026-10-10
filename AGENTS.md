@@ -54,10 +54,11 @@ posts or resolves (a review, a comment, a reply, a resolved thread, a deferred
 finding's issue) runs through `./scripts/gh-as-reviewer.sh` in place of `gh`, so
 it counts against the app's posting limit, not the user's ("Posting pace").
 Reads, pushes, `gh pr ready` and the merge stay on the logged-in `gh` account.
-The app has write access to the code only because GitHub lets an app resolve
-a thread with nothing less; it never pushes. The script reads the app's
-private key from `~/.ssh/message-crate-reviewer.pem` and stops when it is
-missing.
+The app has write access to the code only so it can resolve threads. It never
+pushes. Run the script from the root of the review worktree. It reads the
+app's private key from `~/.ssh/message-crate-reviewer.pem`, and when GitHub
+refuses a request it prints the HTTP status and GitHub's reply and exits 1.
+Why: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 ##### The marker
 
@@ -241,12 +242,9 @@ resolves it.
 
 GitHub limits how fast one account creates content (reviews, comments,
 replies, pull requests), apart from its hourly limit: about 80 a minute and
-500 an hour. Every session shares the user's account, and a busy hour of
-reviews used to exhaust it for all of them, so `pr-review` posts through
-`./scripts/gh-as-reviewer.sh` as the `message-crate-reviewer` app, which has a
-limit of its own ("Review on the pull request"). Every reviewing session
-shares the app's limit in turn. So make those calls one at a time, at least a
-second apart. When GitHub refuses one ("submitted too quickly", or a 403 or 422 that
+500 an hour. Every session shares one account: the user's, or the app's for
+`pr-review` ("Review on the pull request"). So make those calls one at a time,
+at least a second apart. When GitHub refuses one ("submitted too quickly", or a 403 or 422 that
 names a secondary rate limit), check that it did not land, wait a minute (or
 the `retry-after` it gives), and send the same call again.
 

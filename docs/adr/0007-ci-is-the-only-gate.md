@@ -314,18 +314,20 @@ another. Every finding is posted, judgement calls included, and closes as
 fixed, declined with evidence, or deferred to a filed issue, so nothing the
 review raised is dropped without a record. The fix commits get one more
 Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`
-marker, and only the user resolves a thread without it.
+marker, and only the user resolves a thread without it. A pull request the
+skill has taken through all of that, with green checks, is merged without
+asking the user. The review is the check a merge used to wait on them for.
 
 The skill posts as the `message-crate-reviewer` GitHub App, through
-`scripts/gh-as-reviewer.sh`, not as the user's account. GitHub allows one account
-about 80 content-creating requests a minute and 500 an hour, and one review
-posts 20 to 40 times: the review, a reply to each finding, the re-review and
-the summary. With every session on the user's account, a busy hour of reviews
-used up that limit, and every session's posts were refused until it reset.
-The app has a limit of its own. A second account would too, but the app needs
-no seat and its key opens only the repository permissions it was given. A pull request the skill has taken through
-all of that, with green checks, is merged without asking the user. The review
-is the check a merge used to wait on them for.
+`scripts/gh-as-reviewer.sh`, not as the user's account. GitHub allows one
+account about 80 content-creating requests a minute and 500 an hour, and one
+review posts 20 to 40 times: the review, a reply to each finding, the
+re-review and the summary. With every session on the user's account, a busy
+hour of reviews used up that limit, and every session's posts were refused
+until it reset. The app has a limit of its own. A second account would too,
+but the app needs no seat and its key opens only the repository permissions
+it was given. It has write access to the code because GitHub lets an app
+resolve a review thread with nothing less. It never pushes.
 
 The `changes` job is load-bearing and worth testing before the ruleset is
 enabled. A diff that is too broad runs the Rust matrix on a README edit; a diff
