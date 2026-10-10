@@ -239,6 +239,10 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **A downloaded ffmpeg is not reported as broken by
+  mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
+  runs could wrongly report it as not running. The check now tries again,
+  and a file still being written is still reported as not running (#2031).
 - 2026-10-07: **The desktop app remembers the server address.** An address
   entered under **Change server address** was saved only with the login.
   Logging out, or a login the server no longer accepted, forgot it. The next
