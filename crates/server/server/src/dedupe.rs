@@ -82,7 +82,7 @@ pub fn compute_content_key(
     body: Option<&str>,
     attachment_shas: &[String],
 ) -> Option<String> {
-    let secs = parse_rfc3339_utc_secs(timestamp.trim())?;
+    let secs = parse_rfc3339_utc_secs(timestamp)?;
     let identity = message_ir::MessageIdentity {
         chat: chat_identifier,
         is_from_me,
