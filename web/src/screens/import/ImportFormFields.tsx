@@ -9,10 +9,7 @@ import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import TimeZoneField from "../../components/TimeZoneField";
 import {
-  backupIsFile,
-  backupPathHint,
-  backupPathLabel,
-  backupPathPlaceholder,
+  backupField,
   isAndroidSmsSource,
   needsOwnerEmails,
   splitEmails,
@@ -186,7 +183,6 @@ function PhoneCountryField({
 const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
 const WHATSAPP_CONTACTS_FILTERS = [{ name: "SQLite database", extensions: ["db", "sqlite"] }];
 const APPLE_CONTACTS_FILTERS = [{ name: "Apple AddressBook", extensions: ["abcddb", "sqlitedb"] }];
-const SMS_BACKUP_RESTORE_FILTERS = [{ name: "SMS Backup & Restore", extensions: ["xml"] }];
 
 const WHATSAPP_DIRECTORY_HINT_ANDROID =
   "Directory that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
@@ -310,6 +306,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const isIos = props.source === "imessage-ios";
   const isImazing = props.source === IMAZING_SOURCE_ID;
   const isAndroidSms = isAndroidSmsSource(props.source);
+  const androidBackup = backupField(props.source);
   const wantsEmails = needsOwnerEmails(props.source);
   const imessageMethod = isImessageMethod(props.source) ? props.source : null;
   const whatsappMethod = isWhatsappMethod(props.source) ? props.source : null;
@@ -732,15 +729,15 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           </>
         ) : isAndroidSms ? (
           <>
-            <StackedField label={backupPathLabel(props.source)} required={required.backupPath}>
+            <StackedField label={androidBackup.label} required={required.backupPath}>
               <PathPicker
                 value={props.backupPath}
                 onChange={props.onBackupPathChange}
-                directory={!backupIsFile(props.source)}
-                filters={backupIsFile(props.source) ? SMS_BACKUP_RESTORE_FILTERS : undefined}
-                placeholder={backupPathPlaceholder(props.source)}
+                directory={androidBackup.directory}
+                filters={androidBackup.filters}
+                placeholder={androidBackup.placeholder}
               />
-              <p className={hintStyle}>{backupPathHint(props.source)}</p>
+              <p className={hintStyle}>{androidBackup.hint}</p>
             </StackedField>
 
             <AttachmentFields
