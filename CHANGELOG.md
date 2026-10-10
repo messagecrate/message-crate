@@ -259,9 +259,11 @@ released versions carry their date on the heading.
   times had milliseconds. It now says they are whole seconds, as it does for
   a message whose date the database holds in a form that could only be read
   to the second. A message also held with milliseconds by another backup of
-  the same phone is then shown once. Apple Messages from a newer Mac or
-  iPhone now keep the milliseconds of their times, where every time was cut
-  to the second (#1970).
+  the same phone is then shown once (#1970).
+- 2026-10-09: **Apple Messages from a newer Mac or iPhone keep their
+  milliseconds.** Every Apple Messages time was cut to the second, though
+  the Messages database holds it to the nanosecond. A message now shows
+  its time with its milliseconds, as WhatsApp messages do (#1970).
 - 2026-10-09: **A file without a backup date imported beside a dated one
   gives the same result in any order.** When one import held a dated backup
   and a message file that says nothing about when its backup was made, such
