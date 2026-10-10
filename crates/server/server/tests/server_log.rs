@@ -68,6 +68,69 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// What `claimed_with_account` answers, each named so the two session
+/// tokens cannot be swapped.
+struct Claimed {
+    /// The owner's session token.
+    owner_token: String,
+    /// Alice's account id.
+    alice_id: i64,
+    /// Alice's session token.
+    alice_token: String,
+}
+
+/// Claims the Message Crate as the owner, opens public registration,
+/// registers `alice`, and logs her in.
+async fn claimed_with_account(base: &str) -> Claimed {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let (status, claimed) = call(
+        base,
+        Method::POST,
+        "/v1/server/claim",
+        None,
+        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{claimed}");
+    let owner = claimed["token"].as_str().unwrap().to_string();
+    let (status, _) = call(
+        base,
+        Method::PATCH,
+        "/v1/server/settings",
+        Some(&owner),
+        json_body(&json!({ "public_registration": true })),
+    )
+    .await;
+    assert_eq!(status, S::OK);
+    let (status, registered) = call(
+        base,
+        Method::POST,
+        "/v1/accounts",
+        None,
+        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{registered}");
+    let alice_id = registered["account_id"].as_i64().unwrap();
+    let (status, session) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{session}");
+    let alice = session["token"].as_str().unwrap().to_string();
+    Claimed {
+        owner_token: owner,
+        alice_id,
+        alice_token: alice,
+    }
+}
+
 /// Everything in the server's log files, and how many files there are.
 fn log_text(data_dir: &Path) -> (String, usize) {
     let mut text = String::new();
@@ -91,48 +154,15 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    // The owner claims the Message Crate and opens registration.
-    let (status, claimed) = call(
-        base,
-        Method::POST,
-        "/v1/server/claim",
-        None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
+    // The owner claims the Message Crate and opens registration, and Alice
+    // registers and logs in.
+    let Claimed {
+        owner_token: owner,
+        alice_id,
+        alice_token: alice,
+    } = claimed_with_account(base).await;
 
-    // An account registers, logs in, and makes an API token.
-    let (status, registered) = call(
-        base,
-        Method::POST,
-        "/v1/accounts",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let alice_id = registered["account_id"].as_i64().unwrap();
-    let (status, session) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{session}");
-    let alice = session["token"].as_str().unwrap().to_string();
+    // Alice makes an API token.
     let (status, made) = call(
         base,
         Method::POST,
@@ -350,44 +380,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    let (status, claimed) = call(
-        base,
-        Method::POST,
-        "/v1/server/claim",
-        None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
-    let (status, registered) = call(
-        base,
-        Method::POST,
-        "/v1/accounts",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let (status, session) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{session}");
-    let alice = session["token"].as_str().unwrap().to_string();
+    let alice = claimed_with_account(base).await.alice_token;
 
     let (status, run) = call(
         base,
