@@ -42,22 +42,6 @@ struct FfmpegFiles {
     ffprobe: (&'static str, &'static str, &'static str),
 }
 
-/// The Windows x64 files, which Windows on ARM gets as well.
-const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
-    os: "windows",
-    arch: "x86_64",
-    ffmpeg: (
-        "ffmpeg-win32-x64.gz",
-        "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
-        "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
-    ),
-    ffprobe: (
-        "ffprobe-win32-x64.gz",
-        "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d",
-        "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4",
-    ),
-};
-
 /// The files of the pinned `ffmpeg-static` release, by platform.
 ///
 /// The project publishes no checksum file. Each SHA-256 here was computed on
@@ -71,9 +55,6 @@ const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
 /// are a third of the size (19 to 30 MB against 45 to 83 MB). The file is
 /// checked as it arrives, before it is unpacked, and the program it unpacks
 /// to is checked again.
-///
-/// Windows on ARM gets the x64 files, which Windows runs under emulation.
-/// Whether they run there is not checked yet (#1053).
 const FFMPEG_FILES: &[FfmpegFiles] = &[
     FfmpegFiles {
         os: "linux",
@@ -132,12 +113,30 @@ const FFMPEG_FILES: &[FfmpegFiles] = &[
         ),
     },
     WINDOWS_X64,
-    // Windows on ARM runs the x64 build.
+    // Windows on ARM runs the x64 build, under emulation. Whether it runs
+    // there is not checked yet (#1053).
     FfmpegFiles {
         arch: "aarch64",
         ..WINDOWS_X64
     },
 ];
+
+/// The Windows x64 entry of [`FFMPEG_FILES`], whose doc says how its
+/// SHA-256 values were computed.
+const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
+    os: "windows",
+    arch: "x86_64",
+    ffmpeg: (
+        "ffmpeg-win32-x64.gz",
+        "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
+        "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
+    ),
+    ffprobe: (
+        "ffprobe-win32-x64.gz",
+        "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d",
+        "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4",
+    ),
+};
 
 /// The wtsexporter file for each platform the fork builds for, as
 /// `(os, arch, asset, sha256)`. The checksums are copied from the release's
