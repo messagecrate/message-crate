@@ -22,7 +22,7 @@
     "@tanstack/react-virtual": "^3.14.13",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-dialog": "^2.8.1",
-    "@tauri-apps/plugin-shell": "^2.4.0",
+    "@tauri-apps/plugin-shell": "^2.4.1",
     "@vvo/tzdb": "^6.198.0",
     "react": "^19.2.4",
     "react-aria-components": "^1.21.1",
