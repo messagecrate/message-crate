@@ -14,7 +14,8 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
 /**
  * Turn anything a promise rejected with, or a `catch` caught, into text: the
  * message of an `Error`, and `String(err)` of anything else. An `Error` whose
- * message is empty gives `String(err)`, which is `"Error"`.
+ * message is empty gives `String(err)`, which is the error's `name` (`"Error"`
+ * for a plain `Error`).
  */
 export function errorText(err: unknown): string {
   return apiErrorMessage(err, String(err));
