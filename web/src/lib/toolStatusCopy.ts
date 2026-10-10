@@ -1,4 +1,4 @@
-import { formatBytes } from "./attachmentProgressCopy";
+import { formatBytes } from "./formatBytes";
 import type { ToolName, ToolStatus } from "./tauri";
 
 /**

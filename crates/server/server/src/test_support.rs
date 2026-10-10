@@ -2,7 +2,7 @@
 //! that binds a listener and spawns the app; every helper below issues one
 //! request through it, reads the whole response, and lets the server drop.
 //!
-//! Distinct from `server.rs`'s `test_state()`, which returns a four-tuple
+//! Distinct from `test_state()` in `server/tests.rs`, which returns a four-tuple
 //! `(TempDir, AppState, String, i64)` for handler-level tests that call a
 //! handler function directly. This module drives the whole stack over real
 //! HTTP, for tests in `session_api.rs`, `accounts_api.rs`,
