@@ -267,7 +267,8 @@ pub async fn register_via_api(
         .send()
         .await
         .unwrap();
-    let (location, body) = created(response, &format!("registering {username}")).await;
+    let (location, body): (_, serde_json::Value) =
+        created(&format!("registering {username}"), response).await;
     let account_id = body["account_id"].as_i64().unwrap();
     assert_eq!(
         location.as_deref(),
@@ -337,7 +338,7 @@ pub async fn log_in(state: &AppState, username: &str, password: &str) -> serde_j
         .send()
         .await
         .unwrap();
-    let (location, body) = created(response, &format!("logging in as {username}")).await;
+    let (location, body) = created(&format!("logging in as {username}"), response).await;
     assert_eq!(
         location.as_deref(),
         Some("/v1/session"),
@@ -396,8 +397,7 @@ pub async fn post_created_json<T: DeserializeOwned>(
         .send()
         .await
         .unwrap();
-    let what = format!("POST {path}");
-    let (location, body) = created(response, &what).await;
+    let (location, parsed) = created(&format!("POST {path}"), response).await;
     let location =
         location.unwrap_or_else(|| panic!("POST {path} answered 201 without a Location"));
     let collection = path.split('?').next().unwrap_or(path);
@@ -405,8 +405,6 @@ pub async fn post_created_json<T: DeserializeOwned>(
         location.starts_with(&format!("{collection}/")),
         "POST {path} Location must name a member under it, got {location}"
     );
-    let parsed = serde_json::from_value(body.clone())
-        .unwrap_or_else(|e| panic!("{what} answered an unexpected body ({e}): {body}"));
     (location, parsed)
 }
 
@@ -421,9 +419,12 @@ pub fn location(response: &reqwest::Response) -> Option<String> {
 
 /// Read a response the caller expects to be `201 Created` with a JSON body:
 /// assert the status, with the body in the message, and return the
-/// `Location` header and the parsed body. `what` names the request in the
-/// assertion messages.
-async fn created(response: reqwest::Response, what: &str) -> (Option<String>, serde_json::Value) {
+/// `Location` header and the decoded body. `what` names the request in the
+/// assertion messages, as it does for [`expect_ok`].
+async fn created<T: DeserializeOwned>(
+    what: &str,
+    response: reqwest::Response,
+) -> (Option<String>, T) {
     let status = response.status();
     let location = location(&response);
     let text = response.text().await.unwrap();
