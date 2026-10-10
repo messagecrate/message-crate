@@ -1107,7 +1107,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
 /// Store a real attachment file for the account's `imessage` source and
 /// attach it to the newest message of `conversation_id`, returning the
 /// file's path so a test can check whether a delete removed it. The MIME
-/// sidecar the store writes beside an extensionless blob is written too, so
+/// sidecar the store writes beside an extensionless file is written too, so
 /// the same test can check that it went with the file.
 ///
 /// `sha` stands in for the content hash; the store never reads the bytes

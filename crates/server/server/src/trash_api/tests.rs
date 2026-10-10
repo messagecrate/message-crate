@@ -219,14 +219,14 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     let (fixture, alice) = fixture_with_account().await;
     let bytes = b"shared photo bytes";
     let sha = crate::assets_api::Sha256::of_bytes(bytes);
-    let blob = fixture
+    let asset_file = fixture
         .state
         .cfg
         .paths
         .assets_dir_for_account(alice.account_id)
         .join(crate::assets_api::shard_rel_path(&sha, ""));
-    std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
-    std::fs::write(&blob, bytes).unwrap();
+    std::fs::create_dir_all(asset_file.parent().unwrap()).unwrap();
+    std::fs::write(&asset_file, bytes).unwrap();
     let old = seed(&fixture, &alice, "+15555550177").await;
     {
         let mut conn = fixture.conn().await;
@@ -279,15 +279,15 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     .await
     .unwrap();
     assert!(
-        assets_path.is_some() && blob.is_file(),
-        "the imported attachment has no file: assets_path={assets_path:?}, blob on disk={}",
-        blob.is_file()
+        assets_path.is_some() && asset_file.is_file(),
+        "the imported attachment has no file: assets_path={assets_path:?}, file on disk={}",
+        asset_file.is_file()
     );
     drop(conn);
 
     complete_run(&fixture, &alice, run).await;
     assert!(
-        blob.is_file(),
+        asset_file.is_file(),
         "the sweep at the run's end keeps a file the new message names"
     );
 }
@@ -311,10 +311,10 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let (fixture, alice) = fixture_with_account().await;
     let sha = fake_sha256('c');
     let doomed = seed(&fixture, &alice, "+15555550178").await;
-    let blob = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
-    let sidecar = blob.parent().unwrap().join(format!(".{sha}.mime"));
+    let asset_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
+    let sidecar = asset_file.parent().unwrap().join(format!(".{sha}.mime"));
     let kept = seed(&fixture, &alice, "+15555550181").await;
-    let kept_blob =
+    let kept_file =
         attach_stored_file(&fixture.state, alice.account_id, kept, &fake_sha256('d')).await;
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     let run = start_run(&fixture, &alice).await;
@@ -322,15 +322,18 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(
-        blob.is_file(),
+        asset_file.is_file(),
         "a running Import Run may still need the file"
     );
 
     complete_run(&fixture, &alice, run).await;
-    assert!(!blob.exists(), "nothing names the file once the run ended");
+    assert!(
+        !asset_file.exists(),
+        "nothing names the file once the run ended"
+    );
     assert!(!sidecar.exists(), "its MIME sidecar goes with it");
     assert!(
-        kept_blob.is_file(),
+        kept_file.is_file(),
         "a file a conversation still names is not swept"
     );
 }
@@ -344,7 +347,7 @@ async fn a_run_started_after_the_delete_commits_keeps_its_original() {
     let (fixture, alice) = fixture_with_account().await;
     let sha = fake_sha256('e');
     let doomed = seed(&fixture, &alice, "+15555550182").await;
-    let blob = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
+    let asset_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     let mut conn = fixture.conn().await;
     let files = crate::db::trash::empty_trash(
@@ -368,7 +371,7 @@ async fn a_run_started_after_the_delete_commits_keeps_its_original() {
     .await;
 
     assert!(
-        blob.is_file(),
+        asset_file.is_file(),
         "a run that started after the commit may still need the file"
     );
 }

@@ -331,7 +331,7 @@ pub fn classify(path: &Path) -> Option<Kind> {
 /// the file's own extension first, then the declared MIME type, then the
 /// names the export supplied for it.
 ///
-/// The server stores Assets as `<directory>/<sha256>` with no extension, so a row
+/// The server may store an Asset as `<directory>/<sha256>` with no extension, so a row
 /// whose MIME type is missing would otherwise have no kind and never be
 /// converted. `name_hints` (the attachment's original name and its path
 /// inside the export) are read only when the path and the declared MIME say
@@ -566,8 +566,8 @@ pub fn transcode_file(
 }
 
 /// [`transcode_file`] for a source whose kind the caller already knows,
-/// because the file carries no extension to read it from: the server stores
-/// originals under their SHA-256 alone, and knows the kind from the MIME type
+/// because the file carries no extension to read it from: the server may store
+/// an original under its SHA-256 alone, and knows the kind from the MIME type
 /// the import declared. Use [`kind_for_mime`](crate::kind_for_mime) for that.
 ///
 /// A source with no extension is never "already in the target format", so in
