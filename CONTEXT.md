@@ -36,10 +36,19 @@ _Avoid_: Thread Tag, Conversation Tag, Label
 One exchange with one person or group, holding its messages and
 participants. It is the unit the product acts on: tagging and trashing
 resolve to whole conversations, and searching resolves to whole
-conversations unless the person asks for messages. A Conversation the source
-app keeps as a group is a **group conversation**; one with a single other
-person is a **one-to-one conversation**. A Conversation of Orphaned messages
-is neither. The search words for the three are `kind:group`, `kind:direct`
+conversations unless the person asks for messages.
+
+A Conversation the source records as a group (a WhatsApp group, an Apple
+Messages group) is a **group conversation**, whatever the number of other
+people in it, because the source app showed it to the person as one.
+A source that records no groups (an SMS or MMS backup, an iMazing or
+OpenExtract export) names only who took part, so there two or more other
+people it names make a group conversation, and an MMS group left with one
+other person comes through as a one-to-one conversation.
+Every other Conversation is a **one-to-one conversation**, apart from a
+Conversation of Orphaned messages, which is neither.
+
+The search words for the three are `kind:group`, `kind:direct`
 and `kind:orphaned`, short because they are typed; everything a person reads
 says "group conversation" and "one-to-one conversation", never "group chat",
 because "group" alone could also mean a Contact Group.
