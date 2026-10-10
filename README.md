@@ -1,6 +1,9 @@
+[![pull-request][pull-request-shield]][pull-request-url]
 [![Issues][issues-shield]][issues-url]
 [![project_license][license-shield]][license-url]
 [![source_available][source-available-shield]][license-url]
+[![open-source][open-source-shield]][license-url]
+[![ai-honesty][ai-honesty-shield]][ai-honesty-url]
 
 <a id="readme-top"></a>
 
@@ -12,7 +15,7 @@
 
 <h1 align="center">Message Crate</h1>
   <p align="center">
-    Your chat history, on a server you run yourself.
+    Your messages, out of the apps.
     <br />
     <br />
     <a href="https://messagecrate.app/docs/user/"><strong>Explore the docs »</strong></a>
@@ -32,9 +35,11 @@
     <li><a href="#about-the-project">About The Project</a></li>
     <li><a href="#who-the-project-is-for">Who The Project Is For</a></li>
     <li><a href="#getting-started">Getting Started</a></li>
+    <li><a href="#faq">FAQ</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#additional-documentation">Additional documentation</a></li>
     <li><a href="#license">License</a></li>
+    <li><a href="#how-message-crate-is-built">How Message Crate Is Built</a></li>
     <li><a href="#project-status">Project Status</a></li>
     <li><a href="#maintainers">Maintainers</a></li>
     <li><a href="#related-projects">Related Projects</a></li>
@@ -45,40 +50,91 @@
 
 [![Docker][Docker]][Docker-url] [![React][React.js]][React-url] [![Rust][Rust-dev]][Rust-url] [![SQLite][SQLite]][SQLite-url] [![Tauri][Tauri]][Tauri-url] [![Vite][Vite]][Vite-url]
 
-Message Crate copies your conversations out of chat apps and phone backups — iMessage, WhatsApp, Android SMS — and stores them in a self-hosted, searchable archive that you control. Read old threads in a browser, search years of messages, and export them as ordinary files whenever you like.
+Message Crate copies conversations and their attachments out of chat apps and phone backups (iMessage, WhatsApp, Android SMS) into a local archive.
+Conversations open in a browser or the desktop app, years of messages are searchable, and everything exports back out as ordinary files.
+There is no cloud service, no trial, and no AI feature in the product.
+Messages never leave the computer they are imported on.
+
+<div align="center">
+  <img src="docs/img/message-crate-overview-screenshot.jpg" alt="Message Crate screenshot" width="600">
+</div>
 
 ### Project Details
 
-The Message Crate software has three parts:
+### How It Works
 
-- **Backend** - The core system that runs on your computer. It keeps you logged in, stores your messages, and powers the search feature.
-- **Desktop App** - A program that imports your messages into Message Crate from phone backups and app exports. You can also view, organize, and export your messages from here.
-- **Website** - The desktop app in a web browser, for reading, searching, and organizing your messages. Importing, exporting, and converting need the desktop app.
+Message Crate works exclusively with local backups taken from phones or exports from apps. RCS, iMessage, and WhatsApp messages can't be pulled from an iCloud or Google One backup, because the providers only allow those archives to be restored to a device.
 
-You can bring in:
+Once a local backup or app data is on hand, run the standalone Message Crate desktop app to import messages and any matching attachments into a workspace. Messages are stored in a SQLite database, with attachments kept outside the database, on disk.
 
-- Apple Messages from an iPhone backup, or from Messages on a Mac
-- Android texts and picture messages from an SMS Backup & Restore file
-- WhatsApp from an iPhone backup or from WhatsApp's Android files
+Importing attachments is entirely optional. When attachments are wanted, media files can be standardized and converted to `.jpg` and `.mp4` before import, and video can be compressed from 4K at 60fps down to 1080p or 720p at 30fps.
 
-A few older export formats still work if that is all you have left.
+Imported messages and their attachments can be exported from a Message Crate as `.jsonl`, `.csv`, or `.eml` files, with one file per 1:1 conversation or group chat. These exports can't be restored onto a device. On the phone, messages live inside each vendor's proprietary database. Vendors don't allow writing back into it, and doing so would mean reverse-engineering how that database is built. Instead, Message Crate exports to common file formats. They don't follow any formal standard, but they're portable and complete enough to use the data elsewhere.
 
-Once messages are imported you can:
+### Software Pieces
 
-- Read threads the way you would in an app or on a phone, including group chats. Photos, videos, and other attachments are included.
-- Search across years of conversations
-- Save a copy back out as ordinary files if you want a directory on disk
-- Combine texts from more than one phone or app into one archive
+Message Crate is three pieces of software, shipped in two different ways.
+
+- **Server** - Stores the messages in SQLite, keeps accounts logged in, runs the search, and responds to HTTP API requests.
+- **Desktop app** - Reads phone backups and app exports on the computer and imports them into a Message Crate. Importing, exporting, and converting happen here because they read and write files to a local disk.
+- **Website** - The same screens as the desktop app, in a web browser. The server serves it.
+
+Each release ships both packages:
+
+- **The desktop installer** contains the app, the server, and the website. The app starts its own server when one isn't running, so a single computer needs nothing else installed.
+- **The Docker image** runs the server and hosts the website. This is for a Message Crate shared by several people or kept on a computer that is always on. The desktop app and the website both connect to it.
 
 ## Who The Project Is For
 
-This project is for people who want a personal copy of their phone messages. That includes anyone replacing a phone, leaving a chat app, or keeping a long-term archive of texts.
+Message Crate is designed for anyone who wants to back up, read, and search their messages outside the app they came from or the device they originated on.
 
 ## Getting Started
 
-Follow the [User Guide](https://messagecrate.app/docs/user/try/what-is-message-crate/) to run the demo and import your own data.
+### As A User
 
-The [Developer Guide](https://messagecrate.app/docs/developer/) covers setting up a local development environment and compiling from source.
+The best way to get started is to follow the [User Guide](https://messagecrate.app/docs/user/try/what-is-message-crate/) and try the demo.
+From there you can continue to run Message Crate locally or [self-host](https://messagecrate.app/docs/user/features/owner/run-with-docker/) it with Docker.
+
+### As A Developer
+
+The [Developer Guide](https://messagecrate.app/docs/developer/) covers setting up a local development environment along with running and compiling from source.
+
+## FAQ
+
+**Does Message Crate log in to my accounts to get data?**
+No. Message Crate uses only local backups and app exports for message data.
+
+**Is there a cloud version?**
+No, not yet, but hopefully one day. Message Crate is far from being feature-complete, and the current focus is on reaching a v1.0.0 release and creating a mature self-hosted product that the community finds useful.
+
+**Does Message Crate use AI?**
+AI is used to build the product, as [How Message Crate Is Built](#how-message-crate-is-built) describes, but the end product contains no AI features.
+
+**Where do the messages go?**
+Into a SQLite database and an attachment directory on the computer that runs the server.
+The user guide's [What Message Crate is](https://messagecrate.app/docs/user/try/what-is-message-crate/) page describes the full process.
+
+**Is Docker required?**
+No. The desktop app packages the server alongside the GUI.
+Self-hosting Message Crate via Docker is recommended if it's shared by several people or if always-on access is wanted.
+
+**Can messages be taken back out of Message Crate?**
+Yes. [Export](https://messagecrate.app/docs/user/features/messages/export/) writes them as ordinary files: JSON, JSONL, CSV, EML, or MBOX.
+Nothing is locked in.
+
+Note that exported messages cannot be put back on a device, and that the exported file format will most likely not match the import format one-to-one.
+
+**Is it open source?**
+No. It is source-available under the Fair Core License. See [License](#license) for more details.
+
+**Is it secure? Has it been audited?**
+No third party has audited the code.
+Security is a design priority, but Message Crate is built for a home network, not for the open internet.
+If you want to expose Message Crate to the internet, you should stick it behind a reverse proxy with an auth layer of your choosing.
+
+**Is it finished?**
+No. Message Crate is under heavy development and working towards 1.0.0.
+It works today, but screens, formats, and settings still have breaking changes between releases.
 
 ## Contributing
 
@@ -93,9 +149,27 @@ Most documentation lives in the guidebook at [messagecrate.app](https://messagec
 
 ## License
 
-Message Crate is **source-available, not open source**. It is distributed under the [Fair Core License 1.0](LICENSE.md) (`FCL-1.0-ALv2`): you can read the code, change it, build it, and run it for yourself, but you may not offer it as a product that competes with Message Crate. Two years after each version is released, that version becomes available under the Apache License 2.0.
+Message Crate is licensed under the [Fair Core License 1.0](LICENSE.md) (`FCL-1.0-ALv2`).
+Read the code, change it, build it, run it at home or at work, share it with a friend, fix a bug and send it back. All of that is permitted.
 
-See [LICENSE.md](LICENSE.md) for the full terms.
+The one limit protects the business of Message Crate's authors. Taking the code, or a changed version of it, and selling it as a competing message archiving product is not allowed while the license applies.
+
+That limit expires two years after a version is released. The version then becomes Apache License 2.0, and the restriction on it is gone.
+
+The full terms are in [LICENSE.md](LICENSE.md).
+
+## How Message Crate Is Built
+
+Under the [AI Honesty Badge](https://www.aihonestybadge.com) model, Message Crate is **AI Generated**: an AI tool produced most of the work, and a person prompted, picked, and reviewed it.
+The product itself contains no AI. Nothing in a Message Crate is sent to an AI service, and no AI touches imported user data.
+
+The maintainer sets the roadmap, the features, and the product architecture, and writes the test strategy and the API requirements.
+The maintainer reviews every design document and ADR, and the larger pull requests.
+Most pull requests do not get a line-by-line human review.
+
+Quality is checked by CI and not taken on trust.
+Nothing reaches `main` until CI passes: the Rust and web code are formatted and linted with warnings treated as errors, every test suite runs, and the desktop app and the docs site build.
+Beyond that, test coverage is measured on every merge, dependency audits run weekly, mutation testing asks whether the tests would notice a broken change, and Dependabot proposes updates as they appear.
 
 ## Project Status
 
@@ -122,9 +196,17 @@ Matt Beisser - [hello@bitrealm.io](mailto:hello@bitrealm.io)
 
 [issues-shield]: https://img.shields.io/github/issues/messagecrate/message-crate.svg
 [issues-url]: https://github.com/messagecrate/message-crate/issues
+
+[pull-request-shield]: https://img.shields.io/github/issues-pr/messagecrate/message-crate
+[pull-request-url]: https://github.com/messagecrate/message-crate/pulls
+
 [license-shield]: https://img.shields.io/badge/license-FCL_1.0-blue
-[source-available-shield]: https://img.shields.io/badge/source--available-not_open_source-orange
+
+[source-available-shield]: https://img.shields.io/badge/source--available-yes-green
+[open-source-shield]: https://img.shields.io/badge/open--source-no-orange
 [license-url]: https://github.com/messagecrate/message-crate/blob/main/LICENSE.md
+[ai-honesty-shield]: https://www.aihonestybadge.com/badges/ai-generated-small.svg
+[ai-honesty-url]: https://www.aihonestybadge.com
 
 [React.js]: https://img.shields.io/badge/React-%2320232a.svg?logo=react&logoColor=%2361DAFB
 [React-url]: https://reactjs.org/
