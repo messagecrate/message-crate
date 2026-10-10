@@ -493,8 +493,10 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
     let undecide_photo = || async {
         crate::db::attachment_versions::record_shown_as_is(
             &mut state.db.acquire().await.unwrap(),
-            alice.account_id,
-            &imported.photo,
+            crate::db::attachment_versions::OriginalRows {
+                account_id: alice.account_id,
+                original_sha: &imported.photo,
+            },
             false,
         )
         .await
