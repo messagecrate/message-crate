@@ -8,6 +8,7 @@
  * (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
  */
 
+import { countOf } from "./plural";
 import type { components } from "./serverApi.types";
 
 export type AuditEntry = components["schemas"]["AuditEntry"];
@@ -15,10 +16,9 @@ type AuditActor = components["schemas"]["AuditActor"];
 
 const APP_NAMES = { desktop: "desktop app", website: "website" } as const;
 
-/** "3 conversations", "1 conversation". */
-function count(n: number | null | undefined, one: string, many = `${one}s`): string {
-  const value = n ?? 0;
-  return `${value.toLocaleString()} ${value === 1 ? one : many}`;
+/** "3 conversations", "1 conversation"; a count the entry lacks reads as 0. */
+function count(n: number | null | undefined, one: string, many?: string): string {
+  return countOf(n ?? 0, one, many);
 }
 
 /** "import", "import and export", "import, export and delete". */

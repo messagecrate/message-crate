@@ -365,7 +365,7 @@ export default function TrashScreen() {
                 <div className="mb-2 text-[0.875rem] text-muted">
                   {countOf(contactTotal, "contact")}
                   {searching ? " matching this search" : ""} in Trash
-                  {moreContacts ? `, ${contacts.length} shown` : ""}.
+                  {moreContacts ? `, ${contacts.length.toLocaleString()} shown` : ""}.
                 </div>
                 <ul
                   aria-label="Contacts in Trash"

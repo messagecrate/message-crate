@@ -1,5 +1,6 @@
 import type { ImportSummaryView } from "../../../components/import/ImportSummaryPanel";
 import { formatDateTime } from "../../../lib/formatDate";
+import { countOf } from "../../../lib/plural";
 import type { components } from "../../../lib/serverApi.types";
 
 export const ATTACHMENT_PAGE_SIZE = 20;
@@ -76,10 +77,10 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
       const conversations = scope.conversation_ids?.length ?? 0;
       const messages = scope.message_ids?.length ?? 0;
       if (conversations > 0) {
-        parts.push(`${conversations} conversation${conversations === 1 ? "" : "s"}`);
+        parts.push(countOf(conversations, "conversation"));
       }
       if (messages > 0) {
-        parts.push(`${messages} message${messages === 1 ? "" : "s"}`);
+        parts.push(countOf(messages, "message"));
       }
       return `Picked: ${parts.join(", ")}`;
     }

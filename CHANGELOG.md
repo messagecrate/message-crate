@@ -220,8 +220,9 @@ released versions carry their date on the heading.
 
 - 2026-10-10: **Trash writes a large count the way Storage does.** Trash
   wrote "1234 conversations" where the storage screens wrote "1,234
-  messages". Every count of conversations, contacts, identities and messages
-  in Trash now carries the separator your language uses (#2240).
+  messages". Every count in Trash, and the count of picked conversations and
+  messages on an Export Run, now carries the separator of the language the
+  browser or desktop app is set to (#2240).
 - 2026-10-07: **The login card names the server it is connected to.** The
   card said only **Connected**, so a person could not tell whether the desktop
   app was on its own Message Crate or on one on another computer. It now reads
