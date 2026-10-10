@@ -11,6 +11,7 @@ import {
 
 import { popupShadow } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
+import { SelectChevronIcon } from "./icons";
 
 /** Default control, or the denser one the filter panels use. */
 export type SelectSize = "md" | "sm";
@@ -83,22 +84,7 @@ export default function Select<T extends object>({
         className={`box-border flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden border border-border bg-bg font-normal text-text outline-none focus:border-accent ${TRIGGER_SIZE[size]} ${triggerClassName ?? ""}`}
       >
         <SelectValue className={`min-w-0 truncate ${valueClassName ?? ""}`} />
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          aria-hidden="true"
-          className="shrink-0 text-muted"
-        >
-          <path
-            d="M2.5 3.5 5 6l2.5-2.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <SelectChevronIcon size={10} className="shrink-0 text-muted" />
       </Button>
       <Popover
         data-mc-overlay=""
