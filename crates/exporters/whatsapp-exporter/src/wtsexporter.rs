@@ -18,9 +18,10 @@ const RELEASE_FILE_HINT: &str = "a wtsexporter_<platform> file from the messagec
 
 /// The sentence that sends a person to the user guide's section on a
 /// `wtsexporter` that is missing or doesn't run, which says how to get one
-/// by hand, including where the app has no download of its own. It is the
-/// desktop app's `tool_downloads::troubleshooting` sentence for wtsexporter.
-const TROUBLESHOOTING: &str =
+/// by hand, including where the app has no download of its own. The desktop
+/// app's `tool_downloads::troubleshooting` gives this same constant for
+/// wtsexporter, so the heading's text lives here once.
+pub const WTSEXPORTER_TROUBLESHOOTING: &str =
     "See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,7 +162,7 @@ fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
     };
     bail!(
         "Could not find {executable} in the Tools Directory, {}. Put {RELEASE_FILE_HINT} there. \
-         {TROUBLESHOOTING}",
+         {WTSEXPORTER_TROUBLESHOOTING}",
         tools_dir.display()
     );
 }
@@ -195,7 +196,7 @@ pub(crate) fn run_wtsexporter(
         .map_err(|err| {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
                 format!(
-                    " (often a link to a pipx install whose Python interpreter has gone. {TROUBLESHOOTING})"
+                    " (often a link to a pipx install whose Python interpreter has gone. {WTSEXPORTER_TROUBLESHOOTING})"
                 )
             } else {
                 String::new()
@@ -514,9 +515,10 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, TROUBLESHOOTING, WtsexporterArgs, android_crypt_backup, extracts_ios_backup,
-        input_search_root, names_a_full_disk, resolve_forwarded_paths, run_wtsexporter,
-        scratch_write_error, wtsexporter_command, wtsexporter_file_name, wtsexporter_in,
+        Platform, WTSEXPORTER_TROUBLESHOOTING, WtsexporterArgs, android_crypt_backup,
+        extracts_ios_backup, input_search_root, names_a_full_disk, resolve_forwarded_paths,
+        run_wtsexporter, scratch_write_error, wtsexporter_command, wtsexporter_file_name,
+        wtsexporter_in,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use media::testutil::write_with_mode;
@@ -1105,7 +1107,7 @@ mod tests {
         assert!(message.contains("Tools Directory"), "{message}");
         // A pipx install linked there is replaced by the app's own download,
         // so the error sends the person to the guide, not to pipx.
-        assert!(message.ends_with(TROUBLESHOOTING), "{message}");
+        assert!(message.ends_with(WTSEXPORTER_TROUBLESHOOTING), "{message}");
         assert!(!message.contains("pipx"), "{message}");
         assert!(
             message.contains(&tools.path().display().to_string()),

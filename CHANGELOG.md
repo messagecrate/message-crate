@@ -425,9 +425,9 @@ released versions carry their date on the heading.
   name beside their number. The desktop app replaces an older `wtsexporter`
   in its Tools Directory with Message Crate's own on its next start with an
   internet connection, except on Linux on ARM, where it has no download of
-  its own and Troubleshooting in the user guide says how to install the
-  fork by hand. Run the WhatsApp import again from the backup rather than
-  from an old `result.json` (#1092).
+  its own and Troubleshooting in the user guide says how to install
+  wtsexporter by hand. Run the WhatsApp import again from the backup rather
+  than from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

@@ -9,8 +9,9 @@
 //! developer install in `AGENTS.md` and
 //! `docs/src/content/docs/docs/developer/contributing.md`, which name it.
 //! A renamed heading on that page is a change to
-//! `tool_downloads::troubleshooting` and to `TROUBLESHOOTING` in the
-//! exporter's `wtsexporter.rs`, which carry the heading's text.
+//! `tool_downloads::troubleshooting` for ffmpeg, and for wtsexporter to
+//! `WTSEXPORTER_TROUBLESHOOTING` in the exporter's `wtsexporter.rs`, which
+//! `troubleshooting` gives as it is.
 
 use super::{Pinned, Program};
 

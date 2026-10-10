@@ -37,7 +37,7 @@ Adding the phone's number to the profile under **Settings → Profile** is the b
 **Attachments** stays on **Copy**, which uploads every photo, video, and file as it is.
 
 **Convert** and **Compress & Convert** need ffmpeg, a separate program the desktop app downloads in the background when it starts.
-An import that chooses one waits for that download at the Staging Review, and leaves the attachments as they are only when the download failed.
+An import that chooses one waits for that download after the Staging Review is approved, and when the download has failed, the review's **Convert media** button stays disabled until **Try again** there has downloaded it.
 With **Copy**, a browser shows the formats it can show. Some iPhone photos and videos are in formats that not every browser displays, and those stay that way.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/) describes what each choice does.
 

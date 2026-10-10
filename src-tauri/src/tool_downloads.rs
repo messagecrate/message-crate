@@ -764,13 +764,17 @@ impl std::error::Error for WaitError {}
 
 /// The sentence that sends a person to the user guide's troubleshooting
 /// section for `program`, which says how to install it or where to put a
-/// copy by hand. The Import form and Settings link the same section.
+/// copy by hand. The Import form and Settings link the same section. The
+/// wtsexporter sentence is the exporter's, which puts it in its own errors,
+/// so each heading's text is written once.
 pub fn troubleshooting(program: Program) -> String {
-    let section = match program {
-        Program::Ffmpeg | Program::Ffprobe => "ffmpeg or ffprobe not found",
-        Program::Wtsexporter => "Import can't find wtsexporter",
-    };
-    format!("See \"{section}\" in Troubleshooting at messagecrate.app.")
+    match program {
+        Program::Ffmpeg | Program::Ffprobe => {
+            "See \"ffmpeg or ffprobe not found\" in Troubleshooting at messagecrate.app."
+                .to_string()
+        }
+        Program::Wtsexporter => whatsapp_exporter::WTSEXPORTER_TROUBLESHOOTING.to_string(),
+    }
 }
 
 /// The state of `program` in place that does not run.
