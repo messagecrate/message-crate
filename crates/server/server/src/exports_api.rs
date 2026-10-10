@@ -111,7 +111,13 @@ pub async fn start_export_run(
         },
     )
     .await?;
-    exports::record_credential(&mut tx, export_id, credential).await?;
+    crate::db::audit_trail::record_run_credential(
+        &mut tx,
+        crate::db::audit_trail::RunTable::Exports,
+        export_id,
+        credential,
+    )
+    .await?;
 
     exports::list_run_messages(&mut tx, export_id, &filter).await?;
     let counts = exports::export_counts(&mut tx, export_id).await?;

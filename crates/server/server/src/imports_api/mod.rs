@@ -1316,7 +1316,13 @@ pub(crate) async fn create_import(
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
     let id = crate::db::imports::start_import(&mut tx, &args).await?;
-    crate::db::imports::record_credential(&mut tx, id, &auth.credential).await?;
+    crate::db::audit_trail::record_run_credential(
+        &mut tx,
+        crate::db::audit_trail::RunTable::Imports,
+        id,
+        &auth.credential,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(Created {
