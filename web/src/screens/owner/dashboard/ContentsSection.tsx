@@ -1,4 +1,5 @@
-import { countOf, formatBytes } from "../../settings/storage/storageUtils";
+import { countOf } from "../../../lib/plural";
+import { formatBytes } from "../../settings/storage/storageUtils";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";
 
