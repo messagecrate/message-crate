@@ -553,7 +553,7 @@ impl MergedArchive for SbrArchive {
         output_dir: &Path,
         documents: &[ConversationDocument],
         report: &mut ExportReport,
-    ) -> Result<PathBuf> {
+    ) -> Result<()> {
         let mut session = SbrBackupSession::create(output_dir)?;
         for doc in documents {
             session.append_document(doc)?;
@@ -566,11 +566,12 @@ impl MergedArchive for SbrArchive {
         if not_sms_or_mms > 0 {
             report.bump(NOT_SMS_OR_MMS_LEFT_OUT, not_sms_or_mms);
         }
-        session.finish()
+        session.finish()?;
+        Ok(())
     }
 
-    fn file_names(&self) -> Vec<String> {
-        sbr::backup_file_names()
+    fn outputs(&self, _documents: &[ConversationDocument]) -> Result<Vec<String>> {
+        Ok(sbr::backup_file_names())
     }
 
     fn format_name(&self) -> &'static str {

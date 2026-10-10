@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 
 /// Sentinel file written into export directories so `clean_previous_ir_output` can
 /// distinguish a real export directory from a person's own directory that was
-/// pointed at by mistake. It also lists, one per line, the files a merged
-/// archive wrote into the directory ([`record_archive_files`]), which the next
-/// clean removes.
+/// pointed at by mistake. It also lists, one per line, the files and
+/// directories a merged archive wrote into the directory
+/// ([`record_archive_outputs`]), which the next clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
 
 /// Whether `output_dir` holds the sentinel, which only an export writes.
@@ -89,12 +89,12 @@ pub fn mark_export_directory(output_dir: &Path) -> Result<()> {
 
 /// Clean a directory an earlier export marked, or mark an empty one.
 ///
-/// A directory that holds the sentinel loses the files a merged archive recorded
-/// in it ([`record_archive_files`]) and its previous CSV, JSON, JSON Lines,
-/// meta, temps, staged attachments, and mail archives, and keeps every other
-/// file. The crate that owns an archive names its files, and this crate knows
-/// none. A directory without the sentinel goes through [`mark_export_directory`],
-/// so nothing is removed from it.
+/// A directory that holds the sentinel loses the files and directories a
+/// merged archive recorded in it ([`record_archive_outputs`]) and its
+/// previous CSV, JSON, JSON Lines, meta, temps, staged attachments, and mail
+/// archives, and keeps every other file. The crate that owns an archive names
+/// its outputs, and this crate knows none. A directory without the sentinel
+/// goes through [`mark_export_directory`], so nothing is removed from it.
 ///
 /// # Errors
 ///
@@ -107,9 +107,12 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
     if !has_export_sentinel(output_dir) {
         return mark_export_directory(output_dir);
     }
-    for name in recorded_archive_files(output_dir)? {
+    for name in recorded_archive_outputs(output_dir)? {
         let path = output_dir.join(name);
-        if path.is_file() {
+        if path.is_dir() {
+            fs::remove_dir_all(&path)
+                .with_context(|| format!("remove previous {}", path.display()))?;
+        } else if path.is_file() {
             remove_previous(&path)?;
         }
     }
@@ -210,14 +213,15 @@ fn remove_previous(path: &Path) -> Result<()> {
     fs::remove_file(path).with_context(|| format!("remove previous {}", path.display()))
 }
 
-/// Record in the sentinel of `output_dir` the names of the files a merged
-/// archive is about to write there, so the next fresh export removes them.
-/// Recording before the write covers the partial files of a run that stops.
+/// Record in the sentinel of `output_dir` the names of the files and
+/// directories a merged archive is about to write there, so the next fresh
+/// export removes them. Recording before the write covers the partial output
+/// of a run that stops.
 ///
 /// # Errors
 ///
 /// Returns an error when the sentinel cannot be written.
-pub(crate) fn record_archive_files(output_dir: &Path, names: &[String]) -> Result<()> {
+pub(crate) fn record_archive_outputs(output_dir: &Path, names: &[String]) -> Result<()> {
     let path = output_dir.join(EXPORT_SENTINEL);
     let mut sentinel = fs::OpenOptions::new()
         .create(true)
@@ -230,10 +234,10 @@ pub(crate) fn record_archive_files(output_dir: &Path, names: &[String]) -> Resul
     Ok(())
 }
 
-/// The file names recorded in the sentinel of `output_dir`. A line that is
-/// not a plain file name in the directory is passed over, so a damaged sentinel
+/// The names recorded in the sentinel of `output_dir`. A line that is not a
+/// plain name of an entry in the directory is passed over, so a damaged sentinel
 /// cannot remove anything outside it.
-fn recorded_archive_files(output_dir: &Path) -> Result<Vec<String>> {
+fn recorded_archive_outputs(output_dir: &Path) -> Result<Vec<String>> {
     let path = output_dir.join(EXPORT_SENTINEL);
     let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     Ok(text
