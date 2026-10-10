@@ -48,7 +48,7 @@ async fn import(state: &crate::server::AppState, token: &str, source: &str, line
 fn edited(guid: &str, text: &str) -> MessageLine {
     message_line(guid, text).edit(EarlierVersion {
         part_index: 0,
-        text: "see you at six".into(),
+        text: Some("see you at six".into()),
         edited_at_unix_ms: Some(SECOND + 60_000),
     })
 }

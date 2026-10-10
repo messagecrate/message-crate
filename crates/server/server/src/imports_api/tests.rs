@@ -778,7 +778,17 @@ async fn text_and_key(conn: &mut sqlx::SqliteConnection) -> (String, Option<Stri
 fn edit_version(part: u32, text: &str, ms: i64) -> EarlierVersion {
     EarlierVersion {
         part_index: part,
-        text: text.into(),
+        text: Some(text.into()),
+        edited_at_unix_ms: Some(ms),
+    }
+}
+
+/// One earlier version of `g-edit` with no text, as iMazing records an
+/// edit: only that part `part` was edited at `ms`.
+fn textless_version(part: u32, ms: i64) -> EarlierVersion {
+    EarlierVersion {
+        part_index: part,
+        text: None,
         edited_at_unix_ms: Some(ms),
     }
 }
@@ -890,11 +900,18 @@ async fn append_keeps_a_later_edit_against_an_earlier_backup_listing_more_versio
     let (_pool, mut conn) = open_verify(&db).await;
     let (text, _) = text_and_key(&mut conn).await;
     assert_eq!(text, "see you at eight");
-    let versions: Vec<String> = sqlx::query_scalar("SELECT text FROM message_versions ORDER BY id")
-        .fetch_all(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(versions, ["see you at six", "see you at seven"]);
+    let versions: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT text FROM message_versions ORDER BY id")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        versions,
+        [
+            Some("see you at six".into()),
+            Some("see you at seven".into())
+        ]
+    );
 }
 
 /// What a reader sees of the message `g-edit`: its text and content key,
@@ -905,7 +922,7 @@ struct EditSnapshot {
     text: String,
     content_key: Option<String>,
     /// `(part_index, text, edited_at)`, in the order stored.
-    versions: Vec<(i64, String, Option<String>)>,
+    versions: Vec<(i64, Option<String>, Option<String>)>,
     /// `(word, index, entries found)`.
     hits: Vec<(&'static str, &'static str, i64)>,
 }
@@ -985,6 +1002,49 @@ async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_
         let (_pool, mut conn) = open_verify(&db).await;
         assert_eq!(edit_snapshot(&mut conn).await, expected, "{name}");
     }
+}
+
+/// An edit a source records without the text it replaced, as iMazing does,
+/// is stored as a version with no text and its time, and indexed for no
+/// word: nothing could find the message by it. The final text is still
+/// found (#2030).
+#[tokio::test]
+async fn a_version_without_text_is_stored_with_its_time_and_not_indexed() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let options = edit_options(&assets, tmp.path());
+    let file = edit_file(
+        tmp.path(),
+        "imazing.jsonl",
+        "see you at seven",
+        &[textless_version(0, 1426183462000)],
+    );
+    let db = tmp.path().join("messagecrate.db");
+    import_jsonl_files(&db, &[file], &options).await.unwrap();
+
+    let (_pool, mut conn) = open_verify(&db).await;
+    let snapshot = edit_snapshot(&mut conn).await;
+    assert_eq!(snapshot.text, "see you at seven");
+    assert_eq!(
+        snapshot.versions,
+        [(0, None, Some("2015-03-12T18:04:22.000Z".into()))]
+    );
+    assert_eq!(
+        snapshot.hits,
+        [
+            ("six", "messages_fts", 0),
+            ("six", "message_versions_fts", 0),
+            ("seven", "messages_fts", 1),
+            ("seven", "message_versions_fts", 0),
+            ("eight", "messages_fts", 0),
+            ("eight", "message_versions_fts", 0),
+        ]
+    );
+    let indexed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_versions_fts")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(indexed, 0, "a version with no text has no index row");
 }
 
 /// One attachment of a message in a conversation file, missing unless

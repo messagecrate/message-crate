@@ -21,6 +21,22 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
+  and edits.** Each reaction in an iMazing export is kept with its emoji and
+  whether the account holder gave it. The export names the person who
+  reacted by display name alone, with no phone number or address, so a
+  reaction is not matched to a contact. The server does not yet keep the
+  name, so another person's reaction reads as from "Someone". A reply is linked
+  to the message it quotes when that message is in the same conversation of
+  the export, and stays a reply without a link otherwise. A message deleted
+  on the phone before the export is marked **Deleted in the source app**. An
+  edited message is marked **Edited**, and because iMazing keeps only the
+  final text, **Edited** opens one line, **Earlier version not in the
+  backup**, with the time of the edit; a search never finds the message by
+  the text it lost. The database format changed: an existing Message Crate
+  is rebuilt empty on first start and its messages must be imported again
+  (#2030).
+
 - 2026-10-09: **A WhatsApp import brings each reaction in under the person
   who reacted.** A WhatsApp conversation from an Android phone or an iPhone
   now shows its reactions, each stored under the reactor's phone number, or

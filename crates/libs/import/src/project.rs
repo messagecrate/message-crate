@@ -143,7 +143,7 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":13"#));
+        assert!(header.contains(r#""schema_version":14"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 

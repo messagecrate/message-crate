@@ -2,3 +2,9 @@ Chat Session,Message Date,Delivered Date,Read Date,Edited Date,Deleted Date,Serv
 Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+13215550100,Bob Sample,Read,,,Hello from Bob,,,
 Bob Sample,2020-01-01 12:01:00,,,,,SMS,Outgoing,,,Read,,,Hi Bob,,,
 Bob Sample,2020-01-01 12:02:00,,,,,iMessage,Incoming,+13215550100,Bob Sample,Read,,,Photo,,image000000.jpg,Image
+Bob Sample,2020-01-01 12:03:00,,,,,iMessage,Incoming,+13215550100,Bob Sample,Read,,,Lunch tomorrow?,"Me ❤️ 1/1/2020 12:04:00 PM
+Bob Sample 👍 1/1/2020 12:05:00 PM",,
+Bob Sample,2020-01-01 12:06:00,,,,,iMessage,Outgoing,,,Read,"↩ Bob Sample, 2020-01-01 12:03:00: « Lunch tomorrow? »",,Yes at noon,,,
+Bob Sample,2020-01-01 12:07:00,,,,,iMessage,Incoming,+13215550100,Bob Sample,Read,"↩ 2019-12-31 09:00:00: « Last year »",,That was before this export,,,
+Bob Sample,2020-01-01 12:08:00,,,,2020-01-02 08:00:00,iMessage,Incoming,+13215550100,Bob Sample,Read,,,Deleted later,,,
+Bob Sample,2020-01-01 12:09:00,,,2020-01-01 12:10:00,,iMessage,Outgoing,,,Read,,,See you at noon,,,

@@ -79,7 +79,10 @@ with the time it was written. A message's own text is always its final
 version, and its earlier versions are kept beside it, oldest first; search
 finds the message by any of them, and says when it found a message only by
 an earlier version. The message is shown with its final text and the word
-"Edited", which opens its earlier versions.
+"Edited", which opens its earlier versions. A source may record that an
+edit was made, and when, without the text it replaced: an iMazing export
+does, so its version has no text, is shown as "Earlier version not in the
+backup" with its time, and search never finds the message by it.
 _Avoid_: Revision, Old text, Edit history
 
 **Orphaned message**:

@@ -77,7 +77,10 @@ use serde_json::Value;
 /// 13: a reply carries [`Message::reply_to`], a [`ReplyTo`] naming the
 /// message it quotes and the part, and `Imessage::is_reply`,
 /// `in_reply_to_guid`, `thread_originator_part` and `num_replies` are gone.
-pub const PROTOCOL_VERSION: u32 = 13;
+/// 14: an [`EarlierVersion`] may carry no text ([`EarlierVersion::text`] is
+/// optional), for a source that records an edit and not the text it
+/// replaced.
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -503,19 +506,24 @@ impl Deletion {
 }
 
 /// One earlier version of one part of an edited message: the text that part
-/// held before an edit replaced it.
+/// held before an edit replaced it, or only that an edit replaced it.
 ///
 /// A message's own text is its final version, so a list of these holds only
 /// the versions before it, oldest first within each part. Every source that
 /// records edits writes the same shape, so the type is defined here beside
-/// [`Reaction`] and `message-ir` re-exports it.
+/// [`Reaction`] and `message-ir` re-exports it. Apple Messages keeps each
+/// version's text. iMazing records only that a message was edited, and when,
+/// so its version has no text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EarlierVersion {
     /// The part of the message this version belongs to; 0 for the first or
     /// only part.
     pub part_index: u32,
-    /// The part's text in this version.
-    pub text: String,
+    /// The part's text in this version; `None` when the source records the
+    /// edit and not the text it replaced. A version with no text is not
+    /// searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     /// When this version was written, as milliseconds since 1970-01-01 UTC:
     /// the send time for the original, the time of the edit that wrote it for
     /// a later one. `None` when the source does not record it.
