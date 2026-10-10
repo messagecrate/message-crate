@@ -39,8 +39,12 @@ export default function IdentityDialogs({
   /** The identities already in the table, which the Add identity dialog refuses again. */
   existing: readonly { address: string; service?: string | null }[];
   onCloseAdd: () => void;
-  /** Add the identity, settling now or later. The dialog stays open until the editor closes it. */
-  onConfirmAdd: (args: { address: string; service: OfferedService }) => unknown;
+  /**
+   * Add the identity. A promise it returns is not awaited, so the editor
+   * reports its own failure in `addError`. The dialog stays open until the
+   * editor closes it.
+   */
+  onConfirmAdd: (args: { address: string; service: OfferedService }) => void | Promise<void>;
 }) {
   return (
     <>
