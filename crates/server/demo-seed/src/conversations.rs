@@ -372,34 +372,63 @@ impl Overlap<'_> {
     }
 }
 
+/// What a conversation file's header says: the conversation, and the backup
+/// `owner_identity` exported it from.
+struct ConversationFileHeader<'a> {
+    chat_id: &'a str,
+    conversation_type: IrConversationType,
+    group_title: Option<String>,
+    participants: Vec<IrParticipant>,
+    message_count: usize,
+    source: &'a str,
+    owner_identity: &'a str,
+}
+
+impl<'a> ConversationFileHeader<'a> {
+    /// The header of a one-to-one conversation, which has no group title.
+    fn one_to_one(
+        chat_id: &'a str,
+        participants: Vec<IrParticipant>,
+        message_count: usize,
+        source: &'a str,
+        owner_identity: &'a str,
+    ) -> Self {
+        Self {
+            chat_id,
+            conversation_type: IrConversationType::Individual,
+            group_title: None,
+            participants,
+            message_count,
+            source,
+            owner_identity,
+        }
+    }
+}
+
 impl<R: Rng> Seeder<'_, R> {
-    /// Create a one-to-one conversation file at `path` and write its header:
-    /// no group title, exported from `source` by `owner_identity` at the
-    /// seed's reference time. Returns the file, ready for the messages.
+    /// Create a conversation file at `path` and write `header` as its first
+    /// line, exported at the seed's reference time. Returns the file, ready
+    /// for the messages.
     ///
     /// # Errors
     ///
     /// Returns an error if the file cannot be created or the header cannot be written.
-    fn create_one_to_one_file(
+    fn create_conversation_file(
         &self,
         path: &Path,
-        chat_id: &str,
-        participants: Vec<IrParticipant>,
-        message_count: usize,
-        source: &str,
-        owner_identity: &str,
+        header: ConversationFileHeader<'_>,
     ) -> Result<BufWriter<File>> {
         let mut file = open_jsonl(path)?;
         write_conversation_header(
             &mut file,
-            chat_id,
-            IrConversationType::Individual,
-            None,
-            participants,
-            message_count,
+            header.chat_id,
+            header.conversation_type,
+            header.group_title,
+            header.participants,
+            header.message_count,
             export_meta(
-                source,
-                owner_identity,
+                header.source,
+                header.owner_identity,
                 self.cfg.reference_time.timestamp_millis(),
             ),
         )?;
@@ -419,13 +448,15 @@ impl<R: Rng> Seeder<'_, R> {
         // an Unknown, and the demo's address book names them afterwards.
         let participants = individual_participants(chat_id, None);
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_one_to_one_file(
+        let mut file = self.create_conversation_file(
             &path,
-            chat_id,
-            participants,
-            msg_count,
-            source_id(flavor),
-            OWNER_PHONE,
+            ConversationFileHeader::one_to_one(
+                chat_id,
+                participants,
+                msg_count,
+                source_id(flavor),
+                OWNER_PHONE,
+            ),
         )?;
 
         let timestamps = self.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
@@ -509,13 +540,15 @@ impl<R: Rng> Seeder<'_, R> {
     fn overlap_imessage(&mut self, staging: &Path, overlap: &Overlap<'_>) -> Result<()> {
         let chat_id = overlap.chat_id;
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_one_to_one_file(
+        let mut file = self.create_conversation_file(
             &path,
-            chat_id,
-            individual_participants(chat_id, overlap.display_name.clone()),
-            overlap.msg_count,
-            IMESSAGE_SOURCE,
-            OWNER_PHONE,
+            ConversationFileHeader::one_to_one(
+                chat_id,
+                individual_participants(chat_id, overlap.display_name.clone()),
+                overlap.msg_count,
+                IMESSAGE_SOURCE,
+                OWNER_PHONE,
+            ),
         )?;
         let mut origin_guid: Option<String> = None;
         for (i, shared) in overlap.shared.iter().enumerate() {
@@ -562,13 +595,15 @@ impl<R: Rng> Seeder<'_, R> {
         let chat_id = overlap.chat_id;
         let android_total = overlap.shared.len() + overlap.extra_n;
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_one_to_one_file(
+        let mut file = self.create_conversation_file(
             &path,
-            chat_id,
-            individual_participants(chat_id, overlap.display_name.clone()),
-            android_total,
-            SBR_SOURCE,
-            OWNER_PHONE,
+            ConversationFileHeader::one_to_one(
+                chat_id,
+                individual_participants(chat_id, overlap.display_name.clone()),
+                android_total,
+                SBR_SOURCE,
+                OWNER_PHONE,
+            ),
         )?;
         for (i, shared) in overlap.shared.iter().enumerate() {
             let msg = shared.message(
@@ -646,13 +681,15 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             OWNER_PHONE
         };
-        let mut file = self.create_one_to_one_file(
+        let mut file = self.create_conversation_file(
             &staging.join(fname),
-            chat_id,
-            participants,
-            msg_count,
-            IMESSAGE_SOURCE,
-            owner_identity,
+            ConversationFileHeader::one_to_one(
+                chat_id,
+                participants,
+                msg_count,
+                IMESSAGE_SOURCE,
+                owner_identity,
+            ),
         )?;
 
         let timestamps = self.timestamps(msg_count, 1.5, sample_direct_day_burst);
@@ -698,7 +735,6 @@ impl<R: Rng> Seeder<'_, R> {
             .collect();
         let msg_count = ((group.msgs_per_year * group.span_years).round() as isize).max(1) as usize;
         let timestamps = self.timestamps(msg_count, group.span_years, sample_group_day_burst);
-        let mut file = open_jsonl(&staging.join(format!("group-{:03}.jsonl", group.index)))?;
         // The first group starts with a rename announcement so the UI has one to
         // show, when it has a title to have been named.
         let rename_title = group.title.as_deref().filter(|_| group.index == 0);
@@ -707,18 +743,17 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             msg_count
         };
-        write_conversation_header(
-            &mut file,
-            &chat_id,
-            IrConversationType::Group,
-            group.title.clone(),
-            participants,
-            header_message_count,
-            export_meta(
-                IMESSAGE_SOURCE,
-                OWNER_PHONE,
-                self.cfg.reference_time.timestamp_millis(),
-            ),
+        let mut file = self.create_conversation_file(
+            &staging.join(format!("group-{:03}.jsonl", group.index)),
+            ConversationFileHeader {
+                chat_id: &chat_id,
+                conversation_type: IrConversationType::Group,
+                group_title: group.title.clone(),
+                participants,
+                message_count: header_message_count,
+                source: IMESSAGE_SOURCE,
+                owner_identity: OWNER_PHONE,
+            },
         )?;
 
         if let Some(title) = rename_title {
@@ -863,19 +898,18 @@ impl<R: Rng> Seeder<'_, R> {
             if messages.is_empty() {
                 continue;
             }
-            let mut file = open_jsonl(&staging.join(file_name))?;
-            write_conversation_header(
-                &mut file,
-                &orphaned_chat_id(sender.as_ref().and_then(|p| p.identity.as_deref())),
-                IrConversationType::Orphaned,
-                None,
-                sender.into_iter().collect(),
-                messages.len(),
-                export_meta(
-                    IMESSAGE_SOURCE,
-                    OWNER_PHONE,
-                    self.cfg.reference_time.timestamp_millis(),
-                ),
+            let chat_id = orphaned_chat_id(sender.as_ref().and_then(|p| p.identity.as_deref()));
+            let mut file = self.create_conversation_file(
+                &staging.join(file_name),
+                ConversationFileHeader {
+                    chat_id: &chat_id,
+                    conversation_type: IrConversationType::Orphaned,
+                    group_title: None,
+                    participants: sender.into_iter().collect(),
+                    message_count: messages.len(),
+                    source: IMESSAGE_SOURCE,
+                    owner_identity: OWNER_PHONE,
+                },
             )?;
             for msg in messages {
                 self.emit(&mut file, msg)?;
