@@ -4,7 +4,7 @@ import { isTauri } from "../lib/tauri-check";
 import Button from "./Button";
 import ProgressBar from "./ProgressBar";
 
-export type TauriJobFormShellProps = {
+export type DesktopJobFormShellProps = {
   /** Screen heading. Omit when the caller already sits under a heading (Settings tabs). */
   title?: string;
   /**
@@ -28,7 +28,7 @@ export type TauriJobFormShellProps = {
   intro?: ReactNode;
 };
 
-export default function TauriJobFormShell({
+export default function DesktopJobFormShell({
   title,
   job,
   className = "max-w-[700px] p-6",
@@ -44,7 +44,7 @@ export default function TauriJobFormShell({
   success,
   requireTauri,
   intro,
-}: TauriJobFormShellProps) {
+}: DesktopJobFormShellProps) {
   const otherJob = useDesktopJob();
   if (requireTauri && !isTauri()) {
     return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;

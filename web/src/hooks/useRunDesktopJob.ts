@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
 import type { DesktopJobName } from "../lib/desktopJob";
-import { awaitTauriJob, invokeCancel, type TauriJobResult } from "../lib/tauri";
+import { awaitDesktopJob, type DesktopJobResult, invokeCancel } from "../lib/tauri";
 import type { ImportIssueEvent, ImportProgressEvent } from "../lib/types";
 
-export type TauriJobRunCallbacks = {
+export type RunDesktopJobCallbacks = {
   onLog?: (line: string) => void;
   onProgress?: (event: ImportProgressEvent) => void;
   onIssue?: (event: ImportIssueEvent) => void;
@@ -19,7 +19,7 @@ export type TauriJobRunCallbacks = {
  * of the job that finished, so a success message names what the job wrote
  * rather than what the form holds now.
  */
-export function useTauriJob<Request>(options: { job: DesktopJobName }): {
+export function useRunDesktopJob<Request>(options: { job: DesktopJobName }): {
   running: boolean;
   /**
    * The request the last job was started with, once that job reports that it
@@ -34,8 +34,8 @@ export function useTauriJob<Request>(options: { job: DesktopJobName }): {
   run: (
     invokeFn: () => Promise<void>,
     request: Request,
-    callbacks?: TauriJobRunCallbacks,
-  ) => Promise<TauriJobResult>;
+    callbacks?: RunDesktopJobCallbacks,
+  ) => Promise<DesktopJobResult>;
   cancel: () => Promise<void>;
 } {
   const job = options.job;
@@ -46,12 +46,12 @@ export function useTauriJob<Request>(options: { job: DesktopJobName }): {
     async (
       invokeFn: () => Promise<void>,
       request: Request,
-      callbacks?: TauriJobRunCallbacks,
-    ): Promise<TauriJobResult> => {
+      callbacks?: RunDesktopJobCallbacks,
+    ): Promise<DesktopJobResult> => {
       setRunning(true);
       setFinished(null);
       try {
-        const result = await awaitTauriJob(
+        const result = await awaitDesktopJob(
           job,
           invokeFn,
           callbacks?.onLog,

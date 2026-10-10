@@ -14,7 +14,7 @@ const invokeFinishExportDir = vi.hoisted(() => vi.fn());
 const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
 const invokeCancel = vi.hoisted(() => vi.fn());
 const invokeCreateExportDir = vi.hoisted(() => vi.fn());
-const awaitTauriJob = vi.hoisted(() => vi.fn());
+const awaitDesktopJob = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/tauri-check", () => ({
   isTauri: () => true,
@@ -31,7 +31,7 @@ vi.mock("../lib/tauri", async (importOriginal) => {
     invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
     invokeCancel: (...args: unknown[]) => invokeCancel(...args),
     // The job's name comes first; the mocks below take what follows it.
-    awaitTauriJob: (_job: string, ...args: unknown[]) => awaitTauriJob(...args),
+    awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
     onExtractEvents: vi.fn(async () => () => {}),
   };
 });
@@ -66,8 +66,8 @@ beforeEach(() => {
   invokeCreateExportDir.mockResolvedValue(EXPORT_DIR);
   invokeFinishExportDir.mockResolvedValue(EXPORT_DIR.dir);
   invokeDiscardExportDir.mockResolvedValue(undefined);
-  // The hook's `run` goes through awaitTauriJob: call the invoke and resolve.
-  awaitTauriJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
+  // The hook's `run` goes through awaitDesktopJob: call the invoke and resolve.
+  awaitDesktopJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
     await invokeFn();
     return { summary: "done" };
   });
@@ -212,11 +212,11 @@ describe("ExportScreen", () => {
   it("deletes the export's own directory when the conversion fails", async () => {
     // Otherwise a failed export silently leaves a whole copy of the conversations on
     // disk, in a directory the person never chose and will not think to look in.
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
       return { summary: "exported" };
     });
-    awaitTauriJob.mockImplementationOnce(async () => {
+    awaitDesktopJob.mockImplementationOnce(async () => {
       throw new Error("unsupported output format");
     });
 
@@ -234,18 +234,18 @@ describe("ExportScreen", () => {
     const formatHeld = new Promise<void>((resolve) => {
       releaseFormat = resolve;
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
       return { summary: "exported" };
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
       await invokeFn();
       return { summary: "converted" };
     });
 
     const user = await exportAs("/home/demo/out", "CSV (.csv)");
-    await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(awaitDesktopJob).toHaveBeenCalledTimes(2));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     releaseFormat();
 
@@ -261,11 +261,11 @@ describe("ExportScreen", () => {
     const formatHeld = new Promise<void>((resolve) => {
       releaseFormat = resolve;
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
       return { summary: "exported" };
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await formatHeld;
       await invokeFn();
       return { summary: "converted" };
@@ -292,7 +292,7 @@ describe("ExportScreen", () => {
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     // The export step has ended and the format step has not started.
-    await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(awaitDesktopJob).toHaveBeenCalledTimes(2));
     expect(invokeExport).toHaveBeenCalledTimes(1);
     expect(invokeFormat).not.toHaveBeenCalled();
     expect(currentDesktopJob()).toBe("Export");
@@ -305,7 +305,7 @@ describe("ExportScreen", () => {
   });
 
   it("lets the desktop job go when the export fails", async () => {
-    awaitTauriJob.mockImplementationOnce(async () => {
+    awaitDesktopJob.mockImplementationOnce(async () => {
       throw new Error("server unreachable");
     });
 
@@ -428,7 +428,7 @@ describe("ExportScreen", () => {
   });
 
   it("reports the failure rather than claiming the export finished", async () => {
-    awaitTauriJob.mockImplementation(async () => {
+    awaitDesktopJob.mockImplementation(async () => {
       throw new Error("session token is required");
     });
 
@@ -457,7 +457,7 @@ describe("ExportScreen", () => {
     const exportHeld = new Promise<void>((resolve) => {
       releaseExport = resolve;
     });
-    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+    awaitDesktopJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await exportHeld;
       await invokeFn();
       return { summary: "exported" };
