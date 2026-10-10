@@ -317,7 +317,7 @@ Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`
 marker, and only the user resolves a thread without it.
 
 The skill posts as the `message-crate-reviewer` GitHub App, through
-`scripts/gh-as-reviewer`, not as the user's account. GitHub allows one account
+`scripts/gh-as-reviewer.sh`, not as the user's account. GitHub allows one account
 about 80 content-creating requests a minute and 500 an hour, and one review
 posts 20 to 40 times: the review, a reply to each finding, the re-review and
 the summary. With every session on the user's account, a busy hour of reviews

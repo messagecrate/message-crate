@@ -51,7 +51,7 @@ It runs the steps below, fixes what it finds, and merges the pull request.
 
 `pr-review` posts as the `message-crate-reviewer` GitHub App: every call that
 posts or resolves (a review, a comment, a reply, a resolved thread, a deferred
-finding's issue) runs through `./scripts/gh-as-reviewer` in place of `gh`, so
+finding's issue) runs through `./scripts/gh-as-reviewer.sh` in place of `gh`, so
 it counts against the app's posting limit, not the user's ("Posting pace").
 Reads, pushes, `gh pr ready` and the merge stay on the logged-in `gh` account.
 The app has write access to the code only because GitHub lets an app resolve
@@ -82,7 +82,7 @@ resolves it.
    commit that was reviewed so a later push cannot move the lines:
 
    ```bash
-   ./scripts/gh-as-reviewer api repos/messagecrate/message-crate/pulls/<N>/reviews \
+   ./scripts/gh-as-reviewer.sh api repos/messagecrate/message-crate/pulls/<N>/reviews \
      -f commit_id=<headRefOid> -f event=COMMENT \
      -f body=$'<!-- pr-review -->\n<summary>' \
      -f 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
@@ -92,9 +92,9 @@ resolves it.
    Repeat the three `comments[]` fields for each finding. The marker goes in
    each `comments[][body]`, because that comment opens the thread. A finding
    with no line in the diff goes in a top-level comment instead
-   (`./scripts/gh-as-reviewer pr comment <N>`), with the marker on its first
+   (`./scripts/gh-as-reviewer.sh pr comment <N>`), with the marker on its first
    line. It has no thread, so it is answered by a new marked
-   `./scripts/gh-as-reviewer pr comment <N>` that quotes it.
+   `./scripts/gh-as-reviewer.sh pr comment <N>` that quotes it.
 3. **Work on a detached worktree** made at the pull request's head, before
    the review. The branch may be checked out in another worktree, and a
    detached one works either way. Before every push, run the **local
@@ -117,12 +117,12 @@ resolves it.
    stays as it is. Then resolve it if it is an agent thread:
 
    ```bash
-   ./scripts/gh-as-reviewer api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
+   ./scripts/gh-as-reviewer.sh api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
        -f body=$'<!-- pr-review -->\nFixed in <sha>: <what changed>.'
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
-   ./scripts/gh-as-reviewer api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
+   ./scripts/gh-as-reviewer.sh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
    ```
 
    Never resolve a thread without a reply in it.
@@ -243,7 +243,7 @@ GitHub limits how fast one account creates content (reviews, comments,
 replies, pull requests), apart from its hourly limit: about 80 a minute and
 500 an hour. Every session shares the user's account, and a busy hour of
 reviews used to exhaust it for all of them, so `pr-review` posts through
-`./scripts/gh-as-reviewer` as the `message-crate-reviewer` app, which has a
+`./scripts/gh-as-reviewer.sh` as the `message-crate-reviewer` app, which has a
 limit of its own ("Review on the pull request"). Every reviewing session
 shares the app's limit in turn. So make those calls one at a time, at least a
 second apart. When GitHub refuses one ("submitted too quickly", or a 403 or 422 that
