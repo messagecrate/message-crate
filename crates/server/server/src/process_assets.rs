@@ -14,7 +14,6 @@
 //! for rebuilding and repair, and the server's background pass over the
 //! Assets an Import Run brought ([`crate::media_queue`]).
 
-use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -29,6 +28,7 @@ use crate::counts::words;
 use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
+use crate::progress::Progress;
 use media::Kind;
 
 /// Options for one processing pass.
@@ -181,31 +181,6 @@ impl ProcessAssetsStats {
             "1 original whose Preview or Thumbnail could not be made",
             "{n} originals whose Preview or Thumbnail could not be made",
         )
-    }
-}
-
-/// Where a pass says what it does: on standard output, for the
-/// `process-assets` command, or in the server's log, for the background
-/// pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Log {
-    Print,
-    Trace,
-}
-
-impl Log {
-    fn say(self, line: impl fmt::Display) {
-        match self {
-            Self::Print => println!("{line}"),
-            Self::Trace => tracing::info!("{line}"),
-        }
-    }
-
-    fn fail(self, line: impl fmt::Display) {
-        match self {
-            Self::Print => eprintln!("{line}"),
-            Self::Trace => tracing::warn!("{line}"),
-        }
     }
 }
 
@@ -412,7 +387,8 @@ pub(crate) async fn process_one_asset(
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
     let opts = ProcessAssetsOptions::default();
-    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Log::Trace)? else {
+    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Progress::Log)?
+    else {
         return Ok(ProcessAssetsStats::default());
     };
     let rows =
@@ -535,7 +511,7 @@ struct AccountPass<'a> {
     account_id: i64,
     assets_dir: PathBuf,
     converted_dir: PathBuf,
-    log: Log,
+    progress: Progress,
 }
 
 /// What making one version produced.
@@ -597,7 +573,7 @@ impl<'a> AccountPass<'a> {
             let files = words(left, "1 temporary file", "{n} temporary files");
             println!("  {cleaned_verb} {files} a killed write left in the shard directories");
         }
-        Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
+        Self::new(cfg, opts, work_dir, account_id, stop, Progress::Print)
     }
 
     /// The pass over `account_id`'s directories, making the converted
@@ -613,7 +589,7 @@ impl<'a> AccountPass<'a> {
         work_dir: &'a Path,
         account_id: i64,
         stop: &'a AtomicBool,
-        log: Log,
+        progress: Progress,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         if !assets_dir.is_dir() {
@@ -629,7 +605,7 @@ impl<'a> AccountPass<'a> {
             account_id,
             assets_dir,
             converted_dir,
-            log,
+            progress,
         }))
     }
 
@@ -656,7 +632,7 @@ impl<'a> AccountPass<'a> {
                 break;
             }
             for err in outcome.failures() {
-                self.log.fail(format!(
+                self.progress.warn(format!(
                     "{} could not be processed: {err:#}",
                     self.label(row)
                 ));
@@ -775,7 +751,7 @@ impl<'a> AccountPass<'a> {
         damaged: bool,
     ) -> Result<bool> {
         if damaged && let Some(rel) = row.named(version).assets_path.as_deref() {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "The {version} {rel} of {} does not hash to the fingerprint in its name, so it is made again",
                 self.label(row)
             ));
@@ -798,13 +774,13 @@ impl<'a> AccountPass<'a> {
             // the sweep at the next Import Run's end, which keeps a young
             // file: the same bytes may be the version of another original
             // that a concurrent pass is about to record.
-            self.log.say(format!(
+            self.progress.say(format!(
                 "{} was deleted while its {version} was made, so the {version} is left for the sweep at the next Import Run's end",
                 self.label(row)
             ));
             return Ok(false);
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "Made the {version} of {} at {}",
             self.label(row),
             blob.assets_path
@@ -843,7 +819,7 @@ impl<'a> AccountPass<'a> {
             mime_type,
         };
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would point {} at its existing {version} {}",
                 self.label(row),
                 blob.assets_path
@@ -862,7 +838,7 @@ impl<'a> AccountPass<'a> {
             // The rows that named none were deleted since they were read.
             return Ok(false);
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "{} now names its existing {version} {}",
             self.label(row),
             blob.assets_path
@@ -894,7 +870,7 @@ impl<'a> AccountPass<'a> {
             return Ok(false);
         };
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would drop the damaged {version} {rel} of {}",
                 self.label(row)
             ));
@@ -907,7 +883,7 @@ impl<'a> AccountPass<'a> {
             crate::asset_store::remove_file(&path)
                 .with_context(|| format!("remove damaged {version} {}", path.display()))?;
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "The {version} {rel} of {} does not hash to the fingerprint in its name and is not \
              made again, so it is dropped",
             self.label(row)
@@ -927,14 +903,14 @@ impl<'a> AccountPass<'a> {
             return Ok(false);
         }
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would remove the incomplete {}",
                 self.label(row)
             ));
         } else {
             crate::asset_store::remove_file(source_path)
                 .with_context(|| format!("remove incomplete {}", source_path.display()))?;
-            self.log
+            self.progress
                 .say(format!("Removed the incomplete {}", self.label(row)));
         }
         Ok(true)
@@ -976,7 +952,7 @@ impl<'a> AccountPass<'a> {
         row: &StoredOriginal,
     ) -> Result<Derived> {
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would make the {version} of {} as {ext}",
                 self.label(row)
             ));

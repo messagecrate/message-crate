@@ -117,6 +117,16 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
+  The Import form's **Backup File** field takes the backup's one `.xml`
+  file, where **Backup Directory** took a directory of them, because an
+  import reads one backup. A second backup is a second import, and the
+  server keeps the later copy of a message by the date each file records.
+  A directory is refused. **Settings → Convert** refuses a directory that
+  holds more than one SMS Backup & Restore file, naming each, and finds a
+  backup the app wrote under any name. GO SMS Pro and SMS Backup+ still take
+  a directory (#2009).
+
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs
   installed on the computer, else in the app's Tools Directory, and both
@@ -235,6 +245,14 @@ released versions carry their date on the heading.
   an internal id is imported under that id, with their name, and is listed
   under Unknown until given an address. A WhatsApp file that another
   version of wtsexporter wrote is refused, naming Message Crate's own (#1092).
+- 2026-10-09: **Owner Home's Logs panel shows how each import went.** The
+  lines an import writes as it reads its files, writes them into the account
+  and hides duplicates never reached the **Logs** panel. They do now, and so
+  do the lines of the Demo Account's import when it is built or rebuilt. An
+  import that was running when the desktop app crashed could also stop
+  part-way while writing one of those lines. It no longer does. The server's
+  `import` and `reset-demo` commands still print the same lines as they run
+  (#1945).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,

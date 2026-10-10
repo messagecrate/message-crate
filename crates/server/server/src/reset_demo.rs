@@ -33,6 +33,7 @@ use crate::dedupe;
 use crate::imports_api::{self, FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode};
 use crate::open_db::OpenDb;
 use crate::process_assets::{self, ProcessAssetsOptions};
+use crate::progress::Progress;
 
 /// Stable id of the Demo Account, which every demo build writes.
 pub use crate::db::account_profile::DEMO_ACCOUNT_ID;
@@ -150,10 +151,11 @@ async fn dedupe_and_process_assets(
     db: &SqlitePool,
     account_id: i64,
     stop: &AtomicBool,
+    progress: Progress,
 ) -> Result<(dedupe::DedupeStats, process_assets::ProcessAssetsStats)> {
     let dedupe_stats = {
         let mut conn = db.acquire().await?;
-        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2).await?
+        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, progress).await?
     };
     // Without ffmpeg the preview pass would fail once per attachment; say so
     // once instead (#1018). Whether each original is shown as it is needs no
@@ -594,7 +596,7 @@ async fn build_from_bundle(
         &prepared,
         DEMO_ACCOUNT_ID,
         actor,
-        Vacuum::Skip,
+        BuildRun::Serve,
         stop,
     )
     .await
@@ -653,10 +655,7 @@ async fn reset_prepared_bundle_with(
         &prepared,
         account_id,
         AuditActor::CommandLine,
-        // The command serves no one while it runs, and the database it
-        // writes is a copy swapped in afterwards, so rewriting the file
-        // holds up no other writer.
-        Vacuum::Run,
+        BuildRun::Command,
         &AtomicBool::new(false),
     )
     .await
@@ -718,10 +717,10 @@ async fn install_reset_state_or_keep_work(
 
 /// Wipe, seed, import, load the address book, dedupe, and convert media for
 /// the demo account in the database `db`, the one `cfg` names, then run
-/// `VACUUM` when `vacuum` asks for it. A new database, a reset and a build on
-/// a running server all run exactly this; what differs is what the caller
-/// does around it (a reset snapshots the database first, asks for
-/// `Vacuum::Run`, and swaps it in after). Every step uses `db`, so on a
+/// `VACUUM` when `run` is [`BuildRun::Command`]. A new database, a reset and
+/// a build on a running server all run exactly this; what differs is what
+/// the caller does around it (a reset snapshots the database first, runs as
+/// [`BuildRun::Command`], and swaps it in after). Every step uses `db`, so on a
 /// running server the build shares the server's pool. The build's record in
 /// `demo_account_build` is written first and removed last, so a database
 /// that still holds it after a stop has a part-built Demo Account (#1215).
@@ -731,19 +730,20 @@ async fn rebuild_demo_account(
     prepared: &PreparedBundle,
     account_id: i64,
     actor: AuditActor,
-    vacuum: Vacuum,
+    run: BuildRun,
     stop: &AtomicBool,
 ) -> Result<ResetPreparedStats> {
+    let progress = run.progress();
     begin_demo_build(db).await?;
     wipe_demo_account(cfg, db, account_id, actor).await?;
     print_reset_header(account_id, prepared, &cfg.paths.db.display());
     seed_demo_account(db, account_id, &prepared.seed).await?;
-    let import = import_demo_sources(cfg, db, prepared, account_id).await?;
+    let import = import_demo_sources(cfg, db, prepared, account_id, progress).await?;
     let address_book = load_demo_address_book(db, prepared, account_id).await?;
     let (dedupe_stats, process_stats) =
-        dedupe_and_process_assets(cfg, db, account_id, stop).await?;
-    if vacuum == Vacuum::Run {
-        vacuum_after_demo(db).await;
+        dedupe_and_process_assets(cfg, db, account_id, stop, progress).await?;
+    if run == BuildRun::Command {
+        vacuum_after_demo(db, progress).await;
     }
     let mut conn = db.acquire().await?;
     demo_account_build::end(&mut conn)
@@ -758,15 +758,31 @@ async fn rebuild_demo_account(
     })
 }
 
-/// Whether a Demo Account build ends by running `VACUUM`, which rewrites the
-/// whole database file and holds the write lock while it does.
+/// What runs a Demo Account build, which decides two things: whether it ends
+/// by running `VACUUM`, which rewrites the whole database file and holds the
+/// write lock while it does, and where its progress goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Vacuum {
-    /// Run it: the `reset-demo` command, on a copy no one else writes.
-    Run,
-    /// Leave the freed pages for the database to reuse: a build on a running
-    /// server, and the build `serve` runs on a new database.
-    Skip,
+enum BuildRun {
+    /// The `reset-demo` command. It runs `VACUUM`: the command serves no one
+    /// while it runs, and the database it writes is a copy swapped in
+    /// afterwards, so rewriting the file holds up no other writer. Its
+    /// progress is its output, on standard output.
+    Command,
+    /// A build on a running server, and the build `serve` runs on a new
+    /// database. It leaves the freed pages for the database to reuse, and
+    /// its progress goes into the server's log.
+    Serve,
+}
+
+impl BuildRun {
+    /// Where the build's import, dedupe and `VACUUM` say how far they have
+    /// got.
+    fn progress(self) -> Progress {
+        match self {
+            Self::Command => Progress::Print,
+            Self::Serve => Progress::Log,
+        }
+    }
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
@@ -810,6 +826,7 @@ async fn import_demo_sources(
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
+    progress: Progress,
 ) -> Result<imports_api::ImportCounts> {
     import_demo_sources_with(
         cfg,
@@ -817,6 +834,7 @@ async fn import_demo_sources(
         prepared,
         account_id,
         IMPORT_BATCH_BYTES,
+        progress,
         async || Ok(()),
     )
     .await
@@ -836,6 +854,7 @@ async fn import_demo_sources_with(
     prepared: &PreparedBundle,
     account_id: i64,
     batch_bytes: u64,
+    progress: Progress,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
 ) -> Result<imports_api::ImportCounts> {
     let mut totals = imports_api::ImportCounts::default();
@@ -866,16 +885,19 @@ async fn import_demo_sources_with(
             let imported = imports_api::import_jsonl_files_on_conn(
                 &mut conn,
                 batch,
-                &ImportOptions::fixed(FixedImportArgs {
-                    assets_dir: &assets_dir,
-                    asset_root: export_dir,
-                    mode,
-                    source: source.source,
-                    account_id,
-                    fill_content_keys: true,
-                    import_id: Some(import_run.id),
-                    phone_country: None,
-                }),
+                &ImportOptions {
+                    progress,
+                    ..ImportOptions::fixed(FixedImportArgs {
+                        assets_dir: &assets_dir,
+                        asset_root: export_dir,
+                        mode,
+                        source: source.source,
+                        account_id,
+                        fill_content_keys: true,
+                        import_id: Some(import_run.id),
+                        phone_country: None,
+                    })
+                },
                 ImportSchemaMode::AssumeReady,
             )
             .await
@@ -2001,19 +2023,20 @@ fn remove_any_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Reclaim space after the demo import replaced most rows. Best effort:
-/// failures are printed, not returned, because the demo rows are already
+/// failures are written as warnings through `progress`, not returned,
+/// because the demo rows are already
 /// committed and a failed vacuum only costs disk space.
-async fn vacuum_after_demo(db: &SqlitePool) {
+async fn vacuum_after_demo(db: &SqlitePool, progress: Progress) {
     let mut conn = match db.acquire().await {
         Ok(conn) => conn,
         Err(err) => {
-            eprintln!(
-                "  VACUUM did not run, because no connection to the database could be opened: {err}"
-            );
+            progress.warn(format_args!(
+                "VACUUM did not run, because no connection to the database could be opened: {err}"
+            ));
             return;
         }
     };
-    maintenance::vacuum_import_tables(&mut conn).await;
+    maintenance::vacuum_import_tables(&mut conn, progress).await;
 }
 
 /// Parse `config/seed.toml` from the bundle.

@@ -44,6 +44,7 @@ pub(crate) mod paging;
 pub(crate) mod phone_countries_api;
 pub mod problem;
 pub(crate) mod process_assets;
+pub(crate) mod progress;
 pub mod request_id;
 pub(crate) mod reset_demo;
 pub(crate) mod saved_searches_api;
