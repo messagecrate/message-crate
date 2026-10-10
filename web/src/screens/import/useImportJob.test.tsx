@@ -151,10 +151,6 @@ vi.mock("../../lib/importRun", async (importOriginal) => {
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 // Imported after the mocks above so useImportJob picks up the mocked modules.
 const { useImportJob, parseStoredStagingSummary, resetImportRun } = await import("./useImportJob");
 const { ConvertSection } = await import("../settings/ConvertSection");

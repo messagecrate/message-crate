@@ -44,10 +44,6 @@ vi.mock("../lib/auth", () => ({
   useAuth: () => ({ token: "test-token" }),
 }));
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
