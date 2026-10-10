@@ -475,10 +475,11 @@ impl<R: Rng> Seeder<'_, R> {
                 let timestamps =
                     seeder.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
                 let mut origin_guid: Option<String> = None;
-                for (i, &ts) in timestamps.iter().enumerate() {
+                for (i, &timestamp_ms) in timestamps.iter().enumerate() {
                     let from_me = i % 3 != 0;
                     let guid = format!("{}1to1-{chat_id}-{i}", guid_prefix(flavor));
-                    let mut msg = seeder.text_message(&guid, ts, from_me, chat_id, flavor);
+                    let mut msg =
+                        seeder.text_message(&guid, timestamp_ms, from_me, chat_id, flavor);
                     match flavor {
                         SourceFlavor::IMessage => {
                             seeder.decorate_message(
@@ -715,11 +716,16 @@ impl<R: Rng> Seeder<'_, R> {
             ),
             |seeder, file| {
                 let timestamps = seeder.timestamps(msg_count, 1.5, sample_direct_day_burst);
-                for (i, &ts) in timestamps.iter().enumerate() {
+                for (i, &timestamp_ms) in timestamps.iter().enumerate() {
                     let from_me = i % 4 == 0;
                     let guid = format!("unassigned-{chat_id}-{i}");
-                    let mut msg =
-                        seeder.text_message(&guid, ts, from_me, chat_id, SourceFlavor::IMessage);
+                    let mut msg = seeder.text_message(
+                        &guid,
+                        timestamp_ms,
+                        from_me,
+                        chat_id,
+                        SourceFlavor::IMessage,
+                    );
                     if i == 2 && ua.name_alias.is_some() && !from_me {
                         msg.sender_identity = Some(String::new());
                     }
@@ -905,12 +911,17 @@ impl<R: Rng> Seeder<'_, R> {
         // Every third message names nobody; the others alternate between
         // ORPHAN_SENDER's and the holder's to them.
         let (mut with_person, mut naming_nobody) = (Vec::new(), Vec::new());
-        for (i, &ts) in timestamps.iter().enumerate() {
+        for (i, &timestamp_ms) in timestamps.iter().enumerate() {
             let guid = format!("orphan-{i}");
             let names_nobody = i % 3 == 2;
             let from_me = names_nobody || i % 3 == 1;
-            let mut msg =
-                self.text_message(&guid, ts, from_me, ORPHAN_SENDER, SourceFlavor::IMessage);
+            let mut msg = self.text_message(
+                &guid,
+                timestamp_ms,
+                from_me,
+                ORPHAN_SENDER,
+                SourceFlavor::IMessage,
+            );
             msg.text = format!("Orphaned message #{i} (no conversation association)");
             if names_nobody {
                 naming_nobody.push(msg);

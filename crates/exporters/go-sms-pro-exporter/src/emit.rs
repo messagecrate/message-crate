@@ -176,8 +176,8 @@ fn add_xml_messages(
 ) {
     for msg in msgs {
         let chat_id = msg.other.key();
-        let convo = ensure_conversation(conversations, chat_id, false, None, Vec::new());
-        convo.messages.push(PendingMessage {
+        let conversation = ensure_conversation(conversations, chat_id, false, None, Vec::new());
+        conversation.messages.push(PendingMessage {
             sort_key: msg.timestamp_secs as i64,
             is_from_me: msg.is_from_me,
             sender_identity: if msg.is_from_me {
@@ -269,14 +269,14 @@ fn add_pdu_message(
         report.bump(PDU_GROUP_MESSAGES, 1);
     }
     let pending = pdu_pending_message(parsed, addresses.sender, attachments);
-    let convo = ensure_conversation(
+    let conversation = ensure_conversation(
         conversations,
         &target.chat_id,
         target.is_group,
         target.group_title,
         target.peers,
     );
-    convo.messages.push(pending);
+    conversation.messages.push(pending);
 }
 
 /// The chat the PDU belongs to, from the addresses on it that are not the
@@ -398,7 +398,7 @@ impl ProjectionHooks for GoSmsProjection {
         raw.to_string()
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = serde_json::Map::new();
         fields.insert(
             "source_kind".into(),
@@ -425,7 +425,7 @@ impl ProjectionHooks for GoSmsProjection {
                     .or_insert_with(|| serde_json::Value::String(v.clone()));
             }
         }
-        android_source(convo, msg, fields)
+        android_source(conversation, msg, fields)
     }
 }
 
@@ -518,8 +518,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         ),
     };
     let mut documents = Vec::new();
-    for (chat_id, mut convo) in conversations {
-        if let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) {
+    for (chat_id, mut conversation) in conversations {
+        if let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report) {
             documents.push(doc);
         }
     }
@@ -750,9 +750,9 @@ mod tests {
             &mut skips,
         );
         assert_eq!(conversations.len(), 1);
-        let convo = conversations.values().next().unwrap();
-        assert!(convo.is_group);
-        assert!(convo.chat_id.starts_with("chat-group-"));
+        let conversation = conversations.values().next().unwrap();
+        assert!(conversation.is_group);
+        assert!(conversation.chat_id.starts_with("chat-group-"));
         assert_eq!(report.extra(PDU_GROUP_MESSAGES), 1);
     }
 
@@ -810,10 +810,11 @@ mod tests {
                 None,
             ),
         };
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-        convo.messages = messages;
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
+        conversation.messages = messages;
         let mut report = ExportReport::default();
-        let doc = project_conversation("+15555550122", &mut convo, &hooks, &mut report).unwrap();
+        let doc =
+            project_conversation("+15555550122", &mut conversation, &hooks, &mut report).unwrap();
         (doc.messages, report)
     }
 

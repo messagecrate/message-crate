@@ -150,7 +150,7 @@ fn relative_eml_path(
 /// roster must not shrink the participant list. (A roster change that yields a
 /// different `chat_key` still splits the conversation into fragments; this keeps
 /// each fragment's participant list complete within that key.)
-fn ensure_convo<'a>(
+fn ensure_conversation_merging_roster<'a>(
     map: &'a mut HashMap<String, PendingConversation>,
     chat_id: &str,
     is_group: bool,
@@ -164,13 +164,13 @@ fn ensure_convo<'a>(
             PendingConversation::new(chat_id, is_group, display_name, Vec::new()),
         );
     }
-    let convo = map
+    let conversation = map
         .get_mut(chat_id)
         .expect("just inserted or already present");
-    convo.participant_e164s.extend(participant_e164s);
-    convo.participant_e164s.sort();
-    convo.participant_e164s.dedup();
-    convo
+    conversation.participant_e164s.extend(participant_e164s);
+    conversation.participant_e164s.sort();
+    conversation.participant_e164s.dedup();
+    conversation
 }
 
 /// Map a parsed EML message onto the pending message shape.
@@ -218,7 +218,7 @@ fn add_message(
         .iter()
         .map(|p| p.key().to_string())
         .collect();
-    let convo = ensure_convo(
+    let conversation = ensure_conversation_merging_roster(
         conversations,
         &chat_id,
         msg.is_group(),
@@ -227,7 +227,9 @@ fn add_message(
     );
 
     report.bump(MESSAGES_BEFORE_DEDUPE, 1);
-    convo.messages.push(pending_from_parsed(msg, pending_atts));
+    conversation
+        .messages
+        .push(pending_from_parsed(msg, pending_atts));
 }
 
 /// True when the path has a `.eml` extension (any case).
@@ -270,7 +272,7 @@ impl ProjectionHooks for SbpProjection {
             .then_with(|| a.extra_str("eml_path").cmp(b.extra_str("eml_path")))
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = serde_json::Map::new();
         for key in ["smssync_id", "eml_path"] {
             let value = msg.extra_str(key);
@@ -278,7 +280,7 @@ impl ProjectionHooks for SbpProjection {
                 fields.insert(key.into(), serde_json::Value::String(value.to_string()));
             }
         }
-        android_source(convo, msg, fields)
+        android_source(conversation, msg, fields)
     }
 }
 
@@ -300,12 +302,12 @@ struct Caveats {
 /// sender as a skip, the others as notes.
 fn project_and_count(
     chat_id: &str,
-    convo: &mut PendingConversation,
+    conversation: &mut PendingConversation,
     hooks: &SbpProjection,
     caveats: &Caveats,
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
-    let doc = project_conversation(chat_id, convo, hooks, report)?;
+    let doc = project_conversation(chat_id, conversation, hooks, report)?;
     let is_group = doc.conversation.conversation_type == IrConversationType::Group;
     for msg in &doc.messages {
         let eml_path = msg
@@ -518,9 +520,11 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         ),
     };
     let mut documents = Vec::new();
-    for (chat_id, mut convo) in conversations {
+    for (chat_id, mut conversation) in conversations {
         message_crate_core::check_cancel(cancel)?;
-        if let Some(doc) = project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report) {
+        if let Some(doc) =
+            project_and_count(&chat_id, &mut conversation, &hooks, &caveats, &mut report)
+        {
             documents.push(doc);
         }
     }
@@ -904,9 +908,9 @@ mod tests {
         let mut messages = Vec::new();
         let mut conversations: Vec<_> = ingest.conversations.into_iter().collect();
         conversations.sort_by(|a, b| a.0.cmp(&b.0));
-        for (chat_id, mut convo) in conversations {
+        for (chat_id, mut conversation) in conversations {
             if let Some(doc) =
-                project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report)
+                project_and_count(&chat_id, &mut conversation, &hooks, &caveats, &mut report)
             {
                 messages.extend(doc.messages);
             }

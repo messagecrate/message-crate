@@ -44,7 +44,7 @@ pub use spool::AttachmentSpool;
 pub use staging_summary::{AttachmentForecast, StagingSummary, SummaryProgress, summarize_staging};
 pub use transcode::{TranscodeOptions, TranscodeProgress, TranscodeReport, transcode_staged};
 pub use write_queue::{
-    AttachmentSource, ConversationUnit, UnitAttachment, WriteQueueOptions, WriteQueueReport,
+    AttachmentSource, ConversationUnit, Sinks, UnitAttachment, WriteQueueOptions, WriteQueueReport,
     default_writer_count, drain_units, drain_write_queue, drain_write_queue_with_loader,
     load_attachment_source, unreadable_attachment_line,
 };
