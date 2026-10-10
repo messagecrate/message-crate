@@ -545,6 +545,19 @@ pub async fn post_status(
     .0
 }
 
+/// Send a JSON body with a Bearer token, returning the status and the
+/// response text, for a refusal checked with [`expect_problem`]. The four
+/// `*_json_raw` helpers below name the method.
+async fn json_raw(
+    state: &AppState,
+    method: reqwest::Method,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    request(state, method, path, Some(token), Some(json_body(body))).await
+}
+
 /// POST a JSON body with a Bearer token, returning the status and the
 /// response text, for a refusal checked with [`expect_problem`].
 pub async fn post_json_raw(
@@ -553,14 +566,7 @@ pub async fn post_json_raw(
     token: &str,
     body: serde_json::Value,
 ) -> (StatusCode, String) {
-    request(
-        state,
-        reqwest::Method::POST,
-        path,
-        Some(token),
-        Some(json_body(body)),
-    )
-    .await
+    json_raw(state, reqwest::Method::POST, path, token, body).await
 }
 
 /// PUT a JSON body with a Bearer token, returning the status and the
@@ -571,14 +577,7 @@ pub async fn put_json_raw(
     token: &str,
     body: serde_json::Value,
 ) -> (StatusCode, String) {
-    request(
-        state,
-        reqwest::Method::PUT,
-        path,
-        Some(token),
-        Some(json_body(body)),
-    )
-    .await
+    json_raw(state, reqwest::Method::PUT, path, token, body).await
 }
 
 /// POST a JSON body with no credential at all, returning only the status.
@@ -655,22 +654,14 @@ pub async fn delete_status_with_body(
 }
 
 /// DELETE with a JSON body and a Bearer token, returning the status and the
-/// raw response text, for asserting on the problem document a refusal
-/// answers.
-pub async fn delete_raw_with_body(
+/// response text, for a refusal checked with [`expect_problem`].
+pub async fn delete_json_raw(
     state: &AppState,
     path: &str,
     token: &str,
     body: serde_json::Value,
 ) -> (StatusCode, String) {
-    request(
-        state,
-        reqwest::Method::DELETE,
-        path,
-        Some(token),
-        Some(json_body(body)),
-    )
-    .await
+    json_raw(state, reqwest::Method::DELETE, path, token, body).await
 }
 
 /// DELETE with a JSON body and a Bearer token, asserting 200 and parsing
@@ -761,22 +752,15 @@ pub async fn store_asset_max_bytes(state: &AppState, bytes: u64) {
         .unwrap();
 }
 
-/// PATCH a JSON body with a Bearer token, returning the status and the raw
+/// PATCH a JSON body with a Bearer token, returning the status and the
 /// response text, for a refusal checked with [`expect_problem`].
-pub async fn patch_raw(
+pub async fn patch_json_raw(
     state: &AppState,
     path: &str,
     token: &str,
     body: serde_json::Value,
 ) -> (StatusCode, String) {
-    request(
-        state,
-        reqwest::Method::PATCH,
-        path,
-        Some(token),
-        Some(json_body(body)),
-    )
-    .await
+    json_raw(state, reqwest::Method::PATCH, path, token, body).await
 }
 
 /// PATCH a JSON body with a Bearer token and decode the JSON response.

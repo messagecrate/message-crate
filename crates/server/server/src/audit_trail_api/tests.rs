@@ -7,8 +7,9 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
-    PASSWORD, claim_as_owner, delete_status, expect_problem, get_json, get_raw, http_client,
-    log_in, login_status, patch_status, post_created_json, register_via_api, serve, test_fixture,
+    PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
+    http_client, log_in, log_in_raw, login_status, patch_status, post_created_json,
+    register_via_api, serve, test_fixture,
 };
 
 /// The items of an Audit Trail page.
@@ -184,13 +185,19 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     let state = &fixture.state;
     let owner = claim_as_owner(state, "keeper", PASSWORD).await;
     let alice = register_via_api(state, "alice", PASSWORD).await;
-    assert_eq!(
-        login_status(state, "  Nobody-Here  ", "guess").await,
-        StatusCode::UNAUTHORIZED
+    let (status, text) = log_in_raw(state, "  Nobody-Here  ", "guess").await;
+    expect_problem_for(
+        "an unknown username",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
     );
-    assert_eq!(
-        login_status(state, "alice", "guess").await,
-        StatusCode::UNAUTHORIZED
+    let (status, text) = log_in_raw(state, "alice", "guess").await;
+    expect_problem_for(
+        "a wrong password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
     );
 
     let items = trail(state, "/v1/audit-trail", &owner.token).await;
@@ -239,10 +246,8 @@ async fn a_rate_limited_login_writes_nothing() {
     for _ in 0..crate::credentials::AUTH_RATE_MAX {
         login_status(state, "nobody", "guess").await;
     }
-    assert_eq!(
-        login_status(state, "nobody", "guess").await,
-        StatusCode::TOO_MANY_REQUESTS
-    );
+    let (status, text) = log_in_raw(state, "nobody", "guess").await;
+    expect_problem(status, &text, ProblemType::RateLimited);
     let items = trail(state, "/v1/audit-trail", &owner.token).await;
     let refused = items
         .iter()
@@ -326,10 +331,8 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     )
     .await;
     delete_account(state, second.account_id, &owner.token).await;
-    assert_eq!(
-        login_status(state, "alice", "guess").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(state, "alice", "guess").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
     let _third = register_via_api(state, "alice", PASSWORD).await;
 
     let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;

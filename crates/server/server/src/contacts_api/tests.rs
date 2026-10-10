@@ -260,7 +260,8 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
             }),
         ] {
             let (status, text) =
-                crate::test_support::patch_raw(&fixture.state, &path, &account.token, body).await;
+                crate::test_support::patch_json_raw(&fixture.state, &path, &account.token, body)
+                    .await;
             let problem = crate::test_support::expect_problem(
                 status,
                 &text,

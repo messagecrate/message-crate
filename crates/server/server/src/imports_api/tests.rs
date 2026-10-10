@@ -155,7 +155,7 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
     .await;
     let path = format!("/v1/imports/{}", created["id"]);
 
-    let (status, text) = crate::test_support::patch_raw(
+    let (status, text) = crate::test_support::patch_json_raw(
         &fixture.state,
         &path,
         &account.token,
@@ -204,12 +204,11 @@ async fn an_issue_names_the_stage_it_came_from() {
     };
 
     // A finer part of the desktop app's work is not a Stage.
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         &format!("/v1/imports/{id}/complete"),
         &account.token,
-        "application/json",
-        issue("parse").to_string(),
+        issue("parse"),
     )
     .await;
     crate::test_support::expect_problem(
@@ -241,12 +240,11 @@ async fn completing_a_missing_or_finished_run_answers_its_own_status() {
         let state = fixture.state.clone();
         let token = account.token.clone();
         async move {
-            crate::test_support::post_raw(
+            crate::test_support::post_json_raw(
                 &state,
                 &format!("/v1/imports/{id}/complete"),
                 &token,
-                "application/json",
-                serde_json::json!({ "status": "completed" }).to_string(),
+                serde_json::json!({ "status": "completed" }),
             )
             .await
         }
@@ -3419,16 +3417,14 @@ async fn a_multipart_body_is_an_unsupported_media_type() {
         body,
     )
     .await;
-    let parsed: serde_json::Value =
-        serde_json::from_str(&text).unwrap_or_else(|_| panic!("non-JSON body: {text}"));
-    assert_eq!(
+    let problem = crate::test_support::expect_problem(
         status,
-        axum::http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        "{text}"
+        &text,
+        crate::problem::ProblemType::UnsupportedMediaType,
     );
     assert_eq!(
-        parsed["detail"],
-        "Content-Type must be application/x-ndjson or application/jsonl"
+        problem.detail.as_deref(),
+        Some("Content-Type must be application/x-ndjson or application/jsonl")
     );
 }
 
@@ -3503,7 +3499,7 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
     let refusals = [
         (
             "PATCH stage",
-            crate::test_support::patch_raw(
+            crate::test_support::patch_json_raw(
                 state,
                 &run,
                 token,
@@ -3513,23 +3509,21 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
         ),
         (
             "POST complete",
-            crate::test_support::post_raw(
+            crate::test_support::post_json_raw(
                 state,
                 &format!("{run}/complete"),
                 token,
-                "application/json",
-                r#"{"status":"completed"}"#,
+                serde_json::json!({"status":"completed"}),
             )
             .await,
         ),
         (
             "POST discard",
-            crate::test_support::post_raw(
+            crate::test_support::post_json_raw(
                 state,
                 &format!("{run}/discard"),
                 token,
-                "application/json",
-                r#"{"issues":[],"notes":[]}"#,
+                serde_json::json!({"issues":[],"notes":[]}),
             )
             .await,
         ),
@@ -3554,12 +3548,12 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
         ),
     ];
     for (route, (status, text)) in refusals {
-        assert_eq!(
+        crate::test_support::expect_problem_for(
+            &format!("{route} on another account's run"),
             status,
-            axum::http::StatusCode::NOT_FOUND,
-            "{route} on another account's run: {text}"
+            &text,
+            crate::problem::ProblemType::NotFound,
         );
-        crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
     }
 
     assert_eq!(run_state(&fixture.state, bobs_run).await, before);
@@ -4179,12 +4173,11 @@ async fn a_message_is_held_at_its_own_owner_else_the_headers_and_the_owner_gets_
 async fn creating_an_import_with_a_blank_source_is_a_validation_failure() {
     let (state, _fixture, token) = importer().await;
     for source in ["", "   "] {
-        let (status, text) = crate::test_support::post_raw(
+        let (status, text) = crate::test_support::post_json_raw(
             &state,
             "/v1/imports",
             &token,
-            "application/json",
-            serde_json::json!({ "source": source }).to_string(),
+            serde_json::json!({ "source": source }),
         )
         .await;
         crate::test_support::expect_problem(
@@ -4209,12 +4202,11 @@ async fn creating_an_import_with_a_blank_source_is_a_validation_failure() {
 async fn creating_an_import_with_a_space_around_the_source_is_a_validation_failure() {
     let (state, _fixture, token) = importer().await;
     for source in [" imessage", "imessage ", " imessage "] {
-        let (status, text) = crate::test_support::post_raw(
+        let (status, text) = crate::test_support::post_json_raw(
             &state,
             "/v1/imports",
             &token,
-            "application/json",
-            serde_json::json!({ "source": source }).to_string(),
+            serde_json::json!({ "source": source }),
         )
         .await;
         crate::test_support::expect_problem(
@@ -5352,13 +5344,7 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
     .await;
     let id = created["id"].as_i64().unwrap();
 
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/discard"),
-        token,
-        "application/json",
-        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}],"notes":[]}"#,
-    )
+    let (status, text) = crate::test_support::post_json_raw(state, &format!("/v1/imports/{id}/discard"), token, serde_json::json!({"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}],"notes":[]}))
     .await;
 
     crate::test_support::expect_problem(
