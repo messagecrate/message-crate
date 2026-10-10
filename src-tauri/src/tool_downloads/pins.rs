@@ -192,7 +192,7 @@ pub fn pinned_for(os: &str, arch: &str) -> Vec<Pinned> {
                 asset,
                 sha256,
                 program_sha256,
-                gzip: true,
+                gzipped: true,
             });
         }
     }
@@ -207,7 +207,7 @@ pub fn pinned_for(os: &str, arch: &str) -> Vec<Pinned> {
             asset,
             sha256,
             program_sha256: sha256,
-            gzip: false,
+            gzipped: false,
         });
     }
     pinned

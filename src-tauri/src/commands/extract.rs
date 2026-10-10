@@ -496,7 +496,7 @@ fn build_exporter_config(
             form.whatsapp_backup = path.to_string();
             form.backup_password.clone_from(&options.backup_password);
             form.whatsapp_wa.clone_from(&options.whatsapp_wa);
-            form.whatsapp_business = options.whatsapp_business;
+            form.is_business_app = options.whatsapp_business;
             Exporter::Whatsapp
         }
         _ => return Err(format!("unsupported source '{source}'")),

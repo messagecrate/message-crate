@@ -15,7 +15,7 @@ fn android_args(input: &Path, key: Option<&str>) -> WtsexporterArgs {
         wa: None,
         media: None,
         db: None,
-        business: false,
+        is_business_app: false,
     }
 }
 
@@ -159,7 +159,7 @@ fn an_android_command_forwards_every_found_path_and_nothing_else() {
     let json = out.join("result.json");
     let mut args = android_args(dir.path(), Some("deadbeef"));
     args.work_dir = work.path().to_path_buf();
-    args.business = true;
+    args.is_business_app = true;
 
     let key_file = work.path().join("decryption.key");
     assert_eq!(

@@ -174,7 +174,7 @@ pub struct Form {
     /// Optional hex seed for reproducible obfuscation.
     pub obfuscate_seed: String,
     /// Whether the advanced section of the GUI form is shown.
-    pub advanced: bool,
+    pub shows_advanced: bool,
     /// iMessage chat database path (Apple sources).
     pub db_path: String,
     /// Apple backup attachment root directory.
@@ -212,7 +212,7 @@ pub struct Form {
     /// WhatsApp message database path.
     pub whatsapp_db: String,
     /// Whether the backup is a WhatsApp Business backup.
-    pub whatsapp_business: bool,
+    pub is_business_app: bool,
 }
 
 impl Default for Form {
@@ -226,7 +226,7 @@ impl Default for Form {
             phone_country: String::new(),
             obfuscate: false,
             obfuscate_seed: String::new(),
-            advanced: false,
+            shows_advanced: false,
             db_path: String::new(),
             attachment_root: String::new(),
             apple_contacts: String::new(),
@@ -244,7 +244,7 @@ impl Default for Form {
             whatsapp_wa: String::new(),
             whatsapp_media: String::new(),
             whatsapp_db: String::new(),
-            whatsapp_business: false,
+            is_business_app: false,
         }
     }
 }
@@ -415,7 +415,7 @@ impl Form {
                 wa: non_empty_path(&self.whatsapp_wa),
                 media: non_empty_path(&self.whatsapp_media),
                 db: non_empty_path(&self.whatsapp_db),
-                business: self.whatsapp_business,
+                is_business_app: self.is_business_app,
                 owner_phone,
             }),
         }
