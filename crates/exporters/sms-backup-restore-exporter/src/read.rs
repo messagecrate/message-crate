@@ -272,7 +272,7 @@ struct PendingConversation {
 fn require_backup_file(input: &Path) -> Result<()> {
     if input.is_dir() {
         bail!(
-            "{} is a directory: choose one SMS Backup & Restore .xml file",
+            "Input must be one SMS Backup & Restore .xml file, not a directory: {}",
             input.display()
         );
     }
@@ -519,7 +519,7 @@ fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String
 /// Project one pending conversation into a document and fold its counts into the report.
 fn to_document(
     id: &str,
-    file: &str,
+    file_path: &str,
     conversation: &PendingConversation,
     owner_identity: Option<&str>,
     backup_taken_at_unix_ms: Option<i64>,
@@ -547,7 +547,7 @@ fn to_document(
             // dropped there can change which time the message keeps.
             if !message.left_out.is_empty() {
                 report.left_out.push(LeftOut {
-                    file: file.to_string(),
+                    file: file_path.to_string(),
                     message: describe(message, conversation),
                     counts: message.left_out,
                 });
@@ -727,7 +727,7 @@ pub fn read_backup(
         .and_then(OwnerHandleSet::primary_owner_handle);
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
-    let file = input.display().to_string();
+    let file_path = input.display().to_string();
     check_cancel(options.cancel)?;
     // Each record's attachment payloads go to the spool as the record is
     // parsed; staging waits until every conversation is built. Messages
@@ -787,7 +787,7 @@ pub fn read_backup(
         }
         documents.push(to_document(
             &id,
-            &file,
+            &file_path,
             &conversation,
             owner_identity.as_deref(),
             backup_taken_at_unix_ms,

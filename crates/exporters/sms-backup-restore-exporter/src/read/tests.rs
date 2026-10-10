@@ -181,7 +181,7 @@ fn a_directory_is_refused() {
     .unwrap();
     let owner = vec!["+15555550100".to_string()];
     let err = read_backup(dir.path(), opts(&owner, None, None)).unwrap_err();
-    assert!(err.to_string().contains("is a directory"), "{err:#}");
+    assert!(err.to_string().contains("not a directory"), "{err:#}");
 }
 
 #[test]
