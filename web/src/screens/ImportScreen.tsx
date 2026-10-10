@@ -44,10 +44,11 @@ import {
   WHATSAPP_SOURCE_ID,
   type WhatsappMethodId,
 } from "../lib/whatsappImport";
+import { type AttachmentChoices, attachmentChoicesOf } from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
-import ImportFormFields, { type AttachmentChoices } from "./import/ImportFormFields";
+import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import { isReviewPhase } from "./import/importRunStore";
 import ResumeImportPanel from "./import/ResumeImportPanel";
@@ -324,12 +325,7 @@ export default function ImportScreen() {
     setWhatsappBusiness(restored.whatsappBusiness);
     whatsappOwnerPhoneSeededRef.current = true;
     setWhatsappOwnerPhone(restored.whatsappOwnerPhone);
-    setAttachments({
-      attachmentMedia: restored.attachmentMedia,
-      maxResolution: restored.maxResolution,
-      maxFps: restored.maxFps,
-      minSizeMb: restored.minSizeMb,
-    });
+    setAttachments(attachmentChoicesOf(restored));
     // Restoring settings counts as seeding: the SBR profile-phones effect
     // must not overwrite what was just restored.
     ownerPhonesSeededRef.current = true;

@@ -17,10 +17,8 @@ import {
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
-import ImportFormFields, {
-  type AttachmentChoices,
-  type ImportFormFieldsProps,
-} from "./ImportFormFields";
+import type { AttachmentChoices } from "./attachmentChoices";
+import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
@@ -196,15 +194,25 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
   });
 
-  it("hands back every attachment choice when one of them changes", async () => {
+  it("hands back every attachment choice when any one of them changes", async () => {
     const user = setupUser();
     const onAttachmentsChange = vi.fn();
     const compress: AttachmentChoices = { ...copyAttachments, attachmentMedia: "compress" };
     renderForm({ attachments: compress, onAttachmentsChange });
 
-    await user.type(screen.getByLabelText("Max FPS"), "6");
+    await user.click(screen.getByLabelText("Attachments"));
+    await user.click(await screen.findByRole("option", { name: "Skip" }));
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, attachmentMedia: "skip" });
 
+    await user.click(screen.getByLabelText("Target resolution"));
+    await user.click(await screen.findByRole("option", { name: "1080" }));
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxResolution: "1080p" });
+
+    await user.type(screen.getByLabelText("Max FPS"), "6");
     expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, maxFps: "306" });
+
+    await user.type(screen.getByLabelText("Minimum Video File Size (Megabytes)"), "5");
+    expect(onAttachmentsChange).toHaveBeenLastCalledWith({ ...compress, minSizeMb: "205" });
   });
 
   it("shows optional attachment directory on Mac Messages", () => {

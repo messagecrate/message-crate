@@ -50,6 +50,7 @@ import {
   whatsappShowsMedia,
   whatsappShowsPassword,
 } from "../../lib/whatsappImport";
+import type { AttachmentChoices } from "./attachmentChoices";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
@@ -61,18 +62,6 @@ import {
 } from "./ImportFormUi";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
-
-/**
- * The four attachment choices: what happens to attachments, and the three
- * limits Compress works to. The names match the import's form values, so the
- * choices spread into them as they are.
- */
-export type AttachmentChoices = {
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-};
 
 export type ImportFormFieldsProps = {
   source: string;
