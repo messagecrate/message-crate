@@ -3,6 +3,7 @@ import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-com
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import type { ContactDetail } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { getContactSummaries } from "../lib/serverApi";
@@ -133,8 +134,7 @@ export default function CheckedContactsPanel({
 }) {
   const cache = useRouteCache();
   const zone = useTimeZone();
-  const heading =
-    contacts.length === 1 ? "1 contact selected" : `${contacts.length} contacts selected`;
+  const heading = `${countOf(contacts.length, "contact")} selected`;
   const ids = useMemo(() => contacts.map((c) => c.id), [contacts]);
   // The figures come from `POST /v1/contacts/summaries`. A contact whose
   // drawer was opened in this session already has its own figures in the
