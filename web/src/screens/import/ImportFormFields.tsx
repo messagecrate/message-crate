@@ -239,12 +239,14 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const phonesForMatch = phoneDraftPending
     ? [...props.ownerPhones, phoneDraft.trim()]
     : props.ownerPhones;
-  const phonesMismatch =
-    asksOwnerPhones &&
-    ownerPhonesNeedMismatchAck(phonesForMatch, props.profilePhones, {
+  // True when none of `phones` is on the profile, as the form and the
+  // Import button both judge it.
+  const mismatchFor = (phones: string[]) =>
+    ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
       ready: props.profilePhonesReady,
       fetchFailed: props.profilePhonesError,
     });
+  const phonesMismatch = asksOwnerPhones && mismatchFor(phonesForMatch);
 
   useEffect(() => {
     if (!phonesMismatch) setMismatchAck(false);
@@ -268,7 +270,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   };
   // The asterisks and the Import button both read the source's readiness,
   // so a field cannot be needed and unmarked.
-  const readiness = source.readiness({ ...props, ownerPhoneEntry }, props.source);
+  const readiness = source.readiness({ ...props, ownerPhoneEntry });
 
   const showCompress =
     source.showsAttachmentOptions && props.attachments.attachmentMedia === "compress";
@@ -302,15 +304,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
       ...ownerPhoneEntry,
       draftPending: false,
       phonesForMatch: phones,
-      mismatch: ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
-        ready: props.profilePhonesReady,
-        fetchFailed: props.profilePhonesError,
-      }),
+      mismatch: mismatchFor(phones),
     };
-    const ready = source.readiness(
-      { ...props, ownerPhones: phones, ownerPhoneEntry: committed },
-      props.source,
-    );
+    const ready = source.readiness({ ...props, ownerPhones: phones, ownerPhoneEntry: committed });
     if (ready.enabled) props.onImport(phones);
   }
 

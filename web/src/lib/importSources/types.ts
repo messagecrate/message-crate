@@ -77,10 +77,13 @@ export type ImportFormSectionProps = ReadinessInput & {
  * in one place. Each field is read for the selected source, so the form
  * and the extract of a new source need only its descriptor.
  *
- * `M` is the source's own method ids. The functions that take a method are
- * written as methods, so a descriptor typed by its own ids fits the list of
- * `ImportSourceDescriptor`. The list only passes a descriptor one of its own
- * methods, because `importSourceFor` finds the descriptor by that method.
+ * `M` is the source's own method ids. The functions below are declared in
+ * method syntax, which TypeScript checks bivariantly in their parameters, so
+ * `ImportSourceDescriptor<ImessageMethodId>` is assignable to
+ * `ImportSourceDescriptor`. Written as arrow-function properties they would
+ * not be. The list type therefore takes any string as a method, and only
+ * `importSourceFor`, which finds a descriptor by the method it is then
+ * asked about, keeps the method one of the descriptor's own.
  */
 export type ImportSourceDescriptor<M extends string = string> = {
   /** The Import Run's and each message's `source`. */
@@ -106,14 +109,14 @@ export type ImportSourceDescriptor<M extends string = string> = {
   needsWtsexporter: boolean;
   /** The options under Processing Options this method shows. */
   processingOptions(method: M): readonly ProcessingOption[];
-  /** The fields `extract` needs from a form whose `source` is `method`. */
-  extractFields(form: ImportJobFormValues, method: M): ExtractFields;
+  /** The fields `extract` needs from a form whose `source` is one of `methods`. */
+  extractFields(form: ImportJobFormValues & { source: M }): ExtractFields;
   /** The secret this method's extract reads, or null for none. */
   snapshotSecret(method: M): SnapshotSecret | null;
   /** How the form asks for this method's backup. */
   backupField(method: M): BackupField;
   /** Whether the source's own fields let Import start, and what is wrong with each. */
-  readiness(input: ReadinessInput, method: M): Readiness;
+  readiness(input: ReadinessInput & { source: M }): Readiness;
   /** The source's fields after its backup field, in the Import Messages section. */
   FormSection: ComponentType<ImportFormSectionProps>;
 };

@@ -30,9 +30,9 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
   needsWtsexporter: true,
   processingOptions: (method) =>
     whatsappOwnerPhoneRequired(method) ? [] : ["whatsappFallbackPhone"],
-  extractFields: (form, method) =>
+  extractFields: (form) =>
     whatsappExtractFields({
-      source: method,
+      source: form.source,
       ...attachmentChoicesOf(form),
       key: form.whatsappKey,
       backupPassword: form.backupPassword,
@@ -53,9 +53,9 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
     hint:
       method === "whatsapp-ios" ? WHATSAPP_DIRECTORY_HINT_IPHONE : WHATSAPP_DIRECTORY_HINT_ANDROID,
   }),
-  readiness: (input, method) =>
+  readiness: (input) =>
     whatsappCanImport({
-      method,
+      method: input.source,
       backupPath: input.backupPath,
       key: input.whatsappKey,
       backupPassword: input.backupPassword,

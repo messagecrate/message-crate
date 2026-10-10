@@ -44,9 +44,9 @@ export const IMESSAGE_SOURCE: ImportSourceDescriptor<ImessageMethodId> = {
   needsWtsexporter: false,
   // Only an iPhone backup can be obfuscated.
   processingOptions: (method) => (method === "imessage-ios" ? ["obfuscate"] : []),
-  extractFields: (form, method) =>
+  extractFields: (form) =>
     imessageExtractFields({
-      source: method,
+      source: form.source,
       backupPassword: form.backupPassword,
       ...attachmentChoicesOf(form),
       obfuscate: form.obfuscate,
@@ -56,9 +56,9 @@ export const IMESSAGE_SOURCE: ImportSourceDescriptor<ImessageMethodId> = {
   // The iPhone backup password; Mac Messages and a jailbroken iPhone read none.
   snapshotSecret: (method) => (imessageShowsPassword(method) ? "backupPassword" : null),
   backupField: imessageBackupField,
-  readiness: (input, method) =>
+  readiness: (input) =>
     imessageCanImport({
-      method,
+      method: input.source,
       backupPath: input.backupPath,
       attachmentRoot: input.attachmentRoot,
       appleContacts: input.appleContacts,

@@ -62,9 +62,7 @@ describe("IMPORT_SOURCES", () => {
         expect([null, "backupPassword", "whatsappKey"], method).toContain(
           source.snapshotSecret(method),
         );
-        expect(typeof source.extractFields({ ...form, source: method }, method), method).toBe(
-          "object",
-        );
+        expect(typeof source.extractFields({ ...form, source: method }), method).toBe("object");
       }
     }
   });
@@ -176,19 +174,19 @@ describe("snapshotSecret", () => {
 describe("extractFields", () => {
   it("sends iMazing only the time zone its dates are read in", () => {
     const source = IMAZING_SOURCE_ID;
-    expect(importSourceFor(source).extractFields({ ...form, source }, source)).toEqual({
+    expect(importSourceFor(source).extractFields({ ...form, source })).toEqual({
       timezone: "Europe/London",
     });
   });
 
   it("sends OpenExtract nothing of its own", () => {
     const source = OPENEXTRACT_SOURCE_ID;
-    expect(importSourceFor(source).extractFields({ ...form, source }, source)).toEqual({});
+    expect(importSourceFor(source).extractFields({ ...form, source })).toEqual({});
   });
 
   it("sends an Android SMS source the owner's phones, and SMS Backup+ the emails too", () => {
     const source = SMS_BACKUP_PLUS_SOURCE_ID;
-    expect(importSourceFor(source).extractFields({ ...form, source }, source)).toMatchObject({
+    expect(importSourceFor(source).extractFields({ ...form, source })).toMatchObject({
       attachment_media: "compress",
       owner_phones: ["+15555550100"],
       owner_emails: ["me@example.com"],
@@ -198,16 +196,10 @@ describe("extractFields", () => {
 
   it("sends an iPhone backup its password and a Mac none", () => {
     expect(
-      importSourceFor("imessage-ios").extractFields(
-        { ...form, source: "imessage-ios" },
-        "imessage-ios",
-      ),
+      importSourceFor("imessage-ios").extractFields({ ...form, source: "imessage-ios" }),
     ).toMatchObject({ backup_password: "secret" });
     expect(
-      importSourceFor("imessage-macos").extractFields(
-        { ...form, source: "imessage-macos" },
-        "imessage-macos",
-      ),
+      importSourceFor("imessage-macos").extractFields({ ...form, source: "imessage-macos" }),
     ).not.toHaveProperty("backup_password");
   });
 });
