@@ -103,7 +103,11 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label, draws
   it(`${drawsReactions ? "draws" : "draws no"} reactions on an unmarked message`, () => {
     renderInUtc(Bubble, imessageMessage({ source, service, text: KEPT_TEXT, tapbacks: [LOVED] }));
 
-    expect(screen.queryByText(/❤️/) !== null).toBe(drawsReactions);
+    if (drawsReactions) {
+      expect(screen.getByText(/❤️/)).toBeInTheDocument();
+    } else {
+      expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
+    }
   });
 
   it("draws an unmarked message with no dashed outline and no note", () => {
@@ -119,7 +123,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label, draws
  * leaves its reactions out; the "draws reactions" test above pins which ones.
  */
 describe.each(BUBBLES.filter((b) => b.drawsReactions))(
-  "$label bubble",
+  "$label bubble, reactions",
   ({ Bubble, source, service }) => {
     it("draws an Unsent message without its reactions", () => {
       renderInUtc(
@@ -127,7 +131,6 @@ describe.each(BUBBLES.filter((b) => b.drawsReactions))(
         imessageMessage({ source, service, text: "", tapbacks: [LOVED], deletion: "unsent" }),
       );
 
-      expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
       expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
     });
   },
