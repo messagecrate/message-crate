@@ -42,6 +42,32 @@ fn mails(dir: &Path, directory: &str) -> Vec<(String, Vec<u8>)> {
     out
 }
 
+/// Run a fresh SMS Backup+ export of `documents` into `dir`: the export
+/// directory is prepared first, then each document is written.
+fn export_fresh(dir: &Path, documents: Vec<ConversationDocument>) {
+    let (mut sink, _) = message_ir_format::FormatSink::open_prepared(
+        dir,
+        message_crate_core::OutputFormat::SmsBackupPlus,
+        message_crate_core::ExportTransforms::none(),
+    )
+    .unwrap();
+    sink = sink.with_archive(Box::new(archive()));
+    for doc in documents {
+        sink.write_document(doc).unwrap();
+    }
+    sink.finish(&mut ExportReport::default()).unwrap();
+}
+
+/// The name of every entry directly in `dir`, sorted.
+fn entry_names(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
 fn header(raw: &[u8], name: &str) -> Option<String> {
     parse_mail(raw).unwrap().headers.get_first_value(name)
 }
@@ -254,11 +280,7 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
         .write(tmp.path(), &[imessage, sms, whatsapp], &mut report)
         .unwrap();
 
-    let directories: Vec<String> = fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(directories, ["+15555550101"]);
+    assert_eq!(entry_names(tmp.path()), ["+15555550101"]);
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 3);
 }
 
@@ -281,11 +303,7 @@ fn outputs_names_every_directory_write_creates() {
         .write(tmp.path(), &documents, &mut ExportReport::default())
         .unwrap();
 
-    let mut written: Vec<String> = fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    written.sort();
+    let written = entry_names(tmp.path());
     outputs.sort();
     assert_eq!(written.len(), 2, "{written:?}");
     assert!(
@@ -301,36 +319,48 @@ fn outputs_names_every_directory_write_creates() {
 #[test]
 fn a_fresh_export_removes_the_earlier_conversation_directories() {
     let tmp = tempfile::tempdir().unwrap();
-    let export = |documents: Vec<ConversationDocument>| {
-        let (mut sink, _) = message_ir_format::FormatSink::open_prepared(
-            tmp.path(),
-            message_crate_core::OutputFormat::SmsBackupPlus,
-            message_crate_core::ExportTransforms::none(),
-        )
-        .unwrap();
-        sink = sink.with_archive(Box::new(archive()));
-        for doc in documents {
-            sink.write_document(doc).unwrap();
-        }
-        sink.finish(&mut ExportReport::default()).unwrap();
-    };
     let mut stopped = sample_document("the run stopped before this mail");
     stopped.conversation.chat_identifier = "+15555550102".into();
-    export(vec![sample_document("earlier"), stopped]);
+    export_fresh(tmp.path(), vec![sample_document("earlier"), stopped]);
     for mail in fs::read_dir(tmp.path().join("+15555550102")).unwrap() {
         fs::remove_file(mail.unwrap().path()).unwrap();
     }
     let mut later = sample_document("later");
     later.conversation.chat_identifier = "+15555550103".into();
 
-    export(vec![later]);
+    export_fresh(tmp.path(), vec![later]);
 
-    let mut names: Vec<String> = fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    assert_eq!(names, ["+15555550103", ".message-crate-export"]);
+    assert_eq!(
+        entry_names(tmp.path()),
+        ["+15555550103", ".message-crate-export"]
+    );
+}
+
+/// A one-to-one conversation with an empty chat id writes its mail into a
+/// conversation directory, not loose in the export directory, and a fresh
+/// export into the same directory removes that directory.
+#[test]
+fn a_conversation_with_an_empty_chat_id_writes_into_a_directory_a_fresh_export_removes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut no_chat_id = sample_document("a chat with no id");
+    no_chat_id.conversation.chat_identifier = String::new();
+
+    export_fresh(tmp.path(), vec![no_chat_id]);
+
+    assert_eq!(
+        entry_names(tmp.path()),
+        [".message-crate-export", "unknown"]
+    );
+    assert_eq!(mails(tmp.path(), "unknown").len(), 1);
+
+    let mut later = sample_document("later");
+    later.conversation.chat_identifier = "+15555550103".into();
+    export_fresh(tmp.path(), vec![later]);
+
+    assert_eq!(
+        entry_names(tmp.path()),
+        ["+15555550103", ".message-crate-export"]
+    );
 }
 
 /// A message whose service is unknown but whose kind says SMS, as a Mac
