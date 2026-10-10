@@ -86,76 +86,150 @@ where
         .map_err(de::Error::custom)
 }
 
+/// The `[contacts]` section: how many contacts to invent, the shape of their
+/// names, and the shares of them that get unusual traits.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContactsConfig {
+    /// How many contacts to invent.
     pub count: usize,
+    /// Share of contacts named with a first and a last name.
     pub first_last: f64,
+    /// Share of contacts named with a first, a middle and a last name.
     pub first_middle_last: f64,
+    /// Share of contacts named with a first name only.
     pub first_only: f64,
+    /// Chance that a generated phone number is a US number rather than a UK one.
     pub us_phones: f64,
+    /// Share of contacts put in the Inactive Contact Group. An inactive contact
+    /// has no messages.
     pub inactive_fraction: f64,
+    /// Chance that a contact that is not inactive has no messages. Every
+    /// inactive contact has none too, so the share of contacts with no
+    /// messages is higher than this.
     pub no_messages_fraction: f64,
+    /// Share of contacts that get a second phone number.
     pub multi_phone_fraction: f64,
 }
 
+/// The `[labels]` section: the four Contact Groups and the chance that a
+/// contact is put in each of the first three.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelsConfig {
+    /// The Contact Group names in a fixed order: family, work, college,
+    /// inactive. [`SeedConfig::validate`] refuses any other count, because the
+    /// generator picks each Contact Group by its position.
     pub names: Vec<String>,
+    /// Chance that an active contact is put in the first Contact Group.
     pub family: f64,
+    /// Chance that an active contact is put in the second Contact Group.
     pub work: f64,
+    /// Chance that an active contact is put in the third Contact Group.
     pub college: f64,
 }
 
+/// The `[one_to_one]` section: how many one-to-one conversations there are,
+/// how many messages a year each holds, and how far back each goes.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OneToOneConfig {
+    /// Lowest messages per year in the typical band most conversations fall in.
     pub typical_min: u32,
+    /// Highest messages per year in the typical band.
     pub typical_max: u32,
+    /// Lowest messages per year a conversation in the low tail can get.
     pub min_per_year: u32,
+    /// Highest messages per year a conversation in the high tail can get.
     pub max_per_year: u32,
+    /// Chance that a conversation's yearly rate falls below the typical band.
     pub low_tail: f64,
+    /// Chance that a conversation's yearly rate falls above the typical band.
     pub high_tail: f64,
+    /// Mean age in years of a conversation's first message.
     pub span_mean_years: f64,
+    /// Standard deviation in years around `span_mean_years`.
     pub span_mean_jitter: f64,
+    /// Oldest a conversation's first message can be, in years.
     pub span_max_years: f64,
+    /// Fewest days back a conversation's first message can be, for one-to-one
+    /// and group conversations alike. At most 30.
     pub newest_days: u32,
+    /// Share of contacts with messages that get a one-to-one conversation. The
+    /// rest appear in groups only.
     pub one_to_one_fraction: f64,
 }
 
+/// The `[groups]` section: how many group conversations each contact joins,
+/// how many people each one holds, and how many messages a year it gets.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupsConfig {
+    /// Mean of the budget of group conversations drawn for each contact with
+    /// messages that is not one-to-one only. The draw is clamped to
+    /// `per_contact_min` and `per_contact_max`. A one-to-one-only contact gets
+    /// a budget of 0, or of at most 2 in 15% of cases. A contact with no
+    /// messages gets 0. Filling a group conversation that is still short can
+    /// put a contact past its budget.
     pub per_contact_mean: f64,
+    /// Smallest budget of group conversations drawn. See `per_contact_mean`.
     pub per_contact_min: u32,
+    /// Largest budget of group conversations drawn. See `per_contact_mean`.
     pub per_contact_max: u32,
+    /// Mean size aimed for in a group conversation that is not large.
     pub participants_mean: f64,
+    /// Smallest size aimed for in a group conversation that is not large. One
+    /// of contacts that runs short of candidates can end with as few as 2.
     pub participants_min: u32,
+    /// Largest size aimed for in a group conversation that is not large.
     pub participants_max: u32,
     /// At least this many groups must have a participant count between
     /// `large_participants_min` and `large_participants_max`.
     pub large_min_count: usize,
+    /// Fewest contacts in a large group.
     pub large_participants_min: u32,
+    /// Most contacts in a large group.
     pub large_participants_max: u32,
+    /// As [`OneToOneConfig::typical_min`], for a group.
     pub typical_min: u32,
+    /// As [`OneToOneConfig::typical_max`], for a group.
     pub typical_max: u32,
+    /// As [`OneToOneConfig::min_per_year`], for a group.
     pub min_per_year: u32,
+    /// As [`OneToOneConfig::max_per_year`], for a group.
     pub max_per_year: u32,
+    /// As [`OneToOneConfig::low_tail`], for a group.
     pub low_tail: f64,
+    /// As [`OneToOneConfig::high_tail`], for a group.
     pub high_tail: f64,
+    /// As [`OneToOneConfig::span_mean_years`], for a group.
     pub span_mean_years: f64,
+    /// As [`OneToOneConfig::span_max_years`], for a group.
     pub span_max_years: f64,
+    /// Chance that a group conversation made after the large ones has phone
+    /// numbers with no contact behind them as its members. A large group
+    /// conversation is never phone-only.
     pub phone_only_fraction: f64,
 }
 
+/// The `[messages]` section: how often a message gets an emoji, an
+/// attachment, a tapback or a reply, and which Apple Messages states it takes.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MessagesConfig {
+    /// Chance that a message's text is an emoji rather than a sentence.
     pub emoji_probability: f64,
+    /// Base spacing between photo attachments. The spacing grows with the
+    /// conversation's length, so a long conversation is not mostly photos.
     pub jpg_base_stride: usize,
+    /// Base spacing between attachments other than photos, such as a PDF or a
+    /// voice note. Grows with the conversation's length, as `jpg_base_stride` does.
     pub other_base_stride: usize,
+    /// Every this many messages, one can get a tapback; 0 adds none. A
+    /// conversation shorter than 10 messages (20 for a one-to-one) gets none.
     pub tapback_stride: usize,
+    /// Every this many messages, one can be a reply to an earlier message; 0
+    /// adds none. A one-to-one conversation shorter than 25 messages gets none.
     pub reply_stride: usize,
     /// Every this many messages of an Apple Messages one-to-one conversation,
     /// one is marked Deleted in the source app and keeps its text; 0 marks none.
@@ -173,13 +247,23 @@ pub struct MessagesConfig {
     pub apple_fallback_transport_fraction: f64,
 }
 
+/// The `[edge_cases]` section: the awkward data the server must still show,
+/// such as handles with no contact, messages with no conversation, and empty
+/// conversations.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EdgeCasesConfig {
+    /// How many phone numbers have messages but no contact.
     pub unassigned_phones: usize,
+    /// How many email addresses have messages but no contact.
     pub unassigned_emails: usize,
+    /// How many orphaned messages to write: ones the backup holds without
+    /// recording which conversation they were said in. At least one is
+    /// written, even when this is 0.
     pub orphaned_messages: usize,
+    /// Write a one-to-one conversation with no messages.
     pub empty_individual: bool,
+    /// Write a group conversation with no messages.
     pub empty_group: bool,
 }
 
@@ -195,7 +279,11 @@ pub struct SourcesConfig {
     /// Share of messages in those overlapping iMessage threads that also appear
     /// in the Android backup with the same text and time.
     pub overlap_shared_fraction: f64,
+    /// Fewest Android-only messages added to each overlapping conversation.
     pub overlap_android_extra_min: usize,
+    /// Upper bound, exclusive, of the Android-only messages added to each
+    /// overlapping conversation. When it is not above
+    /// `overlap_android_extra_min`, exactly the minimum is added.
     pub overlap_android_extra_max: usize,
     /// Share of contacts that also get a WhatsApp conversation. That conversation
     /// uses the same phone number, marked as WhatsApp rather than iMessage or SMS.
