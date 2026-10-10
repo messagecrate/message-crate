@@ -60,7 +60,8 @@ pub(super) fn collect_parts_and_attachments(
     session: &MailSession,
     message: &Message,
 ) -> Result<(Vec<PartRecord>, Vec<AttachmentRecord>), RuntimeError> {
-    let attachments = Attachment::from_message(session.data_source.db(), message)?;
+    let attachments =
+        Attachment::from_message(session.data_source.db(), message, &session.capabilities)?;
     let referenced = referenced_attachment_indices(message, &attachments);
     let index_by_full: std::collections::HashMap<usize, usize> = referenced
         .iter()

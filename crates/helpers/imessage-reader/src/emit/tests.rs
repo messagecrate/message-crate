@@ -234,6 +234,9 @@ fn a_chat_is_a_group_by_its_style() {
         chat_identifier: identifier.to_string(),
         service_name: None,
         display_name: display_name.map(str::to_string),
+        is_filtered: None,
+        is_blackholed: None,
+        is_pending_review: None,
     };
     assert_eq!(
         participants_for(&session, &chat(1, FRIEND_PHONE, None)).1,

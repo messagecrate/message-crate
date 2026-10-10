@@ -21,10 +21,10 @@ path = "src/main.rs"
 [dependencies]
 chrono = { workspace = true }
 crabapple = { version = "=0.4.7" }
-imessage-database = "4.2.0"
+imessage-database = "4.3.0"
 imessage-reader-protocol = { path = "../imessage-reader-protocol" }
 plist = "1.9.0"
-rusqlite = { version = "=0.40.0", features = ["blob", "bundled"] }
+rusqlite = { version = "=0.40.2", features = ["blob", "bundled"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

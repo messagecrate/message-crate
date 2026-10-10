@@ -12,6 +12,7 @@ use imessage_database::{
     },
     tables::{
         attachment::Attachment,
+        capabilities::Capabilities,
         messages::{
             Message,
             models::{BubbleComponent, SharedLocation},
@@ -236,7 +237,11 @@ fn url_message_json(bubble: &URLMessage<'_>) -> Value {
 }
 
 /// Best-effort structured balloon/app payload for archival.
-pub(crate) fn build_balloon_value(db: &Connection, message: &Message) -> Option<Value> {
+pub(crate) fn build_balloon_value(
+    db: &Connection,
+    capabilities: &Capabilities,
+    message: &Message,
+) -> Option<Value> {
     let Variant::App(balloon) = message.variant() else {
         return None;
     };
@@ -253,7 +258,7 @@ pub(crate) fn build_balloon_value(db: &Connection, message: &Message) -> Option<
         }));
     }
     if message.is_poll() {
-        return Some(poll_value(db, message));
+        return Some(poll_value(db, capabilities, message));
     }
     let Some(payload) = message.payload_data(db) else {
         return Some(payloadless_value(&balloon, message));
@@ -284,8 +289,8 @@ fn balloon_kind_name(balloon: &CustomBalloon) -> &'static str {
 }
 
 /// A poll's options and votes in display order, or an `unparseable` marker.
-fn poll_value(db: &Connection, message: &Message) -> Value {
-    let Ok(Some(poll)) = message.as_poll(db) else {
+fn poll_value(db: &Connection, capabilities: &Capabilities, message: &Message) -> Value {
+    let Ok(Some(poll)) = message.as_poll(db, capabilities) else {
         return json!({ "kind": "poll", "error": "unparseable" });
     };
     let options: Vec<Value> = poll
