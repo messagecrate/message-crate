@@ -400,12 +400,10 @@ pub struct AppState {
     /// here, not in a static, so tests in one binary cannot rate-limit each
     /// other; a running server has a single state, so the limit still spans it.
     pub(crate) auth_rate_limits: crate::credentials::AuthRateLimits,
-    /// The slots HTTP imports take, [`MAX_CONCURRENT_IMPORTS`] of them, so
-    /// imports can never drain the connection pool. Held here, not in a
+    /// The slots HTTP imports take, from [`crate::imports_api::import_slots`],
+    /// so imports can never drain the connection pool. Held here, not in a
     /// static, for the same reason as `auth_rate_limits`: tests in one binary
     /// cannot wait on each other's imports.
-    ///
-    /// [`MAX_CONCURRENT_IMPORTS`]: crate::imports_api::MAX_CONCURRENT_IMPORTS
     pub(crate) import_slots: Arc<tokio::sync::Semaphore>,
     /// The largest multipart part, from `[server] asset_part_size`. The part
     /// size a client is told is this or the attachment size limit, whichever
@@ -440,9 +438,7 @@ impl AppState {
             account_import_locks: KeyedLocks::default(),
             asset_complete_locks: KeyedLocks::default(),
             auth_rate_limits: Arc::new(std::sync::Mutex::new(HashMap::new())),
-            import_slots: Arc::new(tokio::sync::Semaphore::new(
-                crate::imports_api::MAX_CONCURRENT_IMPORTS,
-            )),
+            import_slots: crate::imports_api::import_slots(),
             asset_part_size,
             demo_build: crate::server_api::DemoBuild::default(),
             demo_bundle_generator: crate::reset_demo::generate_bundle,

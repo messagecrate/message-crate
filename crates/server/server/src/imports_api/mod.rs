@@ -1768,9 +1768,14 @@ pub(crate) async fn create_import_batch(
 
 /// Bound on concurrent HTTP imports: each import holds one pooled connection
 /// for its whole run, so at most this many may overlap and the remaining
-/// connections stay available for auth, search, and export. Counted by
-/// `AppState::import_slots`, one count per server.
-pub(crate) const MAX_CONCURRENT_IMPORTS: usize = 2;
+/// connections stay available for auth, search, and export.
+const MAX_CONCURRENT_IMPORTS: usize = 2;
+
+/// A new server's import slots, [`MAX_CONCURRENT_IMPORTS`] of them, which
+/// `AppState::new` holds as `import_slots`: one count per server.
+pub(crate) fn import_slots() -> Arc<tokio::sync::Semaphore> {
+    Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_IMPORTS))
+}
 
 /// `create_import_batch` is the only entry point, and the run's `source`,
 /// validated when the run was created, names an on-disk directory.
