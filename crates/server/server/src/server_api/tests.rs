@@ -812,13 +812,101 @@ fn tiny_bundle(
     Ok(())
 }
 
-/// [`tiny_bundle`], slowly, so a test can act while the build is running.
-fn slow_tiny_bundle(
+/// Where a generator waits for its test, so a test can act while the build
+/// is running for as long as it needs: the generator says it has arrived,
+/// and writes nothing until the test opens the gate. Nothing in it waits on
+/// a clock.
+struct BundleGate {
+    state: std::sync::Mutex<GateState>,
+    changed: std::sync::Condvar,
+}
+
+#[derive(Clone, Copy)]
+struct GateState {
+    arrived: bool,
+    open: bool,
+}
+
+impl BundleGate {
+    const fn new() -> Self {
+        Self {
+            state: std::sync::Mutex::new(GateState {
+                arrived: false,
+                open: false,
+            }),
+            changed: std::sync::Condvar::new(),
+        }
+    }
+
+    /// Wait in the generator until the gate is open.
+    fn pass(&self) {
+        let mut state = self.state.lock().unwrap();
+        state.arrived = true;
+        self.changed.notify_all();
+        while !state.open {
+            state = self.changed.wait(state).unwrap();
+        }
+    }
+
+    /// Close the gate for one test, and return what opens it.
+    fn close(&'static self) -> OpenGate {
+        *self.state.lock().unwrap() = GateState {
+            arrived: false,
+            open: false,
+        };
+        OpenGate(self)
+    }
+}
+
+/// Opens its gate when dropped as well as by [`OpenGate::open`]. A test that
+/// fails before it opens the gate would otherwise leave the generator
+/// waiting, and the runtime waits for a blocking task when it shuts down.
+struct OpenGate(&'static BundleGate);
+
+impl OpenGate {
+    /// Wait until the generator is at the gate. The build has recorded
+    /// itself by then: it does so before it generates.
+    async fn arrival(&self) {
+        let gate = self.0;
+        tokio::task::spawn_blocking(move || {
+            let mut state = gate.state.lock().unwrap();
+            while !state.arrived {
+                state = gate.changed.wait(state).unwrap();
+            }
+        })
+        .await
+        .unwrap();
+    }
+
+    fn open(self) {}
+}
+
+impl Drop for OpenGate {
+    fn drop(&mut self) {
+        let mut state = self
+            .0
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        state.open = true;
+        self.0.changed.notify_all();
+    }
+}
+
+/// One gate for each test that holds a build open, so tests running at the
+/// same time never open each other's.
+static BUNDLE_GATES: [BundleGate; 3] = [const { BundleGate::new() }; 3];
+const SECOND_BUILD_GATE: usize = 0;
+const STOPPED_BUILD_GATE: usize = 1;
+const ENTERED_BUILD_GATE: usize = 2;
+
+/// [`tiny_bundle`], once the test opens gate `GATE` of [`BUNDLE_GATES`].
+fn gated_tiny_bundle<const GATE: usize>(
     size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    BUNDLE_GATES[GATE].pass();
     tiny_bundle(size, bundle, cancel)
 }
 
@@ -970,7 +1058,8 @@ async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
 async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = slow_tiny_bundle;
+    let gate = BUNDLE_GATES[SECOND_BUILD_GATE].close();
+    state.demo_bundle_generator = gated_tiny_bundle::<SECOND_BUILD_GATE>;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
@@ -982,6 +1071,7 @@ async fn a_running_demo_build_refuses_a_second_build_and_a_delete() {
     let (status, body) = crate::test_support::delete_raw(&state, &demo_path, &owner.token).await;
     crate::test_support::expect_problem(status, &body, crate::problem::ProblemType::StateConflict);
 
+    gate.open();
     let demo = demo_account_after_build(&state, &owner.token).await;
     assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
     assert_eq!(
@@ -1089,23 +1179,25 @@ async fn a_demo_build_the_server_stopped_is_removed_and_failed_on_the_next_start
 async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = slow_tiny_bundle;
+    let gate = BUNDLE_GATES[STOPPED_BUILD_GATE].close();
+    state.demo_bundle_generator = gated_tiny_bundle::<STOPPED_BUILD_GATE>;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     let (status, body) = start_demo_build(&state, &owner.token).await;
     assert_eq!(status, StatusCode::ACCEPTED, "{body}");
-    let mut waited = 0;
-    while !demo_build_is_unfinished(&fixture).await {
-        waited += 1;
-        assert!(waited < 200, "the build never wrote its record");
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
+    gate.arrival().await;
+    assert!(
+        demo_build_is_unfinished(&fixture).await,
+        "the build wrote its record before it generated"
+    );
 
     state.demo_build.stop().await;
 
     assert!(!demo_account_exists(&fixture).await);
     assert!(demo_build_is_unfinished(&fixture).await);
+    // The stopped build's generator is still at the gate; let it end.
+    gate.open();
 
     // The next start: a new server over the same database.
     let mut next = state.clone();
@@ -1206,7 +1298,8 @@ async fn a_demo_build_that_panics_fails_and_the_next_build_starts() {
 async fn the_demo_account_cannot_be_entered_while_it_is_built() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
-    state.demo_bundle_generator = slow_tiny_bundle;
+    let gate = BUNDLE_GATES[ENTERED_BUILD_GATE].close();
+    state.demo_bundle_generator = gated_tiny_bundle::<ENTERED_BUILD_GATE>;
     fixture.demo_account().await;
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let visitor = crate::test_support::log_in(&state, "demo", "").await;
@@ -1232,6 +1325,7 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
         "the Session made before the build ended when the build started"
     );
 
+    gate.open();
     let demo = demo_account_after_build(&state, &owner.token).await;
     assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
     let info: Server = get_json(&state, "/v1/server", "").await;
