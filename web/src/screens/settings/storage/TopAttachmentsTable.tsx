@@ -1,9 +1,9 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { formatBytes } from "../../../lib/formatBytes";
 import PageControl from "./PageControl";
 import type { TopAttachment } from "./storageUtils";
 import {
   ATTACHMENT_PAGE_SIZE,
-  formatBytes,
   sectionHint,
   sectionTitle,
   tableCard,
