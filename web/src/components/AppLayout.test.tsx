@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { type ReactNode, Suspense } from "react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AppRoutes } from "../App";
 import type { SearchList } from "../lib/searchFields";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
-import AppLayout from "./AppLayout";
 import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
 
 // The lists, the header and the drawers fetch their own data; this file is
@@ -16,8 +17,19 @@ import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
 // list filtered to a set from a list of everything, and the conversation list
 // offers one row to click.
 vi.mock("../screens/ContactList", () => ({
-  default: ({ groupFilter }: { groupFilter: string | null }) => (
-    <div data-testid="contact-list">{`group filter: ${groupFilter ?? "(none)"}`}</div>
+  default: ({
+    groupFilter,
+    onSelect,
+  }: {
+    groupFilter: string | null;
+    onSelect: (c: { id: string; name: string }) => void;
+  }) => (
+    <div>
+      <div data-testid="contact-list">{`group filter: ${groupFilter ?? "(none)"}`}</div>
+      <button type="button" onClick={() => onSelect({ id: "c1", name: "Ada" })}>
+        Open Ada
+      </button>
+    </div>
   ),
 }));
 vi.mock("../screens/ConversationList", () => ({
@@ -75,14 +87,31 @@ vi.mock("./AppHeader", () => ({
     </>
   ),
 }));
-vi.mock("./ContactDrawer", () => ({ default: () => null }));
+// The contact panel docked beside the contact list says which contact it shows.
+vi.mock("./ContactDrawer", () => ({
+  default: ({ variant, contactId }: { variant: string; contactId: string }) =>
+    variant === "docked" ? <output data-testid="docked-contact">{contactId}</output> : null,
+}));
+// The screens beside the lists stand in as their names; this file is about
+// which route shows which list, not about what those screens do.
+vi.mock("../screens/TrashScreen", () => ({ default: () => <div data-testid="trash-screen" /> }));
+vi.mock("../screens/SettingsScreen", () => ({ default: () => null }));
+vi.mock("../screens/ImportScreen", () => ({ default: () => null }));
+vi.mock("../screens/ExportScreen", () => ({ default: () => null }));
+// The real one holds the lazy screen's Suspense boundary, so this one does too.
+vi.mock("./ImportExportRoute", () => ({
+  default: ({ children }: { children: ReactNode }) => (
+    <Suspense fallback={null}>{children}</Suspense>
+  ),
+}));
+vi.mock("./MessageRoute", () => ({ default: () => <div data-testid="message-route" /> }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({
-  useAccountProfile: () => ({ profile: desktop.on ? {} : null }),
+  useAccountProfile: () => ({ profile: desktop.on ? {} : null, loading: false, error: "" }),
 }));
 const sets = vi.hoisted(() => ({
   groups: [] as string[],
@@ -145,11 +174,7 @@ function renderLayout(entry: string) {
   return render(
     <Providers>
       <MemoryRouter initialEntries={[entry]}>
-        <Routes>
-          <Route element={<AppLayout />}>
-            <Route path="*" element={null} />
-          </Route>
-        </Routes>
+        <AppRoutes />
         <HistoryProbe />
       </MemoryRouter>
     </Providers>,
@@ -182,6 +207,50 @@ describe("AppLayout", () => {
     // A search with a `word:` waits for the lists' words.
     await user.click(await screen.findByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
+  });
+});
+
+// #2138: each route's element in App.tsx renders its own list, so a route is
+// written down once.
+describe("Each route under the app layout", () => {
+  it.each([
+    ["/", "conversation-list", "query: "],
+    ["/tag/Holiday", "conversation-list", "query: tag:Holiday"],
+    ["/no-tag", "conversation-list", "query: tag:none"],
+    ["/trash", "conversation-list", "query: trashed:yes"],
+    ["/contacts", "contact-list", "group filter: (none)"],
+    ["/group/Family", "contact-list", "group filter: Family"],
+    ["/no-group", "contact-list", "group filter: none"],
+    ["/unknown", "contact-list", "group filter: unknown"],
+  ])("shows its list on %s", async (entry, list, filter) => {
+    sets.tags = ["Holiday"];
+    sets.groups = ["Family"];
+    renderLayout(entry);
+    expect((await screen.findByTestId(list)).textContent).toBe(filter);
+  });
+
+  it("shows the Trash screen beside the trashed conversations", async () => {
+    renderLayout("/trash");
+    expect(await screen.findByTestId("trash-screen")).toBeTruthy();
+  });
+
+  it("shows an open conversation on /messages/:id, with no list of its own", () => {
+    renderLayout("/messages/6");
+    expect(screen.getByTestId("message-route")).toBeTruthy();
+    expect(screen.queryByTestId("conversation-list")).toBeNull();
+    expect(screen.getByTestId("header-search-target").textContent).toBe("conversations");
+  });
+
+  it("keeps the open contact when the person leaves Contacts and comes back", async () => {
+    const user = setupUser();
+    renderLayout("/contacts");
+    await user.click(screen.getByRole("button", { name: "Open Ada" }));
+    expect(screen.getByTestId("docked-contact").textContent).toBe("c1");
+
+    await user.click(screen.getByRole("button", { name: "Messages" }));
+    expect(screen.queryByTestId("docked-contact")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Contacts" }));
+    expect(screen.getByTestId("docked-contact").textContent).toBe("c1");
   });
 });
 
@@ -432,17 +501,7 @@ describe("AppLayout in a phone-width window (#1722)", () => {
 
   it("keeps the same row for an open conversation", () => {
     setWindowWidth(390);
-    render(
-      <Providers>
-        <MemoryRouter initialEntries={["/messages/6"]}>
-          <Routes>
-            <Route element={<AppLayout />}>
-              <Route path="messages/:id" element={<div data-testid="message-route" />} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </Providers>,
-    );
+    renderLayout("/messages/6");
     expect(navigationPanel().style.width).toBe("160px");
     expect(columnRow().className).toContain("overflow-x-auto");
     // The message route's columns sit in the row itself, with no wrapper
