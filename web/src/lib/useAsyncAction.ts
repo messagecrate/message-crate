@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { errorText } from "./apiErrorMessage";
 
 /**
  * Run one async action at a time and keep a busy flag plus an error string.
@@ -21,7 +22,7 @@ export function useAsyncAction(): {
     try {
       await fn();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }

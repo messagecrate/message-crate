@@ -1,5 +1,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useState } from "react";
+import { errorText } from "../lib/apiErrorMessage";
 import Button from "./Button";
 import { textInputClassName } from "./TextField";
 
@@ -38,7 +39,7 @@ export default function PathPicker({
         : await open({ multiple: false, filters });
     } catch (err) {
       // A Tauri command rejects with the plugin's own string, not an Error.
-      const reason = err instanceof Error ? err.message : String(err);
+      const reason = errorText(err);
       setBrowseError(`The file dialog could not be opened: ${reason}`);
       return;
     }

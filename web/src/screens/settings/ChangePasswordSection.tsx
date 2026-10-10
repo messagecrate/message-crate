@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Button from "../../components/Button";
+import { errorText } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/auth";
 import { useRouteCache } from "../../lib/routeQuery";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
@@ -71,7 +72,7 @@ export function ChangePasswordSection({
       setNewPw("");
       setConfirmPw("");
     } catch (e) {
-      setPwMsg(e instanceof Error ? e.message : String(e));
+      setPwMsg(errorText(e));
     }
   };
 

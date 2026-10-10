@@ -1,3 +1,4 @@
+import { errorText } from "./apiErrorMessage";
 import {
   type ExportDir,
   type ExportFormat,
@@ -37,11 +38,7 @@ export async function writeInExportDir(
       try {
         await invokeDiscardExportDir(made.dir);
       } catch (cleanupError: unknown) {
-        onLog(
-          `Could not delete ${made.dir}: ${
-            cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-          }`,
-        );
+        onLog(`Could not delete ${made.dir}: ${errorText(cleanupError)}`);
       }
     }
   }
