@@ -466,6 +466,18 @@ pub fn expect_problem(
     problem
 }
 
+/// Assert a failure is the `500 Internal Server Error` problem, which has no
+/// [`ProblemType`](crate::problem::ProblemType) for [`expect_problem`] to take.
+pub fn expect_internal_problem(status: StatusCode, text: &str) -> message_crate_api_types::Problem {
+    let problem = problem(text);
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{text}");
+    assert_eq!(problem.status, 500, "{text}");
+    assert_eq!(problem.kind, crate::problem::INTERNAL_TYPE, "{text}");
+    assert_eq!(problem.title, "Internal server error", "{text}");
+    assert!(problem.request_id.is_some(), "no request_id: {text}");
+    problem
+}
+
 /// POST a JSON body with a Bearer token, returning only the status.
 pub async fn post_status(
     state: &AppState,

@@ -2718,15 +2718,7 @@ async fn import_slots_belong_to_one_server() {
     let path = batches_path(&busy, &busy_token, "imessage").await;
     let (status, text) =
         crate::test_support::post_raw(&busy, &path, &busy_token, "application/jsonl", body).await;
-    assert_eq!(
-        status,
-        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "{text}"
-    );
-    let problem = crate::test_support::problem(&text);
-    assert_eq!(problem.kind, crate::problem::INTERNAL_TYPE, "{text}");
-    assert_eq!(problem.status, 500, "{text}");
-    assert!(problem.request_id.is_some(), "no request_id: {text}");
+    crate::test_support::expect_internal_problem(status, &text);
 }
 
 /// A schema-4 header was read: version 4 named every identity a `handle`,
