@@ -1,7 +1,12 @@
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import type { HeaderSearch } from "./AppHeader";
 import type { ContactBrowseKind, ContactPreview } from "./contactDrawer/contactDrawerTypes";
+
+/**
+ * What the app layout and the routes under it share: the section each route
+ * declares for the header and the navigation panel, and the contact panel
+ * the layout holds for them.
+ */
 
 /**
  * What a route under the app layout tells the layout's header and navigation
@@ -26,6 +31,13 @@ export interface ShownSection {
   browseQuery: string;
 }
 
+/** The contact, or the one handle of it, whose conversations to open. */
+export interface ContactBrowseTarget {
+  contactId: string;
+  kind: ContactBrowseKind;
+  handle?: string;
+}
+
 /** What the app layout hands the routes under it. */
 export interface AppLayoutContextValue {
   /** Declare the route's section, or null when the route leaves. */
@@ -40,11 +52,7 @@ export interface AppLayoutContextValue {
   /** Close the contact panel, docked or over a conversation. */
   closeContactDrawer: () => void;
   /** Open the conversations of a contact, or of one of its handles. */
-  browseContactConversations: (target: {
-    contactId: string;
-    kind: ContactBrowseKind;
-    handle?: string;
-  }) => void;
+  browseContactConversations: (target: ContactBrowseTarget) => void;
 }
 
 export const AppLayoutContext = createContext<AppLayoutContextValue | null>(null);
@@ -102,23 +110,4 @@ export function useLayoutSection(section: LayoutSection): void {
   });
   // Leaving the route takes its section with it.
   useLayoutEffect(() => () => declareSection(null), [declareSection]);
-}
-
-/**
- * Write `updates` into the address's query, deleting a key whose value is
- * empty. `replace: true` is deliberate: typing in a search box must not fill
- * the history with one entry per keystroke. Trash's `tsel` selection goes
- * through the same function and so is not undoable with Back, unlike
- * selecting a conversation elsewhere, which navigates.
- */
-export function useReplaceSearchParams(): (updates: Record<string, string>) => void {
-  const [searchParams, setSearchParams] = useSearchParams();
-  return (updates) => {
-    const next = new URLSearchParams(searchParams);
-    for (const [k, v] of Object.entries(updates)) {
-      if (v) next.set(k, v);
-      else next.delete(k);
-    }
-    setSearchParams(next, { replace: true });
-  };
 }

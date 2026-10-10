@@ -3,13 +3,18 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { contactBrowseQuery } from "../lib/contactBrowseQuery";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import AppHeader from "./AppHeader";
+import {
+  AppLayoutContext,
+  type AppLayoutContextValue,
+  type ContactBrowseTarget,
+  useSectionSlot,
+} from "./appLayoutContext";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
 import { COLUMN_DIVIDER_WIDTH } from "./columnDivider";
-import type { ContactBrowseKind, ContactPreview } from "./contactDrawer/contactDrawerTypes";
+import type { ContactPreview } from "./contactDrawer/contactDrawerTypes";
 import LeftPanel from "./LeftPanel";
 import { LIST_COLUMN_MIN_WIDTH } from "./ListColumn";
-import { AppLayoutContext, type AppLayoutContextValue, useSectionSlot } from "./layoutSection";
 import { RIGHT_PANE_MIN_WIDTH } from "./RightPane";
 import { RightToolbarProvider } from "./RightToolbarContext";
 
@@ -45,15 +50,7 @@ export default function AppLayout() {
     });
   };
 
-  const browseContactConversations = ({
-    contactId,
-    kind,
-    handle,
-  }: {
-    contactId: string;
-    kind: ContactBrowseKind;
-    handle?: string;
-  }) => {
+  const browseContactConversations = ({ contactId, kind, handle }: ContactBrowseTarget) => {
     const query = contactBrowseQuery(contactId, kind, handle);
     setSelectedContact(null);
     navigate(`/?q=${encodeURIComponent(query)}&f=${encodeURIComponent(query)}`);

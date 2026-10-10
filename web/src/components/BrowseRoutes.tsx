@@ -25,6 +25,7 @@ import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
+import { useAppLayout, useLayoutSection } from "./appLayoutContext";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import ContactDrawer from "./ContactDrawer";
 import {
@@ -34,7 +35,6 @@ import {
   sameContactPreviews,
 } from "./contactDrawer/contactDrawerTypes";
 import ListColumn from "./ListColumn";
-import { useAppLayout, useLayoutSection, useReplaceSearchParams } from "./layoutSection";
 import MessageRoute from "./MessageRoute";
 import ResultsColumn from "./ResultsColumn";
 import RightPane from "./RightPane";
@@ -44,6 +44,33 @@ const mainPane = "min-w-0 flex-1 overflow-auto bg-bg text-text";
 
 /** Centered placeholder when a column has nothing selected yet. */
 const emptyMain = "flex h-full items-center justify-center text-[0.875rem] text-muted";
+
+/**
+ * Write `updates` into the address's query, deleting a key whose value is
+ * empty. `replace: true` is deliberate: typing in a search box must not fill
+ * the history with one entry per keystroke. Trash's `tsel` selection goes
+ * through the same function and so is not undoable with Back, unlike
+ * selecting a conversation elsewhere, which navigates.
+ */
+function useReplaceSearchParams(): (updates: Record<string, string>) => void {
+  const [searchParams, setSearchParams] = useSearchParams();
+  return (updates) => {
+    const next = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(updates)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    setSearchParams(next, { replace: true });
+  };
+}
+
+/**
+ * The address of `pathname` searched for `q` in the query parameter `param`,
+ * with nothing else in its query: a new search starts the list again.
+ */
+function searchedAddress(pathname: string, param: string, q: string): string {
+  return `${pathname}${q ? `?${param}=${encodeURIComponent(q)}` : ""}`;
+}
 
 /**
  * Why a Contact Group or Message Tag page has no list: the sets have not
@@ -117,9 +144,9 @@ function useConversationsSection({
 
 /**
  * The conversation list: every conversation (`/`), those with no Message Tag
- * (`/no-tag`, `untagged`), or those with the tag a `/tag/:slug` page names.
+ * (`/no-tag`, tag `"none"`), or those with the tag a `/tag/:slug` page names.
  */
-export function ConversationsRoute({ untagged = false }: { untagged?: boolean }) {
+export function ConversationsRoute({ tag }: { tag?: "none" }) {
   const { slug = null } = useParams<{ slug: string }>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -127,7 +154,7 @@ export function ConversationsRoute({ untagged = false }: { untagged?: boolean })
   const { tags, loading: tagsLoading } = useMessageTags();
   const activeTag = slug !== null ? tagFromSlug(slug, tags) : null;
   const tagPage = setPageState(slug, tagsLoading, activeTag);
-  const tagFilter = untagged ? "none" : activeTag;
+  const tagFilter = tag ?? activeTag;
 
   const conversationSearch = searchParams.get("q") || "";
   const conversationFilter = searchParams.get("f") || "";
@@ -233,7 +260,7 @@ export function ContactsRoute({ group }: { group?: "none" | "unknown" }) {
   useLayoutSection({
     search: { target: "contacts", query: contactSearch },
     onSearchChange: (q) => replaceSearchParams({ cq: q }),
-    onSearch: (q) => navigate(`${location.pathname}${q ? `?cq=${encodeURIComponent(q)}` : ""}`),
+    onSearch: (q) => navigate(searchedAddress(location.pathname, "cq", q)),
     browseQuery: "",
   });
 
@@ -300,6 +327,7 @@ export function ContactsRoute({ group }: { group?: "none" | "unknown" }) {
  * without leaving the Trash list behind.
  */
 export function TrashRoute({ children }: { children: ReactNode }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const replaceSearchParams = useReplaceSearchParams();
@@ -315,7 +343,7 @@ export function TrashRoute({ children }: { children: ReactNode }) {
     // the selection goes with the search rather than leaving the Restore
     // panel pointed at a conversation the list no longer shows.
     onSearchChange: (q) => replaceSearchParams({ tq: q, tsel: "" }),
-    onSearch: (q) => navigate(`/trash${q ? `?tq=${encodeURIComponent(q)}` : ""}`),
+    onSearch: (q) => navigate(searchedAddress(location.pathname, "tq", q)),
     browseQuery: "",
   });
 
@@ -341,6 +369,6 @@ export function TrashRoute({ children }: { children: ReactNode }) {
  * search. Export carries `?q=` for its own scope box, which typing in the
  * header must never change (#1568).
  */
-export function FullScreenRoute({ children }: { children: ReactNode }) {
+export function NoListRoute({ children }: { children: ReactNode }) {
   return <main className={mainPane}>{children}</main>;
 }

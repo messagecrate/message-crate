@@ -6,7 +6,7 @@ import { AuthGuard } from "./components/AuthGuard";
 import {
   ContactsRoute,
   ConversationsRoute,
-  FullScreenRoute,
+  NoListRoute,
   OpenConversationRoute,
   TrashRoute,
 } from "./components/BrowseRoutes";
@@ -82,7 +82,7 @@ export function AppRoutes() {
               panel and tells the layout what the header searches. */}
           <Route index element={<ConversationsRoute />} />
           <Route path="tag/:slug" element={<ConversationsRoute />} />
-          <Route path="no-tag" element={<ConversationsRoute untagged />} />
+          <Route path="no-tag" element={<ConversationsRoute tag="none" />} />
           <Route path="contacts" element={<ContactsRoute />} />
           <Route path="group/:slug" element={<ContactsRoute />} />
           <Route path="no-group" element={<ContactsRoute group="none" />} />
@@ -100,31 +100,31 @@ export function AppRoutes() {
           <Route
             path="import"
             element={
-              <FullScreenRoute>
+              <NoListRoute>
                 <ImportExportRoute feature="import">
                   <ImportScreen />
                 </ImportExportRoute>
-              </FullScreenRoute>
+              </NoListRoute>
             }
           />
           <Route
             path="export"
             element={
-              <FullScreenRoute>
+              <NoListRoute>
                 <ImportExportRoute feature="export">
                   <ExportScreen />
                 </ImportExportRoute>
-              </FullScreenRoute>
+              </NoListRoute>
             }
           />
           <Route
             path="settings"
             element={
-              <FullScreenRoute>
+              <NoListRoute>
                 <Suspense fallback={null}>
                   <SettingsScreen />
                 </Suspense>
-              </FullScreenRoute>
+              </NoListRoute>
             }
           />
           <Route path="messages/:conversationId" element={<OpenConversationRoute />} />
