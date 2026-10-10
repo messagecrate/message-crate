@@ -9,7 +9,7 @@ use message_crate_core::{ExporterConfig, RunResult, SourceConfig, prepare_output
 /// # Errors
 ///
 /// Returns an error when the source is not SMS Backup & Restore, the output
-/// directory is or holds the input, conversion fails, media processing fails for
+/// directory holds the input, conversion fails, media processing fails for
 /// every candidate file, or the user cancels.
 pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let SourceConfig::SmsBackupRestore(source) = &config.source else {
@@ -51,9 +51,9 @@ mod tests {
     }
 
     /// The writer cleans its output directory before it writes, so an output
-    /// that is or holds the backup would delete the backup being read.
+    /// that holds the backup would delete the backup being read.
     #[test]
-    fn run_refuses_an_output_that_is_or_contains_the_backup() {
+    fn run_refuses_an_output_that_holds_the_backup() {
         let tmp = tempfile::tempdir().unwrap();
         let input = tmp.path().join("backup");
         fs::create_dir_all(&input).unwrap();
@@ -66,7 +66,7 @@ mod tests {
 
         for output in [input.clone(), tmp.path().to_path_buf()] {
             let config = jsonl_run_config(
-                &[&input],
+                &[&xml],
                 &output,
                 SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
                     owner_phones: vec!["+15555550100".into()],

@@ -424,11 +424,9 @@ fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<
 
 /// Convert from an SMS Backup & Restore backup says what its reader
 /// dropped and skipped, before the `Conversations:` line the desktop app
-/// shows as the run's summary, and names every file it could not read, not
-/// only the first five (#1603). The fixture holds one of each kind, and six
-/// files cut off partway.
+/// shows as the run's summary (#1603). The fixture holds one of each kind.
 #[test]
-fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
+fn run_from_an_sms_backup_logs_the_reader_counts() {
     let destination = tempfile::tempdir().unwrap();
     let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
 
@@ -448,22 +446,6 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         assert!(
             logged.iter().any(|line| line == expected),
             "{expected:?} in the log: {logged:#?}"
-        );
-    }
-    // Every file it could not read is a sentence naming it, under the
-    // Import Errors heading (#1920).
-    let heading = logged
-        .iter()
-        .position(|line| line == "Import Errors")
-        .unwrap_or_else(|| panic!("no Import Errors heading in the log: {logged:#?}"));
-    for n in 1..=6 {
-        let name = format!("broken-{n}.xml");
-        assert!(
-            logged[heading + 1..]
-                .iter()
-                .any(|line| line.starts_with("  The file ")
-                    && line.contains(&format!("{name} could not be read in full: "))),
-            "an Import Error for {name} in the log: {logged:#?}"
         );
     }
     // The run's summary lines follow everything logged as it ran.
@@ -1082,6 +1064,29 @@ fn an_eml_directory_with_a_temporary_name_is_skipped() {
     assert_eq!(
         detect_ir_export(dir.path()).unwrap().format,
         OutputFormat::Jsonl
+    );
+}
+
+/// A conversion reads one backup, so a directory holding two SMS Backup &
+/// Restore files is refused, naming both, rather than merged.
+#[test]
+fn a_directory_with_two_sms_backups_is_refused() {
+    let input = tempfile::tempdir().unwrap();
+    let backup = fs::read_to_string(sms_fixture("sms-backup-every-skip/smses.xml")).unwrap();
+    fs::write(input.path().join("smses.xml"), &backup).unwrap();
+    // Named by its first line, as a file not called `smses.xml` is.
+    let older = backup
+        .split_once('\n')
+        .map_or(backup.as_str(), |(_, rest)| rest);
+    fs::write(input.path().join("older.xml"), older).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("holds 2 SMS Backup & Restore files (older.xml, smses.xml)"),
+        "{err:#}"
     );
 }
 

@@ -26,7 +26,7 @@ The Owner's login doesn't show **Import**, because the Owner holds no messages.
 ### For an Android backup
 
 1. The first list is the source. Choose **SMS Backup & Restore**.
-2. **Backup Directory**: select **Browse** and pick the directory that holds the `.xml` files.
+2. **Backup File**: select **Browse** and pick the backup's `.xml` file, such as `sms-20261001120000.xml`. One import reads one backup, so a second `.xml` file is a second import.
 3. **Backup Device Phone Numbers**: every number that belonged to the phone. The numbers on the account's profile are filled in already.
 
 When none of the numbers in the field is on the account's profile, **Import** stays greyed out until **Allow import from phone numbers not on my profile** is ticked.

@@ -117,6 +117,15 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
+  The Import form's **Backup File** field takes the backup's one `.xml`
+  file, where **Backup Directory** took a directory of them, because an
+  import reads one backup. A second backup is a second import, and the
+  server keeps the later copy of a message by the date each file records.
+  A directory is refused. **Settings → Convert** refuses a directory that
+  holds two SMS Backup & Restore files. GO SMS Pro and SMS Backup+ still
+  take a directory (#2009).
+
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs
   installed on the computer, else in the app's Tools Directory, and both

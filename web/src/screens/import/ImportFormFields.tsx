@@ -9,8 +9,10 @@ import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import TimeZoneField from "../../components/TimeZoneField";
 import {
-  backupDirectoryHint,
-  backupDirectoryPlaceholder,
+  backupIsFile,
+  backupPathHint,
+  backupPathLabel,
+  backupPathPlaceholder,
   isAndroidSmsSource,
   needsOwnerEmails,
   splitEmails,
@@ -184,6 +186,7 @@ function PhoneCountryField({
 const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
 const WHATSAPP_CONTACTS_FILTERS = [{ name: "SQLite database", extensions: ["db", "sqlite"] }];
 const APPLE_CONTACTS_FILTERS = [{ name: "Apple AddressBook", extensions: ["abcddb", "sqlitedb"] }];
+const SMS_BACKUP_RESTORE_FILTERS = [{ name: "SMS Backup & Restore", extensions: ["xml"] }];
 
 const WHATSAPP_DIRECTORY_HINT_ANDROID =
   "Directory that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
@@ -729,14 +732,15 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           </>
         ) : isAndroidSms ? (
           <>
-            <StackedField label="Backup Directory" required={required.backupPath}>
+            <StackedField label={backupPathLabel(props.source)} required={required.backupPath}>
               <PathPicker
                 value={props.backupPath}
                 onChange={props.onBackupPathChange}
-                directory
-                placeholder={backupDirectoryPlaceholder(props.source)}
+                directory={!backupIsFile(props.source)}
+                filters={backupIsFile(props.source) ? SMS_BACKUP_RESTORE_FILTERS : undefined}
+                placeholder={backupPathPlaceholder(props.source)}
               />
-              <p className={hintStyle}>{backupDirectoryHint(props.source)}</p>
+              <p className={hintStyle}>{backupPathHint(props.source)}</p>
             </StackedField>
 
             <AttachmentFields

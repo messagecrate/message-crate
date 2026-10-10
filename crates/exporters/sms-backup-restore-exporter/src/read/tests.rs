@@ -1,6 +1,7 @@
 use super::*;
 use crate::write::SbrBackupSession;
 use std::fs;
+use std::path::PathBuf;
 
 fn opts<'a>(
     owner_phones: &'a [String],
@@ -11,7 +12,6 @@ fn opts<'a>(
         owner_phones,
         attachments_dir,
         spool,
-        exclude_dir: None,
         media: if spool.is_some() {
             MediaMode::Clone
         } else {
@@ -155,23 +155,33 @@ fn group_mms_sender_direction_and_conversation() {
     );
 }
 
+/// With no owner phone given, a file that cannot be read to find one stops
+/// the read and says so.
 #[test]
-fn owner_inference_tolerates_malformed_files() {
+fn a_file_owner_inference_cannot_read_is_refused() {
     let dir = tempfile::tempdir().unwrap();
-    let input = dir.path().join("input");
-    fs::create_dir_all(&input).unwrap();
+    let input = dir.path().join("broken.xml");
+    fs::write(&input, "<smses><mms date=").unwrap();
+    let err = read_backup(&input, opts(&[], None, None)).unwrap_err();
+    assert!(
+        err.to_string().contains("could not infer owner phones"),
+        "{err:#}"
+    );
+}
+
+/// An Import Run reads one backup, and SMS Backup & Restore writes each
+/// backup as one file, so a directory is refused rather than walked.
+#[test]
+fn a_directory_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
     fs::write(
-        input.join("ok.xml"),
-        r#"<smses><mms date="1400773400000" msg_box="2" address="+15555550101"><parts/><addrs><addr address="+15555550100" type="137"/><addr address="+15555550101" type="151"/></addrs></mms></smses>"#,
+        dir.path().join("sms-1.xml"),
+        r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="hi"/></smses>"#,
     )
     .unwrap();
-    fs::write(input.join("broken.xml"), "<smses><mms date=").unwrap();
-    let (docs, report) = read_backup(&input, opts(&[], None, None)).unwrap();
-    assert_eq!(
-        docs[0].export.owner_identity.as_deref(),
-        Some("+15555550100")
-    );
-    assert_eq!(report.errors.len(), 1);
+    let owner = vec!["+15555550100".to_string()];
+    let err = read_backup(dir.path(), opts(&owner, None, None)).unwrap_err();
+    assert!(err.to_string().contains("is a directory"), "{err:#}");
 }
 
 #[test]
@@ -231,24 +241,6 @@ fn reading_a_backup_spools_every_payload_and_holds_none() {
         "nothing was staged, so nothing to point at"
     );
     assert!(!stage.exists(), "no attachment files were written");
-}
-
-/// An `.xml` file under `exclude_dir` is not read, so a backup Convert wrote
-/// into an output inside the input's directory is never read back in.
-#[test]
-fn a_backup_under_the_excluded_directory_is_not_read() {
-    let dir = tempfile::tempdir().unwrap();
-    let sms = r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/></smses>"#;
-    fs::write(dir.path().join("smses.xml"), sms).unwrap();
-    let output = dir.path().join("converted");
-    fs::create_dir_all(&output).unwrap();
-    fs::write(output.join("smses.xml"), sms.replace("kept", "skipped")).unwrap();
-
-    assert_eq!(
-        collect_xml_paths(dir.path(), Some(&output)).unwrap(),
-        [dir.path().join("smses.xml")]
-    );
-    assert_eq!(collect_xml_paths(dir.path(), None).unwrap().len(), 2);
 }
 
 /// A run that does not copy attachments keeps no payload anywhere.
@@ -606,26 +598,5 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
     assert_eq!(
         backup_dates(&input),
         [("+15555550101".to_string(), Some(1_500_000_000_000))]
-    );
-}
-
-/// Two backups in one directory: a conversation both hold is as new as the
-/// newer, and one only the older holds keeps the older's date.
-#[test]
-fn a_conversation_in_two_backups_is_as_new_as_the_newer() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::copy(dated_fixture(), dir.path().join("newer.xml")).unwrap();
-    fs::write(
-        dir.path().join("older.xml"),
-        r#"<smses count="2" backup_date="1780000000000"><sms address="+15555550101" date="1400773261000" type="1" body="from the older backup" /><sms address="+15555550103" date="1400773271000" type="1" body="only in the older backup" /></smses>"#,
-    )
-    .unwrap();
-    assert_eq!(
-        backup_dates(dir.path()),
-        [
-            ("+15555550101".to_string(), Some(1_790_793_912_000)),
-            ("+15555550102".to_string(), Some(1_790_793_912_000)),
-            ("+15555550103".to_string(), Some(1_780_000_000_000)),
-        ]
     );
 }

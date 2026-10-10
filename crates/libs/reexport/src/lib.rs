@@ -105,7 +105,8 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // refuses, such as a file of another schema version or a broken SMS
     // backup, stops the run with the previous output left as it was.
     let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
-        let backup = SmsBackupRead::open(&inputs[0], output, &config.scratch_dir, copy_attachments);
+        let file = sms_backup_file(&inputs[0])?;
+        let backup = SmsBackupRead::open(&file, output, &config.scratch_dir, copy_attachments);
         (backup.read(config)?, Some(backup))
     } else {
         (read_conversation_files(input_dir, detected.format)?, None)
@@ -373,11 +374,8 @@ fn previous_attachment_bytes(output: &Path) -> u64 {
 /// An SMS Backup & Restore read whose attachments wait in the spool until
 /// the output has been cleaned.
 struct SmsBackupRead {
-    /// The backup's directory, resolved.
+    /// The backup's one `.xml` file.
     input: PathBuf,
-    /// The output directory, resolved. The read leaves it out, since it may
-    /// sit inside the backup's directory and hold a backup an earlier run wrote.
-    output: PathBuf,
     /// The output's `attachments/`, where the spooled attachments are staged.
     attachments_dir: PathBuf,
     /// The payloads the read spooled; `None` when the run does not copy
@@ -386,8 +384,8 @@ struct SmsBackupRead {
 }
 
 impl SmsBackupRead {
-    /// Prepare to read the backup in `input` for a conversion into
-    /// `output`, both resolved by `prepare_outputs`. Each payload goes to
+    /// Prepare to read the backup file `input` for a conversion into
+    /// `output`, resolved by `prepare_outputs`. Each payload goes to
     /// a spool under `scratch_dir`, the Scratch Directory, as its record is
     /// read, so the backup's attachments are never all in memory and never
     /// in the output before they are staged.
@@ -395,7 +393,6 @@ impl SmsBackupRead {
         Self {
             input: input.to_path_buf(),
             attachments_dir: output.join("attachments"),
-            output,
             // No copy directory: the output still holds an earlier conversion
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
@@ -410,7 +407,6 @@ impl SmsBackupRead {
             owner_phones: &[],
             attachments_dir: Some(&self.attachments_dir),
             spool: self.spool.as_ref(),
-            exclude_dir: Some(&self.output),
             media: if self.spool.is_some() {
                 MediaMode::Clone
             } else {
@@ -553,6 +549,28 @@ fn detect_ir_export(input_dir: &Path) -> Result<DetectedExport> {
             samples.join(", ")
         ),
     }
+}
+
+/// The one SMS Backup & Restore file in `input_dir`: a conversion reads one
+/// backup, and SMS Backup & Restore writes each backup as one file.
+fn sms_backup_file(input_dir: &Path) -> Result<PathBuf> {
+    let mut files = list_artifacts(input_dir, OutputFormat::Xml)?;
+    if files.len() > 1 {
+        bail!(
+            "{} holds {} SMS Backup & Restore files ({}): a conversion reads one backup",
+            input_dir.display(),
+            files.len(),
+            files
+                .iter()
+                .filter_map(|path| path.file_name())
+                .map(|name| name.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    files
+        .pop()
+        .with_context(|| format!("no SMS Backup & Restore file in {}", input_dir.display()))
 }
 
 /// List conversation files or EML directories for the detected format.
