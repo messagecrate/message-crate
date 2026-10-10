@@ -8,10 +8,21 @@ use std::sync::{Arc, Mutex};
 /// Shared cancel flag for cooperative in-process jobs.
 pub type CancelFlag = Arc<AtomicBool>;
 
+/// A callback that receives one line of text at a time.
+type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// Callback for mid-run progress / warning lines. The desktop app sets one and
 /// streams the lines to its log panel; `None` sends them to stderr.
+///
+/// A line is something the run did. A warning is the output of a step that
+/// failed. The desktop app writes a warning into the Import Run's log at
+/// warning level (`docs/architecture/import-run-logs.md`). A sink with no
+/// warning callback takes a warning as a line.
 #[derive(Clone)]
-pub struct LogSink(Arc<dyn Fn(&str) + Send + Sync>);
+pub struct LogSink {
+    line: LineCallback,
+    warning: Option<LineCallback>,
+}
 
 impl LogSink {
     /// Wrap a callback that receives one log line at a time.
@@ -19,12 +30,34 @@ impl LogSink {
     where
         F: Fn(&str) + Send + Sync + 'static,
     {
-        Self(Arc::new(f))
+        Self {
+            line: Arc::new(f),
+            warning: None,
+        }
+    }
+
+    /// The same sink, with `f` receiving each warning.
+    #[must_use]
+    pub fn with_warnings<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&str) + Send + Sync + 'static,
+    {
+        self.warning = Some(Arc::new(f));
+        self
     }
 
     /// Send one log line to the callback.
     pub fn emit(&self, line: &str) {
-        (self.0)(line);
+        (self.line)(line);
+    }
+
+    /// Send one warning to the warning callback, or to the line callback
+    /// when the sink has none.
+    pub fn warn(&self, text: &str) {
+        match &self.warning {
+            Some(warning) => warning(text),
+            None => (self.line)(text),
+        }
     }
 }
 
@@ -40,6 +73,16 @@ pub fn emit_log(sink: Option<&LogSink>, line: impl AsRef<str>) {
     match sink {
         Some(sink) => sink.emit(line),
         None => eprintln!("{line}"),
+    }
+}
+
+/// Send a warning to `sink` when set ([`LogSink::warn`]). Otherwise print to
+/// stderr.
+pub fn emit_warning(sink: Option<&LogSink>, text: impl AsRef<str>) {
+    let text = text.as_ref();
+    match sink {
+        Some(sink) => sink.warn(text),
+        None => eprintln!("{text}"),
     }
 }
 

@@ -242,6 +242,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
+  wtsexporter's output named a full disk, the import asked to free space on
+  the Scratch Directory's disk. The output itself was lost. So a full disk
+  elsewhere, such as the one that holds the system's temporary files, could
+  not be told apart. The import still asks to free space on the Scratch
+  Directory's disk. The Import Run's log now also holds everything a failed
+  wtsexporter run printed, as warnings (#1938).
 - 2026-10-09: **A resumed import drops a Staging Error about a file it then
   reads clean.** When Staging could not read a file of the backup, such as a
   mail file on a network drive that dropped, and the run was paused and

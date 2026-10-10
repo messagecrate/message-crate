@@ -46,7 +46,8 @@ pub use pipeline::{
     prepare_outputs, project_conversation, unreadable_parts_note,
 };
 pub use process::{
-    CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,
+    CancelFlag, Cancelled, LogSink, check_cancel, emit_log, emit_warning, is_cancelled,
+    parallel_for_each,
 };
 pub use progress::{ProgressEvent, ProgressSink, WriteStatus, emit_progress};
 pub use run::{finish_run, run_pipeline};

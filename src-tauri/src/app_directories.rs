@@ -116,6 +116,13 @@ impl RunLog {
         self.write(RunLogLevel::Info, line);
     }
 
+    /// Add `text` to the log as a warning, one line per line of it: what the
+    /// run went on without, or the output of a step that failed, such as a
+    /// failed wtsexporter run's (#1938).
+    pub fn warn(&self, text: &str) {
+        self.write(RunLogLevel::Warn, text);
+    }
+
     /// Add a row of the Import Run's record to the log, at the level its
     /// kind gives it: a skip as a warning, an error as an error, and a note
     /// as something the run did.
@@ -225,6 +232,39 @@ mod tests {
                 (
                     RunLogLevel::Info,
                     "Converting and compressing attachments…".to_string()
+                ),
+            ]
+        );
+    }
+
+    /// A warning that holds several lines, such as a failed wtsexporter
+    /// run's output, is one warning line per line of it, so the Logs panel's
+    /// level filter finds each (#1938).
+    #[test]
+    fn a_warning_is_one_warning_line_per_line_of_it() {
+        let logs = tempfile::tempdir().unwrap();
+        let run = Path::new("/home/sam/message-crate/staging-whatsapp-261004-143000");
+        RunLog::open(logs.path(), run)
+            .warn("wtsexporter failed (exit status: 1). Its output:\nOSError: [Errno 28] No space left on device");
+
+        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
+        let lines: Vec<_> = text
+            .lines()
+            .map(|raw| {
+                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
+                (line.level, line.text)
+            })
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                (
+                    RunLogLevel::Warn,
+                    "wtsexporter failed (exit status: 1). Its output:".to_string()
+                ),
+                (
+                    RunLogLevel::Warn,
+                    "OSError: [Errno 28] No space left on device".to_string()
                 ),
             ]
         );
