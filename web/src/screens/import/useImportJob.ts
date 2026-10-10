@@ -46,7 +46,7 @@ import {
   invokeUpload,
   type MediaToolName,
   type OwnerIdentityCount,
-  onExtractEvents,
+  onDesktopJobEvents,
   type RunDirConfig,
   type SizeVerdict,
   type StagingSummary,
@@ -398,12 +398,12 @@ type RunScratch = {
   notes: ImportNote[];
   /**
    * What this part's Upload said of each conversation file it finished so
-   * far (`extract:file-done`): `ok`, `skipped` or `failed`, by file.
+   * far (`desktop-job:file-done`): `ok`, `skipped` or `failed`, by file.
    */
   conversations: Map<string, ConversationStatus>;
   /**
    * What this part's Staging said of each conversation file it finished so
-   * far (`extract:file-written`): `written` or `skipped`, by file.
+   * far (`desktop-job:file-written`): `written` or `skipped`, by file.
    */
   staged: Map<string, StagedStatus>;
   counts: { filesParsed?: number; messagesParsed?: number };
@@ -853,14 +853,14 @@ function runJob(invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
 }
 
 /**
- * `invokeSummarizeStaging`, with a listener on the same `extract:progress`
+ * `invokeSummarizeStaging`, with a listener on the same `desktop-job:progress`
  * channel Staging and the Media stage use. `summarize_staging` (Rust)
  * emits progress on the `check` step while it walks a big directory, and
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.
  */
 async function summarizeStagingWithProgress(config: RunDirConfig): Promise<StagingSummary> {
-  const unlisten = await onExtractEvents({
+  const unlisten = await onDesktopJobEvents({
     onLog: () => {},
     onProgress: applyProgress,
     onFinished: () => {},

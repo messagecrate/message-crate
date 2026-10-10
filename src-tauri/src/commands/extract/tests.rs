@@ -244,7 +244,7 @@ fn staging_records_the_media_settings_in_the_directory() {
 }
 
 /// Each issue reaches the issue sink, which the command forwards to the
-/// window as `extract:issue`, while Staging is still running: the window
+/// window as `desktop-job:issue`, while Staging is still running: the window
 /// writes it into the run record at once, so an app that closes before
 /// Staging ends keeps it. Before, the issues went out only after the
 /// exporter returned (#1639).
@@ -694,7 +694,7 @@ fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
 
 /// Run the SMS Backup & Restore exporter on one MMS that carries an
 /// attachment named `log.jsonl` whose bytes are the base64 `data`, and return
-/// the conversation and message counts of the `extract:finished` payload.
+/// the conversation and message counts of the `desktop-job:finished` payload.
 fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     let tmp = tempfile::tempdir().unwrap();
     let xml = format!(

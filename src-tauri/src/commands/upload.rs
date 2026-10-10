@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use message_crate_import::{FileStatus, ImportConfig, ProgressEvent, run as run_import};
 
 use super::events;
-use super::events::ExtractProgressEvent;
+use super::events::ImportProgressEvent;
 use super::jobs::{spawn_job, start_job};
 use super::paths::logs_dir;
 use crate::app_directories::{RunLog, import_run_log};
@@ -21,8 +21,8 @@ fn as_usize(value: u64) -> usize {
 /// Progress bar update and finished JSON payload after an Upload completes.
 fn finished_upload_events(
     report: &message_crate_import::ImportReport,
-) -> (ExtractProgressEvent, serde_json::Value) {
-    let progress = ExtractProgressEvent {
+) -> (ImportProgressEvent, serde_json::Value) {
+    let progress = ImportProgressEvent {
         step: "upload".into(),
         done: as_usize(report.conversations_total),
         total: as_usize(report.conversations_total),
@@ -82,13 +82,14 @@ pub struct UploadArgs {
 /// Ask this process to upload extracted conversations to a server.
 ///
 /// Returns as soon as the background thread starts. Upload progress uses the
-/// same `extract:*` events as Extract so the UI can reuse one progress view.
+/// same `desktop-job:*` events as the `extract` command so the UI can reuse
+/// one progress view.
 ///
 /// # Errors
 ///
 /// Returns an error if another job is running, or if another thread panicked
 /// while holding the shared state lock. Failures during the upload are sent
-/// as `extract:error`.
+/// as `desktop-job:error`.
 #[tauri::command(async)]
 pub fn upload(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -184,7 +185,7 @@ fn file_done_line(file: &str, status: FileStatus) -> String {
     }
 }
 
-/// Relay one Upload progress event to the window as `extract:*` events.
+/// Relay one Upload progress event to the window as `desktop-job:*` events.
 fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
     match event {
         ProgressEvent::Log(line) => {
@@ -196,7 +197,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::PROGRESS,
-                ExtractProgressEvent {
+                ImportProgressEvent {
                     step: "upload".into(),
                     done: index.saturating_sub(1),
                     total,
@@ -212,7 +213,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::FILE_DONE,
-                events::ExtractFileDoneEvent {
+                events::ImportFileDoneEvent {
                     file,
                     status: status.as_str().into(),
                 },
@@ -228,7 +229,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::ISSUE,
-                events::ExtractIssueEvent {
+                events::ImportIssueEvent {
                     kind,
                     step,
                     item,

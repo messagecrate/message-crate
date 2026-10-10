@@ -148,12 +148,12 @@ export type RunPart = {
   messagesParsed?: number;
   /**
    * What this part's Upload said of each conversation file it finished so
-   * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
+   * far (`desktop-job:file-done`), by file: `ok`, `skipped` or `failed`.
    */
   conversations: ReadonlyMap<string, ConversationStatus>;
   /**
    * What this part's Staging said of each conversation file it finished so
-   * far (`extract:file-written`), by file: `written` or `skipped`.
+   * far (`desktop-job:file-written`), by file: `written` or `skipped`.
    */
   staged: ReadonlyMap<string, StagedStatus>;
   /** This part's Upload report, when it ran an Upload that reported. */

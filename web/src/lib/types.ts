@@ -100,13 +100,13 @@ export interface ExtractConfig {
   asset_max_bytes: number;
 }
 
-export interface ExtractErrorEvent {
+export interface DesktopJobErrorEvent {
   detail: string;
   user_message?: string;
 }
 
 /**
- * One typed progress event from the desktop backend (`extract:progress`).
+ * One typed progress event from the desktop backend (`desktop-job:progress`).
  * `setup` is a numbered step before any message is read (decrypting an
  * iPhone backup, caching chat tables); its label arrives as `status` and
  * `done`/`total` are the step's position, not message counts.
@@ -126,7 +126,7 @@ export interface ImportProgressEvent {
 }
 
 /**
- * One row for the Import Errors list, or the notes list (`extract:issue`),
+ * One row for the Import Errors list, or the notes list (`desktop-job:issue`),
  * sent the moment the stage records it.
  */
 export interface ImportIssueEvent {
@@ -154,7 +154,7 @@ export interface ImportIssueEvent {
 }
 
 /**
- * The Upload finished with one conversation file (`extract:file-done`):
+ * The Upload finished with one conversation file (`desktop-job:file-done`):
  * `ok` sent it now, `skipped` found an earlier part of the run had sent it,
  * `failed` could not send it.
  */
@@ -171,7 +171,7 @@ export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";
 
 /**
  * Staging's write queue finished with one conversation file
- * (`extract:file-written`): `written` wrote it now, `skipped` found an
+ * (`desktop-job:file-written`): `written` wrote it now, `skipped` found an
  * earlier part of the run had written it to the end and did not read it
  * again.
  */

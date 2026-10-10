@@ -5,8 +5,8 @@ import type { LogLinesPage } from "./serverApi";
 import type { components } from "./serverApi.types";
 import type {
   AttachmentMediaMode,
+  DesktopJobErrorEvent,
   ExtractConfig,
-  ExtractErrorEvent,
   ImportFileDoneEvent,
   ImportFileWrittenEvent,
   ImportIssueEvent,
@@ -237,7 +237,7 @@ export async function invokeSummarizeStaging(config: RunDirConfig): Promise<Stag
 
 /**
  * Run the Media stage over a staged directory, after the Staging Review
- * approves it. Reports through the `extract:*` events like every other long
+ * approves it. Reports through the `desktop-job:*` events like every other long
  * job, so `awaitDesktopJob` drives it exactly as it drives extract and the Upload.
  */
 export async function invokeTranscodeStaging(config: RunDirConfig): Promise<void> {
@@ -318,7 +318,7 @@ export interface UploadFinishedReport {
 }
 
 /**
- * What `transcode_staging`'s job did, from its `extract:finished` payload.
+ * What `transcode_staging`'s job did, from its `desktop-job:finished` payload.
  * `TranscodeReport` (`message-staging`) has no serde derive: `transcode_staging`
  * (`src-tauri/src/commands/staging.rs`) hand-builds the payload with these
  * fields flat at the top level, alongside `summary` — not nested under a
@@ -628,25 +628,25 @@ export async function invokeImessageBackupIdentities(args: {
  * Listen for job events from the desktop backend (log lines, progress, errors).
  * Returns one function that removes every listener.
  */
-export function onExtractEvents(callbacks: {
+export function onDesktopJobEvents(callbacks: {
   onLog: (line: string) => void;
   onProgress?: (event: ImportProgressEvent) => void;
   onIssue?: (event: ImportIssueEvent) => void;
   onFileDone?: (event: ImportFileDoneEvent) => void;
   onFileWritten?: (event: ImportFileWrittenEvent) => void;
   onFinished: (summary: string) => void;
-  onError: (err: ExtractErrorEvent) => void;
+  onError: (err: DesktopJobErrorEvent) => void;
 }): Promise<UnlistenFn> {
   return Promise.all([
-    listen<string>("extract:log", (e) => callbacks.onLog(e.payload)),
-    listen<ImportProgressEvent>("extract:progress", (e) => callbacks.onProgress?.(e.payload)),
-    listen<ImportIssueEvent>("extract:issue", (e) => callbacks.onIssue?.(e.payload)),
-    listen<ImportFileDoneEvent>("extract:file-done", (e) => callbacks.onFileDone?.(e.payload)),
-    listen<ImportFileWrittenEvent>("extract:file-written", (e) =>
+    listen<string>("desktop-job:log", (e) => callbacks.onLog(e.payload)),
+    listen<ImportProgressEvent>("desktop-job:progress", (e) => callbacks.onProgress?.(e.payload)),
+    listen<ImportIssueEvent>("desktop-job:issue", (e) => callbacks.onIssue?.(e.payload)),
+    listen<ImportFileDoneEvent>("desktop-job:file-done", (e) => callbacks.onFileDone?.(e.payload)),
+    listen<ImportFileWrittenEvent>("desktop-job:file-written", (e) =>
       callbacks.onFileWritten?.(e.payload),
     ),
-    listen<string>("extract:finished", (e) => callbacks.onFinished(e.payload)),
-    listen<ExtractErrorEvent>("extract:error", (e) => callbacks.onError(e.payload)),
+    listen<string>("desktop-job:finished", (e) => callbacks.onFinished(e.payload)),
+    listen<DesktopJobErrorEvent>("desktop-job:error", (e) => callbacks.onError(e.payload)),
   ]).then((unlisteners) => {
     return () => {
       for (const u of unlisteners) {
@@ -679,7 +679,7 @@ export async function awaitDesktopJob(
     return await new Promise<DesktopJobResult>((resolve, reject) => {
       void (async () => {
         try {
-          unlisten = await onExtractEvents({
+          unlisten = await onDesktopJobEvents({
             onLog: (line) => onLog?.(line),
             onProgress,
             onIssue,

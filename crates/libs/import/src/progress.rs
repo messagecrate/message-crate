@@ -30,7 +30,7 @@ pub enum FileStatus {
 }
 
 impl FileStatus {
-    /// The word the desktop app's `extract:file-done` event carries.
+    /// The word the desktop app's `desktop-job:file-done` event carries.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Ok => "ok",

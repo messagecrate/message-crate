@@ -2,13 +2,15 @@
 //!
 //! `extract` starts the selected exporter on a background thread and returns
 //! immediately. Progress is sent back as Tauri events:
-//! `extract:log` (one human-readable log line), `extract:progress` (one
-//! typed [`ExtractProgressEvent`](events::ExtractProgressEvent), mapped from
-//! the exporter's `ProgressEvent`), `extract:file-written` (one
-//! conversation file the write queue finished, from the same
-//! `ProgressEvent`s), `extract:issue` (one row for the Import Run's record,
-//! sent the moment the exporter records it), `extract:finished` (a summary
-//! string or JSON object), and `extract:error` ([`ExtractErrorEvent`]).
+//! `desktop-job:log` (one human-readable log line), `desktop-job:progress` (one
+//! typed [`ImportProgressEvent`](events::ImportProgressEvent), mapped from
+//! the exporter's `ProgressEvent`), `desktop-job:file-written` (one
+//! [`ImportFileWrittenEvent`](events::ImportFileWrittenEvent), a conversation
+//! file the write queue finished, from the same `ProgressEvent`s),
+//! `desktop-job:issue` (one [`ImportIssueEvent`](events::ImportIssueEvent),
+//! a row for the Import Run's record, sent the moment the exporter records
+//! it), `desktop-job:finished` (a summary string or JSON object), and
+//! `desktop-job:error` ([`DesktopJobErrorEvent`](events::DesktopJobErrorEvent)).
 //!
 //! `cancel` sets the cancel flag of the job that is running (see
 //! `commands::jobs`). The exporter checks it between steps through
@@ -57,7 +59,7 @@ pub fn cancel(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
     cancel_running_job(&state)
 }
 
-/// The `extract:finished` payload: the run's last log line as the summary,
+/// The `desktop-job:finished` payload: the run's last log line as the summary,
 /// and the conversation and message counts the exporter reported.
 ///
 /// The counts come from the exporter rather than from reading the output
@@ -138,9 +140,9 @@ pub struct ExtractArgs {
 /// Ask this process to parse a phone backup and write conversation files.
 ///
 /// Returns as soon as the background thread starts. Log lines, progress,
-/// issues, and the final summary are sent as `extract:log`,
-/// `extract:progress`, `extract:issue`, `extract:finished`, and
-/// `extract:error`. Each issue goes out the moment the exporter records it,
+/// issues, and the final summary are sent as `desktop-job:log`,
+/// `desktop-job:progress`, `desktop-job:issue`, `desktop-job:finished`, and
+/// `desktop-job:error`. Each issue goes out the moment the exporter records it,
 /// so the window has written it into the run record before an app that
 /// closes mid-Staging stops. Output is JSON Lines (one JSON object per line)
 /// so the Import screen's Upload can read it later.
@@ -156,7 +158,7 @@ pub struct ExtractArgs {
 /// Returns an error if `output_dir` is not a run directory this app made, a
 /// form field is invalid, the source is unknown, another job is running, or
 /// another thread panicked while holding the shared state lock. Failures
-/// during the export itself are sent as `extract:error`, not returned here.
+/// during the export itself are sent as `desktop-job:error`, not returned here.
 #[tauri::command(async)]
 pub fn extract(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,

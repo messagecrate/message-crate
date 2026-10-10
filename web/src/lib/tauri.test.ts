@@ -206,7 +206,7 @@ describe("awaitDesktopJob", () => {
     let seenWhileRunning: string | null = null;
     const done = awaitDesktopJob("Export", async () => {
       seenWhileRunning = currentDesktopJob();
-      queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Export complete" }));
+      queueMicrotask(() => listeners.get("desktop-job:finished")?.({ payload: "Export complete" }));
     });
     await done;
     expect(seenWhileRunning).toBe("Export");
@@ -219,7 +219,7 @@ describe("awaitDesktopJob", () => {
     const releaseRun = holdDesktopJob("Import Run");
     try {
       await awaitDesktopJob("Import Run", async () => {
-        queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Staged" }));
+        queueMicrotask(() => listeners.get("desktop-job:finished")?.({ payload: "Staged" }));
       });
       expect(currentDesktopJob()).toBe("Import Run");
     } finally {
@@ -230,7 +230,9 @@ describe("awaitDesktopJob", () => {
 
   it("lets the desktop job go when the job fails", async () => {
     const done = awaitDesktopJob("Convert", async () => {
-      queueMicrotask(() => listeners.get("extract:error")?.({ payload: { detail: "disk full" } }));
+      queueMicrotask(() =>
+        listeners.get("desktop-job:error")?.({ payload: { detail: "disk full" } }),
+      );
     });
     await expect(done).rejects.toThrow("disk full");
     expect(currentDesktopJob()).toBeNull();
