@@ -22,7 +22,7 @@ function message(
       conversation_type: isGroup ? "group" : "individual",
       is_group: isGroup,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [],
     },
   });

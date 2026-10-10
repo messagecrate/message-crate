@@ -35,7 +35,7 @@ function GroupNames({ conv }: { conv: Conversation }) {
  * the name the Messages list gives it too.
  */
 function titleContent(conv: Conversation): ReactNode {
-  if (!conv.label && conv.is_group && conv.participants.length > 0) {
+  if (!conv.shown_title && conv.is_group && conv.participants.length > 0) {
     return <GroupNames conv={conv} />;
   }
   return conversationTitleText(conv);
@@ -44,7 +44,7 @@ function titleContent(conv: Conversation): ReactNode {
 /** Plain-text form of the row title, for the checkbox's accessible name. */
 function conversationTitleText(conv: Conversation): string {
   return conversationName({
-    title: conv.label,
+    title: conv.shown_title,
     isGroup: conv.is_group,
     participants: conv.participants,
   });
@@ -77,7 +77,7 @@ export default function ConversationRow({
 }) {
   const columnResizing = useColumnResizing();
   const isGroup = conversation.is_group;
-  const wraps = isGroup && !conversation.label && !columnResizing;
+  const wraps = isGroup && !conversation.shown_title && !columnResizing;
   const dateSpan = formatDateSpan(
     conversation.first_message_at,
     conversation.last_message_at,
