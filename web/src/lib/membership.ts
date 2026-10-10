@@ -21,11 +21,16 @@ export function checksFromMembers(
 /**
  * Clear all: take every name the selected rows carry off them, one write per
  * name, all started at once rather than each waiting for the one before.
+ * Names that differ only in letter case are one name, as `checksFromMembers`
+ * reads them, so they get one write.
  */
 export async function clearAllMembers(
   memberLists: readonly (readonly string[])[],
   removeName: (name: string) => Promise<unknown>,
 ): Promise<void> {
-  const names = new Set(memberLists.flat());
-  await Promise.allSettled([...names].map(removeName));
+  const names = new Map<string, string>();
+  for (const name of memberLists.flat()) {
+    if (!names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+  }
+  await Promise.allSettled([...names.values()].map(removeName));
 }

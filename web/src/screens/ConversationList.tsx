@@ -16,7 +16,7 @@ import {
   saveConversationSort,
 } from "../lib/conversationSort";
 import { formatVisibleRange } from "../lib/listPaging";
-import { checksFromMembers, clearAllMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { useMessageTagActions, useSetMessageTagMembers } from "../lib/messageTags";
 import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";

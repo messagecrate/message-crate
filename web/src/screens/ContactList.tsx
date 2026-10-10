@@ -26,7 +26,7 @@ import {
 import { formatDay } from "../lib/formatDate";
 import { highlightText } from "../lib/highlightText";
 import { PAGE_SIZE_CONTACTS_FIRST, PAGE_SIZE_FIRST } from "../lib/listPaging";
-import { checksFromMembers, clearAllMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
 import { applyCheckedRange } from "../lib/rangeCheck";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
