@@ -24,12 +24,20 @@ pub(crate) enum TokenKind {
     /// `word:value`. `quoted` says the value came in quotes, so a comma in it
     /// is text rather than a list separator.
     Field {
+        /// The field name before the colon.
         word: String,
+        /// The value after the colon, without its quotes.
         value: String,
+        /// True when the value came in quotes.
         quoted: bool,
     },
     /// A bare word; `prefix` when it ended in `*`.
-    Word { text: String, prefix: bool },
+    Word {
+        /// The word, without its trailing `*`.
+        text: String,
+        /// True when the word ended in `*`.
+        prefix: bool,
+    },
     /// A quoted phrase.
     Phrase(String),
 }

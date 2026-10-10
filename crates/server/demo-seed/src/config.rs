@@ -101,28 +101,31 @@ pub struct ContactsConfig {
     pub first_only: f64,
     /// Chance that a generated phone number is a US number rather than a UK one.
     pub us_phones: f64,
-    /// Share of contacts labelled Inactive. An inactive contact has no messages.
+    /// Share of contacts put in the Inactive Contact Group. An inactive contact
+    /// has no messages.
     pub inactive_fraction: f64,
-    /// Share of contacts that have no messages.
+    /// Chance that a contact that is not inactive has no messages. Every
+    /// inactive contact has none too, so the share of contacts with no
+    /// messages is higher than this.
     pub no_messages_fraction: f64,
     /// Share of contacts that get a second phone number.
     pub multi_phone_fraction: f64,
 }
 
-/// The `[labels]` section: the four contact labels and the chance that a
-/// contact gets each of the first three.
+/// The `[labels]` section: the four Contact Groups and the chance that a
+/// contact is put in each of the first three.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LabelsConfig {
-    /// The label names in a fixed order: family, work, college, inactive.
-    /// [`SeedConfig::validate`] refuses any other count, because the generator
-    /// picks each label by its position.
+    /// The Contact Group names in a fixed order: family, work, college,
+    /// inactive. [`SeedConfig::validate`] refuses any other count, because the
+    /// generator picks each Contact Group by its position.
     pub names: Vec<String>,
-    /// Chance that an active contact gets the first label.
+    /// Chance that an active contact is put in the first Contact Group.
     pub family: f64,
-    /// Chance that an active contact gets the second label.
+    /// Chance that an active contact is put in the second Contact Group.
     pub work: f64,
-    /// Chance that an active contact gets the third label.
+    /// Chance that an active contact is put in the third Contact Group.
     pub college: f64,
 }
 
@@ -162,17 +165,22 @@ pub struct OneToOneConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupsConfig {
-    /// Mean number of groups a contact joins.
+    /// Mean of the group budget drawn for each contact with messages that is
+    /// not one-to-one only. The draw is clamped to `per_contact_min` and
+    /// `per_contact_max`. A one-to-one-only contact gets a budget of 0, or of
+    /// at most 2 in 15% of cases, and a contact with no messages gets 0.
+    /// Filling a group that is still short can put a contact past its budget.
     pub per_contact_mean: f64,
-    /// Fewest groups a contact joins.
+    /// Smallest group budget drawn; see `per_contact_mean`.
     pub per_contact_min: u32,
-    /// Most groups a contact joins.
+    /// Largest group budget drawn; see `per_contact_mean`.
     pub per_contact_max: u32,
-    /// Mean number of contacts in a group.
+    /// Mean size aimed for in a group that is not large.
     pub participants_mean: f64,
-    /// Fewest contacts in a group.
+    /// Smallest size aimed for in a group that is not large. A group of
+    /// contacts that runs short of candidates can end with as few as 2.
     pub participants_min: u32,
-    /// Most contacts in a group.
+    /// Largest size aimed for in a group that is not large.
     pub participants_max: u32,
     /// At least this many groups must have a participant count between
     /// `large_participants_min` and `large_participants_max`.
@@ -197,7 +205,8 @@ pub struct GroupsConfig {
     pub span_mean_years: f64,
     /// As [`OneToOneConfig::span_max_years`], for a group.
     pub span_max_years: f64,
-    /// Share of groups whose members are phone numbers with no contact behind them.
+    /// Chance that a group made after the large ones has phone numbers with no
+    /// contact behind them as its members. A large group is never phone-only.
     pub phone_only_fraction: f64,
 }
 
@@ -218,7 +227,7 @@ pub struct MessagesConfig {
     /// conversation shorter than 10 messages (20 for a one-to-one) gets none.
     pub tapback_stride: usize,
     /// Every this many messages, one can be a reply to an earlier message; 0
-    /// adds none.
+    /// adds none. A one-to-one conversation shorter than 25 messages gets none.
     pub reply_stride: usize,
     /// Every this many messages of an Apple Messages one-to-one conversation,
     /// one is marked Deleted in the source app and keeps its text; 0 marks none.
@@ -271,7 +280,8 @@ pub struct SourcesConfig {
     /// Fewest Android-only messages added to each overlapping conversation.
     pub overlap_android_extra_min: usize,
     /// Upper bound, exclusive, of the Android-only messages added to each
-    /// overlapping conversation.
+    /// overlapping conversation. When it is not above
+    /// `overlap_android_extra_min`, exactly the minimum is added.
     pub overlap_android_extra_max: usize,
     /// Share of contacts that also get a WhatsApp conversation. That conversation
     /// uses the same phone number, marked as WhatsApp rather than iMessage or SMS.

@@ -20,8 +20,10 @@ use crate::server::ApiError;
 pub(crate) const MAX_PASSWORD_BYTES: usize = 1024;
 /// Sliding window for the routes a stranger may call with a credential.
 pub(crate) const AUTH_RATE_WINDOW: Duration = Duration::from_secs(60);
-/// The most credential attempts one bucket may make within
-/// [`AUTH_RATE_WINDOW`]. The next attempt is refused as `rate-limited`.
+/// The most hits one bucket may count within [`AUTH_RATE_WINDOW`]. The next
+/// attempt is refused as `rate-limited`. Register, claim and login count
+/// every attempt; a route that checks a `current_password` counts only a
+/// wrong one.
 pub(crate) const AUTH_RATE_MAX: usize = 20;
 
 static DUMMY_PASSWORD_HASH: OnceLock<String> = OnceLock::new();

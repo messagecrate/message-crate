@@ -19,7 +19,8 @@ pub const OWNER_EMAIL: &str = "demo.ingest@example.com";
 /// Which conversations a contact appears in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageScope {
-    /// A one-to-one conversation only; the contact rarely joins a group.
+    /// A one-to-one conversation. The contact joins a group only rarely: up
+    /// to two groups, in 15% of cases.
     OneToOne,
     /// Group conversations only, with no one-to-one conversation.
     Group,
@@ -39,7 +40,8 @@ pub struct Contact {
     pub middle_name: String,
     /// Last name, empty when the contact has none.
     pub last_name: String,
-    /// The contact's labels, such as Family or Work, from the `[labels]` names.
+    /// The contact's Contact Groups, such as Family or Work, from the
+    /// `[labels]` names.
     pub groups: Vec<String>,
     /// False for a contact that appears in no conversation.
     pub has_messages: bool,
@@ -88,8 +90,11 @@ pub struct GroupSpec {
 /// Contacts, groups, and unassigned handles used to write the demo conversations.
 #[derive(Debug)]
 pub struct Roster {
+    /// The people in the demo address book.
     pub contacts: Vec<Contact>,
+    /// The phone numbers and email addresses with messages and no contact.
     pub unassigned: Vec<Unassigned>,
+    /// The group conversations to write.
     pub groups: Vec<GroupSpec>,
 }
 
