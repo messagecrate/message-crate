@@ -31,14 +31,14 @@ fixed, never declined for being small.
 ## Pushing and posting
 
 The PR is a draft until step 5. Before CI, it is pushed at most twice: in
-step 1, to bring it up to date, and in step 5, with every fix. Step 5 marks it
-ready after its push, and CI is watched on that head alone (AGENTS.md
-step 6).
+step 1, to bring it up to date, and in step 5, with every fix. A conflict that
+appears before the PR is marked ready adds one push, with the base merged in.
+Step 5 marks it ready after its push, and CI is watched on that head alone
+(AGENTS.md step 6).
 
-**Every push brings the base in** when it moved since the last one, so each
-run tests the PR on the `main` it lands on (AGENTS.md step 5). A push made
-only for the base waits for a conflict: a PR that is only behind merges as
-it is, and a conflict ends the CI watch (step 6).
+**Every push brings the base in** when it moved since the last one. A push
+made only to bring the base in is made only on `CONFLICTING` (AGENTS.md
+step 5).
 
 **Every call that posts** (a review, a comment, a reply) goes one at a time,
 and a refusal is retried (AGENTS.md, "Posting pace").
@@ -174,13 +174,9 @@ failed job or at a conflict (AGENTS.md step 6). A job that fails because of
 the PR is a finding: fix it, run the local checks, push, and watch the new
 run.
 
-**A conflict ends the watch.** The watch reads the PR's merge state with
-every poll, starting before the PR is marked ready. Once the PR is
-`CONFLICTING`, no run on its head can lead to a merge, so leave the run:
-merge the base in with the merge review, fix any job of that run that
-already failed because of the PR, run the local checks, push, and watch the
-new run. The push cancels the run you left. A run being waited on for a
-rerun is left the same way.
+**A conflict ends the watch.** No run on a `CONFLICTING` head can lead to a
+merge, so leave the run and push the base merged in at once, with the merge
+review. AGENTS.md step 6 says what the push carries.
 
 A check that fails for a reason outside the PR (a runner fault, a network
 fetch) gets one rerun of its failed jobs. If it fails again, or `main` fails
