@@ -548,7 +548,9 @@ impl ProjectionHooks for WhatsappProjection {
 
     /// The chat's `jid` and the message's `key_id`: raw values the
     /// conversation model has no place for. A reply is not copied here,
-    /// because `reply_to` records it on the message.
+    /// because `reply_to` records it on the message. A reply whose quoted
+    /// message is not found keeps no quoted id: the raw `reply` value is
+    /// the 17-character `key_id` prefix, which #1645 says not to link by.
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         let whatsapp_jid = convo.extra_str("whatsapp_jid");
