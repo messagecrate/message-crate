@@ -9,7 +9,6 @@ import TimeZoneField from "../../components/TimeZoneField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ImessagePathStats } from "../../lib/imessageImport";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
-import { splitEmails } from "../../lib/importSources/androidSms";
 import { FieldStatus } from "../../lib/importSources/FieldStatus";
 import type { OwnerPhoneEntry } from "../../lib/importSources/types";
 import { WhatsappFallbackPhoneField } from "../../lib/importSources/WhatsappFormSection";
@@ -269,7 +268,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   };
   // The asterisks and the Import button both read the source's readiness,
   // so a field cannot be needed and unmarked.
-  const readiness = source.readiness({ ...props, ownerPhoneEntry });
+  const readiness = source.readiness({ ...props, ownerPhoneEntry }, props.source);
 
   const showCompress =
     source.showsAttachmentOptions && props.attachments.attachmentMedia === "compress";
@@ -292,20 +291,27 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     blockedBy === null && !wtsexporterBlocked && readiness.enabled && !props.running;
 
   function handleImport(): void {
-    if (asksOwnerPhones) {
-      if (!props.profilePhonesReady) return;
-      const phones = phoneFieldRef.current?.flush() ?? props.ownerPhones;
-      if (phones.length === 0) return;
-      if (source.asksOwnerEmails && splitEmails(props.ownerEmails).length === 0) return;
-      const mismatch = ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
-        ready: props.profilePhonesReady,
-        fetchFailed: props.profilePhonesError,
-      });
-      if (mismatch && !mismatchAck) return;
-      props.onImport(phones);
+    if (!asksOwnerPhones) {
+      props.onImport();
       return;
     }
-    props.onImport();
+    // Commit the number being typed, then ask the source again with the
+    // committed list, which is what the run gets.
+    const phones = phoneFieldRef.current?.flush() ?? props.ownerPhones;
+    const committed: OwnerPhoneEntry = {
+      ...ownerPhoneEntry,
+      draftPending: false,
+      phonesForMatch: phones,
+      mismatch: ownerPhonesNeedMismatchAck(phones, props.profilePhones, {
+        ready: props.profilePhonesReady,
+        fetchFailed: props.profilePhonesError,
+      }),
+    };
+    const ready = source.readiness(
+      { ...props, ownerPhones: phones, ownerPhoneEntry: committed },
+      props.source,
+    );
+    if (ready.enabled) props.onImport(phones);
   }
 
   const attachmentFields = (

@@ -1554,7 +1554,7 @@ async function runImport(
         // The media fields go only to a source whose form shows them, as the
         // person chose them: extract checks them before anything is staged
         // and records them for the later stages.
-        ...importSourceFor(form.source).extractFields(form),
+        ...importSourceFor(form.source).extractFields(form, form.source),
         ...(form.phoneCountry ? { phone_country: form.phoneCountry } : {}),
       }),
     );

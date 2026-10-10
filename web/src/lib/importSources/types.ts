@@ -73,24 +73,26 @@ export type ImportFormSectionProps = ReadinessInput & {
 };
 
 /**
- * Everything the Import screen knows about one backup source, in one place.
- * Each field is read for the selected source, so adding a source is adding
- * one descriptor to `IMPORT_SOURCES`.
+ * What the Import form and the run's extract know about one backup source,
+ * in one place. Each field is read for the selected source, so the form
+ * and the extract of a new source need only its descriptor.
  *
- * The functions that take a method are only asked about one of the
- * source's own `methods`.
+ * `M` is the source's own method ids. The functions that take a method are
+ * written as methods, so a descriptor typed by its own ids fits the list of
+ * `ImportSourceDescriptor`. The list only passes a descriptor one of its own
+ * methods, because `importSourceFor` finds the descriptor by that method.
  */
-export type ImportSourceDescriptor = {
+export type ImportSourceDescriptor<M extends string = string> = {
   /** The Import Run's and each message's `source`. */
   id: ImportSourceId;
   /** The name the product gives the source, from `EXPORT_SOURCES`. */
   label: string;
   /** The ways Import reads it. A source read one way lists one, whose id is the source's own. */
-  methods: readonly ImportMethod[];
+  methods: readonly { id: M; label: string }[];
   /** The method a new form, or a pick of this source, starts on. */
-  defaultMethod: string;
+  defaultMethod: M;
   /** The methods Platform lists while `selected` is picked. */
-  visibleMethods: (selected: string) => readonly ImportMethod[];
+  visibleMethods(selected: M): readonly ImportMethod[];
   /**
    * True when the form shows the Attachments field. A source without it
    * copies its attachments, whatever the field held for another source.
@@ -103,15 +105,15 @@ export type ImportSourceDescriptor = {
   /** True when the import runs wtsexporter, so it cannot start without it. */
   needsWtsexporter: boolean;
   /** The options under Processing Options this method shows. */
-  processingOptions: (method: string) => readonly ProcessingOption[];
-  /** The fields `extract` needs from a form whose `source` is one of `methods`. */
-  extractFields: (form: ImportJobFormValues) => ExtractFields;
+  processingOptions(method: M): readonly ProcessingOption[];
+  /** The fields `extract` needs from a form whose `source` is `method`. */
+  extractFields(form: ImportJobFormValues, method: M): ExtractFields;
   /** The secret this method's extract reads, or null for none. */
-  snapshotSecret: (method: string) => SnapshotSecret | null;
+  snapshotSecret(method: M): SnapshotSecret | null;
   /** How the form asks for this method's backup. */
-  backupField: (method: string) => BackupField;
+  backupField(method: M): BackupField;
   /** Whether the source's own fields let Import start, and what is wrong with each. */
-  readiness: (input: ReadinessInput) => Readiness;
+  readiness(input: ReadinessInput, method: M): Readiness;
   /** The source's fields after its backup field, in the Import Messages section. */
   FormSection: ComponentType<ImportFormSectionProps>;
 };
