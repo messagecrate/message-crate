@@ -34,9 +34,13 @@ pub fn contact_name(raw: &str, kind: ConversationKind) -> Option<&str> {
 /// Where an MMS lands: a one-to-one conversation keyed by the peer's handle
 /// key, or a group keyed by the sorted peer set.
 pub(crate) struct MmsConversation {
+    /// The peer's handle key, or the group key.
     pub(crate) chat_key: String,
+    /// Individual or group.
     pub(crate) kind: ConversationKind,
+    /// The generated title of a group; `None` for an individual.
     pub(crate) group_title: Option<String>,
+    /// Each peer with the name the element gives it, if any.
     pub(crate) participants: Vec<(Handle, Option<String>)>,
 }
 

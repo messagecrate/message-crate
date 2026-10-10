@@ -14,23 +14,23 @@ use crate::xml::{btree, decode_body, get};
 /// Raw `<part>` element: content-type, name, location, and payload columns
 /// plus the full attribute map.
 #[derive(Debug, Clone, Default)]
-pub struct MmsPart {
+pub(crate) struct MmsPart {
     /// MIME type from the `ct` attribute.
-    pub ct: String,
+    pub(crate) ct: String,
     /// Content name from the `name` attribute.
-    pub name: String,
+    pub(crate) name: String,
     /// Content-Location from the `cl` attribute.
-    pub cl: String,
+    pub(crate) cl: String,
     /// Filename from the XML `fn` attribute (not a function attribute).
-    pub filename_attr: String,
+    pub(crate) filename_attr: String,
     /// Content-ID from the `cid` attribute, angle brackets and all.
-    pub cid: String,
+    pub(crate) cid: String,
     /// Text body (SMIL) when present.
-    pub text: String,
+    pub(crate) text: String,
     /// Base64 payload when present.
-    pub data: String,
+    pub(crate) data: String,
     /// All raw attributes.
-    pub attrs: BTreeMap<String, String>,
+    pub(crate) attrs: BTreeMap<String, String>,
 }
 
 /// Decoded MMS attachment with a content-addressed filename.
@@ -107,11 +107,18 @@ pub(crate) enum DecodedPartData {
     Absent,
     /// Successfully decoded payload.
     Ok {
+        /// The decoded payload.
         bytes: Arc<[u8]>,
+        /// Lowercase hex SHA-256 of the decoded payload.
         digest_hex: String,
     },
     /// Non-empty data that is not valid base64.
-    Err { raw_len: usize, raw_sha256: String },
+    Err {
+        /// Length in bytes of the `data` attribute as written.
+        raw_len: usize,
+        /// Lowercase hex SHA-256 of the `data` attribute as written.
+        raw_sha256: String,
+    },
 }
 
 /// A part's `data` attribute decoded from base64, or why it could not be.

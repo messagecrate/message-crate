@@ -9,10 +9,14 @@ use crate::xml::{btree, get};
 const INSERT_ADDRESS_TOKEN: &str = "insert-address-token";
 pub(crate) const MMS_ADDR_FROM: &str = "137";
 
+/// Raw `<addr>` element: the address, its type, and the full attribute map.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MmsAddr {
+    /// The address as written, from the `address` attribute.
     pub(crate) address: String,
+    /// The address's role from the `type` attribute, such as `137` for `FROM`.
     pub(crate) addr_type: String,
+    /// All raw attributes.
     pub(crate) attrs: BTreeMap<String, String>,
 }
 
