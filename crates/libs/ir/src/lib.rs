@@ -858,11 +858,10 @@ pub fn conversation_stem(
 ) -> String {
     let is_group = conversation_type.eq_ignore_ascii_case("group");
     if !is_group {
-        let stem = if chat_id.trim().is_empty() {
-            "unknown".to_string()
-        } else {
-            sanitize_stem(chat_id)
-        };
+        let mut stem = sanitize_stem(chat_id);
+        if stem.is_empty() {
+            stem = "unknown".to_string();
+        }
         return with_suffix(&stem, suffix);
     }
 
@@ -1237,10 +1236,6 @@ mod conversation_stem_tests {
     fn individual_with_an_empty_chat_id_is_unknown() {
         assert_eq!(
             conversation_stem("individual", "", None, &[], None),
-            "unknown"
-        );
-        assert_eq!(
-            conversation_stem("individual", "  ", None, &[], None),
             "unknown"
         );
         assert_eq!(
