@@ -118,15 +118,14 @@ mod tests {
     #[test]
     fn serializes_ir_sms() {
         let mut doc = sample_document("hello");
-        let mut msg = doc.messages.remove(0);
-        msg.guid = "g1".into();
+        let msg = doc.messages.remove(0);
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
         assert!(header.contains(r#""schema_version":14"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
         let (line, guid) = message_line(&msg, &[]).unwrap();
-        assert_eq!(guid, "g1");
+        assert_eq!(guid, msg.guid);
         let s = String::from_utf8(line).unwrap();
         assert!(s.contains(r#""direction":"incoming""#));
         assert!(!s.contains(r#""record":"message""#));
