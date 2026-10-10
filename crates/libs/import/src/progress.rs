@@ -11,7 +11,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use message_crate_core::{RunLogLevel, count_of, format_run_log};
+use message_crate_core::{RunIssueKind, RunLogLevel, count_of, format_run_log};
 
 use crate::report::{
     FileResult, ImportReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
@@ -71,8 +71,9 @@ pub enum ProgressEvent {
     },
     /// Structured skip/error for Import Errors (e.g. oversized attachment).
     Issue {
-        /// `skip` when the item was left out, `error` when it failed.
-        kind: String,
+        /// [`RunIssueKind::Skip`] when the item was left out,
+        /// [`RunIssueKind::Error`] when it failed.
+        kind: RunIssueKind,
         /// The Stage that raised it, e.g. `upload`.
         step: String,
         /// What was affected: an attachment path or a conversation file.
@@ -360,7 +361,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
                 format!("Did not upload {}: {}", skip.item, skip.reason),
             );
             self.event(ProgressEvent::Issue {
-                kind: "skip".into(),
+                kind: RunIssueKind::Skip,
                 step: "upload".into(),
                 item: skip.item.clone(),
                 reason: skip.reason.clone(),
@@ -380,12 +381,15 @@ impl<'p, 'f> Reporter<'p, 'f> {
     pub(crate) fn conversation_issues(&mut self, results: &[FileResult]) {
         for result in results {
             let (kind, fallback) = match result.status.as_str() {
-                "failed" => ("error", "upload failed"),
-                "cancelled" => ("skip", "the Upload ended before this conversation was sent"),
+                "failed" => (RunIssueKind::Error, "upload failed"),
+                "cancelled" => (
+                    RunIssueKind::Skip,
+                    "the Upload ended before this conversation was sent",
+                ),
                 _ => continue,
             };
             self.event(ProgressEvent::Issue {
-                kind: kind.into(),
+                kind,
                 step: "upload".into(),
                 item: result.file.clone(),
                 reason: result.error.clone().unwrap_or_else(|| fallback.to_string()),
@@ -575,7 +579,7 @@ mod tests {
                 },
             ]);
         }
-        let rows: Vec<(String, String, String)> = seen
+        let rows: Vec<(RunIssueKind, String, String)> = seen
             .into_iter()
             .map(|event| match event {
                 ProgressEvent::Issue {
@@ -588,17 +592,17 @@ mod tests {
             rows,
             [
                 (
-                    "error".to_string(),
+                    RunIssueKind::Error,
                     "bad.jsonl".to_string(),
                     "attachment exceeds limit".to_string()
                 ),
                 (
-                    "skip".to_string(),
+                    RunIssueKind::Skip,
                     "unsent.jsonl".to_string(),
                     "the Upload ended before this conversation was sent".to_string()
                 ),
                 (
-                    "error".to_string(),
+                    RunIssueKind::Error,
                     "silent.jsonl".to_string(),
                     "upload failed".to_string()
                 ),

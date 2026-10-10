@@ -12,6 +12,7 @@ use crate::counter::{
 };
 use anyhow::{Context, bail};
 use media::MediaReport;
+pub use message_crate_api_types::RunIssueKind;
 use message_ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
     pending_to_document, prepare_conversation,
@@ -92,11 +93,10 @@ impl RunResult {
 /// reports its own issues with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
-    /// What the row is: `skip` when the item was left out, `error` when it
-    /// failed, [`NOTE`] when the run did something with it worth knowing that
-    /// is not a failure. `resolved` says an earlier row with the same step
-    /// and item no longer holds, as when Media converts a file on a later try.
-    pub kind: String,
+    /// What the row is: an Import Error ([`RunIssueKind::Skip`] or
+    /// [`RunIssueKind::Error`]), a note, or a word that an earlier row with
+    /// the same step and item no longer holds.
+    pub kind: RunIssueKind,
     /// The step that raised it, such as `attachments`.
     pub step: String,
     /// What was affected, such as an attachment's path in the backup.
@@ -113,11 +113,6 @@ pub struct RunIssue {
     /// in full (#1688).
     pub conversation: Option<String>,
 }
-
-/// The [`RunIssue::kind`] of a note: something the run did with an item that
-/// is worth knowing but did not fail, such as a message it kept with a
-/// caveat. The Import Run lists notes apart from its Import Errors.
-pub const NOTE: &str = "note";
 
 /// The note an exporter sends for a chat that names its person with no
 /// address, which it keeps under the name alone, counted as
@@ -250,7 +245,7 @@ impl ExportReport {
     pub fn error(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
         let item = item.into();
         self.errors.push(item_line(kind, &item, what_happened));
-        self.send("error", item, item_reason(kind, what_happened));
+        self.send(RunIssueKind::Error, item, item_reason(kind, what_happened));
     }
 
     /// Record something the run did with `item`, of `kind`, that is worth
@@ -260,7 +255,7 @@ impl ExportReport {
     pub fn note(&mut self, kind: ItemKind, item: impl Into<String>, what_happened: &str) {
         let item = item.into();
         self.notes.push(item_line(kind, &item, what_happened));
-        self.send(NOTE, item, item_reason(kind, what_happened));
+        self.send(RunIssueKind::Note, item, item_reason(kind, what_happened));
     }
 
     /// Count `by` under `counter` for one item the run kept with a caveat,
@@ -280,15 +275,15 @@ impl ExportReport {
     /// Send a note that names one item the run kept with a caveat to
     /// `issues`, for an exporter that counts the caveat's total itself.
     pub fn caveat_note(&self, item: impl Into<String>, text: impl Into<String>) {
-        self.send(NOTE, item.into(), text.into());
+        self.send(RunIssueKind::Note, item.into(), text.into());
     }
 
     /// Send one row about an item of the backup to `issues`.
-    fn send(&self, kind: &str, item: String, reason: String) {
+    fn send(&self, kind: RunIssueKind, item: String, reason: String) {
         emit_issue(
             self.issues.as_ref(),
             RunIssue {
-                kind: kind.into(),
+                kind,
                 step: READ_STEP.into(),
                 item,
                 reason,
@@ -579,22 +574,22 @@ mod tests {
                 "    The picture a.jpg is named by 2 rows",
             ]
         );
-        let rows: Vec<(String, String, String)> = rows
+        let rows: Vec<(RunIssueKind, String, String)> = rows
             .lock()
             .unwrap()
             .iter()
-            .map(|i| (i.kind.clone(), i.item.clone(), i.reason.clone()))
+            .map(|i| (i.kind, i.item.clone(), i.reason.clone()))
             .collect();
         assert_eq!(
             rows,
             [
                 (
-                    "note".into(),
+                    RunIssueKind::Note,
                     "a.jpg".into(),
                     "This picture is named by 2 rows".into()
                 ),
                 (
-                    "error".into(),
+                    RunIssueKind::Error,
                     "b.csv".into(),
                     "This CSV could not be read and was left out: cut off".into()
                 ),

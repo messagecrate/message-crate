@@ -208,7 +208,7 @@ describe("recordToCarry", () => {
   it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
     // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
     // before it started sending, so it reported nothing on b.jsonl.
-    const earlier = {
+    const earlier: RunRecord = {
       issues: [],
       lastStopIssues: [
         { ...upload("b.jsonl"), kind: "error", reason: "connection refused" },
@@ -222,7 +222,7 @@ describe("recordToCarry", () => {
   });
 
   it("drops an earlier pause's failed conversation once a later Upload reported on it", () => {
-    const earlier = {
+    const earlier: RunRecord = {
       issues: [],
       lastStopIssues: [{ ...upload("b.jsonl"), kind: "error", reason: "connection refused" }],
     };
@@ -242,7 +242,11 @@ describe("recordToCarry", () => {
 });
 
 describe("the record written while a stage runs (#1639)", () => {
-  const skip = { ...upload("a.jsonl", "a.jsonl:big.mov"), kind: "skip", reason: "too large" };
+  const skip: ImportIssue = {
+    ...upload("a.jsonl", "a.jsonl:big.mov"),
+    kind: "skip",
+    reason: "too large",
+  };
 
   it("holds an Upload's row apart until its conversation is on the server", () => {
     // A crash now would leave a.jsonl out of the journal, and the resumed
@@ -306,7 +310,12 @@ describe("the record written while a stage runs (#1639)", () => {
   });
 
   it("drops a row a later try resolved, wherever the record keeps it", () => {
-    const media = { kind: "skip", stage: "media" as const, item: "a.jsonl:IMG.HEIC", reason: "x" };
+    const media: ImportIssue = {
+      kind: "skip",
+      stage: "media" as const,
+      item: "a.jsonl:IMG.HEIC",
+      reason: "x",
+    };
     const record: RunRecord = { issues: [media], lastStopIssues: [skip] };
     expect(resolveInRecord(record, { stage: "media", item: "a.jsonl:IMG.HEIC" })).toEqual({
       issues: [],
@@ -317,7 +326,12 @@ describe("the record written while a stage runs (#1639)", () => {
   it("keeps once a row that a resumed stage reports again", () => {
     // Staging closed after reporting the photo but before writing its
     // conversation, so the resumed Staging read it again.
-    const photo = { kind: "error", stage: "staging" as const, item: "IMG_1.HEIC", reason: "x" };
+    const photo: ImportIssue = {
+      kind: "error",
+      stage: "staging" as const,
+      item: "IMG_1.HEIC",
+      reason: "x",
+    };
     const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [photo] }));
     expect(wholeRun(carried, part({ issues: [photo] })).issues).toEqual([photo]);
     // An Upload row reported again by the resumed Upload is kept once too.

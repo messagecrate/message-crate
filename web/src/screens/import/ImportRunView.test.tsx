@@ -750,7 +750,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "error" }),
       summaryView: finished({
         status: "completed_with_issues",
-        issues: [{ kind: "warn", stage: "upload", item: "chat.jsonl", reason: "Skipped one" }],
+        issues: [{ kind: "skip", stage: "upload", item: "chat.jsonl", reason: "Skipped one" }],
       }),
       importRunId: null,
       completionText: "Import completed with issues",
