@@ -6,12 +6,12 @@ use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
-    delete_json_with_body, delete_raw, delete_raw_with_body, delete_status,
-    delete_status_with_body, expect_problem, expect_problem_for, fixture_with_account, get_json,
-    get_raw, get_status, http_client, log_in, log_in_raw, login_status, message_line,
-    patch_failure, patch_json, patch_raw, post_created_json, post_json_raw, post_logged_out,
-    post_raw, post_status, post_status_logged_out, put_json, put_json_raw, put_raw, put_status,
-    register_via_api, seed_conversation, seed_one_message, stored_time, test_fixture,
+    delete_json_raw, delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
+    expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
+    http_client, log_in, log_in_raw, login_status, message_line, patch_failure, patch_json,
+    patch_json_raw, post_created_json, post_json_raw, post_logged_out, post_raw, post_status,
+    post_status_logged_out, put_json, put_json_raw, put_raw, put_status, register_via_api,
+    seed_conversation, seed_one_message, stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
@@ -584,7 +584,7 @@ async fn the_profile_refuses_email_as_a_service() {
             "remove_identities": [{ "address": "ada@example.com", "service": "email" }]
         }),
     ] {
-        let (status, text) = patch_raw(&fixture.state, &path, &account.token, body).await;
+        let (status, text) = patch_json_raw(&fixture.state, &path, &account.token, body).await;
         let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
         assert!(
             problem
@@ -898,7 +898,7 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
     assert!(row.is_owner, "the owner reads its own row");
 
     // The owner cannot disable itself.
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         &state,
         &own,
         &owner.token,
@@ -907,7 +907,7 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
     // The owner cannot delete itself.
-    let (status, text) = delete_raw_with_body(
+    let (status, text) = delete_json_raw(
         &state,
         &own,
         &owner.token,
@@ -930,7 +930,7 @@ async fn owner_routes_on_a_missing_account_are_404() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let missing = member(424_242);
 
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         &state,
         &missing,
         &owner.token,
@@ -1478,7 +1478,7 @@ async fn deleting_own_messages_needs_the_delete_permission_and_a_confirmation() 
     assert_eq!(body.conversations, 1);
 
     fixture.turn_off_delete(alice.account_id).await;
-    let (status, text) = delete_raw_with_body(
+    let (status, text) = delete_json_raw(
         &state,
         &path,
         &alice.token,
@@ -1663,7 +1663,7 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
     .token;
     drop(conn);
 
-    let (status, text) = delete_raw_with_body(
+    let (status, text) = delete_json_raw(
         &state,
         &format!("{}/messages", member(created.account_id)),
         &token,
@@ -1672,7 +1672,7 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
     .await;
     expect_problem(status, &text, ProblemType::InsufficientScope);
 
-    let (status, text) = delete_raw_with_body(
+    let (status, text) = delete_json_raw(
         &state,
         &member(created.account_id),
         &token,
@@ -1758,7 +1758,7 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
     // No body: nothing confirmed and no password.
     let (status, text) = delete_raw(&state, &path, &alice.token).await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
-    let (status, text) = delete_raw_with_body(
+    let (status, text) = delete_json_raw(
         &state,
         &path,
         &alice.token,
@@ -1785,7 +1785,7 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
     );
 
     let (demo, demo_token) = fixture.demo_account_session().await;
-    let (status, text) = crate::test_support::delete_raw_with_body(
+    let (status, text) = crate::test_support::delete_json_raw(
         &state,
         &member(demo),
         &demo_token,
@@ -1812,7 +1812,7 @@ async fn an_account_without_the_delete_permission_cannot_delete_itself() {
     fixture.turn_off_delete(bob.account_id).await;
     let path = member(bob.account_id);
 
-    let (status, text) = crate::test_support::delete_raw_with_body(
+    let (status, text) = crate::test_support::delete_json_raw(
         &state,
         &path,
         &bob.token,
@@ -1882,7 +1882,7 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
             &text,
             ProblemType::DemoAccountProtected,
         );
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             &state,
             &path,
             token,
@@ -1897,7 +1897,7 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
             &text,
             ProblemType::DemoAccountProtected,
         );
-        let (status, text) = delete_raw_with_body(
+        let (status, text) = delete_json_raw(
             &state,
             &format!("{path}/messages"),
             token,
@@ -1922,7 +1922,7 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
                 serde_json::json!({ "time_zone": "America/New_York" }),
             ),
         ] {
-            let (status, text) = patch_raw(&state, &path, token, body).await;
+            let (status, text) = patch_json_raw(&state, &path, token, body).await;
             let problem = expect_problem_for(
                 &format!("{who} changing its {field}"),
                 status,
@@ -2958,8 +2958,7 @@ async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
         |current: &str| serde_json::json!({ "confirm": true, "current_password": current });
 
     for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
-        let (status, text) =
-            delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
+        let (status, text) = delete_json_raw(&state, &path, &alice.token, delete("not-it")).await;
         expect_problem_for(
             &format!("attempt {attempt}"),
             status,
@@ -2967,11 +2966,11 @@ async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
             ProblemType::InvalidCredentials,
         );
     }
-    let (status, text) = delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
+    let (status, text) = delete_json_raw(&state, &path, &alice.token, delete("not-it")).await;
     expect_problem(status, &text, ProblemType::RateLimited);
     // Past the limit the guess is not checked.
     let (status, text) =
-        delete_raw_with_body(&state, &path, &alice.token, delete("hunter2hunter2")).await;
+        delete_json_raw(&state, &path, &alice.token, delete("hunter2hunter2")).await;
     expect_problem(status, &text, ProblemType::RateLimited);
     assert_eq!(
         get_status(&state, &path, &alice.token).await,

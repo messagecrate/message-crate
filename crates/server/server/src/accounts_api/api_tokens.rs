@@ -475,12 +475,11 @@ mod tests {
             crate::test_support::register_via_api(&state, "token-owner", "hunter2hunter2").await;
 
         let collection = format!("/v1/accounts/{}/api-tokens", account.account_id);
-        let (status, text) = crate::test_support::post_raw(
+        let (status, text) = crate::test_support::post_json_raw(
             &state,
             &collection,
             &account.token,
-            "application/json",
-            r#"{"label": "cli token", "can_delete": true}"#,
+            serde_json::json!({ "label": "cli token", "can_delete": true }),
         )
         .await;
         crate::test_support::expect_problem(
@@ -561,9 +560,10 @@ mod tests {
     /// from then on.
     #[tokio::test]
     async fn the_owner_revokes_an_accounts_token() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, get_status, post_created_json, register_via_api,
-            test_fixture,
+            claim_as_owner, delete_status, expect_problem, get_raw, get_status, post_created_json,
+            register_via_api, test_fixture,
         };
         use axum::http::StatusCode;
 
@@ -590,10 +590,8 @@ mod tests {
             delete_status(&state, &format!("{alices}/{id}"), &owner.token).await,
             StatusCode::NO_CONTENT
         );
-        assert_eq!(
-            get_status(&state, "/v1/exports", token).await,
-            StatusCode::UNAUTHORIZED
-        );
+        let (status, text) = get_raw(&state, "/v1/exports", token).await;
+        expect_problem(status, &text, ProblemType::AuthenticationRequired);
     }
 
     /// The owner sees and revokes; making and renaming stay with the
@@ -602,11 +600,11 @@ mod tests {
     /// token reaches any token route.
     #[tokio::test]
     async fn only_the_account_itself_makes_and_renames_its_tokens() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            claim_as_owner, delete_status, get_status, patch_status, post_created_json,
-            post_status, register_via_api, test_fixture,
+            claim_as_owner, delete_raw, expect_problem, expect_problem_for, get_raw,
+            patch_json_raw, post_created_json, post_json_raw, register_via_api, test_fixture,
         };
-        use axum::http::StatusCode;
 
         let fixture = test_fixture().await;
         let state = fixture.state.clone();
@@ -624,46 +622,53 @@ mod tests {
         let one = format!("{alices}/{}", created["id"]);
 
         for (who, token) in [("bob", &bob.token), ("the owner", &owner.token)] {
-            assert_eq!(
-                post_status(&state, &alices, token, serde_json::json!({ "label": "x" })).await,
-                StatusCode::FORBIDDEN,
-                "{who} must not mint a token for alice"
+            let (status, text) =
+                post_json_raw(&state, &alices, token, serde_json::json!({ "label": "x" })).await;
+            expect_problem_for(
+                &format!("{who} minting a token for alice"),
+                status,
+                &text,
+                ProblemType::InsufficientScope,
             );
-            assert_eq!(
-                patch_status(&state, &one, token, serde_json::json!({ "label": "y" })).await,
-                StatusCode::FORBIDDEN,
-                "{who} must not rename alice's token"
+            let (status, text) =
+                patch_json_raw(&state, &one, token, serde_json::json!({ "label": "y" })).await;
+            expect_problem_for(
+                &format!("{who} renaming alice's token"),
+                status,
+                &text,
+                ProblemType::InsufficientScope,
             );
         }
-        assert_eq!(
-            get_status(&state, &alices, &bob.token).await,
-            StatusCode::FORBIDDEN,
-            "bob must not list alice's tokens"
+        let (status, text) = get_raw(&state, &alices, &bob.token).await;
+        expect_problem_for(
+            "bob listing alice's tokens",
+            status,
+            &text,
+            ProblemType::NotTheOwner,
         );
-        assert_eq!(
-            delete_status(&state, &one, &bob.token).await,
-            StatusCode::FORBIDDEN,
-            "bob must not revoke alice's token"
+        let (status, text) = delete_raw(&state, &one, &bob.token).await;
+        expect_problem_for(
+            "bob revoking alice's token",
+            status,
+            &text,
+            ProblemType::NotTheOwner,
         );
         let secret = created["token"].as_str().unwrap();
-        assert_eq!(
-            get_status(&state, &alices, secret).await,
-            StatusCode::FORBIDDEN
-        );
-        assert_eq!(
-            delete_status(&state, &one, secret).await,
-            StatusCode::FORBIDDEN
-        );
+        let (status, text) = get_raw(&state, &alices, secret).await;
+        expect_problem(status, &text, ProblemType::InsufficientScope);
+        let (status, text) = delete_raw(&state, &one, secret).await;
+        expect_problem(status, &text, ProblemType::InsufficientScope);
     }
 
     /// A rename answers the token with its new label, trimmed, as the list
     /// shows it; an id the account does not hold is a 404.
     #[tokio::test]
     async fn renaming_a_token_answers_and_stores_the_new_label() {
+        use crate::problem::ProblemType;
         use crate::test_support::{
-            fixture_with_account, get_json, patch_json, patch_status, post_created_json,
+            expect_problem, fixture_with_account, get_json, patch_json, patch_json_raw,
+            post_created_json,
         };
-        use axum::http::StatusCode;
 
         let (fixture, alice) = fixture_with_account().await;
         let state = fixture.state.clone();
@@ -691,16 +696,14 @@ mod tests {
             "the rename answers the token as the list shows it"
         );
 
-        assert_eq!(
-            patch_status(
-                &state,
-                &format!("{collection}/{}", id + 1000),
-                &alice.token,
-                serde_json::json!({ "label": "nobody" })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
+        let (status, text) = patch_json_raw(
+            &state,
+            &format!("{collection}/{}", id + 1000),
+            &alice.token,
+            serde_json::json!({ "label": "nobody" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
     }
 
     /// A token created without naming `can_export` may export: the default is
