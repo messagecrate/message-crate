@@ -87,7 +87,7 @@ export default function ConversationHeader({
   };
 
   const title =
-    conversation.label ||
+    conversation.shown_title ||
     (conversation.is_group
       ? `${conversation.participants.length} participants`
       : conversation.participants[0]?.name);

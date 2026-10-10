@@ -34,7 +34,7 @@ function message(id: number): Message {
       conversation_type: "direct",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [],
     },
   });

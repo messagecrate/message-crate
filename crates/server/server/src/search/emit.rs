@@ -5,7 +5,7 @@ use chrono::NaiveDate;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::conversation_messages::{duplicate_chain_sql, earlier_versions_holder_sql};
-use crate::db::conversations::{conversation_title_sql, is_with_yourself_sql};
+use crate::db::conversations::{is_with_yourself_sql, shown_title_sql};
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
 use super::error::{QueryError, QueryErrorKind};
@@ -277,7 +277,7 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         }
         ListKind::Conversations => {
             out.push("(");
-            free_text_match(out, &conversation_title_text(), term);
+            free_text_match(out, &shown_title_text(), term);
             out.push(" OR ");
             free_text_match(out, &conversation_identity_text(), term);
             // The handle join is a LEFT join: a source may name a participant
@@ -472,7 +472,7 @@ fn emit_text_word(
         ("title", _) => ctx.conversation(out, |o| {
             result = text_match(
                 o,
-                &conversation_title_text(),
+                &shown_title_text(),
                 term,
                 v,
             );
@@ -624,11 +624,11 @@ fn participant_matches(out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(),
 }
 
 /// Conversation `c`'s title as text to match, `''` when it has none: the one
-/// expression the conversation list shows (`conversation_title_sql`), so
+/// expression the conversation list shows (`shown_title_sql`), so
 /// plain text, `title:` and `in:` find a conversation by the name it is
 /// shown by.
-fn conversation_title_text() -> String {
-    format!("coalesce({}, '')", conversation_title_sql("c"))
+fn shown_title_text() -> String {
+    format!("coalesce({}, '')", shown_title_sql("c"))
 }
 
 /// The text of conversation `c`'s own identity, as plain text on
@@ -895,7 +895,7 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
 }
 
 /// `in:#id` names a conversation; `in:<text>` matches its title
-/// (`conversation_title_sql`) or its own identity
+/// (`shown_title_sql`) or its own identity
 /// (`conversation_identity_text`).
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
@@ -908,7 +908,7 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             let prefix = matches!(v, Value::Prefix(_));
             ctx.conversation(out, |o| {
                 o.push("(");
-                like_contains(o, &conversation_title_text(), t, prefix);
+                like_contains(o, &shown_title_text(), t, prefix);
                 o.push(" OR ");
                 like_contains(o, &conversation_identity_text(), t, prefix);
                 o.push(")");

@@ -791,7 +791,7 @@ as one (WhatsApp's "Message yourself" does), is dropped as any account identity
 is. A read asks the same question of the identities the account has now
 (`db/conversations.rs`, `is_with_yourself_sql`): the conversation list and the
 conversation page do not read its chat handle back as a participant
-(`db/participant_names.rs`), and the title (`conversation_title_sql`) is the
+(`db/participant_names.rs`), and the title (`shown_title_sql`) is the
 one expression the conversation list, the conversation page, the Messages list,
 `title:`, `in:` and plain text all read
 ([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
@@ -885,7 +885,7 @@ The key is the conversation's own and nobody's address: it gets no contact,
 and search reads it as no text, as it does a group's id. Every title says
 "Orphaned", so the word `orphaned` finds every one of these conversations by
 its title, while `"orphaned:"` finds none. The title is computed on every read
-(`db/conversations.rs`, `conversation_title_sql`) from the first participant's
+(`db/conversations.rs`, `shown_title_sql`) from the first participant's
 name as the conversation shows it, so it follows a rename of the person's
 contact. The Apple Messages Reader writes these conversations for messages in
 no chat (`emit.rs`, `orphaned_conversation`). It reads the person from the

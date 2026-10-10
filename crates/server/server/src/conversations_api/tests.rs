@@ -2786,7 +2786,7 @@ async fn conversation_sources_404s_for_another_accounts_conversation_and_an_unkn
 /// The list shows a group under its title, trimmed. A title of only spaces is
 /// no title, so the web app falls back to the participants' names.
 #[tokio::test]
-async fn the_list_labels_a_group_with_its_trimmed_title_and_a_blank_title_with_null() {
+async fn the_list_shows_a_group_by_its_trimmed_title_and_a_blank_title_as_null() {
     use crate::test_support::{SeedConversation, SeedMessage, seed_conversation};
     let (fixture, alice) = fixture_with_account().await;
     let message = SeedMessage {
@@ -2815,16 +2815,16 @@ async fn the_list_labels_a_group_with_its_trimmed_title_and_a_blank_title_with_n
 
     let page: serde_json::Value =
         crate::test_support::get_json(&fixture.state, "/v1/conversations", &alice.token).await;
-    let label_of = |id: i64| {
+    let shown_title_of = |id: i64| {
         page["items"]
             .as_array()
             .unwrap()
             .iter()
             .find(|item| item["id"] == serde_json::json!(id))
-            .unwrap_or_else(|| panic!("conversation {id} is listed: {page}"))["label"]
+            .unwrap_or_else(|| panic!("conversation {id} is listed: {page}"))["shown_title"]
             .clone()
     };
 
-    assert_eq!(label_of(ids[0]), serde_json::json!("Family"));
-    assert_eq!(label_of(ids[1]), serde_json::Value::Null);
+    assert_eq!(shown_title_of(ids[0]), serde_json::json!("Family"));
+    assert_eq!(shown_title_of(ids[1]), serde_json::Value::Null);
 }

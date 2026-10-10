@@ -632,13 +632,13 @@ api_shape! {
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
         /// The title the conversation is shown by, as the conversation list's
-        /// `label` gives it: for a conversation the account holder has with
+        /// `shown_title` gives it: for a conversation the account holder has with
         /// themselves, the account's display name or, without one, the
         /// conversation's own address; for one of orphaned messages, its
         /// person's name and "Orphaned", or "Orphaned · Unknown person" for
         /// the one that names nobody; for any other, the export's title. `null`
         /// when there is none, and the conversation goes by its participants.
-        pub label: Option<String>,
+        pub shown_title: Option<String>,
         /// Participants of the conversation.
         pub participants: Vec<Participant>,
     }
@@ -739,7 +739,7 @@ mod tests {
                 conversation_type: "individual".into(),
                 is_group: false,
                 group_title: None,
-                label: None,
+                shown_title: None,
                 participants: vec![Participant {
                     name: "Sarah Vale".into(),
                     identity: None,
@@ -792,7 +792,7 @@ mod tests {
                 "conversation_type": "individual",
                 "is_group": false,
                 "group_title": null,
-                "label": null,
+                "shown_title": null,
                 "participants": [{
                     "name": "Sarah Vale",
                     "identity": null,
