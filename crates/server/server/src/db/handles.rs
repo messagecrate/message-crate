@@ -68,24 +68,35 @@ pub fn handle_type_of(address: &str) -> IdentityType {
 }
 
 /// The type an import gives an address it meets on `service`: the service
-/// decides which types are valid, and the shape picks among them.
+/// decides which types are valid, and the shape ([`handle_type_of`]) picks
+/// among them. Every address an import meets is typed here, and the
+/// conversation file states no type (#1933).
 ///
-/// `stated` is the type the source gave, else the shape ([`handle_type_of`])
-/// decides. WhatsApp carries phone numbers and its own ids (`…@lid`,
-/// `…@g.us`, `…@s.whatsapp.net`), which are `Other`, so an address with an
-/// `@` on WhatsApp is `Other` however it looks (#1671). iMessage reaches an
-/// email address and shares the phone service with SMS, and an address has
-/// one type on one service, so the shape's type stands there; how SMS's
-/// phone-only rule is held on that service is #1958. A phone number is a
-/// phone number on every service (#1144).
-pub fn handle_type_on(
-    address: &str,
-    stated: Option<IdentityType>,
-    service: IdentityService,
-) -> IdentityType {
-    match (service, stated.unwrap_or_else(|| handle_type_of(address))) {
+/// WhatsApp carries phone numbers and its own ids (`…@lid`, `…@g.us`,
+/// `…@s.whatsapp.net`), which are `Other`, so an address with an `@` on
+/// WhatsApp is `Other` however it looks (#1671). Text Message carries phone
+/// numbers and email addresses, and an `@` address there is `Email` whatever
+/// transport carried it, because one conversation holds both SMS and
+/// iMessage and an address has one type on one service (#1958). A phone
+/// number is a phone number on every service (#1144). A name that is neither
+/// a number nor an address is `Other`.
+pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
+    match (service, handle_type_of(address)) {
         (IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
         (_, kind) => kind,
+    }
+}
+
+/// The type an import gives an identity value it meets on `service`: a name
+/// the source gave in place of an address (`is_name`) is `Other`, and an
+/// address is typed by [`handle_type_on`]. A participant, a message's sender
+/// and a reaction's sender all go through here, so one address is one type
+/// wherever it appears in a conversation (#1959).
+pub fn identity_type_on(value: &str, is_name: bool, service: IdentityService) -> IdentityType {
+    if is_name {
+        IdentityType::Other
+    } else {
+        handle_type_on(value, service)
     }
 }
 

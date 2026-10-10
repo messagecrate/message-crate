@@ -5,11 +5,10 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, Deletion, EarlierVersion, IdentityService, IdentityType, IrAttachment,
-    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
+    ConversationHeader, Deletion, EarlierVersion, IdentityService, IrAttachment, IrDirection,
+    IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
-use phone::Handle;
 use serde_json::Value;
 
 use crate::config::validate_source_id;
@@ -77,12 +76,14 @@ impl ConversationRecord {
 #[derive(Debug, Clone)]
 pub struct ParticipantRecord {
     /// Raw identity value. For a person the source named with no address it
-    /// is the name, and `handle_type` is `Other`.
+    /// is the name, and `is_name` is set.
     pub handle: String,
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
-    /// Handle type (phone, email, username, or other).
-    pub handle_type: Option<IdentityType>,
+    /// True when `handle` is a name the source gave in place of an address.
+    /// Staging stores a name as `Other`, and types an address by its service
+    /// and shape.
+    pub is_name: bool,
 }
 
 /// One message of an imported conversation.
@@ -105,13 +106,11 @@ pub struct MessageRecord {
     /// True for messages sent by the account owner.
     pub is_from_me: bool,
     /// Sender handle for incoming messages: the address, or the name when the
-    /// source named the sender with no address (`sender_handle_type` is then
-    /// `Other`).
+    /// source named the sender with no address (`sender_is_name` is then
+    /// set). Staging types an address by the message's service and its shape.
     pub sender: Option<String>,
-    /// The sender's identity type read from the address alone (phone, email
-    /// or other). Staging prefers the type the header gives a participant
-    /// with the same address.
-    pub sender_handle_type: Option<IdentityType>,
+    /// True when `sender` is a name the source gave in place of an address.
+    pub sender_is_name: bool,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -401,8 +400,8 @@ fn message_from_ir(
         timestamp,
         time_precision: msg.time_precision,
         is_from_me,
-        sender: sender.as_ref().map(|(value, _)| value.clone()),
-        sender_handle_type: sender.and_then(|(_, kind)| kind),
+        sender_is_name: sender.as_ref().is_some_and(|(_, is_name)| *is_name),
+        sender: sender.map(|(value, _)| value),
         owner: msg
             .owner_identity
             .as_deref()
@@ -448,52 +447,27 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// Every participant is an identity. A person the source names with no
 /// address gets an identity of type `other` whose value is the name, so the
 /// same name on one service is one identity and one contact on every import
-/// (`docs/architecture/contacts-identities-and-messages.md`).
+/// (`docs/architecture/contacts-identities-and-messages.md`). The file
+/// states no type: staging types an address by its service and shape
+/// (`db::handles::handle_type_on`).
 fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
     let name_alias = p.display_name.clone();
-    if let Some(handle) = p.identity.as_deref().and_then(nonempty) {
-        return Some(ParticipantRecord {
-            handle,
-            name_alias,
-            handle_type: p.identity_type,
-        });
-    }
-    let name = p.display_name.as_deref().and_then(nonempty)?;
+    let (handle, is_name) = sender_identity(p.identity.as_deref(), p.display_name.as_deref())?;
     Some(ParticipantRecord {
-        handle: name,
+        handle,
         name_alias,
-        handle_type: Some(IdentityType::Other),
+        is_name,
     })
 }
 
-/// An incoming message's sender as an identity value and, when known, its
-/// type: the address, else the name the source gave with no address as an
-/// identity of type `other`, the rule [`participant_from_ir`] applies.
-/// `None` when the message names neither.
-fn sender_identity(
-    address: Option<&str>,
-    name: Option<&str>,
-) -> Option<(String, Option<IdentityType>)> {
+/// An identity value and whether it is a name: the address, else the name
+/// the source gave with no address. `None` when the source gave neither.
+/// A message's sender and a participant follow this one rule.
+fn sender_identity(address: Option<&str>, name: Option<&str>) -> Option<(String, bool)> {
     if let Some(address) = address.and_then(nonempty) {
-        let kind = sender_handle_type(Some(address.as_str()));
-        return Some((address, kind));
+        return Some((address, false));
     }
-    let name = name.and_then(nonempty)?;
-    Some((name, Some(IdentityType::Other)))
-}
-
-/// The shape of a sender's address, read from the address alone.
-///
-/// A message carries only the sender's address, never its type. Staging uses
-/// the type the participant with the same address has, and this one only
-/// when the header lists no such participant, and then only within what the
-/// message's service carries (`db::handles::handle_type_on`): an address
-/// with an `@` on WhatsApp is `other`. It is
-/// [`Handle::parse`], the one rule for what an address looks like: a
-/// contact's number is a phone number on a service the model does not know
-/// too, such as a message Apple Messages sent by satellite (#1144).
-fn sender_handle_type(sender_identity: Option<&str>) -> Option<IdentityType> {
-    sender_identity.and_then(Handle::parse).map(|h| h.kind())
+    name.and_then(nonempty).map(|name| (name, true))
 }
 
 /// Map one IR attachment onto the server's attachment record.
@@ -574,7 +548,6 @@ mod tests {
                 assert!(!m.is_from_me);
                 assert_eq!(m.text.as_deref(), Some("hello"));
                 assert_eq!(m.service.as_deref(), Some("sms"));
-                assert_eq!(m.sender_handle_type, Some(IdentityType::Phone));
                 assert!(m.tapbacks.is_empty());
                 assert!(m.reply_to.is_none());
             }
@@ -770,24 +743,6 @@ mod tests {
             ExportRecord::Conversation(c) => assert_eq!(c.chat_identifier, "+15555550102"),
             _ => panic!("expected conversation"),
         }
-    }
-
-    #[test]
-    fn types_a_sender_by_the_address_alone() {
-        assert_eq!(
-            sender_handle_type(Some("alice@example.com")),
-            Some(IdentityType::Email)
-        );
-        assert_eq!(
-            sender_handle_type(Some("+1 (555) 555-0101")),
-            Some(IdentityType::Phone)
-        );
-        assert_eq!(
-            sender_handle_type(Some("AMAZON")),
-            Some(IdentityType::Other)
-        );
-        assert_eq!(sender_handle_type(Some("  ")), None);
-        assert_eq!(sender_handle_type(None), None);
     }
 
     #[test]

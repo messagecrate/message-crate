@@ -26,9 +26,9 @@ use message_crate_core::{
     RunIssue, item_line, item_reason,
 };
 use message_ir::{
-    ConversationDocument, ConversationMeta, ExportMeta, IdentityType, IrAttachment,
-    IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, SCHEMA_VERSION, TimePrecision, nonempty, owner_sender,
+    ConversationDocument, ConversationMeta, ExportMeta, IrAttachment, IrConversationType,
+    IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
+    TimePrecision, nonempty, owner_sender,
 };
 use message_ir_format::FormatSink;
 use message_staging::{
@@ -349,7 +349,6 @@ fn pending_from_record(record: ConversationRecord) -> PendingConversation {
             .participants
             .into_iter()
             .map(|p| IrParticipant {
-                identity_type: Some(handle_type_for(&p.identity)),
                 identity: Some(p.identity),
                 display_name: p.display_name,
             })
@@ -358,16 +357,6 @@ fn pending_from_record(record: ConversationRecord) -> PendingConversation {
         owner_display_name: None,
         messages: Vec::new(),
         attachment_loads: Vec::new(),
-    }
-}
-
-/// iMessage stores handles as phone numbers or email addresses without
-/// recording which; infer the type from the handle shape.
-fn handle_type_for(handle: &str) -> IdentityType {
-    if handle.contains('@') {
-        IdentityType::Email
-    } else {
-        IdentityType::Phone
     }
 }
 

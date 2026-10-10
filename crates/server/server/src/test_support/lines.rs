@@ -78,38 +78,22 @@ impl ConversationHeaderLine {
 
     /// One more participant, reached at `identity`.
     pub fn participant(self, identity: &str, display_name: Option<&str>) -> Self {
-        self.with_participant(Some(identity), display_name, None)
-    }
-
-    /// One more participant, reached at `identity` of a known type.
-    pub fn typed_participant(
-        self,
-        identity: &str,
-        display_name: Option<&str>,
-        identity_type: message_ir::IdentityType,
-    ) -> Self {
-        self.with_participant(Some(identity), display_name, Some(identity_type))
+        self.with_participant(Some(identity), display_name)
     }
 
     /// One more participant the source recorded no address for, named
     /// `display_name` when it named them at all.
     pub fn participant_without_identity(self, display_name: Option<&str>) -> Self {
-        self.with_participant(None, display_name, None)
+        self.with_participant(None, display_name)
     }
 
-    fn with_participant(
-        mut self,
-        identity: Option<&str>,
-        display_name: Option<&str>,
-        identity_type: Option<message_ir::IdentityType>,
-    ) -> Self {
+    fn with_participant(mut self, identity: Option<&str>, display_name: Option<&str>) -> Self {
         self.0
             .conversation
             .participants
             .push(message_ir::IrParticipant {
                 identity: identity.map(str::to_string),
                 display_name: display_name.map(str::to_string),
-                identity_type,
             });
         self
     }

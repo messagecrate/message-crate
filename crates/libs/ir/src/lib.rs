@@ -138,7 +138,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -298,9 +298,6 @@ pub struct IrParticipant {
     pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
-    /// Known kind of `identity`; `None` when the source did not record one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity_type: Option<IdentityType>,
 }
 
 /// Transport a message arrived on.

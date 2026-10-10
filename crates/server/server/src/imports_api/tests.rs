@@ -2000,11 +2000,7 @@ async fn a_name_keyed_chat_is_not_the_chat_of_the_address_it_spells() {
         "AMAZON.jsonl",
         &format!(
             "{}\n{}",
-            conversation_header("sms_backup_plus", "AMAZON").typed_participant(
-                "AMAZON",
-                None,
-                message_ir::IdentityType::Other
-            ),
+            conversation_header("sms_backup_plus", "AMAZON").participant("AMAZON", None),
             message_line("g-sender", "from a sender")
                 .at(1_426_183_463_000)
                 .sms()

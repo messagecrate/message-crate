@@ -9,7 +9,7 @@ use sqlx::SqliteConnection;
 use super::ImportCounts;
 use crate::db::contacts;
 use crate::db::handles::{
-    HandleIdCache, handle_type_on, normalize_handle, upsert_handle_row_cached,
+    HandleIdCache, identity_type_on, normalize_handle, upsert_handle_row_cached,
 };
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
@@ -107,11 +107,12 @@ pub(super) struct IncomingSender<'a> {
     /// handle to resolve.
     pub is_from_me: bool,
     /// The sender's address as the backup recorded it, or the name it gave
-    /// with no address (typed `Other`), when it recorded either.
+    /// with no address, when it recorded either.
     pub address: Option<&'a str>,
-    /// The address's type when the source stated it, else its shape decides.
-    /// Either way the service has the last word ([`handle_type_on`]).
-    pub handle_type: Option<IdentityType>,
+    /// True when `address` is a name the backup gave in place of an address,
+    /// which is `Other`. An address is typed by its shape within what the
+    /// service carries ([`identity_type_on`]).
+    pub is_name: bool,
     /// Service the message arrived on: `phone` or `whatsapp`.
     pub service: IdentityService,
 }
@@ -147,7 +148,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     let Some(address) = sender.address.and_then(trimmed) else {
         return Ok(None);
     };
-    let handle_type = handle_type_on(address, sender.handle_type, sender.service);
+    let handle_type = identity_type_on(address, sender.is_name, sender.service);
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
         cache,

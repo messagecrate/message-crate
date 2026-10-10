@@ -130,12 +130,10 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
         message_ir::IrParticipant {
             identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
-            identity_type: Some(message_ir::IdentityType::Phone),
         },
         message_ir::IrParticipant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
-            identity_type: Some(message_ir::IdentityType::Phone),
         },
     ];
     let incoming = &mut doc.messages[0];
@@ -275,7 +273,6 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
         .push(message_ir::IrParticipant {
             identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
-            identity_type: Some(message_ir::IdentityType::Phone),
         });
     let incoming = &mut doc.messages[0];
     incoming.source = None;
@@ -329,7 +326,6 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
         .push(message_ir::IrParticipant {
             identity: None,
             display_name: Some("Lee".into()),
-            identity_type: None,
         });
     doc.messages[0].source = None;
 
@@ -359,7 +355,6 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
             .push(message_ir::IrParticipant {
                 identity: Some(handle.into()),
                 display_name: Some(name.into()),
-                identity_type: Some(message_ir::IdentityType::Phone),
             });
         doc.messages[0].source = None;
 

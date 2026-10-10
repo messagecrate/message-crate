@@ -9,10 +9,10 @@ use message_crate_core::{
 };
 use message_csv::format_local_ts;
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
-    IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, SCHEMA_VERSION, TimePrecision,
-    one_copy_per_message, owner_sender,
+    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
+    MessageCopy, MessageGuid, MessageIdentity, SCHEMA_VERSION, TimePrecision, one_copy_per_message,
+    owner_sender,
 };
 use message_staging::{
     AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
@@ -269,8 +269,8 @@ struct PendingMessage {
 struct PendingConversation {
     kind: ConversationKind,
     group_title: Option<String>,
-    /// Each participant's handle key and kind.
-    participants: Vec<(String, IdentityType)>,
+    /// Each participant's handle key.
+    participants: Vec<String>,
     messages: Vec<PendingMessage>,
 }
 
@@ -411,7 +411,7 @@ fn add_record(
     let peers = record
         .participants
         .iter()
-        .map(|(h, _)| (h.key().to_string(), h.kind()))
+        .map(|(h, _)| h.key().to_string())
         .collect();
     let conversation = conversations
         .entry(id)
@@ -522,7 +522,7 @@ fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String
                 .or_insert_with(|| name.to_string());
         }
         if let Some(name) = sbr::contact_name(&message.contact_name, conversation.kind) {
-            for (peer, _) in &conversation.participants {
+            for peer in &conversation.participants {
                 names
                     .entry(peer.clone())
                     .or_insert_with(|| name.to_string());
@@ -609,7 +609,7 @@ fn describe(message: &PendingMessage, conversation: &PendingConversation) -> Str
             let identities: Vec<&str> = conversation
                 .participants
                 .iter()
-                .map(|(handle, _)| handle.as_str())
+                .map(String::as_str)
                 .collect();
             identities.join(", ")
         },
@@ -696,10 +696,9 @@ fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
     conversation
         .participants
         .iter()
-        .map(|(handle, kind)| IrParticipant {
+        .map(|handle| IrParticipant {
             identity: Some(handle.clone()),
             display_name: names.get(handle).cloned(),
-            identity_type: Some(*kind),
         })
         .collect()
 }

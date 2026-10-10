@@ -212,7 +212,6 @@ pub(crate) fn write_conversation_csv(
             .map(|p| ParticipantCell {
                 identity: p.identity.clone().unwrap_or_default(),
                 display_name: p.display_name.clone().unwrap_or_default(),
-                identity_type: p.identity_type,
             })
             .collect::<Vec<_>>(),
     );

@@ -426,10 +426,10 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
 }
 
 /// A one-to-one chat keyed by an internal `@lid` id has no phone number to
-/// write. Its one participant is the raw id typed `other`, so the server
-/// does not read the `@` in it as an email address (#1141).
+/// write. Its one participant is the raw id, which the server types `other`
+/// because WhatsApp carries no email address (#1141, #1933).
 #[test]
-fn a_lid_chat_has_its_id_as_an_other_participant() {
+fn a_lid_chat_has_its_id_as_its_participant() {
     let json = serde_json::json!({
         "123456@lid": {
             "name": "Lid Peer",
@@ -443,12 +443,9 @@ fn a_lid_chat_has_its_id_as_an_other_participant() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.identity.as_deref(), p.identity_type))
+        .map(|p| p.identity.as_deref())
         .collect();
-    assert_eq!(
-        participants,
-        vec![(Some("123456@lid"), Some(message_ir::IdentityType::Other))]
-    );
+    assert_eq!(participants, vec![Some("123456@lid")]);
     assert_eq!(
         doc.messages[0].sender_identity.as_deref(),
         Some("123456@lid")

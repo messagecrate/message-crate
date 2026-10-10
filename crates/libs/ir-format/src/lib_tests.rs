@@ -346,12 +346,11 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     let (cols, row) = first_row_cols(&csv);
     let participants_idx = cols.iter().position(|c| c == "participants_json").unwrap();
     let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
-    // Participants cell carries the typed participant.
+    // The participants cell carries no type: the conversation file has
+    // none, and the server works it out from the service and the address.
     assert!(
-        row.get(participants_idx)
-            .unwrap()
-            .contains(r#""identity_type":"phone""#),
-        "participants_json must carry identity_type"
+        !row.get(participants_idx).unwrap().contains("identity_type"),
+        "participants_json must not carry identity_type"
     );
     // Dedicated column carries the sender identity type.
     assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
@@ -365,8 +364,8 @@ fn csv_serializes_identity_type_in_cell_and_column() {
 }
 
 /// An address written with `tel:` is a phone number in the CSV
-/// `identity_type` cell and in a participant read back from EML or mbox, as
-/// `phone::Handle::parse` types it everywhere else (#1634).
+/// `identity_type` cell, as `phone::Handle::parse` types it everywhere else,
+/// and comes back from EML or mbox as written (#1634).
 #[test]
 fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     let tel = "tel:+15555550157";
@@ -387,12 +386,8 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
             .conversation
             .participants
             .iter()
-            .find(|p| p.identity.as_deref() == Some(tel))
-            .expect("the tel: participant is read back");
-        assert_eq!(
-            participant.identity_type,
-            Some(message_ir::IdentityType::Phone)
-        );
+            .any(|p| p.identity.as_deref() == Some(tel));
+        assert!(participant, "the tel: participant is read back");
     }
 }
 

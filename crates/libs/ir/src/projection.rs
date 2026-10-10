@@ -9,11 +9,11 @@
 //! mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
-    IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, PendingAttachment,
-    PendingConversation, PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
-    one_copy_per_message, owner_sender,
+    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
+    MessageCopy, MessageGuid, MessageIdentity, PendingAttachment, PendingConversation,
+    PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts, one_copy_per_message,
+    owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -429,7 +429,6 @@ pub fn default_participants(
         .map(|h| IrParticipant {
             identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
-            identity_type: Some(IdentityType::Phone),
         })
         .collect();
     if participants.is_empty()
@@ -444,7 +443,6 @@ pub fn default_participants(
             participants.push(IrParticipant {
                 identity: None,
                 display_name: convo.first_contact_name(),
-                identity_type: None,
             });
         } else {
             participants.push(IrParticipant {
@@ -453,7 +451,6 @@ pub fn default_participants(
                     .get(chat_id)
                     .cloned()
                     .or_else(|| convo.first_contact_name()),
-                identity_type: Some(IdentityType::Phone),
             });
         }
     }
