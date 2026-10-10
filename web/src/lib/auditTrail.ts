@@ -75,7 +75,10 @@ function sessionEnded(entry: AuditEntry): string {
 function loginRefused(entry: AuditEntry): string {
   switch (entry.reason) {
     case "unknown_username":
-      return `Login refused: no account is named “${entry.username ?? ""}”${fromApp(entry)}`;
+      // The server keeps no username when the text typed could not be one,
+      // since it may be a password typed into the wrong field.
+      if (entry.username == null) return `Login refused: not a valid username${fromApp(entry)}`;
+      return `Login refused: no account is named “${entry.username}”${fromApp(entry)}`;
     case "wrong_password":
       return `Login refused: wrong password${fromApp(entry)}`;
     case "account_disabled":

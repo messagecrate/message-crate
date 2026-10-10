@@ -239,31 +239,19 @@ pub fn transcode_staged(
                 );
             }
             match item {
-                PendingWork::Transcode { recorded_rel, src } => {
-                    apply_transcode(
+                PendingWork::Transcode {
+                    recorded_rel,
+                    src,
+                    is_heal,
+                } => {
+                    let target = TranscodeTarget {
                         run_dir,
                         jsonl,
-                        &mut doc,
-                        &recorded_rel,
-                        &src,
-                        false,
-                        options,
-                        issues,
-                        &mut report,
-                    )?;
-                }
-                PendingWork::HealTranscode { recorded_rel, src } => {
-                    apply_transcode(
-                        run_dir,
-                        jsonl,
-                        &mut doc,
-                        &recorded_rel,
-                        &src,
-                        true,
-                        options,
-                        issues,
-                        &mut report,
-                    )?;
+                        recorded_rel: &recorded_rel,
+                        src: &src,
+                        is_heal,
+                    };
+                    apply_transcode(&target, &mut doc, options, issues, &mut report)?;
                 }
                 PendingWork::Repoint {
                     recorded_rel,
@@ -323,7 +311,6 @@ impl PendingWork {
     fn recorded_rel(&self) -> &str {
         match self {
             Self::Transcode { recorded_rel, .. }
-            | Self::HealTranscode { recorded_rel, .. }
             | Self::Repoint { recorded_rel, .. }
             | Self::DroppedTooLarge { recorded_rel, .. }
             | Self::Unrecoverable { recorded_rel } => recorded_rel,
@@ -337,11 +324,15 @@ impl PendingWork {
 /// one (in the same document) names the same physical file and therefore
 /// shares the same fate, so [`pending_in`] queues each recorded path once.
 enum PendingWork {
-    /// Transcode `src` — untouched, still at its recorded name — and commit.
-    Transcode { recorded_rel: String, src: PathBuf },
-    /// The recorded name is a crash-heal `-mv` name with nothing on disk;
-    /// `src` is the recovered original.
-    HealTranscode { recorded_rel: String, src: PathBuf },
+    /// Transcode `src` and commit. `src` is untouched, still at its recorded
+    /// name, unless `is_heal` is set.
+    Transcode {
+        recorded_rel: String,
+        src: PathBuf,
+        /// The recorded name is a crash-heal `-mv` name with nothing on
+        /// disk, and `src` is the recovered original.
+        is_heal: bool,
+    },
     /// The recorded path is gone, but its would-be derivative already
     /// exists — the aliasing case, or the crash window right after the
     /// shared original's delete. Repoint, no transcode needed.
@@ -391,6 +382,7 @@ fn pending_in(
                     out.push(PendingWork::Transcode {
                         recorded_rel: rel.to_string(),
                         src: abs,
+                        is_heal: false,
                     });
                 }
                 continue;
@@ -410,9 +402,10 @@ fn pending_in(
                 // derivative whose size varies right at the limit).
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
                 if let Some(found) = find_recoverable_original(run_dir, orig_stem, mode)? {
-                    out.push(PendingWork::HealTranscode {
+                    out.push(PendingWork::Transcode {
                         recorded_rel: rel.to_string(),
                         src: found,
+                        is_heal: true,
                     });
                 } else if let Some(size) = find_too_large_note(run_dir, &abs, mode)? {
                     out.push(PendingWork::DroppedTooLarge {
@@ -639,28 +632,42 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     })
 }
 
-/// Transcode `src` and commit it, in this order: derivative
+/// The one staged file [`apply_transcode`] converts, and where it is recorded.
+struct TranscodeTarget<'a> {
+    /// The run directory whose `attachments/` directory holds `src`.
+    run_dir: &'a Path,
+    /// The conversation file that records the attachment.
+    jsonl: &'a Path,
+    /// The attachment path the conversation file records.
+    recorded_rel: &'a str,
+    /// The original file on disk.
+    src: &'a Path,
+    /// A crash-heal recovery: `recorded_rel` points at a `-mv` name nothing
+    /// produced yet, rather than at `src` itself. That distinction only
+    /// matters when the Media stage declines the file (the `Skipped` arm of
+    /// [`apply_transcode`]) or fails on it (the `Err` arm). Everywhere else
+    /// a heal behaves exactly like a fresh transcode.
+    is_heal: bool,
+}
+
+/// Transcode `target.src` and commit it, in this order: derivative
 /// written, conversation file patched, derivative renamed into its final
 /// name, original deleted. Reversing any pair leaves the directory lying about
 /// itself.
-///
-/// `is_heal` marks a crash-heal recovery: `recorded_rel` currently points at
-/// a `-mv` name nothing produced yet, rather than at `src` itself. That
-/// distinction only matters when the Media stage declines the file (see the
-/// `Skipped` arm) — everywhere else a heal behaves exactly like a fresh
-/// transcode.
-#[allow(clippy::too_many_arguments)]
 fn apply_transcode(
-    run_dir: &Path,
-    jsonl: &Path,
+    target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,
-    recorded_rel: &str,
-    src: &Path,
-    is_heal: bool,
     options: &TranscodeOptions,
     issues: Option<&IssueSink>,
     report: &mut TranscodeReport,
 ) -> Result<()> {
+    let &TranscodeTarget {
+        run_dir,
+        jsonl,
+        recorded_rel,
+        src,
+        is_heal,
+    } = target;
     let Some(name) = final_derivative_name(src, options.mode) else {
         report.skipped += 1;
         return Ok(());

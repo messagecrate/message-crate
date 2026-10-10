@@ -5,7 +5,7 @@ use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, claim_as_owner, expect_problem, expect_problem_for, get_json,
-    get_raw, get_status, http_client, patch_raw, post_json_raw, post_logged_out, post_status,
+    get_raw, get_status, http_client, patch_json_raw, post_json_raw, post_logged_out, post_status,
     register_via_api, seed_conversation, stored_time, test_fixture,
 };
 
@@ -404,7 +404,7 @@ async fn only_the_owner_reaches_the_server_settings() {
 
     let (status, text) = get_raw(&state, "/v1/server/settings", &ordinary.token).await;
     expect_problem(status, &text, ProblemType::NotTheOwner);
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         &state,
         "/v1/server/settings",
         &ordinary.token,
@@ -480,7 +480,7 @@ async fn an_ordinary_account_cannot_change_the_attachment_size_limit() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         &state,
         "/v1/server/settings",
         &ordinary.token,
@@ -501,7 +501,7 @@ async fn a_limit_of_zero_or_past_what_the_server_can_store_is_refused() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
     for refused in [0, i64::MAX as u64 + 1] {
-        let (status, text) = crate::test_support::patch_raw(
+        let (status, text) = crate::test_support::patch_json_raw(
             &state,
             "/v1/server/settings",
             &owner.token,

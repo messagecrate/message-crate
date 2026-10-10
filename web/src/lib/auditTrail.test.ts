@@ -32,6 +32,19 @@ describe("describeAuditEntry", () => {
     ).toBe("Login refused: no account is named “nobody” from the desktop app (0.10.0+bbbb2222)");
   });
 
+  it("says a refused login typed no valid username when the server kept none", () => {
+    expect(
+      describeAuditEntry(
+        entry({
+          action: "login_refused",
+          reason: "unknown_username",
+          account_id: null,
+          username: null,
+        }),
+      ),
+    ).toBe("Login refused: not a valid username");
+  });
+
   it("names the API token that started a run, by label and hint", () => {
     expect(
       describeAuditEntry(
