@@ -1,21 +1,36 @@
 use super::*;
 use crate::test_support::test_fixture;
 
-/// A refused login keeps the username as typed, cut to the username length
-/// limit, so a stranger cannot write an entry of any length.
+/// A refused login as a username nobody holds keeps the text typed only when
+/// it could be a username. Anything else, such as a password typed into the
+/// username field, is recorded with no username, so it never enters the trail.
+/// The text kept is the text checked: surrounding whitespace is not kept.
 #[tokio::test]
-async fn a_refused_username_is_cut_to_the_username_limit() {
+async fn a_refused_login_keeps_the_typed_text_only_when_it_could_be_a_username() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
-    let typed = "x".repeat(MAX_TYPED_USERNAME_CHARS + 50);
-    record_refused_login(&mut conn, &typed, None, AuditReason::UnknownUsername, None)
-        .await
-        .unwrap();
+    for typed in [
+        "hunter2!Secret",
+        "two words",
+        &"x".repeat(129),
+        "nobody.here_2",
+        " padded.name ",
+    ] {
+        record_refused_login(&mut conn, typed, None, AuditReason::UnknownUsername, None)
+            .await
+            .unwrap();
+    }
     let (items, total) = page(&mut conn, Scope::All, 10, 0).await.unwrap();
-    assert_eq!(total, 1);
+    assert_eq!(total, 5);
+    let kept: Vec<Option<&str>> = items.iter().rev().map(|i| i.username.as_deref()).collect();
     assert_eq!(
-        items[0].username.as_deref().map(str::len),
-        Some(MAX_TYPED_USERNAME_CHARS)
+        kept,
+        [None, None, None, Some("nobody.here_2"), Some("padded.name")]
+    );
+    assert!(
+        items
+            .iter()
+            .all(|i| i.reason == Some(AuditReason::UnknownUsername))
     );
 }
 
