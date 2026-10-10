@@ -303,7 +303,7 @@ pub(crate) async fn create_media_link(
         .await?
         .is_some();
     if !held {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     }
 
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);

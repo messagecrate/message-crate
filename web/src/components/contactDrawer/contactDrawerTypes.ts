@@ -76,7 +76,7 @@ export function sameContactPreviews(
   });
 }
 
-export type ThreadParticipantPreviewSource = {
+export type ConversationParticipantPreviewSource = {
   /** As the server sends it: a number. The UI carries contact ids as strings. */
   contact_id?: number | null;
   /** Null/undefined when the source named this participant without an address. */
@@ -85,13 +85,13 @@ export type ThreadParticipantPreviewSource = {
 };
 
 /** The participant's name, then identity — same order as chips. */
-function threadParticipantDisplayName(p: ThreadParticipantPreviewSource): string {
+function conversationParticipantDisplayName(p: ConversationParticipantPreviewSource): string {
   return p.name.trim() || p.identity?.trim() || "Contact";
 }
 
-export function contactPreviewFromThreadParticipants(
+export function contactPreviewFromConversationParticipants(
   contactId: string,
-  participants: readonly ThreadParticipantPreviewSource[],
+  participants: readonly ConversationParticipantPreviewSource[],
 ): ContactPreview | null {
   const matched = participants.filter(
     (p) => p.contact_id != null && String(p.contact_id) === contactId,
@@ -102,7 +102,7 @@ export function contactPreviewFromThreadParticipants(
   const uniqueCount = previewHandleStubRows(addresses, undefined).length;
   return {
     id: contactId,
-    name: threadParticipantDisplayName(named ?? matched[0]),
+    name: conversationParticipantDisplayName(named ?? matched[0]),
     addresses,
     // At least one stub row so an empty handle list does not take the empty-table Loading path.
     handleCount: Math.max(1, uniqueCount),

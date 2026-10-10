@@ -97,7 +97,7 @@ export default function AppLayout() {
               <Outlet />
             </AppLayoutContext.Provider>
 
-            {/* Overlay contact panel (e.g. opened from a message thread). */}
+            {/* Overlay contact panel (e.g. opened from a conversation). */}
             {openContactId ? (
               <ContactDrawer
                 variant="overlay"

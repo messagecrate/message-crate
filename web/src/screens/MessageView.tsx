@@ -2,15 +2,15 @@ import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import AttachmentLightbox from "../components/AttachmentLightbox";
 import {
   type ContactPreview,
-  contactPreviewFromThreadParticipants,
+  contactPreviewFromConversationParticipants,
 } from "../components/contactDrawer/contactDrawerTypes";
 import SourcesPanel from "../components/SourcesPanel";
 import { lightboxImages } from "../lib/lightboxImages";
 import { useTimeZone } from "../lib/timeZone";
 import type { Conversation, MessageAttachment } from "../lib/types";
 import ConversationHeader from "./message/ConversationHeader";
+import ConversationView from "./message/ConversationView";
 import MessageFindBar from "./message/MessageFindBar";
-import MessageThread from "./message/MessageThread";
 import { conversationYears, useConversationMessages } from "./message/useConversationMessages";
 
 /**
@@ -32,8 +32,8 @@ export default function MessageView({
   openMatched?: readonly number[];
   onOpenContact?: (contactId: string, preview: ContactPreview | null) => void;
 }) {
-  const thread = useConversationMessages(conversation.id, openAt, openMatched);
-  const { messages, find } = thread;
+  const conversationMessages = useConversationMessages(conversation.id, openAt, openMatched);
+  const { messages, find } = conversationMessages;
 
   const [lightboxItems, setLightboxItems] = useState<MessageAttachment[] | null>(null);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -69,8 +69,8 @@ export default function MessageView({
     [participants],
   );
 
-  // Re-highlighting a whole thread is far more work than echoing a keystroke, so
-  // the find bar stays on the term while the thread trails on the deferred one.
+  // Re-highlighting a whole conversation is far more work than echoing a keystroke, so
+  // the find bar stays on the term while the conversation trails on the deferred one.
   const deferredFindTerm = useDeferredValue(find.open ? find.term : "");
 
   return (
@@ -81,10 +81,13 @@ export default function MessageView({
         years={years}
         findOpen={find.open}
         onToggleFind={() => (find.open ? find.close() : find.openFind())}
-        onJumpToNewest={thread.jumpToNewest}
-        onJumpToYear={(year) => void thread.jumpToYear(year)}
+        onJumpToNewest={conversationMessages.jumpToNewest}
+        onJumpToYear={(year) => void conversationMessages.jumpToYear(year)}
         onOpenContact={(contactId) => {
-          onOpenContact?.(contactId, contactPreviewFromThreadParticipants(contactId, participants));
+          onOpenContact?.(
+            contactId,
+            contactPreviewFromConversationParticipants(contactId, participants),
+          );
         }}
         onShowSources={() => setShowSources(true)}
       />
@@ -102,21 +105,21 @@ export default function MessageView({
         />
       ) : null}
 
-      <MessageThread
+      <ConversationView
         messages={messages}
-        loading={thread.loading}
-        error={thread.error}
+        loading={conversationMessages.loading}
+        error={conversationMessages.error}
         findTerm={deferredFindTerm}
-        highlightId={thread.highlightId}
+        highlightId={conversationMessages.highlightId}
         isGroup={conversation.is_group}
-        hasOlder={thread.hasOlder}
-        hasNewer={thread.hasNewer}
-        loadingOlder={thread.loadingOlder}
-        loadingNewer={thread.loadingNewer}
-        onLoadOlder={thread.loadOlder}
-        onLoadNewer={thread.loadNewer}
-        landing={thread.landing}
-        jumping={thread.jumping}
+        hasOlder={conversationMessages.hasOlder}
+        hasNewer={conversationMessages.hasNewer}
+        loadingOlder={conversationMessages.loadingOlder}
+        loadingNewer={conversationMessages.loadingNewer}
+        onLoadOlder={conversationMessages.loadOlder}
+        onLoadNewer={conversationMessages.loadNewer}
+        landing={conversationMessages.landing}
+        jumping={conversationMessages.jumping}
         onAttachmentClick={handleAttachmentClick}
       />
 

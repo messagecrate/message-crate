@@ -82,7 +82,7 @@ pub fn compute_content_key(
     body: Option<&str>,
     attachment_shas: &[String],
 ) -> Option<String> {
-    let secs = parse_rfc3339_utc_secs(timestamp.trim())?;
+    let secs = parse_rfc3339_utc_secs(timestamp)?;
     let identity = message_ir::MessageIdentity {
         chat: chat_identifier,
         is_from_me,
@@ -898,8 +898,8 @@ fn rank(a: &Cand, b: &Cand, prio: &HashMap<&str, usize>) -> std::cmp::Ordering {
 /// Strict RFC3339 is sufficient: `messages.timestamp` is only ever written by
 /// `models::utc_timestamp_text`, so no lenient spellings reach this path.
 /// Unparseable input yields `None`.
-fn parse_rfc3339_utc_secs(ts: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(ts.trim())
+fn parse_rfc3339_utc_secs(timestamp_rfc3339: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(timestamp_rfc3339.trim())
         .ok()
         .map(|dt| dt.timestamp())
 }
@@ -1048,7 +1048,7 @@ async fn load_near_rows(
         conversation_id,
         source,
         is_from_me,
-        ts,
+        timestamp_rfc3339,
         body,
         sender_norm,
         content_key,
@@ -1059,7 +1059,7 @@ async fn load_near_rows(
         if hidden.contains(&id) {
             continue;
         }
-        let Some(secs) = parse_rfc3339_utc_secs(ts.trim()) else {
+        let Some(secs) = parse_rfc3339_utc_secs(&timestamp_rfc3339) else {
             continue;
         };
         let shas = shas_by_msg.remove(&id).unwrap_or_default();

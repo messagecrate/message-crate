@@ -106,7 +106,7 @@ pub const EMPTY_GROUP_HANDLE: &str = "chat0000000001";
 pub const EMPTY_GROUP_MEMBERS: [&str; 2] = ["+12125550101", "+13035550102"];
 /// The other person in the one-to-one conversation with no messages, written
 /// when `edge_cases.empty_individual` is set.
-pub const EMPTY_THREAD_HANDLE: &str = "+13125550100";
+pub const EMPTY_ONE_TO_ONE_HANDLE: &str = "+13125550100";
 /// The person in the orphaned messages, ones the backup holds without
 /// recording which conversation they were said in.
 pub const ORPHAN_SENDER: &str = "+447700900999";
@@ -118,7 +118,7 @@ const FIXED_PHONES: [&str; 5] = [
     OWNER_PHONE,
     EMPTY_GROUP_MEMBERS[0],
     EMPTY_GROUP_MEMBERS[1],
-    EMPTY_THREAD_HANDLE,
+    EMPTY_ONE_TO_ONE_HANDLE,
     ORPHAN_SENDER,
 ];
 

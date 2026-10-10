@@ -52,7 +52,7 @@ pub struct SavedSearch {
 #[derive(Debug)]
 pub enum SavedSearchError {
     BadRequest(String),
-    NotFound(String),
+    NotFound,
     Conflict(String),
     Internal(anyhow::Error),
 }
@@ -67,7 +67,7 @@ impl From<SavedSearchError> for crate::server::ApiError {
     fn from(e: SavedSearchError) -> Self {
         match e {
             SavedSearchError::BadRequest(m) => Self::validation(m),
-            SavedSearchError::NotFound(m) => Self::NotFound(m),
+            SavedSearchError::NotFound => Self::not_found("saved search"),
             SavedSearchError::Conflict(m) => Self::NameTaken(m),
             SavedSearchError::Internal(e) => Self::Internal(e),
         }
@@ -211,7 +211,7 @@ pub async fn update(
     // cannot be taken, nor the row deleted, between them.
     let mut tx = begin_write(conn).await?;
     let Some(existing) = get(&mut tx, account_id, id).await? else {
-        return Err(SavedSearchError::NotFound("saved search not found".into()));
+        return Err(SavedSearchError::NotFound);
     };
     // A name already used by a *different* row is a conflict; keeping or
     // recasing this row's own name is not.
@@ -251,7 +251,7 @@ pub async fn delete(conn: &mut SqliteConnection, account_id: i64, id: i64) -> Re
         .execute(&mut *conn)
         .await?;
     if result.rows_affected() == 0 {
-        return Err(SavedSearchError::NotFound("saved search not found".into()));
+        return Err(SavedSearchError::NotFound);
     }
     Ok(())
 }

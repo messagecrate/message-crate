@@ -29,8 +29,8 @@ export function dayLabel(iso: string, zone: string, now: Date = new Date()): str
   });
 }
 
-/** One message of the thread, with what is drawn around it. */
-export type ThreadRow = {
+/** One message of the conversation, with what is drawn around it. */
+export type ConversationRow = {
   message: Message;
   /** The day separator drawn above it, or `null` when it is not the first of its day. */
   day: string | null;
@@ -48,8 +48,12 @@ function sameSender(a: Message, b: Message): boolean {
   return a.sender === b.sender;
 }
 
-/** The thread's messages, oldest first, with their day separators and runs. */
-export function threadRows(messages: Message[], zone: string, now: Date = new Date()): ThreadRow[] {
+/** The conversation's messages, oldest first, with their day separators and runs. */
+export function conversationRows(
+  messages: Message[],
+  zone: string,
+  now: Date = new Date(),
+): ConversationRow[] {
   let previous: Message | null = null;
   let previousDay = "";
   return messages.map((message) => {

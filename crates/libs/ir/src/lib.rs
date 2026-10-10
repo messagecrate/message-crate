@@ -994,11 +994,15 @@ pub fn parse_android_type(s: &str) -> Option<i32> {
 /// message's `android_type` extra read with [`parse_android_type`]. The
 /// title is stored as data only; filenames do not use it.
 pub fn android_source(
-    convo: &PendingConversation,
+    conversation: &PendingConversation,
     msg: &PendingMessage,
     mut fields: Map<String, Value>,
 ) -> IrSource {
-    if let Some(title) = convo.display_name.as_deref().filter(|t| !t.is_empty()) {
+    if let Some(title) = conversation
+        .display_name
+        .as_deref()
+        .filter(|t| !t.is_empty())
+    {
         fields.insert(
             "android_group_title".into(),
             Value::String(title.to_string()),

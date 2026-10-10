@@ -1460,6 +1460,10 @@ fn every_api_error_displays_its_detail_sentence() {
         "no such conversation"
     );
     assert_eq!(
+        ApiError::not_found("API token").to_string(),
+        "API token not found"
+    );
+    assert_eq!(
         ApiError::MethodNotAllowed("no PUT here".into()).to_string(),
         "no PUT here"
     );

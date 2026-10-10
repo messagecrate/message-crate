@@ -11,7 +11,7 @@ import {
   scrollNear,
 } from "../../test/intersectionObserver";
 import { renderWithProviders } from "../../test/providers";
-import MessageThread from "./MessageThread";
+import ConversationView from "./ConversationView";
 
 vi.mock("../../lib/serverApi", () => ({
   fetchAsset: vi.fn(),
@@ -39,29 +39,29 @@ const baseProps = {
   onAttachmentClick: vi.fn(),
 };
 
-describe("MessageThread", () => {
+describe("ConversationView", () => {
   it("shows a loading state", () => {
-    render(<MessageThread {...baseProps} messages={[]} loading={true} />);
+    render(<ConversationView {...baseProps} messages={[]} loading={true} />);
     expect(screen.getByText("Loading…")).toBeInTheDocument();
   });
 
   it("shows the server's error sentence when the query failed", () => {
-    render(<MessageThread {...baseProps} messages={[]} error={new Error("server is down")} />);
+    render(<ConversationView {...baseProps} messages={[]} error={new Error("server is down")} />);
     expect(screen.getByText("server is down")).toBeInTheDocument();
   });
 
   it("falls back to a generic message when the error carries no message", () => {
-    render(<MessageThread {...baseProps} messages={[]} error={"not an Error"} />);
+    render(<ConversationView {...baseProps} messages={[]} error={"not an Error"} />);
     expect(screen.getByText("Could not load messages.")).toBeInTheDocument();
   });
 
   it("shows an empty state when the conversation has no messages", () => {
-    render(<MessageThread {...baseProps} messages={[]} />);
+    render(<ConversationView {...baseProps} messages={[]} />);
     expect(screen.getByText("No messages in this conversation")).toBeInTheDocument();
   });
 
   it("renders messages when there are some", () => {
-    render(<MessageThread {...baseProps} messages={[imessageMessage()]} />);
+    render(<ConversationView {...baseProps} messages={[imessageMessage()]} />);
     expect(screen.getByText("hi")).toBeInTheDocument();
     expect(screen.queryByText("No messages in this conversation")).not.toBeInTheDocument();
   });
@@ -82,7 +82,7 @@ describe("MessageThread", () => {
     const from = (id: number, sender: string, timestamp: string) =>
       imessageMessage({ id, sender, timestamp, text: `m${id}`, conversation: group });
     render(
-      <MessageThread
+      <ConversationView
         {...baseProps}
         isGroup={true}
         messages={[
@@ -97,7 +97,7 @@ describe("MessageThread", () => {
   });
 
   it("says older messages load by scrolling, with no Previous or Next", () => {
-    render(<MessageThread {...baseProps} messages={[imessageMessage()]} hasOlder={true} />);
+    render(<ConversationView {...baseProps} messages={[imessageMessage()]} hasOlder={true} />);
     expect(screen.getByText("Scroll up for older messages")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Previous" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
@@ -105,22 +105,22 @@ describe("MessageThread", () => {
 });
 
 /**
- * Opening a conversation at a message scrolls the thread to it and nothing
+ * Opening a conversation at a message scrolls the conversation to it and nothing
  * else: in a narrow window the row under the header scrolls sideways (#1722),
  * and moving it would pan the navigation panel and the list out of view.
  */
-describe("MessageThread landing on a message", () => {
+describe("ConversationView landing on a message", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     Reflect.deleteProperty(Element.prototype, "scrollIntoView");
   });
 
   it.each([
-    // The message's top, 400 px below the thread's top, lands at the top.
+    // The message's top, 400 px below the conversation's top, lands at the top.
     ["start", 400],
-    // A 40 px message in a 300 px thread lands 130 px down.
+    // A 40 px message in a 300 px conversation lands 130 px down.
     ["center", 270],
-  ] as const)("scrolls only the thread to a message at %s", (align, scrollTop) => {
+  ] as const)("scrolls only the conversation to a message at %s", (align, scrollTop) => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
     vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
@@ -131,7 +131,7 @@ describe("MessageThread landing on a message", () => {
     });
 
     render(
-      <MessageThread
+      <ConversationView
         {...baseProps}
         messages={[
           imessageMessage({ id: 1, timestamp: "2026-08-11T15:00:00Z", text: "m1" }),
@@ -142,20 +142,20 @@ describe("MessageThread landing on a message", () => {
       />,
     );
 
-    const thread = document.getElementById("row-2")?.closest(".overflow-auto") as HTMLElement;
-    expect(thread.scrollTop).toBe(scrollTop);
+    const view = document.getElementById("row-2")?.closest(".overflow-auto") as HTMLElement;
+    expect(view.scrollTop).toBe(scrollTop);
     expect(scrollIntoView).not.toHaveBeenCalled();
   });
 });
 
 /**
  * Scrolling a long conversation loads only the Thumbnails of the messages
- * that come near the screen, measured against the thread's own scroll area
+ * that come near the screen, measured against the conversation's own scroll area
  * (`docs/architecture/media.md`, rule 5). Measured against the window, the
- * margin would not reach past the thread's edge, and a Thumbnail would start
+ * margin would not reach past the conversation's edge, and a Thumbnail would start
  * loading only once it was already on screen.
  */
-describe("MessageThread and attachments", () => {
+describe("ConversationView and attachments", () => {
   function withPhoto(id: number, sha256: string): Message {
     return imessageMessage({
       id,
@@ -177,7 +177,7 @@ describe("MessageThread and attachments", () => {
       async (sha, options) => `blob:${options?.version}-${sha}`,
     );
     const { container } = renderWithProviders(
-      <MessageThread {...baseProps} messages={[withPhoto(1, "aaa"), withPhoto(2, "bbb")]} />,
+      <ConversationView {...baseProps} messages={[withPhoto(1, "aaa"), withPhoto(2, "bbb")]} />,
     );
     const row = container.querySelector("#row-2");
     if (!row) throw new Error("no row for message 2");

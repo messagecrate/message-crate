@@ -4,26 +4,26 @@ import { NearScreenRoot } from "../../hooks/useNearScreen";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment } from "../../lib/types";
-import { threadRows } from "./threadLayout";
+import { conversationRows } from "./conversationLayout";
 import type { Landing } from "./useConversationMessages";
 
-/** How near an end of the thread, in pixels, the next page starts loading. */
+/** How near an end of the conversation, in pixels, the next page starts loading. */
 const LOAD_MARGIN = 600;
 
-/** Within this many pixels of the bottom, the thread counts as at the bottom and stays there. */
+/** Within this many pixels of the bottom, the conversation counts as at the bottom and stays there. */
 const BOTTOM_SLACK = 8;
 
 /**
- * Scrolls the thread so `node` sits at its top (`start`) or in its middle
- * (`center`). Only the thread scrolls: `scrollIntoView` would also scroll
+ * Scrolls the conversation so `node` sits at its top (`start`) or in its middle
+ * (`center`). Only the conversation scrolls: `scrollIntoView` would also scroll
  * every scrolling ancestor, such as the row under the header that scrolls
  * sideways in a narrow window (#1722), and pan the list out of view.
  */
-function scrollThreadTo(thread: HTMLElement, node: HTMLElement, align: "center" | "start") {
+function scrollConversationTo(view: HTMLElement, node: HTMLElement, align: "center" | "start") {
   const nodeBox = node.getBoundingClientRect();
-  const offset = nodeBox.top - thread.getBoundingClientRect().top;
-  const slack = align === "center" ? (thread.clientHeight - nodeBox.height) / 2 : 0;
-  thread.scrollTop += offset - slack;
+  const offset = nodeBox.top - view.getBoundingClientRect().top;
+  const slack = align === "center" ? (view.clientHeight - nodeBox.height) / 2 : 0;
+  view.scrollTop += offset - slack;
 }
 
 /**
@@ -37,7 +37,7 @@ function scrollThreadTo(thread: HTMLElement, node: HTMLElement, align: "center" 
  * Chromium and Firefox but not in WebKit, which the desktop app runs in on
  * macOS and Linux, so it is done here and the browser's is turned off.
  */
-export default function MessageThread({
+export default function ConversationView({
   messages,
   loading,
   error,
@@ -75,7 +75,7 @@ export default function MessageThread({
   onAttachmentClick: (att: MessageAttachment) => void;
 }) {
   const zone = useTimeZone();
-  const rows = useMemo(() => threadRows(messages, zone), [messages, zone]);
+  const rows = useMemo(() => conversationRows(messages, zone), [messages, zone]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // The scroll area, in state as well, so the attachments in it measure
   // whether they are near the screen against it rather than the window.
@@ -124,7 +124,7 @@ export default function MessageThread({
       } else {
         const node = document.getElementById(`row-${landing.to.id}`);
         if (node) {
-          scrollThreadTo(el, node, landing.to.align);
+          scrollConversationTo(el, node, landing.to.align);
           landedSeq.current = landing.seq;
         }
       }
@@ -138,8 +138,8 @@ export default function MessageThread({
     loadNearEnds.current();
   });
 
-  // An image that loads after the thread drew grows it. At the bottom, the
-  // thread stays at the bottom, the way a phone keeps the newest in view.
+  // An image that loads after the conversation drew grows it. At the bottom, the
+  // conversation stays at the bottom, the way a phone keeps the newest in view.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     const content = contentRef.current;

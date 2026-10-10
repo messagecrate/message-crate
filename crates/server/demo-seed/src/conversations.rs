@@ -23,7 +23,7 @@ use crate::assets::{JPG_PHOTOS, OTHER_ATTACHMENTS};
 use crate::config::SeedConfig;
 use crate::corpus::Corpus;
 use crate::personas::{
-    Contact, EMPTY_GROUP_HANDLE, EMPTY_GROUP_MEMBERS, EMPTY_THREAD_HANDLE, ORPHAN_SENDER,
+    Contact, EMPTY_GROUP_HANDLE, EMPTY_GROUP_MEMBERS, EMPTY_ONE_TO_ONE_HANDLE, ORPHAN_SENDER,
     OWNER_EMAIL, OWNER_PHONE, Roster, Unassigned,
 };
 use crate::phones;
@@ -107,7 +107,7 @@ pub struct StagingDirs<'a> {
 /// Write every conversation file into the three backup directories and return counts.
 ///
 /// One-to-one contacts are split into iMessage-only, Android-only, and overlap.
-/// Unassigned handles, groups, orphaned messages, empty threads, and WhatsApp
+/// Unassigned handles, groups, orphaned messages, empty conversations, and WhatsApp
 /// copies are written after that, in that order.
 ///
 /// # Errors
@@ -196,7 +196,7 @@ impl<R: Rng> Seeder<'_, R> {
         if self.cfg.edge_cases.empty_individual {
             self.create_empty_conversation_file(
                 staging.imessage,
-                EMPTY_THREAD_HANDLE,
+                EMPTY_ONE_TO_ONE_HANDLE,
                 IrConversationType::Individual,
                 &[],
             )?;
@@ -210,7 +210,7 @@ impl<R: Rng> Seeder<'_, R> {
             )?;
         }
 
-        // WhatsApp threads reuse the contact's phone number. Import treats them as
+        // WhatsApp conversations reuse the contact's phone number. Import treats them as
         // a separate platform on the same person.
         for contact in roster.contacts.iter().filter(|c| c.has_whatsapp) {
             stop_if_cancelled(self.cancel)?;
@@ -496,7 +496,8 @@ impl<R: Rng> Seeder<'_, R> {
                             seeder.decorate_android_message(&mut msg, i, msg_count);
                         }
                         SourceFlavor::Whatsapp => {
-                            // WhatsApp threads skip iMessage-only fields such as tapbacks and replies.
+                            // WhatsApp conversations skip iMessage-only fields such as tapbacks
+                            // and replies.
                         }
                     }
                     seeder.emit(file, msg)?;
@@ -987,8 +988,9 @@ impl<R: Rng> Seeder<'_, R> {
     }
 
     /// Add photos, other files, tapbacks, replies, and occasional SMS/RCS
-    /// labels to an iMessage. `origin_guid` is the thread every few messages
-    /// reply to; this call may replace it.
+    /// labels to an iMessage. `origin_guid` is the message every few messages
+    /// reply to, the first message of an Apple Messages reply in a thread; this
+    /// call may replace it.
     fn decorate_message(
         &mut self,
         msg: &mut IrMessage,
@@ -1561,14 +1563,14 @@ mod tests {
             "/dev/full",
             staging.join(format!(
                 "empty-{}.jsonl",
-                sanitize_filename(EMPTY_THREAD_HANDLE)
+                sanitize_filename(EMPTY_ONE_TO_ONE_HANDLE)
             )),
         )
         .expect("link the conversation file to /dev/full");
 
         let result = seeder.create_empty_conversation_file(
             &staging,
-            EMPTY_THREAD_HANDLE,
+            EMPTY_ONE_TO_ONE_HANDLE,
             IrConversationType::Individual,
             &[],
         );

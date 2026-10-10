@@ -151,7 +151,7 @@ async fn saved_searches_are_scoped_per_account() {
     // One account cannot read or delete another's row by id.
     assert!(get(&mut conn, other, mine.id).await.unwrap().is_none());
     let err = delete(&mut conn, other, mine.id).await.unwrap_err();
-    assert!(matches!(err, SavedSearchError::NotFound(_)), "got {err:?}");
+    assert!(matches!(err, SavedSearchError::NotFound), "got {err:?}");
 }
 
 #[tokio::test]
