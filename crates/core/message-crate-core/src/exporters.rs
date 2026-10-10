@@ -173,8 +173,6 @@ pub struct Form {
     pub obfuscate: bool,
     /// Optional hex seed for reproducible obfuscation.
     pub obfuscate_seed: String,
-    /// Whether the advanced section of the GUI form is shown.
-    pub shows_advanced: bool,
     /// iMessage chat database path (Apple sources).
     pub db_path: String,
     /// Apple backup attachment root directory.
@@ -226,7 +224,6 @@ impl Default for Form {
             phone_country: String::new(),
             obfuscate: false,
             obfuscate_seed: String::new(),
-            shows_advanced: false,
             db_path: String::new(),
             attachment_root: String::new(),
             apple_contacts: String::new(),
