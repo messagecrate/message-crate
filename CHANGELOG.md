@@ -222,10 +222,10 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-10: **API Tokens, Identities, Storage, the Audit Trail and the
-  log viewer end an empty-list message without a full stop.** API Tokens, Identities, Export History, Import History, the
-  largest attachments in Storage, the Audit Trail, and the log viewer ended
-  theirs with one, where Contacts and Trash did not. "No API Tokens yet.",
+- 2026-10-10: **API Tokens, Identities, Export History, Import History,
+  the largest attachments in Storage, the Audit Trail and the log viewer
+  end an empty-list message without a full stop.** They ended theirs with
+  one, where Contacts and Trash did not. "No API Tokens yet.",
   "No identities yet.", "No exports recorded yet.", "No imports recorded
   yet.", "No attachments with sizes yet.", "Nothing recorded yet.", "No line
   matches the search." and "No line at this level." now end without one
