@@ -1,14 +1,14 @@
 /**
- * Pull the human-readable part out of an API error.
+ * Pull the human-readable part out of an API error: the message of an
+ * `Error`, and `fallback` for anything else.
  *
- * `apiClient` now rejects with a `ApiError` whose `message` is already
- * the server's own sentence (`problemFromBody` in `api.ts` reads the problem
- * document once, at the client). There is no `"<status>: <body>"`
- * shape left to unwrap here — this just falls back to `fallback` when the
- * rejection is not an `Error`, or has no message, at all.
+ * `apiClient` rejects with an `ApiError` whose `message` is already the
+ * server's own sentence (`problemFromBody` in `api.ts` reads the problem
+ * document once, at the client), so there is nothing left to unwrap here. An
+ * `Error` with an empty message gives the empty string, not `fallback`.
  */
 export function apiErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? errorText(err) : fallback;
+  return err instanceof Error ? err.message : fallback;
 }
 
 /**
@@ -16,5 +16,5 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
  * message of an `Error`, and `String(err)` of anything else.
  */
 export function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return apiErrorMessage(err, String(err));
 }
