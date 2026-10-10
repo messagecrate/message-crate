@@ -22,7 +22,7 @@ export function whatsappExtractFields(
     wa: string;
     media: string;
     db: string;
-    business: boolean;
+    isBusinessApp: boolean;
     ownerPhone: string;
   },
 ): Pick<
@@ -36,7 +36,7 @@ export function whatsappExtractFields(
   | "whatsapp_wa"
   | "whatsapp_media"
   | "whatsapp_db"
-  | "whatsapp_business"
+  | "is_business_app"
   | "owner_phones"
 > {
   const fields: ReturnType<typeof whatsappExtractFields> = {
@@ -69,8 +69,8 @@ export function whatsappExtractFields(
   }
 
   if (args.source === "whatsapp-ios") {
-    if (args.business) {
-      fields.whatsapp_business = true;
+    if (args.isBusinessApp) {
+      fields.is_business_app = true;
     }
     const password = args.backupPassword.trim();
     if (password) {

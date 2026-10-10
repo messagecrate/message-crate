@@ -306,7 +306,7 @@ pub struct WhatsappConfig {
     /// Explicit `msgstore.db` path.
     pub db: Option<PathBuf>,
     /// Whether the backup is a WhatsApp Business backup.
-    pub business: bool,
+    pub is_business_app: bool,
     /// The account holder's WhatsApp phone number, as typed on the form.
     /// Android has nothing else: a crypt backup does not carry the number.
     /// iPhone reads the number from the backup's preferences and uses this

@@ -157,7 +157,7 @@ pub struct Pinned {
     pub program_sha256: &'static str,
     /// Whether the asset is gzipped: the checksum is over the gzipped
     /// file, and the program is what it unpacks to.
-    pub gzip: bool,
+    pub gzipped: bool,
 }
 
 impl Pinned {
@@ -483,7 +483,7 @@ fn download(
             actual,
         });
     }
-    let mut program = if pinned.gzip {
+    let mut program = if pinned.gzipped {
         let mut unpacked = tempfile::Builder::new()
             .prefix(&temp_prefix(pinned.program, "unpack"))
             .tempfile_in(dir)

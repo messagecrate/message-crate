@@ -30,7 +30,7 @@ const form: ImportJobFormValues = {
   whatsappWa: "",
   whatsappMedia: "",
   whatsappDb: "",
-  whatsappBusiness: false,
+  isBusinessApp: false,
   whatsappOwnerPhone: "",
 };
 

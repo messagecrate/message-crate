@@ -111,7 +111,7 @@ const form = {
   whatsappWa: "",
   whatsappMedia: "",
   whatsappDb: "",
-  whatsappBusiness: false,
+  isBusinessApp: false,
   whatsappOwnerPhone: "",
   timeZone: "America/New_York",
   phoneCountry: "",

@@ -108,7 +108,7 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
   if (typeof r.whatsappWa !== "string") return null;
   if (typeof r.whatsappMedia !== "string") return null;
   if (typeof r.whatsappDb !== "string") return null;
-  if (typeof r.whatsappBusiness !== "boolean") return null;
+  if (typeof r.isBusinessApp !== "boolean") return null;
   if (typeof r.whatsappOwnerPhone !== "string") return null;
   if (typeof r.backupPasswordGiven !== "boolean") return null;
   if (typeof r.whatsappKeyGiven !== "boolean") return null;
@@ -132,7 +132,7 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
     whatsappWa: r.whatsappWa,
     whatsappMedia: r.whatsappMedia,
     whatsappDb: r.whatsappDb,
-    whatsappBusiness: r.whatsappBusiness,
+    isBusinessApp: r.isBusinessApp,
     whatsappOwnerPhone: r.whatsappOwnerPhone,
     assetMaxBytes: r.assetMaxBytes,
   };
