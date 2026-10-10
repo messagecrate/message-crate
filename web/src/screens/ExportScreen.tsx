@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { ListBoxItem } from "react-aria-components";
 import { useSearchParams } from "react-router-dom";
+import ExportFormatSelect from "../components/ExportFormatSelect";
 import FormRow from "../components/FormRow";
 import PathPicker from "../components/PathPicker";
 import Select, { selectItemClassName } from "../components/Select";
@@ -20,8 +21,6 @@ import {
   invokeExport,
   invokeFormat,
 } from "../lib/tauri";
-
-const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
 
 /**
  * What an export covers. `everything` sends a blank query, which message-crate-export
@@ -285,23 +284,7 @@ export default function ExportScreen() {
           isDisabled={running || busy}
         />
       </FormRow>
-      <FormRow label="Format">
-        <Select
-          selectedKey={format}
-          onSelectionChange={(key) => {
-            const next = parseSelectKey(key, FORMAT_IDS);
-            if (next) setFormat(next);
-          }}
-          aria-label="Format"
-          isDisabled={running || busy}
-        >
-          {EXPORT_FORMATS.map((option) => (
-            <ListBoxItem key={option.id} id={option.id} className={selectItemClassName}>
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </Select>
-      </FormRow>
+      <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running || busy} />
     </TauriJobFormShell>
   );
 }

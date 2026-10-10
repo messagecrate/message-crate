@@ -142,6 +142,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **The Export screen names its format menu Output format.** It
+  was Format there and Output format under Convert in Settings; both now read
+  Output format, on screen and to a screen reader.
+
 - 2026-10-09: **Every import hides duplicates.** An import from the desktop
   app never hid duplicates, so a message two backup apps both held, or one
   SMS Backup+ held to the second and to the millisecond, was shown twice.
