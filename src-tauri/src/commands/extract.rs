@@ -5,10 +5,12 @@
 //! `desktop-job:log` (one human-readable log line), `desktop-job:progress` (one
 //! typed [`ImportProgressEvent`](events::ImportProgressEvent), mapped from
 //! the exporter's `ProgressEvent`), `desktop-job:file-written` (one
-//! conversation file the write queue finished, from the same
-//! `ProgressEvent`s), `desktop-job:issue` (one row for the Import Run's record,
-//! sent the moment the exporter records it), `desktop-job:finished` (a summary
-//! string or JSON object), and `desktop-job:error` ([`DesktopJobErrorEvent`]).
+//! [`ImportFileWrittenEvent`](events::ImportFileWrittenEvent), a conversation
+//! file the write queue finished, from the same `ProgressEvent`s),
+//! `desktop-job:issue` (one [`ImportIssueEvent`](events::ImportIssueEvent),
+//! a row for the Import Run's record, sent the moment the exporter records
+//! it), `desktop-job:finished` (a summary string or JSON object), and
+//! `desktop-job:error` ([`DesktopJobErrorEvent`](events::DesktopJobErrorEvent)).
 //!
 //! `cancel` sets the cancel flag of the job that is running (see
 //! `commands::jobs`). The exporter checks it between steps through
