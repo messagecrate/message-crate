@@ -147,17 +147,27 @@ identity on WhatsApp, which no WhatsApp identity can be, and the identities
 list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
 
-Does an address with an `@` that sends over SMS become an email identity?
-
-Yes, for now. Text Message over SMS or RCS carries phone numbers only, but
-SMS and iMessage share the one `phone` service, and an address has one type
-on one service. Typing it by the message's transport made one address two
-identities, `email` from iMessage or from a header and `other` from an SMS
-message, and identities of one address are linked only when their types are
-equal. How the `phone` service holds the SMS rule is open
+**Text Message is one service, and a message's transport never changes an
+identity's type.** SMS, MMS, RCS and iMessage are transports. Each message
+records the one that carried it in `messages.service`, such as `sms`, `rcs`
+or `imessage`. An MMS is recorded as `sms`, and a message whose source names
+no transport is recorded as `unknown` and stays on Text Message. The
+transport says how that one message travelled, not what its address is. So
+when the file states no type, an address with an `@` is an `email` identity
+on Text Message whatever transport carried it. An email-to-text gateway such
+as `alerts@example.com` that writes over SMS is one `email` row on `phone`,
+on one contact. Why: one conversation holds both transports, and identities
+of one address are linked only when their types are equal. Typed by
+transport, an address became `email` from a header or an iMessage and
+`other` from an SMS message. That made two identities on two contacts, and
+the second contact had no name. The first contact's counts left the SMS
+messages out
 ([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
-Whether the file's type is needed at all, once service and shape decide, is
-[#1933](https://github.com/messagecrate/message-crate/issues/1933).
+
+A type the file states stands on Text Message, as above. Whether the file's
+type is needed at all is
+[#1933](https://github.com/messagecrate/message-crate/issues/1933). WhatsApp
+is the other way, as above: its `@` ids are `other`.
 
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a
