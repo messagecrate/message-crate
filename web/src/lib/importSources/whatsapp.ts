@@ -27,6 +27,9 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
   showsAttachmentOptions: true,
   asksOwnerPhones: false,
   asksOwnerEmails: false,
+  // Android's only owner number, and an iPhone backup's fallback.
+  asksAccountPhone: true,
+  rememberedPaths: ["whatsappWa", "whatsappMedia", "whatsappDb"],
   needsWtsexporter: true,
   processingOptions: (method) =>
     whatsappOwnerPhoneRequired(method) ? [] : ["whatsappFallbackPhone"],
@@ -42,6 +45,7 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
       business: form.whatsappBusiness,
       ownerPhone: form.whatsappOwnerPhone,
     }),
+  backupIdentityRead: () => null,
   // The iPhone backup password, or the Android backup's key.
   snapshotSecret: (method) => {
     if (whatsappShowsPassword(method)) return "backupPassword";

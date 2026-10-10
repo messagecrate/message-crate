@@ -3,6 +3,7 @@ import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
 import type { ImportFormFieldsProps } from "../../screens/import/ImportFormFields";
 import type { ImportJobFormValues } from "../../screens/import/useImportJob";
 import type { ImportSourceId } from "../exportSources";
+import type { ImporterExtraField } from "../system-settings";
 import type { ExtractConfig } from "../types";
 
 /**
@@ -32,6 +33,13 @@ export type SnapshotSecret = "backupPassword" | "whatsappKey";
  * phone's country is every source's, so it is not one of these.
  */
 export type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone";
+
+/**
+ * How a run reads the backup's identities before it starts, so the person
+ * can add the ones missing from their profile. `ios` is true for an iPhone
+ * backup and false for a Messages database.
+ */
+export type BackupIdentityRead = { ios: boolean };
 
 /** The fields `extract` reads for one source, beside the ones every run sends. */
 export type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "output_dir">>;
@@ -73,9 +81,12 @@ export type ImportFormSectionProps = ReadinessInput & {
 };
 
 /**
- * What the Import form and the run's extract know about one backup source,
- * in one place. Each field is read for the selected source, so the form
- * and the extract of a new source need only its descriptor.
+ * What the Import screen and the run know about one backup source, in one
+ * place. Each field is read for the selected source, so a new source needs
+ * only its descriptor. The exception is the Import screen's path checks as
+ * the paths are typed: each fills its own source's stats (`pathStats`,
+ * `whatsappStats`), which the source's readiness and form section read, so
+ * a source that checks its paths adds a check and its stats there too.
  *
  * `M` is the source's own method ids. The functions below are declared in
  * method syntax, which TypeScript checks bivariantly in their parameters, so
@@ -105,12 +116,28 @@ export type ImportSourceDescriptor<M extends string = string> = {
   asksOwnerPhones: boolean;
   /** True when the form also asks for the owner's email addresses. */
   asksOwnerEmails: boolean;
+  /**
+   * True when the form asks for the one phone number the backup's account
+   * is registered to. The profile's first phone pre-fills it.
+   */
+  asksAccountPhone: boolean;
+  /**
+   * The path fields, beside the backup, that the form remembers for each of
+   * this source's methods. A field not listed is cleared when the source is
+   * picked, and is never remembered for it.
+   */
+  rememberedPaths: readonly ImporterExtraField[];
   /** True when the import runs wtsexporter, so it cannot start without it. */
   needsWtsexporter: boolean;
   /** The options under Processing Options this method shows. */
   processingOptions(method: M): readonly ProcessingOption[];
   /** The fields `extract` needs from a form whose `source` is one of `methods`. */
   extractFields(form: ImportJobFormValues & { source: M }): ExtractFields;
+  /**
+   * How a new run of this method reads the backup's identities before it
+   * starts, or null for a method whose run does not read them.
+   */
+  backupIdentityRead(method: M): BackupIdentityRead | null;
   /** The secret this method's extract reads, or null for none. */
   snapshotSecret(method: M): SnapshotSecret | null;
   /** How the form asks for this method's backup. */

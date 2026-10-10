@@ -171,6 +171,46 @@ describe("snapshotSecret", () => {
   });
 });
 
+describe("rememberedPaths", () => {
+  // A path the form clears when its source is picked, and never stores for it.
+  it("names the paths beside the backup that each source keeps", () => {
+    const expected: Record<string, readonly string[]> = {
+      imessage: ["attachmentRoot", "appleContacts"],
+      whatsapp: ["whatsappWa", "whatsappMedia", "whatsappDb"],
+      [SMS_BACKUP_RESTORE_SOURCE_ID]: [],
+      [GO_SMS_PRO_SOURCE_ID]: [],
+      [IMAZING_SOURCE_ID]: [],
+      [SMS_BACKUP_PLUS_SOURCE_ID]: [],
+      [OPENEXTRACT_SOURCE_ID]: [],
+    };
+    expect(Object.keys(expected).sort()).toEqual(IMPORT_SOURCES.map((s) => s.id).sort());
+    for (const source of IMPORT_SOURCES) {
+      expect(source.rememberedPaths, source.id).toEqual(expected[source.id]);
+    }
+  });
+});
+
+describe("backupIdentityRead", () => {
+  it("reads the identities of an Apple Messages backup only, as an iPhone backup for the iPhone method", () => {
+    const expected: Record<string, { ios: boolean } | null> = {
+      "imessage-ios": { ios: true },
+      "imessage-macos": { ios: false },
+      "imessage-jailbreak": { ios: false },
+      "whatsapp-android": null,
+      "whatsapp-ios": null,
+      [SMS_BACKUP_RESTORE_SOURCE_ID]: null,
+      [GO_SMS_PRO_SOURCE_ID]: null,
+      [IMAZING_SOURCE_ID]: null,
+      [SMS_BACKUP_PLUS_SOURCE_ID]: null,
+      [OPENEXTRACT_SOURCE_ID]: null,
+    };
+    expect(Object.keys(expected).sort()).toEqual([...allMethods].sort());
+    for (const method of allMethods) {
+      expect(importSourceFor(method).backupIdentityRead(method), method).toEqual(expected[method]);
+    }
+  });
+});
+
 describe("extractFields", () => {
   it("sends iMazing only the time zone its dates are read in", () => {
     const source = IMAZING_SOURCE_ID;

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { IMPORT_SOURCES } from "../../lib/importSources";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
@@ -195,6 +196,16 @@ describe("runHeading and the operation line", () => {
     );
     expect(sourceDisplayName("whatsapp-android")).toBe("WhatsApp · Android");
     expect(sourceDisplayName("sms-backup-restore")).toBe("SMS Backup & Restore");
+  });
+
+  it("names every method by its source's label, and its own label where the source has several", () => {
+    for (const source of IMPORT_SOURCES) {
+      for (const method of source.methods) {
+        expect(sourceDisplayName(method.id)).toBe(
+          source.methods.length === 1 ? source.label : `${source.label} · ${method.label}`,
+        );
+      }
+    }
   });
 
   it("leads with what was imported once the run is done", () => {

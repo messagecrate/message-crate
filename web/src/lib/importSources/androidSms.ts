@@ -58,6 +58,8 @@ function androidSmsSource(args: {
     showsAttachmentOptions: true,
     asksOwnerPhones: true,
     asksOwnerEmails: args.asksOwnerEmails,
+    asksAccountPhone: false,
+    rememberedPaths: [],
     needsWtsexporter: false,
     processingOptions: () => ["obfuscate"],
     extractFields: (form) =>
@@ -67,6 +69,7 @@ function androidSmsSource(args: {
         ownerEmails: form.ownerEmails,
         obfuscate: form.obfuscate,
       }),
+    backupIdentityRead: () => null,
     snapshotSecret: () => null,
     backupField: () => args.backupField,
     readiness: (input) => ({

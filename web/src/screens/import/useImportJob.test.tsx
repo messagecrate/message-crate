@@ -517,6 +517,28 @@ describe("useImportJob wiring", () => {
     expect(invokeTranscodeStagingMock).not.toHaveBeenCalled();
   });
 
+  it("reads an Apple Messages backup's identities before the run, as an iPhone backup only for the iPhone method", async () => {
+    for (const [source, ios] of [
+      ["imessage-ios", true],
+      ["imessage-macos", false],
+    ] as const) {
+      resetImportRun();
+      invokeImessageBackupIdentitiesMock.mockClear();
+      runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
+      const { result } = renderHook(() => useImportJob());
+      await act(() => result.current.startImport({ ...baseForm, source }));
+      expect(invokeImessageBackupIdentitiesMock).toHaveBeenCalledWith(
+        expect.objectContaining({ path: baseForm.backupPath, ios }),
+      );
+    }
+  });
+
+  it("reads no backup identities before a run of a source that has none to read", async () => {
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport({ ...baseForm, source: "whatsapp-android" }));
+    expect(invokeImessageBackupIdentitiesMock).not.toHaveBeenCalled();
+  });
+
   it("sends the form's zone with an iMazing extract, whose dates carry none", async () => {
     // Without it the exporter reads every date in the machine's zone (#689).
     const { result } = renderHook(() => useImportJob());

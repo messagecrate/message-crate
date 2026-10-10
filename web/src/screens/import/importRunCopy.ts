@@ -1,8 +1,7 @@
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { sourceLabel } from "../../lib/exportSources";
-import { IMESSAGE_METHODS, isImessageMethod } from "../../lib/imessageImport";
+import { findImportSource } from "../../lib/importSources";
 import { countOf } from "../../lib/plural";
-import { isWhatsappMethod, WHATSAPP_METHODS } from "../../lib/whatsappImport";
 import { ATTACHMENT_OPTIONS } from "./ImportFormUi";
 import type { ImportPhase } from "./importProgressState";
 import type { ImportJobFormValues } from "./useImportJob";
@@ -10,17 +9,17 @@ import type { ImportJobFormValues } from "./useImportJob";
 /** Which of the run's two reviews ((CONTEXT.md, "Review")). */
 export type ReviewKind = "staging" | "media";
 
-/** The person's name for the source, e.g. "Apple Messages · iPhone backup". */
+/**
+ * The person's name for the source: the source's label for a source read
+ * one way, e.g. "SMS Backup & Restore", and the label and the method's
+ * otherwise, e.g. "Apple Messages · iPhone backup".
+ */
 export function sourceDisplayName(source: string): string {
-  if (isImessageMethod(source)) {
-    const method = IMESSAGE_METHODS.find((m) => m.id === source)?.label;
-    return method ? `Apple Messages · ${method}` : "Apple Messages";
-  }
-  if (isWhatsappMethod(source)) {
-    const method = WHATSAPP_METHODS.find((m) => m.id === source)?.label;
-    return method ? `WhatsApp · ${method}` : "WhatsApp";
-  }
-  return sourceLabel(source);
+  const descriptor = findImportSource(source);
+  if (descriptor === undefined) return sourceLabel(source);
+  if (descriptor.methods.length === 1) return descriptor.label;
+  const method = descriptor.methods.find((m) => m.id === source);
+  return method ? `${descriptor.label} · ${method.label}` : descriptor.label;
 }
 
 /** The attachments line of "what you asked for", in the form's own words, settings included when they apply. */
