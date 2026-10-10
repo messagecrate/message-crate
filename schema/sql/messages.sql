@@ -220,10 +220,18 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- Path of the Thumbnail under the account's converted-media directory.
     thumbnail_assets_path TEXT,
     -- MIME type of the Thumbnail file.
-    thumbnail_mime_type TEXT
+    thumbnail_mime_type TEXT,
+    -- Import Run that last wrote this row: the one that added it, or that
+    -- gave a row stored without its file the file (`imports.id`). When the
+    -- run ends, the server queues the Assets of the rows it wrote, whichever
+    -- run created their message (#1946).
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS ix_attachments_sha256 ON attachments (sha256);
+CREATE INDEX IF NOT EXISTS ix_attachments_import_id
+    ON attachments (import_id)
+    WHERE import_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_attachments_message_id ON attachments (message_id);
 
 -- Assets whose Thumbnail and Preview the server still has to make. An Import

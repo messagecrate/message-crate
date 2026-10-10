@@ -252,6 +252,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
+  backup was imported again and now held a photo or video that was missing
+  the first time, the import gave the stored message its file but never
+  queued it, so it got no Thumbnail or Preview, and the viewer did not open
+  it, until `process-assets` was run by hand. The server now makes the
+  Thumbnails and Previews of every attachment an import adds or fills in,
+  whichever import first brought the message (#1946).
 - 2026-10-09: **A file without a backup date imported beside a dated one
   gives the same result in any order.** When one import held a dated backup
   and a message file that says nothing about when its backup was made, such
