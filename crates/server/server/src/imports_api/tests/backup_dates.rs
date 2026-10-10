@@ -786,3 +786,104 @@ async fn an_undated_later_edit_beside_an_earlier_backup_gives_its_text() {
         );
     }
 }
+
+/// A message imported from a file without a backup date takes the date of
+/// the first dated file that meets it, even one that gives it nothing new,
+/// so the next import compares with that backup. A file without a date
+/// leaves the message's date as it is.
+#[tokio::test]
+async fn a_dated_file_gives_an_undated_message_its_date() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let db = tmp.path().join("messagecrate.db");
+    let file = |name: &str, backup: Option<i64>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "same text",
+                versions: &[],
+                deletion: None,
+            },
+        )
+    };
+    let undated = file("undated.jsonl", None);
+    import(&db, &assets, tmp.path(), std::slice::from_ref(&undated)).await;
+    assert_eq!(held(&db).await.backup_taken_at, None);
+    import(
+        &db,
+        &assets,
+        tmp.path(),
+        &[file("dated.jsonl", Some(EARLIER_BACKUP))],
+    )
+    .await;
+    assert_eq!(
+        held(&db).await.backup_taken_at.as_deref(),
+        Some(EARLIER_BACKUP_AT)
+    );
+    import(&db, &assets, tmp.path(), &[undated]).await;
+    assert_eq!(
+        held(&db).await.backup_taken_at.as_deref(),
+        Some(EARLIER_BACKUP_AT)
+    );
+}
+
+/// A message a file without a backup date gave its mark is read back with
+/// no backup date, though a dated backup gave it one, so an Export Run
+/// writes no date for it and a later import of that file keeps the rules
+/// for files without one. A message only dated backups gave anything keeps
+/// its date.
+#[tokio::test]
+async fn a_message_an_undated_file_marked_is_read_back_without_a_date() {
+    let (state, _fixture, token) = importer().await;
+    let batch = |backup: Option<i64>, deletion: Option<Deletion>| {
+        let header =
+            conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+        let header = match backup {
+            Some(ms) => header.backup_taken_at(ms),
+            None => header,
+        };
+        let marked = message_line("g-marked", "taken back").sender("+15555550123");
+        let marked = match deletion {
+            Some(deletion) => marked.deletion(deletion),
+            None => marked,
+        };
+        let plain = message_line("g-plain", "hello").sender("+15555550123");
+        format!("{header}\n{marked}\n{plain}\n")
+    };
+    import_one_batch(
+        &state,
+        &token,
+        "imessage",
+        "append",
+        batch(Some(LATER_BACKUP), None),
+    )
+    .await;
+    import_one_batch(
+        &state,
+        &token,
+        "imessage",
+        "append",
+        batch(None, Some(Deletion::Unsent)),
+    )
+    .await;
+    let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+    let dates: std::collections::BTreeMap<String, serde_json::Value> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["guid"].as_str().unwrap().to_owned(),
+                item["backup_taken_at"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(dates["g-marked"], serde_json::Value::Null, "{dates:?}");
+    assert_eq!(
+        dates["g-plain"],
+        serde_json::json!(LATER_BACKUP_AT),
+        "{dates:?}"
+    );
+}

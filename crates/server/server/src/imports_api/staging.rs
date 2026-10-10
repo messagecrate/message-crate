@@ -984,7 +984,7 @@ async fn add_staged_copy(
     };
     match order {
         BackupOrder::Later => {
-            db_staging::take_staged_copy_from_later_backup(tx, staged, &copy).await?;
+            db_staging::replace_staged_text(tx, staged, &copy).await?;
         }
         BackupOrder::Earlier => {}
         BackupOrder::Undecided => {

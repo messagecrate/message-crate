@@ -477,7 +477,9 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
                 ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label, m.deletion, m.backup_taken_at,
+                ho.raw AS owner, {label} AS label, m.deletion,
+                CASE WHEN m.undated_deletion IS NULL AND NOT m.undated_body
+                    THEN m.backup_taken_at END AS backup_taken_at,
                 m.time_precision
          {from_sql}
          WHERE {where_sql}

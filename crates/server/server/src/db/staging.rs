@@ -610,22 +610,6 @@ pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<Sta
     })
 }
 
-/// Give the staged message `staged` the text and earlier versions of
-/// `copy`, another copy of it from a later backup in the same import. The
-/// caller has compared the two backups' dates ([`later_backup`]), so the
-/// copy staged first no longer decides whatever its age (#1741, #1804).
-///
-/// # Errors
-///
-/// Returns an error when a statement fails.
-pub async fn take_staged_copy_from_later_backup(
-    conn: &mut SqliteConnection,
-    staged: i64,
-    copy: &StagedCopy<'_>,
-) -> Result<()> {
-    replace_staged_text(conn, staged, copy).await
-}
-
 /// Give the staged message `staged` the mark `deletion` of another copy of
 /// it from the same import, from the backup made at `backup_taken_at`, or
 /// `None` for a file without a date, by the rule a later import of the copy
@@ -676,8 +660,7 @@ pub async fn add_staged_copy_mark(
 /// `copy`, another copy of it from the same import, when that copy records
 /// a later edit ([`later_edit_sql`]). Returns whether it did. The caller
 /// uses it only when the backups' dates cannot decide the text
-/// ([`later_backup`]); otherwise [`take_staged_copy_from_later_backup`]
-/// decides.
+/// ([`later_backup`]); otherwise they decide ([`replace_staged_text`]).
 ///
 /// Staging keeps one row per guid and skips a second copy, so without this
 /// the copy staged first counted whatever its age: one import of an
@@ -716,9 +699,17 @@ pub async fn take_later_staged_copy(
     Ok(true)
 }
 
-/// Replace the staged message `staged`'s text, its earlier versions, and
-/// whether they came from a file without a date with `copy`'s.
-async fn replace_staged_text(
+/// Give the staged message `staged` the text, the earlier versions, and
+/// whether they came from a file without a date of `copy`, another copy of
+/// it from the same import whose text the caller decided is the later one:
+/// by the backups' dates ([`later_backup`]), so the copy staged first no
+/// longer decides whatever its age (#1741, #1804), or by its later edit
+/// ([`take_later_staged_copy`]).
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn replace_staged_text(
     conn: &mut SqliteConnection,
     staged: i64,
     copy: &StagedCopy<'_>,
@@ -1286,8 +1277,8 @@ pub async fn write_message_map(
 /// falls back on the rule for files without a date. Equal dates are the
 /// same backup read again, where that rule changes nothing because the two
 /// copies agree, or two reads of one Mac's `chat.db` that Messages did
-/// not write between, where it adds a mark and takes a later edit as it
-/// would with no dates.
+/// not write between, where it takes a later edit as it would with no
+/// dates.
 ///
 /// The one rule for which of two copies of a message from one source gives
 /// its text, for a stored message ([`write_edit_map`]) and, in Rust
@@ -1360,8 +1351,9 @@ pub enum BackupOrder {
     Later,
     /// The copy comes from an earlier backup.
     Earlier,
-    /// Either copy has no date, or the two dates are equal: the dates
-    /// cannot decide, and the rules for files without one hold.
+    /// Either copy has no date, the two dates are equal, or the held text
+    /// came from a file without a date (#1989): the dates cannot decide,
+    /// and the rules for files without one hold.
     Undecided,
 }
 
@@ -1581,7 +1573,7 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 /// An append skips a message production already holds, so a later backup in
 /// which it was edited again reaches it only here. A message has one staged
 /// row: staging keeps one row per guid, the later copy when one import
-/// carries two ([`take_staged_copy_from_later_backup`], [`take_later_staged_copy`]).
+/// carries two ([`replace_staged_text`], [`take_later_staged_copy`]).
 ///
 /// # Errors
 ///

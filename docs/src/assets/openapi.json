@@ -16047,7 +16047,7 @@
               "string",
               "null"
             ],
-            "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
+            "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say, or when a file that did not say gave the\nmessage its mark or text, so a file exported from it claims no\ndate that nothing backs. Between two copies of one message from\none source, the copy from the later backup decides."
           },
           "conversation": {
             "$ref": "#/components/schemas/MessageConversation",
@@ -18150,7 +18150,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
+                  "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say, or when a file that did not say gave the\nmessage its mark or text, so a file exported from it claims no\ndate that nothing backs. Between two copies of one message from\none source, the copy from the later backup decides."
                 },
                 "conversation": {
                   "$ref": "#/components/schemas/MessageConversation",

@@ -573,7 +573,8 @@ backup decides its mark and text.** One message from one source is one row
 already there, in the same import or a later one. The conversation file says
 when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
 that date on each staged row, and `messages.backup_taken_at` keeps the date of
-the newest backup with a date that gave the stored copy anything. When both copies have a date, the
+the newest backup with a date that gave the stored copy anything. When both
+copies have a date, the
 copy from the later backup gives the message its deletion mark, mark or no
 mark, and its text and earlier versions, whatever the versions' times say; a
 copy from an earlier backup changes neither. The duplicate flag follows the
@@ -589,7 +590,7 @@ message alike: the mark it gave (`undated_deletion`), which outlasts every
 copy without a mark, dated or not, and whether the text came from it
 (`undated_body`), which leaves the text to the later edit whatever the
 other copy's date. The date rules then decide only between dated copies, and
-the first dated copy a message meets gives it its date. Why: a row that kept
+the newest dated copy a message meets gives it its date. Why: a row that kept
 one date for both could hold an undated mark or edit under a dated
 backup's date, and a later import would then judge it by that date, so the
 order the files were read in decided the result
@@ -597,7 +598,8 @@ order the files were read in decided the result
 Attachments and reactions add from
 either copy, because a backup that lacks one does not say it is gone. The
 rule is the same in one import as across several, in any file order
-(`later_backup_sql` in `db/staging.rs`, `add_staged_copy` in
+(`copy_mark_sql` for the mark and `later_backup_sql` for the text in
+`db/staging.rs`, `add_staged_copy` in
 `imports_api/staging.rs`). Why: a person recovers a deleted message and
 unsends or edits a sent one between two backups, and only the backup's own
 date says which state is the newer; the message's own times record when it
