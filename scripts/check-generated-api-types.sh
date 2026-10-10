@@ -9,11 +9,13 @@
 #
 # Regenerate with: (cd web && npm run gen:api)
 #
-# The generator runs through npx rather than as a web/ dependency: it declares
-# a peer dependency on TypeScript 5 and this project is on TypeScript 7, so
-# installing it into web/ fails to resolve. Running it in its own tree sidesteps
-# that, and only its text output ever reaches the repository. Keep the pinned
-# version here in step with web/package.json's gen:api script.
+# The generator is not a web/ dependency: it declares a peer dependency on
+# TypeScript 5 and this project is on TypeScript 7, so installing it into web/
+# fails to resolve. It has a tree of its own instead, scripts/openapi-typescript/,
+# whose package-lock.json pins every package it runs, so a new release of one of
+# its dependencies cannot run here unreviewed, and Dependabot and `npm audit` see
+# that tree. Only its text output ever reaches the repository. web/package.json's
+# gen:api script runs the same tree.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -31,7 +33,9 @@ fi
 tmp="$(mktemp -t serverApi.types.XXXXXX.ts)"
 trap 'rm -f "${tmp}"' EXIT
 
-npx --yes openapi-typescript@7.13.0 "${SPEC}" -o "${tmp}" >/dev/null
+GENERATOR="scripts/openapi-typescript"
+npm ci --prefix "${GENERATOR}" --no-audit --no-fund --silent
+npm exec --no --prefix "${GENERATOR}" -- openapi-typescript "${SPEC}" -o "${tmp}" >/dev/null
 
 if ! diff -u "${GENERATED}" "${tmp}"; then
   echo >&2

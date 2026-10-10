@@ -204,9 +204,10 @@ nothing — the opposite of the pattern this decision removes.
   `/v1/contacts/{id}` path — already used the integer the database stores. The
   web app carries contact ids as strings for routes and DOM ids and converts at
   that edge.
-- The generator runs through `npx`, pinned, rather than as a `web/` dependency:
-  `openapi-typescript` declares a peer dependency on TypeScript 5 and this
-  project is on TypeScript 7, so installing it into `web/` does not resolve.
+- The generator runs from a tree of its own, `scripts/openapi-typescript/`, with
+  a committed lockfile, rather than as a `web/` dependency: `openapi-typescript`
+  declares a peer dependency on TypeScript 5 and this project is on TypeScript
+  7, so installing it into `web/` does not resolve.
   Only its text output reaches the repository. Biome is configured to skip the
   generated file, because formatting it would make it differ from what the
   generator produces and the drift check compares the two byte for byte.
