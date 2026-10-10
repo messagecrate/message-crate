@@ -10,11 +10,11 @@ import type { AccountImportRun, ListedImportRun } from "./storageUtils";
 import {
   formatImportDate,
   RUN_PAGE_SIZE,
-  sectionHint,
-  sectionTitle,
-  tableCard,
-  tdStyle,
-  thStyle,
+  sectionHintClass,
+  sectionTitleClass,
+  tableCardClass,
+  tdClass,
+  thClass,
 } from "./storageUtils";
 
 export default function ImportHistoryTable({
@@ -48,25 +48,25 @@ export default function ImportHistoryTable({
 }) {
   return (
     <section>
-      <h3 className={sectionTitle}>Import history</h3>
-      <p className={sectionHint}>
+      <h3 className={sectionTitleClass}>Import history</h3>
+      <p className={sectionHintClass}>
         Each import recorded for this account, from the desktop app or the command line
         {total > RUN_PAGE_SIZE ? ` · ${RUN_PAGE_SIZE} per page` : ""}.
       </p>
       {total === 0 ? (
-        <p className={`${sectionHint} mt-3`}>No imports recorded yet</p>
+        <p className={`${sectionHintClass} mt-3`}>No imports recorded yet</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
-          <ScrollingTableCard cardClassName={tableCard}>
+          <ScrollingTableCard cardClassName={tableCardClass}>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className={thStyle}>Date</th>
-                  <th className={thStyle}>Import type</th>
-                  <th className={`${thStyle} text-right`}>Messages</th>
-                  <th className={`${thStyle} text-right`}>Attachments</th>
-                  <th className={`${thStyle} text-right`}>Uploaded size</th>
-                  <th className={`${thStyle} text-right`}>Issues</th>
+                  <th className={thClass}>Date</th>
+                  <th className={thClass}>Import type</th>
+                  <th className={`${thClass} text-right`}>Messages</th>
+                  <th className={`${thClass} text-right`}>Attachments</th>
+                  <th className={`${thClass} text-right`}>Uploaded size</th>
+                  <th className={`${thClass} text-right`}>Issues</th>
                 </tr>
               </thead>
               <tbody>
@@ -79,7 +79,7 @@ export default function ImportHistoryTable({
                         className={`cursor-pointer ${isSelected ? "bg-hover" : "hover:bg-hover"}`}
                         onClick={() => onToggle(row.id)}
                       >
-                        <td className={tdStyle}>
+                        <td className={tdClass}>
                           <PlainButton
                             aria-expanded={isSelected}
                             aria-controls={detailId}
@@ -90,17 +90,17 @@ export default function ImportHistoryTable({
                             {formatImportDate(row.finished_at ?? row.started_at)}
                           </PlainButton>
                         </td>
-                        <td className={tdStyle}>{row.source}</td>
-                        <td className={`${tdStyle} text-right tabular-nums`}>
+                        <td className={tdClass}>{row.source}</td>
+                        <td className={`${tdClass} text-right tabular-nums`}>
                           {row.message_count.toLocaleString()}
                         </td>
-                        <td className={`${tdStyle} text-right tabular-nums`}>
+                        <td className={`${tdClass} text-right tabular-nums`}>
                           {row.attachment_count.toLocaleString()}
                         </td>
-                        <td className={`${tdStyle} text-right tabular-nums`}>
+                        <td className={`${tdClass} text-right tabular-nums`}>
                           {formatBytes(row.bytes_uploaded)}
                         </td>
-                        <td className={`${tdStyle} text-right tabular-nums`}>
+                        <td className={`${tdClass} text-right tabular-nums`}>
                           {row.issue_count.toLocaleString()}
                         </td>
                       </tr>

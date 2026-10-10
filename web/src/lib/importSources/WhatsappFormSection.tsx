@@ -1,7 +1,7 @@
 import Checkbox from "../../components/Checkbox";
 import PasswordField from "../../components/PasswordField";
 import PathPicker from "../../components/PathPicker";
-import { fieldStyle, hintStyle, StackedField } from "../../screens/import/ImportFormUi";
+import { fieldClass, hintClass, StackedField } from "../../screens/import/ImportFormUi";
 import {
   isWhatsappMethod,
   whatsappCryptRequired,
@@ -59,7 +59,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             showPassword={props.showWhatsappKey}
             onToggle={props.onToggleWhatsappKey}
           />
-          <p className={hintStyle}>{WHATSAPP_KEY_HINT}</p>
+          <p className={hintClass}>{WHATSAPP_KEY_HINT}</p>
           <FieldStatus message={errors.key} />
         </StackedField>
       ) : null}
@@ -95,9 +95,9 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             value={props.whatsappOwnerPhone}
             onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
             placeholder="+1 555 555 0100"
-            className={fieldStyle}
+            className={fieldClass}
           />
-          <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_ANDROID}</p>
+          <p className={hintClass}>{WHATSAPP_OWNER_PHONE_HINT_ANDROID}</p>
           <FieldStatus message={errors.ownerPhone} />
         </StackedField>
       ) : null}
@@ -109,7 +109,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             onChange={props.onWhatsappWaChange}
             filters={WHATSAPP_CONTACTS_FILTERS}
           />
-          <p className={hintStyle}>
+          <p className={hintClass}>
             {method === "whatsapp-ios"
               ? WHATSAPP_CONTACTS_HINT_IPHONE
               : WHATSAPP_CONTACTS_HINT_ANDROID}
@@ -125,7 +125,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             onChange={props.onWhatsappMediaChange}
             directory
           />
-          <p className={hintStyle}>{WHATSAPP_MEDIA_HINT}</p>
+          <p className={hintClass}>{WHATSAPP_MEDIA_HINT}</p>
           <FieldStatus message={errors.media} />
         </StackedField>
       ) : null}
@@ -137,7 +137,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             onChange={props.onWhatsappDbChange}
             filters={SQLITE_DB_FILTERS}
           />
-          <p className={hintStyle}>{WHATSAPP_DB_HINT}</p>
+          <p className={hintClass}>{WHATSAPP_DB_HINT}</p>
           <FieldStatus message={errors.db} />
         </StackedField>
       ) : null}
@@ -174,9 +174,9 @@ export function WhatsappFallbackPhoneField(props: {
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder="+1 555 555 0100"
-        className={fieldStyle}
+        className={fieldClass}
       />
-      <p className={hintStyle}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
+      <p className={hintClass}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
     </StackedField>
   );
 }

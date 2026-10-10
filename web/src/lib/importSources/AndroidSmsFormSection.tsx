@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import Checkbox from "../../components/Checkbox";
 import PhoneTokenField from "../../components/PhoneTokenField";
-import { fieldStyle, hintStyle, StackedField } from "../../screens/import/ImportFormUi";
+import { fieldClass, hintClass, StackedField } from "../../screens/import/ImportFormUi";
 import { accentLink } from "../uiStyles";
 import type { ImportFormSectionProps } from "./types";
 
@@ -24,7 +24,7 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
           onDraftChange={entry.onDraftChange}
           aria-label="Backup Device Phone Numbers"
         />
-        <p className={hintStyle}>
+        <p className={hintClass}>
           Pre-filled from your profile. Add numbers from other SIMs, if needed.
         </p>
         {props.showMissingAccountPhoneWarning ? (
@@ -67,9 +67,9 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
             value={props.ownerEmails}
             onChange={(e) => props.onOwnerEmailsChange(e.target.value)}
             placeholder="you@example.com"
-            className={fieldStyle}
+            className={fieldClass}
           />
-          <p className={hintStyle}>
+          <p className={hintClass}>
             Pre-filled from your profile. The Gmail or IMAP account SMS Backup+ synced to; separate
             several with commas.
           </p>

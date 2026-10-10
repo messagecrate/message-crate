@@ -6,11 +6,11 @@ import {
   describeExportRun,
   formatImportDate,
   RUN_PAGE_SIZE,
-  sectionHint,
-  sectionTitle,
-  tableCard,
-  tdStyle,
-  thStyle,
+  sectionHintClass,
+  sectionTitleClass,
+  tableCardClass,
+  tdClass,
+  thClass,
 } from "./storageUtils";
 
 /**
@@ -53,46 +53,46 @@ export default function ExportHistoryTable({
 }) {
   return (
     <section>
-      <h3 className={sectionTitle}>Export history</h3>
-      <p className={sectionHint}>
+      <h3 className={sectionTitleClass}>Export history</h3>
+      <p className={sectionHintClass}>
         Each export recorded for this account
         {total > RUN_PAGE_SIZE ? ` · ${RUN_PAGE_SIZE} per page` : ""}.
       </p>
       {total === 0 ? (
-        <p className={`${sectionHint} mt-3`}>No exports recorded yet</p>
+        <p className={`${sectionHintClass} mt-3`}>No exports recorded yet</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
-          <ScrollingTableCard cardClassName={tableCard}>
+          <ScrollingTableCard cardClassName={tableCardClass}>
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className={thStyle}>Date</th>
-                  <th className={thStyle}>Scope</th>
-                  <th className={thStyle}>Status</th>
-                  <th className={`${thStyle} text-right`}>Messages</th>
-                  <th className={`${thStyle} text-right`}>Delivered</th>
-                  <th className={`${thStyle} text-right`}>Attachments</th>
-                  <th className={`${thStyle} text-right`}>Size</th>
+                  <th className={thClass}>Date</th>
+                  <th className={thClass}>Scope</th>
+                  <th className={thClass}>Status</th>
+                  <th className={`${thClass} text-right`}>Messages</th>
+                  <th className={`${thClass} text-right`}>Delivered</th>
+                  <th className={`${thClass} text-right`}>Attachments</th>
+                  <th className={`${thClass} text-right`}>Size</th>
                 </tr>
               </thead>
               <tbody>
                 {exports.map((row) => (
                   <tr key={row.id}>
-                    <td className={tdStyle}>
+                    <td className={tdClass}>
                       {formatImportDate(row.finished_at ?? row.started_at)}
                     </td>
-                    <td className={tdStyle}>{describeExportRun(row)}</td>
-                    <td className={tdStyle}>{statusLabel(row.status)}</td>
-                    <td className={`${tdStyle} text-right tabular-nums`}>
+                    <td className={tdClass}>{describeExportRun(row)}</td>
+                    <td className={tdClass}>{statusLabel(row.status)}</td>
+                    <td className={`${tdClass} text-right tabular-nums`}>
                       {row.message_count.toLocaleString()}
                     </td>
-                    <td className={`${tdStyle} text-right tabular-nums`}>
+                    <td className={`${tdClass} text-right tabular-nums`}>
                       {row.messages_delivered.toLocaleString()}
                     </td>
-                    <td className={`${tdStyle} text-right tabular-nums`}>
+                    <td className={`${tdClass} text-right tabular-nums`}>
                       {row.attachment_count.toLocaleString()}
                     </td>
-                    <td className={`${tdStyle} text-right tabular-nums`}>
+                    <td className={`${tdClass} text-right tabular-nums`}>
                       {formatBytes(row.total_bytes)}
                     </td>
                   </tr>

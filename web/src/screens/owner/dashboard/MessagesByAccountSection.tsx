@@ -1,7 +1,7 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
 import { formatBytes } from "../../../lib/formatBytes";
-import { tdClass, tdMuted } from "../../settings/apiTokensUtils";
-import { rowStripe, thClass, thSeparator } from "../ownerTableStyles";
+import { tdClass, tdMutedClass } from "../../settings/apiTokensUtils";
+import { rowStripeClass, thClass, thSeparatorClass } from "../ownerTableStyles";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";
 
@@ -30,19 +30,23 @@ export function MessagesByAccountSection({ storage }: { storage: ServerStorage }
           <thead>
             <tr>
               <th className={thClass}>Account</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Messages</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Text</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Estimated size on disk</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Messages</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Text</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>
+                Estimated size on disk
+              </th>
             </tr>
           </thead>
           <tbody>
             {storage.accounts.map((account) => (
-              <tr key={account.account_id} className={`border-t border-border ${rowStripe}`}>
+              <tr key={account.account_id} className={`border-t border-border ${rowStripeClass}`}>
                 <td className={`${tdClass} whitespace-nowrap font-semibold`}>{account.username}</td>
-                <td className={`${tdMuted} ${numberCell}`}>
+                <td className={`${tdMutedClass} ${numberCell}`}>
                   {account.message_count.toLocaleString()}
                 </td>
-                <td className={`${tdMuted} ${numberCell}`}>{formatBytes(account.text_bytes)}</td>
+                <td className={`${tdMutedClass} ${numberCell}`}>
+                  {formatBytes(account.text_bytes)}
+                </td>
                 <td className={`${tdClass} ${numberCell}`}>
                   {formatBytes(account.estimated_message_bytes)}
                 </td>

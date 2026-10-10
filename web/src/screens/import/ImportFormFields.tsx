@@ -22,11 +22,11 @@ import type { WhatsappPathStats } from "../../lib/whatsappImport";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
-  fieldStyle,
-  hintStyle,
+  fieldClass,
+  hintClass,
   RESOLUTION_OPTIONS,
   StackedField,
-  sectionGap,
+  sectionGapClass,
 } from "./ImportFormUi";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
@@ -135,7 +135,7 @@ function PhoneCountryField({
           ...phoneCountryItems(countries),
         ]}
       </Select>
-      <p className={hintStyle}>
+      <p className={hintClass}>
         Numbers written without a country code are read as numbers in this country. Leave it unset
         when the backup holds numbers from more than one country written that way.
       </p>
@@ -174,7 +174,7 @@ function AttachmentFields(props: {
             </ListBoxItem>
           ))}
         </Select>
-        <p className={hintStyle}>{attachmentHelp[attachments.attachmentMedia]}</p>
+        <p className={hintClass}>{attachmentHelp[attachments.attachmentMedia]}</p>
       </StackedField>
 
       {props.showCompress && (
@@ -194,7 +194,7 @@ function AttachmentFields(props: {
                 </ListBoxItem>
               ))}
             </Select>
-            <p className={hintStyle}>Maximum video resolution; videos are not upscaled.</p>
+            <p className={hintClass}>Maximum video resolution; videos are not upscaled.</p>
           </StackedField>
           {/* The desktop app's refusals name Max FPS and Minimum Video File Size by
               these labels (media::compress_options_from_form in crates/libs/media), so
@@ -204,9 +204,9 @@ function AttachmentFields(props: {
               type="text"
               value={attachments.maxFps}
               onChange={(e) => onAttachmentsChange({ ...attachments, maxFps: e.target.value })}
-              className={fieldStyle}
+              className={fieldClass}
             />
-            <p className={hintStyle}>
+            <p className={hintClass}>
               Maximum video frame rate; a video with a lower frame rate keeps it.
             </p>
           </StackedField>
@@ -215,9 +215,9 @@ function AttachmentFields(props: {
               type="text"
               value={attachments.minSizeMb}
               onChange={(e) => onAttachmentsChange({ ...attachments, minSizeMb: e.target.value })}
-              className={fieldStyle}
+              className={fieldClass}
             />
-            <p className={hintStyle}>Only re-encode videos above this size.</p>
+            <p className={hintClass}>Only re-encode videos above this size.</p>
           </StackedField>
         </div>
       )}
@@ -328,7 +328,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         open={props.formatOpen}
         onToggle={props.onToggleFormat}
       >
-        <div className={sectionGap}>
+        <div className={sectionGapClass}>
           <Select
             selectedKey={source.id}
             onSelectionChange={(k) => {
@@ -374,7 +374,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
             filters={backup.filters}
             placeholder={backup.placeholder}
           />
-          {backup.hint ? <p className={hintStyle}>{backup.hint}</p> : null}
+          {backup.hint ? <p className={hintClass}>{backup.hint}</p> : null}
           <FieldStatus message={readiness.errors.backupPath} />
         </StackedField>
 
@@ -409,7 +409,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
                 value={props.timeZone}
                 onChange={props.onTimeZoneChange}
               />
-              <p className={hintStyle}>
+              <p className={hintClass}>
                 Pre-filled from your profile. iMazing writes each message time without a zone, so
                 pick the one the phone was in.
               </p>
