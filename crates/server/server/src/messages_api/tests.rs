@@ -5,7 +5,7 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
-    get_status, message_line, register_via_api, seed_conversation, stored_time,
+    message_line, register_via_api, seed_conversation, stored_time,
 };
 use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
 
@@ -266,7 +266,6 @@ async fn source_sms_is_a_422_that_names_the_sources() {
     let (fixture, alice) = fixture_with_account().await;
     let (status, text) = get_raw(&fixture.state, "/v1/messages?q=source%3Asms", &alice.token).await;
     let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(
         problem
             .detail
@@ -1670,19 +1669,14 @@ async fn one_message_is_read_by_id_and_only_by_the_account_that_owns_it() {
     assert_eq!(message["id"], serde_json::json!(id));
     assert_eq!(message["text"], serde_json::json!(text));
 
-    assert_eq!(
-        get_status(&fixture.state, &format!("/v1/messages/{id}"), &bob.token).await,
-        StatusCode::NOT_FOUND,
-        "another account's message is absent, not forbidden"
-    );
-    assert_eq!(
-        get_status(&fixture.state, "/v1/messages/999999", &alice.token).await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        get_status(&fixture.state, &format!("/v1/messages/{id}"), "not-a-token").await,
-        StatusCode::UNAUTHORIZED
-    );
+    // Another account's message is absent, not forbidden.
+    let (status, text) = get_raw(&fixture.state, &format!("/v1/messages/{id}"), &bob.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = get_raw(&fixture.state, "/v1/messages/999999", &alice.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) =
+        get_raw(&fixture.state, &format!("/v1/messages/{id}"), "not-a-token").await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
     // An id that is not a number is a problem document like every other
     // failure, not Axum's plain-text rejection.
     let (status, text) = get_raw(&fixture.state, "/v1/messages/abc", &alice.token).await;

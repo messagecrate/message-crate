@@ -1094,8 +1094,8 @@ pub struct TopAttachment {
     /// `null` when the owner reads another account's storage: which
     /// conversation a file is in, and who it is with, is the holder's.
     pub conversation_id: Option<i64>,
-    /// Conversation label, when set.
-    pub conversation_title: Option<String>,
+    /// The title the export gave the conversation, when it gave one.
+    pub group_title: Option<String>,
     /// Raw text of the identity that keys the conversation.
     pub chat_identifier: Option<String>,
 }
@@ -1104,7 +1104,7 @@ impl TopAttachment {
     /// The attachment as a file and nothing else: name, type and size.
     pub fn without_conversation(mut self) -> Self {
         self.conversation_id = None;
-        self.conversation_title = None;
+        self.group_title = None;
         self.chat_identifier = None;
         self
     }
@@ -1159,7 +1159,7 @@ pub async fn top_attachments_by_size(
                 mime_type,
                 size_bytes,
                 conversation_id,
-                conversation_title,
+                group_title,
                 chat_identifier,
             )| TopAttachment {
                 id,
@@ -1167,7 +1167,7 @@ pub async fn top_attachments_by_size(
                 mime_type,
                 size_bytes,
                 conversation_id: Some(conversation_id),
-                conversation_title,
+                group_title,
                 // A conversation keyed by a name is labelled with the name,
                 // not with its `name:` key.
                 chat_identifier: Some(

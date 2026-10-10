@@ -89,7 +89,7 @@ pub struct ConversationSummary {
     /// person's name and "Orphaned", or "Orphaned · Unknown person" for the
     /// one that names nobody; for any other, the export's title. `null` when
     /// there is none, and the conversation goes by its participants.
-    pub label: Option<String>,
+    pub shown_title: Option<String>,
     /// Message tags on this conversation.
     pub tags: Vec<String>,
 }
@@ -104,7 +104,7 @@ pub(crate) fn is_group_type(conversation_type: &str) -> bool {
 struct RawConversation {
     id: i64,
     conversation_type: String,
-    label: Option<String>,
+    shown_title: Option<String>,
     message_count: i64,
     first_message_at: Option<String>,
     last_message_at: Option<String>,
@@ -197,7 +197,7 @@ pub async fn get_conversation_summary(
 /// with themselves: a one-to-one conversation whose own identity is one of
 /// the account's identities, such as notes sent to their own number (#1094).
 /// `c` is the alias of a `conversations` row. `with:me` asks this, and
-/// [`conversation_title_sql`] names such a conversation by it.
+/// [`shown_title_sql`] names such a conversation by it.
 #[must_use]
 pub fn is_with_yourself_sql(c: &str) -> String {
     format!(
@@ -227,7 +227,7 @@ pub const ORPHANED_UNKNOWN_PERSON: &str = "Orphaned · Unknown person";
 /// single-conversation read, the message rows, `title:`, `in:` and plain
 /// text all read this one expression.
 #[must_use]
-pub fn conversation_title_sql(c: &str) -> String {
+pub fn shown_title_sql(c: &str) -> String {
     format!(
         "CASE WHEN {with_yourself} THEN COALESCE(
                   (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
@@ -254,14 +254,14 @@ pub fn is_orphaned_sql(c: &str) -> String {
 }
 
 /// The row shape shared by the conversation list and the single-conversation
-/// read: id, type, title ([`conversation_title_sql`]), and the
+/// read: id, type, title ([`shown_title_sql`]), and the
 /// counts/timestamps computed from `messages`. Callers append their own
 /// `WHERE`, `ORDER BY`, and paging.
 fn conversation_row_select() -> String {
     format!(
         "SELECT c.id,
                 c.conversation_type,
-                {label} AS label,
+                {shown_title} AS shown_title,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
@@ -269,7 +269,7 @@ fn conversation_row_select() -> String {
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
          FROM conversations c",
-        label = conversation_title_sql("c")
+        shown_title = shown_title_sql("c")
     )
 }
 
@@ -289,11 +289,18 @@ async fn load_conversation_rows(
     let rows: Vec<RawConversation> = rows
         .into_iter()
         .map(
-            |(id, conversation_type, label, message_count, first_message_at, last_message_at)| {
+            |(
+                id,
+                conversation_type,
+                shown_title,
+                message_count,
+                first_message_at,
+                last_message_at,
+            )| {
                 RawConversation {
                     id,
                     conversation_type,
-                    label,
+                    shown_title,
                     message_count,
                     first_message_at,
                     last_message_at,
@@ -332,8 +339,8 @@ async fn load_conversation_rows(
             last_message_at: row.last_message_at,
             service,
             is_group,
-            label: row
-                .label
+            shown_title: row
+                .shown_title
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             tags: tag_sets.remove(&row.id).unwrap_or_default(),

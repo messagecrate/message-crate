@@ -61,7 +61,7 @@ struct RawRow {
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
-    label: Option<String>,
+    shown_title: Option<String>,
 }
 
 /// A message's reply count: the replies shown that quote `m`, counted when
@@ -478,14 +478,14 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
                 ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label, m.deletion,
+                ho.raw AS owner, {shown_title} AS shown_title, m.deletion,
                 CASE WHEN m.undated_deletion IS NULL AND NOT m.undated_body
                     THEN m.backup_taken_at END AS backup_taken_at,
                 m.time_precision
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
-        label = crate::db::conversations::conversation_title_sql("c"),
+        shown_title = crate::db::conversations::shown_title_sql("c"),
         reply_count = REPLY_COUNT_SQL,
     );
     let mut params = params.to_vec();
@@ -532,7 +532,7 @@ async fn fetch_message_page(
                 conversation_type: row.try_get(17)?,
                 group_title: row.try_get(18)?,
                 owner: row.try_get(19)?,
-                label: row.try_get(20)?,
+                shown_title: row.try_get(20)?,
                 deletion: row.try_get(21)?,
                 backup_taken_at: row.try_get(22)?,
                 time_precision: {
@@ -581,7 +581,7 @@ async fn fetch_message_page(
                     is_group: is_group_type(&r.conversation_type),
                     conversation_type: r.conversation_type,
                     group_title: r.group_title,
-                    label: r.label,
+                    shown_title: r.shown_title,
                     participants: parts,
                 },
                 attachments: attachments.get(&r.id).cloned().unwrap_or_default(),

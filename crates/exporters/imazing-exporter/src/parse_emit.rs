@@ -3,8 +3,8 @@
 
 use crate::emit::TransportFamily;
 use crate::parse::{RawRow, SourceKind};
+use crate::zone::Zone;
 use chrono::NaiveDateTime;
-use message_csv::Zone;
 use message_ir::{ConversationKey, IdentityType, IrParticipant};
 use phone::Handle;
 use sha2::{Digest, Sha256};

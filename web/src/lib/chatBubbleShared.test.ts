@@ -63,7 +63,7 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
-        label: null,
+        shown_title: null,
         participants: [participant({ identity: "+1", name: "Ada" })],
       },
     });
@@ -77,7 +77,7 @@ describe("senderName / namesSender", () => {
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [
         participant({
           identity: "+1555",
@@ -97,7 +97,7 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
-        label: null,
+        shown_title: null,
         participants: [participant({ identity: "a", name: "A" })],
       },
     });
@@ -125,7 +125,7 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
-        label: null,
+        shown_title: null,
         participants: [
           participant({ identity: "a", name: "A" }),
           participant({ identity: "b", name: "B" }),
@@ -153,7 +153,7 @@ const conversation = {
   conversation_type: "group",
   is_group: true,
   group_title: null,
-  label: null,
+  shown_title: null,
   participants: [
     participant({ identity: "+1555", name: "Ada" }),
     participant({ identity: "+1556", name: "Bob" }),
