@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installMemoryStorage } from "../test/localStorage";
 import {
   getImporterExtraPaths,
   getImporterPath,
@@ -8,25 +9,8 @@ import {
   setRememberImporterPaths,
 } from "./system-settings";
 
-const mem = new Map<string, string>();
-
 beforeEach(() => {
-  mem.clear();
-  const store: Storage = {
-    getItem: (k) => mem.get(k) ?? null,
-    setItem: (k, v) => {
-      mem.set(k, String(v));
-    },
-    removeItem: (k) => {
-      mem.delete(k);
-    },
-    clear: () => mem.clear(),
-    key: () => null,
-    length: 0,
-  };
-  // The node environment has no window. lib/storage.ts reads window.localStorage.
-  vi.stubGlobal("localStorage", store);
-  vi.stubGlobal("window", { localStorage: store });
+  installMemoryStorage();
 });
 
 afterEach(() => {

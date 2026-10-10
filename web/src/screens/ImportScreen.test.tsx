@@ -9,6 +9,7 @@ import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
+import { activeImportRun } from "../test/apiShapes";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import type { RunDirDeleteFailure } from "./import/importRunStore";
@@ -199,24 +200,6 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
   };
 }
 
-function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
-  return {
-    id: 7,
-    source: "imessage",
-    mode: "append",
-    status: "running",
-    started_at: "2026-08-30T00:00:00Z",
-    stage: "upload",
-    run_dir: "/home/u/message-crate/staging-260830",
-    device_id: "this-device",
-    form: { source: "imessage-ios" },
-    source_fingerprint: null,
-    source_identities: null,
-    summary: null,
-    ...overrides,
-  };
-}
-
 /** A stored form snapshot for an iPhone backup, as `formSnapshot` writes it. */
 function storedForm(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -333,7 +316,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("shows the resume panel instead of the form for a resumable run", async () => {
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
@@ -342,7 +325,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("says the run directory could not be checked, not that it is gone, when the stat fails", async () => {
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     invokePathStatMock.mockRejectedValue(new Error("ipc down"));
     renderWithProviders(<ImportScreen />);
 
@@ -352,7 +335,7 @@ describe("ImportScreen entering Import", () => {
 
   it("discards the run and drops through to the form", async () => {
     const user = setupUser();
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
@@ -367,7 +350,7 @@ describe("ImportScreen entering Import", () => {
     // only on the server, so the badge reads it from there. Discard ends it,
     // and the badge must go at once rather than on a later refetch.
     const user = setupUser();
-    let running: ActiveImportRun | null = importRun({ stage: "staging_review" });
+    let running: ActiveImportRun | null = activeImportRun({ stage: "staging_review" });
     getActiveImportRunMock.mockImplementation(async () => running);
     listImportsMock.mockImplementation(async () => ({
       items: running ? [running] : [],
@@ -404,7 +387,7 @@ describe("ImportScreen entering Import", () => {
     // discardImportRun, orphaning a potentially multi-GB directory.
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "upload",
         device_id: "this-device",
         run_dir: "/home/u/message-crate/staging-260830",
@@ -446,7 +429,7 @@ describe("ImportScreen entering Import", () => {
     // local path with the same name would be wrong, or a no-op at best.
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "upload",
         device_id: "another-device",
         run_dir: "/home/u/message-crate/staging-260830",
@@ -466,7 +449,7 @@ describe("ImportScreen entering Import", () => {
   it("resumes the Upload against the existing run without creating a new one", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "upload",
         run_dir: "/home/u/message-crate/staging-260830",
         form: {
@@ -539,7 +522,7 @@ describe("ImportScreen entering Import", () => {
     async (stage, kind) => {
       const user = setupUser();
       getActiveImportRunMock.mockResolvedValue(
-        importRun({
+        activeImportRun({
           stage,
           run_dir: "/home/u/message-crate/staging-260830",
           form: restorableForm,
@@ -574,7 +557,7 @@ describe("ImportScreen entering Import", () => {
     // since nothing was touched server-side, it finds the same run and
     // shows the panel again -- this is the retry.
     getActiveImportRunMock.mockResolvedValue(
-      importRun({ stage: "staging_review", form: restorableForm }),
+      activeImportRun({ stage: "staging_review", form: restorableForm }),
     );
     const { rerender } = renderWithProviders(<ImportScreen />);
 
@@ -604,7 +587,7 @@ describe("ImportScreen entering Import", () => {
   it("discards the old run before restarting when the extract never finished", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "parse",
         form: {
           source: "imessage-ios",
@@ -652,7 +635,7 @@ describe("ImportScreen entering Import", () => {
   it("picks up an interrupted copy in the directory it was already writing into", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "write",
         source_fingerprint: {
           path: "/backups/iphone.tar",
@@ -716,7 +699,7 @@ describe("ImportScreen entering Import", () => {
 
   it("says the backup changed when its size no longer matches what was recorded", async () => {
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "write",
         source_fingerprint: {
           path: "/backups/iphone.tar",
@@ -762,7 +745,7 @@ describe("ImportScreen entering Import", () => {
     });
     expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     hookState.phase = "form";
     await act(async () => {
       rerender(<ImportScreen />);
@@ -776,7 +759,7 @@ describe("ImportScreen entering Import", () => {
   it("runs one restart when the resume action is double-clicked", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "parse",
         form: {
           source: "imessage-ios",
@@ -828,7 +811,7 @@ describe("ImportScreen entering Import", () => {
   it("falls back to a settings-unreadable panel when the stored form snapshot is malformed", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({ stage: "upload", form: { nonsense: true } }),
+      activeImportRun({ stage: "upload", form: { nonsense: true } }),
     );
     renderWithProviders(<ImportScreen />);
 
@@ -842,7 +825,7 @@ describe("ImportScreen entering Import", () => {
 
   it("still drops to the form when discarding from the panel fails server-side", async () => {
     const user = setupUser();
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
     discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
@@ -856,7 +839,7 @@ describe("ImportScreen entering Import", () => {
   it("still restarts when discarding the old run before a restart fails server-side", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({
+      activeImportRun({
         stage: "parse",
         form: {
           source: "imessage-ios",
@@ -899,7 +882,7 @@ describe("ImportScreen entering Import", () => {
   it("asks for the backup password again when a resumed Staging will read an encrypted backup", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({ stage: "write", form: storedForm({ backupPasswordGiven: true }) }),
+      activeImportRun({ stage: "write", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
 
@@ -923,7 +906,7 @@ describe("ImportScreen entering Import", () => {
   it("asks for the backup password again when a restart will read an encrypted backup", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({ stage: "parse", form: storedForm({ backupPasswordGiven: true }) }),
+      activeImportRun({ stage: "parse", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
 
@@ -953,7 +936,7 @@ describe("ImportScreen entering Import", () => {
     async (_label, stage, kind) => {
       const user = setupUser();
       getActiveImportRunMock.mockResolvedValue(
-        importRun({
+        activeImportRun({
           source: "whatsapp",
           stage,
           form: storedForm({
@@ -979,7 +962,9 @@ describe("ImportScreen entering Import", () => {
 
   it("asks for nothing when the stored Import Run had no password or key", async () => {
     const user = setupUser();
-    getActiveImportRunMock.mockResolvedValue(importRun({ stage: "write", form: storedForm() }));
+    getActiveImportRunMock.mockResolvedValue(
+      activeImportRun({ stage: "write", form: storedForm() }),
+    );
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
@@ -995,7 +980,7 @@ describe("ImportScreen entering Import", () => {
   it("asks for nothing on a resume into Upload, which reads no backup", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
-      importRun({ stage: "upload", form: storedForm({ backupPasswordGiven: true }) }),
+      activeImportRun({ stage: "upload", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
 
