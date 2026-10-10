@@ -32,7 +32,9 @@ export type RunRecord = {
   /**
    * The run's notes, apart from its Import Errors; absent when it noted
    * nothing. A note is about an item a stage read, never about whether a
-   * conversation reached the server, so every part's notes are kept.
+   * conversation reached the server, so every part's notes are kept, except
+   * that a resumed Staging that has read the whole backup again replaces the
+   * earlier parts' Staging notes with its own (`combine`).
    */
   notes?: ImportNote[];
   durationMs?: number;
@@ -292,7 +294,7 @@ function isBackupReadRow(issue: ImportIssue): boolean {
  * is done, or the Staging has finished. A part resumed past Staging reads
  * nothing again, and a Staging stopped while it reads has not read it all.
  */
-function readWholeBackup(part: RunPart): boolean {
+function hasReadWholeBackup(part: RunPart): boolean {
   return part.staged.size > 0 || part.filesParsed != null;
 }
 
@@ -367,14 +369,19 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
 /**
  * The earlier parts' record with this part added, taking in `earlier`, the
  * rows of the earlier stop that join `issues`. Once this part's Staging has
- * read the whole backup, its own rows from that read replace the earlier
- * parts' (`isBackupReadRow`), so such a row stays only while its item still
- * fails (#1947).
+ * read the whole backup, its own rows and notes from that read replace the
+ * earlier parts' (`isBackupReadRow`; every Staging note is sent while the
+ * exporter reads), so such a row or note stays only while it still holds
+ * (#1947).
  */
 function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;
-  const notes = mergeNotes(carried.notes, part.notes);
-  const carriedIssues = readWholeBackup(part)
+  const readAgain = hasReadWholeBackup(part);
+  const carriedNotes = readAgain
+    ? carried.notes?.filter((note) => note.stage !== "staging")
+    : carried.notes;
+  const notes = mergeNotes(carriedNotes, part.notes);
+  const carriedIssues = readAgain
     ? carried.issues.filter((issue) => !isBackupReadRow(issue))
     : carried.issues;
   return {

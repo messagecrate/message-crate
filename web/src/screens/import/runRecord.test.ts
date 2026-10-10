@@ -438,6 +438,17 @@ describe("a resumed Staging's read of the backup replaces the earlier parts' (#1
     const uploaded = part({ conversations: new Map([["a.jsonl", "ok"]]), report: report() });
     expect(wholeRun(carried, uploaded).issues).toEqual([unreadable]);
   });
+
+  it("replaces the earlier parts' Staging notes with the resumed Staging's", () => {
+    // Part 1 read 2 rows naming a.jpg; by the resume the backup has one.
+    const twoRows = { stage: "staging" as const, item: "a.jpg", text: "named by 2 rows" };
+    const oneRow = { stage: "staging" as const, item: "b.jpg", text: "kept with a caveat" };
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [twoRows, oneRow] }));
+    const resumed = part({ notes: [oneRow], staged: new Map([["a.jsonl", "written"]]) });
+    expect(wholeRun(carried, resumed).notes).toEqual([oneRow]);
+    // A part resumed past Staging reads nothing again and keeps them.
+    expect(wholeRun(carried, part({ report: report() })).notes).toEqual([twoRows, oneRow]);
+  });
 });
 
 describe("the run's notes (#1626)", () => {
