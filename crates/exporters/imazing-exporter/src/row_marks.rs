@@ -21,10 +21,11 @@ const SEPARATORS: &[char] = &[',', ':', ';', '-', '\u{2013}', '\u{2014}', '\u{b7
 
 /// The reactions a `Reactions` cell holds, one per line, in the order
 /// written. A line names the reactor, the emoji, and when they reacted, in
-/// the US `M/D/YYYY` form. The name is the text before the emoji, or after
-/// it when nothing comes before, or before the time when the line has no
-/// emoji, or the whole line when it has neither. The time is read past: a
-/// reaction has no time of its own in the conversation file.
+/// the US `M/D/YYYY` form or the `YYYY-MM-DD` form the rest of the CSV
+/// uses. The name is the text before the emoji, or after it when nothing
+/// comes before, or before the time when the line has no emoji, or the
+/// whole line when it has neither. The time is read past: a reaction has
+/// no time of its own in the conversation file.
 pub(crate) fn parse_reactions(cell: &str) -> Vec<Reaction> {
     cell.lines().filter_map(parse_reaction_line).collect()
 }
@@ -39,13 +40,13 @@ fn parse_reaction_line(line: &str) -> Option<Reaction> {
         Some((start, end)) => {
             let before = clean_name(&line[..start]);
             let name = if before.is_empty() {
-                clean_name(before_us_date(&line[end..]))
+                clean_name(before_date(&line[end..]))
             } else {
                 before
             };
             (name, Some(line[start..end].to_string()))
         }
-        None => (clean_name(before_us_date(line)), None),
+        None => (clean_name(before_date(line)), None),
     };
     Some(Reaction {
         part_index: 0,
@@ -63,12 +64,23 @@ fn clean_name(text: &str) -> &str {
         .trim_matches(|c: char| c.is_whitespace() || SEPARATORS.contains(&c))
 }
 
-/// `text` up to the first US date in it (`M/D/YYYY`), or all of it.
-fn before_us_date(text: &str) -> &str {
-    match us_date_at(text) {
+/// `text` up to the first date in it, US (`M/D/YYYY`) or `YYYY-MM-DD`, or
+/// all of it.
+fn before_date(text: &str) -> &str {
+    let us = us_date_at(text);
+    let iso = iso_date_at(text);
+    match us.into_iter().chain(iso).min() {
         Some(at) => &text[..at],
         None => text,
     }
+}
+
+/// The byte offset of the first `YYYY-MM-DD` in `text`.
+fn iso_date_at(text: &str) -> Option<usize> {
+    let bytes = text.as_bytes();
+    (0..bytes.len())
+        .filter(|&i| i == 0 || !bytes[i - 1].is_ascii_digit())
+        .find(|&i| matches_shape(&bytes[i..], b"dddd-dd-dd"))
 }
 
 /// The byte offset of the first `M/D/YYYY` in `text`, with one or two
@@ -101,23 +113,43 @@ fn us_date_at(text: &str) -> Option<usize> {
 }
 
 /// The byte range of the first run of emoji-like characters in `line`:
-/// the emoji with its joiners, variation selectors and skin tones.
+/// the emoji with its joiners, variation selectors and skin tones. The run
+/// starts at an emoji-like character, or at the character a variation
+/// selector or keycap turns into one, as `\u{203c}\u{fe0f}` (the Emphasize
+/// tapback) and `1\u{fe0f}\u{20e3}` are written: their first character is
+/// punctuation or a digit by itself.
 fn emoji_run(line: &str) -> Option<(usize, usize)> {
-    let start = line.char_indices().find(|&(_, c)| is_emoji_like(c))?.0;
+    let mut chars = line.char_indices().peekable();
+    let start = loop {
+        let (at, c) = chars.next()?;
+        let next = chars.peek().map(|&(_, next)| next);
+        if is_emoji_like(c) || (!c.is_whitespace() && next.is_some_and(is_emoji_selector)) {
+            break at;
+        }
+    };
     let end = line[start..]
         .char_indices()
+        .skip(1)
         .find(|&(_, c)| !is_emoji_like(c))
         .map_or(line.len(), |(at, _)| start + at);
     Some((start, end))
 }
 
+/// Whether `c` turns the character before it into an emoji: a variation
+/// selector or the keycap sign.
+fn is_emoji_selector(c: char) -> bool {
+    matches!(u32::from(c), 0x20E3 | 0xFE00..=0xFE0F)
+}
+
 /// Whether `c` can be part of an emoji rather than of a name or a time: a
 /// symbol or pictograph, or a character that joins or varies one. Letters
-/// of every script, digits and punctuation are not.
+/// of every script, digits and punctuation are not, unless a selector
+/// follows them ([`emoji_run`]).
 fn is_emoji_like(c: char) -> bool {
     match u32::from(c) {
-        // Zero-width joiner, keycap, variation selectors and skin tones.
-        0x200D | 0x20E3 | 0xFE00..=0xFE0F | 0x1F3FB..=0x1F3FF => true,
+        // Zero-width joiner, skin tones, and the selectors.
+        0x200D | 0x1F3FB..=0x1F3FF => true,
+        _ if is_emoji_selector(c) => true,
         // General and CJK punctuation.
         0x2000..=0x206F | 0x3000..=0x303F => false,
         cp => cp >= 0x2190 && !c.is_alphanumeric(),
@@ -224,25 +256,52 @@ mod tests {
     }
 
     /// A name after the emoji, a name in another script, and a line with no
-    /// emoji each keep the name without the time.
+    /// emoji each keep the name without the time, whichever way the time is
+    /// written.
     #[test]
     fn the_name_is_found_either_side_of_the_emoji_or_before_the_time() {
         assert_eq!(
             names_and_emoji(
                 "\u{1f602} Bob Sample 1/1/2020 1:00:00 PM\n\
+                 \u{1f602} Bob Sample 2020-01-01 13:00:00\n\
                  \u{5c71}\u{7530} \u{1f389} 1/1/2020 1:01:00 PM\n\
                  Bob Sample 1/1/2020 1:02:00 PM\n\
+                 Bob Sample 2020-01-01 13:02:00\n\
                  Bob Sample"
             ),
             vec![
                 one(Some("Bob Sample"), Some("\u{1f602}"), false),
+                one(Some("Bob Sample"), Some("\u{1f602}"), false),
                 one(Some("\u{5c71}\u{7530}"), Some("\u{1f389}"), false),
+                one(Some("Bob Sample"), None, false),
                 one(Some("Bob Sample"), None, false),
                 one(Some("Bob Sample"), None, false),
             ]
         );
         assert_eq!(parse_reactions(""), vec![]);
         assert_eq!(parse_reactions(" \n "), vec![]);
+    }
+
+    /// An emoji whose first character is punctuation or a digit by itself,
+    /// made an emoji by the selector after it (the Emphasize tapback, a
+    /// keycap, a trademark sign), is read whole, and the name before it
+    /// keeps no part of it. A digit in a name stays in the name.
+    #[test]
+    fn a_selector_makes_the_character_before_it_part_of_the_emoji() {
+        assert_eq!(
+            names_and_emoji(
+                "Bob Sample \u{203c}\u{fe0f} 1/1/2020 12:04:00 PM\n\
+                 Bob Sample 1\u{fe0f}\u{20e3} 1/1/2020 12:05:00 PM\n\
+                 \u{2122}\u{fe0f} Bob Sample 1/1/2020 12:06:00 PM\n\
+                 Agent 47 \u{1f44d} 1/1/2020 12:07:00 PM"
+            ),
+            vec![
+                one(Some("Bob Sample"), Some("\u{203c}\u{fe0f}"), false),
+                one(Some("Bob Sample"), Some("1\u{fe0f}\u{20e3}"), false),
+                one(Some("Bob Sample"), Some("\u{2122}\u{fe0f}"), false),
+                one(Some("Agent 47"), Some("\u{1f44d}"), false),
+            ]
+        );
     }
 
     /// The date is found with or without a sender before it, with or
