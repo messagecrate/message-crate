@@ -90,8 +90,8 @@ export interface ExtractConfig {
   whatsapp_media?: string;
   /** Explicit WhatsApp message database (`msgstore.db`). */
   whatsapp_db?: string;
-  /** iPhone WhatsApp Business default files (`--business`). */
-  whatsapp_business?: boolean;
+  /** Whether an iPhone WhatsApp backup is from WhatsApp Business (`--business`). */
+  is_business_app?: boolean;
   /** Continue an interrupted export in the same directory: previous output is
    * kept and conversations already written are skipped. */
   resume?: boolean;

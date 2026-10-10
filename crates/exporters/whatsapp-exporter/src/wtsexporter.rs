@@ -55,7 +55,7 @@ pub(crate) struct WtsexporterArgs {
     pub wa: Option<PathBuf>,
     pub media: Option<PathBuf>,
     pub db: Option<PathBuf>,
-    pub business: bool,
+    pub is_business_app: bool,
 }
 
 impl WtsexporterArgs {
@@ -329,7 +329,7 @@ fn wtsexporter_command(
     push_opt(&mut cmd, "-b", paths.backup.as_deref());
     push_opt(&mut cmd, "-w", paths.wa.as_deref());
     push_opt(&mut cmd, "-m", paths.media.as_deref());
-    if args.business {
+    if args.is_business_app {
         cmd.arg("--business");
     }
     // Never pass `-c` (--move-media): wtsexporter would shutil.move the user's

@@ -38,7 +38,7 @@ export async function invokeExtract(config: ExtractConfig): Promise<void> {
       whatsappWa: config.whatsapp_wa ?? null,
       whatsappMedia: config.whatsapp_media ?? null,
       whatsappDb: config.whatsapp_db ?? null,
-      whatsappBusiness: config.whatsapp_business ?? null,
+      isBusinessApp: config.is_business_app ?? null,
       resume: config.resume ?? null,
       assetMaxBytes: config.asset_max_bytes,
     },
