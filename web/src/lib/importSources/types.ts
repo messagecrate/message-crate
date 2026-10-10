@@ -138,8 +138,8 @@ export type ImportSourceDescriptor<M extends string = string> = {
   /**
    * How a new run of this method reads the backup's identities with the
    * Apple Messages Reader before it starts, or null for a method whose run
-   * does not read them. The reader reads only Apple Messages backups, so
-   * every other source returns null.
+   * does not read them. Only an Apple Messages run reads the backup's
+   * identities, so every other source returns null.
    */
   appleIdentityRead(method: M): AppleIdentityRead | null;
   /** The secret this method's extract reads, or null for none. */
