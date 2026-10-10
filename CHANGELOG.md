@@ -142,15 +142,12 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-10: **Importing an SMS Backup & Restore backup again puts each
-  group conversation beside the one an earlier import made.** A group
-  conversation from SMS Backup & Restore is now identified the way the SMS
-  Backup+ and GO SMS Pro imports identify theirs, so the two rules can no
-  longer drift apart. Each group conversation keeps the same messages, the
-  same people and the same title. A backup imported before this change and
-  imported again afterwards puts each group conversation into a second
-  conversation beside the first. Delete the older one, or start from an
-  empty Message Crate, to keep one of each (#2139).
+- 2026-10-10: **An SMS Backup & Restore group conversation is identified
+  the way the SMS Backup+ and GO SMS Pro imports identify theirs.** The
+  three imports now share one rule, so they can no longer drift apart. Each
+  group conversation keeps the same messages, the same people and the same
+  title. Upgrading says what this means for a backup imported before
+  (#2139).
 
 - 2026-10-10: **The Export screen names its format menu Output format.** It
   was Format there and Output format under Convert in Settings; both now read
@@ -602,6 +599,11 @@ released versions carry their date on the heading.
 - Message files exported before Message Crate worked out each address's kind
   itself are refused when you import or convert them. Export the backup
   again with this build.
+- An SMS Backup & Restore backup imported before this release and imported
+  again afterwards makes a second copy of each group conversation, beside
+  the one the first import made. To keep one of each, delete the older
+  copy, or start from an empty Message Crate before importing again
+  (#2139).
 
 ## [0.10.1] - 2026-10-05
 
