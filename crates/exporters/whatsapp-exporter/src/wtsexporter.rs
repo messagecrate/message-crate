@@ -651,7 +651,8 @@ mod tests {
     }
 
     /// The arguments every command starts with: the platform flag (`-a` or
-    /// `-i`), then the fixed ones, before the paths the backup forwards.
+    /// `-i`), then `--no-html`, `--no-banner`, `-o <out>` and `-j <json>`,
+    /// before the paths the backup forwards.
     fn base_args(platform_flag: &str, out: &Path, json: &Path) -> Vec<String> {
         vec![
             platform_flag.to_string(),
@@ -666,7 +667,7 @@ mod tests {
 
     /// The arguments that pass an iPhone backup's files read straight from
     /// disk: its database, contacts and media directory.
-    fn files_args(db: &Path, contacts: &Path, media: &Path) -> Vec<String> {
+    fn ios_files_args(db: &Path, contacts: &Path, media: &Path) -> Vec<String> {
         vec![
             "-d".to_string(),
             text(db),
@@ -811,7 +812,7 @@ mod tests {
             command_args(&args, &out, &json),
             [
                 base_args("-i", &out, &json),
-                files_args(&db, &contacts, &domain),
+                ios_files_args(&db, &contacts, &domain),
             ]
             .concat()
         );
@@ -876,7 +877,7 @@ mod tests {
             command_args(&args, &out, &json),
             [
                 base_args("-i", &out, &json),
-                files_args(&db, &contacts, &shared),
+                ios_files_args(&db, &contacts, &shared),
             ]
             .concat()
         );
