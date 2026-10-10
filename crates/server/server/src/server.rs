@@ -466,7 +466,7 @@ impl AppState {
 /// Run `f` on the blocking thread pool and answer its result. A task that
 /// panics or is cancelled answers an internal error naming `task`; an error
 /// `f` returns becomes the [`ApiError`] it converts to.
-pub(crate) async fn blocking<T, E>(
+pub(crate) async fn run_blocking<T, E>(
     task: &'static str,
     f: impl FnOnce() -> Result<T, E> + Send + 'static,
 ) -> Result<T, ApiError>

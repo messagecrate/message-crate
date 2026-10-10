@@ -20,8 +20,8 @@ fn jsonl_content_type_accepts_x_ndjson() {
 }
 
 #[tokio::test]
-async fn blocking_answers_a_panicked_task_as_an_internal_error_naming_it() {
-    let answer = blocking("upload read", || -> Result<(), ApiError> { panic!("boom") }).await;
+async fn run_blocking_answers_a_panicked_task_as_an_internal_error_naming_it() {
+    let answer = run_blocking("upload read", || -> Result<(), ApiError> { panic!("boom") }).await;
     let Err(ApiError::Internal(err)) = answer else {
         panic!("expected an internal error, got {answer:?}");
     };

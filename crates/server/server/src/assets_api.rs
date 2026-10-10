@@ -638,7 +638,7 @@ async fn resolve_asset_lookup(
 
     let cfg = Arc::clone(&state.cfg);
     let sha_lookup = sha256.clone();
-    let existing = blocking("asset lookup", move || {
+    let existing = run_blocking("asset lookup", move || {
         let assets_dir = cfg.paths.assets_dir_for_account(account);
         Ok::<_, ApiError>(lookup_by_sha256(&assets_dir, &sha_lookup))
     })
@@ -876,7 +876,7 @@ pub(crate) async fn lookup_for_read(
 ) -> Result<Option<StoredAsset>, ApiError> {
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha256 = sha256.clone();
-    blocking("asset lookup", move || {
+    run_blocking("asset lookup", move || {
         Ok::<_, ApiError>(lookup_by_sha256_unverified(&assets_dir, &sha256))
     })
     .await
@@ -1075,7 +1075,7 @@ pub(crate) async fn replace_asset(
     let sha = sha256.clone();
     let tmp_for_store = tmp_path.clone();
     let assets_dir_store = assets_dir.clone();
-    let stored = blocking("asset upload", move || {
+    let stored = run_blocking("asset upload", move || {
         std::fs::create_dir_all(&assets_dir_store)
             .with_context(|| format!("create {}", assets_dir_store.display()))?;
         store_verified(
@@ -1187,7 +1187,7 @@ pub(crate) async fn create_asset_upload(
     let bytes = body.bytes;
     let sha = sha256.clone();
     let limits = state.upload_limits().await?;
-    let result = blocking("upload start", move || {
+    let result = run_blocking("upload start", move || {
         asset_uploads::start_upload(&assets_dir, &sha, bytes, mime.as_deref(), limits)
     })
     .await?;
@@ -1257,7 +1257,7 @@ pub(crate) async fn replace_asset_upload_part(
         let assets_dir = assets_dir.clone();
         let sha = sha256.clone();
         let uid = upload_id.clone();
-        blocking("upload part", move || {
+        run_blocking("upload part", move || {
             asset_uploads::session_part_size(&assets_dir, &sha, &uid)
         })
         .await?
@@ -1274,7 +1274,7 @@ pub(crate) async fn replace_asset_upload_part(
     let body = read_body_limited(request.into_body(), part_size).await?;
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let written = blocking("upload part", move || {
+    let written = run_blocking("upload part", move || {
         asset_uploads::put_part(&assets_dir, &sha, &uid, part, &body)
     })
     .await?;
@@ -1342,7 +1342,7 @@ pub(crate) async fn complete_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let (stored, already_present) = blocking("upload complete", move || {
+    let (stored, already_present) = run_blocking("upload complete", move || {
         asset_uploads::complete_upload(&assets_dir, &sha, &uid)
     })
     .await?;
@@ -1402,7 +1402,7 @@ pub(crate) async fn get_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    let manifest = blocking("upload read", move || {
+    let manifest = run_blocking("upload read", move || {
         asset_uploads::read_upload(&assets_dir, &sha, &uid)
     })
     .await?;
@@ -1440,7 +1440,7 @@ pub(crate) async fn delete_asset_upload(
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
-    blocking("upload abort", move || {
+    run_blocking("upload abort", move || {
         asset_uploads::abort_upload(&assets_dir, &sha, &uid)
     })
     .await?;
