@@ -72,7 +72,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         "  Read 2 MMS",
         "  Left out 1 message part that could not be read",
         "  Left out 1 character reference that is not a character",
-        "  Skipped 1 draft or unsent message",
+        "  Skipped 1 draft or message never sent",
         "  Skipped 1 MMS with no participants",
         "  Skipped 1 message with no usable address",
         "  Skipped 1 message of an unknown type",
