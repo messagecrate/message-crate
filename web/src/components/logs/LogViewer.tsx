@@ -146,7 +146,7 @@ export default function LogViewer({
         </p>
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
-          {text ? "No line matches the search." : `No line at this level.`}
+          {text ? "No line matches the search" : "No line at this level"}
         </p>
       ) : (
         <div

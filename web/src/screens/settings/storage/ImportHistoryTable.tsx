@@ -54,7 +54,7 @@ export default function ImportHistoryTable({
         {total > RUN_PAGE_SIZE ? ` · ${RUN_PAGE_SIZE} per page` : ""}.
       </p>
       {total === 0 ? (
-        <p className={`${sectionHint} mt-3`}>No imports recorded yet.</p>
+        <p className={`${sectionHint} mt-3`}>No imports recorded yet</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <ScrollingTableCard cardClassName={tableCard}>

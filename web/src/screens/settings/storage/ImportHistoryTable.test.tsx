@@ -211,4 +211,13 @@ describe("Import history", () => {
     expect(file?.textContent).toBe("Not recorded");
     expect(made?.textContent).toBe("The backup does not say when it was made");
   });
+
+  it("says when no Import Run has been recorded", async () => {
+    listAccountImports.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderWithProviders(<StorageSection />);
+
+    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    expect(await section.findByText("No imports recorded yet")).toBeInTheDocument();
+  });
 });

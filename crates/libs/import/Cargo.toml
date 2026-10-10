@@ -21,6 +21,7 @@ sha2 = { workspace = true }
 message-crate-api-types = { version = "0.1.0", path = "../api-types" }
 
 [dev-dependencies]
+message-ir = { path = "../../libs/ir", features = ["testutil"] }
 tempfile = { workspace = true }
 httpmock = "0.8"
 
