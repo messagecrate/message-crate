@@ -10,12 +10,16 @@ use sha2::{Digest, Sha256};
 
 /// Demo JPEG photos (path relative to export dir, display name, base color).
 pub struct JpgPhoto {
+    /// Where the photo is written, relative to the export directory.
     pub path: &'static str,
+    /// The file name the conversation gives the photo, as a phone would.
     pub original_name: &'static str,
     /// Base RGB the generated gradient starts from.
     pub color: [u8; 3],
 }
 
+/// The photos the demo conversations attach, each written once and attached
+/// to many messages in turn.
 pub const JPG_PHOTOS: &[JpgPhoto] = &[
     JpgPhoto {
         path: "attachments/sunset.jpg",
