@@ -370,9 +370,9 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
  * The earlier parts' record with this part added, taking in `earlier`, the
  * rows of the earlier stop that join `issues`. Once this part's Staging has
  * read the whole backup, its own rows and notes from that read replace the
- * earlier parts' (`isBackupReadRow`; every Staging note is sent while the
- * exporter reads), so such a row or note stays only while it still holds
- * (#1947).
+ * earlier parts' (`isBackupReadRow`), so such a row or note stays only while
+ * it still holds (#1947). Every Staging note is sent while the exporter
+ * reads, so the resumed Staging sends again each one that still holds.
  */
 function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;

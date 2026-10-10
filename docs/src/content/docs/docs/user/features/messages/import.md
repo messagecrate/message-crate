@@ -317,7 +317,8 @@ A resumed Stage reads again what it had not finished, and an Error it reports ag
 An Upload Error about a conversation that the resumed Upload then sends is dropped, so the run never records a failure for a conversation that reached the Message Crate.
 A Staging Error about an attachment of a conversation that the resumed Staging then writes is dropped too, because that Staging read the attachment again and reports it afresh if it still fails.
 A Staging Error about a conversation that was already written before the stop is kept, because the resumed Staging does not read that conversation again.
-A Staging Error about a file the backup could not read, such as a mail file on a network drive that dropped, is dropped once the resumed Staging has read the whole backup again and read that file clean, and so is a Staging note that read no longer gives.
+A Staging Error about a file the backup could not read, such as a mail file on a network drive that dropped, is dropped once the resumed Staging has read the whole backup again and read that file clean.
+A Staging note is dropped the same way, because the resumed Staging's read sends again every note that still holds.
 A run resumed at a Review, Media, or Upload keeps them, because none of those reads the backup again.
 
 | The run stopped | The screen reads | The button |
