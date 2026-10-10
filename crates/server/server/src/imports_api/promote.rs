@@ -465,8 +465,7 @@ impl Promote<'_> {
     /// stored messages whose attachment rows took their missing files.
     async fn promote_attachments(&mut self) -> Result<(i64, Vec<i64>)> {
         let phase = self.begin("Writing the import's attachments…");
-        let attachments_before = staging::max_attachment_id(self.tx).await?;
-        let promoted = staging::promote_attachments(self.tx, attachments_before).await?;
+        let promoted = staging::promote_attachments(self.tx).await?;
         self.stats.attachments = promoted.inserted;
         self.done(
             phase,
@@ -484,7 +483,7 @@ impl Promote<'_> {
                 ),
             ),
         );
-        Ok((attachments_before, promoted.filled_messages))
+        Ok((promoted.attachments_before, promoted.filled_messages))
     }
 
     /// Insert the staged tapbacks under their production messages.

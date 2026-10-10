@@ -1597,6 +1597,9 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
 /// What [`promote_attachments`] did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct PromotedAttachments {
+    /// The highest attachment id before the insert: every row inserted is
+    /// above it.
+    pub attachments_before: i64,
     /// Production rows stored without a file that took the file from a
     /// staged row.
     pub filled: u64,
@@ -1727,18 +1730,15 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// ([`fill_attachments_sql`]), then insert the rows the message does not
 /// hold yet ([`insert_new_attachments_sql`]). Every row it fills or inserts
 /// takes the Import Run of its staged message as its `import_id`, so the
-/// Media Stage after the run queues its Asset even when an earlier run
-/// created the message (#1946). `attachments_before` is the highest
-/// attachment id before the insert ([`max_attachment_id`]): the new rows
-/// land above it.
+/// server queues its Asset when the run ends
+/// (`db::media_queue::queue_import_run`), even when an earlier run created
+/// the message (#1946).
 ///
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-pub async fn promote_attachments(
-    conn: &mut SqliteConnection,
-    attachments_before: i64,
-) -> Result<PromotedAttachments> {
+pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
+    let attachments_before = max_attachment_id(conn).await?;
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
     let filled_rows: Vec<(i64, i64)> = sqlx::query_as(&format!(
         "{} RETURNING id, message_id",
@@ -1770,6 +1770,7 @@ pub async fn promote_attachments(
     .execute(&mut *conn)
     .await?;
     Ok(PromotedAttachments {
+        attachments_before,
         filled,
         filled_messages,
         inserted,

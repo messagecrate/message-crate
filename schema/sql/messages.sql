@@ -210,8 +210,8 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- MIME type of the Thumbnail file.
     thumbnail_mime_type TEXT,
     -- Import Run that last wrote this row: the one that added it, or that
-    -- gave a row stored without its file the file (`imports.id`). The Media
-    -- Stage after the run queues the Assets of the rows it wrote, whichever
+    -- gave a row stored without its file the file (`imports.id`). When the
+    -- run ends, the server queues the Assets of the rows it wrote, whichever
     -- run created their message (#1946).
     import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL
 );
