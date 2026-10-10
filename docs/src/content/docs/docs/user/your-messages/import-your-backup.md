@@ -1,9 +1,9 @@
 ---
 title: Import your backup
-description: Point the desktop app's Import form at the backup directory, approve the review, and open the imported conversations.
+description: Point the desktop app's Import form at the backup, an iPhone's backup directory or an Android phone's .xml file, approve the review, and open the imported conversations.
 ---
 
-This step reads the phone's backup directory and stores its messages in the Message Crate.
+This step reads the phone's backup, an iPhone's backup directory or an Android phone's `.xml` file, and stores its messages in the Message Crate.
 It happens in the desktop app, logged in as the account made in [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
 
 ## Open Import
