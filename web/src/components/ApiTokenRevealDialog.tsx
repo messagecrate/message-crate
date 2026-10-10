@@ -1,27 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { type ApiTokenReveal, ApiTokenRevealContext } from "./apiTokenRevealState";
 import Button from "./Button";
+import { CopyIcon } from "./icons";
 import ModalShell from "./ModalShell";
 import PlainButton from "./PlainButton";
-
-function CopyIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
 
 export default function ApiTokenRevealDialog({
   open,
@@ -99,7 +81,7 @@ export default function ApiTokenRevealDialog({
           onClick={() => void copy()}
           className="!inline-flex !shrink-0 !items-center !gap-1.5 !rounded-xl !px-3 !py-2 !text-[0.813rem]"
         >
-          <CopyIcon />
+          <CopyIcon size={14} className="" />
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
