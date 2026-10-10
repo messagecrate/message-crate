@@ -12,6 +12,7 @@ import {
 import LogoutDialog, { type LogoutDialogState } from "../components/LogoutDialog";
 import PathList from "../components/PathList";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
+import { errorText } from "./apiErrorMessage";
 import { parsePersistedAuth } from "./authGuards";
 import { createQueryClient } from "./routeQuery";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
@@ -531,7 +532,7 @@ async function deleteRunDirectories(directories: readonly string[]): Promise<Und
     try {
       await invokeDeleteRunDir({ run_dir: path });
     } catch (e) {
-      undeleted.push({ path, reason: e instanceof Error ? e.message : String(e) });
+      undeleted.push({ path, reason: errorText(e) });
     }
   }
   return undeleted;

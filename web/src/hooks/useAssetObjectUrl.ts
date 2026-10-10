@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "../lib/apiErrorMessage";
 import type { AssetVersion } from "../lib/assetUrl";
 import { fetchAssetObjectUrl } from "../lib/serverApi";
 
@@ -82,7 +83,7 @@ export function useAssetObjectUrls(
           setEntries((prev) =>
             new Map(prev).set(key, {
               url: null,
-              error: e instanceof Error ? e.message : String(e),
+              error: errorText(e),
             }),
           );
         });

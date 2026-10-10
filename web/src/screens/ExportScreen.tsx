@@ -9,6 +9,7 @@ import Select, { selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
+import { errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/auth";
 import { holdDesktopJob } from "../lib/desktopJob";
 import { writeInExportDir } from "../lib/exportDir";
@@ -188,7 +189,7 @@ export default function ExportScreen() {
           appendLog,
         );
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorText(err);
         appendLog(`Error: ${message}`);
         setError(message);
       } finally {

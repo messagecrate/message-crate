@@ -7,6 +7,7 @@ import {
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
 import { profileAddresses } from "../../lib/account";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
+import { errorText } from "../../lib/apiErrorMessage";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import { useAuth } from "../../lib/auth";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
@@ -903,7 +904,7 @@ async function endSessionIfRefused<T>(call: () => Promise<T>): Promise<T> {
   } catch (e: unknown) {
     if (token == null || !endsSession(e)) throw e;
     sessionRefused(token);
-    throw new SessionRefusedError(e instanceof Error ? e.message : String(e));
+    throw new SessionRefusedError(errorText(e));
   }
 }
 
@@ -944,7 +945,7 @@ async function moveStage(
     await endSessionIfRefused(() => setImportStage(runId, stage, approvedPlan));
   } catch (e: unknown) {
     if (e instanceof SessionRefusedError) throw e;
-    const reason = e instanceof Error ? e.message : String(e);
+    const reason = errorText(e);
     throw new StageNotRecordedError(`Message Crate didn't record the run's progress: ${reason}`);
   }
 }
@@ -968,7 +969,7 @@ async function moveStageAtReview(
     return "recorded";
   } catch (e: unknown) {
     if (await leaveIfRefused(e, runId)) return "refused";
-    store.set({ reviewError: e instanceof Error ? e.message : String(e) });
+    store.set({ reviewError: errorText(e) });
     return "failed";
   }
 }
@@ -1096,7 +1097,7 @@ async function finishImport(args: {
         }),
       );
     } catch (e: unknown) {
-      completeRefused = e instanceof Error ? e.message : String(e);
+      completeRefused = errorText(e);
       sessionWasRefused = e instanceof SessionRefusedError;
     }
   }
@@ -1156,7 +1157,7 @@ async function discardRunDirectory(runDir: string): Promise<boolean> {
     store.set({
       runDirDeleteFailure: {
         path: runDir,
-        reason: e instanceof Error ? e.message : String(e),
+        reason: errorText(e),
       },
     });
     return false;
@@ -1220,7 +1221,7 @@ async function uploadAndFinish(
     if (await leaveIfRefused(e, runId)) return false;
     // The server still has the run at its review, so the run stays there
     // and is not completed: a later visit offers that review again.
-    recordError("upload", e instanceof Error ? e.message : String(e));
+    recordError("upload", errorText(e));
     failActiveStep();
     await finishImport({
       runId,
@@ -1250,7 +1251,7 @@ async function uploadAndFinish(
       }),
     );
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorText(e);
     if (msg === CANCELLED_MESSAGE) {
       // The person asked for this: not an error, so no issue row for it.
       pausedBeforeStart = true;
@@ -1319,7 +1320,7 @@ async function runMediaStage(
     if (await leaveIfRefused(e, runId)) return;
     // The server still has the run at the Staging Review, so the run stays
     // there and is not completed: a later visit offers that review again.
-    recordError("media", e instanceof Error ? e.message : String(e));
+    recordError("media", errorText(e));
     failActiveStep();
     await finishImport({
       runId,
@@ -1339,7 +1340,7 @@ async function runMediaStage(
     const result = await runJob(() => invokeTranscodeStaging({ run_dir: outputDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorText(e);
     if (msg === CANCELLED_MESSAGE) {
       // The person asked for this: not an error, so no issue row for it.
       cancelled = true;
@@ -1391,7 +1392,7 @@ async function runMediaStage(
     // failure on `resumeError`. The run waits at the Media Review on the
     // server, and resuming it there reads the directory again.
     store.set({
-      resumeError: e instanceof Error ? e.message : String(e),
+      resumeError: errorText(e),
       computingSummary: false,
       running: false,
     });
@@ -1612,7 +1613,7 @@ async function runImport(
       waitAtReview("staging_review");
     } catch (e: unknown) {
       store.set({
-        resumeError: e instanceof Error ? e.message : String(e),
+        resumeError: errorText(e),
         computingSummary: false,
         running: false,
       });
@@ -1620,7 +1621,7 @@ async function runImport(
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(e, runId)) return;
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorText(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
     // run at `write` is what lets the next Import visit offer that. A
@@ -1956,7 +1957,7 @@ export function useImportJob() {
         waitAtReview(review);
       } catch (e: unknown) {
         store.set({
-          resumeError: e instanceof Error ? e.message : String(e),
+          resumeError: errorText(e),
           computingSummary: false,
           running: false,
         });
