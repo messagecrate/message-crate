@@ -17,3 +17,15 @@ export function checksFromMembers(
   }
   return checks;
 }
+
+/**
+ * Clear all: take every name the selected rows carry off them, one write per
+ * name, all started at once rather than each waiting for the one before.
+ */
+export async function clearAllMembers(
+  memberLists: readonly (readonly string[])[],
+  removeName: (name: string) => Promise<unknown>,
+): Promise<void> {
+  const names = new Set(memberLists.flat());
+  await Promise.allSettled([...names].map(removeName));
+}

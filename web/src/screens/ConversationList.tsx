@@ -16,7 +16,7 @@ import {
   saveConversationSort,
 } from "../lib/conversationSort";
 import { formatVisibleRange } from "../lib/listPaging";
-import { checksFromMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membershipChecks";
 import { useMessageTagActions, useSetMessageTagMembers } from "../lib/messageTags";
 import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
@@ -129,19 +129,14 @@ export default function ConversationList({
     [targetConversations, setTagMembers.mutateAsync],
   );
 
-  /** Drop every tag on the selected conversations: one write per name, each with its own rollback. */
-  const clearAllMembership = useCallback(async () => {
-    const ids = targetConversations.map((c) => c.id);
-    if (ids.length === 0) return;
-    const names = new Set<string>();
-    for (const c of targetConversations) {
-      for (const t of c.tags ?? []) names.add(t);
-    }
-    if (names.size === 0) return;
-    await Promise.allSettled(
-      [...names].map((name) => setTagMembers.mutateAsync({ name, patch: { remove: ids } })),
-    );
-  }, [targetConversations, setTagMembers.mutateAsync]);
+  const clearAllMembership = useCallback(
+    () =>
+      clearAllMembers(
+        targetConversations.map((c) => c.tags ?? []),
+        (name) => applyMembership(name, false),
+      ),
+    [targetConversations, applyMembership],
+  );
 
   useEffect(() => {
     setRightToolbar(
