@@ -919,8 +919,8 @@ async fn a_multipart_upload_completes_end_to_end_over_http() {
     let outcome = upload_in_parts(&server, &user.token, &bytes).await;
     assert_eq!(outcome.part_size, 16);
 
-    // Completing the upload stores the asset: a creation, answered like the
-    // single PUT that stores one.
+    // Completing the upload stores the asset: a creation, so it names the
+    // asset in `Location` like the single PUT that stores one.
     assert_eq!(
         outcome.completed_location.as_deref(),
         Some(format!("/v1/assets/{sha}").as_str())
@@ -943,8 +943,8 @@ struct UploadOutcome {
     served: Vec<u8>,
 }
 
-/// A multipart upload of `bytes` as an `image/png`, opened over HTTP and no
-/// part sent yet, so a test can change the server between the two steps.
+/// A multipart upload of `bytes` as an `image/png`, opened over HTTP with
+/// no part sent yet.
 struct StartedUpload<'a> {
     server: &'a crate::test_support::TestServer,
     token: &'a str,
@@ -981,9 +981,8 @@ impl<'a> StartedUpload<'a> {
         }
     }
 
-    /// This upload's URL with `rest` appended, or the asset's own URL when
-    /// `rest` is empty.
-    fn url(&self, rest: &str) -> String {
+    /// The asset's URL with `rest` appended.
+    fn asset_url(&self, rest: &str) -> String {
         format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha)
     }
 
@@ -994,7 +993,7 @@ impl<'a> StartedUpload<'a> {
         let upload_id = &self.upload_id;
         for (index, chunk) in self.bytes.chunks(self.part_size).enumerate() {
             let response = client
-                .put(self.url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
+                .put(self.asset_url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
                 .bearer_auth(self.token)
                 .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
                 .body(chunk.to_vec())
@@ -1010,10 +1009,9 @@ impl<'a> StartedUpload<'a> {
     async fn send_parts_and_complete(self) -> UploadOutcome {
         self.send_parts().await;
         let client = http_client();
-        let url = |rest: &str| self.url(rest);
         let upload_id = &self.upload_id;
         let response = client
-            .post(url(&format!("/uploads/{upload_id}/complete")))
+            .post(self.asset_url(&format!("/uploads/{upload_id}/complete")))
             .bearer_auth(self.token)
             .send()
             .await
@@ -1033,7 +1031,7 @@ impl<'a> StartedUpload<'a> {
         let completed: serde_json::Value = response.json().await.unwrap();
 
         let response = client
-            .get(url(""))
+            .get(self.asset_url(""))
             .bearer_auth(self.token)
             .send()
             .await
@@ -1245,13 +1243,11 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let server = crate::test_support::serve(&state).await;
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;
-    let url = |rest: &str| upload.url(rest);
     let upload_id = &upload.upload_id;
 
     let response = client
-        .put(url(&format!("/uploads/{upload_id}/parts/1")))
+        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/1")))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[..16].to_vec())
@@ -1261,12 +1257,12 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
-    let session = asset_uploads::session_dir(&assets_dir, &sha, upload_id);
+    let session = asset_uploads::session_dir(&assets_dir, &upload.sha, upload_id);
     assert!(session.join("manifest.json").is_file());
     assert!(session.join("part-0001").is_file());
 
     let response = client
-        .delete(url(&format!("/uploads/{upload_id}")))
+        .delete(upload.asset_url(&format!("/uploads/{upload_id}")))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1276,7 +1272,7 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
 
     // The session is gone, so a part for it has nowhere to go.
     let response = client
-        .put(url(&format!("/uploads/{upload_id}/parts/2")))
+        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/2")))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[16..32].to_vec())
@@ -1413,14 +1409,12 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     let server = crate::test_support::serve(&state).await;
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
     let upload = StartedUpload::start(&server, &user.token, &bytes).await;
-    let url = |rest: &str| upload.url(rest);
     let upload_id = &upload.upload_id;
     upload.send_parts().await;
 
     let response = client
-        .put(url(""))
+        .put(upload.asset_url(""))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "image/png")
         .body(bytes.clone())
@@ -1430,7 +1424,7 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     assert_eq!(response.status(), StatusCode::CREATED);
 
     let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
+        .post(upload.asset_url(&format!("/uploads/{upload_id}/complete")))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1439,11 +1433,11 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     assert!(response.headers().get(reqwest::header::LOCATION).is_none());
     let done: serde_json::Value = response.json().await.unwrap();
     assert_eq!(done["already_present"], true);
-    assert_eq!(done["sha256"], sha.as_str());
+    assert_eq!(done["sha256"], upload.sha.as_str());
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
     assert!(
-        !asset_uploads::session_dir(&assets_dir, &sha, upload_id).exists(),
+        !asset_uploads::session_dir(&assets_dir, &upload.sha, upload_id).exists(),
         "the stale session must be dropped"
     );
 }
