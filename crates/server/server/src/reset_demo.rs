@@ -33,6 +33,7 @@ use crate::dedupe;
 use crate::imports_api::{self, FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode};
 use crate::open_db::OpenDb;
 use crate::process_assets::{self, ProcessAssetsOptions};
+use crate::progress::Progress;
 
 /// Stable id of the Demo Account, which every demo build writes.
 pub use crate::db::account_profile::DEMO_ACCOUNT_ID;
@@ -153,7 +154,7 @@ async fn dedupe_and_process_assets(
 ) -> Result<(dedupe::DedupeStats, process_assets::ProcessAssetsStats)> {
     let dedupe_stats = {
         let mut conn = db.acquire().await?;
-        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2).await?
+        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, Progress::Log).await?
     };
     // Without ffmpeg the preview pass would fail once per attachment; say so
     // once instead (#1018). Whether each original is shown as it is needs no
@@ -2013,7 +2014,7 @@ async fn vacuum_after_demo(db: &SqlitePool) {
             return;
         }
     };
-    maintenance::vacuum_import_tables(&mut conn).await;
+    maintenance::vacuum_import_tables(&mut conn, Progress::Log).await;
 }
 
 /// Parse `config/seed.toml` from the bundle.

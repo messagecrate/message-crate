@@ -1534,9 +1534,15 @@ async fn a_generated_demo_bundle_imports_whole_and_its_overlap_dedupes() {
         .await
         .expect("open the imported database");
     let mut conn = pool.acquire().await.expect("acquire");
-    let dedupe = dedupe::dedupe_cross_source(&mut conn, DEMO_ACCOUNT_ID, None, 2)
-        .await
-        .expect("dedupe across sources");
+    let dedupe = dedupe::dedupe_cross_source(
+        &mut conn,
+        DEMO_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .expect("dedupe across sources");
 
     // The overlap conversations are the only messages written to two
     // backups, so they are the only duplicates the dedupe may find.

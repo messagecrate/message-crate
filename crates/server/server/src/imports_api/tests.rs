@@ -1740,6 +1740,7 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
             media: MediaMode::Clone,
             wipe_sources: Some(vec!["go-sms-pro".into()]),
             phone_country: None,
+            progress: crate::progress::Progress::Log,
         },
     )
     .await
@@ -1803,6 +1804,7 @@ async fn media_none_skips_attachment_copy() {
             media: MediaMode::Disabled,
             wipe_sources: Some(vec!["sms".into()]),
             phone_country: None,
+            progress: crate::progress::Progress::Log,
         },
     )
     .await
@@ -1859,6 +1861,7 @@ fn media_convert_stores_the_converted_file_not_the_original() {
                 media: MediaMode::Convert,
                 wipe_sources: Some(vec!["imessage".into()]),
                 phone_country: None,
+                progress: crate::progress::Progress::Log,
             },
         )
         .await

@@ -504,9 +504,15 @@ async fn the_later_backup_decides_the_duplicate_flag() {
             .await
             .unwrap();
         let (_pool, mut conn) = open_verify(&db).await;
-        crate::dedupe::dedupe_cross_source(&mut conn, TEST_ACCOUNT, None, 2)
-            .await
-            .unwrap();
+        crate::dedupe::dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT,
+            None,
+            2,
+            crate::progress::Progress::Log,
+        )
+        .await
+        .unwrap();
         let hidden: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE duplicate_of IS NOT NULL")
                 .fetch_one(&mut *conn)

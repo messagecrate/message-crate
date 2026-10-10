@@ -45,11 +45,17 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
         .await
         .unwrap();
 
-    let err: super::super::ImportError =
-        promote_append(&mut conn, ImportMode::Append, TEST_ACCOUNT, false, &[])
-            .await
-            .expect_err("promote fails")
-            .into();
+    let err: super::super::ImportError = promote_append(
+        &mut conn,
+        ImportMode::Append,
+        TEST_ACCOUNT,
+        false,
+        &[],
+        crate::progress::Progress::Log,
+    )
+    .await
+    .expect_err("promote fails")
+    .into();
 
     match err {
         super::super::ImportError::Internal(cause) => assert!(
@@ -117,6 +123,7 @@ async fn promote_message_map_ignores_other_accounts() {
         mode: ImportMode::Append,
         stats: PromoteStats::default(),
         started: Instant::now(),
+        progress: crate::progress::Progress::Log,
     };
     let mut map = HashMap::new();
 

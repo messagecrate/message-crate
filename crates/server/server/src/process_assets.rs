@@ -14,7 +14,6 @@
 //! for rebuilding and repair, and the server's background pass over the
 //! Assets an Import Run brought ([`crate::media_queue`]).
 
-use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -29,6 +28,7 @@ use crate::counts::words;
 use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
+use crate::progress::Progress;
 use media::Kind;
 
 /// Options for one processing pass.
@@ -181,31 +181,6 @@ impl ProcessAssetsStats {
             "1 original whose Preview or Thumbnail could not be made",
             "{n} originals whose Preview or Thumbnail could not be made",
         )
-    }
-}
-
-/// Where a pass says what it does: on standard output, for the
-/// `process-assets` command, or in the server's log, for the background
-/// pass.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Log {
-    Print,
-    Trace,
-}
-
-impl Log {
-    fn say(self, line: impl fmt::Display) {
-        match self {
-            Self::Print => println!("{line}"),
-            Self::Trace => tracing::info!("{line}"),
-        }
-    }
-
-    fn fail(self, line: impl fmt::Display) {
-        match self {
-            Self::Print => eprintln!("{line}"),
-            Self::Trace => tracing::warn!("{line}"),
-        }
     }
 }
 
@@ -412,7 +387,8 @@ pub(crate) async fn process_one_asset(
     stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
     let opts = ProcessAssetsOptions::default();
-    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Log::Trace)? else {
+    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Progress::Log)?
+    else {
         return Ok(ProcessAssetsStats::default());
     };
     let rows =
@@ -535,7 +511,7 @@ struct AccountPass<'a> {
     account_id: i64,
     assets_dir: PathBuf,
     converted_dir: PathBuf,
-    log: Log,
+    log: Progress,
 }
 
 /// What making one version produced.
@@ -597,7 +573,7 @@ impl<'a> AccountPass<'a> {
             let files = words(left, "1 temporary file", "{n} temporary files");
             println!("  {cleaned_verb} {files} a killed write left in the shard directories");
         }
-        Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
+        Self::new(cfg, opts, work_dir, account_id, stop, Progress::Print)
     }
 
     /// The pass over `account_id`'s directories, making the converted
@@ -613,7 +589,7 @@ impl<'a> AccountPass<'a> {
         work_dir: &'a Path,
         account_id: i64,
         stop: &'a AtomicBool,
-        log: Log,
+        log: Progress,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         if !assets_dir.is_dir() {
@@ -656,7 +632,7 @@ impl<'a> AccountPass<'a> {
                 break;
             }
             for err in outcome.failures() {
-                self.log.fail(format!(
+                self.log.warn(format!(
                     "{} could not be processed: {err:#}",
                     self.label(row)
                 ));

@@ -246,15 +246,16 @@ async fn fill_missing_content_keys_skips_rows_that_already_have_keys() {
     .insert(&mut conn)
     .await;
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    let first = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
+    let first = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID, crate::progress::Progress::Log)
         .await
         .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(first, 1);
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    let second = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
-        .await
-        .unwrap();
+    let second =
+        fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID, crate::progress::Progress::Log)
+            .await
+            .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(second, 0);
     let key: Option<String> =
@@ -288,9 +289,10 @@ async fn fill_missing_content_keys_writes_multiple_rows_in_one_batch() {
         .await;
     }
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    let filled = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
-        .await
-        .unwrap();
+    let filled =
+        fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID, crate::progress::Progress::Log)
+            .await
+            .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(filled, 3);
     let keys: Vec<(String, Option<String>)> = sqlx::query_as(
@@ -329,13 +331,25 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
     }
     .insert(&mut conn)
     .await;
-    let first = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let first = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(first.keys_filled, 1);
-    let second = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let second = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(second.keys_filled, 0);
 }
 
@@ -367,9 +381,15 @@ async fn integration_exact_flags_cross_source() {
     .insert(&mut conn)
     .await;
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(stats.exact_groups, 1);
     assert_eq!(stats.exact_flagged, 1);
     let dup: Option<i64> = sqlx::query_scalar("SELECT duplicate_of FROM messages WHERE id = $1")
@@ -414,9 +434,15 @@ async fn integration_near_flags_within_window() {
     .insert(&mut conn)
     .await;
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(stats.exact_flagged, 0);
     assert_eq!(stats.near_flagged, 1);
     let dup: Option<i64> = sqlx::query_scalar("SELECT duplicate_of FROM messages WHERE id = $1")
@@ -455,9 +481,15 @@ async fn integration_negative_far_apart_not_flagged() {
     .insert(&mut conn)
     .await;
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(stats.exact_flagged, 0);
     assert_eq!(stats.near_flagged, 0);
     let hidden: i64 =
@@ -496,9 +528,15 @@ async fn integration_priority_prefers_first_imported_source() {
     }
     .insert(&mut conn)
     .await;
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     let dup_first: Option<i64> =
         sqlx::query_scalar("SELECT duplicate_of FROM messages WHERE id = $1")
             .bind(first_imported)
@@ -563,9 +601,15 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
 
         // The window is two seconds in every case; only the gap moves.
         let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
-        let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-            .await
-            .unwrap();
+        let stats = dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            Some(&priority),
+            2,
+            crate::progress::Progress::Log,
+        )
+        .await
+        .unwrap();
 
         let flagged: Option<i64> =
             sqlx::query_scalar("SELECT duplicate_of FROM messages WHERE id = $1")
@@ -623,9 +667,15 @@ async fn two_near_messages_from_one_source_are_both_kept() {
     .await;
 
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         stats.near_flagged, 0,
@@ -665,9 +715,15 @@ async fn identical_rows_from_one_source_are_both_kept() {
         );
     }
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_groups, stats.exact_flagged), (0, 0));
     for id in ids {
@@ -720,9 +776,15 @@ async fn a_whole_second_message_is_the_duplicate_of_its_millisecond_twin_in_one_
     )
     .await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_groups, stats.exact_flagged), (1, 1));
     assert_eq!(duplicate_of(&mut conn, whole).await, Some(exact));
@@ -761,9 +823,15 @@ async fn a_millisecond_time_ending_in_000_is_not_whole_seconds() {
     )
     .await;
 
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(duplicate_of(&mut conn, on_the_second).await, None);
     assert_eq!(duplicate_of(&mut conn, later).await, None);
@@ -794,9 +862,15 @@ async fn two_whole_second_messages_from_one_source_are_both_kept() {
         );
     }
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_groups, stats.exact_flagged), (0, 0));
     for id in ids {
@@ -837,9 +911,15 @@ async fn an_exact_duplicate_across_three_sources_keeps_one() {
         "sms-backup-plus".into(),
         "sms-backup-restore".into(),
     ];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_groups, stats.exact_flagged), (1, 2));
     assert_eq!(duplicate_of(&mut conn, ids[0]).await, None);
@@ -881,9 +961,15 @@ async fn a_near_duplicate_across_three_sources_keeps_one() {
         "sms-backup-plus".into(),
         "sms-backup-restore".into(),
     ];
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        Some(&priority),
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_flagged, stats.near_flagged), (0, 2));
     assert_eq!(duplicate_of(&mut conn, ids[0]).await, None);
@@ -910,9 +996,15 @@ async fn a_near_time_message_one_source_holds_twice_stays_shown_twice() {
     )
     .await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(stats.near_flagged, 1, "only one of the three is a copy");
     assert_eq!(shown_ids(&mut conn).await.len(), 2, "{ids:?}");
@@ -943,9 +1035,15 @@ async fn two_sources_that_each_hold_a_near_time_message_twice_show_it_twice() {
         setup_db(&mut conn).await;
         let ids = insert_incoming_oks(&mut conn, &rows).await;
 
-        let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, window_secs)
-            .await
-            .unwrap();
+        let stats = dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            None,
+            window_secs,
+            crate::progress::Progress::Log,
+        )
+        .await
+        .unwrap();
 
         let shown = shown_ids(&mut conn).await;
         assert_eq!(
@@ -998,9 +1096,15 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     .insert(&mut conn)
     .await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!((stats.exact_flagged, stats.near_flagged), (0, 0));
     assert_eq!(duplicate_of(&mut conn, from_ann).await, None);
@@ -1049,7 +1153,13 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
     let stats = crate::db::write_tx::commit_during(
         other,
-        dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, Some(&priority), 2),
+        dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            Some(&priority),
+            2,
+            crate::progress::Progress::Log,
+        ),
     )
     .await
     .expect("the pass waits for the other write and then runs");
@@ -1183,9 +1293,15 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     }
     .insert(&mut conn)
     .await;
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     // The re-import brings the photo; the other exporter had it all along.
     add_attachment(&mut conn, first, "sha-photo").await;
@@ -1202,9 +1318,15 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     .await;
     add_attachment(&mut conn, twin, "sha-photo").await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         stats.exact_flagged, 1,
@@ -1240,9 +1362,15 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     }
     .insert(&mut conn)
     .await;
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     add_participant(&mut conn, x, "+15555550129").await;
     add_participant(&mut conn, y, "+15555550128").await;
@@ -1259,9 +1387,15 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     .insert(&mut conn)
     .await;
 
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(duplicate_of(&mut conn, twin).await, Some(first));
     assert_eq!(duplicate_of(&mut conn, first).await, None);
@@ -1303,9 +1437,15 @@ async fn the_holders_own_address_does_not_change_a_groups_content_key() {
         );
     }
 
-    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(duplicate_of(&mut conn, ids[1]).await, Some(ids[0]));
 }
@@ -1356,9 +1496,15 @@ async fn a_received_note_to_yourself_pairs_across_the_link_of_its_address() {
     let (before_link, after_link) =
         received_notes_to_yourself(&mut conn, "2015-03-12T18:04:22Z").await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(stats.exact_flagged, 1);
     assert_eq!(duplicate_of(&mut conn, after_link).await, Some(before_link));
@@ -1373,9 +1519,15 @@ async fn a_received_note_to_yourself_a_second_apart_pairs_across_the_link_of_its
     let (before_link, after_link) =
         received_notes_to_yourself(&mut conn, "2015-03-12T18:04:23Z").await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(stats.near_flagged, 1);
     assert_eq!(duplicate_of(&mut conn, after_link).await, Some(before_link));
@@ -1429,16 +1581,29 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
                 .await,
             );
         }
-        let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-            .await
-            .unwrap();
+        let stats = dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            None,
+            2,
+            crate::progress::Progress::Log,
+        )
+        .await
+        .unwrap();
         assert_eq!((stats.exact_flagged, stats.near_flagged), (1, 1));
 
         sqlx::query(&format!("CREATE TEMP TABLE {broken_table} (id BIGINT)"))
             .execute(&mut *conn)
             .await
             .unwrap();
-        let result = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2).await;
+        let result = dedupe_cross_source(
+            &mut conn,
+            TEST_ACCOUNT_ID,
+            None,
+            2,
+            crate::progress::Progress::Log,
+        )
+        .await;
         assert!(result.is_err(), "{broken_table}: the pass should fail");
         sqlx::query(&format!("DROP TABLE {broken_table}"))
             .execute(&mut *conn)
@@ -1812,15 +1977,27 @@ async fn dedupe_snapshot(conn: &mut SqliteConnection) -> Vec<(i64, Option<String
 /// Run dedupe, check the invariants, then run it again and check it changed
 /// nothing. Returns the first run's counts.
 async fn dedupe_and_check(conn: &mut SqliteConnection, ctx: &str) -> DedupeStats {
-    let stats = dedupe_cross_source(conn, TEST_ACCOUNT_ID, None, GEN_WINDOW_SECS)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        conn,
+        TEST_ACCOUNT_ID,
+        None,
+        GEN_WINDOW_SECS,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_dedupe_invariants(conn, ctx).await;
 
     let before = dedupe_snapshot(conn).await;
-    let again = dedupe_cross_source(conn, TEST_ACCOUNT_ID, None, GEN_WINDOW_SECS)
-        .await
-        .unwrap();
+    let again = dedupe_cross_source(
+        conn,
+        TEST_ACCOUNT_ID,
+        None,
+        GEN_WINDOW_SECS,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         again.keys_filled, 0,
         "{ctx}: a second run rewrote content keys"
@@ -1940,9 +2117,15 @@ async fn a_message_sent_twice_held_by_two_sources_keeps_two() {
     )
     .await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         shown_ids(&mut conn).await,
@@ -1973,9 +2156,15 @@ async fn the_source_that_holds_a_message_most_often_sets_how_many_stay() {
     )
     .await;
 
-    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
-        .await
-        .unwrap();
+    let stats = dedupe_cross_source(
+        &mut conn,
+        TEST_ACCOUNT_ID,
+        None,
+        2,
+        crate::progress::Progress::Log,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(shown_ids(&mut conn).await, ids[..2]);
     assert_eq!(duplicate_of(&mut conn, ids[2]).await, Some(ids[0]));

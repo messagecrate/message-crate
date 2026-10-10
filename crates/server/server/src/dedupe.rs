@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write as _;
-use std::io::{self, Write};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -14,6 +13,7 @@ use crate::db::conversations::is_group_type;
 use crate::db::schema;
 use crate::db::sql::SQLITE_IN_CHUNK;
 use crate::db::{WriteTx, begin_write};
+use crate::progress::Progress;
 
 const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
@@ -188,6 +188,7 @@ pub async fn dedupe_cross_source(
     account_id: i64,
     source_priority: Option<&[String]>,
     near_window_secs: i64,
+    progress: Progress,
 ) -> Result<DedupeStats> {
     // One write transaction for the whole run: the flags are cleared and set
     // again, so a pass that fails after the clearing would otherwise leave
@@ -212,9 +213,8 @@ pub async fn dedupe_cross_source(
     let exact_hidden: HashSet<i64>;
 
     {
-        println!("  Refreshing the content keys that match the same message across sources…");
-        let _ = io::stdout().flush();
-        stats.keys_filled = refresh_content_keys(&mut tx, account_id).await?;
+        progress.say("Refreshing the content keys that match the same message across sources…");
+        stats.keys_filled = refresh_content_keys(&mut tx, account_id, progress).await?;
         sqlx::query(
             r"
             UPDATE messages
@@ -227,22 +227,21 @@ pub async fn dedupe_cross_source(
         .bind(account_id)
         .execute(&mut *tx)
         .await?;
-        println!(
-            "  Wrote {} in {:.1} s",
+        progress.say(format_args!(
+            "Wrote {} in {:.1} s",
             words(stats.keys_filled, "1 content key", "{n} content keys"),
             started.elapsed().as_secs_f64()
-        );
+        ));
     }
 
     {
-        println!("  Hiding exact duplicates, the messages that share a content key…");
-        let _ = io::stdout().flush();
+        progress.say("Hiding exact duplicates, the messages that share a content key…");
         let (groups, flags) = flag_exact_content_key_dupes(&mut tx, account_id, &prio).await?;
         stats.exact_groups = groups;
         stats.exact_flagged = flags.len() as u64;
         exact_hidden = flags.into_iter().map(|(loser, _)| loser).collect();
-        println!(
-            "  Found {} and hid {}, {:.1} s in all",
+        progress.say(format_args!(
+            "Found {} and hid {}, {:.1} s in all",
             words(
                 stats.exact_groups,
                 "1 group of exact duplicates",
@@ -250,24 +249,25 @@ pub async fn dedupe_cross_source(
             ),
             words(stats.exact_flagged, "1 message", "{n} messages"),
             started.elapsed().as_secs_f64()
-        );
+        ));
     }
 
     {
-        println!("  Flagging near duplicates, sent within {near_window_secs} s of each other…");
-        let _ = io::stdout().flush();
+        progress.say(format_args!(
+            "Flagging near duplicates, sent within {near_window_secs} s of each other…"
+        ));
         stats.near_flagged =
             flag_near_time_dupes(&mut tx, account_id, &prio, near_window_secs, &exact_hidden)
                 .await?;
-        println!(
-            "  Flagged {}, {:.1} s in all",
+        progress.say(format_args!(
+            "Flagged {}, {:.1} s in all",
             words(
                 stats.near_flagged,
                 "1 near duplicate",
                 "{n} near duplicates"
             ),
             started.elapsed().as_secs_f64()
-        );
+        ));
     }
     tx.commit().await?;
 
@@ -312,6 +312,7 @@ pub async fn dedupe_changed_messages(
     account_id: i64,
     changed: &[i64],
     near_window_secs: i64,
+    progress: Progress,
 ) -> Result<ChangedDedupe> {
     if changed.is_empty() {
         return Ok(ChangedDedupe::default());
@@ -323,7 +324,7 @@ pub async fn dedupe_changed_messages(
     .bind(&changed_json)
     .execute(&mut *conn)
     .await?;
-    recompute_content_keys(conn, KeyScope::Changed(&changed_json), account_id).await?;
+    recompute_content_keys(conn, KeyScope::Changed(&changed_json), account_id, progress).await?;
 
     let priority = source_priority_from_db(conn, account_id).await?;
     let prio: HashMap<&str, usize> = priority
@@ -414,8 +415,9 @@ fn tied_messages(
 pub async fn fill_missing_content_keys(
     conn: &mut SqliteConnection,
     account_id: i64,
+    progress: Progress,
 ) -> Result<u64> {
-    recompute_content_keys(conn, KeyScope::Missing, account_id).await
+    recompute_content_keys(conn, KeyScope::Missing, account_id, progress).await
 }
 
 /// Recompute every content key of the account and write the ones that differ
@@ -425,14 +427,19 @@ pub async fn fill_missing_content_keys(
 /// attachments to a message the database already holds, or participants to a
 /// group, and both are part of the key. A key left as it was stops matching
 /// the same message from another source.
-async fn refresh_content_keys(conn: &mut SqliteConnection, account_id: i64) -> Result<u64> {
-    recompute_content_keys(conn, KeyScope::All, account_id).await
+async fn refresh_content_keys(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    progress: Progress,
+) -> Result<u64> {
+    recompute_content_keys(conn, KeyScope::All, account_id, progress).await
 }
 
 /// Bulk-insert fingerprints into the `_content_keys` temp table in chunks that fit the bind limit.
 async fn insert_content_key_rows(
     conn: &mut SqliteConnection,
     keys: &[(i64, String)],
+    progress: Progress,
 ) -> Result<()> {
     let total = keys.len();
     let mut written = 0usize;
@@ -454,8 +461,7 @@ async fn insert_content_key_rows(
         let crossed_log_mark =
             written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY;
         if written == total || crossed_log_mark {
-            println!("  Wrote {written} of {total} content keys");
-            let _ = io::stdout().flush();
+            progress.say(format_args!("Wrote {written} of {total} content keys"));
         }
     }
     Ok(())
@@ -483,15 +489,15 @@ async fn recompute_content_keys(
     conn: &mut SqliteConnection,
     scope: KeyScope<'_>,
     account_id: i64,
+    progress: Progress,
 ) -> Result<u64> {
     let Some(inputs) = ContentKeyInputs::load(conn, account_id, scope).await? else {
         return Ok(0);
     };
-    println!(
-        "  Hashing the content keys of {}…",
+    progress.say(format_args!(
+        "Hashing the content keys of {}…",
         words(inputs.rows.len() as u64, "1 message", "{n} messages")
-    );
-    let _ = io::stdout().flush();
+    ));
     let keys = tokio::task::spawn_blocking(move || inputs.hash())
         .await
         .context("content-key hash task panicked")?;
@@ -518,7 +524,7 @@ async fn recompute_content_keys(
     if keys.is_empty() {
         return Ok(0);
     }
-    apply_content_keys(conn, &keys).await?;
+    apply_content_keys(conn, &keys, progress).await?;
     Ok(keys.len() as u64)
 }
 
@@ -662,7 +668,11 @@ impl ContentKeyInputs {
 
 /// Write the keys onto `messages` through the `_content_keys` temp table,
 /// which is dropped again afterwards.
-async fn apply_content_keys(conn: &mut SqliteConnection, keys: &[(i64, String)]) -> Result<()> {
+async fn apply_content_keys(
+    conn: &mut SqliteConnection,
+    keys: &[(i64, String)],
+    progress: Progress,
+) -> Result<()> {
     for stmt in schema::split_ddl(
         r"
         CREATE TEMP TABLE IF NOT EXISTS _content_keys (
@@ -674,7 +684,7 @@ async fn apply_content_keys(conn: &mut SqliteConnection, keys: &[(i64, String)])
     ) {
         sqlx::query(&stmt).execute(&mut *conn).await?;
     }
-    insert_content_key_rows(conn, keys).await?;
+    insert_content_key_rows(conn, keys, progress).await?;
     sqlx::query(
         r"
         UPDATE messages AS m

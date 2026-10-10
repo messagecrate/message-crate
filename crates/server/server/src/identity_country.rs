@@ -186,6 +186,7 @@ pub async fn set_identity_country(
         account_id,
         &changed,
         crate::dedupe::NEAR_WINDOW_SECS,
+        crate::progress::Progress::Log,
     )
     .await?;
     Ok(())

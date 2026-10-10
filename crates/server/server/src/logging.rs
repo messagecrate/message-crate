@@ -4,7 +4,9 @@
 //! importer could not act on, the request log, goes through `tracing` and
 //! lands on stderr through one subscriber installed by [`init`]. `RUST_LOG`
 //! picks the level (`info` when unset); the CLI subcommands keep printing
-//! their own progress to stdout, which is their output, not a log.
+//! their own progress to stdout, which is their output, not a log, and the
+//! work they share with `serve` is told which through
+//! `crate::progress::Progress`.
 //!
 //! `serve` also writes every line to the server's log, rotating files in the
 //! Data Directory's `logs` directory ([`write_files_in`], [`LogFiles`]), which
