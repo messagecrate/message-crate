@@ -72,11 +72,11 @@ fn sha256_hex(bytes: &[u8]) -> String {
 /// tokens cannot be swapped.
 struct Claimed {
     /// The owner's session token.
-    owner: String,
+    owner_token: String,
     /// Alice's account id.
     alice_id: i64,
     /// Alice's session token.
-    alice: String,
+    alice_token: String,
 }
 
 /// Claims the Message Crate as the owner, opens public registration,
@@ -125,9 +125,9 @@ async fn claimed_with_account(base: &str) -> Claimed {
     assert_eq!(status, S::CREATED, "{session}");
     let alice = session["token"].as_str().unwrap().to_string();
     Claimed {
-        owner,
+        owner_token: owner,
         alice_id,
-        alice,
+        alice_token: alice,
     }
 }
 
@@ -154,12 +154,12 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    // The owner claims the Message Crate and opens registration, and alice
+    // The owner claims the Message Crate and opens registration, and Alice
     // registers and logs in.
     let Claimed {
-        owner,
+        owner_token: owner,
         alice_id,
-        alice,
+        alice_token: alice,
     } = claimed_with_account(base).await;
 
     // Alice makes an API token.
@@ -380,7 +380,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    let alice = claimed_with_account(base).await.alice;
+    let alice = claimed_with_account(base).await.alice_token;
 
     let (status, run) = call(
         base,
