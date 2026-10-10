@@ -21,6 +21,7 @@
 //! server, so a delete, a password change or a logout cannot change what the
 //! next call sees.
 
+use crate::test_support::http_client;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::OnceLock;
@@ -530,7 +531,7 @@ impl<'a> World<'a> {
             "/v1/assets/{}",
             crate::assets_api::sha256_hex(ASSET_BYTES)
         ));
-        let response = reqwest::Client::new()
+        let response = http_client()
             .put(asset)
             .bearer_auth(&world.tokens.alice)
             // Stored as an image, so its download answers in a media type of its
@@ -580,7 +581,7 @@ impl<'a> World<'a> {
 
     /// POST as Alice and return the body of the `201 Created`.
     async fn create(&self, path: &str, body: Value) -> Value {
-        let response = reqwest::Client::new()
+        let response = http_client()
             .post(self.url(path))
             .bearer_auth(&self.tokens.alice)
             .json(&body)
@@ -641,7 +642,7 @@ impl<'a> World<'a> {
     /// Call `op` with `credential` and return the status.
     async fn call(&self, op: &Operation, credential: Credential) -> StatusCode {
         let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
-        let mut request = reqwest::Client::new()
+        let mut request = http_client()
             .request(method, self.url(&self.path_for(op)))
             .bearer_auth(self.tokens.for_credential(credential));
         if let Some((content_type, body)) = body_for(op, self.n) {
@@ -662,7 +663,7 @@ impl<'a> World<'a> {
             crate::assets_api::sha256_hex(UPLOAD_BYTES),
             self.upload_id
         );
-        let response = reqwest::Client::new()
+        let response = http_client()
             .put(self.url(&path))
             .bearer_auth(&self.tokens.alice)
             .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")

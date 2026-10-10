@@ -1,3 +1,4 @@
+use crate::test_support::http_client;
 use axum::http::StatusCode;
 
 use super::*;
@@ -1538,7 +1539,7 @@ async fn a_delete_body_without_a_content_type_is_a_415() {
     seed_one_message(&state, alice.account_id).await;
     let server = crate::test_support::serve(&state).await;
 
-    let response = reqwest::Client::new()
+    let response = http_client()
         .delete(format!("{}{path}", server.base()))
         .bearer_auth(&alice.token)
         .body(r#"{"confirm": true}"#)
@@ -2707,7 +2708,7 @@ async fn the_account_list_shows_the_app_each_account_connects_with() {
     let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
 
     let server = crate::test_support::serve(&state).await;
-    let status = reqwest::Client::new()
+    let status = http_client()
         .get(format!("{}/v1/session", server.base()))
         .bearer_auth(&bob.token)
         .header(crate::server::APP_HEADER, "desktop")

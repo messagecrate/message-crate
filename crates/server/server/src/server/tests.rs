@@ -6,6 +6,7 @@ use crate::imports_api::{
     UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
     update_import,
 };
+use crate::test_support::http_client;
 use axum::extract::State;
 use tempfile::TempDir;
 
@@ -216,7 +217,7 @@ async fn import_access(state: &AppState, token: &str) -> ImportAccess {
 
 async fn get_path(state: AppState, path: &str) -> reqwest::Response {
     let server = crate::test_support::serve(&state).await;
-    reqwest::Client::new()
+    http_client()
         .get(format!("{}{path}", server.base()))
         .send()
         .await
@@ -232,7 +233,7 @@ fn with_cors(mut state: AppState, origins: &[&str]) -> AppState {
 
 async fn cors_preflight(state: AppState, origin: &str) -> reqwest::Response {
     let server = crate::test_support::serve(&state).await;
-    reqwest::Client::new()
+    http_client()
         .request(
             reqwest::Method::OPTIONS,
             format!("{}/health", server.base()),
@@ -349,7 +350,7 @@ async fn openapi_ui_routes_carry_a_request_id_and_cors_headers() {
     let origin = "http://localhost:5173";
     let state = with_cors(state, &[origin]);
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     for path in ["/openapi.json", "/docs/"] {
         let response = client
             .get(format!("{}{path}", server.base()))
@@ -948,7 +949,7 @@ async fn the_fast_413_carries_cors_headers() {
 
     let sha = "0".repeat(64);
     let server = crate::test_support::serve(&state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!("{}/v1/assets/{sha}", server.base()))
         .bearer_auth(&user.token)
         .header(header::ORIGIN, "https://app.example")
@@ -983,7 +984,7 @@ async fn every_response_carries_a_server_made_request_id_and_a_problem_repeats_i
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let ok = client
         .get(format!("{}/v1/conversations", server.base()))
@@ -1032,7 +1033,7 @@ async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
     let (fixture, _) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let login = || {
         client
             .post(format!("{}/v1/session", server.base()))
@@ -1111,7 +1112,7 @@ async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {
     let fixture = crate::test_support::test_fixture().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let spec: serde_json::Value =
         serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
 
@@ -1175,7 +1176,7 @@ async fn every_operation_refuses_a_query_parameter_it_does_not_declare() {
 async fn a_path_parameters_name_and_a_head_request_are_held_to_the_declared_query() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let response = client
         .get(format!("{}/v1/conversations/1?id=1", server.base()))
@@ -1212,7 +1213,7 @@ async fn accept_is_checked_on_v1_json_routes_only() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let refused = client
         .get(format!("{}/v1/conversations", server.base()))
@@ -1276,7 +1277,7 @@ async fn health_answers_a_probe_that_accepts_only_text() {
     let fixture = crate::test_support::test_fixture().await;
     let server = crate::test_support::serve(&fixture.state).await;
 
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/health", server.base()))
         .header(header::ACCEPT, "text/plain")
         .send()
@@ -1726,7 +1727,7 @@ async fn the_website_is_served_from_the_configured_directory() {
 async fn a_lower_case_bearer_scheme_is_accepted() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/session", server.base()))
         .header(
             reqwest::header::AUTHORIZATION,
@@ -1744,7 +1745,7 @@ async fn a_lower_case_bearer_scheme_is_accepted() {
 async fn a_valid_token_under_another_scheme_answers_401() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/session", server.base()))
         .header(
             reqwest::header::AUTHORIZATION,
@@ -1788,7 +1789,7 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     let mut server = tokio::spawn(serve_until_shutdown(listener, app, None, || {}));
 
     let request = tokio::spawn(async move {
-        reqwest::Client::new()
+        http_client()
             .get(format!("http://{addr}/slow"))
             .send()
             .await
@@ -2011,7 +2012,7 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
     let sha = "0".repeat(64);
-    let client = reqwest::Client::new();
+    let client = http_client();
     let started: serde_json::Value = client
         .post(format!("{}/v1/assets/{sha}/uploads", server.base()))
         .bearer_auth(&user.token)

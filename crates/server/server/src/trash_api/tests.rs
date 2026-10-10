@@ -1,3 +1,4 @@
+use crate::test_support::http_client;
 use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
@@ -250,7 +251,7 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     //    holds the file: it does.
     let run = start_run(&fixture, &alice).await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let head = reqwest::Client::new()
+    let head = http_client()
         .head(format!("{}/v1/assets/{sha}", server.base()))
         .bearer_auth(&alice.token)
         .send()

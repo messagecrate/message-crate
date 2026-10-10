@@ -99,6 +99,17 @@ pub async fn link_identity(conn: &mut sqlx::SqliteConnection, account_id: i64, h
         .unwrap();
 }
 
+/// An HTTP client for a test's calls to its own server. It loads no root
+/// certificates: every call is plain HTTP to 127.0.0.1, and reading the
+/// system's certificate store costs about 20 ms a client, which the OpenAPI
+/// walks in `openapi/` paid a thousand times over.
+pub fn http_client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .tls_built_in_root_certs(false)
+        .build()
+        .expect("build the test HTTP client")
+}
+
 /// An empty database with schema applied and no accounts.
 ///
 /// Public registration is turned on, because most of the suite reaches the
@@ -213,7 +224,7 @@ async fn request(
     body: Option<(&str, reqwest::Body)>,
 ) -> (StatusCode, String) {
     let server = serve(state).await;
-    let mut req = reqwest::Client::new().request(method, format!("{}{path}", server.base()));
+    let mut req = http_client().request(method, format!("{}{path}", server.base()));
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
@@ -259,7 +270,7 @@ pub async fn register_via_api(
     password: &str,
 ) -> RegisteredAccount {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/accounts", server.base()))
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
@@ -342,7 +353,7 @@ pub async fn login_status(state: &AppState, username: &str, password: &str) -> S
 /// (`token`, `account_id`, `username`).
 pub async fn log_in(state: &AppState, username: &str, password: &str) -> serde_json::Value {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/session", server.base()))
         .json(&serde_json::json!({ "username": username, "password": password }))
         .send()
@@ -411,7 +422,7 @@ pub async fn post_created_json<T: DeserializeOwned>(
     body: serde_json::Value,
 ) -> (String, T) {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}{path}", server.base()))
         .bearer_auth(token)
         .header(reqwest::header::CONTENT_TYPE, "application/json")

@@ -1,3 +1,4 @@
+use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::Value;
 
@@ -12,7 +13,7 @@ use crate::test_support::{RegisteredAccount, expect_problem};
 /// `Location`, and the body.
 async fn mint(state: &AppState, sha256: &str, token: &str) -> (StatusCode, Option<String>, String) {
     let server = crate::test_support::serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/assets/{sha256}/media-links", server.base()))
         .bearer_auth(token)
         .send()

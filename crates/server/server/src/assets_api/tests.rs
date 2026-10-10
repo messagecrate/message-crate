@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::http_client;
 use crate::test_support::stored_time;
 use std::io::Write;
 use std::path::PathBuf;
@@ -426,7 +427,7 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
     let path = format!("/v1/assets/{sha}");
     let server = crate::test_support::serve(&fixture.state).await;
     let put = |content_type: Option<&str>| {
-        let mut request = reqwest::Client::new()
+        let mut request = http_client()
             .put(format!("{}{path}", server.base()))
             .bearer_auth(&user.token)
             .body(bytes.clone());
@@ -462,7 +463,7 @@ async fn an_asset_put_then_get_returns_the_same_bytes() {
     let again: serde_json::Value = response.json().await.unwrap();
     assert_eq!(again["already_present"], true);
 
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}{path}", server.base()))
         .bearer_auth(&user.token)
         .send()
@@ -489,7 +490,7 @@ async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
     let sha = Sha256::of_bytes(&bytes);
     let path = format!("/v1/assets/{sha}");
     let server = crate::test_support::serve(&state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!("{}{path}", server.base()))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -837,7 +838,7 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
     let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let response = client
         .post(url("/uploads"))
@@ -910,7 +911,7 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let response = client
         .post(url("/uploads"))
@@ -990,7 +991,7 @@ async fn a_multipart_upload_completes_end_to_end_over_http() {
     let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let response = client
         .post(url("/uploads"))
@@ -1114,7 +1115,7 @@ fn lookup_ignores_a_file_named_with_an_extension() {
 async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let url = |sha: &str| format!("{}/v1/assets/{sha}", server.base());
 
     let jpeg = b"jpeg-bytes".to_vec();
@@ -1179,7 +1180,7 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
 async fn starting_an_upload_for_a_stored_blob_answers_200_already_present() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let bytes = b"already-stored".to_vec();
     let sha = Sha256::of_bytes(&bytes);
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
@@ -1229,7 +1230,7 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let mut state = fixture.state.clone();
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
@@ -1292,7 +1293,7 @@ async fn an_asset_put_of_the_empty_file_is_stored() {
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"");
     let url = format!("{}/v1/assets/{sha}", server.base());
-    let client = reqwest::Client::new();
+    let client = http_client();
     let response = client
         .put(&url)
         .bearer_auth(&user.token)
@@ -1330,7 +1331,7 @@ async fn a_multipart_upload_of_the_empty_file_completes_with_no_parts() {
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"");
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = reqwest::Client::new();
+    let client = http_client();
 
     let response = client
         .post(url("/uploads"))
@@ -1373,7 +1374,7 @@ async fn an_asset_put_with_an_empty_body_answers_422() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"never-sent");
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!("{}/v1/assets/{sha}", server.base()))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -1406,7 +1407,7 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     let mut state = fixture.state.clone();
     state.asset_part_size = 16;
     let server = crate::test_support::serve(&state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
@@ -1554,7 +1555,7 @@ pub(crate) async fn seed_attachment_with_preview(
 /// return the status, the `Content-Type` and the body.
 async fn get_bytes(state: &AppState, path: &str, token: &str) -> (StatusCode, String, Vec<u8>) {
     let server = crate::test_support::serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}{path}", server.base()))
         .bearer_auth(token)
         .header(reqwest::header::ACCEPT, "image/*")
@@ -1662,7 +1663,7 @@ async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
     tx.commit().await.unwrap();
     drop(conn);
     let server = crate::test_support::serve(state).await;
-    let client = reqwest::Client::new();
+    let client = http_client();
     let head = |path: String, range: Option<&'static str>| {
         let mut request = client
             .head(format!("{}{path}", server.base()))
@@ -1851,7 +1852,7 @@ async fn a_part_or_completion_for_an_unknown_upload_is_not_found() {
 async fn a_put_with_a_path_in_the_fingerprint_writes_nothing_outside_the_store() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!(
             "{}/v1/assets/..%2F..%2F..%2F..%2Fescaped%2Fjunk",
             server.base()
@@ -1905,7 +1906,7 @@ async fn a_put_whose_bytes_do_not_match_leaves_no_file() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = Sha256::of_bytes(b"the bytes the client hashed");
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!("{}/v1/assets/{sha}", server.base()))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -1940,7 +1941,7 @@ async fn a_fingerprint_with_surrounding_whitespace_is_refused_not_a_500() {
     let server = crate::test_support::serve(&fixture.state).await;
     let bytes = b"bytes under a padded fingerprint";
     let sha = Sha256::of_bytes(bytes);
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!("{}/v1/assets/%0A{sha}", server.base()))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
@@ -1966,7 +1967,7 @@ async fn a_fingerprint_in_capitals_is_stored_under_its_lower_case_name() {
     let server = crate::test_support::serve(&fixture.state).await;
     let bytes = b"bytes under a capital fingerprint";
     let sha = Sha256::of_bytes(bytes);
-    let response = reqwest::Client::new()
+    let response = http_client()
         .put(format!(
             "{}/v1/assets/{}",
             server.base(),
@@ -2012,7 +2013,7 @@ pub(crate) async fn fetch(
     headers: &[(&str, &str)],
 ) -> Fetched {
     let server = crate::test_support::serve(state).await;
-    let mut request = reqwest::Client::new()
+    let mut request = http_client()
         .get(format!("{}{path}", server.base()))
         .header(reqwest::header::ACCEPT, "*/*");
     if let Some(token) = token {

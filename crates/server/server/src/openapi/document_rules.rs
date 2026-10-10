@@ -27,6 +27,7 @@
 //! in-process document, so a new route is covered the moment it is
 //! registered.
 
+use crate::test_support::http_client;
 use std::collections::BTreeSet;
 
 use axum::http::StatusCode;
@@ -593,7 +594,7 @@ async fn call_with(
     headers: &[(&str, &str)],
 ) -> Answer {
     let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
-    let mut request = reqwest::Client::new().request(method, world.url(path));
+    let mut request = http_client().request(method, world.url(path));
     for (name, value) in headers {
         request = request.header(*name, *value);
     }

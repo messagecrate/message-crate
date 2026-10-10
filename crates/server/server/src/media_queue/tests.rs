@@ -2,6 +2,7 @@
 //! H.264 MP4 and a HEVC `.mov` ends, and the server makes their versions
 //! afterwards (`docs/architecture/media.md`, rule 4).
 
+use crate::test_support::http_client;
 use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
@@ -154,7 +155,7 @@ async fn get_bytes(
     token: Option<&str>,
 ) -> (StatusCode, String, Vec<u8>) {
     let server = crate::test_support::serve(state).await;
-    let mut request = reqwest::Client::new()
+    let mut request = http_client()
         .get(format!("{}{path}", server.base()))
         .header(reqwest::header::ACCEPT, "image/*");
     if let Some(token) = token {
@@ -280,7 +281,7 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
 
         let server = crate::test_support::serve(state).await;
-        let link: serde_json::Value = reqwest::Client::new()
+        let link: serde_json::Value = http_client()
             .post(format!(
                 "{}/v1/assets/{}/media-links",
                 server.base(),

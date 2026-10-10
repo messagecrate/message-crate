@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
 use crate::paging::{DEFAULT_LIST_LIMIT, parse_sort};
+use crate::test_support::http_client;
 use edit::ContactEditError;
 use message_ir::IdentityType;
 
@@ -2572,7 +2573,7 @@ async fn get_address_book(
     accept: Option<&str>,
 ) -> (StatusCode, String, String, String) {
     let server = crate::test_support::serve(&fixture.state).await;
-    let mut request = reqwest::Client::new()
+    let mut request = http_client()
         .post(format!("{}/v1/contacts/address-book", server.base()))
         .bearer_auth(&account.token)
         .json(&body);
@@ -3559,7 +3560,7 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
     let q = format!("groups:{values}");
     assert!(q.len() <= 2048, "{}", q.len());
     let server = crate::test_support::serve(&fixture.state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/contacts", server.base()))
         .query(&[("q", q.as_str())])
         .bearer_auth(&user.token)

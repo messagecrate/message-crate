@@ -1,6 +1,7 @@
 //! The Audit Trail through the router: what each act leaves in it, who reads
 //! it, and what survives the account (#619).
 
+use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
@@ -33,7 +34,7 @@ async fn log_in_from(
     build: &str,
 ) -> String {
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .post(format!("{}/v1/session", server.base()))
         .header(APP_HEADER, app)
         .header(APP_VERSION_HEADER, build)

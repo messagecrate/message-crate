@@ -3,6 +3,7 @@
 //! (`docs/architecture/server-log.md`). Who may call them is the credential
 //! matrix's to check.
 
+use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::Value;
 
@@ -40,7 +41,7 @@ async fn the_owner_lists_the_files_and_downloads_one_whole() {
     assert_eq!(newest["bytes"], on_disk.len());
 
     let server = serve(state).await;
-    let response = reqwest::Client::new()
+    let response = http_client()
         .get(format!("{}/v1/server/log-files/{}", server.base(), ids[0]))
         .bearer_auth(&owner.token)
         .send()
