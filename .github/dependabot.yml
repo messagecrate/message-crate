@@ -30,6 +30,13 @@ updates:
     schedule:
       interval: weekly
 
+  # The generator of the web app's server API types, kept out of /web
+  # because it declares a peer dependency on TypeScript 5
+  - package-ecosystem: npm
+    directory: /scripts/openapi-typescript
+    schedule:
+      interval: weekly
+
   # Documentation site
   - package-ecosystem: npm
     directory: /docs

@@ -64,6 +64,9 @@ config/contacts.vcf
 /web/node_modules
 /web/dist/
 
+# The API type generator's own tree (scripts/openapi-typescript/)
+/scripts/openapi-typescript/node_modules
+
 # Restored Next.js browse UI (web-next/)
 /web-next/node_modules
 /web-next/.next/
