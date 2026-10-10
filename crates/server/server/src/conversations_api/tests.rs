@@ -5,9 +5,10 @@ use message_ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
+use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, register_via_api,
-    seed_one_message, stored_time, test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, expect_problem, fixture_with_account,
+    register_via_api, seed_one_message, stored_time, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these
@@ -48,13 +49,13 @@ async fn conversation_list_takes_the_search_language() {
     )
     .await;
     assert!(page["total"].as_u64().unwrap() >= 1);
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         "/v1/conversations?q=wibble:direct",
         &account.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::SearchQueryInvalid);
     let status = crate::test_support::get_status(
         &fixture.state,
         "/v1/conversations?q=trashed:yes",
@@ -1528,9 +1529,9 @@ async fn conversation_detail_404s_for_an_id_this_account_does_not_own() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status =
-        crate::test_support::get_status(&state, "/v1/conversations/999999", &user.token).await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::get_raw(&state, "/v1/conversations/999999", &user.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1548,13 +1549,13 @@ async fn conversation_detail_404s_for_another_accounts_conversation() {
     // Bob asking for Alice's conversation id must 404, not 403 — a 403
     // would confirm the id exists in someone else's account, and it must
     // not come back as Bob's own conversation either.
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1727,14 +1728,14 @@ async fn conversation_trash_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/trash",
         &user.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1742,14 +1743,14 @@ async fn conversation_restore_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/restore",
         &user.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -1766,14 +1767,14 @@ async fn conversation_trash_404s_for_another_accounts_conversation() {
 
     // Bob trashing Alice's conversation id must 404, not 403 — a 403
     // would confirm the id exists in someone else's account.
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/trash"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = state.db.acquire().await.unwrap();
     assert_eq!(
@@ -1803,14 +1804,14 @@ async fn conversation_restore_404s_for_another_accounts_conversation() {
     let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/restore"),
         &bob.token,
         serde_json::json!({}),
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = state.db.acquire().await.unwrap();
     assert_eq!(
@@ -1859,13 +1860,13 @@ async fn conversation_delete_removes_a_trashed_conversation_for_good() {
     .await;
     assert_eq!(status, axum::http::StatusCode::NO_CONTENT);
 
-    let detail = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         &format!("/v1/conversations/{id}"),
         &user.token,
     )
     .await;
-    assert_eq!(detail, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
     let trashed: serde_json::Value = crate::test_support::get_json(
         &fixture.state,
         "/v1/conversations?q=trashed:any",
@@ -1949,11 +1950,8 @@ async fn conversation_delete_refuses_a_conversation_that_is_not_in_the_trash() {
         &user.token,
     )
     .await;
-    assert_eq!(
-        status,
-        axum::http::StatusCode::CONFLICT,
-        "trash is the only door to deletion: {body}"
-    );
+    // Trash is the only door to deletion.
+    expect_problem(status, &body, ProblemType::StateConflict);
     assert!(body.contains("not in the trash"), "{body}");
     let mut conn = fixture.conn().await;
     assert_eq!(conversation_row_count(&mut conn, id).await, 1);
@@ -1964,23 +1962,20 @@ async fn conversation_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_conversation_fixture().await;
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status = crate::test_support::delete_status(
-        &fixture.state,
-        "/v1/conversations/999999",
-        &alice.token,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::delete_raw(&fixture.state, "/v1/conversations/999999", &alice.token)
+            .await;
+    expect_problem(status, &text, ProblemType::NotFound);
 
     // Bob deleting Alice's trashed conversation must 404, not 403 — a 403
     // would confirm the id exists — and must not delete it.
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/conversations/{alices}"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
     let mut conn = fixture.conn().await;
     assert_eq!(conversation_row_count(&mut conn, alices).await, 1);
 }
@@ -1990,13 +1985,13 @@ async fn conversation_delete_needs_the_delete_permission() {
     let (fixture, user, id) = trashed_conversation_fixture().await;
     fixture.turn_off_delete(user.account_id).await;
 
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/conversations/{id}"),
         &user.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     let mut conn = fixture.conn().await;
     assert_eq!(
         conversation_row_count(&mut conn, id).await,
@@ -2630,13 +2625,13 @@ async fn conversation_messages_name_the_person_a_thread_has_no_participants_row_
 #[tokio::test]
 async fn conversation_messages_404s_for_an_unknown_id() {
     let (fixture, user, _conversation_id) = conversation_messages_fixture().await;
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         "/v1/conversations/999999/messages",
         &user.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -2645,13 +2640,13 @@ async fn conversation_messages_404s_for_another_accounts_conversation() {
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&fixture.state, bob.account_id).await;
 
-    let status = crate::test_support::get_status(
+    let (status, text) = crate::test_support::get_raw(
         &fixture.state,
         &format!("/v1/conversations/{alice_conversation_id}/messages"),
         &bob.token,
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]

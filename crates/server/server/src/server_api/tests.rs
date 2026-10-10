@@ -2,10 +2,11 @@ use axum::http::StatusCode;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
+use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, http_client, patch_status,
-    post_status, post_status_logged_out, register_via_api, seed_conversation, stored_time,
-    test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, expect_problem, expect_problem_for, get_json,
+    get_raw, get_status, http_client, patch_raw, post_json_raw, post_logged_out, post_status,
+    register_via_api, seed_conversation, stored_time, test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -192,14 +193,13 @@ async fn a_server_can_only_be_claimed_once() {
     let state = fixture.state.clone();
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let status = post_status(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT);
+    expect_problem(status, &text, ProblemType::StateConflict);
 
     // And nothing was created for the second caller.
     let mut conn = state.db.acquire().await.unwrap();
@@ -260,17 +260,16 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
     )
     .await
     .unwrap();
-    let status = crate::db::write_tx::commit_during(
+    let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_status(
+        post_logged_out(
             &state,
             "/v1/server/claim",
-            "",
             serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT);
+    expect_problem(status, &text, ProblemType::StateConflict);
 
     let mut conn = state.db.acquire().await.unwrap();
     let owner: String = sqlx::query_scalar("SELECT username FROM accounts WHERE id = $1")
@@ -286,18 +285,14 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
 
-    let status = post_status(
+    // The owner must have a password.
+    let (status, text) = post_logged_out(
         &state,
         "/v1/server/claim",
-        "",
         serde_json::json!({ "username": "keeper", "password": "" }),
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the owner must have a password"
-    );
+    expect_problem(status, &text, ProblemType::ValidationFailed);
     let after: Server = get_json(&state, "/v1/server", "").await;
     assert_eq!(after.state, ServerState::Unclaimed);
 
@@ -321,16 +316,17 @@ async fn claiming_is_rate_limited_across_the_server() {
     // An empty password is refused after the limiter has counted the
     // attempt, so every try counts and none claims this Message Crate.
     for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-        let status = post_status_logged_out(
+        let (status, text) = post_logged_out(
             &state,
             "/v1/server/claim",
             serde_json::json!({ "username": format!("keeper{attempt}"), "password": "" }),
         )
         .await;
-        assert_eq!(
+        expect_problem_for(
+            &format!("attempt {attempt} inside the limit"),
             status,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "attempt {attempt} inside the limit"
+            &text,
+            ProblemType::ValidationFailed,
         );
     }
     let (status, text) = crate::test_support::post_logged_out(
@@ -355,13 +351,13 @@ async fn registration_is_refused_while_the_server_is_closed() {
     let state = fixture.state.clone();
     close_registration(&state).await;
 
-    let status = post_status_logged_out(
+    let (status, text) = post_logged_out(
         &state,
         "/v1/accounts",
         serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
 }
 
 /// The owner opens the door, and the same request that was refused succeeds.
@@ -375,15 +371,13 @@ async fn the_owner_can_open_and_close_registration() {
     let settings: ServerSettings = get_json(&state, "/v1/server/settings", &owner.token).await;
     assert!(!settings.public_registration);
 
-    assert_eq!(
-        post_status_logged_out(
-            &state,
-            "/v1/accounts",
-            serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = post_logged_out(
+        &state,
+        "/v1/accounts",
+        serde_json::json!({ "username": "stranger", "password": "hunter2hunter2" }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
 
     let opened: ServerSettings = crate::test_support::patch_json(
         &state,
@@ -408,20 +402,16 @@ async fn only_the_owner_reaches_the_server_settings() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        get_status(&state, "/v1/server/settings", &ordinary.token).await,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        patch_status(
-            &state,
-            "/v1/server/settings",
-            &ordinary.token,
-            serde_json::json!({ "public_registration": false }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = get_raw(&state, "/v1/server/settings", &ordinary.token).await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
+    let (status, text) = patch_raw(
+        &state,
+        "/v1/server/settings",
+        &ordinary.token,
+        serde_json::json!({ "public_registration": false }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
 }
 
 /// 512 MiB, the limit a Message Crate nobody has configured holds an attachment to.
@@ -490,16 +480,14 @@ async fn an_ordinary_account_cannot_change_the_attachment_size_limit() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        patch_status(
-            &state,
-            "/v1/server/settings",
-            &ordinary.token,
-            serde_json::json!({ "asset_max_bytes": 100 * 1024 * 1024 }),
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = patch_raw(
+        &state,
+        "/v1/server/settings",
+        &ordinary.token,
+        serde_json::json!({ "asset_max_bytes": 100 * 1024 * 1024 }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
     let server: serde_json::Value = get_json(&state, "/v1/server", "").await;
     assert_eq!(server["asset_max_bytes"], DEFAULT_LIMIT);
 }
@@ -793,14 +781,10 @@ async fn only_the_owner_reaches_the_server_totals() {
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let ordinary = register_via_api(&state, "bob", "hunter2hunter2").await;
 
-    assert_eq!(
-        get_status(&state, "/v1/server/storage", &ordinary.token).await,
-        StatusCode::FORBIDDEN
-    );
-    assert_eq!(
-        get_status(&state, "/v1/server/storage", "").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = get_raw(&state, "/v1/server/storage", &ordinary.token).await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
+    let (status, text) = get_raw(&state, "/v1/server/storage", "").await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// Writes a few conversations in place of the built-in data set.
@@ -995,12 +979,11 @@ fn long_bundle(
 
 /// Ask for a build of the medium set and return the answer.
 async fn start_demo_build(state: &AppState, token: &str) -> (StatusCode, String) {
-    crate::test_support::put_raw(
+    crate::test_support::put_json_raw(
         state,
         "/v1/server/demo-account",
         token,
-        "application/json",
-        r#"{"size":"medium"}"#,
+        serde_json::json!({ "size": "medium" }),
     )
     .await
 }
@@ -1076,11 +1059,9 @@ async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
 
     let body =
         |username: &str| serde_json::json!({ "username": username, "password": "hunter2hunter2" });
-    assert_eq!(
-        post_status(&state, "/v1/accounts", &owner.token, body("demo")).await,
-        StatusCode::CONFLICT,
-        "the owner may not create an account named demo"
-    );
+    // The owner may not create an account named demo.
+    let (status, text) = post_json_raw(&state, "/v1/accounts", &owner.token, body("demo")).await;
+    expect_problem(status, &text, ProblemType::UsernameTaken);
     let (status, text) =
         crate::test_support::post_logged_out(&state, "/v1/accounts", body("Demo")).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::UsernameTaken);
@@ -1353,16 +1334,12 @@ async fn the_demo_account_cannot_be_entered_while_it_is_built() {
 
     let info: Server = get_json(&state, "/v1/server", "").await;
     assert!(!info.demo_account, "the login card offers no Demo Account");
-    assert_eq!(
-        crate::test_support::login_status(&state, "demo", "").await,
-        StatusCode::UNAUTHORIZED,
-        "a login as demo is refused while the build runs"
-    );
-    assert_eq!(
-        get_status(&state, "/v1/session", &visitor_token).await,
-        StatusCode::UNAUTHORIZED,
-        "the Session made before the build ended when the build started"
-    );
+    // A login as demo is refused while the build runs.
+    let (status, text) = crate::test_support::log_in_raw(&state, "demo", "").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
+    // The Session made before the build ended when the build started.
+    let (status, text) = get_raw(&state, "/v1/session", &visitor_token).await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 
     gate.open();
     let demo = demo_account_after_build(&state, &owner.token).await;

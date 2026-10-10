@@ -9,10 +9,11 @@ use std::time::Duration;
 use axum::http::StatusCode;
 
 use super::*;
+use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, attachment, conversation_header, fixture_with_account,
-    http_client, message_line,
+    RegisteredAccount, TestFixture, attachment, conversation_header, expect_problem,
+    fixture_with_account, http_client, message_line,
 };
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second
@@ -217,13 +218,17 @@ async fn an_import_run_completes_before_its_thumbnails_are_made() {
             "no Thumbnail is made yet: {attachment}"
         );
     }
-    let (status, _, _) = get_bytes(
+    let (status, _, body) = get_bytes(
         state,
         &format!("/v1/assets/{}/thumbnail", imported.photo),
         Some(&alice.token),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    expect_problem(
+        status,
+        &String::from_utf8(body).unwrap(),
+        ProblemType::NotFound,
+    );
 }
 
 /// After the pass, every image and video has a Thumbnail, and only the HEVC
