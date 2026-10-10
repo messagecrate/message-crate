@@ -108,7 +108,7 @@ pub struct ParseStats {
     /// SMS records dropped for an unknown `type`.
     pub skipped_unknown_type: u64,
     /// Records dropped as draft/outbox/failed/queued.
-    pub skipped_unsent: u64,
+    pub skipped_never_sent: u64,
     /// MMS records dropped with no participants.
     pub skipped_empty_participants: u64,
 }
@@ -154,7 +154,7 @@ fn parse_sms(
         // with the descriptive counter used for MMS drafts/outbox/failed/queued
         // instead of the catch-all unknown-type counter.
         "3" | "4" => {
-            stats.skipped_unsent += 1;
+            stats.skipped_never_sent += 1;
             return None;
         }
         _ => {
@@ -230,8 +230,8 @@ fn parse_mms(
     // Trimmed for `android_type` below; `MmsBox::parse` trims on its own.
     let msg_box = get(attrs, "msg_box").trim().to_string();
     let mms_box = MmsBox::parse(&msg_box);
-    if mms_box.is_some_and(MmsBox::is_unsent) {
-        stats.skipped_unsent += 1;
+    if mms_box.is_some_and(MmsBox::is_never_sent) {
+        stats.skipped_never_sent += 1;
         return None;
     }
     let participants = mms_participants(attrs, addrs);

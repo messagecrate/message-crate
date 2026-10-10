@@ -320,6 +320,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-10: **An SMS Backup & Restore import says "drafts or messages
+  never sent" for what it skips.** It said "drafts or unsent messages",
+  but Unsent is the mark on a message its sender pulled back after sending
+  it, and those messages are kept. The count is of drafts and of messages
+  the phone left in the outbox, failed to send, or queued (#2461).
 - 2026-10-09: **Apple Messages from an older Mac or iPhone keep their times
   in whole seconds.** A Messages database from before macOS 10.13 and iOS 11
   stores each message's time in whole seconds, and the import said those
