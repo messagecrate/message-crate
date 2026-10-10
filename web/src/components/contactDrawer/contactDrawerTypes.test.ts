@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  contactPreviewFromConversationParticipants,
   contactPreviewFromListRow,
-  contactPreviewFromThreadParticipants,
   HANDLE_STUB_PLACEHOLDER,
   previewHandleStubRows,
   sameContactPreviews,
@@ -57,10 +57,10 @@ describe("previewHandleStubRows", () => {
   });
 });
 
-describe("contactPreviewFromThreadParticipants", () => {
+describe("contactPreviewFromConversationParticipants", () => {
   it("builds a preview from matching conversation participants", () => {
     expect(
-      contactPreviewFromThreadParticipants("1", [
+      contactPreviewFromConversationParticipants("1", [
         { contact_id: 1, identity: "+15550101", name: "Ada" },
         { contact_id: 2, identity: "+15550102", name: "Bob" },
       ]),
@@ -74,7 +74,7 @@ describe("contactPreviewFromThreadParticipants", () => {
 
   it("counts two distinct phones for the same contact as two identities", () => {
     expect(
-      contactPreviewFromThreadParticipants("1", [
+      contactPreviewFromConversationParticipants("1", [
         { contact_id: 1, identity: "+15550101", name: "Ada" },
         { contact_id: 1, identity: "+15550102", name: "Ada" },
       ]),
@@ -86,7 +86,7 @@ describe("contactPreviewFromThreadParticipants", () => {
 
   it("collapses raw and normalized forms of the same phone to handleCount 1", () => {
     expect(
-      contactPreviewFromThreadParticipants("1", [
+      contactPreviewFromConversationParticipants("1", [
         { contact_id: 1, identity: "+15550101", name: "Ada" },
         { contact_id: 1, identity: "15550101", name: "Ada" },
       ])?.handleCount,
@@ -95,7 +95,7 @@ describe("contactPreviewFromThreadParticipants", () => {
 
   it("falls back to the identity when no display name is set", () => {
     expect(
-      contactPreviewFromThreadParticipants("1", [
+      contactPreviewFromConversationParticipants("1", [
         { contact_id: 1, identity: "+15550101", name: "" },
       ])?.name,
     ).toBe("+15550101");
@@ -103,7 +103,9 @@ describe("contactPreviewFromThreadParticipants", () => {
 
   it("stubs at least one identity when matched addresses are empty", () => {
     expect(
-      contactPreviewFromThreadParticipants("1", [{ contact_id: 1, identity: "", name: "Ada" }]),
+      contactPreviewFromConversationParticipants("1", [
+        { contact_id: 1, identity: "", name: "Ada" },
+      ]),
     ).toMatchObject({
       name: "Ada",
       addresses: [],
@@ -113,7 +115,7 @@ describe("contactPreviewFromThreadParticipants", () => {
 
   it("returns null when no participant matches the contact id", () => {
     expect(
-      contactPreviewFromThreadParticipants("missing", [
+      contactPreviewFromConversationParticipants("missing", [
         { contact_id: 1, identity: "+15550101", name: "Ada" },
       ]),
     ).toBeNull();

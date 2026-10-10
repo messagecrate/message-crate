@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
 import { message as baseMessage } from "../../test/apiShapes";
-import { dayLabel, threadRows } from "./threadLayout";
+import { conversationRows, dayLabel } from "./conversationLayout";
 
 function message(
   id: number,
@@ -42,12 +42,12 @@ describe("dayLabel", () => {
   });
 });
 
-describe("threadRows", () => {
+describe("conversationRows", () => {
   const ada = { sender: "+15555550101" };
   const bo = { sender: "+15555550102" };
 
   it("puts a day separator before the first message of each day", () => {
-    const rows = threadRows(
+    const rows = conversationRows(
       [
         message(1, "2026-07-02T08:00:00Z", ada),
         message(2, "2026-07-02T09:00:00Z", ada),
@@ -60,7 +60,7 @@ describe("threadRows", () => {
   });
 
   it("starts a run at a new day, a new sender, or a gap of an hour or more", () => {
-    const rows = threadRows(
+    const rows = conversationRows(
       [
         message(1, "2026-07-02T08:00:00Z", ada),
         message(2, "2026-07-02T08:10:00Z", ada),

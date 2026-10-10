@@ -62,7 +62,7 @@ export const BUBBLES: {
 
 /**
  * The bubble in UTC, so its time reads the same on every machine.
- * `rerenderWith` draws the same bubble with another message, as a thread does
+ * `rerenderWith` draws the same bubble with another message, as a conversation does
  * when a message's answer changes, keeping its state.
  */
 export function renderBubbleInUtc(Bubble: ComponentType<MessageBubbleProps>, m: Message) {
