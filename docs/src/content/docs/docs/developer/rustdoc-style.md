@@ -74,7 +74,7 @@ When a function returns `Result` but never errors, say so explicitly and explain
 
 Document the reason behind non-obvious choices — ordering, omitted files, performance tradeoffs — so future readers do not "fix" them.
 
-- `crates/server/demo-seed/src/assets.rs`, `fn write_attachment_assets` — "One path, `attachments/missing-file.heic`, is left out on purpose so import can show a missing-file warning." — Good: a deliberate-looking omission stated explicitly.
+- `crates/server/demo-seed/src/assets.rs`, `fn write_attachment_files` — "One path, `attachments/missing-file.heic`, is left out on purpose so import can show a missing-file warning." — Good: a deliberate-looking omission stated explicitly.
 - `crates/server/server/src/assets_api.rs`, `fn lookup_by_sha256_unverified` — "Used only when streaming an authenticated download. … Hashing the whole file first would read every download twice." — Good: the performance tradeoff is explained instead of just describing the lookup.
 - `crates/libs/import/src/run.rs`, the module intro — "Attachments first, then messages. Messages point at attachments by a content fingerprint (sha256). The server must already have that file, or the import would fail." — Good: explains the invariant that drove the upload ordering.
 

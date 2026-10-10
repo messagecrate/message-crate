@@ -1,5 +1,5 @@
-//! Attachment helpers: queue decoded attachments as [`PendingAttachment`] metadata during
-//! parse.
+//! Attachment helpers: queue decoded attachments as [`PendingAttachment`]
+//! metadata during parse.
 
 use crate::types::AttachmentBytes;
 use anyhow::Result;
