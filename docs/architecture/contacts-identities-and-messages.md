@@ -193,9 +193,10 @@ sender, a reaction's sender and the holder's own address. A participant, a
 message's sender and a reaction's sender go through one function,
 `HandleValue::handle_type_on` (`imports_api/records.rs`), which also
 keeps a name the source gave in place of an address as `other`. The
-server knows it is a name because the file gave it in the name's place. A participant is typed
-by the conversation's service, and a sender or a reaction's sender by its
-message's service. The conversation file carries no `identity_type`. Why:
+server knows it is a name because the file gave it in the name's place.
+A participant is typed by the conversation's service, and a sender or a
+reaction's sender by its message's service. The conversation file
+carries no `identity_type`. Why:
 the type follows from the service and the address, so a type in the file
 could only disagree with it, and every place it did made one person two
 identities. A message's sender took the type the header gave a participant
