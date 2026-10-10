@@ -242,7 +242,15 @@ fn json_body(value: serde_json::Value) -> (&'static str, reqwest::Body) {
 /// Decode a response the caller expects to be `200 OK` with a JSON body.
 fn expect_ok<T: DeserializeOwned>(what: &str, status: StatusCode, text: &str) -> T {
     assert_eq!(status, StatusCode::OK, "{what} must succeed, got: {text}");
-    serde_json::from_str(text).unwrap_or_else(|e| panic!("{what} returned non-JSON ({e}): {text}"))
+    decode(what, text)
+}
+
+/// Decode a response body into the caller's type, or panic naming the
+/// request and the body. The body may be JSON of the wrong shape, so the
+/// message does not call it non-JSON.
+fn decode<T: DeserializeOwned>(what: &str, text: &str) -> T {
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("{what} answered a body that does not decode ({e}): {text}"))
 }
 
 /// Register an account as a stranger, `POST /v1/accounts` with no
@@ -433,9 +441,7 @@ async fn created<T: DeserializeOwned>(
         StatusCode::CREATED,
         "{what} must answer 201 Created, got: {text}"
     );
-    let body = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("{what} returned non-JSON ({e}): {text}"));
-    (location, body)
+    (location, decode(what, &text))
 }
 
 /// The problem document a failure answered, or a panic naming the body
