@@ -42,6 +42,22 @@ struct FfmpegFiles {
     ffprobe: (&'static str, &'static str, &'static str),
 }
 
+/// The Windows x64 files, which Windows on ARM gets as well.
+const WINDOWS_X64: FfmpegFiles = FfmpegFiles {
+    os: "windows",
+    arch: "x86_64",
+    ffmpeg: (
+        "ffmpeg-win32-x64.gz",
+        "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
+        "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
+    ),
+    ffprobe: (
+        "ffprobe-win32-x64.gz",
+        "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d",
+        "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4",
+    ),
+};
+
 /// The files of the pinned `ffmpeg-static` release, by platform.
 ///
 /// The project publishes no checksum file. Each SHA-256 here was computed on
@@ -115,33 +131,11 @@ const FFMPEG_FILES: &[FfmpegFiles] = &[
             "bb2db6f5d8cef919da12fbf592119a987202a8c060a886f3cab091f9cab90b64",
         ),
     },
+    WINDOWS_X64,
+    // Windows on ARM runs the x64 build.
     FfmpegFiles {
-        os: "windows",
-        arch: "x86_64",
-        ffmpeg: (
-            "ffmpeg-win32-x64.gz",
-            "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
-            "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
-        ),
-        ffprobe: (
-            "ffprobe-win32-x64.gz",
-            "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d",
-            "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4",
-        ),
-    },
-    FfmpegFiles {
-        os: "windows",
         arch: "aarch64",
-        ffmpeg: (
-            "ffmpeg-win32-x64.gz",
-            "8883a3dffbd0a16cf4ef95206ea05283f78908dbfb118f73c83f4951dcc06d77",
-            "04e1307997530f9cf2fe35cba2ca7e8875ca91da02f89d6c7243df819c94ad00",
-        ),
-        ffprobe: (
-            "ffprobe-win32-x64.gz",
-            "f309e6223ad89d2fe54bccd420a7709b66fd27540674e92309578ed491a43c8d",
-            "3a7e2dc003dc2cd1472827e4c7c4f056ae1ae0ae7c5bbc580c99b49827351ba4",
-        ),
+        ..WINDOWS_X64
     },
 ];
 
