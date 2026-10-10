@@ -1,3 +1,4 @@
+use crate::progress::Progress;
 use std::future::Future;
 
 use super::*;
@@ -68,7 +69,7 @@ fn pass<'a>(
         account_id: 7,
         assets_dir: assets_dir.to_path_buf(),
         converted_dir: converted_dir.to_path_buf(),
-        log: crate::progress::Progress::Print,
+        progress: Progress::Print,
     }
 }
 
@@ -1680,7 +1681,7 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
             work.path(),
             ACCOUNT,
             &NOT_STOPPED,
-            crate::progress::Progress::Print,
+            Progress::Print,
         )
         .unwrap()
         .unwrap();
@@ -1714,7 +1715,7 @@ fn nothing_is_stored_once_the_account_directory_is_gone() {
             work.path(),
             ACCOUNT,
             &NOT_STOPPED,
-            crate::progress::Progress::Print,
+            Progress::Print,
         )
         .unwrap()
         .unwrap();
@@ -1797,7 +1798,7 @@ async fn a_live_pass_keeps_its_work_directory_young() {
         work.path(),
         ACCOUNT,
         &NOT_STOPPED,
-        crate::progress::Progress::Print,
+        Progress::Print,
     )
     .unwrap()
     .unwrap();

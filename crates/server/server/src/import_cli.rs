@@ -357,7 +357,7 @@ mod tests {
             media: MediaMode::Clone,
             skip_dedupe: true,
             window_secs: 2,
-            progress: crate::progress::Progress::Log,
+            progress: Progress::Log,
         };
         (opened, opts)
     }

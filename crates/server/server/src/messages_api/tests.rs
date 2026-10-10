@@ -1,3 +1,4 @@
+use crate::progress::Progress;
 use axum::http::StatusCode;
 
 use crate::problem::ProblemType;
@@ -1148,15 +1149,9 @@ async fn hidden_under(fixture: &TestFixture, guid: &str) -> Option<String> {
 /// Run dedupe over `account_id` as an import with dedupe on does.
 async fn dedupe(fixture: &TestFixture, account_id: i64) {
     let mut conn = fixture.conn().await;
-    crate::dedupe::dedupe_cross_source(
-        &mut conn,
-        account_id,
-        None,
-        2,
-        crate::progress::Progress::Log,
-    )
-    .await
-    .unwrap();
+    crate::dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, Progress::Log)
+        .await
+        .unwrap();
 }
 
 /// The same edited message from an iMazing backup, imported first, and from

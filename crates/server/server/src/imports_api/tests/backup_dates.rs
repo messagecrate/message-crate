@@ -4,6 +4,8 @@
 //! order (#1924, #1741, #1804). A file without a backup date keeps the
 //! rules for files without one: marks add, and edits compare their times.
 
+use crate::progress::Progress;
+
 use super::*;
 
 /// The earlier backup of the phone: 2026-09-01T10:00:00Z.
@@ -504,15 +506,9 @@ async fn the_later_backup_decides_the_duplicate_flag() {
             .await
             .unwrap();
         let (_pool, mut conn) = open_verify(&db).await;
-        crate::dedupe::dedupe_cross_source(
-            &mut conn,
-            TEST_ACCOUNT,
-            None,
-            2,
-            crate::progress::Progress::Log,
-        )
-        .await
-        .unwrap();
+        crate::dedupe::dedupe_cross_source(&mut conn, TEST_ACCOUNT, None, 2, Progress::Log)
+            .await
+            .unwrap();
         let hidden: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE duplicate_of IS NOT NULL")
                 .fetch_one(&mut *conn)

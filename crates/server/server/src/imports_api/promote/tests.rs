@@ -1,4 +1,5 @@
 use super::*;
+use crate::progress::Progress;
 use crate::test_support::{conversation_header, message_line};
 
 const TEST_ACCOUNT: i64 = 7;
@@ -51,7 +52,7 @@ async fn a_promote_that_fails_is_an_internal_import_failure() {
         TEST_ACCOUNT,
         false,
         &[],
-        crate::progress::Progress::Log,
+        Progress::Log,
     )
     .await
     .expect_err("promote fails")
@@ -123,7 +124,7 @@ async fn promote_message_map_ignores_other_accounts() {
         mode: ImportMode::Append,
         stats: PromoteStats::default(),
         started: Instant::now(),
-        progress: crate::progress::Progress::Log,
+        progress: Progress::Log,
     };
     let mut map = HashMap::new();
 

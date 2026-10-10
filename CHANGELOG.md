@@ -223,14 +223,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-09: **An Import Run's progress is in the server's log.** The lines
-  an import writes as it reads its files, writes them into the account and
-  hides duplicates went to the server's standard output only, so the owner's
-  **Logs** panel never showed them. They are in the server's log now, at the
-  info level. A server whose desktop app had just crashed could also stop an
-  import part-way while printing one of those lines; nothing is printed now.
-  The server's `import` command still shows the same progress on its own
-  output (#1945).
+- 2026-10-09: **Owner Home's Logs panel shows how each import went.** The
+  lines an import writes as it reads its files, writes them into the account
+  and hides duplicates never reached the **Logs** panel. They do now, and so
+  do the lines of the Demo Account's import when it is built or rebuilt. An
+  import that was running when the desktop app crashed could also stop
+  part-way while writing one of those lines; it no longer does. The server's
+  `import` and `reset-demo` commands still print the same lines as they run
+  (#1945).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,

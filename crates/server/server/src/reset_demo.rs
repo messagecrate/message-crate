@@ -151,10 +151,11 @@ async fn dedupe_and_process_assets(
     db: &SqlitePool,
     account_id: i64,
     stop: &AtomicBool,
+    progress: Progress,
 ) -> Result<(dedupe::DedupeStats, process_assets::ProcessAssetsStats)> {
     let dedupe_stats = {
         let mut conn = db.acquire().await?;
-        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, Progress::Log).await?
+        dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, progress).await?
     };
     // Without ffmpeg the preview pass would fail once per attachment; say so
     // once instead (#1018). Whether each original is shown as it is needs no
@@ -597,6 +598,7 @@ async fn build_from_bundle(
         actor,
         Vacuum::Skip,
         stop,
+        Progress::Log,
     )
     .await
 }
@@ -659,6 +661,7 @@ async fn reset_prepared_bundle_with(
         // holds up no other writer.
         Vacuum::Run,
         &AtomicBool::new(false),
+        Progress::Print,
     )
     .await
     {
@@ -726,6 +729,10 @@ async fn install_reset_state_or_keep_work(
 /// running server the build shares the server's pool. The build's record in
 /// `demo_account_build` is written first and removed last, so a database
 /// that still holds it after a stop has a part-built Demo Account (#1215).
+/// The import, dedupe and `VACUUM` say how far they have got through
+/// `progress`: standard output for `reset-demo`, the server's log under
+/// `serve`.
+#[allow(clippy::too_many_arguments)]
 async fn rebuild_demo_account(
     cfg: &Config,
     db: &SqlitePool,
@@ -734,17 +741,18 @@ async fn rebuild_demo_account(
     actor: AuditActor,
     vacuum: Vacuum,
     stop: &AtomicBool,
+    progress: Progress,
 ) -> Result<ResetPreparedStats> {
     begin_demo_build(db).await?;
     wipe_demo_account(cfg, db, account_id, actor).await?;
     print_reset_header(account_id, prepared, &cfg.paths.db.display());
     seed_demo_account(db, account_id, &prepared.seed).await?;
-    let import = import_demo_sources(cfg, db, prepared, account_id).await?;
+    let import = import_demo_sources(cfg, db, prepared, account_id, progress).await?;
     let address_book = load_demo_address_book(db, prepared, account_id).await?;
     let (dedupe_stats, process_stats) =
-        dedupe_and_process_assets(cfg, db, account_id, stop).await?;
+        dedupe_and_process_assets(cfg, db, account_id, stop, progress).await?;
     if vacuum == Vacuum::Run {
-        vacuum_after_demo(db).await;
+        vacuum_after_demo(db, progress).await;
     }
     let mut conn = db.acquire().await?;
     demo_account_build::end(&mut conn)
@@ -811,6 +819,7 @@ async fn import_demo_sources(
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
+    progress: Progress,
 ) -> Result<imports_api::ImportCounts> {
     import_demo_sources_with(
         cfg,
@@ -818,6 +827,7 @@ async fn import_demo_sources(
         prepared,
         account_id,
         IMPORT_BATCH_BYTES,
+        progress,
         async || Ok(()),
     )
     .await
@@ -837,6 +847,7 @@ async fn import_demo_sources_with(
     prepared: &PreparedBundle,
     account_id: i64,
     batch_bytes: u64,
+    progress: Progress,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
 ) -> Result<imports_api::ImportCounts> {
     let mut totals = imports_api::ImportCounts::default();
@@ -867,16 +878,19 @@ async fn import_demo_sources_with(
             let imported = imports_api::import_jsonl_files_on_conn(
                 &mut conn,
                 batch,
-                &ImportOptions::fixed(FixedImportArgs {
-                    assets_dir: &assets_dir,
-                    asset_root: export_dir,
-                    mode,
-                    source: source.source,
-                    account_id,
-                    fill_content_keys: true,
-                    import_id: Some(import_run.id),
-                    phone_country: None,
-                }),
+                &ImportOptions {
+                    progress,
+                    ..ImportOptions::fixed(FixedImportArgs {
+                        assets_dir: &assets_dir,
+                        asset_root: export_dir,
+                        mode,
+                        source: source.source,
+                        account_id,
+                        fill_content_keys: true,
+                        import_id: Some(import_run.id),
+                        phone_country: None,
+                    })
+                },
                 ImportSchemaMode::AssumeReady,
             )
             .await
@@ -2002,19 +2016,19 @@ fn remove_any_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Reclaim space after the demo import replaced most rows. Best effort:
-/// failures are printed, not returned, because the demo rows are already
+/// failures are warnings, not returned, because the demo rows are already
 /// committed and a failed vacuum only costs disk space.
-async fn vacuum_after_demo(db: &SqlitePool) {
+async fn vacuum_after_demo(db: &SqlitePool, progress: Progress) {
     let mut conn = match db.acquire().await {
         Ok(conn) => conn,
         Err(err) => {
-            eprintln!(
-                "  VACUUM did not run, because no connection to the database could be opened: {err}"
-            );
+            progress.warn(format_args!(
+                "VACUUM did not run, because no connection to the database could be opened: {err}"
+            ));
             return;
         }
     };
-    maintenance::vacuum_import_tables(&mut conn, Progress::Log).await;
+    maintenance::vacuum_import_tables(&mut conn, progress).await;
 }
 
 /// Parse `config/seed.toml` from the bundle.

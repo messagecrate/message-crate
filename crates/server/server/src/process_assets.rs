@@ -511,7 +511,7 @@ struct AccountPass<'a> {
     account_id: i64,
     assets_dir: PathBuf,
     converted_dir: PathBuf,
-    log: Progress,
+    progress: Progress,
 }
 
 /// What making one version produced.
@@ -589,7 +589,7 @@ impl<'a> AccountPass<'a> {
         work_dir: &'a Path,
         account_id: i64,
         stop: &'a AtomicBool,
-        log: Progress,
+        progress: Progress,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         if !assets_dir.is_dir() {
@@ -605,7 +605,7 @@ impl<'a> AccountPass<'a> {
             account_id,
             assets_dir,
             converted_dir,
-            log,
+            progress,
         }))
     }
 
@@ -632,7 +632,7 @@ impl<'a> AccountPass<'a> {
                 break;
             }
             for err in outcome.failures() {
-                self.log.warn(format!(
+                self.progress.warn(format!(
                     "{} could not be processed: {err:#}",
                     self.label(row)
                 ));
@@ -751,7 +751,7 @@ impl<'a> AccountPass<'a> {
         damaged: bool,
     ) -> Result<bool> {
         if damaged && let Some(rel) = row.named(version).assets_path.as_deref() {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "The {version} {rel} of {} does not hash to the fingerprint in its name, so it is made again",
                 self.label(row)
             ));
@@ -774,13 +774,13 @@ impl<'a> AccountPass<'a> {
             // the sweep at the next Import Run's end, which keeps a young
             // file: the same bytes may be the version of another original
             // that a concurrent pass is about to record.
-            self.log.say(format!(
+            self.progress.say(format!(
                 "{} was deleted while its {version} was made, so the {version} is left for the sweep at the next Import Run's end",
                 self.label(row)
             ));
             return Ok(false);
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "Made the {version} of {} at {}",
             self.label(row),
             blob.assets_path
@@ -819,7 +819,7 @@ impl<'a> AccountPass<'a> {
             mime_type,
         };
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would point {} at its existing {version} {}",
                 self.label(row),
                 blob.assets_path
@@ -838,7 +838,7 @@ impl<'a> AccountPass<'a> {
             // The rows that named none were deleted since they were read.
             return Ok(false);
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "{} now names its existing {version} {}",
             self.label(row),
             blob.assets_path
@@ -870,7 +870,7 @@ impl<'a> AccountPass<'a> {
             return Ok(false);
         };
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would drop the damaged {version} {rel} of {}",
                 self.label(row)
             ));
@@ -883,7 +883,7 @@ impl<'a> AccountPass<'a> {
             crate::asset_store::remove_file(&path)
                 .with_context(|| format!("remove damaged {version} {}", path.display()))?;
         }
-        self.log.say(format!(
+        self.progress.say(format!(
             "The {version} {rel} of {} does not hash to the fingerprint in its name and is not \
              made again, so it is dropped",
             self.label(row)
@@ -903,14 +903,14 @@ impl<'a> AccountPass<'a> {
             return Ok(false);
         }
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would remove the incomplete {}",
                 self.label(row)
             ));
         } else {
             crate::asset_store::remove_file(source_path)
                 .with_context(|| format!("remove incomplete {}", source_path.display()))?;
-            self.log
+            self.progress
                 .say(format!("Removed the incomplete {}", self.label(row)));
         }
         Ok(true)
@@ -952,7 +952,7 @@ impl<'a> AccountPass<'a> {
         row: &StoredOriginal,
     ) -> Result<Derived> {
         if self.opts.dry_run {
-            self.log.say(format!(
+            self.progress.say(format!(
                 "This dry run would make the {version} of {} as {ext}",
                 self.label(row)
             ));
