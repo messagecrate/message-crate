@@ -1,5 +1,6 @@
-//! The `msg_box` values of an `<mms>` element: which box on the phone the
-//! message was in.
+//! The `msg_box` values of an `<mms>` element that the reader treats apart
+//! from a received message: the box of a sent message, and the boxes of a
+//! message that was never sent, which the reader skips.
 
 /// A message the owner sent.
 pub(crate) const SENT: &str = "2";
