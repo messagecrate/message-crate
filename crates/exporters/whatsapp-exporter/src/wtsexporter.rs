@@ -650,6 +650,34 @@ mod tests {
         path.to_str().unwrap().to_string()
     }
 
+    /// The arguments every command starts with: the platform flag (`-a` or
+    /// `-i`), then `--no-html`, `--no-banner`, `-o <out>` and `-j <json>`,
+    /// before the paths the backup forwards.
+    fn base_args(platform_flag: &str, out: &Path, json: &Path) -> Vec<String> {
+        vec![
+            platform_flag.to_string(),
+            "--no-html".to_string(),
+            "--no-banner".to_string(),
+            "-o".to_string(),
+            text(out),
+            "-j".to_string(),
+            text(json),
+        ]
+    }
+
+    /// The arguments that pass an iPhone backup's files read straight from
+    /// disk: its database, contacts and media directory.
+    fn ios_files_args(db: &Path, contacts: &Path, media: &Path) -> Vec<String> {
+        vec![
+            "-d".to_string(),
+            text(db),
+            "-w".to_string(),
+            text(contacts),
+            "-m".to_string(),
+            text(media),
+        ]
+    }
+
     /// An Android backup with every option found: an encrypted database,
     /// a hex key (passed as a key file, never on the command line),
     /// contacts, media, and the business app. The whole command line is
@@ -675,23 +703,20 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-a".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-k".to_string(),
-                text(&key_file),
-                "-b".to_string(),
-                text(&crypt),
-                "-w".to_string(),
-                text(&wa),
-                "-m".to_string(),
-                text(&media),
-                "--business".to_string(),
+                base_args("-a", &out, &json),
+                vec![
+                    "-k".to_string(),
+                    text(&key_file),
+                    "-b".to_string(),
+                    text(&crypt),
+                    "-w".to_string(),
+                    text(&wa),
+                    "-m".to_string(),
+                    text(&media),
+                    "--business".to_string(),
+                ],
             ]
+            .concat()
         );
         assert_eq!(fs::read(&key_file).unwrap(), [0xde, 0xad, 0xbe, 0xef]);
     }
@@ -786,20 +811,10 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-d".to_string(),
-                text(&db),
-                "-w".to_string(),
-                text(&contacts),
-                "-m".to_string(),
-                text(&domain),
+                base_args("-i", &out, &json),
+                ios_files_args(&db, &contacts, &domain),
             ]
+            .concat()
         );
     }
 
@@ -829,16 +844,10 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-b".to_string(),
-                text(backup.path()),
+                base_args("-i", &out, &json),
+                vec!["-b".to_string(), text(backup.path())],
             ]
+            .concat()
         );
     }
 
@@ -867,20 +876,10 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-d".to_string(),
-                text(&db),
-                "-w".to_string(),
-                text(&contacts),
-                "-m".to_string(),
-                text(&shared),
+                base_args("-i", &out, &json),
+                ios_files_args(&db, &contacts, &shared),
             ]
+            .concat()
         );
     }
 
