@@ -998,7 +998,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     assert!(message.attachments.is_empty(), "{}", message.guid);
                     assert!(message.reactions.is_empty(), "{}", message.guid);
                     // Only an iMessage can be unsent, and an unsent reply would be
-                    // an empty message threaded under another.
+                    // an empty message replying to another.
                     assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
                     assert!(
                         message.reply_to.is_none(),
