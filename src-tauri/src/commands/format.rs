@@ -16,7 +16,7 @@ use crate::state::{AppState, JobName};
 /// Ask this process to rewrite an extract directory in a different file format.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `extract:log` / `extract:finished` / `extract:error`
+/// summary use the same `desktop-job:log` / `desktop-job:finished` / `desktop-job:error`
 /// events as Extract, so the UI can reuse one progress view.
 ///
 /// # Errors
@@ -24,7 +24,7 @@ use crate::state::{AppState, JobName};
 /// Returns an error if `output_format` is not one of json, jsonl, csv, eml,
 /// mbox, xml, or sms-backup-plus, if another job is running, or if another
 /// thread panicked while holding the shared state lock. Failures during
-/// conversion are sent as `extract:error`.
+/// conversion are sent as `desktop-job:error`.
 #[tauri::command(async)]
 pub fn format(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,

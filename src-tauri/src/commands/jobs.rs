@@ -2,7 +2,7 @@
 //! `export`, `upload`, `transcode_staging`).
 //!
 //! One job runs at a time in this process. Every job reports on the same
-//! `extract:*` events, which do not say which job sent them, so a second job
+//! `desktop-job:*` events, which do not say which job sent them, so a second job
 //! would end the first one's wait in the web app with its own finished event.
 //! A job command therefore starts its job with [`start_job`], which refuses
 //! while another job runs and names that job. The job gets a cancel flag of
@@ -10,7 +10,7 @@
 //! running, so a Cancel stops that job and never one started after it.
 //!
 //! [`spawn_job`] runs the job on a worker thread, ends it, and only then sends
-//! its `extract:finished` or `extract:error` event: the web app starts the
+//! its `desktop-job:finished` or `desktop-job:error` event: the web app starts the
 //! next stage's job as soon as that event arrives, and the job must have
 //! ended by then or the next one would be refused. What differs per command
 //! (building the config, mapping progress events, and shaping the finished
@@ -26,7 +26,7 @@ use message_crate_core::CancelFlag;
 use tauri::{AppHandle, Manager};
 
 use super::events;
-use super::events::ExtractErrorEvent;
+use super::events::DesktopJobErrorEvent;
 use crate::local_server::LocalServer;
 use crate::state::{AppState, JobName, RunningJob};
 
@@ -111,13 +111,13 @@ pub(crate) fn cancel_running_job(state: &Arc<Mutex<AppState>>) -> Result<(), Str
 }
 
 /// Run `job` on a worker thread, end it, and report its outcome: the summary
-/// it returns as `extract:finished`, or its failure as `extract:error`.
+/// it returns as `desktop-job:finished`, or its failure as `desktop-job:error`.
 ///
 /// The app's own Message Crate is not restarted for the network setting
 /// while the job runs, since the job may be an import into it.
 pub(crate) fn spawn_job<F>(app: AppHandle, job: Job, run: F)
 where
-    F: FnOnce() -> Result<String, ExtractErrorEvent> + Send + 'static,
+    F: FnOnce() -> Result<String, DesktopJobErrorEvent> + Send + 'static,
 {
     let local_server_job = app.state::<LocalServer>().job_started();
     thread::spawn(move || {
@@ -131,21 +131,21 @@ where
 }
 
 /// Run one job, end it, and return its finished summary or the
-/// `extract:error` payload the UI needs.
+/// `desktop-job:error` payload the UI needs.
 ///
 /// A panic counts as a failure. Without this, a panicking job sends neither
-/// `extract:finished` nor `extract:error`, and the UI waits forever. The
+/// `desktop-job:finished` nor `desktop-job:error`, and the UI waits forever. The
 /// message the person reads names the work as the screens do, because "job"
 /// is a word for the code only.
-fn run_job<F>(job: Job, run: F) -> Result<String, ExtractErrorEvent>
+fn run_job<F>(job: Job, run: F) -> Result<String, DesktopJobErrorEvent>
 where
-    F: FnOnce() -> Result<String, ExtractErrorEvent>,
+    F: FnOnce() -> Result<String, DesktopJobErrorEvent>,
 {
     let name = job.name;
     let outcome = panic::catch_unwind(AssertUnwindSafe(run));
     drop(job);
     outcome.unwrap_or_else(|payload| {
-        Err(ExtractErrorEvent {
+        Err(DesktopJobErrorEvent {
             detail: format!("the job panicked: {}", panic_message(payload.as_ref())),
             user_message: Some(panic_text(name)),
         })
@@ -265,8 +265,8 @@ mod tests {
     }
 
     fn run(
-        run: impl FnOnce() -> Result<String, ExtractErrorEvent>,
-    ) -> Result<String, ExtractErrorEvent> {
+        run: impl FnOnce() -> Result<String, DesktopJobErrorEvent>,
+    ) -> Result<String, DesktopJobErrorEvent> {
         run_job(start_job(&new_state(), JobName::Export).unwrap(), run)
     }
 

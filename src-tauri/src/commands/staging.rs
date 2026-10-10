@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex};
 use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 
 use super::events;
-use super::events::ExtractProgressEvent;
+use super::events::ImportProgressEvent;
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
 use crate::run_directories::{self, RunDirectories, StagingRoot};
@@ -128,7 +128,7 @@ fn staged_directory(
 
 /// Recompute what a staged directory holds, for the first review.
 ///
-/// Reports progress on `extract:progress` with `step: "check"`, so a long
+/// Reports progress on `desktop-job:progress` with `step: "check"`, so a long
 /// summary of a huge directory shows movement on the step the user is already
 /// looking at. The read itself (directory walk plus ffprobe calls) runs on a
 /// blocking-pool thread via [`tauri::async_runtime::spawn_blocking`], so it
@@ -152,7 +152,7 @@ pub async fn summarize_staging(
             events::emit(
                 &progress_app,
                 events::PROGRESS,
-                ExtractProgressEvent {
+                ImportProgressEvent {
                     step: "check".into(),
                     done: progress.done,
                     total: progress.total,
@@ -176,9 +176,9 @@ fn plural_s(count: usize) -> &'static str {
 
 /// One human-readable sentence describing the Media stage's outcome.
 ///
-/// Used both as the `extract:finished` payload's `summary` field (so a
+/// Used both as the `desktop-job:finished` payload's `summary` field (so a
 /// client that falls back to raw JSON still has readable text) and, when
-/// either count is nonzero, as an `extract:log` line so the same wording is
+/// either count is nonzero, as an `desktop-job:log` line so the same wording is
 /// visible while the Media stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
@@ -213,23 +213,23 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
 /// a cancel flag of its own, the Media stage runs on a background thread, and
-/// progress/log/finished go back as `extract:*` events so the UI reuses one
-/// progress view. A cancelled Media stage is reported through `extract:error` the
+/// progress/log/finished go back as `desktop-job:*` events so the UI reuses one
+/// progress view. A cancelled Media stage is reported through `desktop-job:error` the
 /// same way any other failure is — exactly how a cancelled `extract` run
 /// already behaves (`extract` never special-cases its own cancellation
 /// either; `spawn_job`'s generic `Err` handling covers both). An earlier
 /// version of this command ended a cancelled Media stage quietly instead (an
-/// `extract:log` line, `Ok(())`, no `extract:error`); that left
+/// `desktop-job:log` line, `Ok(())`, no `desktop-job:error`); that left
 /// `awaitDesktopJob`'s promise on the web side permanently unsettled — no
-/// `extract:finished`, no `extract:error` — wedging the screen with `running`
+/// `desktop-job:finished`, no `desktop-job:error` — wedging the screen with `running`
 /// stuck true and no way back except restarting the app. Do not restore the
 /// quiet path.
 ///
 /// Each file the Media stage could not convert goes to the window as an
-/// `extract:issue` the moment the Media stage gives up on it, so the window has
+/// `desktop-job:issue` the moment the Media stage gives up on it, so the window has
 /// written it into the run record before an app that closes during the Media stage stops.
 /// The report carries counts only, so a nonzero `failed`/`too_large` count
-/// is also surfaced as one summarizing `extract:log` line (see
+/// is also surfaced as one summarizing `desktop-job:log` line (see
 /// [`transcode_summary`]).
 ///
 /// # Errors
@@ -238,7 +238,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// or holds no media settings, another job is running, or another thread
 /// panicked while holding the shared state lock. Failures during the Media stage —
 /// including a cancellation and ffmpeg/ffprobe being unavailable — are sent
-/// as `extract:error`, verbatim, not returned here.
+/// as `desktop-job:error`, verbatim, not returned here.
 #[tauri::command(async)]
 pub fn transcode_staging(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
@@ -291,7 +291,7 @@ pub fn transcode_staging(
                 events::emit(
                     &app_handle,
                     events::PROGRESS,
-                    ExtractProgressEvent {
+                    ImportProgressEvent {
                         step: "media".into(),
                         done: progress.done,
                         total: progress.total,
@@ -305,7 +305,7 @@ pub fn transcode_staging(
         );
 
         // A cancellation is just another `Err` here — `spawn_job` reports it
-        // as `extract:error` with the error chain as `detail`, the same
+        // as `desktop-job:error` with the error chain as `detail`, the same
         // generic path a cancelled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.

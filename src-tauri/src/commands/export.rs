@@ -37,14 +37,14 @@ pub struct ExportArgs {
 /// Ask this process to export conversations from a server.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `extract:log` / `extract:finished` / `extract:error`
+/// summary use the same `desktop-job:log` / `desktop-job:finished` / `desktop-job:error`
 /// events as Extract.
 ///
 /// # Errors
 ///
 /// Returns an error if another job is running, or if another thread panicked
 /// while holding the shared state lock. Failures during the Export are
-/// sent as `extract:error`.
+/// sent as `desktop-job:error`.
 #[tauri::command(async)]
 pub fn export(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,

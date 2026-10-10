@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use message_crate_core::{CancelFlag, Cancelled};
 use tauri::AppHandle;
 
-use super::events::{self, ExtractProgressEvent};
+use super::events::{self, ImportProgressEvent};
 use crate::tool_downloads::{self, DownloadState, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
@@ -188,7 +188,7 @@ pub fn retry_tool_downloads(downloads: tauri::State<'_, ToolDownloads>) -> Retry
 const WAITING_STEP_BYTES: u64 = 256 * 1024;
 
 /// Wait while any of `programs` is downloading, before an import runs it
-/// (#1053). The wait goes to the window as `extract:progress` events on
+/// (#1053). The wait goes to the window as `desktop-job:progress` events on
 /// `step` ([`waiting_event`]): one when it starts, and one each time the
 /// program waited for changes or its download moves by
 /// [`WAITING_STEP_BYTES`]. The window writes the progress line from them,
@@ -240,7 +240,7 @@ fn worth_sending(
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
 }
 
-/// The `extract:progress` event of a run on `step` waiting for `program`'s
+/// The `desktop-job:progress` event of a run on `step` waiting for `program`'s
 /// download, `received` bytes in of `total`: marked by `waiting`, with no
 /// counts and the bytes in `bytes_done` and `bytes_total`.
 fn waiting_event(
@@ -248,8 +248,8 @@ fn waiting_event(
     program: Program,
     received: u64,
     total: Option<u64>,
-) -> ExtractProgressEvent {
-    ExtractProgressEvent {
+) -> ImportProgressEvent {
+    ImportProgressEvent {
         step: step.to_string(),
         done: 0,
         total: 0,

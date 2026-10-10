@@ -57,17 +57,18 @@ const saveRunRecordMock = vi.fn();
 const invokeStartImportRunLogMock = vi.fn();
 
 /**
- * `onExtractEvents` stands in for the real Tauri event listener. Its default
+ * `onDesktopJobEvents` stands in for the real Tauri event listener. Its default
  * implementation just captures the callbacks it was given (so a test can
  * fire `onProgress` manually to simulate an event arriving mid-call) and
  * resolves to a no-op unlisten function — every summarize call site now
  * subscribes and unsubscribes around its `invokeSummarizeStaging`, so this
  * has to resolve for those call sites to complete at all.
  */
-let lastExtractEventCallbacks: { onProgress?: (event: ImportProgressEvent) => void } | null = null;
-const onExtractEventsMock = vi.fn(
+let lastDesktopJobEventCallbacks: { onProgress?: (event: ImportProgressEvent) => void } | null =
+  null;
+const onDesktopJobEventsMock = vi.fn(
   async (callbacks: { onProgress?: (event: ImportProgressEvent) => void }) => {
-    lastExtractEventCallbacks = callbacks;
+    lastDesktopJobEventCallbacks = callbacks;
     return () => {};
   },
 );
@@ -93,8 +94,8 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   ffmpegMissing: (await importOriginal<typeof import("../../lib/tauri")>()).ffmpegMissing,
   invokeImessageBackupIdentities: (...args: unknown[]) =>
     invokeImessageBackupIdentitiesMock(...args),
-  onExtractEvents: (...args: [{ onProgress?: (event: ImportProgressEvent) => void }]) =>
-    onExtractEventsMock(...args),
+  onDesktopJobEvents: (...args: [{ onProgress?: (event: ImportProgressEvent) => void }]) =>
+    onDesktopJobEventsMock(...args),
 }));
 
 vi.mock("../../lib/useAccountProfile", () => ({
@@ -748,15 +749,15 @@ describe("useImportJob wiring", () => {
   });
 
   it("routes a progress event arriving during summarize to the staging row", async () => {
-    // `summarize_staging` (Rust) emits `extract:progress` with
+    // `summarize_staging` (Rust) emits `desktop-job:progress` with
     // `step: "check"` while it walks a big directory, but nothing used to
     // subscribe, so those events had nowhere to go and the wait for a huge directory's
     // Staging Review looked frozen. The mocked `invokeSummarizeStaging` fires one here,
-    // mid-call, through the callbacks `onExtractEvents` was given — exactly
+    // mid-call, through the callbacks `onDesktopJobEvents` was given — exactly
     // what the real Tauri event stream would do.
     invokeSummarizeStagingMock.mockReset();
     invokeSummarizeStagingMock.mockImplementationOnce(async () => {
-      lastExtractEventCallbacks?.onProgress?.({ step: "check", done: 50, total: 200 });
+      lastDesktopJobEventCallbacks?.onProgress?.({ step: "check", done: 50, total: 200 });
       return stagingSummary();
     });
     const { result } = renderHook(() => useImportJob());
@@ -1368,7 +1369,7 @@ describe("useImportJob wiring", () => {
 
   describe("an earlier part's Staging row about one conversation (#1688)", () => {
     // Part 1 records p.jpg as not decrypted while it writes c.jsonl. The
-    // record it writes then, before any `extract:file-written` for c.jsonl,
+    // record it writes then, before any `desktop-job:file-written` for c.jsonl,
     // is what the run directory holds if the app closes at that moment.
     const notDecryptedEvent: ImportIssueEvent = {
       kind: "error",
@@ -1716,9 +1717,9 @@ describe("useImportJob wiring", () => {
 
   it("unwedges on a cancelled Media stage instead of freezing the screen", async () => {
     // Critical: transcode_staging used to end a cancelled Media stage quietly (an
-    // extract:log line, Ok(())) with no extract:finished and no
-    // extract:error, so awaitDesktopJob's promise never settled and the
-    // screen was stuck. It now reports through extract:error like any other
+    // desktop-job:log line, Ok(())) with no desktop-job:finished and no
+    // desktop-job:error, so awaitDesktopJob's promise never settled and the
+    // screen was stuck. It now reports through desktop-job:error like any other
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();

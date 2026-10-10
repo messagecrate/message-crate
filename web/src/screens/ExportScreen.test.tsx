@@ -32,7 +32,7 @@ vi.mock("../lib/tauri", async (importOriginal) => {
     invokeCancel: (...args: unknown[]) => invokeCancel(...args),
     // The job's name comes first; the mocks below take what follows it.
     awaitDesktopJob: (_job: string, ...args: unknown[]) => awaitDesktopJob(...args),
-    onExtractEvents: vi.fn(async () => () => {}),
+    onDesktopJobEvents: vi.fn(async () => () => {}),
   };
 });
 

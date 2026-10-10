@@ -1,8 +1,13 @@
 //! JSON shapes sent to the UI as Tauri events.
 //!
 //! The core library has a similar error type, but it cannot be sent through
-//! Tauri because it is not serializable. These structs match the TypeScript
-//! types in `web/src/lib/types.ts`.
+//! Tauri because it is not serializable. Each struct has the same name and
+//! fields as its TypeScript type in `web/src/lib/types.ts`.
+//!
+//! Every desktop job (an Import Run's stages, an Export, a Convert) reports on
+//! the same `desktop-job:*` channels. The payloads only an Import Run sends are
+//! named `Import*Event`; the error every job can send is
+//! [`DesktopJobErrorEvent`].
 
 use message_crate_core::{
     IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
@@ -13,22 +18,22 @@ use tauri::{AppHandle, Emitter};
 use crate::tool_downloads::Program;
 
 /// One log line for the UI's log panel. Payload: `String`.
-pub const LOG: &str = "extract:log";
-/// Progress-bar numbers. Payload: [`ExtractProgressEvent`].
-pub const PROGRESS: &str = "extract:progress";
+pub const LOG: &str = "desktop-job:log";
+/// Progress-bar numbers. Payload: [`ImportProgressEvent`].
+pub const PROGRESS: &str = "desktop-job:progress";
 /// One skipped or failed item for the Import Errors list, sent as the job
 /// records it. Payload: an issue row.
-pub const ISSUE: &str = "extract:issue";
+pub const ISSUE: &str = "desktop-job:issue";
 /// The Upload finished with one conversation file. Payload:
-/// [`ExtractFileDoneEvent`].
-pub const FILE_DONE: &str = "extract:file-done";
+/// [`ImportFileDoneEvent`].
+pub const FILE_DONE: &str = "desktop-job:file-done";
 /// Staging's write queue finished with one conversation file. Payload:
-/// [`ExtractFileWrittenEvent`].
-pub const FILE_WRITTEN: &str = "extract:file-written";
+/// [`ImportFileWrittenEvent`].
+pub const FILE_WRITTEN: &str = "desktop-job:file-written";
 /// The job finished. Payload: the summary line or JSON the screen shows.
-pub const FINISHED: &str = "extract:finished";
-/// The job failed before it could finish. Payload: [`ExtractErrorEvent`].
-pub const ERROR: &str = "extract:error";
+pub const FINISHED: &str = "desktop-job:finished";
+/// The job failed before it could finish. Payload: [`DesktopJobErrorEvent`].
+pub const ERROR: &str = "desktop-job:error";
 
 /// Send one event to the UI. An emit fails only when no window is left to
 /// receive it; the job carries on, and the miss goes to the process log so it
@@ -44,7 +49,7 @@ fn undelivered_line(event: &str, error: &dyn std::fmt::Display) -> String {
     format!("The desktop app could not send the {event} event to its window: {error}")
 }
 
-/// An issue sink that sends each row to the window as `extract:issue` the
+/// An issue sink that sends each row to the window as `desktop-job:issue` the
 /// moment the job records it, and adds it to the Import Run's log, so the log
 /// holds what was skipped or failed and the Logs panel's level filter finds
 /// it.
@@ -53,13 +58,13 @@ pub fn run_issue_sink(app: &AppHandle, run_log: &crate::app_directories::RunLog)
     let run_log = run_log.clone();
     IssueSink::new(move |issue| {
         run_log.issue(&issue);
-        emit(&app, ISSUE, ExtractIssueEvent::from(&issue));
+        emit(&app, ISSUE, ImportIssueEvent::from(&issue));
     })
 }
 
 /// A progress sink that sends each count to the window as
-/// `extract:progress`, and each conversation file the write queue finishes
-/// as `extract:file-written`.
+/// `desktop-job:progress`, and each conversation file the write queue finishes
+/// as `desktop-job:file-written`.
 pub fn progress_sink(app: &AppHandle) -> ProgressSink {
     let app = app.clone();
     ProgressSink::new(move |event| match WindowEvent::from(event) {
@@ -71,15 +76,15 @@ pub fn progress_sink(app: &AppHandle) -> ProgressSink {
 /// What one of the exporters' progress events becomes in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WindowEvent {
-    /// A count for the progress bar (`extract:progress`).
-    Progress(ExtractProgressEvent),
-    /// A conversation file the write queue finished (`extract:file-written`).
-    FileWritten(ExtractFileWrittenEvent),
+    /// A count for the progress bar (`desktop-job:progress`).
+    Progress(ImportProgressEvent),
+    /// A conversation file the write queue finished (`desktop-job:file-written`).
+    FileWritten(ImportFileWrittenEvent),
 }
 
 /// Progress numbers the UI uses to update the progress bar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ExtractProgressEvent {
+pub struct ImportProgressEvent {
     /// Current pipeline stage: `setup`, `parse`, `attachments`, `prepare`,
     /// `check`, `media`, or `upload`.
     pub step: String,
@@ -104,7 +109,7 @@ pub struct ExtractProgressEvent {
     pub waiting: Option<Program>,
 }
 
-impl ExtractProgressEvent {
+impl ImportProgressEvent {
     /// A count-only event for `step`, with no bytes and no status.
     fn counts(step: &str, done: usize, total: usize) -> Self {
         Self {
@@ -125,9 +130,9 @@ impl ExtractProgressEvent {
 /// file is not a count, and goes to its own event.
 impl From<ProgressEvent> for WindowEvent {
     fn from(event: ProgressEvent) -> Self {
-        let counts = ExtractProgressEvent::counts;
+        let counts = ImportProgressEvent::counts;
         Self::Progress(match event {
-            ProgressEvent::Setup { label, step, total } => ExtractProgressEvent {
+            ProgressEvent::Setup { label, step, total } => ImportProgressEvent {
                 status: Some(label),
                 ..counts("setup", step, total)
             },
@@ -137,7 +142,7 @@ impl From<ProgressEvent> for WindowEvent {
                 total,
                 bytes_done,
                 bytes_total,
-            } => ExtractProgressEvent {
+            } => ImportProgressEvent {
                 bytes_done: Some(bytes_done),
                 bytes_total: Some(bytes_total),
                 ..counts("attachments", done, total)
@@ -145,7 +150,7 @@ impl From<ProgressEvent> for WindowEvent {
             ProgressEvent::Prepare { done, total } => counts("prepare", done, total),
             ProgressEvent::Media { done, total } => counts("media", done, total),
             ProgressEvent::FileWritten { file, status } => {
-                return Self::FileWritten(ExtractFileWrittenEvent { file, status });
+                return Self::FileWritten(ImportFileWrittenEvent { file, status });
             }
         })
     }
@@ -155,7 +160,7 @@ impl From<ProgressEvent> for WindowEvent {
 /// stage's [`RunIssue`], or from the Upload. Matches `ImportIssueEvent` in
 /// `web/src/lib/types.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ExtractIssueEvent {
+pub struct ImportIssueEvent {
     /// What the row is, sent as its lowercase word.
     pub kind: RunIssueKind,
     /// The step that raised it, such as `attachments`.
@@ -172,7 +177,7 @@ pub struct ExtractIssueEvent {
     pub conversation: Option<String>,
 }
 
-impl From<&RunIssue> for ExtractIssueEvent {
+impl From<&RunIssue> for ImportIssueEvent {
     fn from(issue: &RunIssue) -> Self {
         Self {
             kind: issue.kind,
@@ -189,7 +194,7 @@ impl From<&RunIssue> for ExtractIssueEvent {
 /// the run record the rows of an earlier stop about a conversation that is
 /// now on the server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ExtractFileDoneEvent {
+pub struct ImportFileDoneEvent {
     /// The conversation file, as the Upload's issue rows name it.
     pub file: String,
     /// `ok` (sent now), `skipped` (an earlier part of the run sent it), or
@@ -203,7 +208,7 @@ pub struct ExtractFileDoneEvent {
 /// drops an earlier part's row about a file this Staging wrote again
 /// (#1688).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct ExtractFileWrittenEvent {
+pub struct ImportFileWrittenEvent {
     /// The conversation file, as Staging's issue rows and the Upload name it.
     pub file: String,
     /// What the write queue did with the file: `written` or `skipped`, as
@@ -220,12 +225,12 @@ fn write_status<S: serde::Serializer>(status: &WriteStatus, out: S) -> Result<S:
     })
 }
 
-/// Failure details for the `extract:error` event.
+/// Failure details for the `desktop-job:error` event.
 ///
 /// When `user_message` is missing, it is left out of the JSON so the
 /// TypeScript type can treat it as optional.
 #[derive(Debug, Clone, Serialize)]
-pub struct ExtractErrorEvent {
+pub struct DesktopJobErrorEvent {
     /// Full error chain, for logs and the advanced-details view.
     pub detail: String,
     /// Friendlier message for the UI, when one is known.
@@ -234,7 +239,7 @@ pub struct ExtractErrorEvent {
 }
 
 /// A job's error, with its full chain as `detail` and no friendlier message.
-impl From<anyhow::Error> for ExtractErrorEvent {
+impl From<anyhow::Error> for DesktopJobErrorEvent {
     fn from(err: anyhow::Error) -> Self {
         Self {
             detail: format!("{err:#}"),
@@ -312,12 +317,12 @@ mod tests {
     fn an_undelivered_event_is_a_sentence() {
         assert_eq!(
             undelivered_line(LOG, &"no window"),
-            "The desktop app could not send the extract:log event to its window: no window"
+            "The desktop app could not send the desktop-job:log event to its window: no window"
         );
     }
 
     /// The window's progress payload for one of the counting events.
-    fn progress(event: ProgressEvent) -> ExtractProgressEvent {
+    fn progress(event: ProgressEvent) -> ImportProgressEvent {
         match WindowEvent::from(event) {
             WindowEvent::Progress(progress) => progress,
             other => panic!("not a count: {other:?}"),
@@ -401,7 +406,7 @@ mod tests {
     /// it again (#1688).
     #[test]
     fn a_staging_row_keeps_its_conversation() {
-        let json = serde_json::to_value(ExtractIssueEvent::from(&RunIssue {
+        let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
@@ -416,7 +421,7 @@ mod tests {
     /// issues have, so the Import Run lists both the same way.
     #[test]
     fn a_run_issue_is_sent_as_an_import_issue() {
-        let json = serde_json::to_value(ExtractIssueEvent::from(&RunIssue {
+        let json = serde_json::to_value(ImportIssueEvent::from(&RunIssue {
             kind: message_crate_core::RunIssueKind::Error,
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
