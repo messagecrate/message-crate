@@ -58,7 +58,7 @@ function androidSmsSource(args: {
     showsAttachmentOptions: true,
     asksOwnerPhones: true,
     asksOwnerEmails: args.asksOwnerEmails,
-    asksAccountPhone: false,
+    asksWhatsappOwnerPhone: false,
     rememberedPaths: [],
     needsWtsexporter: false,
     processingOptions: () => ["obfuscate"],
@@ -69,7 +69,7 @@ function androidSmsSource(args: {
         ownerEmails: form.ownerEmails,
         obfuscate: form.obfuscate,
       }),
-    backupIdentityRead: () => null,
+    appleIdentityRead: () => null,
     snapshotSecret: () => null,
     backupField: () => args.backupField,
     readiness: (input) => ({

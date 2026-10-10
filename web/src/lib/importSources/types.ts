@@ -35,11 +35,12 @@ export type SnapshotSecret = "backupPassword" | "whatsappKey";
 export type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone";
 
 /**
- * How a run reads the backup's identities before it starts, so the person
- * can add the ones missing from their profile. `ios` is true for an iPhone
- * backup and false for a Messages database.
+ * How a run reads an Apple Messages backup's identities before it starts,
+ * through the Apple Messages Reader, so the person can add the ones missing
+ * from their profile. `ios` is true for an iPhone backup and false for a
+ * Messages database.
  */
-export type BackupIdentityRead = { ios: boolean };
+export type AppleIdentityRead = { ios: boolean };
 
 /** The fields `extract` reads for one source, beside the ones every run sends. */
 export type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "output_dir">>;
@@ -117,10 +118,11 @@ export type ImportSourceDescriptor<M extends string = string> = {
   /** True when the form also asks for the owner's email addresses. */
   asksOwnerEmails: boolean;
   /**
-   * True when the form asks for the one phone number the backup's account
-   * is registered to. The profile's first phone pre-fills it.
+   * True when the form asks for the WhatsApp phone number the backup's
+   * account is registered to (the form's `whatsappOwnerPhone`). The
+   * profile's first phone pre-fills it.
    */
-  asksAccountPhone: boolean;
+  asksWhatsappOwnerPhone: boolean;
   /**
    * The path fields, beside the backup, that the form remembers for each of
    * this source's methods. A field not listed is cleared when the source is
@@ -134,10 +136,12 @@ export type ImportSourceDescriptor<M extends string = string> = {
   /** The fields `extract` needs from a form whose `source` is one of `methods`. */
   extractFields(form: ImportJobFormValues & { source: M }): ExtractFields;
   /**
-   * How a new run of this method reads the backup's identities before it
-   * starts, or null for a method whose run does not read them.
+   * How a new run of this method reads the backup's identities with the
+   * Apple Messages Reader before it starts, or null for a method whose run
+   * does not read them. The reader reads only Apple Messages backups, so
+   * every other source returns null.
    */
-  backupIdentityRead(method: M): BackupIdentityRead | null;
+  appleIdentityRead(method: M): AppleIdentityRead | null;
   /** The secret this method's extract reads, or null for none. */
   snapshotSecret(method: M): SnapshotSecret | null;
   /** How the form asks for this method's backup. */

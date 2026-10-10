@@ -1756,7 +1756,7 @@ export function useImportJob() {
   ): Promise<void> {
     let identities: string[] | null = null;
     const identityRead =
-      resume || resumeWrite ? null : importSourceFor(form.source).backupIdentityRead(form.source);
+      resume || resumeWrite ? null : importSourceFor(form.source).appleIdentityRead(form.source);
     if (identityRead) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run

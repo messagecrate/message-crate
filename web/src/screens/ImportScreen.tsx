@@ -453,12 +453,11 @@ export default function ImportScreen() {
   }
 
   // The profile's phones seed the owner fields: the owner phone list of a
-  // source that asks for it, and the account's one number of a source that
-  // asks for that instead.
+  // source that asks for it, and the WhatsApp number of a source that asks
+  // for that instead.
   useEffect(() => {
     const descriptor = importSourceFor(source);
-    const asksAccountPhone = descriptor.asksAccountPhone;
-    if (!descriptor.asksOwnerPhones && !asksAccountPhone) {
+    if (!descriptor.asksOwnerPhones && !descriptor.asksWhatsappOwnerPhone) {
       setProfilePhones([]);
       setProfilePhonesReady(false);
       setProfilePhonesError(false);
@@ -480,7 +479,7 @@ export default function ImportScreen() {
         setProfilePhones(phones);
         setProfilePhonesError(false);
         setProfilePhonesReady(true);
-        if (asksAccountPhone) {
+        if (descriptor.asksWhatsappOwnerPhone) {
           const [first] = phones;
           if (first === undefined || whatsappOwnerPhoneSeededRef.current) return;
           setWhatsappOwnerPhone((current) => {

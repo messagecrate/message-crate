@@ -190,7 +190,7 @@ describe("rememberedPaths", () => {
   });
 });
 
-describe("backupIdentityRead", () => {
+describe("appleIdentityRead", () => {
   it("reads the identities of an Apple Messages backup only, as an iPhone backup for the iPhone method", () => {
     const expected: Record<string, { ios: boolean } | null> = {
       "imessage-ios": { ios: true },
@@ -206,7 +206,7 @@ describe("backupIdentityRead", () => {
     };
     expect(Object.keys(expected).sort()).toEqual([...allMethods].sort());
     for (const method of allMethods) {
-      expect(importSourceFor(method).backupIdentityRead(method), method).toEqual(expected[method]);
+      expect(importSourceFor(method).appleIdentityRead(method), method).toEqual(expected[method]);
     }
   });
 });
