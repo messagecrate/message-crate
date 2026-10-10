@@ -131,6 +131,7 @@ describe.each(BUBBLES.filter((b) => b.drawsReactions))(
         imessageMessage({ source, service, text: "", tapbacks: [LOVED], deletion: "unsent" }),
       );
 
+      expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
       expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
     });
   },
