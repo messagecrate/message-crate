@@ -80,7 +80,7 @@ describe("TimeZoneField", () => {
     const user = setupUser();
     render(<TimeZoneField value="America/Chicago" onChange={onChange} />);
     await fill(user, field(), "qqqzzz");
-    expect(screen.getByText("No time zone matches.")).toBeTruthy();
+    expect(screen.getByText("No time zone matches")).toBeTruthy();
     await user.tab();
     expect(field().value).toMatch(/Central Time/);
     expect(onChange).not.toHaveBeenCalled();
