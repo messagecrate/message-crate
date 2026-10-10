@@ -133,6 +133,59 @@ impl std::str::FromStr for ImportMode {
     }
 }
 
+/// What one row a run reports for its Import Run's record is: `skip` when
+/// the run left the item out, `error` when the item failed, `note` when the
+/// run did something with it worth knowing that is not a failure, and
+/// `resolved` when an earlier row about the same item no longer holds.
+// Every crate that sends or reads a row (the exporters, Media, the Upload,
+// the desktop app and the server) takes this type, so a misspelt kind does
+// not compile. `message-crate-core` re-exports it beside its `RunIssue`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "lowercase")]
+pub enum RunIssueKind {
+    /// The run left the item out and went on without it.
+    Skip,
+    /// The item failed.
+    Error,
+    /// The run did something with the item that is worth knowing but is not
+    /// a failure. The Import Run lists notes apart from its Import Errors.
+    Note,
+    /// An earlier row with the same step and item no longer holds, as when
+    /// Media converts a file on a later try. The window removes that row;
+    /// a resolved row is never kept.
+    Resolved,
+}
+
+impl RunIssueKind {
+    /// The wire form: `skip`, `error`, `note` or `resolved`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Skip => "skip",
+            Self::Error => "error",
+            Self::Note => "note",
+            Self::Resolved => "resolved",
+        }
+    }
+
+    /// Read a sent or stored word; anything else names no kind.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "skip" => Some(Self::Skip),
+            "error" => Some(Self::Error),
+            "note" => Some(Self::Note),
+            "resolved" => Some(Self::Resolved),
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for RunIssueKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 #[cfg(test)]
 mod import_mode_tests {
     use super::*;
@@ -156,6 +209,26 @@ mod import_mode_tests {
         let parsed: ImportMode = serde_json::from_str("\"append\"").unwrap();
         assert_eq!(parsed, ImportMode::Append);
         assert_eq!(ImportMode::Append.to_string(), "append");
+    }
+
+    /// `as_str` and `parse` are written by hand beside the serde name: the
+    /// server takes a kind as JSON, stores it with `as_str` and reads it
+    /// back with `parse`, so the three must not drift apart.
+    #[test]
+    fn a_run_issue_kind_is_the_same_word_in_json_and_in_the_database() {
+        for kind in [
+            RunIssueKind::Skip,
+            RunIssueKind::Error,
+            RunIssueKind::Note,
+            RunIssueKind::Resolved,
+        ] {
+            let json = serde_json::to_string(&kind).unwrap();
+            assert_eq!(json, format!("\"{}\"", kind.as_str()));
+            assert_eq!(serde_json::from_str::<RunIssueKind>(&json).unwrap(), kind);
+            assert_eq!(RunIssueKind::parse(kind.as_str()), Some(kind));
+        }
+        assert!(serde_json::from_str::<RunIssueKind>("\"warning\"").is_err());
+        assert_eq!(RunIssueKind::parse("warning"), None);
     }
 }
 

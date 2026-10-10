@@ -4,6 +4,7 @@
 //! `.import-state.jsonl`, a local log of which conversations and files
 //! were already uploaded.
 
+use message_crate_core::RunIssueKind;
 use message_crate_import::ImportMode;
 use std::fs;
 use std::io::Write;
@@ -2331,7 +2332,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     import.assert();
     assert!(
         issues.iter().any(|(kind, item, reason)| {
-            kind == "skip"
+            *kind == RunIssueKind::Skip
                 && item.contains("big.bin")
                 && reason.contains("over the configured asset max")
         }),
@@ -2451,7 +2452,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
     import.assert();
     assert!(
         issues.iter().any(|(kind, item, reason)| {
-            kind == "skip" && item.contains("gone.bin") && reason.contains("not found")
+            *kind == RunIssueKind::Skip && item.contains("gone.bin") && reason.contains("not found")
         }),
         "expected skip issue for missing file, got {issues:?}"
     );
@@ -2590,7 +2591,9 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     import.assert();
     assert!(
         issues.iter().any(|(kind, item, reason)| {
-            kind == "skip" && item.contains("mystery.bin") && reason.contains("no file path")
+            *kind == RunIssueKind::Skip
+                && item.contains("mystery.bin")
+                && reason.contains("no file path")
         }),
         "expected skip issue for pathless attachment, got {issues:?}"
     );

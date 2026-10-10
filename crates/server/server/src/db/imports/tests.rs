@@ -47,7 +47,7 @@ async fn complete_import_persists_timings_and_issues() {
             upload_ms: Some(8_000),
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![ImportIssueInput {
-                kind: "skip".into(),
+                kind: RunIssueKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
@@ -75,62 +75,6 @@ async fn complete_import_persists_timings_and_issues() {
             .await
             .unwrap();
     assert_eq!(issue_count, 1);
-}
-
-#[tokio::test]
-async fn complete_import_rejects_invalid_issue_kind() {
-    let (pool, _dir) = setup_accounts_only().await;
-    let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
-
-    let err = complete_import(
-        &mut conn,
-        ACCOUNT_ID,
-        import_id,
-        &CompleteImportArgs {
-            status: "failed".into(),
-            message_count: None,
-            attachment_count: None,
-            bytes_uploaded: None,
-            duration_ms: None,
-            parse_ms: None,
-            attachments_ms: None,
-            prepare_ms: None,
-            upload_ms: None,
-            summary_json: None,
-            issues: vec![ImportIssueInput {
-                kind: "warning".into(),
-                stage: crate::db::imports::ImportIssueStage::Upload,
-                item: "archive.zip".into(),
-                reason: "not allowed".into(),
-            }],
-            notes: Vec::new(),
-        },
-    )
-    .await
-    .unwrap_err();
-
-    assert!(matches!(
-        err,
-        ImportLookupError::InvalidIssueKind { ref kind } if kind == "warning"
-    ));
-
-    let issue_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM import_issues WHERE import_id = $1")
-            .bind(import_id)
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-    assert_eq!(issue_count, 0);
-
-    let status: String = sqlx::query_scalar("SELECT status FROM imports WHERE id = $1")
-        .bind(import_id)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(status, "running");
 }
 
 #[tokio::test]
@@ -190,13 +134,13 @@ async fn list_import_issues_returns_them_oldest_first() {
             summary_json: Some(r#"{"parse":{"messages":10}}"#.into()),
             issues: vec![
                 ImportIssueInput {
-                    kind: "skip".into(),
+                    kind: RunIssueKind::Skip,
                     stage: crate::db::imports::ImportIssueStage::Media,
                     item: "photo.heic".into(),
                     reason: "convert failed".into(),
                 },
                 ImportIssueInput {
-                    kind: "error".into(),
+                    kind: RunIssueKind::Error,
                     stage: crate::db::imports::ImportIssueStage::Upload,
                     item: "archive.zip".into(),
                     reason: "upload failed".into(),
@@ -215,9 +159,9 @@ async fn list_import_issues_returns_them_oldest_first() {
     assert_eq!(row.parse_ms, Some(18_000));
     let issues = list_import_issues(&mut conn, import_id).await.unwrap();
     assert_eq!(issues.len(), 2);
-    assert_eq!(issues[0].kind, "skip");
+    assert_eq!(issues[0].kind, RunIssueKind::Skip);
     assert_eq!(issues[0].stage, crate::db::imports::ImportIssueStage::Media);
-    assert_eq!(issues[1].kind, "error");
+    assert_eq!(issues[1].kind, RunIssueKind::Error);
     assert_eq!(
         issues[1].stage,
         crate::db::imports::ImportIssueStage::Upload
@@ -513,7 +457,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let with_issue = || CompleteImportArgs {
         status: "completed_with_issues".into(),
         issues: vec![ImportIssueInput {
-            kind: "skip".into(),
+            kind: RunIssueKind::Skip,
             stage: crate::db::imports::ImportIssueStage::Media,
             item: "photo.heic".into(),
             reason: "convert failed".into(),

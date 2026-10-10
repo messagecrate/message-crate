@@ -144,7 +144,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
     assert_eq!(
         *issues.lock().unwrap(),
         [RunIssue {
-            kind: "note".into(),
+            kind: message_crate_core::RunIssueKind::Note,
             step: "parse".into(),
             item: "Media/WhatsApp Images/IMG-1.jpg".into(),
             reason:

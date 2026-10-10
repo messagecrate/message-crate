@@ -32,6 +32,7 @@ use crate::db::maintenance;
 use crate::db::schema;
 use crate::progress::Progress;
 use media::MediaMode;
+use message_crate_api_types::RunIssueKind;
 
 pub mod contact_name;
 pub mod failure;
@@ -768,9 +769,11 @@ fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssueRequest {
     /// `error` when the item failed, or `skip` when the run left it out
-    /// without importing it, such as an attachment it did not upload. Any
-    /// other word is refused with `422 Unprocessable Entity`.
-    pub(crate) kind: String,
+    /// without importing it, such as an attachment it did not upload. Every
+    /// other kind is refused with `422 Unprocessable Entity`: a note goes in
+    /// `notes`, and the desktop app applies a `resolved` row to the record
+    /// before it sends it.
+    pub(crate) kind: RunIssueKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an
@@ -780,9 +783,20 @@ pub(crate) struct ImportIssueRequest {
     pub(crate) reason: String,
 }
 
+/// Refuse an issue that is not an Import Error: the run stores only
+/// `error` and `skip` rows as its issues. Checked before a connection is
+/// opened, so a refused request writes nothing.
 fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
     for issue in issues {
-        crate::db::imports::validate_issue_kind(&issue.kind)?;
+        match issue.kind {
+            RunIssueKind::Error | RunIssueKind::Skip => {}
+            RunIssueKind::Note | RunIssueKind::Resolved => {
+                return Err(ApiError::validation(format!(
+                    "invalid import issue kind '{}'; expected 'error' or 'skip'",
+                    issue.kind
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -873,7 +887,7 @@ pub(crate) struct ImportNote {
 pub(crate) struct ImportIssue {
     /// `error` when the item failed, or `skip` when the run left it out
     /// without importing it.
-    pub(crate) kind: String,
+    pub(crate) kind: RunIssueKind,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an

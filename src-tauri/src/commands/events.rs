@@ -4,7 +4,9 @@
 //! Tauri because it is not serializable. These structs match the TypeScript
 //! types in `web/src/lib/types.ts`.
 
-use message_crate_core::{IssueSink, ProgressEvent, ProgressSink, RunIssue, WriteStatus};
+use message_crate_core::{
+    IssueSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -154,8 +156,8 @@ impl From<ProgressEvent> for WindowEvent {
 /// `web/src/lib/types.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExtractIssueEvent {
-    /// `skip` when the item was left out, `error` when it failed.
-    pub kind: String,
+    /// What the row is, sent as its lowercase word.
+    pub kind: RunIssueKind,
     /// The step that raised it, such as `attachments`.
     pub step: String,
     /// What was affected.
@@ -173,7 +175,7 @@ pub struct ExtractIssueEvent {
 impl From<&RunIssue> for ExtractIssueEvent {
     fn from(issue: &RunIssue) -> Self {
         Self {
-            kind: issue.kind.clone(),
+            kind: issue.kind,
             step: issue.step.clone(),
             item: issue.item.clone(),
             reason: issue.reason.clone(),
@@ -347,7 +349,7 @@ mod tests {
     #[test]
     fn a_staging_row_keeps_its_conversation() {
         let json = serde_json::to_value(ExtractIssueEvent::from(&RunIssue {
-            kind: "error".into(),
+            kind: message_crate_core::RunIssueKind::Error,
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
@@ -362,7 +364,7 @@ mod tests {
     #[test]
     fn a_run_issue_is_sent_as_an_import_issue() {
         let json = serde_json::to_value(ExtractIssueEvent::from(&RunIssue {
-            kind: "error".into(),
+            kind: message_crate_core::RunIssueKind::Error,
             step: "attachments".into(),
             item: "/backup/IMG_0001.MOV".into(),
             reason: "could not be decrypted: No space left on device".into(),
