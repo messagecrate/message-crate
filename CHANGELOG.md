@@ -26,8 +26,9 @@ released versions carry their date on the heading.
   now shows its reactions, each stored under the reactor's phone number, or
   under their internal WhatsApp id when the backup has no number for them.
   Your own reactions are yours. Reactions that were taken back are left out.
-  The raw reaction names that an import used to keep beside each message are
-  no longer kept, because the reaction itself now is (#1646).
+  The `reactions` entry in each WhatsApp message's source fields, a copy of
+  the reactor names and emoji, is gone, because the reactions themselves are
+  on the message (#1646).
 
 - 2026-10-08: **The Import form says when a program the import needs is
   missing, with Try again.** A WhatsApp import needs wtsexporter, and
