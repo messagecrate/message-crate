@@ -2723,6 +2723,10 @@ async fn import_slots_belong_to_one_server() {
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
         "{text}"
     );
+    let problem = crate::test_support::problem(&text);
+    assert_eq!(problem.kind, crate::problem::INTERNAL_TYPE, "{text}");
+    assert_eq!(problem.status, 500, "{text}");
+    assert!(problem.request_id.is_some(), "no request_id: {text}");
 }
 
 /// A schema-4 header was read: version 4 named every identity a `handle`,
