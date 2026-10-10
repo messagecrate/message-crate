@@ -5346,7 +5346,7 @@ export interface components {
              */
             conversation_id: number | null;
             /** @description The title the export gave the conversation, when it gave one. */
-            conversation_title: string | null;
+            group_title: string | null;
             /**
              * Format: int64
              * @description Attachment id.

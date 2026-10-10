@@ -2337,7 +2337,7 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
     assert_eq!(owner_top[0]["mime_type"], "video/quicktime");
     assert_eq!(owner_top[0]["size_bytes"], 3000);
     for file in owner_top {
-        for held_back in ["conversation_id", "conversation_title", "chat_identifier"] {
+        for held_back in ["conversation_id", "group_title", "chat_identifier"] {
             assert_eq!(
                 file.get(held_back),
                 Some(&serde_json::Value::Null),

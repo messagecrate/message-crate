@@ -19386,7 +19386,7 @@
           "size_bytes",
           "chat_identifier",
           "conversation_id",
-          "conversation_title",
+          "group_title",
           "mime_type",
           "original_name"
         ],
@@ -19406,7 +19406,7 @@
             "format": "int64",
             "description": "Conversation that holds the attachment. Like the two fields after it,\n`null` when the owner reads another account's storage: which\nconversation a file is in, and who it is with, is the holder's."
           },
-          "conversation_title": {
+          "group_title": {
             "type": [
               "string",
               "null"
