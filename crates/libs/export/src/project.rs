@@ -557,12 +557,7 @@ mod tests {
     /// under the person who reacted.
     #[test]
     fn a_reply_with_reactions_keeps_its_reply_to_and_reactions() {
-        let mut msg = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut msg = seed_message_with_participant(sam());
         msg.timestamp = "1426183522250".into();
         msg.reply_to = Some(message_crate_api_types::ReplyTo {
             guid: Some("origin-guid".into()),
@@ -626,12 +621,7 @@ mod tests {
     /// attachment across its messages.
     #[test]
     fn an_sms_with_a_file_is_an_mms_and_counts_toward_the_document() {
-        let mut sms = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut sms = seed_message_with_participant(sam());
         sms.service = Some("SMS".into());
         let plain = to_ir_message(&sms, false).unwrap();
         assert_eq!(plain.message_kind, IrMessageKind::Sms);
@@ -653,19 +643,13 @@ mod tests {
     /// from one, and nothing when any two differ or none says.
     #[test]
     fn a_document_says_its_backup_only_when_every_message_came_from_it() {
-        let participant = || Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        };
         let backup_of = |seed: &Message| {
             build_document("imessage", seed, vec![])
                 .export
                 .backup_taken_at_unix_ms
         };
         let dated = |at: Option<&str>| {
-            let mut msg = seed_message_with_participant(participant());
+            let mut msg = seed_message_with_participant(sam());
             msg.backup_taken_at = at.map(str::to_string);
             msg
         };
@@ -697,12 +681,7 @@ mod tests {
     /// `is_group`, never from reading `conversation_type` again.
     #[test]
     fn a_document_is_a_group_when_the_server_says_so() {
-        let mut seed = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut seed = seed_message_with_participant(sam());
         seed.conversation.conversation_type = " group ".into();
         seed.conversation.is_group = false;
         let doc = build_document("imessage", &seed, vec![]);
@@ -742,12 +721,7 @@ mod tests {
     /// An announcement keeps its text; one with no text carries nothing.
     #[test]
     fn an_announcement_keeps_its_text() {
-        let mut msg = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut msg = seed_message_with_participant(sam());
         msg.is_announcement = true;
         msg.text = Some("Sam named the conversation \"Book Club\"".into());
 
@@ -773,13 +747,7 @@ mod tests {
     /// millisecond time that ends in `.000` as milliseconds.
     #[test]
     fn a_message_keeps_the_precision_the_server_stored() {
-        let participant = Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        };
-        let mut msg = seed_message_with_participant(participant);
+        let mut msg = seed_message_with_participant(sam());
         msg.timestamp = "2015-03-12T18:05:22.000Z".into();
         for (stored, written) in [
             (
@@ -800,12 +768,7 @@ mod tests {
 
     #[test]
     fn maps_basic_message() {
-        let mut msg = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut msg = seed_message_with_participant(sam());
         msg.guid = "basic-guid".into();
         msg.text = Some("hello".into());
         msg.service = Some("iMessage".into());
@@ -834,12 +797,7 @@ mod tests {
     /// the same mark, and a message with none carries none.
     #[test]
     fn a_deletion_mark_is_exported_as_the_same_mark() {
-        let mut msg = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut msg = seed_message_with_participant(sam());
         assert_eq!(to_ir_message(&msg, false).unwrap().deletion, None);
         for (api, ir) in [
             (
@@ -860,12 +818,7 @@ mod tests {
     /// message with its part, text and time, in the order the server gave.
     #[test]
     fn earlier_versions_are_exported_with_their_times() {
-        let mut msg = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let mut msg = seed_message_with_participant(sam());
         assert!(to_ir_message(&msg, false).unwrap().edits.is_empty());
         msg.earlier_versions = vec![
             message_crate_api_types::EarlierVersion {
@@ -915,12 +868,7 @@ mod tests {
     /// IR participant's display name.
     #[test]
     fn participants_from_seed_carries_a_real_name() {
-        let seed = seed_message_with_participant(Participant {
-            identity: Some("+1".into()),
-            name: "Sam".into(),
-            service: None,
-            contact_id: None,
-        });
+        let seed = seed_message_with_participant(sam());
         let participants = participants_from_seed(&seed);
         assert_eq!(participants[0].identity.as_deref(), Some("+1"));
         assert_eq!(participants[0].display_name.as_deref(), Some("Sam"));
@@ -939,6 +887,16 @@ mod tests {
         });
         let participants = participants_from_seed(&seed);
         assert_eq!(participants[0].display_name, None);
+    }
+
+    /// Sam at `+1`, the participant most of these tests seed with.
+    fn sam() -> Participant {
+        Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        }
     }
 
     /// A minimal `Message` carrying exactly one conversation participant.
