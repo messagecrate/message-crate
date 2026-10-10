@@ -412,6 +412,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
             media,
             skip_dedupe: args.skip_dedupe,
             window_secs: args.window_secs,
+            progress: crate::progress::Progress::Print,
         },
     )
     .await?;
@@ -556,8 +557,14 @@ async fn run_dedupe(args: DedupeArgs) -> Result<()> {
         }
     );
 
-    let stats =
-        crate::dedupe::dedupe_cross_source(&mut conn, account, None, args.window_secs).await?;
+    let stats = crate::dedupe::dedupe_cross_source(
+        &mut conn,
+        account,
+        None,
+        args.window_secs,
+        crate::progress::Progress::Print,
+    )
+    .await?;
     print!("{}", format_dedupe_stats(&stats));
     drop(conn);
     opened.close().await;

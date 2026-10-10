@@ -73,17 +73,20 @@ fn run_sends_an_import_error_for_an_unreadable_csv_and_a_note_for_a_name_only_ch
     let broken = input.join("broken.csv").display().to_string();
     let error = issues
         .iter()
-        .find(|i| i.kind == "error")
+        .find(|i| i.kind == message_crate_core::RunIssueKind::Error)
         .expect("an error row");
     assert_eq!(
         (error.step.as_str(), error.item.as_str()),
         ("parse", broken.as_str())
     );
-    let notes: Vec<&RunIssue> = issues.iter().filter(|i| i.kind == "note").collect();
+    let notes: Vec<&RunIssue> = issues
+        .iter()
+        .filter(|i| i.kind == message_crate_core::RunIssueKind::Note)
+        .collect();
     assert_eq!(
         notes,
         [&RunIssue {
-            kind: "note".into(),
+            kind: message_crate_core::RunIssueKind::Note,
             step: "parse".into(),
             item: format!("{} (Mystery Person)", input.join("all_conversations.csv").display()),
             reason: "This chat names its person with no phone number or email address, so the conversation is kept under the name alone.".into(),

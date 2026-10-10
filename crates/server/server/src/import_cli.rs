@@ -15,6 +15,7 @@ use crate::imports_api::{
 use crate::jsonl;
 use crate::models::ExportRecord;
 use crate::open_db::OpenDb;
+use crate::progress::Progress;
 use media::MediaMode;
 
 /// Options for a CLI directory import.
@@ -36,6 +37,9 @@ pub struct CliImportOptions {
     pub skip_dedupe: bool,
     /// Near-time window in seconds for dedupe Pass B.
     pub window_secs: i64,
+    /// Where the import and the dedupe say how far they have got: standard
+    /// output for the `import` command.
+    pub progress: Progress,
 }
 
 /// Counts and inputs reported by a CLI directory import.
@@ -132,7 +136,16 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCo
         None
     } else {
         // The command's summary gives these counts, so nothing is printed here.
-        Some(dedupe::dedupe_cross_source(&mut conn, opts.account_id, None, opts.window_secs).await?)
+        Some(
+            dedupe::dedupe_cross_source(
+                &mut conn,
+                opts.account_id,
+                None,
+                opts.window_secs,
+                opts.progress,
+            )
+            .await?,
+        )
     };
 
     Ok(CliImportCounts {
@@ -204,6 +217,7 @@ async fn import_under_session(
         media: opts.media,
         wipe_sources: Some(vec![source.to_string()]),
         phone_country: None,
+        progress: opts.progress,
     };
     let result = imports_api::import_jsonl_files_on_conn(
         conn,
@@ -343,6 +357,7 @@ mod tests {
             media: MediaMode::Clone,
             skip_dedupe: true,
             window_secs: 2,
+            progress: Progress::Log,
         };
         (opened, opts)
     }

@@ -384,13 +384,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
         })),
         issues: vec![
             ImportIssueRequest {
-                kind: "skip".into(),
+                kind: message_crate_api_types::RunIssueKind::Skip,
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             },
             ImportIssueRequest {
-                kind: "error".into(),
+                kind: message_crate_api_types::RunIssueKind::Error,
                 stage: crate::db::imports::ImportIssueStage::Upload,
                 item: "archive.zip".into(),
                 reason: "upload failed".into(),
@@ -429,12 +429,18 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     assert_eq!(value.run.upload_ms, Some(8_000));
     assert_eq!(value.run.summary["parse"]["messages"], 10);
     assert_eq!(value.issues.len(), 2);
-    assert_eq!(value.issues[0].kind, "skip");
+    assert_eq!(
+        value.issues[0].kind,
+        message_crate_api_types::RunIssueKind::Skip
+    );
     assert_eq!(
         value.issues[0].stage,
         crate::db::imports::ImportIssueStage::Media
     );
-    assert_eq!(value.issues[1].kind, "error");
+    assert_eq!(
+        value.issues[1].kind,
+        message_crate_api_types::RunIssueKind::Error
+    );
     assert_eq!(
         value.issues[1].stage,
         crate::db::imports::ImportIssueStage::Upload
@@ -502,8 +508,10 @@ async fn imports_complete_rejects_unknown_status() {
     assert_eq!(status, "running");
 }
 
+/// A note belongs in the request's `notes`: sent as an issue, it is refused
+/// before the run is written.
 #[tokio::test]
-async fn imports_complete_rejects_invalid_issue_kind_before_db_write() {
+async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
     let (_dir, state, token, import_id) = test_state().await;
     let body = CompleteImportRequest {
         status: "completed".into(),
@@ -515,7 +523,7 @@ async fn imports_complete_rejects_invalid_issue_kind_before_db_write() {
         upload_ms: Some(8_000),
         summary: None,
         issues: vec![ImportIssueRequest {
-            kind: "warning".into(),
+            kind: message_crate_api_types::RunIssueKind::Note,
             stage: crate::db::imports::ImportIssueStage::Upload,
             item: "archive.zip".into(),
             reason: "not allowed".into(),

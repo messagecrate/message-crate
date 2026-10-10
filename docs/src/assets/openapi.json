@@ -15406,7 +15406,7 @@
             "description": "What the issue is about, such as a conversation file or an\nattachment's path."
           },
           "kind": {
-            "type": "string",
+            "$ref": "#/components/schemas/RunIssueKind",
             "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it."
           },
           "reason": {
@@ -15434,8 +15434,8 @@
             "description": "What the issue is about, such as a conversation file or an\nattachment's path."
           },
           "kind": {
-            "type": "string",
-            "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it, such as an attachment it did not upload. Any\nother word is refused with `422 Unprocessable Entity`."
+            "$ref": "#/components/schemas/RunIssueKind",
+            "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it, such as an attachment it did not upload. Every\nother kind is refused with `422 Unprocessable Entity`: a note goes in\n`notes`, and the desktop app applies a `resolved` row to the record\nbefore it sends it."
           },
           "reason": {
             "type": "string",
@@ -19102,6 +19102,16 @@
         "enum": [
           "session",
           "api_token"
+        ]
+      },
+      "RunIssueKind": {
+        "type": "string",
+        "description": "What one row a run reports for its Import Run's record is: `skip` when\nthe run left the item out, `error` when the item failed, `note` when the\nrun did something with it worth knowing that is not a failure, and\n`resolved` when an earlier row about the same item no longer holds.",
+        "enum": [
+          "skip",
+          "error",
+          "note",
+          "resolved"
         ]
       },
       "RunStatus": {
