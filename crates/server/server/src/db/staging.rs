@@ -627,36 +627,24 @@ pub async fn add_staged_copy_mark(
     backup_taken_at: Option<&StoredTime>,
 ) -> Result<()> {
     let undated_deletion = deletion.filter(|_| backup_taken_at.is_none());
+    let copy = MarkSql {
+        backup_taken_at: "$1",
+        deletion: "$2",
+        undated_deletion: "$3",
+    };
+    let held = MarkSql {
+        backup_taken_at: "backup_taken_at",
+        deletion: "deletion",
+        undated_deletion: "undated_deletion",
+    };
     let sql = format!(
         "UPDATE staging_messages \
          SET deletion = {mark}, \
              undated_deletion = {undated}, \
              backup_taken_at = CASE WHEN {later} THEN $1 ELSE backup_taken_at END \
          WHERE id = $4",
-        mark = copy_mark_sql(
-            &MarkSql {
-                backup_taken_at: "$1",
-                deletion: "$2",
-                undated_deletion: "$3",
-            },
-            &MarkSql {
-                backup_taken_at: "backup_taken_at",
-                deletion: "deletion",
-                undated_deletion: "undated_deletion",
-            },
-        ),
-        undated = kept_undated_mark_sql(
-            &MarkSql {
-                backup_taken_at: "$1",
-                deletion: "$2",
-                undated_deletion: "$3",
-            },
-            &MarkSql {
-                backup_taken_at: "backup_taken_at",
-                deletion: "deletion",
-                undated_deletion: "undated_deletion",
-            },
-        ),
+        mark = copy_mark_sql(&copy, &held),
+        undated = kept_undated_mark_sql(&copy, &held),
         later = later_dated_backup_sql("$1", "backup_taken_at"),
     );
     sqlx::query(&sql)
