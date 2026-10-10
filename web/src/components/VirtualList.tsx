@@ -13,7 +13,7 @@ export type VisibleRange = {
   end: number;
 };
 
-type VirtualListProps = {
+type VirtualListComponentProps = {
   count: number;
   estimateSize?: number;
   /**
@@ -75,7 +75,7 @@ export default function VirtualList({
   empty,
   footer,
   visibleBottomInset = 0,
-}: VirtualListProps) {
+}: VirtualListComponentProps) {
   const parentRef = useRef<HTMLDivElement | null>(null);
   const onRangeRef = useRef(onVisibleRangeChange);
   onRangeRef.current = onVisibleRangeChange;
