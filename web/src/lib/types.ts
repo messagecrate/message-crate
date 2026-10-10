@@ -44,9 +44,9 @@ export type FreeTextTerm = Schema["FreeTextTerm"];
 export type AttachmentMediaMode = "copy" | "convert" | "compress" | "skip";
 
 /**
- * The four attachment choices: what happens to attachments, and the three
- * limits Compress works to. The names match the import's form values, so the
- * choices spread into them as they are.
+ * The four attachment choices an import is started with: what happens to
+ * attachments, and the three limits Compress works to. The extract builders
+ * turn them into the `attachment_media` and `media_*` fields of `ExtractConfig`.
  */
 export type AttachmentChoices = {
   attachmentMedia: AttachmentMediaMode;
