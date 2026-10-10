@@ -23,8 +23,9 @@ pub mod client;
 #[path = "../../src/test_support/lines.rs"]
 pub mod lines;
 
-// Only the tests that claim the Message Crate and log in use it, so the
-// other test binaries would warn about it as dead code.
+// Only the tests that claim the Message Crate and log in use it, and those
+// use only some of it, so the rest would warn as dead code in each test
+// binary.
 #[allow(dead_code)]
 pub mod claim;
 
