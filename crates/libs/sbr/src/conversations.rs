@@ -58,7 +58,7 @@ impl MmsConversation {
                 participants: vec![(peer, name)],
             };
         }
-        // Group chats are keyed by the participant set because the format
+        // Group conversations are keyed by the participant set because the format
         // has no stable thread ID. When the roster changes (someone is added
         // or removed), messages before and after the change land in
         // different conversations, an inherent limitation of the source,

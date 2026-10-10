@@ -113,8 +113,8 @@ fn a_group_of_twenty_is_keyed_by_a_short_hash_of_its_roster() {
     assert_ne!(group_mms(21).chat_key, key);
 }
 
-/// The key and title come from `phone::group_chat_id`, the rule every
-/// exporter shares: the roster sorted, without repeats, each number
+/// The key and title come from `phone::group_chat_id`, the rule the
+/// SMS exporters share: the roster sorted, without repeats, each number
 /// prefixed by its length. So a roster written in another order, or with
 /// an address twice, is the same group, and a different roster is not.
 #[test]

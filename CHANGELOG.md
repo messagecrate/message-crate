@@ -142,14 +142,15 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-10: **An SMS Backup & Restore group is named by the same rule as
-  every other SMS group.** The group's identifier is now made the way the
-  SMS Backup+ and GO SMS Pro imports make theirs, so the two can no longer
-  drift apart. Each group still holds the same messages and the same people.
-  A backup imported before this change and imported again afterwards puts
-  each group into a second conversation beside the one the first import
-  made. Delete the older conversation, or start from an empty Message
-  Crate, to keep one conversation for each group (#2139).
+- 2026-10-10: **Importing an SMS Backup & Restore backup again puts each
+  group conversation beside the one an earlier import made.** A group
+  conversation from SMS Backup & Restore is now identified the way the SMS
+  Backup+ and GO SMS Pro imports identify theirs, so the two rules can no
+  longer drift apart. Each group conversation keeps the same messages, the
+  same people and the same title. A backup imported before this change and
+  imported again afterwards puts each group conversation into a second
+  conversation beside the first. Delete the older one, or start from an
+  empty Message Crate, to keep one of each (#2139).
 
 - 2026-10-10: **The Export screen names its format menu Output format.** It
   was Format there and Output format under Convert in Settings; both now read
