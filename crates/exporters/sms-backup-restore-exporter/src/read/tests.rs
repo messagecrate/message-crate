@@ -124,7 +124,7 @@ fn group_mms_sender_direction_and_conversation() {
     let doc = &docs[0];
     assert_eq!(
         doc.conversation.chat_identifier,
-        "chat-group-+15555550101_+15555550102_+15555550103"
+        "chat-group-12:+15555550101_12:+15555550102_12:+15555550103"
     );
     assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     let mut participants: Vec<_> = doc

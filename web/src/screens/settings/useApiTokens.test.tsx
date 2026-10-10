@@ -14,8 +14,10 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
-import type { ApiTokenItem } from "./apiTokensUtils";
+import type { components } from "../../lib/serverApi.types";
 import { useApiTokens } from "./useApiTokens";
+
+type ApiToken = components["schemas"]["ApiToken"];
 
 vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
 
@@ -42,7 +44,7 @@ function wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-const token: ApiTokenItem = {
+const token: ApiToken = {
   id: 1,
   label: "Laptop",
   can_import: true,
