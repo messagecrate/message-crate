@@ -31,7 +31,6 @@ import {
 import { invokeHomeDir, invokeIosBackupEncrypted, invokePathStat } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
 import { useTimeZone } from "../lib/timeZone";
-import type { AttachmentMediaMode } from "../lib/types";
 import {
   useAccountProfile,
   useFetchAccountProfile,
@@ -45,6 +44,11 @@ import {
   WHATSAPP_SOURCE_ID,
   type WhatsappMethodId,
 } from "../lib/whatsappImport";
+import {
+  type AttachmentChoices,
+  attachmentChoicesOf,
+  DEFAULT_ATTACHMENT_CHOICES,
+} from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
@@ -218,10 +222,7 @@ export default function ImportScreen() {
   const [whatsappStats, setWhatsappStats] = useState(emptyWhatsappPathStats);
   const [backupPassword, setBackupPassword] = useState("");
   const [showBackupPassword, setShowBackupPassword] = useState(false);
-  const [attachmentMedia, setAttachmentMedia] = useState<AttachmentMediaMode>("copy");
-  const [maxResolution, setMaxResolution] = useState("720p");
-  const [maxFps, setMaxFps] = useState("30");
-  const [minSizeMb, setMinSizeMb] = useState("20");
+  const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);
   const [ownerPhones, setOwnerPhones] = useState<string[]>([]);
   /** Owner email addresses as typed; split into a list when the import starts. */
   const [ownerEmails, setOwnerEmails] = useState("");
@@ -323,10 +324,7 @@ export default function ImportScreen() {
     setWhatsappBusiness(restored.whatsappBusiness);
     whatsappOwnerPhoneSeededRef.current = true;
     setWhatsappOwnerPhone(restored.whatsappOwnerPhone);
-    setAttachmentMedia(restored.attachmentMedia);
-    setMaxResolution(restored.maxResolution);
-    setMaxFps(restored.maxFps);
-    setMinSizeMb(restored.minSizeMb);
+    setAttachments(attachmentChoicesOf(restored));
     // Restoring settings counts as seeding: the SBR profile-phones effect
     // must not overwrite what was just restored.
     ownerPhonesSeededRef.current = true;
@@ -760,14 +758,8 @@ export default function ImportScreen() {
             setWhatsappOwnerPhone(value);
           }}
           whatsappStats={whatsappStats}
-          attachmentMedia={attachmentMedia}
-          onAttachmentMediaChange={setAttachmentMedia}
-          maxResolution={maxResolution}
-          onMaxResolutionChange={setMaxResolution}
-          maxFps={maxFps}
-          onMaxFpsChange={setMaxFps}
-          minSizeMb={minSizeMb}
-          onMinSizeMbChange={setMinSizeMb}
+          attachments={attachments}
+          onAttachmentsChange={setAttachments}
           ownerPhones={ownerPhones}
           onOwnerPhonesChange={(phones) => {
             ownerPhonesSeededRef.current = true;
@@ -801,10 +793,7 @@ export default function ImportScreen() {
               source,
               backupPath,
               backupPassword,
-              attachmentMedia,
-              maxResolution,
-              maxFps,
-              minSizeMb,
+              ...attachments,
               ownerPhones: flushedPhones ?? ownerPhones,
               ownerEmails: splitEmails(ownerEmails),
               obfuscate,
