@@ -2267,15 +2267,6 @@ export interface components {
             /** @description True for group conversations. */
             is_group: boolean;
             /**
-             * @description The title the conversation is shown by: for a conversation the account
-             *     holder has with themselves, the account's display name or, without
-             *     one, the conversation's own address; for one of orphaned messages, its
-             *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
-             *     one that names nobody; for any other, the export's title. `null` when
-             *     there is none, and the conversation goes by its participants.
-             */
-            label: string | null;
-            /**
              * @description Timestamp of the conversation's last message. `null` when every
              *     message in the conversation is a duplicate, so none is left to date it.
              */
@@ -2289,6 +2280,15 @@ export interface components {
             participants: components["schemas"]["Participant"][];
             /** @description Platform service of the conversation, e.g. `imessage`. */
             service: string;
+            /**
+             * @description The title the conversation is shown by: for a conversation the account
+             *     holder has with themselves, the account's display name or, without
+             *     one, the conversation's own address; for one of orphaned messages, its
+             *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+             *     one that names nobody; for any other, the export's title. `null` when
+             *     there is none, and the conversation goes by its participants.
+             */
+            shown_title: string | null;
             /** @description Message tags on this conversation. */
             tags: string[];
         };
@@ -3564,18 +3564,18 @@ export interface components {
              *     conversation.
              */
             is_group: boolean;
+            /** @description Participants of the conversation. */
+            participants: components["schemas"]["Participant"][];
             /**
              * @description The title the conversation is shown by, as the conversation list's
-             *     `label` gives it: for a conversation the account holder has with
+             *     `shown_title` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the
              *     conversation's own address; for one of orphaned messages, its
              *     person's name and "Orphaned", or "Orphaned · Unknown person" for
              *     the one that names nobody; for any other, the export's title. `null`
              *     when there is none, and the conversation goes by its participants.
              */
-            label: string | null;
-            /** @description Participants of the conversation. */
-            participants: components["schemas"]["Participant"][];
+            shown_title: string | null;
         };
         /** @description A Messages search as the server read it. */
         MessageSearch: {
@@ -4160,15 +4160,6 @@ export interface components {
                 /** @description True for group conversations. */
                 is_group: boolean;
                 /**
-                 * @description The title the conversation is shown by: for a conversation the account
-                 *     holder has with themselves, the account's display name or, without
-                 *     one, the conversation's own address; for one of orphaned messages, its
-                 *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
-                 *     one that names nobody; for any other, the export's title. `null` when
-                 *     there is none, and the conversation goes by its participants.
-                 */
-                label: string | null;
-                /**
                  * @description Timestamp of the conversation's last message. `null` when every
                  *     message in the conversation is a duplicate, so none is left to date it.
                  */
@@ -4182,6 +4173,15 @@ export interface components {
                 participants: components["schemas"]["Participant"][];
                 /** @description Platform service of the conversation, e.g. `imessage`. */
                 service: string;
+                /**
+                 * @description The title the conversation is shown by: for a conversation the account
+                 *     holder has with themselves, the account's display name or, without
+                 *     one, the conversation's own address; for one of orphaned messages, its
+                 *     person's name and "Orphaned", or "Orphaned · Unknown person" for the
+                 *     one that names nobody; for any other, the export's title. `null` when
+                 *     there is none, and the conversation goes by its participants.
+                 */
+                shown_title: string | null;
                 /** @description Message tags on this conversation. */
                 tags: string[];
             }[];
@@ -5345,8 +5345,8 @@ export interface components {
              *     conversation a file is in, and who it is with, is the holder's.
              */
             conversation_id: number | null;
-            /** @description Conversation label, when set. */
-            conversation_title: string | null;
+            /** @description The title the export gave the conversation, when it gave one. */
+            group_title: string | null;
             /**
              * Format: int64
              * @description Attachment id.

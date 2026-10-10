@@ -623,6 +623,12 @@ released versions carry their date on the heading.
   the one the first import made. To keep one of each, delete the older
   copy, or start from an empty Message Crate before importing again
   (#2139).
+- If you have a program that reads conversations or messages from the HTTP
+  API, it must read the title a conversation is shown by from
+  `shown_title` in place of `label`, on the conversation list and on a
+  message's `conversation`, and the export's title of a largest
+  attachment's conversation in an account's storage from `group_title` in
+  place of `conversation_title` (#2198).
 
 ## [0.10.1] - 2026-10-05
 

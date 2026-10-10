@@ -60,7 +60,7 @@ fn participant_name(p: &str, h: &str, c: &str) -> String {
 /// The name of the first participant of conversation `conv`, as a SQL
 /// subquery; NULL when it has none. It is [`participant_name`], the name the
 /// participants this module loads carry, so an orphaned conversation's title
-/// (`db::conversations::conversation_title_sql`) names its sender as its
+/// (`db::conversations::shown_title_sql`) names its sender as its
 /// participant row does. `conv` is the alias of a `conversations` row; the
 /// subquery's own aliases start with `fp_`.
 pub(crate) fn first_participant_name_sql(conv: &str) -> String {
