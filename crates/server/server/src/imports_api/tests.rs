@@ -5344,7 +5344,16 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
     .await;
     let id = created["id"].as_i64().unwrap();
 
-    let (status, text) = crate::test_support::post_json_raw(state, &format!("/v1/imports/{id}/discard"), token, serde_json::json!({"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}],"notes":[]}))
+    let body = serde_json::json!({
+        "issues": [{ "kind": "warning", "stage": "staging", "item": "a.jsonl", "reason": "x" }],
+        "notes": [],
+    });
+    let (status, text) = crate::test_support::post_json_raw(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        body,
+    )
     .await;
 
     crate::test_support::expect_problem(

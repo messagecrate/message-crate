@@ -2105,9 +2105,9 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     let session = crate::test_support::log_in(&state, "demo", "").await;
     assert_eq!(session["username"], "demo");
     assert_eq!(session["account_id"], DEMO_ACCOUNT_ID);
-    // demo has no password, so only the empty password logs in.
     let (status, text) = crate::test_support::log_in_raw(&state, "demo", "not-empty").await;
-    crate::test_support::expect_problem(
+    crate::test_support::expect_problem_for(
+        "demo logging in with a password, when only the empty password logs in",
         status,
         &text,
         crate::problem::ProblemType::InvalidCredentials,
