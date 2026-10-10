@@ -843,7 +843,8 @@ fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
 /// Standard per-conversation filename stem (no extension — callers append
 /// `.csv`, `.jsonl`, …).
 ///
-/// - Individual → `sanitize_stem(chat_id)` (+ optional suffix)
+/// - Individual → `sanitize_stem(chat_id)` (+ optional suffix); `unknown`
+///   when the chat id is empty, so no file is named only by its extension
 /// - Group with a real `group_title` → sanitized title
 /// - Untitled group → `group_+A_+B_…` (sorted unique E.164, max 10);
 ///   if more than 10 peers, append `_<16 hex>` of SHA-256 over the full roster
@@ -857,7 +858,11 @@ pub fn conversation_stem(
 ) -> String {
     let is_group = conversation_type.eq_ignore_ascii_case("group");
     if !is_group {
-        let stem = sanitize_stem(chat_id);
+        let stem = if chat_id.trim().is_empty() {
+            "unknown".to_string()
+        } else {
+            sanitize_stem(chat_id)
+        };
         return with_suffix(&stem, suffix);
     }
 
@@ -1225,6 +1230,22 @@ mod conversation_stem_tests {
         assert_eq!(
             conversation_stem("individual", "+15550112", None, &[], None),
             "+15550112"
+        );
+    }
+
+    #[test]
+    fn individual_with_an_empty_chat_id_is_unknown() {
+        assert_eq!(
+            conversation_stem("individual", "", None, &[], None),
+            "unknown"
+        );
+        assert_eq!(
+            conversation_stem("individual", "  ", None, &[], None),
+            "unknown"
+        );
+        assert_eq!(
+            conversation_stem("individual", "", None, &[], Some("__whatsapp")),
+            "unknown__whatsapp"
         );
     }
 

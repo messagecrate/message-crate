@@ -287,6 +287,13 @@ released versions carry their date on the heading.
   export into the same directory kept it. A new export into that directory
   now removes every conversation directory an earlier SMS Backup+ export
   wrote, empty or not (#2299).
+- 2026-10-10: **A one-to-one conversation with no chat id is exported under
+  the name `unknown`.** Such a conversation was exported to a file named
+  only by its extension, such as `.json`, which macOS and Linux hide, and an
+  SMS Backup+ export wrote its mail loose in the export directory, where a
+  later export never removed it. Its files and its SMS Backup+ directory are
+  now named `unknown`, as an untitled group with no members is named
+  `group_unknown` (#2459).
 - 2026-10-10: **A downloaded ffmpeg is not reported as broken by
   mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
   runs could wrongly report it as not running. The check now tries again,

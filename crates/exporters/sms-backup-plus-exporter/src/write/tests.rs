@@ -333,6 +333,48 @@ fn a_fresh_export_removes_the_earlier_conversation_directories() {
     assert_eq!(names, ["+15555550103", ".message-crate-export"]);
 }
 
+/// A one-to-one conversation with an empty chat id writes its mail into a
+/// conversation directory, not loose in the export directory, and a fresh
+/// export into the same directory removes that directory.
+#[test]
+fn a_conversation_with_an_empty_chat_id_writes_into_a_directory_a_fresh_export_removes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let export = |documents: Vec<ConversationDocument>| {
+        let (mut sink, _) = message_ir_format::FormatSink::open_prepared(
+            tmp.path(),
+            message_crate_core::OutputFormat::SmsBackupPlus,
+            message_crate_core::ExportTransforms::none(),
+        )
+        .unwrap();
+        sink = sink.with_archive(Box::new(archive()));
+        for doc in documents {
+            sink.write_document(doc).unwrap();
+        }
+        sink.finish(&mut ExportReport::default()).unwrap();
+    };
+    let names = || {
+        let mut names: Vec<String> = fs::read_dir(tmp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    let mut no_chat_id = sample_document("a chat with no id");
+    no_chat_id.conversation.chat_identifier = String::new();
+
+    export(vec![no_chat_id]);
+
+    assert_eq!(names(), [".message-crate-export", "unknown"]);
+    assert_eq!(mails(tmp.path(), "unknown").len(), 1);
+
+    let mut later = sample_document("later");
+    later.conversation.chat_identifier = "+15555550103".into();
+    export(vec![later]);
+
+    assert_eq!(names(), ["+15555550103", ".message-crate-export"]);
+}
+
 /// A message whose service is unknown but whose kind says SMS, as a Mac
 /// `chat.db` row with no service or one pulled back from the server as
 /// `unknown` is, is written like any SMS, as the XML export writes it.
