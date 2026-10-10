@@ -199,7 +199,7 @@ fn guess_mime_covers_phone_media_extensions() {
 }
 
 #[test]
-fn store_verified_records_mime_for_extensionless_media_blobs() {
+fn store_verified_records_mime_for_extensionless_media_assets() {
     let dir = tempdir().unwrap();
     for (name, expected) in [
         ("voice.amr", "audio/amr"),
@@ -298,7 +298,7 @@ fn store_verified_skips_temp_copy_on_valid_dedup() {
     assert_eq!(second.assets_path, first.assets_path);
     assert!(
         !copied.get(),
-        "storing over a valid destination must not copy the source into a temporary blob"
+        "storing over a valid destination must not copy the source into a temporary file"
     );
 }
 
@@ -1066,23 +1066,23 @@ async fn upload_in_parts(
         .await
 }
 
-/// The MIME type recorded for a blob the store already holds. The export's
+/// The MIME type recorded for an asset the store already holds. The export's
 /// claim wins, then what the source file's name says. A blank claim is not a
 /// claim. The stored file has no extension, so it never has a say.
 #[test]
-fn mime_for_a_stored_blob_is_the_claim_then_the_source_name() {
+fn mime_for_a_stored_asset_is_the_claim_then_the_source_name() {
     let dir = tempdir().unwrap();
     let root = dir.path();
-    let sha = Sha256::of_bytes(b"stored-blob");
+    let sha = Sha256::of_bytes(b"stored-asset");
     let dest = root.join(shard_rel_path(&sha, ""));
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(&dest, b"stored-blob").unwrap();
+    fs::write(&dest, b"stored-asset").unwrap();
     let source = root.join("source.png");
-    fs::write(&source, b"stored-blob").unwrap();
+    fs::write(&source, b"stored-asset").unwrap();
 
     let stored = |export_mime: Option<&str>| {
         let (stored, present) = store_verified(&source, &sha, root, export_mime, false).unwrap();
-        assert!(present, "the blob is already stored");
+        assert!(present, "the asset is already stored");
         stored.mime_type
     };
 
@@ -1131,11 +1131,15 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
 
     let jpeg = b"jpeg-bytes".to_vec();
     let jpeg_sha = Sha256::of_bytes(&jpeg);
-    let blob = b"blob-bytes".to_vec();
-    let blob_sha = Sha256::of_bytes(&blob);
+    let octet_stream = b"octet-stream-bytes".to_vec();
+    let octet_stream_sha = Sha256::of_bytes(&octet_stream);
     for (sha, bytes, content_type) in [
         (&jpeg_sha, jpeg.clone(), "image/jpeg; charset=binary"),
-        (&blob_sha, blob.clone(), "application/octet-stream"),
+        (
+            &octet_stream_sha,
+            octet_stream.clone(),
+            "application/octet-stream",
+        ),
     ] {
         let response = client
             .put(url(sha.as_str()))
@@ -1165,7 +1169,7 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
         Some("image/jpeg")
     );
     assert_eq!(
-        served_type(blob_sha.as_str()).await.as_deref(),
+        served_type(octet_stream_sha.as_str()).await.as_deref(),
         Some("application/octet-stream")
     );
 
@@ -1180,15 +1184,15 @@ async fn an_asset_put_keeps_its_media_type_but_not_octet_stream() {
         Some("image/jpeg")
     );
     assert!(
-        !crate::asset_store::sidecar_path(&assets_dir, &blob_sha).exists(),
+        !crate::asset_store::sidecar_path(&assets_dir, &octet_stream_sha).exists(),
         "octet-stream must not be recorded as the asset's type"
     );
 }
 
-/// Starting a chunked upload for a blob the server already holds creates
+/// Starting a chunked upload for an asset the server already holds creates
 /// nothing: the answer is 200 with where the bytes are, and no session.
 #[tokio::test]
-async fn starting_an_upload_for_a_stored_blob_answers_200_already_present() {
+async fn starting_an_upload_for_a_stored_asset_answers_200_already_present() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let server = crate::test_support::serve(&fixture.state).await;
     let client = http_client();
@@ -1402,7 +1406,7 @@ async fn an_asset_put_with_an_empty_body_answers_422() {
 /// bytes is still open, `complete` finds the asset already held: it answers
 /// 200 with no `Location`, like the PUT does, and drops the session.
 #[tokio::test]
-async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
+async fn completing_an_upload_for_an_asset_a_put_stored_first_answers_200() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let mut state = fixture.state.clone();
     state.asset_part_size = 16;
@@ -1780,7 +1784,7 @@ async fn c1_1_a_put_the_server_cannot_store_is_not_a_422() {
         .paths
         .assets_dir_for_account(user.account_id);
     std::fs::create_dir_all(&assets_dir).unwrap();
-    // A file where the shard directory must go: create_dir_all in install_blob fails.
+    // A file where the shard directory must go: create_dir_all in install_asset fails.
     std::fs::write(assets_dir.join(&sha[..2]), b"not a directory").unwrap();
     let (status, text) = crate::test_support::put_raw(
         &fixture.state,

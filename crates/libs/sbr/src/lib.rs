@@ -14,7 +14,7 @@ mod xml;
 pub use addresses::address_handle;
 pub use conversations::{ConversationKind, contact_name};
 pub use owner::infer_owner_phones;
-pub use parts::AttachmentBlob;
+pub use parts::AttachmentBytes;
 pub use read::{ParseStats, Record, SourceFields, parse_file_with};
 
 use anyhow::{Context, Result};

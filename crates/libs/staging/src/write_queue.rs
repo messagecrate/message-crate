@@ -49,7 +49,7 @@ pub enum AttachmentSource {
     /// Read this file when the attachment is written. Worker-safe: a plain
     /// `fs::read`, no shared handle.
     Path(PathBuf),
-    /// Bytes the exporter already holds (SBR blobs, handwriting SVG).
+    /// Bytes the exporter already holds (a decoded SBR attachment, handwriting SVG).
     Bytes(Vec<u8>),
     /// Nothing to read; the attachment becomes `file_missing` under a mode
     /// that copies files.
