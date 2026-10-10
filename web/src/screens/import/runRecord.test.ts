@@ -397,6 +397,49 @@ describe("a Staging row waits until its conversation is written (#1688)", () => 
   });
 });
 
+describe("a resumed Staging's read of the backup replaces the earlier parts' (#1947)", () => {
+  // The SMS Backup+ exporter could not read x.eml in part 1, for example on a
+  // network drive that dropped. The row names no conversation.
+  const unreadable: ImportIssue = {
+    kind: "error",
+    stage: "staging",
+    item: "x.eml",
+    reason: "This mail could not be read and was left out: permission denied",
+  };
+  const stillUnreadable: ImportIssue = { ...unreadable, item: "y.eml" };
+
+  it("completes without the row once the resumed Staging reads the file clean", () => {
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    expect(carried.issues).toEqual([unreadable]);
+    // Part 2 reads the whole backup again, x.eml clean, and writes a.jsonl.
+    const resumed = part({ staged: new Map([["a.jsonl", "written"]]) });
+    expect(wholeRun(carried, resumed).issues).toEqual([]);
+    expect(recordToCarry(carried, resumed).issues).toEqual([]);
+  });
+
+  it("keeps the row the resumed Staging reports again, once", () => {
+    const carried = recordToCarry(
+      EMPTY_RUN_RECORD,
+      part({ issues: [unreadable, stillUnreadable] }),
+    );
+    const resumed = part({ issues: [stillUnreadable], filesParsed: 3 });
+    expect(wholeRun(carried, resumed).issues).toEqual([stillUnreadable]);
+  });
+
+  it("keeps the earlier rows while the resumed Staging is still reading", () => {
+    // Part 2 stopped before its write queue started: it has not read it all.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    expect(recordToCarry(carried, part()).issues).toEqual([unreadable]);
+  });
+
+  it("keeps the earlier rows in a run resumed past Staging", () => {
+    // Part 2 resumes at the Upload, which reads nothing of the backup.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    const uploaded = part({ conversations: new Map([["a.jsonl", "ok"]]), report: report() });
+    expect(wholeRun(carried, uploaded).issues).toEqual([unreadable]);
+  });
+});
+
 describe("the run's notes (#1626)", () => {
   const live = {
     stage: "staging" as const,

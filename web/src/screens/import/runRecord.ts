@@ -277,6 +277,26 @@ export function isStagingRowOfConversation(
 }
 
 /**
+ * A Staging row recorded while the exporter read the backup, such as a file
+ * it could not read: one that names no conversation. Every Staging reads the
+ * whole backup before it writes anything, so a resumed Staging reports every
+ * such row again that still holds (#1947).
+ */
+function isBackupReadRow(issue: ImportIssue): boolean {
+  return issue.stage === "staging" && issue.conversation == null;
+}
+
+/**
+ * Whether this part's Staging has read the whole backup: its write queue
+ * has said what it did with a conversation, which it does only once the read
+ * is done, or the Staging has finished. A part resumed past Staging reads
+ * nothing again, and a Staging stopped while it reads has not read it all.
+ */
+function readWholeBackup(part: RunPart): boolean {
+  return part.staged.size > 0 || part.filesParsed != null;
+}
+
+/**
  * Whether a row this part reported may be reported again by a resume, and
  * so waits apart: a Staging row about a conversation this part's Staging has
  * not yet written, or an Upload row about a conversation not yet on the
@@ -346,13 +366,19 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
 
 /**
  * The earlier parts' record with this part added, taking in `earlier`, the
- * rows of the earlier stop that join `issues`.
+ * rows of the earlier stop that join `issues`. Once this part's Staging has
+ * read the whole backup, its own rows from that read replace the earlier
+ * parts' (`isBackupReadRow`), so such a row stays only while its item still
+ * fails (#1947).
  */
 function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;
   const notes = mergeNotes(carried.notes, part.notes);
+  const carriedIssues = readWholeBackup(part)
+    ? carried.issues.filter((issue) => !isBackupReadRow(issue))
+    : carried.issues;
   return {
-    issues: mergeIssues(carried.issues, mergeIssues(earlier, part.issues)),
+    issues: mergeIssues(carriedIssues, mergeIssues(earlier, part.issues)),
     ...(notes ? { notes } : {}),
     durationMs: sum(carried.durationMs, part.durationMs),
     parseMs: sum(carried.parseMs, part.parseMs),
