@@ -333,6 +333,12 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     out
 }
 
+/// [`resolve_absolute`] for a path no setting names, refused with the plain
+/// "Path is empty" and "Path must be absolute".
+pub(crate) fn require_absolute(raw: &str) -> Result<PathBuf, String> {
+    resolve_absolute(raw, "Path is empty", "Path must be absolute")
+}
+
 /// Trim `raw` and require it to be a non-empty absolute path.
 fn resolve_absolute(
     raw: &str,
@@ -413,7 +419,7 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
 /// yet), it is resolved through [`resolve_on_disk`], the same way as the root,
 /// so the two compare in one form.
 pub(crate) fn resolve_openable_path(raw: &str, root: &str) -> Result<PathBuf, String> {
-    let candidate = resolve_absolute(raw, "Path is empty", "Path must be absolute")?;
+    let candidate = require_absolute(raw)?;
     let root = resolve_staging_root(root)?;
 
     if candidate.exists() {
