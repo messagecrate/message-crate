@@ -599,31 +599,22 @@ fn reactions_json(msg: &MessageJson) -> Option<String> {
     (!reactions.is_empty()).then(|| serde_json::to_string(&reactions).expect("serialize reactions"))
 }
 
-/// One reaction under the reactor's WhatsApp id (#1646). The id follows the
-/// sender rule (#1092): the phone number when `jid` is a phone id, else the
-/// `@lid` id, which `jid` holds when the backup maps it to no phone and
-/// `lid` holds otherwise. The owner's own reactions carry `is_from_me` and
-/// no id, as the fork writes none for them. No display name: the fork's
-/// `reactions` map names a reactor by display name, and a name is not an
-/// identity. An entry with no emoji is a withdrawn reaction and stands no
-/// more.
+/// One reaction under the reactor's WhatsApp id (#1646), the id the same
+/// person is written under as a sender or a member ([`Person::new`]): the
+/// phone number when the fork's `jid` is a phone id, else the raw id, an
+/// `@lid` id the backup maps to no phone. The owner's own reactions carry
+/// `is_from_me` and no id, as the fork writes none for them. No display
+/// name: the fork's `reactions` map names a reactor by display name, and a
+/// name is not an identity. The fork leaves a withdrawn reaction out, so an
+/// entry with no emoji is malformed and is dropped.
 fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
     let emoji = reaction.emoji.as_deref().and_then(message_ir::trimmed)?;
     let reactor_identity = if reaction.from_me {
         None
     } else {
-        reaction
-            .jid
-            .as_deref()
-            .and_then(message_ir::trimmed)
-            .map(|jid| jid_to_e164(jid).unwrap_or_else(|| jid.to_string()))
-            .or_else(|| {
-                reaction
-                    .lid
-                    .as_deref()
-                    .and_then(message_ir::trimmed)
-                    .map(str::to_string)
-            })
+        Person::new(reaction.jid.as_deref(), None)
+            .identity
+            .map(|(identity, _)| identity)
     };
     Some(Reaction {
         part_index: 0,

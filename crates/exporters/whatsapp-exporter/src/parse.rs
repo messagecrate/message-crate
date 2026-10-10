@@ -175,11 +175,11 @@ pub(crate) struct ReactionJson {
     /// The reactor's id by the fork's `sender_jid` rule: the phone id
     /// (`…@s.whatsapp.net`), resolved from an `@lid` id where the backup
     /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
-    /// and on a group reaction whose reactor the backup does not name.
+    /// and on a group reaction whose reactor the backup does not name. The
+    /// fork's `lid`, the `@lid` id the reactor is stored under, is not read:
+    /// `jid` already holds it when there is no phone behind it, and only its
+    /// presence would say anything, as `sender_lid`'s does.
     pub jid: Option<String>,
-    /// The `@lid` id the backup stores the reactor under, when it does;
-    /// `null` otherwise, and on the owner's reactions.
-    pub lid: Option<String>,
 }
 
 /// Load a wtsexporter `result.json` (one JSON object: JID → chat).
