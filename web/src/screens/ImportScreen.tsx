@@ -23,6 +23,7 @@ import { unmatchedIdentities } from "../lib/serverApi";
 import {
   getImporterPath,
   getRememberImporterPaths,
+  type ImporterExtraField,
   loadRememberedImportPaths,
   setImporterExtraPath,
   setImporterPath,
@@ -451,12 +452,12 @@ export default function ImportScreen() {
     }
   }
 
-  // The profile's phones seed the owner fields: the Android SMS phone list,
-  // and the one WhatsApp number (Android's only source, iPhone's fallback).
+  // The profile's phones seed the owner fields: the owner phone list of a
+  // source that asks for it, and the WhatsApp number of a source that asks
+  // for that instead.
   useEffect(() => {
-    const isWhatsapp = isWhatsappMethod(source);
     const descriptor = importSourceFor(source);
-    if (!descriptor.asksOwnerPhones && !isWhatsapp) {
+    if (!descriptor.asksOwnerPhones && !descriptor.asksWhatsappOwnerPhone) {
       setProfilePhones([]);
       setProfilePhonesReady(false);
       setProfilePhonesError(false);
@@ -478,7 +479,7 @@ export default function ImportScreen() {
         setProfilePhones(phones);
         setProfilePhonesError(false);
         setProfilePhonesReady(true);
-        if (isWhatsapp) {
+        if (descriptor.asksWhatsappOwnerPhone) {
           const [first] = phones;
           if (first === undefined || whatsappOwnerPhoneSeededRef.current) return;
           setWhatsappOwnerPhone((current) => {
@@ -603,26 +604,14 @@ export default function ImportScreen() {
 
   function applyRememberedPaths(nextSource: string): string {
     const loaded = loadRememberedImportPaths(nextSource);
+    const remembered = importSourceFor(nextSource).rememberedPaths;
+    const pathOf = (field: ImporterExtraField) => (remembered.includes(field) ? loaded[field] : "");
     setBackupPath(loaded.backupPath);
-    if (isImessageMethod(nextSource)) {
-      setAttachmentRoot(loaded.attachmentRoot);
-      setAppleContacts(loaded.appleContacts);
-      setWhatsappWa("");
-      setWhatsappMedia("");
-      setWhatsappDb("");
-    } else if (isWhatsappMethod(nextSource)) {
-      setAttachmentRoot("");
-      setAppleContacts("");
-      setWhatsappWa(loaded.whatsappWa);
-      setWhatsappMedia(loaded.whatsappMedia);
-      setWhatsappDb(loaded.whatsappDb);
-    } else {
-      setAttachmentRoot("");
-      setAppleContacts("");
-      setWhatsappWa("");
-      setWhatsappMedia("");
-      setWhatsappDb("");
-    }
+    setAttachmentRoot(pathOf("attachmentRoot"));
+    setAppleContacts(pathOf("appleContacts"));
+    setWhatsappWa(pathOf("whatsappWa"));
+    setWhatsappMedia(pathOf("whatsappMedia"));
+    setWhatsappDb(pathOf("whatsappDb"));
     return loaded.backupPath;
   }
 
@@ -671,39 +660,36 @@ export default function ImportScreen() {
     if (getRememberImporterPaths()) setImporterPath(source, path);
   };
 
+  /** Remember a path field beside the backup, when the source keeps it. */
+  const rememberExtraPath = (field: ImporterExtraField, path: string) => {
+    if (getRememberImporterPaths() && importSourceFor(source).rememberedPaths.includes(field)) {
+      setImporterExtraPath(source, field, path);
+    }
+  };
+
   const updateAttachmentRoot = (path: string) => {
     setAttachmentRoot(path);
-    if (getRememberImporterPaths() && isImessageMethod(source)) {
-      setImporterExtraPath(source, "attachmentRoot", path);
-    }
+    rememberExtraPath("attachmentRoot", path);
   };
 
   const updateAppleContacts = (path: string) => {
     setAppleContacts(path);
-    if (getRememberImporterPaths() && isImessageMethod(source)) {
-      setImporterExtraPath(source, "appleContacts", path);
-    }
+    rememberExtraPath("appleContacts", path);
   };
 
   const updateWhatsappWa = (path: string) => {
     setWhatsappWa(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappWa", path);
-    }
+    rememberExtraPath("whatsappWa", path);
   };
 
   const updateWhatsappMedia = (path: string) => {
     setWhatsappMedia(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappMedia", path);
-    }
+    rememberExtraPath("whatsappMedia", path);
   };
 
   const updateWhatsappDb = (path: string) => {
     setWhatsappDb(path);
-    if (getRememberImporterPaths() && isWhatsappMethod(source)) {
-      setImporterExtraPath(source, "whatsappDb", path);
-    }
+    rememberExtraPath("whatsappDb", path);
   };
 
   return (

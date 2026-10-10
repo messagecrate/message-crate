@@ -12,7 +12,6 @@ import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import { useAuth } from "../../lib/auth";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
 import { getDeviceId } from "../../lib/deviceId";
-import { isImessageMethod } from "../../lib/imessageImport";
 import type { ActiveImportRun } from "../../lib/importRun";
 import {
   buildSourceFingerprint,
@@ -1756,7 +1755,9 @@ export function useImportJob() {
     resumeWrite?: ResumeWrite,
   ): Promise<void> {
     let identities: string[] | null = null;
-    if (!resume && !resumeWrite && isImessageMethod(form.source)) {
+    const identityRead =
+      resume || resumeWrite ? null : importSourceFor(form.source).appleIdentityRead(form.source);
+    if (identityRead) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
       // busy for that stretch so the Import button reflects it.
@@ -1764,7 +1765,7 @@ export function useImportJob() {
       try {
         identities = await invokeImessageBackupIdentities({
           path: form.backupPath,
-          ios: form.source === "imessage-ios",
+          ios: identityRead.ios,
           backupPassword: form.backupPassword,
         }).catch(() => []);
         store.set({ sourceIdentities: identities });
