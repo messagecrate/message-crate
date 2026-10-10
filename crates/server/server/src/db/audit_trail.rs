@@ -764,7 +764,7 @@ pub async fn record_session_end(
 
 /// Write the entry for a refused login. `account` is the account the
 /// username named, when it named one. Otherwise the entry belongs to no
-/// account and keeps the username as typed only when `is_valid_username`
+/// account and keeps the username, trimmed, only when `is_valid_username`
 /// accepts it; the module comment says why.
 ///
 /// # Errors
