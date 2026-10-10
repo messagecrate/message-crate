@@ -280,22 +280,22 @@ pub enum CredentialUsed {
 /// A run row's columns that record what started it, as
 /// [`CredentialUsed::run_columns`] fills them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RunCredentialColumns<'a> {
+struct RunCredentialColumns<'a> {
     /// `credential`: `session` or `api_token`.
-    pub(crate) credential: &'static str,
+    credential: &'static str,
     /// `app_kind`: the app a Session's request named.
-    pub(crate) app_kind: Option<&'a str>,
+    app_kind: Option<&'a str>,
     /// `app_build`: that app's Build.
-    pub(crate) app_build: Option<&'a str>,
+    app_build: Option<&'a str>,
     /// `api_token_label`: the token's label as it is now.
-    pub(crate) api_token_label: Option<&'a str>,
+    api_token_label: Option<&'a str>,
     /// `api_token_hint`: the token's masked hint as it is now.
-    pub(crate) api_token_hint: Option<&'a str>,
+    api_token_hint: Option<&'a str>,
 }
 
 impl CredentialUsed {
     /// The run row's columns for this credential.
-    pub(crate) fn run_columns(&self) -> RunCredentialColumns<'_> {
+    fn run_columns(&self) -> RunCredentialColumns<'_> {
         match self {
             Self::Session(app) => RunCredentialColumns {
                 credential: "session",
@@ -313,6 +313,68 @@ impl CredentialUsed {
             },
         }
     }
+}
+
+/// The run table a run's row is in: `imports` for an Import Run, `exports`
+/// for an Export Run. Both carry the same columns for what started the run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunTable {
+    /// `imports`, one row per Import Run.
+    Imports,
+    /// `exports`, one row per Export Run.
+    Exports,
+}
+
+impl RunTable {
+    /// The statement that records what started a run on this table's row.
+    const fn record_credential_sql(self) -> &'static str {
+        match self {
+            Self::Imports => {
+                "UPDATE imports SET credential = $1, app_kind = $2, app_build = $3,
+                        api_token_label = $4, api_token_hint = $5
+                 WHERE id = $6"
+            }
+            Self::Exports => {
+                "UPDATE exports SET credential = $1, app_kind = $2, app_build = $3,
+                        api_token_label = $4, api_token_hint = $5
+                 WHERE id = $6"
+            }
+        }
+    }
+
+    /// The run as an error message names it.
+    const fn noun(self) -> &'static str {
+        match self {
+            Self::Imports => "import",
+            Self::Exports => "export",
+        }
+    }
+}
+
+/// Record what started a run on its row: a Session and the app it named, or
+/// an API token's label and hint as they are now.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn record_run_credential(
+    conn: &mut SqliteConnection,
+    table: RunTable,
+    run_id: i64,
+    credential: &CredentialUsed,
+) -> Result<()> {
+    let columns = credential.run_columns();
+    sqlx::query(table.record_credential_sql())
+        .bind(columns.credential)
+        .bind(columns.app_kind)
+        .bind(columns.app_build)
+        .bind(columns.api_token_label)
+        .bind(columns.api_token_hint)
+        .bind(run_id)
+        .execute(&mut *conn)
+        .await
+        .with_context(|| format!("record what started {} {run_id}", table.noun()))?;
+    Ok(())
 }
 
 /// The counts and names an entry carries beyond who, what and when, stored as

@@ -230,3 +230,92 @@ async fn deleting_an_account_ends_its_live_session() {
         .collect();
     assert_eq!(ended, [(Some(AuditReason::Revoked), AuditActor::Owner)]);
 }
+
+/// What started a run, as one run table's row records it.
+type RecordedCredential = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
+
+async fn recorded_credential(
+    conn: &mut SqliteConnection,
+    table: &str,
+    run_id: i64,
+) -> RecordedCredential {
+    sqlx::query_as(&format!(
+        "SELECT credential, app_kind, app_build, api_token_label, api_token_hint
+         FROM {table} WHERE id = $1"
+    ))
+    .bind(run_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// Each run table records what started its own run: an Import Run and an
+/// Export Run with the same id each keep the credential recorded for it.
+#[tokio::test]
+async fn each_run_table_records_its_own_runs_credential() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let mut conn = fixture.conn().await;
+    let import_id: i64 = sqlx::query_scalar(
+        "INSERT INTO imports (account_id, source, mode, status, started_at)
+         VALUES ($1, 'imessage', 'append', 'running', '2026-10-01T00:00:00+00:00')
+         RETURNING id",
+    )
+    .bind(account)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let export_id = crate::db::exports::start_export(
+        &mut conn,
+        &crate::db::exports::StartExportArgs {
+            account_id: account,
+            scope: &message_crate_api_types::ExportScope::Everything,
+            tool: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(import_id, export_id, "the test needs one id in both tables");
+
+    let session = CredentialUsed::Session(Some(ConnectingApp {
+        kind: AppKind::Desktop,
+        build: "0.10.0+aaaa1111".to_string(),
+    }));
+    let token = CredentialUsed::ApiToken {
+        label: "nightly backup".to_string(),
+        hint: "mc-api-Sd..mE".to_string(),
+    };
+    record_run_credential(&mut conn, RunTable::Imports, import_id, &session)
+        .await
+        .unwrap();
+    record_run_credential(&mut conn, RunTable::Exports, export_id, &token)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        recorded_credential(&mut conn, "imports", import_id).await,
+        (
+            "session".to_string(),
+            Some("desktop".to_string()),
+            Some("0.10.0+aaaa1111".to_string()),
+            None,
+            None
+        )
+    );
+    assert_eq!(
+        recorded_credential(&mut conn, "exports", export_id).await,
+        (
+            "api_token".to_string(),
+            None,
+            None,
+            Some("nightly backup".to_string()),
+            Some("mc-api-Sd..mE".to_string())
+        )
+    );
+}
