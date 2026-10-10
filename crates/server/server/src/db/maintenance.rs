@@ -1,24 +1,25 @@
 //! `ANALYZE` and `VACUUM`: the statements that keep the database file fast
-//! and small after an import. A failure is printed as a warning, never
+//! and small after an import. A failure is a warning, never
 //! returned.
 
-use std::io::{self, Write};
 use std::time::Instant;
 
 use sqlx::SqliteConnection;
 
-/// Run each statement, printing a warning instead of failing when one errors.
-async fn run_sql_warn(conn: &mut SqliteConnection, statements: &[&str]) {
+use crate::progress::Progress;
+
+/// Run each statement, giving a warning instead of failing when one errors.
+async fn run_sql_warn(conn: &mut SqliteConnection, statements: &[&str], progress: Progress) {
     for sql in statements {
         if let Err(err) = sqlx::query(sql).execute(&mut *conn).await {
-            eprintln!("  {sql} did not complete: {err}");
+            progress.warn(format_args!("{sql} did not complete: {err}"));
         }
     }
 }
 
 /// Refresh planner stats on the committed tables promote writes. Errors are
 /// warnings; the caller still opens the promote transaction.
-pub async fn analyze_import_tables(conn: &mut SqliteConnection) {
+pub async fn analyze_import_tables(conn: &mut SqliteConnection, progress: Progress) {
     let started = Instant::now();
     run_sql_warn(
         conn,
@@ -27,23 +28,22 @@ pub async fn analyze_import_tables(conn: &mut SqliteConnection) {
             "ANALYZE attachments",
             "ANALYZE tapbacks",
         ],
+        progress,
     )
     .await;
-    println!(
-        "  ANALYZE of messages, attachments and tapbacks took {:.1} s",
+    progress.say(format_args!(
+        "ANALYZE of messages, attachments and tapbacks took {:.1} s",
         started.elapsed().as_secs_f64()
-    );
-    let _ = io::stdout().flush();
+    ));
 }
 
 /// Reclaim the space the demo import freed: `VACUUM` rewrites the whole
 /// file. Errors are warnings; `reset-demo` still succeeds.
-pub async fn vacuum_import_tables(conn: &mut SqliteConnection) {
+pub async fn vacuum_import_tables(conn: &mut SqliteConnection, progress: Progress) {
     let started = Instant::now();
-    run_sql_warn(conn, &["VACUUM"]).await;
-    println!(
-        "  VACUUM of the database took {:.1} s",
+    run_sql_warn(conn, &["VACUUM"], progress).await;
+    progress.say(format_args!(
+        "VACUUM of the database took {:.1} s",
         started.elapsed().as_secs_f64()
-    );
-    let _ = io::stdout().flush();
+    ));
 }
