@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import Button from "../components/Button";
 import PlainButton from "../components/PlainButton";
 import { setBaseUrl } from "../lib/api";
+import { errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/auth";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
 import { isOwnAddress, type LocalServerStatus, openDataDirectory } from "../lib/localServer";
@@ -82,7 +83,7 @@ function StartFailed({
           onPress={() => {
             setOpenError(null);
             openDataDirectory().catch((caught: unknown) => {
-              setOpenError(caught instanceof Error ? caught.message : String(caught));
+              setOpenError(errorText(caught));
             });
           }}
         >
