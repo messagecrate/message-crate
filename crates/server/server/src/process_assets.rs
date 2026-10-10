@@ -26,7 +26,7 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::counts::words;
 use crate::db::attachment_versions::{
-    self as versions_db, StoredOriginal, Version, VersionFile, VersionWrite,
+    self as versions_db, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
 };
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -224,7 +224,11 @@ async fn record_decision_if_known(
     decided: Option<bool>,
 ) -> Result<()> {
     if let Some(shown) = decided {
-        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, sha256, shown)
+        let rows = OriginalRows {
+            account_id,
+            original_sha: sha256,
+        };
+        versions_db::record_shown_as_is(&mut *db.acquire().await?, rows, shown)
             .await
             .context("record whether it is shown as it is")?;
     }
@@ -764,10 +768,12 @@ impl<'a> AccountPass<'a> {
         };
         let named = versions_db::record(
             &mut *db.acquire().await?,
-            &VersionWrite {
+            VersionWrite {
+                rows: OriginalRows {
+                    account_id: self.account_id,
+                    original_sha: &row.sha256,
+                },
                 version,
-                account_id: self.account_id,
-                original_sha: &row.sha256,
                 file: &blob,
             },
         )
@@ -832,10 +838,12 @@ impl<'a> AccountPass<'a> {
         }
         let pointed = versions_db::share(
             &mut *db.acquire().await?,
-            &VersionWrite {
+            VersionWrite {
+                rows: OriginalRows {
+                    account_id: self.account_id,
+                    original_sha: &row.sha256,
+                },
                 version,
-                account_id: self.account_id,
-                original_sha: &row.sha256,
                 file: &blob,
             },
         )

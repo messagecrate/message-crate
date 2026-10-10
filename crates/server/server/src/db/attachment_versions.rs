@@ -175,15 +175,22 @@ pub async fn stored_originals(
     .await
 }
 
-/// Which rows a version write points at which file: the attachment rows of
-/// `account_id` for the original `original_sha`, as their `version`, at
-/// `file`. [`record`] and [`share`] take it, so a change to what identifies
-/// a version write is made here and where it is built.
+/// The attachment rows of `account_id` for the original `original_sha`: the
+/// rows every write to an original's versions and decision changes.
 #[derive(Debug, Clone, Copy)]
-pub struct VersionWrite<'a> {
-    pub version: Version,
+pub struct OriginalRows<'a> {
     pub account_id: i64,
     pub original_sha: &'a str,
+}
+
+/// The rows a version write changes and the file it points them at: the
+/// `rows` of an original, pointed at `file` as their `version`. [`record`]
+/// and [`share`] take it, so a change to what identifies a version write is
+/// made here and where it is built.
+#[derive(Debug, Clone, Copy)]
+pub struct VersionWrite<'a> {
+    pub rows: OriginalRows<'a>,
+    pub version: Version,
     pub file: &'a VersionFile,
 }
 
@@ -197,26 +204,28 @@ pub struct VersionWrite<'a> {
 /// Returns a database error when the statement fails.
 pub async fn record(
     conn: &mut SqliteConnection,
-    write: &VersionWrite<'_>,
+    write: VersionWrite<'_>,
 ) -> Result<u64, sqlx::Error> {
     point_rows(conn, write, false).await
 }
 
-/// Record on every attachment row of `account_id` for the original
-/// `original_sha` whether every browser shows it as it is
-/// (`attachments.shown_as_is`), the decision the `/v1` Attachment answers.
-/// Rows that already say so are left alone. The update runs in a write
-/// transaction of its own, as [`record`] does.
+/// Record on every one of `rows` whether every browser shows the original
+/// as it is (`attachments.shown_as_is`), the decision the `/v1` Attachment
+/// answers. Rows that already say so are left alone. The update runs in a
+/// write transaction of its own, as [`record`] does.
 ///
 /// # Errors
 ///
 /// Returns a database error when the statement fails.
 pub async fn record_shown_as_is(
     conn: &mut SqliteConnection,
-    account_id: i64,
-    original_sha: &str,
+    rows: OriginalRows<'_>,
     shown_as_is: bool,
 ) -> Result<(), sqlx::Error> {
+    let OriginalRows {
+        account_id,
+        original_sha,
+    } = rows;
     let mut tx = begin_write(conn).await?;
     sqlx::query(
         "UPDATE attachments
@@ -244,7 +253,7 @@ pub async fn record_shown_as_is(
 /// Returns a database error when the statement fails.
 pub async fn share(
     conn: &mut SqliteConnection,
-    write: &VersionWrite<'_>,
+    write: VersionWrite<'_>,
 ) -> Result<u64, sqlx::Error> {
     point_rows(conn, write, true).await
 }
@@ -255,15 +264,17 @@ pub async fn share(
 /// one statement, so a change to how a version is pointed at is made once.
 async fn point_rows(
     conn: &mut SqliteConnection,
-    write: &VersionWrite<'_>,
+    write: VersionWrite<'_>,
     only_unset: bool,
 ) -> Result<u64, sqlx::Error> {
     let VersionWrite {
+        rows: OriginalRows {
+            account_id,
+            original_sha,
+        },
         version,
-        account_id,
-        original_sha,
         file,
-    } = *write;
+    } = write;
     let [sha_column, path_column, mime_column] = version.columns();
     let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")

@@ -676,10 +676,12 @@ async fn store_and_update_derived_db() {
 
     versions_db::record(
         &mut conn,
-        &VersionWrite {
+        VersionWrite {
+            rows: OriginalRows {
+                account_id: ACCOUNT,
+                original_sha: SHA,
+            },
             version: Version::Preview,
-            account_id: ACCOUNT,
-            original_sha: SHA,
             file: &blob,
         },
     )
