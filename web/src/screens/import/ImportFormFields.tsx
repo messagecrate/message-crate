@@ -428,6 +428,20 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     props.onImport();
   }
 
+  const attachmentFields = (
+    <AttachmentFields
+      attachmentMedia={props.attachmentMedia}
+      onAttachmentMediaChange={props.onAttachmentMediaChange}
+      showCompress={showCompress}
+      maxResolution={props.maxResolution}
+      onMaxResolutionChange={props.onMaxResolutionChange}
+      maxFps={props.maxFps}
+      onMaxFpsChange={props.onMaxFpsChange}
+      minSizeMb={props.minSizeMb}
+      onMinSizeMbChange={props.onMinSizeMbChange}
+    />
+  );
+
   return (
     <>
       <h1 className="m-0 mb-1 text-2xl font-bold">Import Messages</h1>
@@ -584,17 +598,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               </StackedField>
             ) : null}
 
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
+            {attachmentFields}
           </>
         ) : whatsappMethod ? (
           <>
@@ -715,17 +719,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               </Checkbox>
             ) : null}
 
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
+            {attachmentFields}
           </>
         ) : androidBackup ? (
           <>
@@ -740,17 +734,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               <p className={hintStyle}>{androidBackup.hint}</p>
             </StackedField>
 
-            <AttachmentFields
-              attachmentMedia={props.attachmentMedia}
-              onAttachmentMediaChange={props.onAttachmentMediaChange}
-              showCompress={showCompress}
-              maxResolution={props.maxResolution}
-              onMaxResolutionChange={props.onMaxResolutionChange}
-              maxFps={props.maxFps}
-              onMaxFpsChange={props.onMaxFpsChange}
-              minSizeMb={props.minSizeMb}
-              onMinSizeMbChange={props.onMinSizeMbChange}
-            />
+            {attachmentFields}
 
             <StackedField label="Backup Device Phone Numbers" required={required.ownerPhones}>
               <PhoneTokenField
