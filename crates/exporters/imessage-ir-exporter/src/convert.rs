@@ -175,7 +175,7 @@ pub(crate) fn export(
     let messages: u64 = collected
         .conversations
         .values()
-        .map(|convo| convo.messages.len() as u64)
+        .map(|conversation| conversation.messages.len() as u64)
         .sum();
 
     // Every format checks the staging disk for room before it writes an
@@ -243,7 +243,7 @@ fn count_loads(collected: &mut Collected, log: Option<&LogSink>) {
     for load in collected
         .conversations
         .values_mut()
-        .flat_map(|convo| convo.attachment_loads.iter_mut())
+        .flat_map(|conversation| conversation.attachment_loads.iter_mut())
     {
         let taken = std::mem::replace(load, AttachmentLoad::Missing);
         *load = AttachmentLoad::from_source(paths.count(taken.into_source(), log));
@@ -259,7 +259,7 @@ fn embedded_bytes(collected: &Collected) -> u64 {
         collected
             .conversations
             .values()
-            .flat_map(|convo| convo.attachment_loads.iter())
+            .flat_map(|conversation| conversation.attachment_loads.iter())
             .map(|load| match load {
                 AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
                 AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
@@ -304,25 +304,28 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
                     .or_insert_with(|| pending_from_record(record));
             }
             Event::Message(record) => {
-                let convo = conversations
-                    .get_mut(&record.chat_identifier)
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "imessage-reader sent a message for {} before its conversation",
-                            record.chat_identifier
-                        )
-                    })?;
-                if convo.owner_identity.is_empty() && !record.owner_identity.is_empty() {
-                    convo.owner_identity.clone_from(&record.owner_identity);
+                let conversation =
+                    conversations
+                        .get_mut(&record.chat_identifier)
+                        .ok_or_else(|| {
+                            anyhow!(
+                                "imessage-reader sent a message for {} before its conversation",
+                                record.chat_identifier
+                            )
+                        })?;
+                if conversation.owner_identity.is_empty() && !record.owner_identity.is_empty() {
+                    conversation
+                        .owner_identity
+                        .clone_from(&record.owner_identity);
                 }
-                if convo.owner_display_name.is_none() {
-                    convo
+                if conversation.owner_display_name.is_none() {
+                    conversation
                         .owner_display_name
                         .clone_from(&record.owner_display_name);
                 }
                 let (message, loads) = message_to_ir(*record, embed, stages_files);
-                convo.attachment_loads.extend(loads);
-                convo.messages.push(message);
+                conversation.attachment_loads.extend(loads);
+                conversation.messages.push(message);
             }
             Event::ExportDone {
                 failures: skipped, ..
@@ -634,9 +637,9 @@ fn embed_attachment_bytes(
     not_decrypted: &mut NotDecrypted,
 ) -> Result<()> {
     let encrypted = collected.encrypted;
-    for convo in collected.conversations.values_mut() {
-        let mut loads = std::mem::take(&mut convo.attachment_loads).into_iter();
-        for message in &mut convo.messages {
+    for conversation in collected.conversations.values_mut() {
+        let mut loads = std::mem::take(&mut conversation.attachment_loads).into_iter();
+        for message in &mut conversation.messages {
             for attachment in &mut message.attachments {
                 options.check_cancel()?;
                 let bytes = match loads.next() {
@@ -673,16 +676,16 @@ fn write_conversations(
     let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
     let mut written = 0usize;
     let mut kept = 0u64;
-    for (chat_identifier, convo) in conversations {
+    for (chat_identifier, conversation) in conversations {
         options.check_cancel()?;
         written += 1;
-        if convo.messages.is_empty() {
+        if conversation.messages.is_empty() {
             continue;
         }
         kept += 1;
         let doc = pending_to_document(
             chat_identifier,
-            convo,
+            conversation,
             options.use_caller_id,
             backup_taken_at_unix_ms,
         );
@@ -705,7 +708,7 @@ fn write_conversations(
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
 fn pending_to_document(
     chat_identifier: String,
-    convo: PendingConversation,
+    conversation: PendingConversation,
     use_caller_id: bool,
     backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationDocument {
@@ -713,8 +716,9 @@ fn pending_to_document(
         source: EXPORT_SOURCE.into(),
         tool: EXPORT_TOOL.into(),
         tool_version: env!("CARGO_PKG_VERSION").into(),
-        owner_identity: (!convo.owner_identity.is_empty()).then(|| convo.owner_identity.clone()),
-        owner_display_name: convo
+        owner_identity: (!conversation.owner_identity.is_empty())
+            .then(|| conversation.owner_identity.clone()),
+        owner_display_name: conversation
             .owner_display_name
             .or_else(|| use_caller_id.then(|| "Me".to_string())),
         backup_taken_at_unix_ms,
@@ -722,7 +726,7 @@ fn pending_to_document(
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
     let (owner_identity, owner_display_name) = owner_sender(&export);
-    let mut messages = convo.messages;
+    let mut messages = conversation.messages;
     for msg in &mut messages {
         if msg.direction == IrDirection::Outgoing && msg.sender_identity.is_none() {
             msg.sender_identity.clone_from(&owner_identity);
@@ -734,9 +738,9 @@ fn pending_to_document(
         export,
         conversation: ConversationMeta {
             chat_identifier,
-            conversation_type: convo.conversation_type,
-            group_title: convo.group_title,
-            participants: convo.participants,
+            conversation_type: conversation.conversation_type,
+            group_title: conversation.group_title,
+            participants: conversation.participants,
             stats: Default::default(),
         },
         messages,
@@ -751,14 +755,14 @@ fn pending_to_document(
 /// consumed in that order and land on the attachment each was collected for.
 fn pending_to_unit(
     chat_identifier: String,
-    mut convo: PendingConversation,
+    mut conversation: PendingConversation,
     use_caller_id: bool,
     backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationUnit {
-    let loads = std::mem::take(&mut convo.attachment_loads);
+    let loads = std::mem::take(&mut conversation.attachment_loads);
     let doc = pending_to_document(
         chat_identifier,
-        convo,
+        conversation,
         use_caller_id,
         backup_taken_at_unix_ms,
     );
@@ -789,11 +793,11 @@ fn drain_conversations(
     let units: Vec<ConversationUnit> = collected
         .conversations
         .into_iter()
-        .filter(|(_, convo)| !convo.messages.is_empty())
-        .map(|(chat_identifier, convo)| {
+        .filter(|(_, conversation)| !conversation.messages.is_empty())
+        .map(|(chat_identifier, conversation)| {
             pending_to_unit(
                 chat_identifier,
-                convo,
+                conversation,
                 use_caller_id,
                 backup_taken_at_unix_ms,
             )
@@ -867,15 +871,15 @@ fn stage_attachments(
     };
     let encrypted = collected.encrypted;
     let mut loads = Vec::new();
-    for convo in collected.conversations.values_mut() {
-        loads.append(&mut convo.attachment_loads);
+    for conversation in collected.conversations.values_mut() {
+        loads.append(&mut conversation.attachment_loads);
     }
     let mut loads = loads.into_iter();
     let counted = CountedAttachments::new(
         collected
             .conversations
             .values_mut()
-            .flat_map(|convo| convo.messages.iter_mut()),
+            .flat_map(|conversation| conversation.messages.iter_mut()),
         media,
         if encrypted {
             PathSources::ReadByLoader
@@ -1215,7 +1219,7 @@ mod tests {
             record.owner_identity = String::new();
             message_to_ir(record, AttachmentEmbed::Embed, true).0
         };
-        let convo = PendingConversation {
+        let conversation = PendingConversation {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1225,7 +1229,7 @@ mod tests {
             attachment_loads: Vec::new(),
         };
 
-        let doc = pending_to_document("+15555550122".into(), convo, false, None);
+        let doc = pending_to_document("+15555550122".into(), conversation, false, None);
 
         let senders: Vec<_> = doc
             .messages
@@ -1250,7 +1254,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let present = tmp.path().join("present.jpg");
         fs::write(&present, b"x").unwrap();
-        let convo = PendingConversation {
+        let conversation = PendingConversation {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1270,7 +1274,7 @@ mod tests {
             ],
         };
         let mut collected = Collected {
-            conversations: BTreeMap::from([("+15555550101".to_string(), convo)]),
+            conversations: BTreeMap::from([("+15555550101".to_string(), conversation)]),
             encrypted,
             failures: 0,
         };
@@ -1299,10 +1303,10 @@ mod tests {
     }
 
     /// A bare message carrying `count` attachments, for pairing tests.
-    fn msg_with_attachments(ts: i64, count: usize) -> IrMessage {
+    fn msg_with_attachments(timestamp_ms: i64, count: usize) -> IrMessage {
         IrMessage {
-            guid: format!("guid-{ts}"),
-            timestamp_unix_ms: ts,
+            guid: format!("guid-{timestamp_ms}"),
+            timestamp_unix_ms: timestamp_ms,
             time_precision: TimePrecision::Milliseconds,
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
@@ -1341,7 +1345,7 @@ mod tests {
         // attachments, so the first load belongs to the first message's
         // attachment and the second to the next message's.
         let first = PathBuf::from("first.jpg");
-        let convo = PendingConversation {
+        let conversation = PendingConversation {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1357,7 +1361,7 @@ mod tests {
             ],
         };
 
-        let unit = pending_to_unit("+15555550101".into(), convo, false, None);
+        let unit = pending_to_unit("+15555550101".into(), conversation, false, None);
 
         assert_eq!(unit.attachments.len(), 2);
         assert_eq!(unit.attachments[0].message_index, 0);
