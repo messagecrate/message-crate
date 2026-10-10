@@ -674,9 +674,19 @@ async fn store_and_update_derived_db() {
     let blob = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
     assert!(converted.join(&blob.assets_path).is_file());
 
-    versions_db::record(&mut conn, Version::Preview, ACCOUNT, SHA, &blob)
-        .await
-        .unwrap();
+    versions_db::record(
+        &mut conn,
+        VersionWrite {
+            rows: OriginalRows {
+                account_id: ACCOUNT,
+                original_sha: SHA,
+            },
+            version: Version::Preview,
+            file: &blob,
+        },
+    )
+    .await
+    .unwrap();
 
     assert_eq!(
         derived_of(&mut conn, attachment_id).await,
