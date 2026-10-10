@@ -82,7 +82,7 @@ an earlier version. The message is shown with its final text and the word
 "Edited", which opens its earlier versions. A source may record that an
 edit was made, and when, without the text it replaced: an iMazing export
 does, so its version has no text, is shown as "Earlier version not in the
-backup" with its time, and finds nothing.
+backup" with its time, and search never finds the message by it.
 _Avoid_: Revision, Old text, Edit history
 
 **Orphaned message**:

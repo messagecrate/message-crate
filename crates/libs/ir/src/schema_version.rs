@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the import client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-12
-//! file is not expected to match version 13 (version 12 required the text of
-//! every earlier version, so a version-13 file whose earlier version has no
-//! text would fail to parse under version 12's rules rather than be refused
-//! by name), and the person should read "schema version 12", not a file that
-//! imports by other rules than its own.
+//! words, and refuses it before parsing the rest of the file. The refusal is
+//! the one rule for every bump, whichever way the shapes differ: a version-12
+//! file would parse under version 13's rules (version 13 made the text of an
+//! earlier version optional, and version 12 always has it), but a file is
+//! imported by its own version's rules or not at all, and the person should
+//! read "schema version 12", not an import that quietly read an older shape.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
