@@ -978,8 +978,8 @@ mod tests {
         assert!(!err.contains("Errno 28"), "{err}");
     }
 
-    /// A failed run's whole output goes to the log as a warning, one line
-    /// per line of output, while the error is still the free-space sentence:
+    /// A failed run's whole output goes to the log as one warning, while
+    /// the error is still the free-space sentence:
     /// the Import Run's log keeps what wtsexporter said about a full disk
     /// that may not be the Scratch Directory's (#1938).
     #[cfg(unix)]

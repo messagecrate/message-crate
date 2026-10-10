@@ -14,9 +14,9 @@ type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 /// Callback for mid-run progress / warning lines. The desktop app sets one and
 /// streams the lines to its log panel; `None` sends them to stderr.
 ///
-/// A line is something the run did. A warning is something it went on
-/// without, or the output of a step that failed, which the desktop app
-/// writes into the Import Run's log at warning level
+/// A line is something the run did. A warning is the output of a step that
+/// failed, today a failed wtsexporter run's, which the desktop app writes
+/// into the Import Run's log at warning level
 /// (`docs/architecture/import-run-logs.md`). A sink with no warning callback
 /// takes a warning as a line.
 #[derive(Clone)]

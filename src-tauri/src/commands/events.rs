@@ -5,7 +5,7 @@
 //! types in `web/src/lib/types.ts`.
 
 use message_crate_core::{
-    IssueSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
+    IssueSink, LogSink, ProgressEvent, ProgressSink, RunIssue, RunIssueKind, WriteStatus,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -249,16 +249,62 @@ pub(crate) fn log_to_run(app: &AppHandle, run_log: &crate::app_directories::RunL
     emit(app, LOG, line);
 }
 
-/// Send `text` to the window's log and add it to the Import Run's log as a
-/// warning.
-pub(crate) fn warn_to_run(app: &AppHandle, run_log: &crate::app_directories::RunLog, text: String) {
-    run_log.warn(&text);
-    emit(app, LOG, text);
+/// The run's log sink: each line and each warning goes into the Import
+/// Run's log, at its own level, and to the window's log.
+pub(crate) fn run_log_sink(app: &AppHandle, run_log: &crate::app_directories::RunLog) -> LogSink {
+    let app = app.clone();
+    log_sink_into(run_log.clone(), move |text| emit(&app, LOG, text))
+}
+
+/// A sink that adds each line to `run_log` as something the run did and each
+/// warning as a warning, and hands both to `window`.
+fn log_sink_into<W>(run_log: crate::app_directories::RunLog, window: W) -> LogSink
+where
+    W: Fn(String) + Clone + Send + Sync + 'static,
+{
+    let line_log = run_log.clone();
+    let line_window = window.clone();
+    LogSink::new(move |line: &str| {
+        line_log.line(line);
+        line_window(line.to_string());
+    })
+    .with_warnings(move |text: &str| {
+        run_log.warn(text);
+        window(text.to_string());
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The run's sink writes a line at `INFO` and a warning, such as a failed
+    /// wtsexporter run's output, at `WARN`, one line per line of it (#1938).
+    #[test]
+    fn the_run_s_sink_logs_a_warning_at_warning_level() {
+        use crate::app_directories::{RunLog, import_run_log};
+        use message_crate_core::RunLogLevel;
+        let logs = tempfile::tempdir().unwrap();
+        let run = std::path::Path::new("/home/sam/message-crate/staging-whatsapp-261004-143000");
+        let sink = log_sink_into(RunLog::open(logs.path(), run), |_| {});
+
+        sink.emit("Reading the backup");
+        sink.warn("wtsexporter failed (exit status: 1). Its output:\nOSError: [Errno 28]");
+
+        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
+        let levels: Vec<_> = text
+            .lines()
+            .map(|raw| {
+                message_crate_core::parse_run_log_line(0, raw)
+                    .unwrap()
+                    .level
+            })
+            .collect();
+        assert_eq!(
+            levels,
+            [RunLogLevel::Info, RunLogLevel::Warn, RunLogLevel::Warn]
+        );
+    }
 
     /// The line for an event no window received is a sentence, with no
     /// `warning:` prefix (#1889).

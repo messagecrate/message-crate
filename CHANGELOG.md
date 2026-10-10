@@ -233,13 +233,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-10: **A failed WhatsApp import keeps what wtsexporter said.** When
-  wtsexporter's output named a full disk, the import said to free space on
-  the Scratch Directory's disk, and the output itself was lost, so a full
-  disk elsewhere, such as the one holding the system's temporary files,
-  could not be told apart. The import still says the same, and the Import
-  Run's log now holds everything a failed wtsexporter run printed, as
-  warnings (#1938).
+- 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
+  wtsexporter's output named a full disk, the import asked to free space on
+  the Scratch Directory's disk. The output itself was lost. So a full disk
+  elsewhere, such as the one that holds the system's temporary files, could
+  not be told apart. The import still asks to free space on the Scratch
+  Directory's disk. The Import Run's log now also holds everything a failed
+  wtsexporter run printed, as warnings (#1938).
 - 2026-10-09: **WhatsApp people are imported with their numbers and names,
   and every group with its members.** A group message's sender had a name or
   a number, never both, some numbers were made from WhatsApp's internal ids
