@@ -52,8 +52,36 @@ pub(crate) struct MessageJson {
     /// [`Self::full_key_id`] is.
     #[serde(default)]
     pub reply_key_id: Option<Value>,
+    /// The reactions that stand on the message, one entry each: `[]` when
+    /// the backup's reaction source was read and the message has none,
+    /// `null` when it is not known (the source table is absent, the record
+    /// does not decode, or the message comes from an older export or from
+    /// WhatsApp's own text export). A withdrawn reaction is already left
+    /// out. Absent from a JSON that upstream WhatsApp Chat Exporter wrote:
+    /// only the fork writes it, from release `0.13.0-mc.2`. The fork's
+    /// `reactions`, a map from the reactor's display name to the emoji on
+    /// Android and always empty on an iPhone, is not read: a name is not an
+    /// identity.
     #[serde(default)]
-    pub reactions: Value,
+    pub reaction_details: Option<Vec<ReactionJson>>,
+}
+
+/// One reaction as the fork writes it in `reaction_details`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ReactionJson {
+    /// The reaction, a non-empty string.
+    pub emoji: Option<String>,
+    /// `true` when the owner of the phone reacted.
+    #[serde(default)]
+    pub from_me: bool,
+    /// The reactor's id by the fork's `sender_jid` rule: the phone id
+    /// (`…@s.whatsapp.net`), resolved from an `@lid` id where the backup
+    /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
+    /// and on a group reaction whose reactor the backup does not name.
+    pub jid: Option<String>,
+    /// The `@lid` id the backup stores the reactor under, when it does;
+    /// `null` otherwise, and on the owner's reactions.
+    pub lid: Option<String>,
 }
 
 /// Load a wtsexporter `result.json` (one JSON object: JID → chat).

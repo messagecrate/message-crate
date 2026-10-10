@@ -564,3 +564,76 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
         "a key from another chat links nothing"
     );
 }
+
+/// Each reaction the fork writes in `reaction_details` is on the message
+/// as a `Reaction`, under the reactor's WhatsApp id: the phone number when
+/// `jid` is a phone id, else the `@lid` id. The owner's own reactions carry
+/// `is_from_me` and no id. A message with `[]`, with `null`, or from an
+/// older export without the field has none, and the raw `reactions` map is
+/// no longer copied into `source.fields`.
+#[test]
+fn reactions_are_on_the_message_under_the_reactors_id() {
+    use message_ir::Reaction;
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reactions.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
+            .expect("parse fixture");
+    let reaction = |emoji: &str, is_from_me: bool, reactor: Option<&str>| Reaction {
+        part_index: 0,
+        kind: "emoji".into(),
+        emoji: Some(emoji.into()),
+        is_from_me,
+        reactor_identity: reactor.map(str::to_string),
+        reactor_display_name: None,
+    };
+
+    let (_, documents) = convert_to_documents(&json);
+    let sam = &documents["+15555550122"];
+    assert_eq!(
+        message_of(sam, "Lunch on Friday?").reactions,
+        vec![
+            reaction("👍", false, Some("+15555550122")),
+            reaction("❤️", true, None),
+        ],
+        "Android shape: a reaction by the peer and one by the owner"
+    );
+    for text in [
+        "No reactions here",
+        "From an older export",
+        "Reactions not known",
+    ] {
+        assert_eq!(message_of(sam, text).reactions, vec![], "{text}");
+    }
+    for message in &sam.messages {
+        let fields: Vec<&str> = message
+            .source
+            .as_ref()
+            .expect("source")
+            .fields
+            .keys()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            fields,
+            vec!["jid", "key_id"],
+            "{}: reactions are on the message, so source.fields carries no copy",
+            message.text
+        );
+    }
+
+    let group = documents
+        .values()
+        .find(|doc| doc.conversation.group_title.as_deref() == Some("Family Chat"))
+        .expect("the group");
+    assert_eq!(
+        message_of(group, "Who likes this?").reactions,
+        vec![
+            reaction("👍", false, Some("+15555550144")),
+            reaction("🔥", false, Some("+15555550155")),
+            reaction("🎉", false, Some("222333444555666@lid")),
+            reaction("😮", false, None),
+            reaction("❤️", true, None),
+        ],
+        "iPhone shape: a phone id, a phone id resolved from an @lid id, an unmapped @lid id, no id, and the owner"
+    );
+}

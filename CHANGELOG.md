@@ -21,6 +21,14 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-09: **A WhatsApp import brings each reaction in under the person
+  who reacted.** A WhatsApp conversation from an Android phone or an iPhone
+  now shows its reactions, each stored under the reactor's phone number, or
+  under their internal WhatsApp id when the backup has no number for them.
+  Your own reactions are yours. Reactions that were taken back are left out.
+  The raw reaction names that an import used to keep beside each message are
+  no longer kept, because the reaction itself now is (#1646).
+
 - 2026-10-08: **The Import form says when a program the import needs is
   missing, with Try again.** A WhatsApp import needs wtsexporter, and
   **Convert** and **Compress** need ffmpeg and ffprobe. When one hasn't been

@@ -3,18 +3,18 @@
 
 use crate::jid::{chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164};
 use crate::parse::{
-    ChatJson, MessageJson, is_reply, key_string, load_chat_store, media_path, message_text,
-    timestamp_ms, timestamp_secs,
+    ChatJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store, media_path,
+    message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
     CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
     project_conversation,
 };
-use message_csv::{format_local_ts, json_cell};
+use message_csv::format_local_ts;
 use message_ir::{
     ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, SortKeyUnit,
+    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use serde_json::Map;
@@ -256,7 +256,9 @@ fn ingest_chat(
                 if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
                     e.insert("reply_key_id".into(), quoted);
                 }
-                e.insert("reactions_json".into(), reactions_json(&msg.reactions));
+                if let Some(reactions) = reactions_json(msg) {
+                    e.insert("reactions".into(), reactions);
+                }
                 e.insert(
                     "is_sticker".into(),
                     if msg.sticker { "true" } else { "false" }.into(),
@@ -434,13 +436,53 @@ fn key_id_string(msg: &MessageJson) -> String {
     }
 }
 
-/// Compact JSON for reactions, or empty when null / empty object.
-fn reactions_json(v: &serde_json::Value) -> String {
-    if v.is_null() || (v.is_object() && v.as_object().is_some_and(|o| o.is_empty())) {
-        String::new()
+/// The message's reactions as the conversation model carries them, serialized
+/// for the `reactions` extra the projection reads back; `None` when the
+/// message has none, or when they are not known.
+fn reactions_json(msg: &MessageJson) -> Option<String> {
+    let reactions: Vec<Reaction> = msg
+        .reaction_details
+        .as_deref()?
+        .iter()
+        .filter_map(reaction_from_json)
+        .collect();
+    (!reactions.is_empty()).then(|| serde_json::to_string(&reactions).expect("serialize reactions"))
+}
+
+/// One reaction under the reactor's WhatsApp id (#1646). The id follows the
+/// sender rule (#1092): the phone number when `jid` is a phone id, else the
+/// `@lid` id, which `jid` holds when the backup maps it to no phone and
+/// `lid` holds otherwise. The owner's own reactions carry `is_from_me` and
+/// no id, as the fork writes none for them. No display name: the fork's
+/// `reactions` map names a reactor by display name, and a name is not an
+/// identity. An entry with no emoji is a withdrawn reaction and stands no
+/// more.
+fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
+    let emoji = reaction.emoji.as_deref().and_then(message_ir::trimmed)?;
+    let reactor_identity = if reaction.from_me {
+        None
     } else {
-        json_cell(v)
-    }
+        reaction
+            .jid
+            .as_deref()
+            .and_then(message_ir::trimmed)
+            .map(|jid| jid_to_e164(jid).unwrap_or_else(|| jid.to_string()))
+            .or_else(|| {
+                reaction
+                    .lid
+                    .as_deref()
+                    .and_then(message_ir::trimmed)
+                    .map(str::to_string)
+            })
+    };
+    Some(Reaction {
+        part_index: 0,
+        kind: "emoji".into(),
+        emoji: Some(emoji.to_string()),
+        is_from_me: reaction.from_me,
+        reactor_identity,
+        reactor_display_name: None,
+    })
 }
 
 /// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
@@ -494,6 +536,15 @@ impl ProjectionHooks for WhatsappProjection {
         (msg.extra_str("is_reply") == "true").then(|| PendingReply {
             quoted_key: message_ir::trimmed(msg.extra_str("reply_key_id")).map(str::to_string),
         })
+    }
+
+    /// The reactions `ingest_chat` read from the fork's `reaction_details`,
+    /// each under the reactor's WhatsApp id ([`reaction_from_json`]).
+    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
+        match msg.extra.get("reactions") {
+            Some(json) => serde_json::from_str(json).expect("reactions written by ingest_chat"),
+            None => Vec::new(),
+        }
     }
 
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
@@ -551,7 +602,9 @@ impl ProjectionHooks for WhatsappProjection {
     /// because `reply_to` records it on the message. A reply whose quoted
     /// message is not in the export keeps no quoted id: `reply_to` names
     /// only a message of the same export, and neither the raw `reply` value
-    /// nor `reply_key_id` is stored beside it.
+    /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
+    /// here: `reactions` records each on the message, and the fork's
+    /// name-to-emoji `reactions` map is not read at all.
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         let whatsapp_jid = convo.extra_str("whatsapp_jid");
@@ -566,14 +619,6 @@ impl ProjectionHooks for WhatsappProjection {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
-            );
-        }
-        let reactions_json = msg.extra_str("reactions_json");
-        if !reactions_json.is_empty() {
-            fields.insert(
-                "reactions".into(),
-                serde_json::from_str(reactions_json)
-                    .unwrap_or_else(|_| serde_json::Value::String(reactions_json.to_string())),
             );
         }
         IrSource {
