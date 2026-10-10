@@ -99,8 +99,9 @@ as a name someone gave the contact.
 other people do.** A WhatsApp backup marks a group by its id, which ends in
 `@g.us`. An Apple Messages database marks it by the chat's `style`: 43 is a
 group and 45 one-to-one. Where the style is missing or another value, a chat
-id of `chat` and digits marks a group, because an older database has no
-`style` column and gives a group an id of that shape.
+id of `chat` and digits marks a group. An older database has no `style`
+column, and only 43 and 45 have a known meaning, so the id's shape is the one
+mark left.
 
 Where a source marks its groups, the mark decides, whatever the number of
 other people in the conversation. Why: the source's group is the one the
@@ -115,8 +116,8 @@ counts its own way.
 
 An SMS or MMS backup (SMS Backup & Restore, SMS Backup+, GO SMS Pro) counts
 the addresses a message names other than the account holder's numbers and
-email addresses. SMS Backup & Restore works those numbers out from the
-backup's sent MMS where none are given.
+email addresses. Where the import names none of the account holder's numbers,
+SMS Backup & Restore works them out from the backup's sent MMS.
 
 An iMazing export counts the people who wrote in a session, and an
 OpenExtract export the people who wrote in a chat file or under a
@@ -131,9 +132,11 @@ name is the group's title, not a roster.
 
 iMazing and OpenExtract count who wrote, not who was in the group. So a group
 in which only one other person wrote comes in as a one-to-one conversation.
-It is keyed by that person's address where a row gives one. Otherwise it is
-keyed by the session name or the `Conversation` label, as a person known only
-by that name.
+It is keyed by the first address found. iMazing looks in the session name,
+then a number written in it, then the earliest received row's `Sender ID`.
+OpenExtract looks in the writer's row, then the label. Where none is an
+address, the session name or the label keys it, as a person known only by
+that name.
 
 **A group conversation is not a person.** A source gives a group an id of its
 own, such as `chat1000000005`. The server stores it as the conversation's chat
