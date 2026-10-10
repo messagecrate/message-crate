@@ -30,13 +30,19 @@ fn sample_doc() -> ConversationDocument {
     doc
 }
 
-/// Same fixture as [`sample_doc`], with a different chat handle and message guid.
+/// Same fixture as [`sample_doc`], with a different chat handle and message
+/// guid. The handle replaces the first one everywhere, the source bag's
+/// address included, so a batch holds the first handle only when it holds
+/// the first conversation.
 fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
     let mut doc = sample_doc();
     doc.conversation.chat_identifier = handle.into();
     doc.conversation.participants[0].identity = Some(handle.into());
     doc.messages[0].guid = guid.into();
     doc.messages[0].sender_identity = Some(handle.into());
+    if let Some(source) = &mut doc.messages[0].source {
+        source.fields.insert("address".into(), json!(handle));
+    }
     doc
 }
 
