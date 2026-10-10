@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{probe_video, require_ffmpeg, run_ffmpeg};
-use crate::{CompressOptions, MediaMode};
+use crate::tools::{require_ffmpeg, run_ffmpeg};
+use crate::{CompressOptions, MediaMode, probe_media};
 
 /// Aggregate counts and errors from one media convert/compress pass.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -894,7 +894,7 @@ fn compress_video(
 
     // A probe that fails yields empty codec and zero dimensions, which never
     // count as efficient, so the file goes through compression like any other.
-    let probe = probe_video(path).unwrap_or_default();
+    let probe = probe_media(path).unwrap_or_default();
     if opts.skip_efficient
         && is_efficient(&probe.codec, probe.width, probe.height, probe.bitrate, opts)
     {
@@ -982,11 +982,9 @@ fn base_video_args(path: &Path, _tmp: &Path, vf: &str) -> Vec<String> {
 
 /// Would `compress_video` skip re-encoding this stream and only remux it?
 ///
-/// Takes plain fields rather than [`crate::tools::Probe`] so the size
-/// forecast in `estimate.rs` (which has its own [`crate::MediaProbe`] from a
-/// public ffprobe call, not this module's private `Probe`) can call the exact
-/// predicate `compress_video` uses instead of copying its thresholds — one
-/// place decides what counts as "already efficient enough."
+/// `compress_video` and the size forecast in `estimate.rs` both call this
+/// rather than copying its thresholds, so one place decides what counts as
+/// "already efficient enough."
 pub(crate) fn is_efficient(
     codec: &str,
     width: u32,
