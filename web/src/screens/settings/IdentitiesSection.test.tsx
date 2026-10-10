@@ -131,7 +131,7 @@ describe("IdentitiesSection", () => {
     render(<IdentitiesSection profile={{ ...profile, phones: [], emails: [] }} />);
 
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
-    expect(screen.getByText("No identities yet.")).toBeInTheDocument();
+    expect(screen.getByText("No identities yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add identity" })).toBeEnabled();
   });
 

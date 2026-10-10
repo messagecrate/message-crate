@@ -123,7 +123,15 @@ describe("LogViewer", () => {
     expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
 
     await fill(user, screen.getByRole("textbox", { name: "Search the log" }), "no such line");
-    expect(await screen.findByText("No line matches the search.")).toBeInTheDocument();
+    expect(await screen.findByText("No line matches the search")).toBeInTheDocument();
+  });
+
+  it("says when no line is at the level picked", async () => {
+    // Four info lines, and the viewer opens at warnings and up.
+    const { source } = sourceOver(aLog(4));
+    renderViewer(source);
+
+    expect(await screen.findByText("No line at this level")).toBeInTheDocument();
   });
 
   it("downloads the log as it is, under its own name", async () => {
