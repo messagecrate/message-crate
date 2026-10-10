@@ -78,14 +78,8 @@ impl MergedArchive for SmsBackupPlusArchive {
             let Some(directory) = directory else {
                 continue;
             };
-            let kept = ConversationDocument {
-                schema_version: doc.schema_version,
-                export: doc.export.clone(),
-                conversation: doc.conversation.clone(),
-                messages,
-                packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
-            };
-            self.write_conversation(&output_dir.join(directory), &kept, output_dir, report)?;
+            let kept = with_messages(doc, messages);
+            self.write_conversation(output_dir, &directory, &kept, report)?;
         }
         Ok(())
     }
@@ -117,16 +111,7 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
         .iter()
         .enumerate()
         .filter(|(_, doc)| doc.messages.iter().any(IrMessage::is_sms_or_mms))
-        .map(|(index, doc)| {
-            let named = ConversationDocument {
-                schema_version: doc.schema_version,
-                export: doc.export.clone(),
-                conversation: doc.conversation.clone(),
-                messages: Vec::new(),
-                packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
-            };
-            (index, named)
-        })
+        .map(|(index, doc)| (index, with_messages(doc, Vec::new())))
         .collect();
     let mut docs: Vec<&mut ConversationDocument> = written.iter_mut().map(|(_, doc)| doc).collect();
     give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
@@ -137,18 +122,33 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
     Ok(directories)
 }
 
+/// `doc` with `messages` in place of its own. The directory names and the
+/// mail are both made from copies built here, so they come from the same
+/// conversation.
+fn with_messages(doc: &ConversationDocument, messages: Vec<IrMessage>) -> ConversationDocument {
+    ConversationDocument {
+        schema_version: doc.schema_version,
+        export: doc.export.clone(),
+        conversation: doc.conversation.clone(),
+        messages,
+        packaging_stem_suffix: doc.packaging_stem_suffix.clone(),
+    }
+}
+
 impl SmsBackupPlusArchive {
-    /// Write the messages of `doc` into `directory`, one `.eml` each, named
-    /// and ordered as the EML archive names and orders its own. Attachments
-    /// are read relative to `output_dir`.
+    /// Write the messages of `doc` into the directory `directory` of
+    /// `output_dir`, one `.eml` each, named and ordered as the EML archive
+    /// names and orders its own.
     fn write_conversation(
         &self,
-        directory: &Path,
-        doc: &ConversationDocument,
         output_dir: &Path,
+        directory: &str,
+        doc: &ConversationDocument,
         report: &mut ExportReport,
     ) -> Result<()> {
-        fs::create_dir_all(directory).with_context(|| format!("create {}", directory.display()))?;
+        let directory = output_dir.join(directory);
+        fs::create_dir_all(&directory)
+            .with_context(|| format!("create {}", directory.display()))?;
         let conversation = Conversation::of(doc);
         let mut ordered: Vec<&IrMessage> = doc.messages.iter().collect();
         ordered.sort_by(|a, b| {
