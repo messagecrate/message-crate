@@ -67,7 +67,7 @@ export function isReservedTagName(name: string): boolean {
 export const tagSlug = groupSlug;
 export const tagFromSlug = groupFromSlug;
 
-/** Build the thread-list query for a tag page plus optional typed search. */
+/** Build the conversation-list query for a tag page plus optional typed search. */
 export const tagListQuery = messageTags.listQuery;
 
 /** Create, rename, delete, and set membership on Message Tags. */

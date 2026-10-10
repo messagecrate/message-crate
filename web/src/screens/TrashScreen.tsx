@@ -156,7 +156,7 @@ export default function TrashScreen() {
   });
 
   // AppLayout's left column sets `tsel` when a trashed conversation is clicked;
-  // it stays on `/trash` rather than navigating to the thread, so this pane can
+  // it stays on `/trash` rather than navigating to the conversation, so this pane can
   // show Restore and Delete for the row the person just selected.
   const {
     data: selected,

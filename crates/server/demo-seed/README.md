@@ -11,7 +11,7 @@ Three staging trees simulate separate backups:
 - `staging/whatsapp/` — WhatsApp-style export for ~20% of contacts (same phone, platform `whatsapp`)
 
 Most conversations are single-source. A small set appears in both iMessage and Android so the
-Sources panel and cross-source dedupe can be exercised. WhatsApp threads share the phone number
+Sources panel and cross-source dedupe can be exercised. WhatsApp conversations share the phone number
 with Text message handles so the contact drawer shows both platforms.
 
 Regenerate + import in one step:
@@ -46,10 +46,10 @@ Prejudice (5274 sentences) under `crates/server/demo-seed/data/corpus/`. Names c
 
 - **Triple sources** — `imessage` vs `sms-backup-restore` vs `whatsapp`
 - **Platform handles** — Text message + WhatsApp rows on the same contact
-- **Transport mix** — SMS/RCS mixed into iMessage threads (~20% by default)
+- **Transport mix** — SMS/RCS mixed into iMessage conversations (~20% by default)
 - **Contacts / groups / No Messages** — group memberships and zero-message rows
 - **Unassigned** — identities with messages and no address book row (phone + email)
-- **Rate skew** — most 1:1 threads ~200–300 msgs/year (bursty days); rare whales up to ~12k/year
+- **Rate skew** — most one-to-one conversations ~200–300 msgs/year (bursty days); rare whales up to ~12k/year
 - **History** — typical first contact ~3–5 years ago; longest ~14 years; newest ~1 week
 - **Group Chats** — membership mean ~5 groups/contact; size mean ~4; at least 10 groups with 8–20 participants; bursty days (several / none / a lot)
 - **Replies, tapbacks, attachments** — including one intentionally missing file

@@ -249,11 +249,14 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
     assert_eq!(per_source(IMESSAGE_SOURCE), 18);
     assert_eq!(per_source(SBR_SOURCE), 3);
     assert_eq!(per_source(WHATSAPP_SOURCE), 4);
-    let empty_threads = documents
+    let empty_conversations = documents
         .iter()
         .filter(|(_, doc)| doc.messages.is_empty())
         .count();
-    assert_eq!(empty_threads, 2, "one empty individual and one empty group");
+    assert_eq!(
+        empty_conversations, 2,
+        "one empty individual and one empty group"
+    );
     // Replies and tapbacks are placed on a stride, so how many there are
     // says nothing a pinned number could check. What has to hold is that
     // every reply names a message written earlier in the same conversation:
