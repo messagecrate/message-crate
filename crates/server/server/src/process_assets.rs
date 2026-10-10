@@ -25,7 +25,9 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::counts::words;
-use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
+use crate::db::attachment_versions::{
+    self as versions_db, StoredOriginal, Version, VersionFile, VersionWrite,
+};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
@@ -762,10 +764,12 @@ impl<'a> AccountPass<'a> {
         };
         let named = versions_db::record(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            &VersionWrite {
+                version,
+                account_id: self.account_id,
+                original_sha: &row.sha256,
+                file: &blob,
+            },
         )
         .await?;
         if named == 0 {
@@ -828,10 +832,12 @@ impl<'a> AccountPass<'a> {
         }
         let pointed = versions_db::share(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            &VersionWrite {
+                version,
+                account_id: self.account_id,
+                original_sha: &row.sha256,
+                file: &blob,
+            },
         )
         .await?;
         if pointed == 0 {

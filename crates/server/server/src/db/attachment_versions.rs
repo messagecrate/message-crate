@@ -175,23 +175,31 @@ pub async fn stored_originals(
     .await
 }
 
-/// Point every attachment row of `account_id` for the original
-/// `original_sha` at `file` as its `version`, and answer how many rows now
-/// name it. 0 when every row of the original was deleted meanwhile. The
-/// update runs in a write transaction of its own, as every write to
-/// `attachments` does (`crate::db::write_tx`).
+/// Which rows a version write points at which file: the attachment rows of
+/// `account_id` for the original `original_sha`, as their `version`, at
+/// `file`. [`record`] and [`share`] take it, so a change to what identifies
+/// a version write is made here and where it is built.
+#[derive(Debug, Clone, Copy)]
+pub struct VersionWrite<'a> {
+    pub version: Version,
+    pub account_id: i64,
+    pub original_sha: &'a str,
+    pub file: &'a VersionFile,
+}
+
+/// Point every attachment row `write` names at its file, and answer how
+/// many rows now name it. 0 when every row of the original was deleted
+/// meanwhile. The update runs in a write transaction of its own, as every
+/// write to `attachments` does (`crate::db::write_tx`).
 ///
 /// # Errors
 ///
 /// Returns a database error when the statement fails.
 pub async fn record(
     conn: &mut SqliteConnection,
-    version: Version,
-    account_id: i64,
-    original_sha: &str,
-    file: &VersionFile,
+    write: &VersionWrite<'_>,
 ) -> Result<u64, sqlx::Error> {
-    point_rows(conn, version, account_id, original_sha, file, false).await
+    point_rows(conn, write, false).await
 }
 
 /// Record on every attachment row of `account_id` for the original
@@ -225,38 +233,37 @@ pub async fn record_shown_as_is(
     tx.commit().await
 }
 
-/// Point the attachment rows of `account_id` for the original
-/// `original_sha` that name no `version` at `file`, and answer how many
-/// rows it pointed. Rows that already name one are left alone. 0 when no
-/// such row is left, such as when they were deleted meanwhile. The update
-/// runs in a write transaction of its own, as [`record`] does.
+/// Point the attachment rows `write` names that name no version of its
+/// kind at its file, and answer how many rows it pointed. Rows that already
+/// name one are left alone. 0 when no such row is left, such as when they
+/// were deleted meanwhile. The update runs in a write transaction of its
+/// own, as [`record`] does.
 ///
 /// # Errors
 ///
 /// Returns a database error when the statement fails.
 pub async fn share(
     conn: &mut SqliteConnection,
-    version: Version,
-    account_id: i64,
-    original_sha: &str,
-    file: &VersionFile,
+    write: &VersionWrite<'_>,
 ) -> Result<u64, sqlx::Error> {
-    point_rows(conn, version, account_id, original_sha, file, true).await
+    point_rows(conn, write, true).await
 }
 
-/// Point the attachment rows of `account_id` for the original
-/// `original_sha` at `file` as its `version`, and answer how many rows it
-/// pointed. When `only_unset` is true, rows that already name a `version`
-/// are left alone. [`record`] and [`share`] are this one statement, so a
-/// change to how a version is pointed at is made once.
+/// Point the attachment rows `write` names at its file, and answer how many
+/// rows it pointed. When `only_unset` is true, rows that already name a
+/// version of its kind are left alone. [`record`] and [`share`] are this
+/// one statement, so a change to how a version is pointed at is made once.
 async fn point_rows(
     conn: &mut SqliteConnection,
-    version: Version,
-    account_id: i64,
-    original_sha: &str,
-    file: &VersionFile,
+    write: &VersionWrite<'_>,
     only_unset: bool,
 ) -> Result<u64, sqlx::Error> {
+    let VersionWrite {
+        version,
+        account_id,
+        original_sha,
+        file,
+    } = *write;
     let [sha_column, path_column, mime_column] = version.columns();
     let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")
