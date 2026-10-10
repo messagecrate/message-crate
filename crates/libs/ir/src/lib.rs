@@ -1,8 +1,8 @@
 //! Shared conversation structure every exporter writes.
 //!
-//! A [`ConversationDocument`] is the in-memory form of one chat: export
-//! metadata, participants, and messages. Backup converters parse vendor
-//! formats into this type. Writing files (JSON, CSV, EML, and so on) lives
+//! A [`ConversationDocument`] is the in-memory form of one conversation:
+//! export metadata, participants, and messages. Backup converters parse
+//! vendor formats into this type. Writing files (JSON, CSV, EML, and so on) lives
 //! in `message-ir-format`. The atomic, synced write those files go through
 //! ([`write_atomic`]) lives here, so attachment staging, media conversion and
 //! the journal use the same one. Converting an existing export directory lives in
@@ -194,9 +194,9 @@ pub struct ExportMeta {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IrConversationType {
-    /// One-on-one chat with a single peer.
+    /// A one-to-one conversation with a single other person.
     Individual,
-    /// Chat with multiple peers.
+    /// A group conversation with several other people.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
