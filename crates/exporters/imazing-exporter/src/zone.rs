@@ -5,11 +5,11 @@ use anyhow::{Result, bail};
 use chrono::{DateTime, Duration, FixedOffset, Local, NaiveDateTime, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 
-use crate::parse_utc_offset;
+use crate::utc_offset::parse_utc_offset;
 
 /// How a timestamp with no zone of its own is turned into an instant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Zone {
+pub(crate) enum Zone {
     /// The zone of the machine running the export.
     Local,
     /// A fixed offset such as `UTC-05:00`; never has a gap or a repeat.
@@ -27,7 +27,7 @@ impl Zone {
     ///
     /// Returns an error when the string is neither a UTC offset nor a known
     /// zone name.
-    pub fn parse(raw: Option<&str>) -> Result<Self> {
+    pub(crate) fn parse(raw: Option<&str>) -> Result<Self> {
         let Some(name) = raw.and_then(message_ir::trimmed) else {
             return Ok(Self::Local);
         };
@@ -48,7 +48,7 @@ impl Zone {
     /// zone that jumped from 02:00 to 03:00 is the instant 03:30 shows on the
     /// new clock; this is what Java's `ZonedDateTime` and Python's `zoneinfo`
     /// do. `None` only when the arithmetic leaves chrono's range.
-    pub fn instant(self, naive: NaiveDateTime) -> Option<DateTime<Utc>> {
+    pub(crate) fn instant(self, naive: NaiveDateTime) -> Option<DateTime<Utc>> {
         match self {
             Self::Local => instant_in(&Local, naive),
             Self::Fixed(offset) => instant_in(&offset, naive),

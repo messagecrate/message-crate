@@ -1883,6 +1883,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "chrono-tz",
  "csv",
  "file-io",
  "hex",
@@ -2429,8 +2430,6 @@ name = "message-csv"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "chrono",
- "chrono-tz",
  "csv",
  "message-ir",
  "serde",
