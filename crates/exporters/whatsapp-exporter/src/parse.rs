@@ -10,17 +10,23 @@ use std::path::Path;
 /// Top-level JSON: map of JID → chat.
 pub(crate) type ChatStoreFile = BTreeMap<String, ChatJson>;
 
+/// One conversation in a wtsexporter `result.json`: its name, its messages
+/// and, on a group conversation, its members.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct ChatJson {
+    /// The conversation's name: the title of a group conversation, the other
+    /// person's name on a one-to-one conversation. `None` when the backup has
+    /// none.
     pub name: Option<String>,
     /// Prefix for relative media `data` paths (iOS often `AppDomainGroup-…/`).
     #[serde(default)]
     pub media_base: Option<String>,
+    /// The conversation's messages, keyed as wtsexporter writes them.
     #[serde(default)]
     pub messages: BTreeMap<String, MessageJson>,
     /// On a group, one entry per person the backup has a member row for,
     /// the owner of the phone included where the backup has one. `null`
-    /// on any other chat, and on a group whose member table was absent or
+    /// on any other conversation, and on a group whose member table was absent or
     /// unreadable. An empty list means the table was read and holds no row
     /// for the group.
     #[serde(default)]
@@ -92,21 +98,31 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for ForkField<T> {
     }
 }
 
+/// One message of a chat in a wtsexporter `result.json`.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct MessageJson {
+    /// `true` when the owner of the phone sent the message.
     #[serde(default)]
     pub from_me: bool,
     /// Unix seconds (or milliseconds — converted when writing the conversation).
     pub timestamp: Option<f64>,
+    /// The message text, or the media file's path when `media` is `true`.
     pub data: Option<Value>,
+    /// The sender as wtsexporter names them: a name, or digits that may be an
+    /// internal id. Read only when it is a name.
     pub sender: Option<String>,
-    /// `false` or a media path string.
+    /// `false`, `true` (the path is in `data`), or a media path string.
     #[serde(default)]
     pub media: Value,
+    /// The media file's MIME type.
     pub mime: Option<String>,
+    /// The caption on a media message.
     pub caption: Option<String>,
+    /// `true` when the message is a sticker.
     #[serde(default)]
     pub sticker: bool,
+    /// The message's id in the backup, shortened on an iPhone: see
+    /// [`Self::full_key_id`].
     pub key_id: Option<Value>,
     /// The whole id the backup stores for the message. On an iPhone
     /// `key_id` is its first 17 characters; on Android the two are equal.
