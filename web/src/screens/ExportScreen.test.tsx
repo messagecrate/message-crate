@@ -96,12 +96,12 @@ async function exportTo(directory: string) {
   return user;
 }
 
-/** Pick a format from the Format select, then press Export. */
+/** Pick a format from the Output format select, then press Export. */
 async function exportAs(directory: string, formatLabel: string) {
   const user = setupUser();
   renderScreen();
   await fill(user, screen.getByPlaceholderText("The Export Directory"), directory);
-  await user.click(screen.getByRole("button", { name: /Format/ }));
+  await user.click(screen.getByRole("button", { name: /Output format/ }));
   await user.click(await screen.findByRole("option", { name: formatLabel }));
   await user.click(screen.getByRole("button", { name: "Export" }));
   return user;
@@ -140,7 +140,7 @@ describe("ExportScreen", () => {
   it("converts into the export's own directory when no directory is chosen", async () => {
     const user = setupUser();
     renderScreen();
-    await user.click(screen.getByRole("button", { name: /Format/ }));
+    await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
@@ -284,9 +284,9 @@ describe("ExportScreen", () => {
     expect(convert).toBeEnabled();
 
     await fill(user, screen.getByLabelText("Save to"), "/home/demo/out");
-    // The Export screen's Format comes before Convert's Output format.
-    const [exportFormat] = screen.getAllByRole("button", { name: /Format/ });
-    if (!exportFormat) throw new Error("no Format select");
+    // The Export screen's Output format comes before Convert's.
+    const [exportFormat] = screen.getAllByRole("button", { name: /Output format/ });
+    if (!exportFormat) throw new Error("no Output format select");
     await user.click(exportFormat);
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
@@ -330,7 +330,7 @@ describe("ExportScreen", () => {
     const user = setupUser();
     renderScreen();
     await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
-    await user.click(screen.getByRole("button", { name: /Format/ }));
+    await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
 
     const exportButton = screen.getByRole("button", { name: "Export" });
@@ -444,7 +444,7 @@ describe("ExportScreen", () => {
     const field = screen.getByPlaceholderText("The Export Directory");
     await user.clear(field);
     await fill(user, field, "/b");
-    await user.click(screen.getByRole("button", { name: /Format/ }));
+    await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
 
     expect(screen.getByText(/Export complete/)).toHaveTextContent(
@@ -476,7 +476,7 @@ describe("ExportScreen", () => {
     const user = await exportTo("/a");
     await screen.findByText(/Export complete/);
     invokeCreateExportDir.mockImplementation(() => new Promise<never>(() => {}));
-    await user.click(screen.getByRole("button", { name: /Format/ }));
+    await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
