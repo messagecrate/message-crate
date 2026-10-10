@@ -68,10 +68,20 @@ fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+/// What `claimed_with_account` answers, each named so the two session
+/// tokens cannot be swapped.
+struct Claimed {
+    /// The owner's session token.
+    owner: String,
+    /// Alice's account id.
+    alice_id: i64,
+    /// Alice's session token.
+    alice: String,
+}
+
 /// Claims the Message Crate as the owner, opens public registration,
-/// registers `alice`, and logs her in. Answers the owner's session token,
-/// her account id, and her session token.
-async fn claimed_with_account(base: &str) -> (String, i64, String) {
+/// registers `alice`, and logs her in.
+async fn claimed_with_account(base: &str) -> Claimed {
     use reqwest::Method;
     use reqwest::StatusCode as S;
 
@@ -103,7 +113,7 @@ async fn claimed_with_account(base: &str) -> (String, i64, String) {
     )
     .await;
     assert_eq!(status, S::CREATED, "{registered}");
-    let account_id = registered["account_id"].as_i64().unwrap();
+    let alice_id = registered["account_id"].as_i64().unwrap();
     let (status, session) = call(
         base,
         Method::POST,
@@ -113,8 +123,12 @@ async fn claimed_with_account(base: &str) -> (String, i64, String) {
     )
     .await;
     assert_eq!(status, S::CREATED, "{session}");
-    let account = session["token"].as_str().unwrap().to_string();
-    (owner, account_id, account)
+    let alice = session["token"].as_str().unwrap().to_string();
+    Claimed {
+        owner,
+        alice_id,
+        alice,
+    }
 }
 
 /// Everything in the server's log files, and how many files there are.
@@ -140,9 +154,15 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    // The owner claims the Message Crate and opens registration, and an
-    // account registers, logs in, and makes an API token.
-    let (owner, alice_id, alice) = claimed_with_account(base).await;
+    // The owner claims the Message Crate and opens registration, and alice
+    // registers and logs in.
+    let Claimed {
+        owner,
+        alice_id,
+        alice,
+    } = claimed_with_account(base).await;
+
+    // Alice makes an API token.
     let (status, made) = call(
         base,
         Method::POST,
@@ -360,7 +380,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
     let base = format!("http://{address}");
     let base = base.as_str();
 
-    let (_, _, alice) = claimed_with_account(base).await;
+    let alice = claimed_with_account(base).await.alice;
 
     let (status, run) = call(
         base,
