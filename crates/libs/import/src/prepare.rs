@@ -134,8 +134,6 @@ impl<'a> PrepareContext<'a> {
             batch_size,
             digests: DigestResolver {
                 cache: Mutex::new(HashMap::new()),
-                verify_digests: cfg.verify_digests,
-                trust_export: cfg.trust_export,
             },
             claim_ended: Condvar::new(),
             probe_existing: AtomicBool::new(false),
@@ -214,11 +212,7 @@ pub(crate) fn prepare_file(
     let source = project::validate_header(&header)?;
 
     let scan_started = Instant::now();
-    let scan = if ctx.cfg.skip_attachments {
-        AttachmentScan::text_only(&doc.messages)
-    } else {
-        scan_attachments(ctx, name, &doc.messages)?
-    };
+    let scan = scan_attachments(ctx, name, &doc.messages)?;
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
@@ -228,18 +222,16 @@ pub(crate) fn prepare_file(
         skipped: scan.skipped,
         ..AssetTotals::default()
     };
-    if !ctx.cfg.skip_attachments {
-        let upload_started = Instant::now();
-        let uploaded = upload_assets(ctx, name, &scan.unique)?;
-        profile.asset_upload_ms = elapsed_ms(upload_started);
-        profile.asset_bytes = uploaded.bytes;
-        assets.add(AssetTotals {
-            uploaded: uploaded.uploaded,
-            skipped: uploaded.skipped,
-            bytes: uploaded.bytes,
-        });
-        log_lines.extend(uploaded.log_lines);
-    }
+    let upload_started = Instant::now();
+    let uploaded = upload_assets(ctx, name, &scan.unique)?;
+    profile.asset_upload_ms = elapsed_ms(upload_started);
+    profile.asset_bytes = uploaded.bytes;
+    assets.add(AssetTotals {
+        uploaded: uploaded.uploaded,
+        skipped: uploaded.skipped,
+        bytes: uploaded.bytes,
+    });
+    log_lines.extend(uploaded.log_lines);
 
     let chunks = build_import_chunks(ctx, name, &doc, &message_lines, &scan.projections)?;
     Ok(PreparedFile {
@@ -271,28 +263,11 @@ struct AttachmentScan {
     warnings: Vec<String>,
 }
 
-impl AttachmentScan {
-    /// The scan for a text-only Upload: count every attachment as skipped,
-    /// upload nothing, and reference nothing from the import lines.
-    fn text_only(messages: &[IrMessage]) -> Self {
-        let count = messages.iter().map(|m| m.attachments.len() as u64).sum();
-        Self {
-            projections: messages.iter().map(|_| Vec::new()).collect(),
-            unique: BTreeMap::new(),
-            count,
-            skipped: count,
-            skips: Vec::new(),
-            warnings: Vec::new(),
-        }
-    }
-}
-
 /// Walk every attachment, decide whether it can be uploaded, and fingerprint the ones that can.
 ///
 /// # Errors
 ///
-/// Returns an error for an unsafe attachment path, an unreadable file, or a
-/// digest mismatch when `verify_digests` is on.
+/// Returns an error for an unsafe attachment path or an unreadable file.
 fn scan_attachments(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -322,8 +297,7 @@ fn scan_attachments(
 ///
 /// # Errors
 ///
-/// Returns an error for an unsafe path, an unreadable file, or a digest
-/// mismatch when `verify_digests` is on.
+/// Returns an error for an unsafe path or an unreadable file.
 fn scan_one_attachment(
     ctx: &PrepareContext<'_>,
     name: &str,
@@ -427,12 +401,8 @@ fn build_import_chunks(
     );
     for (i, msg) in doc.messages.iter().enumerate() {
         check_cancel(ctx.cfg.cancel.as_ref())?;
-        let (line, guid) = if ctx.cfg.skip_attachments {
-            project::message_line_without_attachments(msg)?
-        } else {
-            // Rewrite attachment fields to uploaded digests or missing placeholders.
-            project::message_line(msg, &projections[i])?
-        };
+        // Rewrite attachment fields to uploaded digests or missing placeholders.
+        let (line, guid) = project::message_line(msg, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
             // Already imported this message id on a previous successful Upload.
             continue;
@@ -523,29 +493,22 @@ impl ChunkBuilder {
 /// per-run cache, or a fresh hash of the bytes on disk.
 struct DigestResolver {
     cache: DigestCache,
-    verify_digests: bool,
-    trust_export: bool,
 }
 
 impl DigestResolver {
     /// Resolve the SHA-256 fingerprint for an attachment file.
     ///
-    /// The default is to hash every file from disk, compare against any JSON
-    /// Lines claim, and warn on mismatch (using the actual disk hash). Two
-    /// flags alter this:
-    ///
-    /// * `trust_export` — skip the hash when the JSON Lines `size_bytes`
-    ///   matches the file size on disk (a cheap proxy for "file unchanged
-    ///   since export").
-    /// * `verify_digests` — hash from disk and **fail** on mismatch.
+    /// The export wrote each attachment's SHA-256 and size, so a claim whose
+    /// size matches the file on disk is taken as it is, without hashing the
+    /// file. Any other file is hashed from disk; when the hash differs from
+    /// the claim, the Upload warns and uses the hash of the bytes.
     ///
     /// The server is the final verifier on upload; a stale fingerprint
     /// is self-correcting (the server rejects mismatches).
     ///
     /// # Errors
     ///
-    /// Returns an error when the file cannot be hashed, or when
-    /// `verify_digests` is on and the on-disk hash does not match the claim.
+    /// Returns an error when the file cannot be read or hashed.
     fn resolve(
         &self,
         abs: &Path,
@@ -576,9 +539,7 @@ impl DigestResolver {
             .with_context(|| format!("{name}: stat {rel}"))?
             .len();
 
-        if self.trust_export
-            && !self.verify_digests
-            && let (Some(claimed_digest), Some(claimed_size)) = (claimed.as_deref(), claimed_size)
+        if let (Some(claimed_digest), Some(claimed_size)) = (claimed.as_deref(), claimed_size)
             && claimed_size == disk_size
         {
             self.remember(abs, claimed_digest);
@@ -600,9 +561,6 @@ impl DigestResolver {
                 msg.push_str(&format!(
                     ". Its size changed from {cs} to {disk_size} bytes"
                 ));
-            }
-            if self.verify_digests {
-                bail!("{msg}");
             }
             warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
         }
@@ -1100,11 +1058,9 @@ mod tests {
     use crate::run::NO_MESSAGE_COUNT_LIMIT;
     use sha2::{Digest, Sha256};
 
-    fn resolver(trust_export: bool) -> DigestResolver {
+    fn resolver() -> DigestResolver {
         DigestResolver {
             cache: Mutex::new(HashMap::new()),
-            verify_digests: false,
-            trust_export,
         }
     }
 
@@ -1125,8 +1081,10 @@ mod tests {
         assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_none());
     }
 
+    /// The export's SHA-256 is taken as it is when its size matches the file,
+    /// and the file is hashed, with a warning, when the size differs.
     #[test]
-    fn trust_export_skips_hash_when_size_matches() {
+    fn the_export_digest_is_taken_when_its_size_matches() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pic.bin");
         std::fs::write(&path, b"hello").unwrap();
@@ -1134,7 +1092,7 @@ mod tests {
         let expected_disk = hex::encode(Sha256::digest(b"hello"));
 
         let mut warnings = Vec::new();
-        let trusted = resolver(true)
+        let trusted = resolver()
             .resolve(
                 &path,
                 Some(&claimed),
@@ -1151,21 +1109,7 @@ mod tests {
         assert!(warnings.is_empty());
 
         let mut warnings = Vec::new();
-        let disk = resolver(false)
-            .resolve(
-                &path,
-                Some(&claimed),
-                Some(5),
-                "chat.jsonl",
-                "attachments/pic.bin",
-                &mut |m| warnings.push(m),
-            )
-            .unwrap();
-        assert_eq!(disk, expected_disk);
-        assert_eq!(warnings.len(), 1);
-
-        let mut warnings = Vec::new();
-        let size_mismatch = resolver(true)
+        let size_mismatch = resolver()
             .resolve(
                 &path,
                 Some(&claimed),
@@ -1177,7 +1121,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             size_mismatch, expected_disk,
-            "trust_export must still hash when size_bytes does not match the file"
+            "a file whose size differs from size_bytes is hashed"
         );
         assert_eq!(warnings.len(), 1);
     }

@@ -284,8 +284,6 @@ export interface UploadConfig {
   token: string;
   input_dir: string;
   mode: string;
-  skip_attachments: boolean;
-  trust_export: boolean;
   import_id?: number;
 }
 
@@ -355,8 +353,6 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
       token: config.token,
       inputDir: config.input_dir,
       mode: config.mode,
-      skipAttachments: config.skip_attachments,
-      trustExport: config.trust_export,
       importId: config.import_id ?? null,
     },
   });

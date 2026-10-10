@@ -75,12 +75,6 @@ pub struct UploadArgs {
     /// Import mode. `append` adds to existing data (safe to re-run);
     /// `replace` deletes existing messages for this source, then imports.
     pub mode: ImportMode,
-    /// When true, import messages without uploading attachments.
-    pub skip_attachments: bool,
-    /// When true, trust export metadata: skip re-hashing attachments when
-    /// size_bytes matches the file size on disk. Without this flag every
-    /// attachment is re-hashed.
-    pub trust_export: bool,
     /// Import id of an earlier import to resume, when set.
     pub import_id: Option<i64>,
 }
@@ -148,9 +142,6 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // A resumed Upload skips what the journal in the run directory
         // already recorded as sent.
         force: false,
-        skip_attachments: args.skip_attachments,
-        trust_export: args.trust_export,
-        verify_digests: false,
         max_retries: 3,
         // Pack until message_crate_import::MAX_IMPORT_BODY_BYTES (64 MiB); do not stop at a message count.
         batch_size: message_crate_import::NO_MESSAGE_COUNT_LIMIT,
@@ -167,10 +158,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // Per-file attachment cap, the server's own as the run recorded it.
         // JSONL import batches use MAX_IMPORT_BODY_BYTES.
         asset_max_bytes: recorded.asset_max_bytes,
-        report_path: None,
         log_path,
-        // The journal stays in the run directory, beside the files it tracks.
-        journal_path: None,
         cancel: None,
         import_id: args.import_id,
         // The web app creates the Import Run, with the form's phone country
@@ -316,8 +304,6 @@ mod tests {
             "token": "token",
             "inputDir": run_dir.path(),
             "mode": "append",
-            "skipAttachments": false,
-            "trustExport": true,
             "importId": 7,
         }))
         .unwrap();
@@ -340,8 +326,6 @@ mod tests {
             "token": "token",
             "inputDir": run_dir.path(),
             "mode": "append",
-            "skipAttachments": false,
-            "trustExport": true,
             "importId": 7,
         }))
         .unwrap();
@@ -441,8 +425,6 @@ mod tests {
             "token": "mc_test",
             "inputDir": run_dir,
             "mode": "append",
-            "skipAttachments": false,
-            "trustExport": true,
             "importId": 7,
         }))
         .unwrap();

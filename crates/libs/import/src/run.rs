@@ -104,19 +104,6 @@ pub struct ImportConfig {
     pub mode: ImportMode,
     /// If true, ignore the journal and upload/import everything again.
     pub force: bool,
-    /// Text-only import: do not upload or attach media.
-    pub skip_attachments: bool,
-    /// If true, always re-hash files and fail when the export's claimed sha256
-    /// does not match the bytes on disk. Overrides `trust_export`.
-    ///
-    /// If false (default), files are still hashed from disk unless
-    /// `trust_export` skips them, and a mismatch is a warning: the disk hash is
-    /// used. A path cache avoids hashing the same file twice when several chats
-    /// share it.
-    pub verify_digests: bool,
-    /// If true, skip re-hashing attachments when the JSON Lines `size_bytes` matches
-    /// the file size on disk. Default remains full verification of every file.
-    pub trust_export: bool,
     /// Extra tries per HTTP request after a transient failure.
     pub max_retries: u32,
     /// Messages per import request; at least 1.
@@ -131,12 +118,8 @@ pub struct ImportConfig {
     pub asset_multipart_threshold: usize,
     /// Hard max attachment size this run will attempt to upload.
     pub asset_max_bytes: u64,
-    /// Where to write the report JSON; `None` puts it beside the input.
-    pub report_path: Option<PathBuf>,
     /// Where to write the run log; `None` puts it beside the input.
     pub log_path: Option<PathBuf>,
-    /// Where the journal lives; `None` puts it beside the input.
-    pub journal_path: Option<PathBuf>,
     /// Checked between files and uploads; set it to stop the run early.
     /// The run sets it itself when the server refuses the session, so a
     /// refused session stops the run the way a cancel does.
@@ -227,7 +210,8 @@ struct RunPaths {
 }
 
 impl RunPaths {
-    /// Resolve the export directory and the three side files, honouring overrides in `cfg`.
+    /// Resolve the export directory and the three side files: the report and
+    /// the journal beside the export, and the log where `cfg` names it.
     ///
     /// # Errors
     ///
@@ -235,18 +219,12 @@ impl RunPaths {
     fn resolve(cfg: &ImportConfig) -> Result<Self> {
         let input = input_directory(&cfg.input)?;
         Ok(Self {
-            report: cfg
-                .report_path
-                .clone()
-                .unwrap_or_else(|| input.join(journal::REPORT_NAME)),
+            report: input.join(journal::REPORT_NAME),
             log: cfg
                 .log_path
                 .clone()
                 .unwrap_or_else(|| input.join(journal::LOG_NAME)),
-            journal: cfg
-                .journal_path
-                .clone()
-                .unwrap_or_else(|| journal::journal_path(&input)),
+            journal: journal::journal_path(&input),
             input,
         })
     }
@@ -452,9 +430,6 @@ fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Re
         username: username.clone(),
     });
     out.show(format!("Authenticated as {username} ({})", auth.account_id));
-    if cfg.skip_attachments {
-        out.show("Skipping attachments (text-only import)".into());
-    }
     Ok(Session {
         http,
         url,
