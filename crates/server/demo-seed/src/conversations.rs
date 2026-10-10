@@ -400,18 +400,23 @@ impl<'a> ConversationFileHeader<'a> {
 }
 
 impl<R: Rng> Seeder<'_, R> {
-    /// Create a conversation file at `path` and write `header` as its first
-    /// line, exported at the seed's reference time. Returns the file, ready
-    /// for the messages.
+    /// Write one conversation file: create it at `path`, write `header` as
+    /// its first line (exported at the seed's reference time), let `body`
+    /// write the messages, then flush the file and count it. Every generator
+    /// writes its files through here, so none can drop a file unflushed:
+    /// dropping a `BufWriter` flushes it but ignores the error, which would
+    /// leave a cut-off file behind a seed that reports success.
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be created or the header cannot be written.
-    fn create_conversation_file(
-        &self,
+    /// Returns an error if the file cannot be created, `body` fails, or a
+    /// line cannot be written.
+    fn write_conversation_file(
+        &mut self,
         path: &Path,
         header: ConversationFileHeader<'_>,
-    ) -> Result<BufWriter<File>> {
+        body: impl FnOnce(&mut Self, &mut BufWriter<File>) -> Result<()>,
+    ) -> Result<()> {
         let mut file = open_jsonl(path)?;
         let line = ConversationHeader {
             schema_version: SCHEMA_VERSION,
@@ -434,18 +439,9 @@ impl<R: Rng> Seeder<'_, R> {
             },
         };
         writeln!(file, "{}", serde_json::to_string(&line)?)?;
-        Ok(file)
-    }
-
-    /// Flush a finished conversation file and count it. Every generator ends
-    /// each of its files here, so a write that fails in the buffer's last
-    /// flush stops the seed instead of leaving a cut-off file behind.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the buffered lines cannot be written.
-    fn finish_conversation_file(&mut self, file: BufWriter<File>) -> Result<()> {
-        close_jsonl(file)?;
+        body(self, &mut file)?;
+        file.flush()
+            .with_context(|| format!("write {}", path.display()))?;
         self.stats.conversation_files += 1;
         Ok(())
     }
@@ -463,7 +459,7 @@ impl<R: Rng> Seeder<'_, R> {
         // an Unknown, and the demo's address book names them afterwards.
         let participants = individual_participants(chat_id, None);
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_conversation_file(
+        self.write_conversation_file(
             &path,
             ConversationFileHeader::one_to_one(
                 chat_id,
@@ -472,37 +468,39 @@ impl<R: Rng> Seeder<'_, R> {
                 source_id(flavor),
                 OWNER_PHONE,
             ),
+            |seeder, file| {
+                let timestamps =
+                    seeder.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
+                let mut origin_guid: Option<String> = None;
+                for (i, &ts) in timestamps.iter().enumerate() {
+                    let from_me = i % 3 != 0;
+                    let guid = format!("{}1to1-{chat_id}-{i}", guid_prefix(flavor));
+                    let mut msg = seeder.text_message(&guid, ts, from_me, chat_id, flavor);
+                    match flavor {
+                        SourceFlavor::IMessage => {
+                            seeder.decorate_message(
+                                &mut msg,
+                                i,
+                                msg_count,
+                                chat_id,
+                                from_me,
+                                &mut origin_guid,
+                            );
+                            mark_deletion(&mut msg, i, &seeder.cfg.messages);
+                            mark_edited(&mut msg, i, &seeder.cfg.messages, seeder.corpus);
+                        }
+                        SourceFlavor::SmsBackupRestore => {
+                            seeder.decorate_android_message(&mut msg, i, msg_count);
+                        }
+                        SourceFlavor::Whatsapp => {
+                            // WhatsApp threads skip iMessage-only fields such as tapbacks and replies.
+                        }
+                    }
+                    seeder.emit(file, msg)?;
+                }
+                Ok(())
+            },
         )?;
-
-        let timestamps = self.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
-        let mut origin_guid: Option<String> = None;
-        for (i, &ts) in timestamps.iter().enumerate() {
-            let from_me = i % 3 != 0;
-            let guid = format!("{}1to1-{chat_id}-{i}", guid_prefix(flavor));
-            let mut msg = self.text_message(&guid, ts, from_me, chat_id, flavor);
-            match flavor {
-                SourceFlavor::IMessage => {
-                    self.decorate_message(
-                        &mut msg,
-                        i,
-                        msg_count,
-                        chat_id,
-                        from_me,
-                        &mut origin_guid,
-                    );
-                    mark_deletion(&mut msg, i, &self.cfg.messages);
-                    mark_edited(&mut msg, i, &self.cfg.messages, self.corpus);
-                }
-                SourceFlavor::SmsBackupRestore => {
-                    self.decorate_android_message(&mut msg, i, msg_count);
-                }
-                SourceFlavor::Whatsapp => {
-                    // WhatsApp threads skip iMessage-only fields such as tapbacks and replies.
-                }
-            }
-            self.emit(&mut file, msg)?;
-        }
-        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -555,7 +553,7 @@ impl<R: Rng> Seeder<'_, R> {
     fn overlap_imessage(&mut self, staging: &Path, overlap: &Overlap<'_>) -> Result<()> {
         let chat_id = overlap.chat_id;
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_conversation_file(
+        self.write_conversation_file(
             &path,
             ConversationFileHeader::one_to_one(
                 chat_id,
@@ -564,40 +562,47 @@ impl<R: Rng> Seeder<'_, R> {
                 IMESSAGE_SOURCE,
                 OWNER_PHONE,
             ),
+            |seeder, file| {
+                let mut origin_guid: Option<String> = None;
+                for (i, shared) in overlap.shared.iter().enumerate() {
+                    let msg = shared.message(
+                        format!("1to1-{chat_id}-{i}"),
+                        chat_id,
+                        IrService::IMessage,
+                        IrMessageKind::IMessage,
+                    );
+                    seeder.emit(file, msg)?;
+                }
+                let shared_n = overlap.shared.len();
+                for (i, &timestamp) in overlap
+                    .timestamps
+                    .iter()
+                    .enumerate()
+                    .skip(shared_n)
+                    .take(overlap.msg_count.saturating_sub(shared_n))
+                {
+                    let from_me = i % 3 != 0;
+                    let guid = format!("1to1-{chat_id}-{i}");
+                    let mut msg = seeder.text_message(
+                        &guid,
+                        timestamp,
+                        from_me,
+                        chat_id,
+                        SourceFlavor::IMessage,
+                    );
+                    seeder.decorate_message(
+                        &mut msg,
+                        i,
+                        overlap.msg_count,
+                        chat_id,
+                        from_me,
+                        &mut origin_guid,
+                    );
+                    seeder.emit(file, msg)?;
+                }
+                Ok(())
+            },
         )?;
-        let mut origin_guid: Option<String> = None;
-        for (i, shared) in overlap.shared.iter().enumerate() {
-            let msg = shared.message(
-                format!("1to1-{chat_id}-{i}"),
-                chat_id,
-                IrService::IMessage,
-                IrMessageKind::IMessage,
-            );
-            self.emit(&mut file, msg)?;
-        }
-        let shared_n = overlap.shared.len();
-        for (i, &timestamp) in overlap
-            .timestamps
-            .iter()
-            .enumerate()
-            .skip(shared_n)
-            .take(overlap.msg_count.saturating_sub(shared_n))
-        {
-            let from_me = i % 3 != 0;
-            let guid = format!("1to1-{chat_id}-{i}");
-            let mut msg =
-                self.text_message(&guid, timestamp, from_me, chat_id, SourceFlavor::IMessage);
-            self.decorate_message(
-                &mut msg,
-                i,
-                overlap.msg_count,
-                chat_id,
-                from_me,
-                &mut origin_guid,
-            );
-            self.emit(&mut file, msg)?;
-        }
-        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -610,7 +615,7 @@ impl<R: Rng> Seeder<'_, R> {
         let chat_id = overlap.chat_id;
         let android_total = overlap.shared.len() + overlap.extra_n;
         let path = staging.join(conversation_file_name(chat_id));
-        let mut file = self.create_conversation_file(
+        self.write_conversation_file(
             &path,
             ConversationFileHeader::one_to_one(
                 chat_id,
@@ -619,32 +624,34 @@ impl<R: Rng> Seeder<'_, R> {
                 SBR_SOURCE,
                 OWNER_PHONE,
             ),
+            |seeder, file| {
+                for (i, shared) in overlap.shared.iter().enumerate() {
+                    let msg = shared.message(
+                        format!("sbr-shared-{chat_id}-{i}"),
+                        chat_id,
+                        IrService::Sms,
+                        IrMessageKind::Sms,
+                    );
+                    seeder.emit(file, msg)?;
+                }
+                let mut timestamp = overlap.android_base_timestamp(seeder.cfg);
+                for j in 0..overlap.extra_n {
+                    timestamp = next_daytime_minute(timestamp);
+                    let from_me = j % 4 == 0;
+                    let guid = format!("sbr-extra-{chat_id}-{j}");
+                    let mut msg = seeder.text_message(
+                        &guid,
+                        timestamp,
+                        from_me,
+                        chat_id,
+                        SourceFlavor::SmsBackupRestore,
+                    );
+                    seeder.decorate_android_message(&mut msg, j, overlap.extra_n);
+                    seeder.emit(file, msg)?;
+                }
+                Ok(())
+            },
         )?;
-        for (i, shared) in overlap.shared.iter().enumerate() {
-            let msg = shared.message(
-                format!("sbr-shared-{chat_id}-{i}"),
-                chat_id,
-                IrService::Sms,
-                IrMessageKind::Sms,
-            );
-            self.emit(&mut file, msg)?;
-        }
-        let mut timestamp = overlap.android_base_timestamp(self.cfg);
-        for j in 0..overlap.extra_n {
-            timestamp = next_daytime_minute(timestamp);
-            let from_me = j % 4 == 0;
-            let guid = format!("sbr-extra-{chat_id}-{j}");
-            let mut msg = self.text_message(
-                &guid,
-                timestamp,
-                from_me,
-                chat_id,
-                SourceFlavor::SmsBackupRestore,
-            );
-            self.decorate_android_message(&mut msg, j, overlap.extra_n);
-            self.emit(&mut file, msg)?;
-        }
-        self.finish_conversation_file(file)?;
         Ok(())
     }
 }
@@ -696,7 +703,7 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             OWNER_PHONE
         };
-        let mut file = self.create_conversation_file(
+        self.write_conversation_file(
             &staging.join(fname),
             ConversationFileHeader::one_to_one(
                 chat_id,
@@ -705,22 +712,24 @@ impl<R: Rng> Seeder<'_, R> {
                 IMESSAGE_SOURCE,
                 owner_identity,
             ),
+            |seeder, file| {
+                let timestamps = seeder.timestamps(msg_count, 1.5, sample_direct_day_burst);
+                for (i, &ts) in timestamps.iter().enumerate() {
+                    let from_me = i % 4 == 0;
+                    let guid = format!("unassigned-{chat_id}-{i}");
+                    let mut msg =
+                        seeder.text_message(&guid, ts, from_me, chat_id, SourceFlavor::IMessage);
+                    if i == 2 && ua.name_alias.is_some() && !from_me {
+                        msg.sender_identity = Some(String::new());
+                    }
+                    if should_attach_jpg(i, msg_count, seeder.cfg) {
+                        seeder.add_jpg_attachment(&mut msg, i);
+                    }
+                    seeder.emit(file, msg)?;
+                }
+                Ok(())
+            },
         )?;
-
-        let timestamps = self.timestamps(msg_count, 1.5, sample_direct_day_burst);
-        for (i, &ts) in timestamps.iter().enumerate() {
-            let from_me = i % 4 == 0;
-            let guid = format!("unassigned-{chat_id}-{i}");
-            let mut msg = self.text_message(&guid, ts, from_me, chat_id, SourceFlavor::IMessage);
-            if i == 2 && ua.name_alias.is_some() && !from_me {
-                msg.sender_identity = Some(String::new());
-            }
-            if should_attach_jpg(i, msg_count, self.cfg) {
-                self.add_jpg_attachment(&mut msg, i);
-            }
-            self.emit(&mut file, msg)?;
-        }
-        self.finish_conversation_file(file)?;
         Ok(())
     }
 
@@ -758,7 +767,7 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             msg_count
         };
-        let mut file = self.create_conversation_file(
+        self.write_conversation_file(
             &staging.join(format!("group-{:03}.jsonl", group.index)),
             ConversationFileHeader {
                 chat_id: &chat_id,
@@ -769,69 +778,77 @@ impl<R: Rng> Seeder<'_, R> {
                 source: IMESSAGE_SOURCE,
                 owner_identity: OWNER_PHONE,
             },
+            |seeder, file| {
+                if let Some(title) = rename_title {
+                    let first_message_ts = timestamps
+                        .first()
+                        .copied()
+                        .unwrap_or_else(|| seeder.cfg.reference_time.timestamp_millis());
+                    let mut ann = seeder.text_message(
+                        "grp-0-rename",
+                        first_message_ts - 60_000,
+                        true,
+                        OWNER_PHONE,
+                        SourceFlavor::IMessage,
+                    );
+                    ann.text.clear();
+                    ann.message_kind = IrMessageKind::Announcement;
+                    let im = ann.imessage.get_or_insert_with(IrImessage::default);
+                    im.announcement = Some(format!("Demo User named the conversation “{title}”."));
+                    seeder.emit(file, ann)?;
+                }
+
+                let mut origin_guid: Option<String> = None;
+                for i in 0..msg_count {
+                    let from_me = i % 7 == 0;
+                    let sender = if from_me {
+                        None
+                    } else {
+                        Some(handles[i % handles.len()].clone())
+                    };
+                    let guid = format!("grp-{}-{i}", group.index);
+                    let peer = sender.as_deref().unwrap_or(OWNER_PHONE);
+                    let mut msg = seeder.text_message(
+                        &guid,
+                        timestamps[i],
+                        from_me,
+                        peer,
+                        SourceFlavor::IMessage,
+                    );
+                    msg.sender_identity = sender;
+                    if should_attach_jpg(i, msg_count, seeder.cfg) {
+                        seeder.add_jpg_attachment(&mut msg, i + group.index);
+                    } else if should_attach_other(i, msg_count, seeder.cfg) {
+                        seeder.add_attachment(&mut msg, i, OTHER_ATTACHMENTS);
+                    }
+                    let messages = &seeder.cfg.messages;
+                    if messages.tapback_stride > 0
+                        && i % messages.tapback_stride == 0
+                        && msg_count >= 10
+                        && !handles.is_empty()
+                    {
+                        let reactor = &handles[(i + 1) % handles.len()];
+                        let kind = TAPBACK_KINDS.choose(&mut *seeder.rng).unwrap();
+                        let emoji = tapback_emoji(kind, &mut *seeder.rng);
+                        push_tapback(&mut msg, kind, emoji, reactor, false);
+                    }
+                    if messages.reply_stride > 0
+                        && i % messages.reply_stride == 0
+                        && origin_guid.is_some()
+                    {
+                        msg.reply_to = Some(ReplyTo {
+                            guid: origin_guid.clone(),
+                            part_index: Some(0),
+                        });
+                    }
+                    if i % (messages.reply_stride.max(1) + 17) == 0 {
+                        origin_guid = Some(guid.clone());
+                    }
+                    seeder.emit(file, msg)?;
+                }
+                Ok(())
+            },
         )?;
-
-        if let Some(title) = rename_title {
-            let first_message_ts = timestamps
-                .first()
-                .copied()
-                .unwrap_or_else(|| self.cfg.reference_time.timestamp_millis());
-            let mut ann = self.text_message(
-                "grp-0-rename",
-                first_message_ts - 60_000,
-                true,
-                OWNER_PHONE,
-                SourceFlavor::IMessage,
-            );
-            ann.text.clear();
-            ann.message_kind = IrMessageKind::Announcement;
-            let im = ann.imessage.get_or_insert_with(IrImessage::default);
-            im.announcement = Some(format!("Demo User named the conversation “{title}”."));
-            self.emit(&mut file, ann)?;
-        }
-
-        let mut origin_guid: Option<String> = None;
-        for i in 0..msg_count {
-            let from_me = i % 7 == 0;
-            let sender = if from_me {
-                None
-            } else {
-                Some(handles[i % handles.len()].clone())
-            };
-            let guid = format!("grp-{}-{i}", group.index);
-            let peer = sender.as_deref().unwrap_or(OWNER_PHONE);
-            let mut msg =
-                self.text_message(&guid, timestamps[i], from_me, peer, SourceFlavor::IMessage);
-            msg.sender_identity = sender;
-            if should_attach_jpg(i, msg_count, self.cfg) {
-                self.add_jpg_attachment(&mut msg, i + group.index);
-            } else if should_attach_other(i, msg_count, self.cfg) {
-                self.add_attachment(&mut msg, i, OTHER_ATTACHMENTS);
-            }
-            let messages = &self.cfg.messages;
-            if messages.tapback_stride > 0
-                && i % messages.tapback_stride == 0
-                && msg_count >= 10
-                && !handles.is_empty()
-            {
-                let reactor = &handles[(i + 1) % handles.len()];
-                let kind = TAPBACK_KINDS.choose(&mut *self.rng).unwrap();
-                let emoji = tapback_emoji(kind, &mut *self.rng);
-                push_tapback(&mut msg, kind, emoji, reactor, false);
-            }
-            if messages.reply_stride > 0 && i % messages.reply_stride == 0 && origin_guid.is_some()
-            {
-                msg.reply_to = Some(ReplyTo {
-                    guid: origin_guid.clone(),
-                    part_index: Some(0),
-                });
-            }
-            if i % (messages.reply_stride.max(1) + 17) == 0 {
-                origin_guid = Some(guid.clone());
-            }
-            self.emit(&mut file, msg)?;
-        }
-        self.finish_conversation_file(file)?;
         Ok(())
     }
 }
@@ -914,7 +931,7 @@ impl<R: Rng> Seeder<'_, R> {
                 continue;
             }
             let chat_id = orphaned_chat_id(sender.as_ref().and_then(|p| p.identity.as_deref()));
-            let mut file = self.create_conversation_file(
+            self.write_conversation_file(
                 &staging.join(file_name),
                 ConversationFileHeader {
                     chat_id: &chat_id,
@@ -925,11 +942,13 @@ impl<R: Rng> Seeder<'_, R> {
                     source: IMESSAGE_SOURCE,
                     owner_identity: OWNER_PHONE,
                 },
+                |seeder, file| {
+                    for msg in messages {
+                        seeder.emit(file, msg)?;
+                    }
+                    Ok(())
+                },
             )?;
-            for msg in messages {
-                self.emit(&mut file, msg)?;
-            }
-            self.finish_conversation_file(file)?;
         }
         Ok(())
     }
@@ -954,7 +973,7 @@ impl<R: Rng> Seeder<'_, R> {
                 display_name: None,
             })
             .collect();
-        let file = self.create_conversation_file(
+        self.write_conversation_file(
             &staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id))),
             ConversationFileHeader {
                 chat_id,
@@ -965,8 +984,8 @@ impl<R: Rng> Seeder<'_, R> {
                 source: IMESSAGE_SOURCE,
                 owner_identity: OWNER_PHONE,
             },
-        )?;
-        self.finish_conversation_file(file)
+            |_, _| Ok(()),
+        )
     }
 
     /// Add photos, other files, tapbacks, replies, and occasional SMS/RCS
@@ -1113,16 +1132,6 @@ fn maybe_mark_as_sms_or_rcs(msg: &mut IrMessage, fraction: f64, rng: &mut impl R
 fn open_jsonl(path: &Path) -> Result<BufWriter<File>> {
     let f = File::create(path).with_context(|| format!("create {}", path.display()))?;
     Ok(BufWriter::new(f))
-}
-
-/// Flush a conversation file's buffered lines and return any error. Dropping
-/// a `BufWriter` flushes it too, but ignores the error.
-///
-/// # Errors
-///
-/// Returns an error if the buffered lines cannot be written.
-fn close_jsonl(mut file: BufWriter<File>) -> Result<()> {
-    file.flush().context("flush conversation file")
 }
 
 /// Write one message as a JSON line. Empty iMessage extras are dropped first.
@@ -1521,20 +1530,52 @@ fn sanitize_filename(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
-    /// A line still in the buffer when the disk is full is reported, not
-    /// dropped with the writer. `/dev/full` fails every write with ENOSPC.
+    use super::*;
+    use crate::testutil::small_config;
+
+    /// A line still in the buffer when the disk is full stops the seed, and
+    /// the file is not counted. The conversation file is a link to
+    /// `/dev/full`, which fails every write with ENOSPC; the header fits in
+    /// the buffer, so only the flush at the end of the file sees the error.
     #[cfg(target_os = "linux")]
     #[test]
-    fn a_failed_last_write_is_an_error() {
-        let mut file = BufWriter::new(
-            fs::OpenOptions::new()
-                .write(true)
-                .open("/dev/full")
-                .expect("open /dev/full"),
+    fn a_failed_last_write_stops_the_seed() {
+        let temp = tempfile::tempdir().expect("create test directory");
+        let cfg = small_config(temp.path());
+        let corpus = Corpus::load_pride_and_prejudice().expect("load the corpus");
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let digests = HashMap::new();
+        let cancel = AtomicBool::new(false);
+        let mut seeder = Seeder {
+            cfg: &cfg,
+            corpus: &corpus,
+            rng: &mut rng,
+            attachment_digests: &digests,
+            cancel: &cancel,
+            stats: GenStats::default(),
+        };
+        let staging = temp.path().join("imessage");
+        fs::create_dir(&staging).expect("create staging directory");
+        std::os::unix::fs::symlink(
+            "/dev/full",
+            staging.join(format!(
+                "empty-{}.jsonl",
+                sanitize_filename(EMPTY_THREAD_HANDLE)
+            )),
+        )
+        .expect("link the conversation file to /dev/full");
+
+        let result = seeder.create_empty_conversation_file(
+            &staging,
+            EMPTY_THREAD_HANDLE,
+            IrConversationType::Individual,
+            &[],
         );
-        writeln!(file, "{{}}").expect("the line fits in the buffer");
-        assert!(close_jsonl(file).is_err());
+
+        assert!(result.is_err(), "a failed flush must be an error");
+        assert_eq!(seeder.stats.conversation_files, 0);
     }
 }
