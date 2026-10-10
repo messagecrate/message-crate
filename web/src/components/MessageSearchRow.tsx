@@ -3,6 +3,7 @@ import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import { type MatchRange, matchRanges, snippet } from "../lib/messageMatch";
 import { messageConversationName, messageRowText, messageSenderName } from "../lib/messageRowText";
+import { countOf } from "../lib/plural";
 import { useTimeZone } from "../lib/timeZone";
 import { listRowDivider } from "../lib/tw";
 import type { FreeTextTerm, Message } from "../lib/types";
@@ -161,7 +162,7 @@ export default function MessageSearchRow({
         {attachmentCount > 0 ? (
           <span
             className="shrink-0 text-[0.75rem] text-muted"
-            title={attachmentCount === 1 ? "1 attachment" : `${attachmentCount} attachments`}
+            title={countOf(attachmentCount, "attachment")}
           >
             📎 {attachmentCount}
           </span>

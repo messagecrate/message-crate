@@ -80,6 +80,17 @@ describe("MessageSearchRow", () => {
     expect(screen.getByTitle("2 attachments")).toHaveTextContent("📎 2");
   });
 
+  it("writes a large attachment count with a separator", () => {
+    renderRow(
+      message({
+        attachments: Array.from({ length: 1234 }, (_, i) =>
+          attachment({ original_name: `${i}.jpg` }),
+        ),
+      }),
+    );
+    expect(screen.getByTitle("1,234 attachments")).toBeInTheDocument();
+  });
+
   it("shows no sender for a received message that names none", () => {
     renderRow(message({ sender: null }));
     const row = screen.getByRole("button");
