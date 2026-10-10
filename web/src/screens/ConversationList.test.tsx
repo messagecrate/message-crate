@@ -23,7 +23,7 @@ import { createMessageTag, listConversations, updateMessageTagMembers } from "..
 import type { Conversation } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
-import { WAIT_UNDER_LOAD } from "../test/waits";
+import { SLOW_STATE_WAIT } from "../test/waits";
 import ConversationList from "./ConversationList";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -179,7 +179,7 @@ describe("ConversationList", () => {
       renderList();
       const user = setupUser();
       await user.click(
-        await screen.findByRole("checkbox", { name: "Select Chat 1" }, WAIT_UNDER_LOAD),
+        await screen.findByRole("checkbox", { name: "Select Chat 1" }, SLOW_STATE_WAIT),
       );
       await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
 
