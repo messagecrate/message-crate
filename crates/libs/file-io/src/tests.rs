@@ -3,7 +3,8 @@
 //! `file_sha256` is behind every digest check and asset key in import, staging
 //! and transcode. A change to it silently re-keys everything already in a
 //! database, so it is pinned to values computed outside Rust (Python's
-//! `hashlib`). The message id's known answers are in `identity.rs`.
+//! `hashlib`). The message id's known answers are in `message-ir`'s
+//! `identity.rs`.
 
 use crate::file_sha256;
 
@@ -12,7 +13,7 @@ struct TempFile(std::path::PathBuf);
 
 impl TempFile {
     fn with(name: &str, bytes: &[u8]) -> Self {
-        let path = std::env::temp_dir().join(format!("message-ir-{}-{name}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("file-io-{}-{name}", std::process::id()));
         std::fs::write(&path, bytes).unwrap();
         Self(path)
     }
@@ -46,7 +47,7 @@ fn file_sha256_of_a_file_that_spans_several_reads() {
 
 #[test]
 fn file_sha256_names_a_missing_file() {
-    let path = std::env::temp_dir().join("message-ir-no-such-file");
+    let path = std::env::temp_dir().join("file-io-no-such-file");
     let err = file_sha256(&path).unwrap_err();
-    assert!(err.to_string().contains("message-ir-no-such-file"), "{err}");
+    assert!(err.to_string().contains("file-io-no-such-file"), "{err}");
 }

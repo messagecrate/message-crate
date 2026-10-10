@@ -916,6 +916,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 
 [[package]]
+name = "file-io"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "hex",
+ "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1591,6 +1601,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "csv",
+ "file-io",
  "hex",
  "media",
  "message-crate-core",
@@ -1721,7 +1732,7 @@ name = "journal"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "message-ir",
+ "file-io",
  "serde",
  "serde_json",
  "tempfile",
@@ -1896,7 +1907,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "csv",
- "message-ir",
+ "file-io",
  "serde",
  "tempfile",
 ]
@@ -1922,6 +1933,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "file-io",
  "media",
  "message-crate-api-types",
  "message-crate-log-lines",
@@ -1942,6 +1954,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "file-io",
  "hex",
  "httpmock",
  "journal",
@@ -1978,6 +1991,7 @@ name = "message-crate-import"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "file-io",
  "hex",
  "httpmock",
  "journal",
@@ -2074,14 +2088,12 @@ dependencies = [
 name = "message-ir"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chrono",
  "hex",
  "imessage-reader-protocol",
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "tempfile",
 ]
 
 [[package]]
@@ -2090,6 +2102,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "csv",
+ "file-io",
  "mail",
  "media",
  "message-crate-core",
@@ -2124,6 +2137,7 @@ name = "message-staging"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "file-io",
  "fs2",
  "hex",
  "media",
