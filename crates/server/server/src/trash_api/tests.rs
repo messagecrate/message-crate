@@ -19,7 +19,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],

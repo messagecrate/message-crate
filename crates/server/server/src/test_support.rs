@@ -770,9 +770,8 @@ pub async fn delete_raw(state: &AppState, path: &str, token: &str) -> (StatusCod
 pub struct SeedMessage<'a> {
     /// The `messages.source` slug, such as `imessage`.
     pub source: &'a str,
-    /// RFC 3339 timestamp, stored as text the way the importer writes it: UTC
-    /// to the millisecond (`2020-01-01T00:00:00.000Z`).
-    pub timestamp: &'a str,
+    /// When it was sent, in the stored form ([`stored_time`]).
+    pub timestamp: crate::models::StoredTime,
     /// Whether the account sent it.
     pub is_from_me: bool,
     /// The message text.
@@ -794,6 +793,17 @@ pub struct SeedConversation<'a> {
     pub source_file: &'a str,
     /// Messages, seeded with `sort_order` following this order.
     pub messages: &'a [SeedMessage<'a>],
+}
+
+/// The stored form of the RFC 3339 time `rfc3339`, made by the one function
+/// that writes it (`models::utc_timestamp_text`), so a test seeds a time the
+/// way an import stores it whatever form it spells it in (#1965). Panics on
+/// text that is not RFC 3339.
+pub fn stored_time(rfc3339: &str) -> crate::models::StoredTime {
+    let instant = chrono::DateTime::parse_from_rfc3339(rfc3339)
+        .unwrap_or_else(|e| panic!("{rfc3339:?} is not RFC 3339: {e}"))
+        .with_timezone(&chrono::Utc);
+    crate::models::utc_timestamp_text(instant)
 }
 
 /// A message guid no earlier call returned. `messages.guid` is required and
@@ -835,8 +845,8 @@ pub struct MessageRow<'a> {
     pub source: &'a str,
     /// `messages.guid`. `None` writes NULL, which the table refuses.
     pub guid: Option<String>,
-    /// RFC 3339 in UTC to the millisecond, as the importer writes it.
-    pub timestamp: &'a str,
+    /// When it was sent, in the stored form ([`stored_time`]).
+    pub timestamp: crate::models::StoredTime,
     /// `messages.time_precision`.
     pub time_precision: message_ir::TimePrecision,
     /// Whether the account sent it.
@@ -881,7 +891,7 @@ impl MessageRow<'_> {
             account_id,
             source: "imessage",
             guid: Some(unique_guid()),
-            timestamp: "2020-01-01T00:00:00.000Z",
+            timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
             time_precision: message_ir::TimePrecision::Milliseconds,
             is_from_me: false,
             sender_handle_id: None,
@@ -940,7 +950,7 @@ impl MessageRow<'_> {
         .bind(self.account_id)
         .bind(self.source)
         .bind(&self.guid)
-        .bind(self.timestamp)
+        .bind(&self.timestamp)
         .bind(self.is_from_me)
         .bind(self.sender_handle_id)
         .bind(self.owner_handle_id)
@@ -997,7 +1007,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
     for (index, message) in c.messages.iter().enumerate() {
         MessageRow {
             source: message.source,
-            timestamp: message.timestamp,
+            timestamp: message.timestamp.clone(),
             is_from_me: message.is_from_me,
             sort_order: index as i64,
             body: Some(message.body),
@@ -1075,7 +1085,7 @@ pub async fn seed_one_message(state: &AppState, account_id: i64) {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],
@@ -1256,13 +1266,13 @@ mod tests {
                 messages: &[
                     SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-01T00:00:00.000Z",
+                        timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                         is_from_me: true,
                         body: "first",
                     },
                     SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-02T00:00:00.000Z",
+                        timestamp: crate::test_support::stored_time("2020-01-02T00:00:00.000Z"),
                         is_from_me: false,
                         body: "second",
                     },
@@ -1307,7 +1317,7 @@ mod tests {
                     source_file: "seed.jsonl",
                     messages: &[SeedMessage {
                         source: "imessage",
-                        timestamp: "2020-01-01T00:00:00.000Z",
+                        timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                         is_from_me: true,
                         body: "hello, this is a message long enough to add up",
                     }],

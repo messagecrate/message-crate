@@ -373,7 +373,7 @@ struct StagedConversation {
     source: String,
     /// When the backup the file was read from was made, in the form a
     /// message's timestamp takes; `None` when the file does not say.
-    backup_taken_at: Option<String>,
+    backup_taken_at: Option<crate::models::StoredTime>,
 }
 
 impl StagedConversation {
@@ -544,10 +544,9 @@ impl FileStaging<'_> {
         )
         .await?;
         counts.conversations = 1;
-        if let (Some(import_id), Some(backup_taken_at)) = (
-            self.stmts.import_id,
-            conversation.backup_taken_at.as_deref(),
-        ) {
+        if let (Some(import_id), Some(backup_taken_at)) =
+            (self.stmts.import_id, conversation.backup_taken_at.as_ref())
+        {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
@@ -595,7 +594,7 @@ impl FileStaging<'_> {
                 StagedSource {
                     conversation_id,
                     source: &conversation.source,
-                    backup_taken_at: conversation.backup_taken_at.as_deref(),
+                    backup_taken_at: conversation.backup_taken_at.as_ref(),
                 },
                 self.opts.assets_dir,
                 chunk,
@@ -823,7 +822,7 @@ struct PendingStagingMessage {
 struct StagedSource<'a> {
     conversation_id: i64,
     source: &'a str,
-    backup_taken_at: Option<&'a str>,
+    backup_taken_at: Option<&'a crate::models::StoredTime>,
 }
 
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
@@ -943,7 +942,9 @@ async fn add_staged_copy(
         BackupOrder::Undecided
     } else {
         db_staging::later_backup(
-            staged_source.backup_taken_at,
+            staged_source
+                .backup_taken_at
+                .map(crate::models::StoredTime::as_str),
             held.backup_taken_at.as_deref(),
         )
     };

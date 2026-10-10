@@ -69,7 +69,10 @@ pub(crate) enum Value {
 /// sign and five digits (`+10000-01-01T00:00:00.000Z`), and `+` sorts before
 /// every digit, so as text it would come before every stored timestamp
 /// instead of after them all.
-pub(crate) fn utc_instant(zone: chrono_tz::Tz, day: NaiveDate) -> Option<String> {
+pub(crate) fn utc_instant(
+    zone: chrono_tz::Tz,
+    day: NaiveDate,
+) -> Option<crate::models::StoredTime> {
     let midnight = day.and_hms_opt(0, 0, 0).expect("midnight is a valid time");
     let instant = first_instant_at_or_after(zone, midnight);
     (instant.year() <= 9999).then(|| crate::models::utc_timestamp_text(instant))
@@ -476,6 +479,17 @@ mod tests {
         assert!(parse_id("#-1").is_none());
     }
 
+    /// The stored form of the whole hour `hour`:00 UTC on `year`-`month`-`day`,
+    /// made as an import makes it (`models::utc_timestamp_text`).
+    fn utc_hour(year: i32, month: u32, day: u32, hour: u32) -> Option<crate::models::StoredTime> {
+        use chrono::TimeZone;
+        Some(crate::models::utc_timestamp_text(
+            chrono::Utc
+                .with_ymd_and_hms(year, month, day, hour, 0, 0)
+                .unwrap(),
+        ))
+    }
+
     /// Pacific/Apia skipped 30 December 2011: the clock went from the end of
     /// the 29th at -10:00 straight to the 31st at +14:00. The skipped day
     /// begins where the 31st begins, so it holds no instant (#1204).
@@ -483,21 +497,18 @@ mod tests {
     fn a_skipped_day_begins_where_the_next_day_begins() {
         let zone = chrono_tz::Pacific::Apia;
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 29)).as_deref(),
-            Some("2011-12-29T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 29)),
+            utc_hour(2011, 12, 29, 10)
         );
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 30)).as_deref(),
-            Some("2011-12-30T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 30)),
+            utc_hour(2011, 12, 30, 10)
         );
         assert_eq!(
-            utc_instant(zone, d(2011, 12, 31)).as_deref(),
-            Some("2011-12-30T10:00:00.000Z")
+            utc_instant(zone, d(2011, 12, 31)),
+            utc_hour(2011, 12, 30, 10)
         );
-        assert_eq!(
-            utc_instant(zone, d(2012, 1, 1)).as_deref(),
-            Some("2011-12-31T10:00:00.000Z")
-        );
+        assert_eq!(utc_instant(zone, d(2012, 1, 1)), utc_hour(2011, 12, 31, 10));
     }
 
     /// Kwajalein skipped 21 August 1993, and Kiritimati 31 December 1994.
@@ -522,8 +533,8 @@ mod tests {
     #[test]
     fn a_midnight_in_a_one_hour_gap_starts_the_day_after_the_gap() {
         assert_eq!(
-            utc_instant(chrono_tz::America::Sao_Paulo, d(2018, 11, 4)).as_deref(),
-            Some("2018-11-04T03:00:00.000Z")
+            utc_instant(chrono_tz::America::Sao_Paulo, d(2018, 11, 4)),
+            utc_hour(2018, 11, 4, 3)
         );
     }
 }

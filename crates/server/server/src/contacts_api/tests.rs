@@ -574,7 +574,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: ts,
+            timestamp: crate::test_support::stored_time(ts),
             sender_handle_id: Some(peer),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -584,7 +584,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     }
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
     MessageRow {
-        timestamp: "2024-06-01T14:00:00.000Z",
+        timestamp: crate::test_support::stored_time("2024-06-01T14:00:00.000Z"),
         is_from_me: true,
         body: Some("back at you"),
         ..MessageRow::new(account, 1)
@@ -620,7 +620,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: crate::test_support::stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(peer),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -648,7 +648,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-08-01T12:00:00.000Z",
+        timestamp: crate::test_support::stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("nope"),
         ..MessageRow::new(account, 9)
     }
@@ -739,7 +739,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: ts,
+            timestamp: crate::test_support::stored_time(ts),
             sender_handle_id: Some(sam_handle),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -774,7 +774,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-07-01T12:00:00.000Z",
+        timestamp: crate::test_support::stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(sam_handle),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -826,7 +826,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: "2024-05-01T09:00:00.000Z",
+        timestamp: crate::test_support::stored_time("2024-05-01T09:00:00.000Z"),
         sender_handle_id: Some(pat_handle),
         body: Some("hey"),
         ..MessageRow::new(account, 3)
@@ -1014,7 +1014,7 @@ async fn insert_held_message(
 ) {
     let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
     MessageRow {
-        timestamp: &ts,
+        timestamp: crate::test_support::stored_time(&ts),
         is_from_me: sender.is_none(),
         owner_handle_id: Some(owner),
         sender_handle_id: sender,
@@ -1172,8 +1172,11 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     assert_eq!(phone.conversations, 2, "the trashed group is left out");
     assert_eq!(phone.direct_messages, 40);
     assert_eq!(phone.group_messages, 10);
-    assert_eq!(phone.start_date.as_deref(), Some("2024-01-01T00:01:00Z"));
-    assert_eq!(phone.end_date.as_deref(), Some("2024-02-01T00:55:00Z"));
+    assert_eq!(
+        phone.start_date.as_deref(),
+        Some("2024-01-01T00:01:00.000Z")
+    );
+    assert_eq!(phone.end_date.as_deref(), Some("2024-02-01T00:55:00.000Z"));
     assert_eq!(email.address, "jane@example.com");
     assert_eq!(email.conversations, 1, "it takes part in the group");
     assert_eq!(email.direct_messages, 0);
@@ -1194,11 +1197,11 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     assert_eq!(jane_summary.group_message_count, 10);
     assert_eq!(
         jane_summary.start_date.as_deref(),
-        Some("2024-01-01T00:01:00Z")
+        Some("2024-01-01T00:01:00.000Z")
     );
     assert_eq!(
         jane_summary.end_date.as_deref(),
-        Some("2024-02-01T00:55:00Z")
+        Some("2024-02-01T00:55:00.000Z")
     );
     assert_eq!(bob_summary.id, bob);
     assert_eq!(bob_summary.individual_message_count, 0);
@@ -1216,8 +1219,8 @@ async fn a_contacts_identity_and_summary_count_the_messages_it_sent() {
     assert_eq!(held.conversations, 2);
     assert_eq!(held.direct_messages, 100);
     assert_eq!(held.group_messages, 60);
-    assert_eq!(held.start_date.as_deref(), Some("2024-01-01T00:00:00Z"));
-    assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00Z"));
+    assert_eq!(held.start_date.as_deref(), Some("2024-01-01T00:00:00.000Z"));
+    assert_eq!(held.end_date.as_deref(), Some("2024-02-01T00:59:00.000Z"));
 }
 
 /// Ada is in one one-to-one conversation, one group, and one conversation of
@@ -2200,7 +2203,7 @@ async fn insert_direct_conversation(
         MessageRow {
             source: service,
             service: Some(service),
-            timestamp: ts,
+            timestamp: crate::test_support::stored_time(ts),
             sender_handle_id: Some(handle_id),
             sort_order: i as i64,
             body: Some("hi"),
@@ -2277,7 +2280,7 @@ async fn insert_message_from(
     .unwrap();
     MessageRow {
         service: Some("imessage"),
-        timestamp: ts,
+        timestamp: crate::test_support::stored_time(ts),
         is_from_me,
         sender_handle_id: Some(handle_id),
         body: Some("hi"),
@@ -2394,11 +2397,11 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
         [
             (
                 "Recent".to_string(),
-                Some("2024-06-01T00:00:00Z".to_string())
+                Some("2024-06-01T00:00:00.000Z".to_string())
             ),
             (
                 "Older".to_string(),
-                Some("2024-03-01T00:00:00Z".to_string())
+                Some("2024-03-01T00:00:00.000Z".to_string())
             ),
             ("Silent".to_string(), None),
         ]

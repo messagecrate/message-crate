@@ -30,7 +30,7 @@ async fn reset_for_account_leaves_other_accounts() {
                 account_id: account,
                 source: "sms",
                 guid: "g1",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: &crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
                 time_precision: message_ir::TimePrecision::Milliseconds,
                 is_from_me: 0,
                 sender_handle_id: None,

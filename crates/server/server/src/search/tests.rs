@@ -210,7 +210,7 @@ pub(crate) fn msg<'a>(
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: m.source,
-        timestamp: m.timestamp,
+        timestamp: crate::test_support::stored_time(m.timestamp),
         is_from_me: m.from_me,
         sender_handle_id: m.sender,
         service: Some(m.service),

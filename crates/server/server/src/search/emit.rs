@@ -1203,7 +1203,7 @@ fn at_or_after_sql(out: &mut Sql, expr: &str, zone: chrono_tz::Tz, day: NaiveDat
     match utc_instant(zone, day) {
         Some(instant) => {
             out.push(&format!("{expr} >= "));
-            out.bind_text(instant);
+            out.bind_time(&instant);
         }
         None => out.push("0=1"),
     }
@@ -1217,7 +1217,7 @@ fn before_sql(out: &mut Sql, expr: &str, zone: chrono_tz::Tz, day: NaiveDate) {
     match utc_instant(zone, day) {
         Some(instant) => {
             out.push(&format!("{expr} < "));
-            out.bind_text(instant);
+            out.bind_time(&instant);
         }
         None => out.push(&format!("{expr} IS NOT NULL")),
     }

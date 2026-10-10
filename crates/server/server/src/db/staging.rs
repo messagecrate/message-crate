@@ -202,7 +202,7 @@ pub struct StagingMessage<'a> {
     /// without one.
     pub guid: &'a str,
     /// RFC 3339 UTC instant the message was sent.
-    pub timestamp: &'a str,
+    pub timestamp: &'a crate::models::StoredTime,
     /// Whether the source recorded `timestamp` to the millisecond.
     pub time_precision: message_ir::TimePrecision,
     /// 1 when the account holder sent it.
@@ -233,7 +233,7 @@ pub struct StagingMessage<'a> {
     pub import_id: Option<i64>,
     /// When the backup the row was read from was made, in the form
     /// `timestamp` takes; `None` when its file did not say.
-    pub backup_taken_at: Option<&'a str>,
+    pub backup_taken_at: Option<&'a crate::models::StoredTime>,
 }
 
 /// One attachment row as the import stages it: the stored blob's digest,
@@ -288,7 +288,7 @@ pub struct StagingEarlierVersion<'a> {
     pub text: &'a str,
     /// When the version was written, in the form a message's timestamp
     /// takes; `None` when the source does not record it.
-    pub edited_at: Option<&'a str>,
+    pub edited_at: Option<&'a crate::models::StoredTime>,
 }
 
 impl<'a> StagingEarlierVersion<'a> {
@@ -299,7 +299,7 @@ impl<'a> StagingEarlierVersion<'a> {
             message_id,
             part_index: version.part_index,
             text: &version.text,
-            edited_at: version.edited_at.as_deref(),
+            edited_at: version.edited_at.as_ref(),
         }
     }
 }
@@ -622,7 +622,7 @@ pub async fn add_staged_copy_mark(
     conn: &mut SqliteConnection,
     staged: i64,
     deletion: Option<message_ir::Deletion>,
-    backup_taken_at: Option<&str>,
+    backup_taken_at: Option<&crate::models::StoredTime>,
 ) -> Result<()> {
     let undated_deletion = deletion.filter(|_| backup_taken_at.is_none());
     let sql = format!(
@@ -692,7 +692,7 @@ pub async fn take_later_staged_copy(
     let newest = copy
         .versions
         .iter()
-        .filter_map(|v| v.edited_at.as_deref())
+        .filter_map(|v| v.edited_at.as_ref())
         .max();
     let later: bool = sqlx::query_scalar(&format!(
         "SELECT {} FROM staging_message_versions WHERE message_id = $3",
@@ -723,7 +723,7 @@ pub async fn note_backed_staged_text(
     conn: &mut SqliteConnection,
     staged: i64,
     copy: &StagedCopy<'_>,
-    backup_taken_at: &str,
+    backup_taken_at: &crate::models::StoredTime,
 ) -> Result<()> {
     let sql = format!(
         "UPDATE staging_messages SET undated_body = 0 \
@@ -1636,7 +1636,7 @@ pub async fn promote_time_precision(conn: &mut SqliteConnection) -> Result<()> {
 pub async fn add_staged_copy_milliseconds(
     conn: &mut SqliteConnection,
     staged: i64,
-    timestamp: &str,
+    timestamp: &crate::models::StoredTime,
 ) -> Result<()> {
     sqlx::query("UPDATE staging_messages SET time_precision = $1 WHERE id = $2 AND timestamp = $3")
         .bind(message_ir::TimePrecision::Milliseconds.as_str())

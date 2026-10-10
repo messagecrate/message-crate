@@ -26,6 +26,14 @@ impl Sql {
         self.params.push(SqlParam::Text(v.into()));
     }
 
+    /// Write `?` and bind a stored message time, for a comparison with
+    /// `messages.timestamp` or an aggregate of it: only a
+    /// [`crate::models::StoredTime`], so the bound text has the stored form
+    /// (#1965).
+    pub fn bind_time(&mut self, t: &crate::models::StoredTime) {
+        self.bind_text(t.as_str());
+    }
+
     /// Write `?` and bind an integer.
     pub fn bind_int(&mut self, v: i64) {
         self.text.push('?');
