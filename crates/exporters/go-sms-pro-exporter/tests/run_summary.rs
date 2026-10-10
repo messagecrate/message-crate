@@ -6,11 +6,12 @@
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
 use message_crate_core::{ExporterConfig, GoSmsProConfig, SourceConfig};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-/// A backup directory holding `gosms_sys_1.xml`, and the JSONL run of it into
-/// an output directory beside it. `_tmp` holds both until the test ends, so a
-/// test binds it by name: `..` in a destructuring drops it there and then.
+/// A backup directory holding `gosms_sys_1.xml`, an output directory beside
+/// it, and the config for a JSONL run from one to the other. `_tmp` holds both
+/// directories until the test ends, so a test binds it by name: `..` in a
+/// destructuring drops it there and then.
 struct Backup {
     _tmp: tempfile::TempDir,
     input: PathBuf,
@@ -38,6 +39,14 @@ fn backup(xml: &str) -> Backup {
         output,
         config,
     }
+}
+
+/// Write `gosms_sys_2_broken.xml`, a backup file cut off mid-row, into
+/// `input`, and return its path.
+fn write_broken_xml(input: &Path) -> PathBuf {
+    let path = input.join("gosms_sys_2_broken.xml");
+    fs::write(&path, "<GoSms><SMS><address>").unwrap();
+    path
 }
 
 /// One good SMS row, from +14075550107.
@@ -104,11 +113,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         output,
         config,
     } = backup(SKIPS_XML);
-    fs::write(
-        input.join("gosms_sys_2_broken.xml"),
-        "<GoSms><SMS><address>",
-    )
-    .unwrap();
+    let broken = write_broken_xml(&input);
 
     let result = crate::run(&config).expect("run");
 
@@ -135,7 +140,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         .iter()
         .position(|l| l == "  Import Errors")
         .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
-    let broken = input.join("gosms_sys_2_broken.xml").display().to_string();
+    let broken = broken.display().to_string();
     let errors = &result.messages[heading + 1..];
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
     assert!(
@@ -228,11 +233,7 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
         output: _,
         mut config,
     } = backup(SKIPS_XML);
-    fs::write(
-        input.join("gosms_sys_2_broken.xml"),
-        "<GoSms><SMS><address>",
-    )
-    .unwrap();
+    let broken = write_broken_xml(&input);
     // A message type with an unknown header code right after it.
     for i in 0..21 {
         fs::write(
@@ -255,7 +256,7 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
     assert!(
         issues
             .iter()
-            .any(|i| i.item == input.join("gosms_sys_2_broken.xml").display().to_string()),
+            .any(|i| i.item == broken.display().to_string()),
         "{issues:?}"
     );
     let pdu = input.join("I_1609459220_1_0.pdu").display().to_string();
