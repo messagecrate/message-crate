@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 /// and the caller that wants it hands it to [`FormatSink::with_archive`];
 /// this crate knows no archive format by name.
 pub trait MergedArchive: std::fmt::Debug + Send {
-    /// Write `documents` under `output_dir` and return the path of what was
-    /// written. Anything the format could not carry is counted in `report`.
+    /// Write `documents` under `output_dir`. Anything the format could not
+    /// carry is counted in `report`.
     ///
     /// # Errors
     ///
@@ -31,13 +31,19 @@ pub trait MergedArchive: std::fmt::Debug + Send {
         output_dir: &Path,
         documents: &[ConversationDocument],
         report: &mut ExportReport,
-    ) -> Result<PathBuf>;
+    ) -> Result<()>;
 
-    /// The names of the files [`write`](Self::write) creates in the output
-    /// directory, partial files included. The sink records them before it
-    /// writes, so the next fresh export into the directory removes them
-    /// whatever format it writes.
-    fn file_names(&self) -> Vec<String>;
+    /// The name of every file and directory [`write`](Self::write) creates
+    /// directly in the output directory when it writes `documents`, partial
+    /// files included. The sink records them before it writes, so the next
+    /// fresh export into the directory removes them, directories with
+    /// everything in them, whatever format it writes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the names cannot be worked out, for the same
+    /// reason [`write`](Self::write) would then fail.
+    fn outputs(&self, documents: &[ConversationDocument]) -> Result<Vec<String>>;
 
     /// The format's name as a person knows it, such as the app it belongs
     /// to, for the run's log. The crate that owns the archive names it, so
@@ -204,7 +210,7 @@ impl FormatSink {
         report.obfuscated_docs += outcome.obfuscated_docs as u64;
 
         if let Some(archive) = &self.archive {
-            record_archive_files(&self.output_dir, &archive.file_names())?;
+            record_archive_files(&self.output_dir, &archive.outputs(&self.docs)?)?;
             archive.write(&self.output_dir, &self.docs, report)?;
         } else {
             let mut docs: Vec<&mut ConversationDocument> = self.docs.iter_mut().collect();
@@ -355,18 +361,18 @@ mod tests {
             output_dir: &Path,
             documents: &[ConversationDocument],
             _report: &mut ExportReport,
-        ) -> Result<PathBuf> {
+        ) -> Result<()> {
             let path = output_dir.join("all.txt");
             let body: Vec<String> = documents
                 .iter()
                 .map(|doc| doc.conversation.chat_identifier.clone())
                 .collect();
             fs::write(&path, body.join("\n"))?;
-            Ok(path)
+            Ok(())
         }
 
-        fn file_names(&self) -> Vec<String> {
-            vec!["all.txt".into()]
+        fn outputs(&self, _documents: &[ConversationDocument]) -> Result<Vec<String>> {
+            Ok(vec!["all.txt".into()])
         }
 
         fn format_name(&self) -> &'static str {

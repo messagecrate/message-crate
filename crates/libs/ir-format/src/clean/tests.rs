@@ -110,6 +110,27 @@ fn removes_the_files_an_archive_recorded_and_nothing_else() {
     assert_eq!(fs::read_to_string(dir.join(EXPORT_SENTINEL)).unwrap(), "");
 }
 
+/// An archive that writes a directory per conversation records each one, so
+/// the next clean removes it with everything in it, even when a run stopped
+/// before the directory held anything the mail clean would recognise. A
+/// directory nothing recorded stays.
+#[test]
+fn removes_the_directories_an_archive_recorded() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
+    write_export_sentinel(dir).unwrap();
+    record_archive_files(dir, &["+15555550101".to_string()]).unwrap();
+    fs::create_dir(dir.join("+15555550101")).unwrap();
+    fs::write(dir.join("+15555550101/partial.tmp"), "x").unwrap();
+    fs::create_dir(dir.join("photos")).unwrap();
+    fs::write(dir.join("photos/holiday.txt"), "mine").unwrap();
+
+    clean_previous_ir_output(dir).unwrap();
+
+    assert_eq!(names(dir), [EXPORT_SENTINEL, "photos"]);
+    assert!(dir.join("photos/holiday.txt").is_file());
+}
+
 /// Pull and WhatsApp mark a directory without cleaning it, so marking it
 /// again keeps the archive files an earlier export listed for the next
 /// clean.

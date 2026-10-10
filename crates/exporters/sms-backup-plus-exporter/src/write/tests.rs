@@ -262,6 +262,77 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 3);
 }
 
+/// The names entered in the export directory's sentinel are the directories
+/// `write` creates, no more and no fewer: one per conversation that has an
+/// SMS or MMS, under the name it gets when two conversations' names clash.
+#[test]
+fn outputs_names_every_directory_write_creates() {
+    let mut sms = sample_document("an sms");
+    sms.conversation.chat_identifier = "sam@example.com".into();
+    let mut imessage = sample_imessage_document();
+    imessage.conversation.chat_identifier = "+15555550102".into();
+    let mut clash = sample_document("same name, other conversation");
+    clash.conversation.chat_identifier = "Sam@example.com".into();
+    let documents = [sms, imessage, clash];
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut outputs = archive().outputs(&documents).unwrap();
+    archive()
+        .write(tmp.path(), &documents, &mut ExportReport::default())
+        .unwrap();
+
+    let mut written: Vec<String> = fs::read_dir(tmp.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    written.sort();
+    outputs.sort();
+    assert_eq!(written.len(), 2, "{written:?}");
+    assert!(
+        written.iter().any(|name| name.contains("__")),
+        "the clashing names are told apart: {written:?}"
+    );
+    assert_eq!(outputs, written);
+}
+
+/// A fresh SMS Backup+ export into a directory that held an earlier one
+/// leaves none of the earlier conversation directories, including one a run
+/// that stopped left before it wrote any mail into it.
+#[test]
+fn a_fresh_export_removes_the_earlier_conversation_directories() {
+    let tmp = tempfile::tempdir().unwrap();
+    let export = |documents: Vec<ConversationDocument>| {
+        let (mut sink, _) = message_ir_format::FormatSink::open_prepared(
+            tmp.path(),
+            message_crate_core::OutputFormat::SmsBackupPlus,
+            message_crate_core::ExportTransforms::none(),
+        )
+        .unwrap();
+        sink = sink.with_archive(Box::new(archive()));
+        for doc in documents {
+            sink.write_document(doc).unwrap();
+        }
+        sink.finish(&mut ExportReport::default()).unwrap();
+    };
+    let mut stopped = sample_document("the run stopped before this mail");
+    stopped.conversation.chat_identifier = "+15555550102".into();
+    export(vec![sample_document("earlier"), stopped]);
+    for mail in fs::read_dir(tmp.path().join("+15555550102")).unwrap() {
+        fs::remove_file(mail.unwrap().path()).unwrap();
+    }
+    let mut later = sample_document("later");
+    later.conversation.chat_identifier = "+15555550103".into();
+
+    export(vec![later]);
+
+    let mut names: Vec<String> = fs::read_dir(tmp.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["+15555550103", ".message-crate-export"]);
+}
+
 /// A message whose service is unknown but whose kind says SMS, as a Mac
 /// `chat.db` row with no service or one pulled back from the server as
 /// `unknown` is, is written like any SMS, as the XML export writes it.
