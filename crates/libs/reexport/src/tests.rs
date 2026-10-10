@@ -561,14 +561,14 @@ fn looks_like_smses_reads_only_the_first_line_and_ignores_case() {
     assert!(looks_like_smses(&lower));
     assert!(looks_like_smses(&upper));
     assert!(
-        !looks_like_smses(&second_line),
-        "only the first line is read"
+        looks_like_smses(&second_line),
+        "the XML declaration before the root element is passed over"
     );
     assert!(!looks_like_smses(&dir.path().join("missing.xml")));
 }
 
 #[test]
-fn a_backup_not_named_smses_xml_is_detected_by_its_first_line() {
+fn a_backup_not_named_smses_xml_is_detected_by_its_root_element() {
     let source = tempfile::tempdir().unwrap();
     fs::write(
         source.path().join("sms-20240101.xml"),
@@ -901,7 +901,7 @@ fn a_csv_without_every_ir_column_is_refused() {
 }
 
 /// An `.xml` is an SMS Backup & Restore export only when it is named
-/// `smses.xml` or its first line says `<smses`. Any other XML in the directory —
+/// `smses.xml` or its root element is `<smses>`. Any other XML in the directory —
 /// an Android manifest, a settings dump — must be left alone.
 #[test]
 fn an_xml_that_is_not_an_smses_export_is_refused() {
@@ -1074,11 +1074,7 @@ fn a_directory_with_two_sms_backups_is_refused() {
     let input = tempfile::tempdir().unwrap();
     let backup = fs::read_to_string(sms_fixture("sms-backup-every-skip/smses.xml")).unwrap();
     fs::write(input.path().join("smses.xml"), &backup).unwrap();
-    // Named by its first line, as a file not called `smses.xml` is.
-    let older = backup
-        .split_once('\n')
-        .map_or(backup.as_str(), |(_, rest)| rest);
-    fs::write(input.path().join("older.xml"), older).unwrap();
+    fs::write(input.path().join("older.xml"), &backup).unwrap();
     let destination = tempfile::tempdir().unwrap();
 
     let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
@@ -1090,10 +1086,9 @@ fn a_directory_with_two_sms_backups_is_refused() {
     );
 }
 
-/// A backup the app wrote opens with an `<?xml ...?>` line, so detection
-/// does not name it an SMS Backup & Restore file. Beside `smses.xml` it is
-/// still a second backup, and the conversion is refused rather than run
-/// without its messages.
+/// A backup the app wrote opens with an `<?xml ...?>` line. Beside
+/// `smses.xml` it is a second backup, and the conversion is refused rather
+/// than run without its messages.
 #[test]
 fn a_dated_backup_beside_smses_xml_is_refused() {
     let input = tempfile::tempdir().unwrap();
@@ -1112,9 +1107,9 @@ fn a_dated_backup_beside_smses_xml_is_refused() {
 }
 
 /// An SMS Backup & Restore file counts when it is named `smses.xml` or its
-/// first line opens `<smses`. No other file does.
+/// root element is `<smses>`. No other file does.
 #[test]
-fn list_artifacts_takes_an_smses_file_by_name_or_by_first_line() {
+fn list_artifacts_takes_an_smses_file_by_name_or_by_root_element() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("smses.xml"), "<?xml version=\"1.0\"?>\n").unwrap();
     fs::write(

@@ -123,8 +123,9 @@ released versions carry their date on the heading.
   import reads one backup. A second backup is a second import, and the
   server keeps the later copy of a message by the date each file records.
   A directory is refused. **Settings → Convert** refuses a directory that
-  holds more than one SMS Backup & Restore file, naming each. GO SMS Pro and SMS Backup+ still
-  take a directory (#2009).
+  holds more than one SMS Backup & Restore file, naming each, and finds a
+  backup the app wrote under any name. GO SMS Pro and SMS Backup+ still take
+  a directory (#2009).
 
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs

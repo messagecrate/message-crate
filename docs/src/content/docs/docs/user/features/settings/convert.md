@@ -53,7 +53,7 @@ Convert reads the six formats Export writes:
 | CSV | `.csv` files |
 | MBOX | `.mbox` files |
 | EML | Directories that hold `.eml` files |
-| Android XML | A file named `smses.xml`, or an `.xml` file that starts with `<smses` |
+| Android XML | A file named `smses.xml`, or an `.xml` file whose root element is `<smses>`, after any `<?xml ...?>` declaration |
 
 A `.json`, `.jsonl`, or `.csv` file counts only when its contents look like a Message Crate export, so an unrelated file with the same extension is passed over.
 
@@ -62,7 +62,7 @@ Detection ignores the `attachments` directory, any name that starts with a dot, 
 A directory must hold exactly one format.
 A directory that holds more than one is refused with `unsupported input: mixed formats`, followed by the formats and files found, because Convert can't tell which export to read.
 A directory that holds none is refused with `unsupported input: no Message Crate IR export found`.
-A directory that holds more than one `.xml` file next to an Android XML export is refused, naming each, because a conversion reads one backup.
+A directory that holds more than one Android XML file is refused, naming each, because a conversion reads one backup.
 
 A `.json` or `.jsonl` export of another schema version, such as an export written before version 10, is refused with "This file is schema version 9; Message Crate reads version 10" and the file's name.
 Nothing is upgraded: export the conversations again with the current app.

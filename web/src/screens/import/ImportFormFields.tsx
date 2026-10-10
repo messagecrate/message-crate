@@ -306,7 +306,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const isIos = props.source === "imessage-ios";
   const isImazing = props.source === IMAZING_SOURCE_ID;
   const isAndroidSms = isAndroidSmsSource(props.source);
-  const androidBackup = backupField(props.source);
+  const androidBackup = isAndroidSms ? backupField(props.source) : null;
   const wantsEmails = needsOwnerEmails(props.source);
   const imessageMethod = isImessageMethod(props.source) ? props.source : null;
   const whatsappMethod = isWhatsappMethod(props.source) ? props.source : null;
@@ -727,7 +727,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               onMinSizeMbChange={props.onMinSizeMbChange}
             />
           </>
-        ) : isAndroidSms ? (
+        ) : androidBackup ? (
           <>
             <StackedField label={androidBackup.label} required={required.backupPath}>
               <PathPicker

@@ -553,28 +553,8 @@ fn detect_ir_export(input_dir: &Path) -> Result<DetectedExport> {
 
 /// The one SMS Backup & Restore file in `input_dir`: a conversion reads one
 /// backup, and SMS Backup & Restore writes each backup as one file.
-///
-/// Every `.xml` file beside it counts, not only those detection names an
-/// SMS Backup & Restore file: a backup the app wrote opens with an
-/// `<?xml ...?>` line, which detection does not look past, and leaving one
-/// out would drop its messages without a word.
 fn sms_backup_file(input_dir: &Path) -> Result<PathBuf> {
-    let mut files = Vec::new();
-    for entry in fs::read_dir(input_dir).with_context(|| format!("read {}", input_dir.display()))? {
-        let path = entry?.path();
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let is_xml = path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("xml"));
-        if is_xml && path.is_file() && !ignored_artifact(&name) {
-            files.push(path);
-        }
-    }
-    files.sort();
+    let mut files = list_artifacts(input_dir, OutputFormat::Xml)?;
     if files.len() > 1 {
         bail!(
             "{} holds {} SMS Backup & Restore files ({}): a conversion reads one backup",
@@ -659,14 +639,31 @@ fn ignored_artifact(name: &str) -> bool {
         || name.ends_with(".xml.sbrbody")
 }
 
-/// True when the first line of `path` looks like `<smses`.
+/// The most lines read before the root element of a file that might be an
+/// SMS Backup & Restore backup.
+const SMSES_PROLOG_LINES: usize = 16;
+
+/// True when the root element of `path` is `<smses`: the first line that is
+/// not blank, an `<?xml ...?>` declaration or a comment opens it. A backup
+/// the app wrote starts with a declaration line, so the first line alone
+/// misses it.
 fn looks_like_smses(path: &Path) -> bool {
     let Ok(file) = File::open(path) else {
         return false;
     };
-    let mut first_line = String::new();
-    let _ = BufReader::new(file).read_line(&mut first_line);
-    first_line.to_ascii_lowercase().contains("<smses")
+    for line in BufReader::new(file).lines().take(SMSES_PROLOG_LINES) {
+        let Ok(line) = line else {
+            return false;
+        };
+        let line = line.trim().to_ascii_lowercase();
+        if line.contains("<smses") {
+            return true;
+        }
+        if !(line.is_empty() || line.starts_with("<?") || line.starts_with("<!--")) {
+            return false;
+        }
+    }
+    false
 }
 
 /// True when `path` is a conversation JSON file: an object with a numeric
