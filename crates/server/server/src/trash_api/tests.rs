@@ -1,10 +1,12 @@
 use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
+use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
-    conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
-    http_client, message_line, register_via_api, seed_conversation, stored_time,
+    conversation_header, delete_raw, delete_status, expect_problem, fake_sha256,
+    fixture_with_account, get_json, get_raw, get_status, http_client, message_line,
+    register_via_api, seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -100,17 +102,14 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
         StatusCode::OK,
         "the conversation that was not trashed is still there"
     );
-    let doomed_status = get_status(
+    // The deleted conversation is gone.
+    let (status, text) = get_raw(
         &fixture.state,
         &format!("/v1/conversations/{doomed}"),
         &alice.token,
     )
     .await;
-    assert_eq!(
-        doomed_status,
-        StatusCode::NOT_FOUND,
-        "the deleted conversation is gone"
-    );
+    expect_problem(status, &text, ProblemType::NotFound);
 
     assert!(
         !doomed_file.exists(),
@@ -168,8 +167,8 @@ async fn empty_trash_needs_the_delete_permission() {
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     fixture.turn_off_delete(alice.account_id).await;
 
-    let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, text) = delete_raw(&fixture.state, "/v1/trash", &alice.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     assert_eq!(
         conversation_total(&fixture, &alice.token, "trashed:yes").await,
         1,
