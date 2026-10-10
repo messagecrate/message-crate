@@ -526,6 +526,19 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
         }),
         "the whole key picks the second of two messages that share a key_id"
     );
+    let fields: Vec<&str> = message_of(sam, "Saturday works")
+        .source
+        .as_ref()
+        .expect("source")
+        .fields
+        .keys()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        fields,
+        vec!["jid", "key_id"],
+        "reply_to records the reply, so source.fields carries no copy of it"
+    );
     let no_link = Some(message_ir::ReplyTo {
         guid: None,
         part_index: None,

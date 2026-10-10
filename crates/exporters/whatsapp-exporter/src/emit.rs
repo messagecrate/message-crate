@@ -256,7 +256,6 @@ fn ingest_chat(
                 if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
                     e.insert("reply_key_id".into(), quoted);
                 }
-                e.insert("reply_json".into(), optional_json(msg.reply.as_ref()));
                 e.insert("reactions_json".into(), reactions_json(&msg.reactions));
                 e.insert(
                     "is_sticker".into(),
@@ -435,14 +434,6 @@ fn key_id_string(msg: &MessageJson) -> String {
     }
 }
 
-/// Compact JSON cell, or empty when `None` / null.
-fn optional_json(v: Option<&serde_json::Value>) -> String {
-    match v {
-        Some(val) if !val.is_null() => json_cell(val),
-        _ => String::new(),
-    }
-}
-
 /// Compact JSON for reactions, or empty when null / empty object.
 fn reactions_json(v: &serde_json::Value) -> String {
     if v.is_null() || (v.is_object() && v.as_object().is_some_and(|o| o.is_empty())) {
@@ -553,6 +544,12 @@ impl ProjectionHooks for WhatsappProjection {
         Some("__whatsapp".into())
     }
 
+    /// The chat's `jid` and the message's `key_id`: raw values the
+    /// conversation model has no place for. A reply is not copied here,
+    /// because `reply_to` records it on the message. A reply whose quoted
+    /// message is not in the export keeps no quoted id: `reply_to` names
+    /// only a message of the same export, and neither the raw `reply` value
+    /// nor `reply_key_id` is stored beside it.
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         let whatsapp_jid = convo.extra_str("whatsapp_jid");
@@ -567,14 +564,6 @@ impl ProjectionHooks for WhatsappProjection {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
-            );
-        }
-        let reply_json = msg.extra_str("reply_json");
-        if !reply_json.is_empty() {
-            fields.insert(
-                "reply".into(),
-                serde_json::from_str(reply_json)
-                    .unwrap_or_else(|_| serde_json::Value::String(reply_json.to_string())),
             );
         }
         let reactions_json = msg.extra_str("reactions_json");
