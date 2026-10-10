@@ -3,7 +3,7 @@
 //! the crate that owns that archive's format.
 
 use crate::clean::{
-    clean_previous_ir_output, has_export_sentinel, record_archive_files, require_export_directory,
+    clean_previous_ir_output, has_export_sentinel, record_archive_outputs, require_export_directory,
 };
 use crate::export_transforms::apply_transforms;
 use crate::write::write_format;
@@ -210,7 +210,7 @@ impl FormatSink {
         report.obfuscated_docs += outcome.obfuscated_docs as u64;
 
         if let Some(archive) = &self.archive {
-            record_archive_files(&self.output_dir, &archive.outputs(&self.docs)?)?;
+            record_archive_outputs(&self.output_dir, &archive.outputs(&self.docs)?)?;
             archive.write(&self.output_dir, &self.docs, report)?;
         } else {
             let mut docs: Vec<&mut ConversationDocument> = self.docs.iter_mut().collect();

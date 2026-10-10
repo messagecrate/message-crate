@@ -94,9 +94,9 @@ fn removes_the_files_an_archive_recorded_and_nothing_else() {
     let dir = dir.as_path();
     write_export_sentinel(dir).unwrap();
     let recorded = ["archive.xml", "archive.xml.tmp"].map(String::from);
-    record_archive_files(dir, &recorded).unwrap();
+    record_archive_outputs(dir, &recorded).unwrap();
     // A damaged list cannot reach outside the directory.
-    record_archive_files(dir, &["../outside.xml".to_string()]).unwrap();
+    record_archive_outputs(dir, &["../outside.xml".to_string()]).unwrap();
     let outside = tmp.path().join("outside.xml");
     fs::write(&outside, "mine").unwrap();
     for name in ["archive.xml", "archive.xml.tmp", "sms-20261001.xml"] {
@@ -119,7 +119,7 @@ fn removes_the_directories_an_archive_recorded() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     write_export_sentinel(dir).unwrap();
-    record_archive_files(dir, &["+15555550101".to_string()]).unwrap();
+    record_archive_outputs(dir, &["+15555550101".to_string()]).unwrap();
     fs::create_dir(dir.join("+15555550101")).unwrap();
     fs::write(dir.join("+15555550101/partial.tmp"), "x").unwrap();
     fs::create_dir(dir.join("photos")).unwrap();
@@ -139,7 +139,7 @@ fn marking_a_directory_again_keeps_the_archive_files_it_lists() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     write_export_sentinel(dir).unwrap();
-    record_archive_files(dir, &["archive.xml".to_string()]).unwrap();
+    record_archive_outputs(dir, &["archive.xml".to_string()]).unwrap();
     fs::write(dir.join("archive.xml"), "x").unwrap();
 
     mark_export_directory(dir).unwrap();
