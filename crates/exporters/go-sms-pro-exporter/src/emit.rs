@@ -490,13 +490,53 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         &mut report,
     )?;
 
-    write_skipped_invalid_address_csv(
+    // Rows dropped for an unusable address.
+    write_skipped_csv(
         &output_dir,
-        &skips.invalid_address,
+        "skipped_invalid_address.csv",
+        &[
+            "xml_file",
+            "address",
+            "contact_name",
+            "android_type",
+            "date_ms",
+            "body",
+        ],
+        skips.invalid_address.iter().map(|d| {
+            vec![
+                d.xml_file.clone(),
+                d.address.clone(),
+                d.contact_name.clone(),
+                d.android_type.clone(),
+                d.date_ms.clone(),
+                d.body.clone(),
+            ]
+        }),
         skips.invalid_address_more,
     )?;
-    write_skipped_empty_pdu_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
-    write_skipped_no_party_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
+    // Stub PDU files.
+    write_skipped_csv(
+        &output_dir,
+        "skipped_empty_pdu.csv",
+        &["pdu_filename"],
+        skips.empty_pdu.iter().map(|d| vec![d.pdu_filename.clone()]),
+        skips.empty_pdu_more,
+    )?;
+    // MMS with no participant other than the owner.
+    write_skipped_csv(
+        &output_dir,
+        "skipped_no_party.csv",
+        &["pdu_filename", "sender", "recipients", "is_sent"],
+        skips.no_party.iter().map(|d| {
+            vec![
+                d.pdu_filename.clone(),
+                d.sender.clone(),
+                d.recipients.clone(),
+                if d.is_sent { "1" } else { "0" }.to_owned(),
+            ]
+        }),
+        skips.no_party_more,
+    )?;
 
     Ok(report)
 }
@@ -614,99 +654,32 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
-/// Write `skipped_invalid_address.csv` (or remove a stale one) listing rows dropped for an unusable address.
-fn write_skipped_invalid_address_csv(
+/// Write `file_name` in `output_dir` (or remove a stale one) with `header` and one row per item of
+/// `rows`. When `more` entries were left out, a last row says so in its final column, padded with
+/// empty columns to the header's width.
+fn write_skipped_csv(
     output_dir: &Path,
-    details: &[SkippedBadAddrDetail],
+    file_name: &str,
+    header: &[&str],
+    rows: impl Iterator<Item = Vec<String>>,
     more: u64,
 ) -> Result<()> {
-    let path = output_dir.join("skipped_invalid_address.csv");
-    if details.is_empty() && more == 0 {
+    let path = output_dir.join(file_name);
+    let mut rows = rows.peekable();
+    if rows.peek().is_none() && more == 0 {
         remove_if_exists(&path);
         return Ok(());
     }
     let mut wtr =
         csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record([
-        "xml_file",
-        "address",
-        "contact_name",
-        "android_type",
-        "date_ms",
-        "body",
-    ])?;
-    for d in details {
-        wtr.write_record([
-            d.xml_file.as_str(),
-            d.address.as_str(),
-            d.contact_name.as_str(),
-            d.android_type.as_str(),
-            d.date_ms.as_str(),
-            d.body.as_str(),
-        ])?;
+    wtr.write_record(header)?;
+    for row in rows {
+        wtr.write_record(&row)?;
     }
     if more > 0 {
-        wtr.write_record([
-            "",
-            "",
-            "",
-            "",
-            "",
-            &format!("...and {more} more entries not shown"),
-        ])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_empty_pdu.csv` (or remove a stale one) listing stub PDU files.
-fn write_skipped_empty_pdu_csv(
-    output_dir: &Path,
-    details: &[SkippedEmptyPduDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_empty_pdu.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename"])?;
-    for d in details {
-        wtr.write_record([d.pdu_filename.as_str()])?;
-    }
-    if more > 0 {
-        wtr.write_record([&format!("...and {more} more entries not shown")])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_no_party.csv` (or remove a stale one) listing MMS with no non-owner participant.
-fn write_skipped_no_party_csv(
-    output_dir: &Path,
-    details: &[SkippedNoPartyDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_no_party.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename", "sender", "recipients", "is_sent"])?;
-    for d in details {
-        wtr.write_record([
-            d.pdu_filename.as_str(),
-            d.sender.as_str(),
-            d.recipients.as_str(),
-            if d.is_sent { "1" } else { "0" },
-        ])?;
-    }
-    if more > 0 {
-        wtr.write_record(["", "", "", &format!("...and {more} more entries not shown")])?;
+        let mut row = vec![String::new(); header.len().saturating_sub(1)];
+        row.push(format!("...and {more} more entries not shown"));
+        wtr.write_record(&row)?;
     }
     wtr.flush()?;
     Ok(())
