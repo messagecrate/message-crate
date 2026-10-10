@@ -94,8 +94,9 @@ impl RunResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
     /// What the row is: an Import Error ([`RunIssueKind::Skip`] or
-    /// [`RunIssueKind::Error`]), a note, or [`RunIssueKind::Resolved`] when
-    /// an earlier row with the same step and item no longer holds.
+    /// [`RunIssueKind::Error`]), a note ([`RunIssueKind::Note`]), or
+    /// [`RunIssueKind::Resolved`] when an earlier row with the same step and
+    /// item no longer holds.
     pub kind: RunIssueKind,
     /// The step that raised it, such as `attachments`.
     pub step: String,
