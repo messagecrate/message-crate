@@ -35,6 +35,11 @@ step 1, to bring it up to date, and in step 5, with every fix. Step 5 marks it
 ready after its push, and CI is watched on that head alone (AGENTS.md
 step 6).
 
+**Every push brings the base in** when it moved since the last one, so each
+run tests the PR on the `main` it lands on (AGENTS.md step 5). A push made
+only for the base waits for a conflict: a PR that is only behind merges as
+it is, and a conflict ends the CI watch (step 6).
+
 **Every call that posts** (a review, a comment, a reply) goes one at a time,
 and a refusal is retried (AGENTS.md, "Posting pace").
 
@@ -165,8 +170,17 @@ resolved, and every user thread has a reply.
 ### 6. Green CI
 
 Watch the CI run that marking the PR ready started, stopping at its first
-failed job (AGENTS.md step 6). A job that fails because of the PR is a
-finding: fix it, run the local checks, push, and watch the new run.
+failed job or at a conflict (AGENTS.md step 6). A job that fails because of
+the PR is a finding: fix it, run the local checks, push, and watch the new
+run.
+
+**A conflict ends the watch.** The watch reads the PR's merge state with
+every poll, starting before the PR is marked ready. Once the PR is
+`CONFLICTING`, no run on its head can lead to a merge, so leave the run:
+merge the base in with the merge review, fix any job of that run that
+already failed because of the PR, run the local checks, push, and watch the
+new run. The push cancels the run you left. A run being waited on for a
+rerun is left the same way.
 
 A check that fails for a reason outside the PR (a runner fault, a network
 fetch) gets one rerun of its failed jobs. If it fails again, or `main` fails
@@ -174,8 +188,8 @@ the same job, stop and report it without changing the code for it. AGENTS.md
 step 6 says how a failed check is sorted, how a red `main` is found, and when
 the run is rerun.
 
-Done when the CI run on the commit you pushed ended in `success`, and it is
-still the PR head (_Another session's commits_).
+Done when the CI run on the commit you pushed ended in `success`, the PR is
+not `CONFLICTING`, and it is still the PR head (_Another session's commits_).
 
 ### 7. Summarise and merge
 
