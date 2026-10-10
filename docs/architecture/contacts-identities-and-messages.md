@@ -191,9 +191,9 @@ An import types each address it meets by the rule above (`db/handles.rs`,
 `handle_type_on`): a one-to-one chat handle, a participant, a message's
 sender, a reaction's sender and the holder's own address. A participant, a
 message's sender and a reaction's sender go through one function,
-`HandleValue::handle_type_on` (`imports_api/records.rs`), which also keeps a name the
-source gave in place of an address as `other`. The server knows it is a
-name because the file gave it in the name's place. A participant is typed
+`HandleValue::handle_type_on` (`imports_api/records.rs`), which also
+keeps a name the source gave in place of an address as `other`. The
+server knows it is a name because the file gave it in the name's place. A participant is typed
 by the conversation's service, and a sender or a reaction's sender by its
 message's service. The conversation file carries no `identity_type`. Why:
 the type follows from the service and the address, so a type in the file
