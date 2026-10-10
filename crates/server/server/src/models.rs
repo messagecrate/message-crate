@@ -5,8 +5,8 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, Deletion, EarlierVersion, IdentityService, IrAttachment, IrDirection,
-    IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
+    ConversationHeader, Deletion, EarlierVersion, IdentityService, IdentityType, IrAttachment,
+    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, ReplyTo, TimePrecision,
     check_schema_version_in_json, nonempty, trimmed,
 };
 use serde_json::Value;
@@ -75,15 +75,43 @@ impl ConversationRecord {
 /// One participant of an imported conversation.
 #[derive(Debug, Clone)]
 pub struct ParticipantRecord {
-    /// Raw identity value. For a person the source named with no address it
-    /// is the name, and `is_name` is set.
-    pub handle: String,
+    /// The participant's address, or the name the source gave in its place.
+    pub handle: HandleValue,
     /// Display-name alias, when the export supplied one.
     pub name_alias: Option<String>,
-    /// True when `handle` is a name the source gave in place of an address.
-    /// Staging stores a name as `Other`, and types an address by its service
-    /// and shape.
-    pub is_name: bool,
+}
+
+/// What a conversation file gave for a person: an address, or a name in
+/// place of one when the source recorded no address. The file states no
+/// type; [`HandleValue::handle_type_on`] works it out.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HandleValue {
+    /// A phone number, email address or app id, as the file wrote it.
+    Address(String),
+    /// A name the source gave with no address, such as `Mom`.
+    Name(String),
+}
+
+impl HandleValue {
+    /// The value as the file wrote it.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Address(value) | Self::Name(value) => value,
+        }
+    }
+
+    /// The type an import gives this value on `service`: a name is `Other`,
+    /// and an address is typed by its service and shape
+    /// ([`handle_type_on`](crate::db::handles::handle_type_on)). A
+    /// participant, a message's sender and a reaction's sender are all typed
+    /// here, so one address is one type wherever it appears in a
+    /// conversation (#1959).
+    pub fn handle_type_on(&self, service: IdentityService) -> IdentityType {
+        match self {
+            Self::Address(address) => crate::db::handles::handle_type_on(address, service),
+            Self::Name(_) => IdentityType::Other,
+        }
+    }
 }
 
 /// One message of an imported conversation.
@@ -105,12 +133,9 @@ pub struct MessageRecord {
     pub time_precision: TimePrecision,
     /// True for messages sent by the account owner.
     pub is_from_me: bool,
-    /// Sender handle for incoming messages: the address, or the name when the
-    /// source named the sender with no address (`sender_is_name` is then
-    /// set). Staging types an address by the message's service and its shape.
-    pub sender: Option<String>,
-    /// True when `sender` is a name the source gave in place of an address.
-    pub sender_is_name: bool,
+    /// Sender for incoming messages: the address, or the name when the
+    /// source named the sender with no address.
+    pub sender: Option<HandleValue>,
     /// The account holder's own address on this message, sent from or
     /// received at: the message's owner handle, else the header's.
     pub owner: Option<String>,
@@ -388,7 +413,7 @@ fn message_from_ir(
     let sender = if is_from_me {
         None
     } else {
-        sender_identity(
+        handle_value(
             msg.sender_identity.as_deref(),
             msg.sender_display_name.as_deref(),
         )
@@ -400,8 +425,7 @@ fn message_from_ir(
         timestamp,
         time_precision: msg.time_precision,
         is_from_me,
-        sender_is_name: sender.as_ref().is_some_and(|(_, is_name)| *is_name),
-        sender: sender.map(|(value, _)| value),
+        sender,
         owner: msg
             .owner_identity
             .as_deref()
@@ -452,22 +476,18 @@ fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRec
 /// (`db::handles::handle_type_on`).
 fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
     let name_alias = p.display_name.clone();
-    let (handle, is_name) = sender_identity(p.identity.as_deref(), p.display_name.as_deref())?;
-    Some(ParticipantRecord {
-        handle,
-        name_alias,
-        is_name,
-    })
+    let handle = handle_value(p.identity.as_deref(), p.display_name.as_deref())?;
+    Some(ParticipantRecord { handle, name_alias })
 }
 
-/// An identity value and whether it is a name: the address, else the name
-/// the source gave with no address. `None` when the source gave neither.
-/// A message's sender and a participant follow this one rule.
-fn sender_identity(address: Option<&str>, name: Option<&str>) -> Option<(String, bool)> {
-    if let Some(address) = address.and_then(nonempty) {
-        return Some((address, false));
-    }
-    name.and_then(nonempty).map(|name| (name, true))
+/// The address, else the name the source gave with no address. `None` when
+/// the source gave neither. A message's sender and a participant follow this
+/// one rule.
+fn handle_value(address: Option<&str>, name: Option<&str>) -> Option<HandleValue> {
+    address
+        .and_then(nonempty)
+        .map(HandleValue::Address)
+        .or_else(|| name.and_then(nonempty).map(HandleValue::Name))
 }
 
 /// Map one IR attachment onto the server's attachment record.

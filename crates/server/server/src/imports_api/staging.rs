@@ -1,5 +1,6 @@
 //! Stage message-ir JSONL rows into the temporary import tables.
 
+use crate::models::HandleValue;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -9,7 +10,7 @@ use sqlx::SqliteConnection;
 
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
-    HandleIdCache, handle_type_on, identity_type_on, upsert_handle_row_cached, upsert_handle_row_in,
+    HandleIdCache, handle_type_on, upsert_handle_row_cached, upsert_handle_row_in,
 };
 use crate::db::staging::{
     self as db_staging, BackupOrder, StagedCopy, StagingAttachment, StagingConversation,
@@ -282,10 +283,10 @@ impl StagingInserts {
     }
 }
 
-/// One participant as the conversation header records it: handle (the name,
-/// for a person named with no address), the name this backup used for them,
-/// and whether the handle is that name rather than an address.
-type StagedParticipant = (String, Option<String>, bool);
+/// One participant as the conversation header records it: their address, or
+/// the name the source gave in its place, and the name this backup used for
+/// them.
+type StagedParticipant = (HandleValue, Option<String>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
 ///
@@ -387,7 +388,7 @@ impl StagedConversation {
             participants: record
                 .participants
                 .into_iter()
-                .map(|p| (p.handle, p.name_alias, p.is_name))
+                .map(|p| (p.handle, p.name_alias))
                 .collect(),
             source,
             backup_taken_at: record.backup_taken_at,
@@ -662,18 +663,19 @@ async fn insert_participant(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     conversation_id: i64,
-    (handle, name_alias, is_name): StagedParticipant,
+    (value, name_alias): StagedParticipant,
     service: IdentityService,
     counts: &mut ImportCounts,
 ) -> Result<()> {
-    let handle_type = identity_type_on(&handle, is_name, service);
+    let handle_type = value.handle_type_on(service);
+    let handle = value.as_str();
     // The account holder is never a participant: a member at one of the
     // account's identities gets no handle, contact or participant row. The
     // exporters drop the addresses their backup names as the owner's; this
     // catches the ones only the account knows (#1093).
     if is_account_identity(
         &stmts.identities,
-        &handle,
+        handle,
         handle_type,
         stmts.handles.country(),
     ) {
@@ -683,7 +685,7 @@ async fn insert_participant(
         tx,
         &mut stmts.handles,
         stmts.account_id,
-        &handle,
+        handle,
         handle_type,
         Some(service.as_str()),
     )
@@ -750,8 +752,7 @@ async fn resolve_message_rows(
             stmts.import_id,
             IncomingSender {
                 is_from_me: msg.is_from_me,
-                address: msg.sender.as_deref(),
-                is_name: msg.sender_is_name,
+                value: msg.sender.as_ref(),
                 service: sender_service,
             },
             counts,
@@ -1056,6 +1057,8 @@ async fn tapback_row(
     row: &PendingStagingMessage,
     tap: &TapbackRecord,
 ) -> Result<StagingTapback> {
+    // A reaction names its sender by address only.
+    let reactor = tap.sender.clone().map(HandleValue::Address);
     let sender_handle_id = resolve_incoming_sender_handle(
         tx,
         &mut stmts.handles,
@@ -1064,8 +1067,7 @@ async fn tapback_row(
         stmts.import_id,
         IncomingSender {
             is_from_me: tap.is_from_me,
-            address: tap.sender.as_deref(),
-            is_name: false,
+            value: reactor.as_ref(),
             service: row.sender_service,
         },
         counts,

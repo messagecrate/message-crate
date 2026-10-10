@@ -144,27 +144,27 @@ and the identities list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
 
 **The server types every address; the conversation file states no type.**
-An import types each address it meets by the rule above
-(`db/handles.rs`, `handle_type_on`): a one-to-one chat handle, a participant,
-a message's sender, a reaction's sender and the holder's own address. A
-participant, a message's sender and a reaction's sender go through one
-function, `identity_type_on`, which also keeps a name the source gave in
-place of an address as `other`; the server knows it is a name because the
-file gave it in the name's place. A participant is typed by the
-conversation's service, and a sender or a reaction's sender by its
-message's service. The conversation file carries no `identity_type`. Why: the type follows from the service and the
-address, so a type in the file could only disagree with it, and every place
-it did made one person two identities. A message's sender took the type the
-header gave a participant with the same address, while a reaction's sender
-was typed by its shape, so a participant the file typed `other` whose
-address reads as a number became a `phone` identity when they reacted, on a
-new contact with no name
+An import types each address it meets by the rule above (`db/handles.rs`,
+`handle_type_on`): a one-to-one chat handle, a participant, a message's
+sender, a reaction's sender and the holder's own address. A participant, a
+message's sender and a reaction's sender go through one function,
+`HandleValue::handle_type_on` (`models.rs`), which also keeps a name the
+source gave in place of an address as `other`. The server knows it is a
+name because the file gave it in the name's place. A participant is typed
+by the conversation's service, and a sender or a reaction's sender by its
+message's service. The conversation file carries no `identity_type`. Why:
+the type follows from the service and the address, so a type in the file
+could only disagree with it, and every place it did made one person two
+identities. A message's sender took the type the header gave a participant
+with the same address, while a reaction's sender was typed by its shape. So
+a participant the file typed `other` whose address reads as a number became
+a `phone` identity when they reacted, on a new contact with no name
 ([#1959](https://github.com/messagecrate/message-crate/issues/1959)).
 Checked against every exporter, the file never knew more than the service
-and the shape: an Apple Messages sender that is an email address has an `@`,
-an SMS short code such as `72727` is written as a number and is `phone`, an
-alphanumeric sender such as `AMAZON` is `other`, and a WhatsApp internal id
-has an `@` on WhatsApp
+and the shape: an Apple Messages sender that is an email address has an
+`@`, an SMS short code such as `72727` is written as a number and is
+`phone`, an alphanumeric sender such as `AMAZON` is `other`, and a WhatsApp
+internal id has an `@` on WhatsApp
 ([#1933](https://github.com/messagecrate/message-crate/issues/1933)).
 
 **Text Message is one service, and a message's transport never changes an
@@ -923,7 +923,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
-| Which type an identity takes on its service | `identity_type_on` and `handle_type_on` in `crates/server/server/src/db/handles.rs` |
+| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs`, `HandleValue::handle_type_on` in `crates/server/server/src/models.rs`, and `IdentityService::holds` in `crates/libs/ir/src/lib.rs` |
 | A phone number's key and its country | `key_typed_handle` and `COUNTRIES` in `crates/libs/phone` |
 | Picking a number's country, and merging it into the `+` form | `crates/server/server/src/identity_country.rs`, `crates/server/server/src/db/identity_country.rs` |
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |

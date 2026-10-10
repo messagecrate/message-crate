@@ -81,23 +81,7 @@ pub fn handle_type_of(address: &str) -> IdentityType {
 /// number is a phone number on every service (#1144). A name that is neither
 /// a number nor an address is `Other`.
 pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
-    match (service, handle_type_of(address)) {
-        (IdentityService::Whatsapp, IdentityType::Email) => IdentityType::Other,
-        (_, kind) => kind,
-    }
-}
-
-/// The type an import gives an identity value it meets on `service`: a name
-/// the source gave in place of an address (`is_name`) is `Other`, and an
-/// address is typed by [`handle_type_on`]. A participant, a message's sender
-/// and a reaction's sender all go through here, so one address is one type
-/// wherever it appears in a conversation (#1959).
-pub fn identity_type_on(value: &str, is_name: bool, service: IdentityService) -> IdentityType {
-    if is_name {
-        IdentityType::Other
-    } else {
-        handle_type_on(value, service)
-    }
+    service.holds(handle_type_of(address))
 }
 
 /// A new identity refused because its service cannot carry its type: an
