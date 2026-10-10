@@ -266,10 +266,10 @@ describe("IdentityTable", () => {
 
   it("says so instead of drawing a table when there are no identities", () => {
     render(
-      <IdentityTable {...dates} rows={[]} onRemove={() => {}} emptyText="No identities yet." />,
+      <IdentityTable {...dates} rows={[]} onRemove={() => {}} emptyText="No identities yet" />,
     );
     expect(screen.queryByRole("grid")).not.toBeInTheDocument();
-    expect(screen.getByText("No identities yet.")).toBeInTheDocument();
+    expect(screen.getByText("No identities yet")).toBeInTheDocument();
   });
 });
 
