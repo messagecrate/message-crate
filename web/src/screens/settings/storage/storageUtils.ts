@@ -34,7 +34,7 @@ export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRu
  * One Export Run as the history table lists it: in full to the account
  * itself, and to the owner without what the run asked for.
  */
-export type ExportRow = Schema["ExportRun"] | Schema["OwnerExportRun"];
+export type ListedExportRun = Schema["ExportRun"] | Schema["OwnerExportRun"];
 
 /** One large attachment in the storage breakdown. */
 export type TopAttachment = Schema["TopAttachment"];
@@ -44,7 +44,7 @@ export type TopAttachment = Schema["TopAttachment"];
  * in full ({@link describeExportScope}); the owner is told only which of the
  * three forms the scope took, because the search is the account's own.
  */
-export function describeExportRun(run: ExportRow): string {
+export function describeExportRun(run: ListedExportRun): string {
   if (!("scope_kind" in run)) return describeExportScope(run.scope);
   switch (run.scope_kind) {
     case "everything":
