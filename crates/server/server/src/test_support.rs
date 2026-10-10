@@ -478,8 +478,9 @@ pub fn expect_problem(
     check_problem(status, text, kind, text)
 }
 
-/// [`expect_problem`] for a check made more than once, such as in a loop:
-/// `what` names this one in the failure, as in `attempt 3 as aLice`.
+/// [`expect_problem`] with `what` at the head of every failure: it names
+/// the check, as in `attempt 3 as aLice` for one of a loop, or says why a
+/// single refusal is expected.
 pub fn expect_problem_for(
     what: &str,
     status: StatusCode,
