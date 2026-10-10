@@ -1,4 +1,4 @@
-import { sectionHint } from "../settings/storage/storageUtils";
+import { sectionHintClass } from "../settings/storage/storageUtils";
 import AuditTrailTable from "./AuditTrailTable";
 import { type AuditTrailOf, useAuditTrail } from "./useAuditTrail";
 
@@ -17,7 +17,7 @@ export default function AuditTrail({
   showAccount: boolean;
 }) {
   const trail = useAuditTrail(of);
-  if (trail.loading) return <p className={`${sectionHint} mt-3`}>Loading the Audit Trail…</p>;
+  if (trail.loading) return <p className={`${sectionHintClass} mt-3`}>Loading the Audit Trail…</p>;
   if (trail.error) return <p className="mt-3 text-[0.875rem] text-danger">{trail.error}</p>;
   return (
     <AuditTrailTable

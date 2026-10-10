@@ -7,7 +7,7 @@ import {
   formatTokenDate,
   permissionsLabel,
   tdClass,
-  tdMuted,
+  tdMutedClass,
   thClass,
 } from "./apiTokensUtils";
 
@@ -71,16 +71,16 @@ export default function ApiTokensTable({
                 </span>
               </Cell>
               {holder ? (
-                <Cell className={`${tdMuted} truncate font-mono text-[0.688rem]`}>
+                <Cell className={`${tdMutedClass} truncate font-mono text-[0.688rem]`}>
                   <span className="block truncate" title="Masked API Token">
                     {displayTokenHint(token.token_hint)}
                   </span>
                 </Cell>
               ) : null}
               <Cell className={tdClass}>{permissionsLabel(token)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(token.created_at)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(token.last_accessed_at)}</Cell>
-              <Cell className={tdMuted}>{formatTokenDate(token.expires_at)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.created_at)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.last_accessed_at)}</Cell>
+              <Cell className={tdMutedClass}>{formatTokenDate(token.expires_at)}</Cell>
               <Cell className={`${tdClass}`}>
                 <div className="flex items-center justify-end gap-1">
                   {onRename ? (

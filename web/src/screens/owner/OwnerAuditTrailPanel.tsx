@@ -14,7 +14,7 @@ import {
   auditTrailOf,
   useDeletedAccounts,
 } from "../auditTrail/useAuditTrail";
-import { sectionHint } from "../settings/storage/storageUtils";
+import { sectionHintClass } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
@@ -101,7 +101,7 @@ export function OwnerAuditTrailPanel() {
           </Select>
         </div>
       </div>
-      <p className={sectionHint}>
+      <p className={sectionHintClass}>
         Logins, imports, exports and every change to an account, newest first. Entries are never
         changed or removed, and stay after an account is deleted.
       </p>

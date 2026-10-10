@@ -1,6 +1,6 @@
 import PasswordField from "../../components/PasswordField";
 import PathPicker from "../../components/PathPicker";
-import { hintStyle, StackedField } from "../../screens/import/ImportFormUi";
+import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
 import {
   imessageAttachmentRootRequired,
   imessageShowsAppleContacts,
@@ -61,7 +61,7 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
             onChange={props.onAttachmentRootChange}
             directory
           />
-          <p className={hintStyle}>
+          <p className={hintClass}>
             {method === "imessage-macos"
               ? ATTACHMENT_DIRECTORY_HINT_MAC
               : ATTACHMENT_DIRECTORY_HINT_JAILBREAK}
@@ -77,7 +77,7 @@ export default function ImessageFormSection(props: ImportFormSectionProps) {
             onChange={props.onAppleContactsChange}
             filters={APPLE_CONTACTS_FILTERS}
           />
-          <p className={hintStyle}>
+          <p className={hintClass}>
             {method === "imessage-macos" ? APPLE_CONTACTS_HINT_MAC : APPLE_CONTACTS_HINT_JAILBREAK}
           </p>
           <FieldStatus message={errors.appleContacts} />

@@ -18,7 +18,7 @@ import Select, {
 } from "../../components/Select";
 import { formatDateTime } from "../../lib/formatDate";
 import type { RunLogEntry } from "../../lib/tauri";
-import { sectionHint } from "../settings/storage/storageUtils";
+import { sectionHintClass } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
@@ -106,7 +106,7 @@ export function OwnerLogsPanel() {
           </Select>
         </div>
       </div>
-      <p className={sectionHint}>
+      <p className={sectionHintClass}>
         {pickedRun
           ? `${pickedRun.name}, kept in the Logs Directory on this computer. A log names counts, files and what went wrong, never what a message says.`
           : "What the server did, every account's requests in one place. A log names counts, routes and what went wrong, never what a message says."}
