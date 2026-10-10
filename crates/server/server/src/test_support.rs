@@ -242,7 +242,15 @@ fn json_body(value: serde_json::Value) -> (&'static str, reqwest::Body) {
 /// Decode a response the caller expects to be `200 OK` with a JSON body.
 fn expect_ok<T: DeserializeOwned>(what: &str, status: StatusCode, text: &str) -> T {
     assert_eq!(status, StatusCode::OK, "{what} must succeed, got: {text}");
-    serde_json::from_str(text).unwrap_or_else(|e| panic!("{what} returned non-JSON ({e}): {text}"))
+    decode(what, text)
+}
+
+/// Decode a response body into the caller's type, or panic naming the
+/// request and the body. The body may be JSON of the wrong shape, so the
+/// message does not call it non-JSON.
+fn decode<T: DeserializeOwned>(what: &str, text: &str) -> T {
+    serde_json::from_str(text)
+        .unwrap_or_else(|e| panic!("{what} answered a body that does not decode ({e}): {text}"))
 }
 
 /// Register an account as a stranger, `POST /v1/accounts` with no
@@ -267,20 +275,8 @@ pub async fn register_via_api(
         .send()
         .await
         .unwrap();
-    let status = response.status();
-    let location = response
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let text = response.text().await.unwrap();
-    assert_eq!(
-        status,
-        StatusCode::CREATED,
-        "registering {username} must answer 201 Created, got: {text}"
-    );
-    let body: serde_json::Value = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("POST /v1/accounts returned non-JSON ({e}): {text}"));
+    let (location, body): (_, serde_json::Value) =
+        created(&format!("registering {username}"), response).await;
     let account_id = body["account_id"].as_i64().unwrap();
     assert_eq!(
         location.as_deref(),
@@ -292,7 +288,7 @@ pub async fn register_via_api(
         username: body["username"].as_str().unwrap().to_string(),
         token: body["token"]
             .as_str()
-            .unwrap_or_else(|| panic!("a stranger's registration must open a session: {text}"))
+            .unwrap_or_else(|| panic!("a stranger's registration must open a session: {body}"))
             .to_string(),
     }
 }
@@ -350,25 +346,13 @@ pub async fn log_in(state: &AppState, username: &str, password: &str) -> serde_j
         .send()
         .await
         .unwrap();
-    let status = response.status();
-    let location = response
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let text = response.text().await.unwrap();
-    assert_eq!(
-        status,
-        StatusCode::CREATED,
-        "logging in as {username} must answer 201 Created, got: {text}"
-    );
+    let (location, body) = created(&format!("logging in as {username}"), response).await;
     assert_eq!(
         location.as_deref(),
         Some("/v1/session"),
         "logging in must answer Location: /v1/session"
     );
-    serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("POST /v1/session returned non-JSON ({e}): {text}"))
+    body
 }
 
 /// GET a path with a Bearer token, returning only the status.
@@ -421,18 +405,7 @@ pub async fn post_created_json<T: DeserializeOwned>(
         .send()
         .await
         .unwrap();
-    let status = response.status();
-    let location = response
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
-    let text = response.text().await.unwrap();
-    assert_eq!(
-        status,
-        StatusCode::CREATED,
-        "POST {path} must answer 201 Created, got: {text}"
-    );
+    let (location, parsed) = created(&format!("POST {path}"), response).await;
     let location =
         location.unwrap_or_else(|| panic!("POST {path} answered 201 without a Location"));
     let collection = path.split('?').next().unwrap_or(path);
@@ -440,9 +413,35 @@ pub async fn post_created_json<T: DeserializeOwned>(
         location.starts_with(&format!("{collection}/")),
         "POST {path} Location must name a member under it, got {location}"
     );
-    let parsed = serde_json::from_str(&text)
-        .unwrap_or_else(|e| panic!("POST {path} returned non-JSON ({e}): {text}"));
     (location, parsed)
+}
+
+/// The `Location` header of a response, if it has one that is text.
+pub fn location(response: &reqwest::Response) -> Option<String> {
+    response
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+}
+
+/// Read a response the caller expects to be `201 Created` with a JSON body:
+/// assert the status, with the body in the message, and return the
+/// `Location` header and the decoded body. `what` names the request in the
+/// assertion messages, as it does for [`expect_ok`].
+async fn created<T: DeserializeOwned>(
+    what: &str,
+    response: reqwest::Response,
+) -> (Option<String>, T) {
+    let status = response.status();
+    let location = location(&response);
+    let text = response.text().await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "{what} must answer 201 Created, got: {text}"
+    );
+    (location, decode(what, &text))
 }
 
 /// The problem document a failure answered, or a panic naming the body
