@@ -618,20 +618,10 @@ export default function InfiniteOffsetList<T extends object>({
       ) : null}
       {getSectionLetter ? (
         <SectionedLetterList
-          items={items}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          isRowHighlighted={isRowHighlighted}
+          {...listProps}
           sectionLead={sectionLead}
-          getId={getId}
-          renderRow={renderRow}
-          renderRowLead={renderRowLead}
-          requestMore={requestMore}
-          hasMore={hasMore}
           getSectionLetter={getSectionLetter}
           currentLetter={headerLetter}
-          onVisibleRangeChange={setVisibleRange}
-          empty={empty}
         />
       ) : isTauri() ? (
         <RacVirtualList {...listProps} ariaLabel={ariaLabel} />
