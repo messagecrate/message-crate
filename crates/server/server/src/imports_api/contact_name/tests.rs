@@ -419,7 +419,7 @@ async fn listed_conversations(
         .into_iter()
         .map(|c| {
             (
-                c.label,
+                c.shown_title,
                 c.participants
                     .into_iter()
                     .map(|p| p.identity.unwrap_or_default())
@@ -572,7 +572,7 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
             .map(|p| p["identity"].as_str().unwrap())
             .collect();
         read.push((
-            conversation["label"].as_str().unwrap().to_string(),
+            conversation["shown_title"].as_str().unwrap().to_string(),
             people.join(","),
         ));
     }

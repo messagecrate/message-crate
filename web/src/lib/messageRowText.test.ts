@@ -10,7 +10,7 @@ function conversation(over: Partial<MessageConversation> = {}): MessageConversat
     conversation_type: "individual",
     is_group: false,
     group_title: null,
-    label: null,
+    shown_title: null,
     participants: [{ name: "Alice", identity: "+15555550100", contact_id: 4, service: "imessage" }],
     ...over,
   };
@@ -38,7 +38,11 @@ describe("messageConversationName", () => {
     // it has no participants to fall back on.
     expect(
       messageConversationName(
-        conversation({ chat_identifier: "+15555550199", participants: [], label: "Sam Holder" }),
+        conversation({
+          chat_identifier: "+15555550199",
+          participants: [],
+          shown_title: "Sam Holder",
+        }),
       ),
     ).toBe("Sam Holder");
   });
@@ -53,7 +57,7 @@ describe("messageConversationName", () => {
         conversation({
           conversation_type: "group",
           is_group: true,
-          label: " Family ",
+          shown_title: " Family ",
           participants: people,
         }),
       ),

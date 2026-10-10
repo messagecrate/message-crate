@@ -14084,8 +14084,8 @@
           "is_group",
           "tags",
           "first_message_at",
-          "label",
-          "last_message_at"
+          "last_message_at",
+          "shown_title"
         ],
         "properties": {
           "first_message_at": {
@@ -14103,13 +14103,6 @@
           "is_group": {
             "type": "boolean",
             "description": "True for group conversations."
-          },
-          "label": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for the\none that names nobody; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
           },
           "last_message_at": {
             "type": [
@@ -14134,6 +14127,13 @@
           "service": {
             "type": "string",
             "description": "Platform service of the conversation, e.g. `imessage`."
+          },
+          "shown_title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for the\none that names nobody; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
           },
           "tags": {
             "type": "array",
@@ -16166,7 +16166,7 @@
           "is_group",
           "participants",
           "group_title",
-          "label"
+          "shown_title"
         ],
         "properties": {
           "chat_identifier": {
@@ -16193,19 +16193,19 @@
             "type": "boolean",
             "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide whether it is a group. `conversation_type` is read only to\ntell a conversation of orphaned messages from a one-to-one\nconversation."
           },
-          "label": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for\nthe one that names nobody; for any other, the export's title. `null`\nwhen there is none, and the conversation goes by its participants."
-          },
           "participants": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Participant"
             },
             "description": "Participants of the conversation."
+          },
+          "shown_title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title the conversation is shown by, as the conversation list's\n`shown_title` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for\nthe one that names nobody; for any other, the export's title. `null`\nwhen there is none, and the conversation goes by its participants."
           }
         }
       },
@@ -17318,8 +17318,8 @@
                 "is_group",
                 "tags",
                 "first_message_at",
-                "label",
-                "last_message_at"
+                "last_message_at",
+                "shown_title"
               ],
               "properties": {
                 "first_message_at": {
@@ -17337,13 +17337,6 @@
                 "is_group": {
                   "type": "boolean",
                   "description": "True for group conversations."
-                },
-                "label": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for the\none that names nobody; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
                 },
                 "last_message_at": {
                   "type": [
@@ -17368,6 +17361,13 @@
                 "service": {
                   "type": "string",
                   "description": "Platform service of the conversation, e.g. `imessage`."
+                },
+                "shown_title": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nperson's name and \"Orphaned\", or \"Orphaned · Unknown person\" for the\none that names nobody; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
                 },
                 "tags": {
                   "type": "array",
@@ -19386,7 +19386,7 @@
           "size_bytes",
           "chat_identifier",
           "conversation_id",
-          "conversation_title",
+          "group_title",
           "mime_type",
           "original_name"
         ],
@@ -19406,12 +19406,12 @@
             "format": "int64",
             "description": "Conversation that holds the attachment. Like the two fields after it,\n`null` when the owner reads another account's storage: which\nconversation a file is in, and who it is with, is the holder's."
           },
-          "conversation_title": {
+          "group_title": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Conversation label, when set."
+            "description": "The title the export gave the conversation, when it gave one."
           },
           "id": {
             "type": "integer",

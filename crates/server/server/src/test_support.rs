@@ -338,6 +338,21 @@ pub async fn login_status(state: &AppState, username: &str, password: &str) -> S
     .0
 }
 
+/// A login attempt, `POST /v1/session`: the status and the response text, so
+/// a refused login can be checked with [`expect_problem`].
+pub async fn log_in_raw(state: &AppState, username: &str, password: &str) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::POST,
+        "/v1/session",
+        None,
+        Some(json_body(
+            serde_json::json!({ "username": username, "password": password }),
+        )),
+    )
+    .await
+}
+
 /// Log in through `POST /v1/session`, asserting the `201 Created` and the
 /// `Location: /v1/session` the singleton answers with, and return the body
 /// (`token`, `account_id`, `username`).
@@ -460,13 +475,44 @@ pub fn expect_problem(
     text: &str,
     kind: crate::problem::ProblemType,
 ) -> message_crate_api_types::Problem {
+    check_problem(status, text, kind, text)
+}
+
+/// [`expect_problem`] for a check made more than once, such as in a loop:
+/// `what` names this one in the failure, as in `attempt 3 as aLice`.
+pub fn expect_problem_for(
+    what: &str,
+    status: StatusCode,
+    text: &str,
+    kind: crate::problem::ProblemType,
+) -> message_crate_api_types::Problem {
+    check_problem(status, text, kind, &format!("{what}: {text}"))
+}
+
+/// The checks of [`expect_problem`], with `context` in every failure.
+fn check_problem(
+    status: StatusCode,
+    text: &str,
+    kind: crate::problem::ProblemType,
+    context: &str,
+) -> message_crate_api_types::Problem {
     let problem = problem(text);
-    assert_eq!(status, kind.status(), "{text}");
-    assert_eq!(problem.status, kind.status().as_u16(), "{text}");
-    assert_eq!(problem.kind, kind.url(), "{text}");
-    assert_eq!(problem.title, kind.title(), "{text}");
-    assert!(problem.request_id.is_some(), "no request_id: {text}");
+    assert_eq!(status, kind.status(), "{context}");
+    assert_eq!(problem.status, kind.status().as_u16(), "{context}");
+    assert_eq!(problem.kind, kind.url(), "{context}");
+    assert_eq!(problem.title, kind.title(), "{context}");
+    assert!(problem.request_id.is_some(), "no request_id: {context}");
     problem
+}
+
+/// Read a response a test sent itself and check it with [`expect_problem`].
+pub async fn expect_problem_response(
+    response: reqwest::Response,
+    kind: crate::problem::ProblemType,
+) -> message_crate_api_types::Problem {
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    expect_problem(status, &text, kind)
 }
 
 /// Assert a failure is the `500 Internal Server Error` problem, which has no
@@ -497,6 +543,42 @@ pub async fn post_status(
     )
     .await
     .0
+}
+
+/// POST a JSON body with a Bearer token, returning the status and the
+/// response text, for a refusal checked with [`expect_problem`].
+pub async fn post_json_raw(
+    state: &AppState,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::POST,
+        path,
+        Some(token),
+        Some(json_body(body)),
+    )
+    .await
+}
+
+/// PUT a JSON body with a Bearer token, returning the status and the
+/// response text, for a refusal checked with [`expect_problem`].
+pub async fn put_json_raw(
+    state: &AppState,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::PUT,
+        path,
+        Some(token),
+        Some(json_body(body)),
+    )
+    .await
 }
 
 /// POST a JSON body with no credential at all, returning only the status.
@@ -646,8 +728,8 @@ pub async fn patch_status(
     .0
 }
 
-/// PATCH a JSON body expecting a failure: the status and the sentence of the
-/// problem document the server answered with.
+/// PATCH a JSON body expecting a problem of `kind`, checked with
+/// [`expect_problem`], and return the problem's sentence.
 ///
 /// A route test asserting only a status cannot tell a refusal the person can
 /// act on from a different refusal with the same status, so a route that
@@ -657,7 +739,8 @@ pub async fn patch_failure(
     path: &str,
     token: &str,
     body: serde_json::Value,
-) -> (StatusCode, String) {
+    kind: crate::problem::ProblemType,
+) -> String {
     let (status, text) = request(
         state,
         reqwest::Method::PATCH,
@@ -666,7 +749,7 @@ pub async fn patch_failure(
         Some(json_body(body)),
     )
     .await;
-    (status, problem(&text).sentence())
+    expect_problem(status, &text, kind).sentence()
 }
 
 /// Store an attachment size limit directly, the way a test lowers the body

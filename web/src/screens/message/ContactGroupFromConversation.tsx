@@ -54,7 +54,7 @@ export default function ContactGroupFromConversation({
           title="Make a Contact Group from these people"
           placeholder="Contact Group name"
           confirmLabel="Create"
-          initial={conversation.label ?? ""}
+          initial={conversation.shown_title ?? ""}
           error={actions.error?.message ?? null}
           busy={actions.pending}
           onSave={save}

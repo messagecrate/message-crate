@@ -5736,7 +5736,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             .map(|c| {
                 (
                     c["id"].as_i64().unwrap(),
-                    c["label"].as_str().unwrap_or_default().to_string(),
+                    c["shown_title"].as_str().unwrap_or_default().to_string(),
                 )
             })
             .collect()
@@ -5791,7 +5791,10 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     assert_eq!(messages.len(), 4, "{page}");
     for message in messages {
         assert_eq!(message["text"], "Note to self", "{message}");
-        assert_eq!(message["conversation"]["label"], "Sam Holder", "{message}");
+        assert_eq!(
+            message["conversation"]["shown_title"], "Sam Holder",
+            "{message}"
+        );
         assert!(
             message.get("sender").is_none_or(serde_json::Value::is_null),
             "{message}"

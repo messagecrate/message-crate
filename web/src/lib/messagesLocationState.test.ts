@@ -9,7 +9,7 @@ const conversation = {
   last_message_at: "2026-01-01T00:00:00Z",
   service: "imessage",
   is_group: false,
-  label: null,
+  shown_title: null,
 };
 
 const preview = {
