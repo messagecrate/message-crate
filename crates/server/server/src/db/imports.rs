@@ -162,8 +162,6 @@ pub struct ImportRow {
     pub tool: Option<String>,
     /// Import mode (`replace` or `append`).
     pub mode: String,
-    /// Whether cross-source dedupe runs after each batch.
-    pub dedupe: bool,
     /// ISO code of the country the run states for phone numbers written
     /// without their `+` code, when it states one.
     pub phone_country: Option<String>,
@@ -337,8 +335,6 @@ pub struct StartImportArgs<'a> {
     pub source: &'a str,
     /// Import mode recorded by the importer.
     pub mode: &'a str,
-    /// Whether cross-source dedupe runs after each batch.
-    pub dedupe: bool,
     /// ISO code of the country the run states for phone numbers written
     /// without their `+` code, when it states one.
     pub phone_country: Option<&'a str>,
@@ -369,7 +365,6 @@ impl<'a> StartImportArgs<'a> {
             account_id,
             source,
             mode,
-            dedupe: false,
             phone_country: None,
             tool,
             stage: ImportStage::Parse,
@@ -415,11 +410,11 @@ pub async fn start_import(
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
         INSERT INTO imports (
-            account_id, source, tool, mode, dedupe, status, started_at,
+            account_id, source, tool, mode, status, started_at,
             message_count, attachment_count, bytes_uploaded,
             stage, run_dir, device_id, form_json, source_fingerprint,
             source_identities, phone_country
-        ) VALUES ($1, $2, $3, $4, $12, 'running', $5, 0, 0, 0, $6, $7, $8, $9, $10, $11, $13)
+        ) VALUES ($1, $2, $3, $4, 'running', $5, 0, 0, 0, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         ",
     )
@@ -434,7 +429,6 @@ pub async fn start_import(
     .bind(args.form_json)
     .bind(args.source_fingerprint)
     .bind(args.source_identities)
-    .bind(i64::from(args.dedupe))
     .bind(args.phone_country)
     .fetch_one(&mut *conn)
     .await;
@@ -459,7 +453,7 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, started_at, \
      finished_at, message_count, attachment_count, bytes_uploaded, duration_ms, parse_ms, \
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, run_dir, device_id, \
-     form_json, source_fingerprint, source_identities, dedupe, backup_taken_at, phone_country";
+     form_json, source_fingerprint, source_identities, backup_taken_at, phone_country";
 
 /// Map one `imports` row by column position.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
@@ -501,9 +495,8 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
         form_json: row.try_get(20)?,
         source_fingerprint: row.try_get(21)?,
         source_identities: row.try_get(22)?,
-        dedupe: row.try_get::<i64, _>(23)? != 0,
-        backup_taken_at: row.try_get(24)?,
-        phone_country: row.try_get(25)?,
+        backup_taken_at: row.try_get(23)?,
+        phone_country: row.try_get(24)?,
     })
 }
 

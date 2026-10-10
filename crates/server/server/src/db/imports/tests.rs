@@ -163,7 +163,6 @@ async fn require_running_import_rejects_a_completed_import_and_returns_a_running
         .unwrap();
     // The row is what a batch imports under; nothing in the request says.
     assert_eq!((row.source.as_str(), row.mode.as_str()), ("ios", "append"));
-    assert!(!row.dedupe);
 }
 
 #[tokio::test]

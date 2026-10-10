@@ -60,7 +60,6 @@ fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportO
         mode: ImportMode::Append,
         source,
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     })

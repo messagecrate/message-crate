@@ -893,7 +893,6 @@ async fn import_demo_sources_with(
                         mode,
                         source: source.source,
                         account_id,
-                        fill_content_keys: true,
                         import_id: Some(import_run.id),
                         phone_country: None,
                     })

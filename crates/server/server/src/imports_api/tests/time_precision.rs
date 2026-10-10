@@ -7,19 +7,14 @@ use super::*;
 /// 2015-03-12T18:04:22Z, the second every message here falls in.
 const SECOND: i64 = 1_426_183_462_000;
 
-/// Create an Import Run for `source` with dedupe on, post `body` as its one
-/// batch, and complete it.
-async fn import_with_dedupe(
-    state: &crate::server::AppState,
-    token: &str,
-    source: &str,
-    body: String,
-) {
+/// Create an Import Run for `source`, post `body` as its one batch, and
+/// complete it.
+async fn import_run(state: &crate::server::AppState, token: &str, source: &str, body: String) {
     let (_, created): (String, serde_json::Value) = post_created_json(
         state,
         "/v1/imports",
         token,
-        serde_json::json!({ "source": source, "mode": "append", "dedupe": true }),
+        serde_json::json!({ "source": source, "mode": "append" }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
@@ -67,7 +62,7 @@ async fn a_whole_second_copy_and_a_millisecond_copy_are_shown_once_with_the_mill
     ] {
         let (state, _fixture, token) = importer().await;
         for file in files {
-            import_with_dedupe(&state, &token, "sms-backup-plus", file).await;
+            import_run(&state, &token, "sms-backup-plus", file).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();
@@ -105,7 +100,7 @@ async fn a_whole_second_copy_at_another_time_keeps_seconds() {
     ] {
         let (state, _fixture, token) = importer().await;
         for body in imports {
-            import_with_dedupe(&state, &token, "sms-backup-plus", body).await;
+            import_run(&state, &token, "sms-backup-plus", body).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();
@@ -134,7 +129,7 @@ async fn each_precision_is_kept_through_import_the_api_and_an_export_run() {
         .at(SECOND + 1000)
         .sms()
         .sender("+15555550123");
-    import_with_dedupe(
+    import_run(
         &state,
         &token,
         "sms-backup-plus",
@@ -210,7 +205,7 @@ async fn one_message_held_at_whole_seconds_and_at_000_milliseconds_says_millisec
     ] {
         let (state, _fixture, token) = importer().await;
         for body in imports {
-            import_with_dedupe(&state, &token, "sms-backup-plus", body).await;
+            import_run(&state, &token, "sms-backup-plus", body).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();

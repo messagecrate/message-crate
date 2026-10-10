@@ -247,8 +247,8 @@ impl Session {
     }
 
     /// POST one JSON Lines batch into the Import Run at
-    /// `/v1/imports/{id}/batches`. The run's row says the source, the mode
-    /// and whether to dedupe; the request carries only the body.
+    /// `/v1/imports/{id}/batches`. The run's row says the source and the
+    /// mode; the request carries only the body.
     ///
     /// # Errors
     ///

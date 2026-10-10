@@ -33,8 +33,6 @@ pub struct CliImportOptions {
     pub mode: ImportMode,
     /// Attachment handling mode: copy, none, convert, compress.
     pub media: MediaMode,
-    /// Skip the cross-source soft-dedupe pass after import.
-    pub skip_dedupe: bool,
     /// Near-time window in seconds for dedupe Pass B.
     pub window_secs: i64,
     /// Where the import and the dedupe say how far they have got: standard
@@ -51,8 +49,8 @@ pub struct CliImportCounts {
     pub sources: Vec<String>,
     /// Import stage counts, summed over the runs.
     pub import: ImportCounts,
-    /// Dedupe counts when the pass ran, `None` when skipped.
-    pub dedupe: Option<DedupeStats>,
+    /// What the dedupe after the import did.
+    pub dedupe: DedupeStats,
 }
 
 /// Which source ids the import writes, the files of each, and where that
@@ -102,8 +100,8 @@ impl SourcePlan {
     }
 }
 
-/// Import a directory of JSON Lines files into the database, then optionally run
-/// cross-source duplicate hiding.
+/// Import a directory of JSON Lines files into the database, then hide the
+/// duplicates, within one source and across sources.
 ///
 /// # Errors
 ///
@@ -132,21 +130,15 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCo
         let run = import_under_session(&opened.cfg, opts, &mut conn, source, files, &plan).await?;
         import_counts.add_run(&run);
     }
-    let dedupe = if opts.skip_dedupe {
-        None
-    } else {
-        // The command's summary gives these counts, so nothing is printed here.
-        Some(
-            dedupe::dedupe_cross_source(
-                &mut conn,
-                opts.account_id,
-                None,
-                opts.window_secs,
-                opts.progress,
-            )
-            .await?,
-        )
-    };
+    // The command's summary gives these counts, so nothing is printed here.
+    let dedupe = dedupe::dedupe_cross_source(
+        &mut conn,
+        opts.account_id,
+        None,
+        opts.window_secs,
+        opts.progress,
+    )
+    .await?;
 
     Ok(CliImportCounts {
         input_dir: input.clone(),
@@ -208,10 +200,6 @@ async fn import_under_session(
         mode: opts.mode,
         source: opts.source_override.as_deref().unwrap_or(""),
         account_id,
-        // The full dedupe after the import computes every content key, so
-        // only an import it does not follow puts the changed messages'
-        // flags right on its own.
-        fill_content_keys: !opts.skip_dedupe,
         import_id: Some(import_run.id),
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,
@@ -355,7 +343,6 @@ mod tests {
             source_override: None,
             mode: ImportMode::Append,
             media: MediaMode::Clone,
-            skip_dedupe: true,
             window_secs: 2,
             progress: Progress::Log,
         };

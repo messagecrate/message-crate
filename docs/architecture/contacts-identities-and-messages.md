@@ -595,22 +595,33 @@ was written, not when a part was unsent, so they cannot tell
 [#1804](https://github.com/messagecrate/message-crate/issues/1804),
 [#1924](https://github.com/messagecrate/message-crate/issues/1924)).
 
-**An import that changes a stored message's content puts its duplicate flag
-right, whatever the import's dedupe setting.** A later edit changes a stored
+**Every Import Run hides duplicates.** After each batch, the server runs the
+full dedupe over the account, within one source and across sources
+(`dedupe_cross_source` in `dedupe.rs`): `POST /v1/imports/{id}/batches`, the
+server's `import` command and the Demo Account build alike. Nothing turns it
+off. It computes every content key again, so it also puts right the flag of a
+stored message whose content the import changed: a later edit changes a
 message's text, and an attachment added or given its file changes what its
-content key hashes, so its duplicate flag can stop matching. The import runs
-the dedupe for those messages inside the import's own write transaction, and
-writes the flags of the messages tied to them: those a changed message hid or
-was hidden behind, before or now, followed to the end
-(`dedupe_changed_messages` in `dedupe.rs`). An import with dedupe on leaves
-this to the full dedupe that follows it. The pass compares only messages with
-a content key, the ones a dedupe has seen, and takes up a changed message only
-when it had one, so a message an import with dedupe off brought stays as it
-came, even when a later import changes it. Why: the dedupe
-setting governs the rows an import brings, and a flag the import itself made
-wrong would hide a message behind a copy whose text no longer matches, where
-no search finds it
-([#1805](https://github.com/messagecrate/message-crate/issues/1805)).
+content key hashes. Why: there is no reason ever to leave a duplicate shown,
+and a flag an import made wrong would hide a message behind a copy whose text
+no longer matches, where no search finds it
+([#1805](https://github.com/messagecrate/message-crate/issues/1805),
+[#1969](https://github.com/messagecrate/message-crate/issues/1969)).
+
+**Which copy is shown.** Of the copies of one message, the dedupe shows the
+first by these, in order (`rank` in `dedupe.rs`):
+
+1. the copy with more attachments;
+2. the copy timed to the millisecond over one timed to the second
+   (`messages.time_precision`);
+3. the copy from the Import Run that brought more messages (counted from the
+   account's messages stamped with each run);
+4. the copy of the source imported first, then the lower id.
+
+Why: the copy that carries the most is the one shown, and of two backups the
+larger import is the more complete one. The last rank only makes the result
+the same every time
+([#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 
 **Within one source, a whole-second message is the duplicate of its
 millisecond twin.** Each message says whether its source recorded its time to
@@ -619,8 +630,8 @@ file, `messages.time_precision`). The dedupe hides a whole-second message as
 the duplicate of a message from the same source that matches it in everything
 else and has milliseconds in the same second, so the message is shown once. It
 is shown with its milliseconds unless another source holds it too and that
-source's copy wins the cross-source comparison (`pick_winner`, which ranks by
-attachments and then import order, not precision). The content key stays at
+source's copy is shown first by the order above, as one with more attachments
+is. The content key stays at
 whole seconds, so the two share a key, and the exact pass sets the
 whole-second copy aside before it compares sources (`content_key_group_flags`
 in `dedupe.rs`). A source that holds a message only in whole seconds, or only
