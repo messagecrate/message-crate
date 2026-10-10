@@ -373,6 +373,39 @@ impl Overlap<'_> {
 }
 
 impl<R: Rng> Seeder<'_, R> {
+    /// Create a one-to-one conversation file at `path` and write its header:
+    /// no group title, exported from `source` by `owner_identity` at the
+    /// seed's reference time. Returns the file, ready for the messages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be created or the header cannot be written.
+    fn individual_header(
+        &self,
+        path: &Path,
+        chat_id: &str,
+        participants: Vec<IrParticipant>,
+        message_count: usize,
+        source: &str,
+        owner_identity: &str,
+    ) -> Result<BufWriter<File>> {
+        let mut file = open_jsonl(path)?;
+        write_conversation_header(
+            &mut file,
+            chat_id,
+            IrConversationType::Individual,
+            None,
+            participants,
+            message_count,
+            export_meta(
+                source,
+                owner_identity,
+                self.cfg.reference_time.timestamp_millis(),
+            ),
+        )?;
+        Ok(file)
+    }
+
     /// Write one one-to-one conversation for a single backup source.
     ///
     /// # Errors
@@ -386,19 +419,13 @@ impl<R: Rng> Seeder<'_, R> {
         // an Unknown, and the demo's address book names them afterwards.
         let participants = individual_participants(chat_id, None);
         let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = open_jsonl(&path)?;
-        write_conversation_header(
-            &mut file,
+        let mut file = self.individual_header(
+            &path,
             chat_id,
-            IrConversationType::Individual,
-            None,
             participants,
             msg_count,
-            export_meta(
-                source_id(flavor),
-                OWNER_PHONE,
-                self.cfg.reference_time.timestamp_millis(),
-            ),
+            source_id(flavor),
+            OWNER_PHONE,
         )?;
 
         let timestamps = self.timestamps(msg_count, spec.span_years, sample_direct_day_burst);
@@ -482,19 +509,13 @@ impl<R: Rng> Seeder<'_, R> {
     fn overlap_imessage(&mut self, staging: &Path, overlap: &Overlap<'_>) -> Result<()> {
         let chat_id = overlap.chat_id;
         let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = open_jsonl(&path)?;
-        write_conversation_header(
-            &mut file,
+        let mut file = self.individual_header(
+            &path,
             chat_id,
-            IrConversationType::Individual,
-            None,
             individual_participants(chat_id, overlap.display_name.clone()),
             overlap.msg_count,
-            export_meta(
-                IMESSAGE_SOURCE,
-                OWNER_PHONE,
-                self.cfg.reference_time.timestamp_millis(),
-            ),
+            IMESSAGE_SOURCE,
+            OWNER_PHONE,
         )?;
         let mut origin_guid: Option<String> = None;
         for (i, shared) in overlap.shared.iter().enumerate() {
@@ -541,19 +562,13 @@ impl<R: Rng> Seeder<'_, R> {
         let chat_id = overlap.chat_id;
         let android_total = overlap.shared.len() + overlap.extra_n;
         let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = open_jsonl(&path)?;
-        write_conversation_header(
-            &mut file,
+        let mut file = self.individual_header(
+            &path,
             chat_id,
-            IrConversationType::Individual,
-            None,
             individual_participants(chat_id, overlap.display_name.clone()),
             android_total,
-            export_meta(
-                SBR_SOURCE,
-                OWNER_PHONE,
-                self.cfg.reference_time.timestamp_millis(),
-            ),
+            SBR_SOURCE,
+            OWNER_PHONE,
         )?;
         for (i, shared) in overlap.shared.iter().enumerate() {
             let msg = shared.message(
@@ -631,19 +646,13 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             OWNER_PHONE
         };
-        let mut file = open_jsonl(&staging.join(fname))?;
-        write_conversation_header(
-            &mut file,
+        let mut file = self.individual_header(
+            &staging.join(fname),
             chat_id,
-            IrConversationType::Individual,
-            None,
             participants,
             msg_count,
-            export_meta(
-                IMESSAGE_SOURCE,
-                owner_identity,
-                self.cfg.reference_time.timestamp_millis(),
-            ),
+            IMESSAGE_SOURCE,
+            owner_identity,
         )?;
 
         let timestamps = self.timestamps(msg_count, 1.5, sample_direct_day_burst);
