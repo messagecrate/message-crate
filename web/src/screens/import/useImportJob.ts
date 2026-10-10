@@ -11,8 +11,6 @@ import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import { useAuth } from "../../lib/auth";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
 import { getDeviceId } from "../../lib/deviceId";
-import { IMAZING_SOURCE_ID } from "../../lib/exportSources";
-import { imessageExtractFields } from "../../lib/imessageExtractFields";
 import { isImessageMethod } from "../../lib/imessageImport";
 import type { ActiveImportRun } from "../../lib/importRun";
 import {
@@ -21,11 +19,11 @@ import {
   type ImportStage,
   setImportStage,
 } from "../../lib/importRun";
-import { importRunCreateBody, showsAttachmentOptions } from "../../lib/importSource";
+import { importRunCreateBody } from "../../lib/importSource";
+import { importSourceFor } from "../../lib/importSources";
 import { endsSession } from "../../lib/routeQuery";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
 import { registerRunningUpload } from "../../lib/runningUpload";
-import { sbrExtractFields } from "../../lib/sbrExtractFields";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
 import { sessionRefused } from "../../lib/sessionRefusal";
 import {
@@ -67,9 +65,6 @@ import type {
   StagedStatus,
 } from "../../lib/types";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
-import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
-import { isWhatsappMethod } from "../../lib/whatsappImport";
-import { attachmentChoicesOf } from "./attachmentChoices";
 import { formSnapshot, isAttachmentMediaMode, isStringArray } from "./formSnapshot";
 import { importOutcome } from "./importOutcome";
 import {
@@ -143,7 +138,9 @@ function mediaDoneDetail(mode: AttachmentMediaMode): string {
  * attachments, and the run's stored form says so.
  */
 function withShownAttachmentMode(form: ImportJobFormValues): ImportJobFormValues {
-  return showsAttachmentOptions(form.source) ? form : { ...form, attachmentMedia: "copy" };
+  return importSourceFor(form.source).showsAttachmentOptions
+    ? form
+    : { ...form, attachmentMedia: "copy" };
 }
 
 /**
@@ -273,8 +270,6 @@ export type ImportJobFormValues = AttachmentChoices & {
    * (#1676).
    */
   phoneCountry: string;
-  /** True for the Android SMS sources, whose extract carries owner phones. */
-  isAndroidSms: boolean;
   attachmentRoot: string;
   appleContacts: string;
   whatsappKey: string;
@@ -1433,50 +1428,6 @@ async function startRunLog(
   }
 }
 
-/**
- * Fields extract needs for this form's source. The media fields go only to
- * a source whose form shows them, as the person chose them: extract checks
- * them before anything is staged and records them for the later stages.
- */
-function extractFieldsFor(form: ImportJobFormValues) {
-  const media = attachmentChoicesOf(form);
-  if (isImessageMethod(form.source)) {
-    return imessageExtractFields({
-      source: form.source,
-      backupPassword: form.backupPassword,
-      ...media,
-      obfuscate: form.obfuscate,
-      attachmentRoot: form.attachmentRoot,
-      appleContacts: form.appleContacts,
-    });
-  }
-  if (isWhatsappMethod(form.source)) {
-    return whatsappExtractFields({
-      source: form.source,
-      ...media,
-      key: form.whatsappKey,
-      backupPassword: form.backupPassword,
-      wa: form.whatsappWa,
-      media: form.whatsappMedia,
-      db: form.whatsappDb,
-      business: form.whatsappBusiness,
-      ownerPhone: form.whatsappOwnerPhone,
-    });
-  }
-  if (form.isAndroidSms) {
-    return sbrExtractFields({
-      ...media,
-      ownerPhones: form.ownerPhones,
-      ownerEmails: form.ownerEmails,
-      obfuscate: form.obfuscate,
-    });
-  }
-  if (form.source === IMAZING_SOURCE_ID) {
-    return { timezone: form.timeZone };
-  }
-  return {};
-}
-
 async function runImport(
   token: string | null,
   submitted: ImportJobFormValues,
@@ -1600,7 +1551,10 @@ async function runImport(
         output_dir: outputDir,
         ...(resumeWrite ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
-        ...extractFieldsFor(form),
+        // The media fields go only to a source whose form shows them, as the
+        // person chose them: extract checks them before anything is staged
+        // and records them for the later stages.
+        ...importSourceFor(form.source).extractFields(form),
         ...(form.phoneCountry ? { phone_country: form.phoneCountry } : {}),
       }),
     );
