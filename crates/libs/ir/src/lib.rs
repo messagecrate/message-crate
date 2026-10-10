@@ -195,11 +195,13 @@ pub struct ExportMeta {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IrConversationType {
-    /// A one-to-one conversation: one the source app keeps with a single
-    /// other person, not as a group.
+    /// A one-to-one conversation: one with a single other person that the
+    /// source does not mark as a group.
     Individual,
-    /// A group conversation: one the source app keeps as a group, whatever
-    /// the number of other people in it.
+    /// A group conversation. Where the source marks its groups (a WhatsApp
+    /// `@g.us` id, Apple's chat style), the mark decides, whatever the number
+    /// of other people in it. Where the source has no mark (an SMS or MMS
+    /// backup), two or more other people make a group.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
@@ -289,9 +291,9 @@ pub struct ConversationStats {
     pub message_count: u64,
     /// Total attachments across all messages.
     pub attachment_count: u64,
-    /// Earliest message timestamp; `None` when the conversation has no messages.
+    /// Earliest message timestamp. `None` when the conversation has no messages.
     pub first_timestamp_unix_ms: Option<i64>,
-    /// Latest message timestamp; `None` when the conversation has no messages.
+    /// Latest message timestamp. `None` when the conversation has no messages.
     pub last_timestamp_unix_ms: Option<i64>,
 }
 
@@ -1142,7 +1144,7 @@ impl PendingAttachment {
 pub struct PendingConversation {
     /// Stable chat id from the source.
     pub chat_id: String,
-    /// Display name for the conversation; `None` when the source has none.
+    /// Display name for the conversation. `None` when the source has none.
     pub display_name: Option<String>,
     /// Participant handles in E.164 form.
     pub participant_e164s: Vec<String>,
