@@ -1,10 +1,17 @@
 //! The releases the app downloads ffmpeg, ffprobe and wtsexporter from, and
 //! the SHA-256 of each file, by platform. A newer pinned ffmpeg release is a
-//! change to this file alone (`docs/adr/0019`). A newer wtsexporter release
-//! is a change to this file, to the install hints in
+//! change to this file and to the user guide's troubleshooting page,
+//! `docs/src/content/docs/docs/user/features/owner/troubleshooting.md`,
+//! which names the release and its files for a copy put in the Tools
+//! Directory by hand (`docs/adr/0019`). A newer wtsexporter release is a
+//! change to this file, to that page, to the install hint in
 //! `crates/exporters/whatsapp-exporter/src/wtsexporter.rs`, and to the
 //! developer install in `AGENTS.md` and
 //! `docs/src/content/docs/docs/developer/contributing.md`, which name it.
+//! A renamed heading on that page is a change to
+//! `tool_downloads::troubleshooting` for ffmpeg, and for wtsexporter to
+//! `WTSEXPORTER_TROUBLESHOOTING` in the exporter's `wtsexporter.rs`, which
+//! `troubleshooting` gives as it is.
 
 use super::{Pinned, Program};
 

@@ -9,18 +9,21 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// How to install the `wtsexporter` Message Crate reads: its fork at release
+/// Where a copy of `wtsexporter` put in the Tools Directory by hand comes
+/// from: a `wtsexporter_<platform>` file of Message Crate's fork at release
 /// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
 /// ids a quoted reply is linked by, and `reaction_details`, each reaction
-/// under the reactor's id. Upstream records none of them. The tag archive
-/// rather than a `git+` URL, so no Git is needed; `--force`, so an upstream
-/// `wtsexporter` already installed under the same name is replaced; double
-/// quotes, which cmd, PowerShell and bash all accept.
-const PINNED_HINT: &str = r#"pipx install --force "whatsapp-chat-exporter[android_backup,crypt15] @ https://github.com/messagecrate/WhatsApp-Chat-Exporter/archive/refs/tags/0.13.0-mc.2.tar.gz""#;
-
-/// The other way to get `wtsexporter`: a `wtsexporter_<platform>` file from the
-/// same release, renamed to the name `resolve_wtsexporter` looks for.
+/// under the reactor's id, renamed to the name `resolve_wtsexporter` looks
+/// for. Upstream records none of them.
 const RELEASE_FILE_HINT: &str = "a wtsexporter_<platform> file from the messagecrate/WhatsApp-Chat-Exporter 0.13.0-mc.2 release, renamed to wtsexporter (wtsexporter.exe on Windows) and made executable (chmod +x on Linux and macOS)";
+
+/// The sentence that sends a person to the user guide's section on a
+/// `wtsexporter` that is missing or doesn't run, which says how to get one
+/// by hand, including where the app has no download of its own. The desktop
+/// app's `tool_downloads::troubleshooting` gives this same constant for
+/// wtsexporter, so the heading's text lives here once.
+pub const WTSEXPORTER_TROUBLESHOOTING: &str =
+    "See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Platform {
@@ -103,9 +106,10 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// `Ok(None)` when there is no Tools Directory or no file in it.
 ///
 /// On Unix the file must have an executable bit. It is not run here: a
-/// `pipx` shim is slow to start. So a link to a `pipx` shim whose Python has
-/// gone is found, and fails only when it is run, with the hint
-/// [`run_wtsexporter`] gives (`docs/adr/0019`).
+/// `pipx` shim is slow to start. A shim is what is linked there on a
+/// computer the app has no download for, such as Linux on ARM. So a link
+/// to a `pipx` shim whose Python has gone is found, and fails only when it
+/// is run, with the hint [`run_wtsexporter`] gives (`docs/adr/0019`).
 ///
 /// # Errors
 ///
@@ -159,7 +163,7 @@ fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
     };
     bail!(
         "Could not find {executable} in the Tools Directory, {}. Put {RELEASE_FILE_HINT} there. \
-         A pipx install, `{PINNED_HINT}`, works too once its wtsexporter is linked into that directory.",
+         {WTSEXPORTER_TROUBLESHOOTING}",
         tools_dir.display()
     );
 }
@@ -199,7 +203,7 @@ pub(crate) fn run_wtsexporter(
         .map_err(|err| {
             let hint = if err.kind() == std::io::ErrorKind::NotFound {
                 format!(
-                    " (often a broken pipx/venv shim: the script exists but its Python interpreter does not. Run `pipx uninstall whatsapp-chat-exporter`, then `{PINNED_HINT}`, and link the wtsexporter it installs into the Tools Directory; an older pipx cannot repair the broken venv in place.)"
+                    " (often a link to a pipx install whose Python interpreter has gone. {WTSEXPORTER_TROUBLESHOOTING})"
                 )
             } else {
                 String::new()
@@ -528,9 +532,10 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
-        names_a_full_disk, resolve_forwarded_paths, run_wtsexporter, scratch_write_error,
-        wtsexporter_command, wtsexporter_file_name, wtsexporter_in,
+        Platform, WTSEXPORTER_TROUBLESHOOTING, WtsexporterArgs, android_crypt_backup,
+        extracts_ios_backup, input_search_root, names_a_full_disk, resolve_forwarded_paths,
+        run_wtsexporter, scratch_write_error, wtsexporter_command, wtsexporter_file_name,
+        wtsexporter_in,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use media::testutil::write_with_mode;
@@ -1177,6 +1182,10 @@ mod tests {
 
         let message = err.to_string();
         assert!(message.contains("Tools Directory"), "{message}");
+        // A pipx install linked there is replaced by the app's own download,
+        // so the error sends the person to the guide, not to pipx.
+        assert!(message.ends_with(WTSEXPORTER_TROUBLESHOOTING), "{message}");
+        assert!(!message.contains("pipx"), "{message}");
         assert!(
             message.contains(&tools.path().display().to_string()),
             "{message}"
