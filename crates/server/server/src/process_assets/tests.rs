@@ -102,7 +102,7 @@ fn a_part_path_is_removed_and_never_converted() {
 }
 
 #[test]
-fn a_blob_that_is_not_media_is_skipped() {
+fn an_asset_that_is_not_media_is_skipped() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
         plan(&row("aa/notes.txt"), &opts, FRESH),
@@ -159,7 +159,7 @@ fn an_original_every_browser_shows_gets_no_preview() {
 }
 
 #[test]
-fn an_extensionless_blob_is_planned_by_its_declared_mime_or_its_attachment_name() {
+fn an_extensionless_asset_is_planned_by_its_declared_mime_or_its_attachment_name() {
     let opts = ProcessAssetsOptions::default();
     let mut by_mime = row(&format!("ab/{SHA}"));
     by_mime.mime_type = Some("image/heic".to_string());
@@ -701,7 +701,7 @@ async fn store_and_update_derived_db() {
 }
 
 #[tokio::test]
-async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
+async fn listed_attachments_carry_name_hints_for_extensionless_assets() {
     let (opened, _dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
@@ -1060,7 +1060,7 @@ async fn an_account_without_an_assets_directory_is_passed_over() {
 }
 
 #[tokio::test]
-async fn a_blob_that_is_not_media_is_left_as_is_by_the_run() {
+async fn an_asset_that_is_not_media_is_left_as_is_by_the_run() {
     let (opened, _dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
