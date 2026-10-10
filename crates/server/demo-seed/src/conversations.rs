@@ -380,7 +380,7 @@ impl<R: Rng> Seeder<'_, R> {
     /// # Errors
     ///
     /// Returns an error if the file cannot be created or the header cannot be written.
-    fn individual_header(
+    fn create_one_to_one_file(
         &self,
         path: &Path,
         chat_id: &str,
@@ -418,8 +418,8 @@ impl<R: Rng> Seeder<'_, R> {
         // A roster contact's backups carry no name for them: each arrives as
         // an Unknown, and the demo's address book names them afterwards.
         let participants = individual_participants(chat_id, None);
-        let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = self.individual_header(
+        let path = staging.join(conversation_file_name(chat_id));
+        let mut file = self.create_one_to_one_file(
             &path,
             chat_id,
             participants,
@@ -508,8 +508,8 @@ impl<R: Rng> Seeder<'_, R> {
     /// Returns an error if the file cannot be written.
     fn overlap_imessage(&mut self, staging: &Path, overlap: &Overlap<'_>) -> Result<()> {
         let chat_id = overlap.chat_id;
-        let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = self.individual_header(
+        let path = staging.join(conversation_file_name(chat_id));
+        let mut file = self.create_one_to_one_file(
             &path,
             chat_id,
             individual_participants(chat_id, overlap.display_name.clone()),
@@ -561,8 +561,8 @@ impl<R: Rng> Seeder<'_, R> {
     fn overlap_android(&mut self, staging: &Path, overlap: &Overlap<'_>) -> Result<()> {
         let chat_id = overlap.chat_id;
         let android_total = overlap.shared.len() + overlap.extra_n;
-        let path = staging.join(sanitize_filename(chat_id) + ".jsonl");
-        let mut file = self.individual_header(
+        let path = staging.join(conversation_file_name(chat_id));
+        let mut file = self.create_one_to_one_file(
             &path,
             chat_id,
             individual_participants(chat_id, overlap.display_name.clone()),
@@ -637,7 +637,7 @@ impl<R: Rng> Seeder<'_, R> {
         let fname = if ua.email_only {
             format!("email-{}.jsonl", chat_id.replace('@', "_at_"))
         } else {
-            sanitize_filename(chat_id) + ".jsonl"
+            conversation_file_name(chat_id)
         };
         // A correspondent known only by an email address wrote to the Demo
         // Account's email, so that identity has messages too.
@@ -646,7 +646,7 @@ impl<R: Rng> Seeder<'_, R> {
         } else {
             OWNER_PHONE
         };
-        let mut file = self.individual_header(
+        let mut file = self.create_one_to_one_file(
             &staging.join(fname),
             chat_id,
             participants,
@@ -1474,6 +1474,12 @@ fn push_tapback(
         reactor_identity: (!from_me).then(|| sender.to_string()),
         reactor_display_name: None,
     });
+}
+
+/// File name of the conversation with `chat_id`: the handle, made safe for a
+/// file name, with `.jsonl` added.
+fn conversation_file_name(chat_id: &str) -> String {
+    sanitize_filename(chat_id) + ".jsonl"
 }
 
 /// Turn a phone or email into a safe file name (`+` becomes `p`, `@` becomes `a`).
