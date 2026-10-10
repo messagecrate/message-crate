@@ -1,6 +1,6 @@
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { sourceLabel } from "../../lib/exportSources";
-import { findImportSource } from "../../lib/importSources";
+import { IMPORT_SOURCES } from "../../lib/importSources";
 import { countOf } from "../../lib/plural";
 import { ATTACHMENT_OPTIONS } from "./ImportFormUi";
 import type { ImportPhase } from "./importProgressState";
@@ -15,11 +15,14 @@ export type ReviewKind = "staging" | "media";
  * otherwise, e.g. "Apple Messages · iPhone backup".
  */
 export function sourceDisplayName(source: string): string {
-  const descriptor = findImportSource(source);
-  if (descriptor === undefined) return sourceLabel(source);
-  if (descriptor.methods.length === 1) return descriptor.label;
-  const method = descriptor.methods.find((m) => m.id === source);
-  return method ? `${descriptor.label} · ${method.label}` : descriptor.label;
+  for (const descriptor of IMPORT_SOURCES) {
+    const method = descriptor.methods.find((m) => m.id === source);
+    if (method === undefined) continue;
+    return descriptor.methods.length === 1
+      ? descriptor.label
+      : `${descriptor.label} · ${method.label}`;
+  }
+  return sourceLabel(source);
 }
 
 /** The attachments line of "what you asked for", in the form's own words, settings included when they apply. */
