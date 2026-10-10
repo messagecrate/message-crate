@@ -1,12 +1,12 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
 import { formatBytes } from "../../../lib/formatBytes";
-import { tdClass, tdMuted } from "../../settings/apiTokensUtils";
-import { rowStripe, thClass, thSeparator } from "../ownerTableStyles";
+import { tdClass, tdMutedClass } from "../../settings/apiTokensUtils";
+import { rowStripeClass, thClass, thSeparatorClass } from "../ownerTableStyles";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";
 
 /** A figure lines up on the right, so sizes can be read down the column. */
-const numberCell = "whitespace-nowrap text-right";
+const numberCellClass = "whitespace-nowrap text-right";
 
 /**
  * One row per account: its username, how many messages it holds, how much
@@ -30,31 +30,37 @@ export function MessagesByAccountSection({ storage }: { storage: ServerStorage }
           <thead>
             <tr>
               <th className={thClass}>Account</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Messages</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Text</th>
-              <th className={`${thClass} ${thSeparator} text-right`}>Estimated size on disk</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Messages</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>Text</th>
+              <th className={`${thClass} ${thSeparatorClass} text-right`}>
+                Estimated size on disk
+              </th>
             </tr>
           </thead>
           <tbody>
             {storage.accounts.map((account) => (
-              <tr key={account.account_id} className={`border-t border-border ${rowStripe}`}>
+              <tr key={account.account_id} className={`border-t border-border ${rowStripeClass}`}>
                 <td className={`${tdClass} whitespace-nowrap font-semibold`}>{account.username}</td>
-                <td className={`${tdMuted} ${numberCell}`}>
+                <td className={`${tdMutedClass} ${numberCellClass}`}>
                   {account.message_count.toLocaleString()}
                 </td>
-                <td className={`${tdMuted} ${numberCell}`}>{formatBytes(account.text_bytes)}</td>
-                <td className={`${tdClass} ${numberCell}`}>
+                <td className={`${tdMutedClass} ${numberCellClass}`}>
+                  {formatBytes(account.text_bytes)}
+                </td>
+                <td className={`${tdClass} ${numberCellClass}`}>
                   {formatBytes(account.estimated_message_bytes)}
                 </td>
               </tr>
             ))}
             <tr className="border-t border-border">
               <td className={`${tdClass} whitespace-nowrap font-semibold`}>All accounts</td>
-              <td className={`${tdClass} ${numberCell} font-semibold`}>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
                 {storage.message_count.toLocaleString()}
               </td>
-              <td className={`${tdClass} ${numberCell} font-semibold`}>{formatBytes(totalText)}</td>
-              <td className={`${tdClass} ${numberCell} font-semibold`}>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
+                {formatBytes(totalText)}
+              </td>
+              <td className={`${tdClass} ${numberCellClass} font-semibold`}>
                 {formatBytes(storage.messages_bytes)}
               </td>
             </tr>

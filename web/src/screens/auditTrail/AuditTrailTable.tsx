@@ -2,7 +2,12 @@ import ScrollingTableCard from "../../components/ScrollingTableCard";
 import { type AuditEntry, auditActorLabel, describeAuditEntry } from "../../lib/auditTrail";
 import { formatDateTime } from "../../lib/formatDate";
 import PageControl from "../settings/storage/PageControl";
-import { sectionHint, tableCard, tdStyle, thStyle } from "../settings/storage/storageUtils";
+import {
+  sectionHintClass,
+  tableCardClass,
+  tdClass,
+  thClass,
+} from "../settings/storage/storageUtils";
 import { AUDIT_TRAIL_PAGE_SIZE } from "./useAuditTrail";
 
 /** The Account column: the username, marked when the account has since been deleted. */
@@ -42,31 +47,31 @@ export default function AuditTrailTable({
   showAccount: boolean;
 }) {
   if (total === 0) {
-    return <p className={`${sectionHint} mt-3`}>Nothing recorded yet</p>;
+    return <p className={`${sectionHintClass} mt-3`}>Nothing recorded yet</p>;
   }
   return (
     <div className="mt-3 flex flex-col gap-3">
-      <ScrollingTableCard cardClassName={tableCard}>
+      <ScrollingTableCard cardClassName={tableCardClass}>
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              <th className={thStyle}>Date</th>
-              {showAccount ? <th className={thStyle}>Account</th> : null}
-              <th className={thStyle}>What happened</th>
-              <th className={thStyle}>By</th>
+              <th className={thClass}>Date</th>
+              {showAccount ? <th className={thClass}>Account</th> : null}
+              <th className={thClass}>What happened</th>
+              <th className={thClass}>By</th>
             </tr>
           </thead>
           <tbody>
             {entries.map((entry) => (
               <tr key={`${entry.action}-${entry.id}`}>
-                <td className={`${tdStyle} whitespace-nowrap`}>{formatDateTime(entry.at)}</td>
-                {showAccount ? <td className={tdStyle}>{accountCell(entry)}</td> : null}
-                <td className={tdStyle}>
+                <td className={`${tdClass} whitespace-nowrap`}>{formatDateTime(entry.at)}</td>
+                {showAccount ? <td className={tdClass}>{accountCell(entry)}</td> : null}
+                <td className={tdClass}>
                   {/* The card sizes to its content, so a long line wraps here
                       rather than pushing the By column out of view. */}
                   <div className="max-w-[30rem]">{describeAuditEntry(entry)}</div>
                 </td>
-                <td className={`${tdStyle} whitespace-nowrap`}>{auditActorLabel(entry.actor)}</td>
+                <td className={`${tdClass} whitespace-nowrap`}>{auditActorLabel(entry.actor)}</td>
               </tr>
             ))}
           </tbody>

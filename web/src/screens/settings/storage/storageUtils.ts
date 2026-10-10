@@ -8,12 +8,12 @@ export const ATTACHMENT_PAGE_SIZE = 20;
 /** Import Runs or Export Runs on one page of a history table, and the `limit` each request sends. */
 export const RUN_PAGE_SIZE = 50;
 
-export const sectionTitle = "m-0 text-[0.938rem] font-semibold text-text";
-export const sectionHint = "mt-1 text-[0.813rem] text-muted";
-export const tableCard = "overflow-hidden rounded-lg";
-export const thStyle =
+export const sectionTitleClass = "m-0 text-[0.938rem] font-semibold text-text";
+export const sectionHintClass = "mt-1 text-[0.813rem] text-muted";
+export const tableCardClass = "overflow-hidden rounded-lg";
+export const thClass =
   "border-b border-border bg-elevated p-2 px-3 text-left text-[0.813rem] font-medium text-muted";
-export const tdStyle = "border-b border-border p-2 px-3 text-[0.813rem] text-text";
+export const tdClass = "border-b border-border p-2 px-3 text-[0.813rem] text-text";
 
 /*
  * These three shapes come from the server, so they are generated rather than
