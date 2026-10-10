@@ -25,7 +25,9 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::counts::words;
-use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
+use crate::db::attachment_versions::{
+    self as versions_db, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
+};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
@@ -209,20 +211,19 @@ fn shown_as_is(assets_dir: &Path, row: &StoredOriginal) -> Option<bool> {
     )
 }
 
-/// Record `decided` on every row of `account_id`'s original `sha256`, the
-/// one write of the decision. `None` writes nothing.
+/// Record `decided` on every one of `rows`, the one write of the decision.
+/// `None` writes nothing.
 ///
 /// # Errors
 ///
 /// Returns an error when the rows cannot be written.
 async fn record_decision_if_known(
     db: &SqlitePool,
-    account_id: i64,
-    sha256: &str,
+    rows: OriginalRows<'_>,
     decided: Option<bool>,
 ) -> Result<()> {
     if let Some(shown) = decided {
-        versions_db::record_shown_as_is(&mut *db.acquire().await?, account_id, sha256, shown)
+        versions_db::record_shown_as_is(&mut *db.acquire().await?, rows, shown)
             .await
             .context("record whether it is shown as it is")?;
     }
@@ -252,8 +253,11 @@ pub(crate) async fn decide_shown_as_is(
     let mut decided = std::collections::HashSet::new();
     for row in &rows {
         if decided.insert(row.sha256.as_str()) {
-            record_decision_if_known(db, account_id, &row.sha256, shown_as_is(&assets_dir, row))
-                .await?;
+            let original = OriginalRows {
+                account_id,
+                original_sha: &row.sha256,
+            };
+            record_decision_if_known(db, original, shown_as_is(&assets_dir, row)).await?;
         }
     }
     Ok(())
@@ -614,6 +618,14 @@ impl<'a> AccountPass<'a> {
         format!("{}/{}", self.account_id, row.assets_path)
     }
 
+    /// The attachment rows of this account for `row`'s original.
+    fn rows<'r>(&self, row: &'r StoredOriginal) -> OriginalRows<'r> {
+        OriginalRows {
+            account_id: self.account_id,
+            original_sha: &row.sha256,
+        }
+    }
+
     /// Process each of `rows` and count what happened, logging each failure.
     async fn process_rows(&self, db: &SqlitePool, rows: &[StoredOriginal]) -> ProcessAssetsStats {
         let mut stats = ProcessAssetsStats::default();
@@ -668,7 +680,7 @@ impl<'a> AccountPass<'a> {
         let not_decided = if self.opts.dry_run {
             None
         } else {
-            record_decision_if_known(db, self.account_id, &row.sha256, decided)
+            record_decision_if_known(db, self.rows(row), decided)
                 .await
                 .err()
         };
@@ -762,10 +774,11 @@ impl<'a> AccountPass<'a> {
         };
         let named = versions_db::record(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            VersionWrite {
+                rows: self.rows(row),
+                version,
+                file: &blob,
+            },
         )
         .await?;
         if named == 0 {
@@ -828,10 +841,11 @@ impl<'a> AccountPass<'a> {
         }
         let pointed = versions_db::share(
             &mut *db.acquire().await?,
-            version,
-            self.account_id,
-            &row.sha256,
-            &blob,
+            VersionWrite {
+                rows: self.rows(row),
+                version,
+                file: &blob,
+            },
         )
         .await?;
         if pointed == 0 {
