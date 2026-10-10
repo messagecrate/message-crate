@@ -605,6 +605,7 @@ mod tests {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
+                sender_display_name: Some("Sam".into()),
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 reactions: reactions.clone(),
@@ -612,6 +613,10 @@ mod tests {
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
+                source: Some(IrSource {
+                    android_type: Some(1),
+                    fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
+                }),
                 ..base.message
             },
             attachments: vec![MailAttachment {
