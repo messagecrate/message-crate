@@ -116,10 +116,13 @@ only the user resolves it.
    Never resolve a thread without a reply in it.
 5. **Merge the base into the pull request** before the review, whenever the
    base has commits the pull request lacks, so the review and the pull
-   request's checks see the code as it would land. Before merging, merge it
-   again only on `CONFLICTING`: GitHub cannot merge a pull request that
-   conflicts with the base, and merges one that is only behind as it is,
-   untested on the new base (ADR 0007 says why that is accepted).
+   request's checks see the code as it would land. Every later push the
+   review makes, such as its last push or a fix for a failed job, brings the
+   base in too. After the review, a push made only to bring the base in is
+   made only on `CONFLICTING`: GitHub cannot merge a pull request that conflicts with the
+   base, and merges one that is only behind as it is, untested on the new
+   base (ADR 0007 says why that is accepted). Step 6 says what a conflict
+   does to the CI watch.
    Merge rather than rebase: a rebase needs a force-push, and the squash
    merge drops the merge commit. GitHub reports `UNKNOWN`
    for a few seconds after a push, so wait for a settled answer:
@@ -151,6 +154,15 @@ only the user resolves it.
    pull request that is already ready, such as a fix for a failed job, starts
    its run itself, and the snippet's `isDraft` branch skips straight to it.
 
+   A conflict ends the watch at any point. The snippet reads the merge state
+   before it marks the pull request ready, and with every poll after. GitHub
+   starts no run for a pull request that conflicts with its base, and a run
+   on a head that conflicts cannot lead to a merge. On `CONFLICTING`, merge
+   the base in (step 5), fix any job of the run that already failed because
+   of the pull request, run the local checks, push, and watch the new run.
+   The push cancels the run it replaces. A run being waited on for its rerun
+   is left the same way, and the push replaces the rerun.
+
    A rejected push is handled as step 3 says. If the head moved past your
    push, another session pushed commits nobody reviewed: stop before marking
    the pull request ready, so it stays a draft, and report it.
@@ -173,29 +185,39 @@ only the user resolves it.
    and its commits have not been reviewed.
 
    ```bash
+   conflicting() { m=$(gh pr view <N> --json mergeable -q .mergeable) && [ "$m" = CONFLICTING ]; }
+   stop_if_conflicting() { [ "$m" != CONFLICTING ] || { echo conflicting; exit 1; }; }   # tests the state the last read left in $m
    before=$(gh pr view <N> --json headRefOid -q .headRefOid)
    git push origin HEAD:<headRefName> || exit 1   # rejected: see step 3
    sha=$(git rev-parse HEAD)
    until h=$(gh pr view <N> --json headRefOid -q .headRefOid) && [ "$h" != "$before" ] || [ "$sha" = "$before" ]
    do sleep 10; done
    [ "$h" = "$sha" ] || { echo moved; exit 1; }   # another session pushed on top
+   until m=$(gh pr view <N> --json mergeable -q .mergeable) && [ "$m" != UNKNOWN ]; do sleep 10; done
+   stop_if_conflicting                  # before any run
    if [ "$(gh pr view <N> --json isDraft -q .isDraft)" = true ]; then
-     until last=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId -q 'map(.databaseId) | max // empty') &&
-           [ -n "$last" ]
+     until conflicting || { last=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
+                                     -q 'map(.databaseId) | max // empty') && [ -n "$last" ]; }
      do sleep 10; done                  # the draft's own run, all skipped
+     stop_if_conflicting
      gh pr ready <N>
    else
      last=0                             # already ready: the push started the run
    fi
-   until run=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
-                 -q "map(select(.databaseId > $last)) | .[0].databaseId // empty") && [ -n "$run" ]
-   do sleep 10; done
-   until s=$(gh run view "$run" --json status,jobs \
-               -q 'if any(.jobs[]; .conclusion == "failure") then "failed" else .status end') &&
-         { [ "$s" = failed ] || [ "$s" = completed ]; }
-   do sleep 30; done                    # stops at the first failed job
+   until conflicting || { run=$(gh run list --commit "$sha" --workflow ci.yml --json databaseId \
+                                  -q "map(select(.databaseId > $last)) | .[0].databaseId // empty") && [ -n "$run" ]; }
+   do sleep 10; done                    # no run starts on a conflicting pull request
+   stop_if_conflicting
+   until conflicting || { s=$(gh run view "$run" --json status,jobs \
+                                -q 'if any(.jobs[]; .conclusion == "failure") then "failed" else .status end') &&
+                          { [ "$s" = failed ] || [ "$s" = completed ]; }; }
+   do sleep 30; done                    # stops at the first failed job, or at a conflict
    gh run view "$run" --json conclusion,jobs -q '.conclusion, (.jobs[] | select(.conclusion == "failure") | .name)'
-   gh run watch "$run"                  # an outside failure: wait for the run to finish
+   stop_if_conflicting                  # fix the jobs listed above in the same push
+   until conflicting || { s=$(gh run view "$run" --json status -q .status) && [ "$s" = completed ]; }
+   do sleep 30; done                    # an outside failure: wait for the run to finish, or for a conflict
+   gh run view "$run" --json jobs -q '.jobs[] | select(.conclusion == "failure") | .name'   # every failed job, to sort
+   stop_if_conflicting                  # the push replaces the rerun
    main_run=$(gh run list --branch main --workflow ci.yml --event push --status completed -L 1 \
                 --json databaseId -q '.[0].databaseId')   # the last finished run on main
    gh run view "$main_run" --json url,jobs -q '.url, (.jobs[] | select(.conclusion == "failure") | .name)'

@@ -31,9 +31,15 @@ fixed, never declined for being small.
 ## Pushing and posting
 
 The PR is a draft until step 5. Before CI, it is pushed at most twice: in
-step 1, to bring it up to date, and in step 5, with every fix. Step 5 marks it
-ready after its push, and CI is watched on that head alone (AGENTS.md
-step 6).
+step 1, to bring it up to date, and in step 5, with every fix. Each conflict
+that appears before the PR is marked ready adds a push, with the base merged
+in.
+Step 5 marks it ready after its push, and CI is watched on that head alone
+(AGENTS.md step 6).
+
+**Every push brings the base in** when it moved since the last one. After
+step 1, a push made only to bring the base in is made only on `CONFLICTING`
+(AGENTS.md step 5).
 
 **Every call that posts** (a review, a comment, a reply) goes one at a time,
 and a refusal is retried (AGENTS.md, "Posting pace").
@@ -165,8 +171,13 @@ resolved, and every user thread has a reply.
 ### 6. Green CI
 
 Watch the CI run that marking the PR ready started, stopping at its first
-failed job (AGENTS.md step 6). A job that fails because of the PR is a
-finding: fix it, run the local checks, push, and watch the new run.
+failed job or at a conflict (AGENTS.md step 6). A job that fails because of
+the PR is a finding: fix it, run the local checks, push, and watch the new
+run.
+
+**A conflict ends the watch.** AGENTS.md step 6 says what the push that
+replaces the run carries. A merge that resolves a conflict gets the merge
+review.
 
 A check that fails for a reason outside the PR (a runner fault, a network
 fetch) gets one rerun of its failed jobs. If it fails again, or `main` fails
@@ -174,8 +185,8 @@ the same job, stop and report it without changing the code for it. AGENTS.md
 step 6 says how a failed check is sorted, how a red `main` is found, and when
 the run is rerun.
 
-Done when the CI run on the commit you pushed ended in `success`, and it is
-still the PR head (_Another session's commits_).
+Done when the CI run on the commit you pushed ended in `success`, the PR is
+not `CONFLICTING`, and it is still the PR head (_Another session's commits_).
 
 ### 7. Summarise and merge
 
