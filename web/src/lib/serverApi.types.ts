@@ -5345,7 +5345,7 @@ export interface components {
              *     conversation a file is in, and who it is with, is the holder's.
              */
             conversation_id: number | null;
-            /** @description Conversation label, when set. */
+            /** @description The title the export gave the conversation, when it gave one. */
             conversation_title: string | null;
             /**
              * Format: int64

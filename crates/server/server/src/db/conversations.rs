@@ -197,7 +197,7 @@ pub async fn get_conversation_summary(
 /// with themselves: a one-to-one conversation whose own identity is one of
 /// the account's identities, such as notes sent to their own number (#1094).
 /// `c` is the alias of a `conversations` row. `with:me` asks this, and
-/// [`conversation_title_sql`] names such a conversation by it.
+/// [`shown_title_sql`] names such a conversation by it.
 #[must_use]
 pub fn is_with_yourself_sql(c: &str) -> String {
     format!(
@@ -227,7 +227,7 @@ pub const ORPHANED_UNKNOWN_PERSON: &str = "Orphaned · Unknown person";
 /// single-conversation read, the message rows, `title:`, `in:` and plain
 /// text all read this one expression.
 #[must_use]
-pub fn conversation_title_sql(c: &str) -> String {
+pub fn shown_title_sql(c: &str) -> String {
     format!(
         "CASE WHEN {with_yourself} THEN COALESCE(
                   (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
@@ -254,7 +254,7 @@ pub fn is_orphaned_sql(c: &str) -> String {
 }
 
 /// The row shape shared by the conversation list and the single-conversation
-/// read: id, type, title ([`conversation_title_sql`]), and the
+/// read: id, type, title ([`shown_title_sql`]), and the
 /// counts/timestamps computed from `messages`. Callers append their own
 /// `WHERE`, `ORDER BY`, and paging.
 fn conversation_row_select() -> String {
@@ -269,7 +269,7 @@ fn conversation_row_select() -> String {
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
          FROM conversations c",
-        shown_title = conversation_title_sql("c")
+        shown_title = shown_title_sql("c")
     )
 }
 

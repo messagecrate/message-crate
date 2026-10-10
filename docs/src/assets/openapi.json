@@ -19411,7 +19411,7 @@
               "string",
               "null"
             ],
-            "description": "Conversation label, when set."
+            "description": "The title the export gave the conversation, when it gave one."
           },
           "id": {
             "type": "integer",

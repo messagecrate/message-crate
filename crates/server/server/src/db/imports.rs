@@ -1094,7 +1094,7 @@ pub struct TopAttachment {
     /// `null` when the owner reads another account's storage: which
     /// conversation a file is in, and who it is with, is the holder's.
     pub conversation_id: Option<i64>,
-    /// Conversation label, when set.
+    /// The title the export gave the conversation, when it gave one.
     pub conversation_title: Option<String>,
     /// Raw text of the identity that keys the conversation.
     pub chat_identifier: Option<String>,

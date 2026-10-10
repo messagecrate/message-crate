@@ -485,7 +485,7 @@ fn message_page_sql(
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
-        shown_title = crate::db::conversations::conversation_title_sql("c"),
+        shown_title = crate::db::conversations::shown_title_sql("c"),
         reply_count = REPLY_COUNT_SQL,
     );
     let mut params = params.to_vec();
