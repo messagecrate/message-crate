@@ -8,7 +8,7 @@ license = "LicenseRef-FCL-1.0-ALv2"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 mail-builder = "1.0.0"
-mailparse = "0.17.0"
+mailparse = "0.18.0"
 message-ir = { path = "../ir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
