@@ -186,7 +186,7 @@ The zone an account shows every message time in, chosen when the account is
 set up and changeable afterwards. A message records the instant it arrived
 and nothing about where the phone was, so the account's zone is what turns
 that instant into a clock reading, a day, and a year, in search and in the
-thread alike. It is the person's zone, never the server's.
+conversation alike. It is the person's zone, never the server's.
 _Avoid_: Server time, Local time, Offset
 
 ### People
