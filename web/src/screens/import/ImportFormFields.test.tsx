@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
+import { IMPORT_SOURCES } from "../../lib/importSources";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import type { AttachmentChoices } from "../../lib/types";
 import {
@@ -120,6 +121,21 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
   };
   return render(<ImportFormFields {...props} />);
 }
+
+describe("ImportFormFields sources", () => {
+  // The form reads everything per source from the source's descriptor, so
+  // each method of each source in the list must render its form.
+  it("renders the backup field each method's descriptor names", () => {
+    for (const source of IMPORT_SOURCES) {
+      for (const method of source.methods) {
+        renderForm({ source: method.id });
+        const label = source.backupField(method.id).label;
+        expect(screen.getByText(label), method.id).toBeTruthy();
+        cleanup();
+      }
+    }
+  });
+});
 
 describe("ImportFormFields iMessage methods", () => {
   it("shows one iMessage source and a Platform dropdown without jailbreak", async () => {
