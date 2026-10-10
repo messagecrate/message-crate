@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { type CloseRequestedEvent, getCurrentWindow } from "@tauri-apps/api/window";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
 import type { LogLinesPage } from "./serverApi";
 import type { components } from "./serverApi.types";
@@ -622,6 +624,106 @@ export async function invokeImessageBackupIdentities(args: {
     ios: args.ios,
     backupPassword: args.backupPassword.trim() === "" ? null : args.backupPassword,
   });
+}
+
+/**
+ * Open a file or directory with the operating system's default handler. The
+ * desktop process opens only a run directory it made, or a path inside one.
+ */
+export async function invokeOpenPath(path: string): Promise<void> {
+  await invoke("open_path", { path });
+}
+
+/**
+ * Show the Save dialog with `fileName` filled in, and write `bytes` where the
+ * person chose. The bytes go as the request's raw body and the name as a
+ * header, so a file of megabytes is not written out as JSON. A header carries
+ * ASCII only, so the name goes as a JSON string with every other character
+ * escaped.
+ *
+ * Resolves false when the person closed the dialog without choosing a place.
+ */
+export async function invokeSaveFile(bytes: Uint8Array, fileName: string): Promise<boolean> {
+  return invoke<boolean>("save_file", bytes, {
+    headers: { "file-name": asciiJson(fileName) },
+  });
+}
+
+/** `value` as a JSON string, with every character outside ASCII written as `\uXXXX`. */
+function asciiJson(value: string): string {
+  return JSON.stringify(value).replace(
+    /[\u007f-\uffff]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+/** Why the app's own Message Crate is not running. */
+export type LocalServerFailure = "port_taken" | "start_failed";
+
+/**
+ * What the desktop app reports about its own Message Crate, the server it
+ * ships and runs at its own address while the app is open. The rules are in
+ * `src-tauri/src/local_server.rs`.
+ */
+export type LocalServerStatus =
+  | { status: "idle" }
+  | { status: "starting"; first_time: boolean }
+  | { status: "ready"; started_by_app: boolean }
+  | { status: "failed"; reason: LocalServerFailure; message: string; details: string };
+
+/** Start the app's own Message Crate, or ask the one it found whether it still answers. */
+export async function invokeStartLocalServer(openToNetwork: boolean): Promise<LocalServerStatus> {
+  return invoke<LocalServerStatus>("start_local_server", { openToNetwork });
+}
+
+/**
+ * Give the network setting to the desktop app. It starts nothing: the app's
+ * own server is restarted to match, once no import or other desktop job
+ * runs, and a Message Crate the app only found is left as it is.
+ */
+export async function invokeSetOpenToNetwork(openToNetwork: boolean): Promise<LocalServerStatus> {
+  return invoke<LocalServerStatus>("set_open_to_network", { openToNetwork });
+}
+
+/** The state of the app's own Message Crate, read without starting it. */
+export async function invokeLocalServerStatus(): Promise<LocalServerStatus> {
+  return invoke<LocalServerStatus>("local_server_status");
+}
+
+/** Open the directory holding the app's own database and attachments. */
+export async function invokeOpenDataDirectory(): Promise<void> {
+  await invoke("open_data_directory");
+}
+
+/**
+ * Show the operating system's dialog to choose one file, or one directory
+ * when `directory` is set. Resolves null when the person closed the dialog
+ * without a choice.
+ */
+export async function pickPath(options: {
+  directory?: boolean;
+  filters?: { name: string; extensions: string[] }[];
+}): Promise<string | null> {
+  const result = options.directory
+    ? await openDialog({ directory: true, multiple: false })
+    : await openDialog({ multiple: false, filters: options.filters });
+  return typeof result === "string" ? result : null;
+}
+
+/**
+ * Call `handler` when the person asks to close the desktop app's window. The
+ * handler keeps the window open by calling the event's `preventDefault()`.
+ * Resolves to a function that stops listening.
+ */
+export async function onWindowCloseRequested(
+  handler: (event: CloseRequestedEvent) => void | Promise<void>,
+): Promise<UnlistenFn> {
+  return getCurrentWindow().onCloseRequested(handler);
+}
+
+/** Close the desktop app's window without asking `onWindowCloseRequested`'s handler. */
+export async function destroyWindow(): Promise<void> {
+  await getCurrentWindow().destroy();
 }
 
 /**

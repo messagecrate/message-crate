@@ -43,6 +43,9 @@ vi.mock("../../lib/tauri", () => ({
     cancelMock();
   },
   invokeUpload: async () => {},
+  onWindowCloseRequested: async () => {
+    throw new Error("no window in tests");
+  },
   invokeReadImportRunRecord: async () => null,
   invokeSaveImportRunRecord: async () => {
     calls.push("pause recorded");
@@ -77,12 +80,6 @@ vi.mock("../../lib/useAccountProfile", () => ({
 
 vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => true,
-}));
-
-vi.mock("@tauri-apps/api/window", () => ({
-  getCurrentWindow: () => {
-    throw new Error("no window in tests");
-  },
 }));
 
 const { AuthProvider, useAuth } = await import("../../lib/auth");

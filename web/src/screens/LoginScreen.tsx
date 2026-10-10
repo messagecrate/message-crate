@@ -5,8 +5,9 @@ import { setBaseUrl } from "../lib/api";
 import { errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/auth";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
-import { isOwnAddress, type LocalServerStatus, openDataDirectory } from "../lib/localServer";
+import { isOwnAddress } from "../lib/localServer";
 import { checkServerHealth, type ServerHealthStatus } from "../lib/serverHealth";
+import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
 import { accentLink, authCard, authCardBody, authScreenTitle, pageCenter } from "../lib/uiStyles";
 import { useLocalServer } from "../lib/useLocalServer";
@@ -82,7 +83,7 @@ function StartFailed({
           variant="secondary"
           onPress={() => {
             setOpenError(null);
-            openDataDirectory().catch((caught: unknown) => {
+            invokeOpenDataDirectory().catch((caught: unknown) => {
               setOpenError(errorText(caught));
             });
           }}

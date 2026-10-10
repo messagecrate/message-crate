@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { errorText } from "./apiErrorMessage";
-import { type LocalServerStatus, localServerStatus, startLocalServer } from "./localServer";
+import { startLocalServer } from "./localServer";
+import { invokeLocalServerStatus, type LocalServerStatus } from "./tauri";
 
 /** How often a starting server is asked how it is getting on. */
 const POLL_MS = 500;
@@ -56,7 +57,7 @@ export function useLocalServer(active: boolean): {
         next.status === "starting" ? POLL_MS : next.status === "ready" ? READY_POLL_MS : null;
       if (wait !== null) {
         timer.current = setTimeout(() => {
-          localServerStatus().then(settle, (error: unknown) => settle(failed(error)));
+          invokeLocalServerStatus().then(settle, (error: unknown) => settle(failed(error)));
         }, wait);
       }
     };

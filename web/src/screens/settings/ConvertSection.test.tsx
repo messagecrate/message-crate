@@ -37,10 +37,6 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
   };
 });
 
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
-}));
-
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();

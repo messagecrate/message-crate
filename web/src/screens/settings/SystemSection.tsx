@@ -7,19 +7,15 @@ import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
 import { errorText } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
-import {
-  getOpenToNetwork,
-  isOwnAddress,
-  type LocalServerStatus,
-  openDataDirectory,
-  setLocalServerOpenToNetwork,
-  setOpenToNetwork,
-} from "../../lib/localServer";
+import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   invokeExportDirectory,
+  invokeOpenDataDirectory,
+  invokeSetOpenToNetwork,
   invokeSetStagingRoot,
   invokeStagingRoot,
+  type LocalServerStatus,
   type ToolName,
   type ToolStatus,
   type ToolsStatus,
@@ -307,7 +303,7 @@ function DataDirectory() {
     // While the app uses another Message Crate, the setting waits for the
     // next start of its own.
     if (!isOwnAddress(getBaseUrl())) return;
-    setLocalServerOpenToNetwork(on).then(setServer, (caught: unknown) => {
+    invokeSetOpenToNetwork(on).then(setServer, (caught: unknown) => {
       setNetworkError(errorText(caught));
     });
   };
@@ -325,7 +321,7 @@ function DataDirectory() {
         className="mt-2 rounded border border-border px-3 py-1.5 text-[0.875rem] text-text hover:bg-elevated"
         onPress={() => {
           setError(null);
-          openDataDirectory().catch((caught: unknown) => {
+          invokeOpenDataDirectory().catch((caught: unknown) => {
             setError(errorText(caught));
           });
         }}

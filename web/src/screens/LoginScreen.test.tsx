@@ -16,8 +16,8 @@ vi.mock("../lib/auth", () => ({
 
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
-const localServerStatus = vi.hoisted(() => vi.fn());
-const openDataDirectory = vi.hoisted(() => vi.fn());
+const invokeLocalServerStatus = vi.hoisted(() => vi.fn());
+const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/tauri-check", () => ({
   isTauri: () => tauriState.isTauri,
@@ -26,8 +26,12 @@ vi.mock("../lib/tauri-check", () => ({
 vi.mock("../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/localServer")>()),
   startLocalServer: () => startLocalServer(),
-  localServerStatus: () => localServerStatus(),
-  openDataDirectory: () => openDataDirectory(),
+}));
+
+vi.mock("../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauri")>()),
+  invokeLocalServerStatus: () => invokeLocalServerStatus(),
+  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
 }));
 
 const setBaseUrlSpy = vi.hoisted(() => vi.fn());
@@ -142,10 +146,10 @@ describe("LoginScreen", () => {
     authState.serverUrl = "";
     startLocalServer.mockReset();
     startLocalServer.mockResolvedValue({ status: "ready", started_by_app: true });
-    localServerStatus.mockReset();
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
-    openDataDirectory.mockReset();
-    openDataDirectory.mockResolvedValue(undefined);
+    invokeLocalServerStatus.mockReset();
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeOpenDataDirectory.mockReset();
+    invokeOpenDataDirectory.mockResolvedValue(undefined);
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
@@ -707,7 +711,7 @@ describe("LoginScreen", () => {
   it("says the app's own Message Crate is starting, in place of Connected", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: false });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: false });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: false });
     stubNoServer();
     renderScreen();
 
@@ -718,7 +722,7 @@ describe("LoginScreen", () => {
   it("says a first start is setting Message Crate up", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: true });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: true });
     stubNoServer();
     renderScreen();
 
@@ -730,13 +734,13 @@ describe("LoginScreen", () => {
   it("connects as soon as the app's own Message Crate answers", async () => {
     tauriState.isTauri = true;
     startLocalServer.mockResolvedValue({ status: "starting", first_time: true });
-    localServerStatus.mockResolvedValue({ status: "starting", first_time: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "starting", first_time: true });
     stubNoServer();
     renderScreen();
     await screen.findByText("Setting up Message Crate for the first time…");
 
     stubServer("unclaimed", true);
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
 
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Connected"), {
       timeout: 3000,
@@ -764,7 +768,7 @@ describe("LoginScreen", () => {
     expect(screen.queryByText("Details")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Open data directory" }));
-    expect(openDataDirectory).toHaveBeenCalledTimes(1);
+    expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(startLocalServer).toHaveBeenCalledTimes(2);
@@ -808,7 +812,7 @@ describe("LoginScreen", () => {
       ownRunning = true;
       return { status: "starting", first_time: false };
     });
-    localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
+    invokeLocalServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
     serveAt((address) =>
       ownRunning && address.startsWith("http://127.0.0.1:8080") ? { state: "closed" } : "down",
     );

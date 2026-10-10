@@ -15,16 +15,14 @@ const toolsStatus = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
 const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
 const setStagingRoot = vi.hoisted(() => vi.fn());
-const openDataDirectory = vi.hoisted(() => vi.fn());
+const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
-const setLocalServerOpenToNetwork = vi.hoisted(() => vi.fn());
+const invokeSetOpenToNetwork = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/localServer")>()),
-  openDataDirectory: () => openDataDirectory(),
   startLocalServer: () => startLocalServer(),
-  setLocalServerOpenToNetwork: (on: boolean) => setLocalServerOpenToNetwork(on),
 }));
 
 vi.mock("../../lib/tauri-check", () => ({
@@ -40,10 +38,8 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   }),
   invokeSetStagingRoot: (root: string) => setStagingRoot(root),
   invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
-}));
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  open: vi.fn(),
+  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
+  invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
 }));
 
 afterEach(() => {
@@ -105,15 +101,15 @@ describe("SystemSection", () => {
   });
 
   it("opens the data directory of the app's own Message Crate", async () => {
-    openDataDirectory.mockResolvedValue(undefined);
+    invokeOpenDataDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
     const user = setupUser();
     await user.click(await screen.findByRole("button", { name: "Open data directory" }));
-    expect(openDataDirectory).toHaveBeenCalledTimes(1);
+    expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
   });
 
   it("says why the data directory could not be opened", async () => {
-    openDataDirectory.mockRejectedValue(new Error("Could not open /data"));
+    invokeOpenDataDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
     const user = setupUser();
     await user.click(await screen.findByRole("button", { name: "Open data directory" }));
@@ -123,8 +119,8 @@ describe("SystemSection", () => {
   it("keeps the app's own Message Crate closed to the network until asked", async () => {
     setBaseUrl("http://127.0.0.1:8080");
     startLocalServer.mockReset();
-    setLocalServerOpenToNetwork.mockReset();
-    setLocalServerOpenToNetwork.mockResolvedValue({ status: "starting", first_time: false });
+    invokeSetOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockResolvedValue({ status: "starting", first_time: false });
     render(<SystemSection />);
     const box = await screen.findByRole("checkbox", {
       name: /Let other devices on this network connect/,
@@ -137,11 +133,11 @@ describe("SystemSection", () => {
     await user.click(box);
 
     expect(getOpenToNetwork()).toBe(true);
-    expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(true);
+    expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(true);
 
     await user.click(box);
     expect(getOpenToNetwork()).toBe(false);
-    expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(false);
+    expect(invokeSetOpenToNetwork).toHaveBeenLastCalledWith(false);
     // The setting restarts a server the app runs; it never starts one.
     expect(startLocalServer).not.toHaveBeenCalled();
   });
@@ -149,7 +145,7 @@ describe("SystemSection", () => {
   it("changes no server while the app uses another Message Crate", async () => {
     setBaseUrl("https://crate.example");
     startLocalServer.mockReset();
-    setLocalServerOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockReset();
     render(<SystemSection />);
 
     const user = setupUser();
@@ -158,14 +154,14 @@ describe("SystemSection", () => {
     );
 
     expect(getOpenToNetwork()).toBe(true);
-    expect(setLocalServerOpenToNetwork).not.toHaveBeenCalled();
+    expect(invokeSetOpenToNetwork).not.toHaveBeenCalled();
     expect(startLocalServer).not.toHaveBeenCalled();
   });
 
   it("says the setting does not change a Message Crate the app did not start", async () => {
     setBaseUrl("http://127.0.0.1:8080");
-    setLocalServerOpenToNetwork.mockReset();
-    setLocalServerOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
+    invokeSetOpenToNetwork.mockReset();
+    invokeSetOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
     render(<SystemSection />);
     const user = setupUser();
     await user.click(
