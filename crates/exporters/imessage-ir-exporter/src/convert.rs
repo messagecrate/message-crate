@@ -28,7 +28,7 @@ use message_crate_core::{
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, IrAttachment, IrConversationType,
     IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
-    TimePrecision, nonempty, owner_sender,
+    nonempty, owner_sender,
 };
 use message_ir_format::FormatSink;
 use message_staging::{
@@ -399,9 +399,8 @@ fn message_to_ir(
     let message = IrMessage {
         guid: record.guid,
         timestamp_unix_ms: record.timestamp_unix_ms,
-        // `chat.db` records a message's time in nanoseconds (since macOS
-        // 10.13 and iOS 11).
-        time_precision: TimePrecision::Milliseconds,
+        // The Reader says how finely `chat.db` recorded the time.
+        time_precision: record.time_precision,
         direction,
         service: IrService::parse(&record.service),
         message_kind: IrMessageKind::parse(&record.message_kind),
@@ -933,6 +932,7 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_ir::TimePrecision;
 
     fn record_with_attachment(source: SourceRecord) -> AttachmentRecord {
         AttachmentRecord {
@@ -1087,6 +1087,7 @@ mod tests {
             chat_identifier: chat.into(),
             guid: guid.into(),
             timestamp_unix_ms: 1_609_459_200_000,
+            time_precision: TimePrecision::Milliseconds,
             outgoing,
             service: "iMessage".into(),
             message_kind: "imessage".into(),

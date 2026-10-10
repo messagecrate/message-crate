@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -232,15 +232,60 @@ pub fn require_ffmpeg() -> Result<()> {
     )
 }
 
-/// True when running `bin` with `args` exits successfully.
+/// How many times a program whose file is busy is started before it is
+/// given up on.
+///
+/// Linux refuses to run a file that any process holds open for writing
+/// (`ETXTBSY`, [`io::ErrorKind::ExecutableFileBusy`]). A child this process
+/// starts on another thread holds every descriptor the process had open
+/// from its fork until its exec, so a program written and run at once, a
+/// tool the desktop app has just downloaded or a mock a test has just
+/// written, is busy for that instant whenever another child is starting
+/// (#2031). The instant ends when that child execs, a few system calls
+/// later, so a bounded run of starts, each giving the processor up first,
+/// outlasts it: a refused start costs about one spawn, and only a file that
+/// stays open pays for all of them. A file still open for writing after
+/// them, as one being written is, does not run.
+///
+/// Twenty is more than three times the most starts the instant has needed.
+/// Over fifty runs of this crate's tests with 32 and 64 test threads on 32
+/// processors, the most was six. Pinned to two loaded processors, as CI
+/// has, it was two.
+/// The number has to stay small, because a failure is not kept
+/// ([`candidate_runs`]), so every lookup of a file that stays open for
+/// writing makes every one of these starts. Twenty refused starts took
+/// between a fifth and a half of a second on two loaded processors.
+const BUSY_STARTS: usize = 20;
+
+/// True when the program that `start` starts exits successfully, once its
+/// file is free. While a start is refused because the file is busy, the
+/// program is started again, up to [`BUSY_STARTS`] starts in all. A start
+/// refused for any other reason is final.
+fn runs_once_the_file_is_free(mut start: impl FnMut() -> io::Result<ExitStatus>) -> bool {
+    let mut starts = 0;
+    loop {
+        starts += 1;
+        match start() {
+            Ok(status) => return status.success(),
+            Err(err) if err.kind() == io::ErrorKind::ExecutableFileBusy && starts < BUSY_STARTS => {
+                std::thread::yield_now();
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// True when running `bin` with `args` exits successfully, trying again
+/// while the file is busy ([`runs_once_the_file_is_free`]).
 fn command_runs(bin: &Path, args: &[&str]) -> bool {
-    Command::new(bin)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    runs_once_the_file_is_free(|| {
+        Command::new(bin)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    })
 }
 
 /// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
