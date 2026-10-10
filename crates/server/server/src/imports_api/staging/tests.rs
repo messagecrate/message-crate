@@ -5,11 +5,11 @@ use tempfile::TempDir;
 
 use super::{StagingError, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
+use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{
     FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
     ImportSchemaMode, import_jsonl_files_on_conn,
 };
-use crate::models::AttachmentRecord;
 use crate::test_support::{attachment, conversation_header, message_line};
 use message_ir::{IrAttachment, IrMessageKind, IrService};
 

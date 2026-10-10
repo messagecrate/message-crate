@@ -158,7 +158,7 @@ impl ImportFailure {
 /// Each stage returns its own error type, and each one says whether the
 /// sender can fix what stopped it: [`crate::jsonl::ReadRecordsError`],
 /// [`super::staging::StagingError`] and [`super::promote::PromoteError`],
-/// while `models::parse_ir_lines` refuses with an [`ImportFailure`] alone.
+/// while `records::parse_ir_lines` refuses with an [`ImportFailure`] alone.
 /// The conversions below sort them into these kinds by variant, so a stage
 /// that adds a refusal changes a type, and the compiler names every place
 /// that has to decide what it is.

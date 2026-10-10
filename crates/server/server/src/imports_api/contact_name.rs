@@ -11,7 +11,7 @@ use crate::db::contacts;
 use crate::db::handles::{HandleIdCache, normalize_handle, upsert_handle_row_cached};
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
-use crate::models::HandleValue;
+use crate::imports_api::records::HandleValue;
 
 /// The contact that owns `handle_id`, creating one when nothing owns it yet.
 ///

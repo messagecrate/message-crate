@@ -22,6 +22,7 @@ use sqlx::sqlite::SqliteArguments;
 use sqlx::{Row, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
+use crate::imports_api::records::EarlierVersionRecord;
 use crate::models::StoredTime;
 
 // ── Staging: what one import writes before promotion ─────────────────────
@@ -296,7 +297,7 @@ pub struct StagingEarlierVersion<'a> {
 impl<'a> StagingEarlierVersion<'a> {
     /// The staging row of `version`, one earlier version of the staged
     /// message `message_id`.
-    pub fn from_record(message_id: i64, version: &'a crate::models::EarlierVersionRecord) -> Self {
+    pub fn from_record(message_id: i64, version: &'a EarlierVersionRecord) -> Self {
         Self {
             message_id,
             part_index: version.part_index,
@@ -576,7 +577,7 @@ pub struct StagedCopy<'a> {
     /// The copy's text.
     pub body: Option<&'a str>,
     /// The copy's earlier versions, in the order its file listed them.
-    pub versions: &'a [crate::models::EarlierVersionRecord],
+    pub versions: &'a [EarlierVersionRecord],
     /// Whether the copy's file has no backup date.
     pub undated: bool,
 }
@@ -1760,7 +1761,7 @@ fn versions_json_sql(table: &str, id: &str) -> String {
 }
 
 /// `versions` in the form [`versions_json_sql`] gives, to bind.
-fn versions_json(versions: &[crate::models::EarlierVersionRecord]) -> String {
+fn versions_json(versions: &[EarlierVersionRecord]) -> String {
     serde_json::Value::Array(
         versions
             .iter()
