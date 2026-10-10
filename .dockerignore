@@ -27,7 +27,7 @@ config/contacts.vcf
 target
 **/target
 web/node_modules
-web/tsconfig.tsbuildinfo
+web/**/*.tsbuildinfo
 docs/node_modules
 docs/.astro
 docs/dist
