@@ -170,6 +170,43 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
     assert_eq!(rows[21], ",,,,,...and 2 more entries not shown");
 }
 
+/// A resumed run with no row to list in a skipped-row file removes the one the
+/// earlier run left, so the file never lists rows the new run did not skip. A
+/// fresh run clears every CSV file in the output directory before it starts;
+/// a resumed run keeps them, so only the exporter's own removal catches this.
+#[test]
+fn a_resumed_run_with_no_bad_address_removes_the_earlier_skipped_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(input.join("gosms_sys_1.xml"), SKIPS_XML).unwrap();
+    let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(
+        &[&input],
+        &output,
+        SourceConfig::GoSmsPro(GoSmsProConfig {
+            owner_phones: vec!["+15555550100".into()],
+        }),
+    );
+    crate::run(&config).expect("first run");
+    let skipped = output.join("skipped_invalid_address.csv");
+    assert!(skipped.exists(), "the first run wrote no skipped-row file");
+
+    fs::write(
+        input.join("gosms_sys_1.xml"),
+        "<?xml version=\"1.0\"?>\n<GoSms>\n<SMS><address>+14075550107</address>\
+         <date>1609459200000</date><type>1</type><body>hello</body></SMS>\n</GoSms>\n",
+    )
+    .unwrap();
+    config.resume = true;
+    crate::run(&config).expect("resumed run");
+
+    assert!(
+        !skipped.exists(),
+        "the resumed run kept the first run's skipped-row file"
+    );
+}
+
 /// A backup file the run cannot read is an Import Error naming the file, one
 /// per file however many there are, so the Import Run lists every one (#1626).
 #[test]
