@@ -338,6 +338,21 @@ pub async fn login_status(state: &AppState, username: &str, password: &str) -> S
     .0
 }
 
+/// A login attempt, `POST /v1/session`: the status and the response text, so
+/// a refused login can be checked with [`expect_problem`].
+pub async fn log_in_raw(state: &AppState, username: &str, password: &str) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::POST,
+        "/v1/session",
+        None,
+        Some(json_body(
+            serde_json::json!({ "username": username, "password": password }),
+        )),
+    )
+    .await
+}
+
 /// Log in through `POST /v1/session`, asserting the `201 Created` and the
 /// `Location: /v1/session` the singleton answers with, and return the body
 /// (`token`, `account_id`, `username`).
@@ -646,8 +661,8 @@ pub async fn patch_status(
     .0
 }
 
-/// PATCH a JSON body expecting a failure: the status and the sentence of the
-/// problem document the server answered with.
+/// PATCH a JSON body expecting a problem of `kind`, checked with
+/// [`expect_problem`], and return the problem's sentence.
 ///
 /// A route test asserting only a status cannot tell a refusal the person can
 /// act on from a different refusal with the same status, so a route that
@@ -657,7 +672,8 @@ pub async fn patch_failure(
     path: &str,
     token: &str,
     body: serde_json::Value,
-) -> (StatusCode, String) {
+    kind: crate::problem::ProblemType,
+) -> String {
     let (status, text) = request(
         state,
         reqwest::Method::PATCH,
@@ -666,7 +682,7 @@ pub async fn patch_failure(
         Some(json_body(body)),
     )
     .await;
-    (status, problem(&text).sentence())
+    expect_problem(status, &text, kind).sentence()
 }
 
 /// Store an attachment size limit directly, the way a test lowers the body

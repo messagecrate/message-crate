@@ -6,11 +6,12 @@ use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
-    delete_json_with_body, delete_raw, delete_status, delete_status_with_body, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, http_client, log_in, login_status,
-    message_line, patch_failure, patch_json, patch_raw, patch_status, post_created_json,
-    post_logged_out, post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status,
-    register_via_api, seed_conversation, seed_one_message, stored_time, test_fixture,
+    delete_json_with_body, delete_raw, delete_raw_with_body, delete_status,
+    delete_status_with_body, expect_problem, fixture_with_account, get_json, get_raw, get_status,
+    http_client, log_in, log_in_raw, login_status, message_line, patch_failure, patch_json,
+    patch_raw, post_created_json, post_logged_out, post_raw, post_status, post_status_logged_out,
+    put_json, put_raw, put_status, register_via_api, seed_conversation, seed_one_message,
+    stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
@@ -37,11 +38,9 @@ async fn the_owner_reaches_every_row_and_an_account_reaches_its_own() {
     assert_eq!(by_owner.username, "bob");
     let own: Account = get_json(&state, &member(bob.account_id), &bob.token).await;
     assert_eq!(own.username, "bob");
-    assert_eq!(
-        get_status(&state, &member(bob.account_id), &alice.token).await,
-        StatusCode::FORBIDDEN,
-        "alice does not read bob's row"
-    );
+    // Alice does not read Bob's row.
+    let (status, text) = get_raw(&state, &member(bob.account_id), &alice.token).await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
 
     let (status, text) = get_raw(&state, &member(424_242), &alice.token).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotTheOwner);
@@ -381,16 +380,14 @@ async fn a_taken_username_is_a_conflict() {
     // beside "alice" and leave one of the two unreachable at login, because
     // the lookup is the same comparison.
     for taken in ["alice", "ALICE", "Alice"] {
-        assert_eq!(
-            post_status_logged_out(
-                &state,
-                "/v1/accounts",
-                serde_json::json!({ "username": taken, "password": "otherpassword" }),
-            )
-            .await,
-            StatusCode::CONFLICT,
-            "registering {taken} must be refused"
-        );
+        // Registering a taken username is refused.
+        let (status, text) = post_logged_out(
+            &state,
+            "/v1/accounts",
+            serde_json::json!({ "username": taken, "password": "otherpassword" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::UsernameTaken);
     }
 
     assert_eq!(
@@ -398,11 +395,9 @@ async fn a_taken_username_is_a_conflict() {
         StatusCode::CREATED,
         "the original account must still hold the name"
     );
-    assert_eq!(
-        login_status(&state, "alice", "otherpassword").await,
-        StatusCode::UNAUTHORIZED,
-        "a refused registration must not have replaced the password"
-    );
+    // A refused registration must not have replaced the password.
+    let (status, text) = log_in_raw(&state, "alice", "otherpassword").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// Creating an account is the server's one unauthenticated write, so without a
@@ -548,16 +543,16 @@ async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
     assert_eq!(patched["phones"], serde_json::json!([]));
     assert_eq!(patched["emails"], serde_json::json!(["ada@example.com"]));
 
-    let (status, sentence) = patch_failure(
+    let sentence = patch_failure(
         &fixture.state,
         &path,
         &account.token,
         serde_json::json!({
             "identities": [{ "address": "ann@example.com", "service": "whatsapp" }]
         }),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         sentence,
         "ann@example.com is an email address, and WhatsApp carries no email addresses"
@@ -609,15 +604,15 @@ async fn the_profile_refuses_email_as_a_service() {
 async fn patching_with_an_unknown_time_zone_is_a_validation_failure() {
     let (fixture, account) = fixture_with_account().await;
 
-    let (status, sentence) = patch_failure(
+    let sentence = patch_failure(
         &fixture.state,
         &member(account.account_id),
         &account.token,
         serde_json::json!({ "time_zone": "Mars/Olympus_Mons" }),
+        ProblemType::ValidationFailed,
     )
     .await;
 
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
         sentence,
         "unknown time zone: Mars/Olympus_Mons; use an IANA name such as America/New_York"
@@ -634,18 +629,15 @@ async fn an_account_does_not_set_its_own_flags() {
     let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
     let path = member(bob.account_id);
 
-    let (status, sentence) = patch_failure(
+    // An account does not set its flags.
+    let sentence = patch_failure(
         &state,
         &path,
         &bob.token,
         serde_json::json!({ "preferred_name": "Robert", "can_export": false }),
+        ProblemType::InsufficientScope,
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::FORBIDDEN,
-        "an account does not set its flags"
-    );
     assert!(sentence.contains("only the owner"), "{sentence}");
 
     let row: Account = get_json(&state, &path, &owner.token).await;
@@ -907,28 +899,24 @@ async fn the_owners_own_row_cannot_be_disabled_or_deleted() {
     let row: Account = get_json(&state, &own, &owner.token).await;
     assert!(row.is_owner, "the owner reads its own row");
 
-    assert_eq!(
-        patch_status(
-            &state,
-            &own,
-            &owner.token,
-            serde_json::json!({ "disabled": true })
-        )
-        .await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the owner cannot disable itself"
-    );
-    assert_eq!(
-        delete_status_with_body(
-            &state,
-            &own,
-            &owner.token,
-            serde_json::json!({ "confirm": true, "current_password": "hunter2hunter2" })
-        )
-        .await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the owner cannot delete itself"
-    );
+    // The owner cannot disable itself.
+    let (status, text) = patch_raw(
+        &state,
+        &own,
+        &owner.token,
+        serde_json::json!({ "disabled": true }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+    // The owner cannot delete itself.
+    let (status, text) = delete_raw_with_body(
+        &state,
+        &own,
+        &owner.token,
+        serde_json::json!({ "confirm": true, "current_password": "hunter2hunter2" }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 
     // And the refusals changed nothing: the owner still logs in.
     assert_eq!(
@@ -944,38 +932,22 @@ async fn owner_routes_on_a_missing_account_are_404() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let missing = member(424_242);
 
-    assert_eq!(
-        patch_status(
-            &state,
-            &missing,
-            &owner.token,
-            serde_json::json!({ "disabled": true })
-        )
-        .await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        put_status(
-            &state,
-            &format!("{missing}/password"),
-            &owner.token,
-            serde_json::json!({ "password": "hunter2hunter2", "password_confirmation": "hunter2hunter2" }),
-        )
-        .await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        delete_status(&state, &format!("{missing}/messages"), &owner.token).await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        delete_status(&state, &missing, &owner.token).await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        get_status(&state, &format!("{missing}/storage"), &owner.token).await,
-        StatusCode::NOT_FOUND
-    );
+    let (status, text) = patch_raw(
+        &state,
+        &missing,
+        &owner.token,
+        serde_json::json!({ "disabled": true }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = put_raw(&state, &format!("{missing}/password"), &owner.token, "application/json", serde_json::json!({ "password": "hunter2hunter2", "password_confirmation": "hunter2hunter2" }).to_string()).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = delete_raw(&state, &format!("{missing}/messages"), &owner.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = delete_raw(&state, &missing, &owner.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    let (status, text) = get_raw(&state, &format!("{missing}/storage"), &owner.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 // ---------------------------------------------------------------------------
@@ -1072,11 +1044,9 @@ async fn the_owner_sets_a_password_and_nothing_else_changes() {
         login_status(&state, "bob", "resetbytheowner").await,
         StatusCode::CREATED
     );
-    assert_eq!(
-        login_status(&state, "bob", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED,
-        "the old password is gone"
-    );
+    // The old password is gone.
+    let (status, text) = log_in_raw(&state, "bob", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// The account changes its own with its session alone and gets the rotated
@@ -1127,27 +1097,11 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
-    assert_eq!(
-        put_status(
-            &state,
-            &path,
-            &owner.token,
-            serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice" }),
-        )
-        .await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "the session alone does not change the owner's password"
-    );
-    assert_eq!(
-        put_status(
-            &state,
-            &path,
-            &owner.token,
-            serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice", "current_password": "notthisone" }),
-        )
-        .await,
-        StatusCode::UNAUTHORIZED
-    );
+    // The session alone does not change the owner's password.
+    let (status, text) = put_raw(&state, &path, &owner.token, "application/json", serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice" }).to_string()).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+    let (status, text) = put_raw(&state, &path, &owner.token, "application/json", serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice", "current_password": "notthisone" }).to_string()).await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
     // A refused change leaves the password as it was. Logging in opens a new
     // session, so the change that follows uses its token.
     let login = log_in(&state, "keeper", "hunter2hunter2").await;
@@ -1164,10 +1118,8 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
         login_status(&state, "keeper", "keeperschoice").await,
         StatusCode::CREATED
     );
-    assert_eq!(
-        login_status(&state, "keeper", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(&state, "keeper", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// The checks run in one order, and the first that fails is the only one
@@ -1275,20 +1227,20 @@ async fn the_owner_cannot_clear_their_own_password() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
-    assert_eq!(
-        put_status(
-            &state,
-            &path,
-            &owner.token,
-            serde_json::json!({
-                "password": "",
-                "password_confirmation": "",
-                "current_password": "hunter2hunter2",
-            })
-        )
-        .await,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
+    let (status, text) = put_raw(
+        &state,
+        &path,
+        &owner.token,
+        "application/json",
+        serde_json::json!({
+            "password": "",
+            "password_confirmation": "",
+            "current_password": "hunter2hunter2",
+        })
+        .to_string(),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 
     // The refusal stored nothing: the old password still logs in. That opens
     // a new session, so the next change uses its token.
@@ -1324,11 +1276,9 @@ async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
         serde_json::json!({ "password": "", "password_confirmation": "" }),
     )
     .await;
-    assert_eq!(
-        login_status(&state, "bob", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED,
-        "the old password is gone"
-    );
+    // The old password is gone.
+    let (status, text) = log_in_raw(&state, "bob", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 
     // Logging in opens a new session, so the next change uses its token.
     let login = log_in(&state, "bob", "").await;
@@ -1351,10 +1301,8 @@ async fn a_user_password_can_be_cleared_by_the_account_or_the_owner() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert_eq!(login_status(&state, "bob", "").await, StatusCode::CREATED);
-    assert_eq!(
-        login_status(&state, "bob", "b").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(&state, "bob", "b").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// The account row says whether a password is set, so a screen asks for the
@@ -1500,11 +1448,9 @@ async fn deleting_own_messages_needs_the_delete_permission_and_a_confirmation() 
     let path = format!("{}/messages", member(alice.account_id));
     seed_one_message(&state, alice.account_id).await;
 
-    assert_eq!(
-        delete_status(&state, &path, &alice.token).await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "no body, no confirmation"
-    );
+    // No body, no confirmation.
+    let (status, text) = delete_raw(&state, &path, &alice.token).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
     let body: DeleteMessagesResponse = delete_json_with_body(
         &state,
         &path,
@@ -1515,16 +1461,14 @@ async fn deleting_own_messages_needs_the_delete_permission_and_a_confirmation() 
     assert_eq!(body.conversations, 1);
 
     fixture.turn_off_delete(alice.account_id).await;
-    assert_eq!(
-        delete_status_with_body(
-            &state,
-            &path,
-            &alice.token,
-            serde_json::json!({ "confirm": true })
-        )
-        .await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = delete_raw_with_body(
+        &state,
+        &path,
+        &alice.token,
+        serde_json::json!({ "confirm": true }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 }
 
 /// A confirmation sent without a `Content-Type` is a body of no named type,
@@ -1698,23 +1642,23 @@ async fn a_token_may_not_delete_messages_or_close_the_account() {
     .token;
     drop(conn);
 
-    let deleted = delete_status_with_body(
+    let (status, text) = delete_raw_with_body(
         &state,
         &format!("{}/messages", member(created.account_id)),
         &token,
         serde_json::json!({ "confirm": true }),
     )
     .await;
-    assert_eq!(deleted, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 
-    let closed = delete_status_with_body(
+    let (status, text) = delete_raw_with_body(
         &state,
         &member(created.account_id),
         &token,
         serde_json::json!({ "confirm": true, "current_password": "hunter2hunter2" }),
     )
     .await;
-    assert_eq!(closed, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 
     let mut conn = state.db.acquire().await.unwrap();
     let messages: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE account_id = $1")
@@ -1753,10 +1697,8 @@ async fn the_owner_deletes_any_account_outright() {
         ["keeper"],
         "both are gone, and only the owner is left"
     );
-    assert_eq!(
-        login_status(&state, "bob", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(&state, "bob", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// A data directory that cannot be removed does not turn a delete that happened
@@ -1777,11 +1719,9 @@ async fn a_directory_that_cannot_be_removed_still_answers_no_content() {
         delete_status(&state, &member(victim.account_id), &owner.token).await,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(
-        get_status(&state, &member(victim.account_id), &owner.token).await,
-        StatusCode::NOT_FOUND,
-        "the account is gone"
-    );
+    // The account is gone.
+    let (status, text) = get_raw(&state, &member(victim.account_id), &owner.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 /// An account deletes itself with its confirmation and its current password
@@ -1794,21 +1734,17 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
     let _bob = register_via_api(&state, "bob", "hunter2hunter2").await;
     let path = member(alice.account_id);
 
-    assert_eq!(
-        delete_status(&state, &path, &alice.token).await,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "no body: nothing confirmed and no password"
-    );
-    assert_eq!(
-        delete_status_with_body(
-            &state,
-            &path,
-            &alice.token,
-            serde_json::json!({ "confirm": true, "current_password": "not-it" }),
-        )
-        .await,
-        StatusCode::UNAUTHORIZED
-    );
+    // No body: nothing confirmed and no password.
+    let (status, text) = delete_raw(&state, &path, &alice.token).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+    let (status, text) = delete_raw_with_body(
+        &state,
+        &path,
+        &alice.token,
+        serde_json::json!({ "confirm": true, "current_password": "not-it" }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
     assert_eq!(
         delete_status_with_body(
             &state,
@@ -1819,10 +1755,8 @@ async fn an_account_deletes_itself_with_its_password_and_the_demo_account_refuse
         .await,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(
-        login_status(&state, "alice", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(&state, "alice", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
     assert_eq!(
         login_status(&state, "bob", "hunter2hunter2").await,
         StatusCode::CREATED,
@@ -1894,10 +1828,8 @@ async fn an_account_without_the_delete_permission_cannot_delete_itself() {
         delete_status(&state, &path, &owner.token).await,
         StatusCode::NO_CONTENT
     );
-    assert_eq!(
-        login_status(&state, "bob", "hunter2hunter2").await,
-        StatusCode::UNAUTHORIZED
-    );
+    let (status, text) = log_in_raw(&state, "bob", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::InvalidCredentials);
 }
 
 /// The Demo Account has no password, so its limits are fixed for everyone:
@@ -1913,39 +1845,21 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
     let path = member(demo);
 
     for (who, token) in [("the owner", &owner.token), ("the account", &demo_token)] {
-        assert_eq!(
-            put_status(
-                &state,
-                &format!("{path}/password"),
-                token,
-                serde_json::json!({ "password": "chosen4demo", "password_confirmation": "chosen4demo" }),
-            )
-            .await,
-            StatusCode::FORBIDDEN,
-            "{who} must not set a password"
-        );
-        assert_eq!(
-            patch_status(
-                &state,
-                &path,
-                token,
-                serde_json::json!({ "identities": [{ "address": "demo@example.com", "service": "phone" }] }),
-            )
-            .await,
-            StatusCode::FORBIDDEN,
-            "{who} must not change its identities"
-        );
-        assert_eq!(
-            delete_status_with_body(
-                &state,
-                &format!("{path}/messages"),
-                token,
-                serde_json::json!({ "confirm": true }),
-            )
-            .await,
-            StatusCode::FORBIDDEN,
-            "{who} must not delete its messages for good"
-        );
+        // Neither may set the Demo Account's password.
+        let (status, text) = put_raw(&state, &format!("{path}/password"), token, "application/json", serde_json::json!({ "password": "chosen4demo", "password_confirmation": "chosen4demo" }).to_string()).await;
+        expect_problem(status, &text, ProblemType::DemoAccountProtected);
+        // Neither may change the Demo Account's identities.
+        let (status, text) = patch_raw(&state, &path, token, serde_json::json!({ "identities": [{ "address": "demo@example.com", "service": "phone" }] })).await;
+        expect_problem(status, &text, ProblemType::DemoAccountProtected);
+        // Neither may delete the Demo Account's messages for good.
+        let (status, text) = delete_raw_with_body(
+            &state,
+            &format!("{path}/messages"),
+            token,
+            serde_json::json!({ "confirm": true }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::DemoAccountProtected);
         // Every visitor shares the account, so a name or zone one visitor
         // sets would greet the next; the seed's "Demo User" and UTC stay.
         for (field, body) in [
@@ -1974,8 +1888,14 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
         serde_json::json!({ "can_delete": true }),
         serde_json::json!({ "can_export": false }),
     ] {
-        let (status, sentence) = patch_failure(&state, &path, &owner.token, flags.clone()).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{flags}");
+        let sentence = patch_failure(
+            &state,
+            &path,
+            &owner.token,
+            flags.clone(),
+            ProblemType::DemoAccountProtected,
+        )
+        .await;
         assert!(
             sentence.contains("status and permissions are fixed"),
             "{flags}: {sentence}"
@@ -2028,7 +1948,6 @@ async fn the_demo_account_refuses_imports_and_deletes_whatever_its_permission_ro
     expect_problem(status, &text, ProblemType::DemoAccountProtected);
     for path in ["/v1/trash", "/v1/conversations/1", "/v1/contacts/1"] {
         let (status, text) = delete_raw(&state, path, &token).await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "DELETE {path}: {text}");
         expect_problem(status, &text, ProblemType::DemoAccountProtected);
     }
 }
@@ -2816,22 +2735,18 @@ async fn the_owner_and_the_account_read_the_same_import_and_export_runs() {
     )
     .await;
     assert_eq!(running["total"], 0);
-    assert_eq!(
-        get_status(
-            &fixture.state,
-            &format!("{base}/exports?status=backup"),
-            &owner.token
-        )
-        .await,
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
+    let (status, text) = get_raw(
+        &fixture.state,
+        &format!("{base}/exports?status=backup"),
+        &owner.token,
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 
     for pipeline in ["/v1/imports", "/v1/exports"] {
-        assert_eq!(
-            get_status(&fixture.state, pipeline, &owner.token).await,
-            StatusCode::FORBIDDEN,
-            "{pipeline} is the pipeline's route and stays closed to the owner"
-        );
+        // The pipeline's route stays closed to the owner.
+        let (status, text) = get_raw(&fixture.state, pipeline, &owner.token).await;
+        expect_problem(status, &text, ProblemType::InsufficientScope);
     }
 }
 
@@ -2850,25 +2765,21 @@ async fn an_import_run_is_a_404_under_another_account() {
     )
     .await;
 
-    assert_eq!(
-        get_status(
-            &fixture.state,
-            &format!("{}/imports/{}", member(bob.account_id), import["id"]),
-            &owner.token
-        )
-        .await,
-        StatusCode::NOT_FOUND
-    );
-    assert_eq!(
-        get_status(
-            &fixture.state,
-            &format!("{}/imports", member(9_999)),
-            &owner.token
-        )
-        .await,
-        StatusCode::NOT_FOUND,
-        "an account that does not exist has no history"
-    );
+    let (status, text) = get_raw(
+        &fixture.state,
+        &format!("{}/imports/{}", member(bob.account_id), import["id"]),
+        &owner.token,
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotFound);
+    // An account that does not exist has no history.
+    let (status, text) = get_raw(
+        &fixture.state,
+        &format!("{}/imports", member(9_999)),
+        &owner.token,
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 /// C2-1: what the account's backup talked to, and what it searched for, is
@@ -2965,22 +2876,36 @@ async fn guessing_the_owners_current_password_is_rate_limited() {
         })
     };
 
-    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
-        assert_eq!(
-            put_status(&state, &path, &owner.token, change("notthisone")).await,
-            StatusCode::UNAUTHORIZED,
-            "attempt {attempt}"
-        );
+    for _ in 1..=crate::credentials::AUTH_RATE_MAX {
+        let (status, text) = put_raw(
+            &state,
+            &path,
+            &owner.token,
+            "application/json",
+            change("notthisone").to_string(),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::InvalidCredentials);
     }
-    assert_eq!(
-        put_status(&state, &path, &owner.token, change("notthisone")).await,
-        StatusCode::TOO_MANY_REQUESTS
-    );
-    assert_eq!(
-        put_status(&state, &path, &owner.token, change("hunter2hunter2")).await,
-        StatusCode::TOO_MANY_REQUESTS,
-        "past the limit the guess is not checked"
-    );
+    let (status, text) = put_raw(
+        &state,
+        &path,
+        &owner.token,
+        "application/json",
+        change("notthisone").to_string(),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RateLimited);
+    // Past the limit the guess is not checked.
+    let (status, text) = put_raw(
+        &state,
+        &path,
+        &owner.token,
+        "application/json",
+        change("hunter2hunter2").to_string(),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RateLimited);
 }
 
 /// A wrong current password on an account deleting itself counts like a
@@ -2994,22 +2919,17 @@ async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
     let delete =
         |current: &str| serde_json::json!({ "confirm": true, "current_password": current });
 
-    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
-        assert_eq!(
-            delete_status_with_body(&state, &path, &alice.token, delete("not-it")).await,
-            StatusCode::UNAUTHORIZED,
-            "attempt {attempt}"
-        );
+    for _ in 1..=crate::credentials::AUTH_RATE_MAX {
+        let (status, text) =
+            delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
+        expect_problem(status, &text, ProblemType::InvalidCredentials);
     }
-    assert_eq!(
-        delete_status_with_body(&state, &path, &alice.token, delete("not-it")).await,
-        StatusCode::TOO_MANY_REQUESTS
-    );
-    assert_eq!(
-        delete_status_with_body(&state, &path, &alice.token, delete("hunter2hunter2")).await,
-        StatusCode::TOO_MANY_REQUESTS,
-        "past the limit the guess is not checked"
-    );
+    let (status, text) = delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
+    expect_problem(status, &text, ProblemType::RateLimited);
+    // Past the limit the guess is not checked.
+    let (status, text) =
+        delete_raw_with_body(&state, &path, &alice.token, delete("hunter2hunter2")).await;
+    expect_problem(status, &text, ProblemType::RateLimited);
     assert_eq!(
         get_status(&state, &path, &alice.token).await,
         StatusCode::OK,

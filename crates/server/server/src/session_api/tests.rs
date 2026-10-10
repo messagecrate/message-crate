@@ -5,7 +5,7 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
     expect_problem, fixture_with_account, get_json, get_raw, get_status, http_client, log_in,
-    login_status, post_created_json, post_raw, put_status, register_via_api, seed_conversation,
+    log_in_raw, post_created_json, post_raw, put_status, register_via_api, seed_conversation,
     stored_time, test_fixture,
 };
 
@@ -103,12 +103,9 @@ async fn a_session_is_created_read_and_deleted_at_one_path() {
 
     let status = crate::test_support::delete_status(&state, "/v1/session", &token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    let status = crate::test_support::get_status(&state, "/v1/session", &token).await;
-    assert_eq!(
-        status,
-        StatusCode::UNAUTHORIZED,
-        "a deleted session no longer names an account"
-    );
+    // A deleted session no longer names an account.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/session", &token).await;
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// Logging out ends a Session and nothing else. An API token is not a
@@ -311,8 +308,8 @@ async fn disabled_account_cannot_log_in() {
         .await
         .unwrap();
 
-    let status = login_status(&state, "alice", "hunter2hunter2").await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, text) = log_in_raw(&state, "alice", "hunter2hunter2").await;
+    expect_problem(status, &text, ProblemType::AccountDisabled);
 }
 
 // ---------------------------------------------------------------------------

@@ -5,9 +5,10 @@ use edit::ContactEditError;
 use message_ir::IdentityType;
 
 use crate::db::account_profile;
+use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, http_client, post_json,
-    post_status, register_via_api, stored_time, test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, expect_problem, fixture_with_account, http_client,
+    post_json, post_raw, register_via_api, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -208,25 +209,25 @@ async fn a_refused_contact_edit_answers_422_with_the_persons_sentence() {
     drop(conn);
 
     // Taking an identity that is already another contact’s.
-    let (status, sentence) = crate::test_support::patch_failure(
+    let sentence = crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{first}"),
         &account.token,
         serde_json::json!({ "add_identity": { "address": "+15555550135" } }),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(sentence, "identity already linked to another contact");
 
     // No edit named at all.
-    let status = crate::test_support::patch_status(
+    crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{first}"),
         &account.token,
         serde_json::json!({}),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
 /// A contact edit takes `phone` or `whatsapp` as a service and refuses any
@@ -305,17 +306,17 @@ async fn renaming_a_contact_deleted_meanwhile_answers_not_found() {
         .execute(&mut *other)
         .await
         .unwrap();
-    let (status, _) = crate::db::write_tx::commit_during(
+    crate::db::write_tx::commit_during(
         other,
         crate::test_support::patch_failure(
             &fixture.state,
             &format!("/v1/contacts/{ada}"),
             &account.token,
             serde_json::json!({ "name": "Ada Lovelace" }),
+            ProblemType::NotFound,
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -326,16 +327,16 @@ async fn replacing_an_identity_with_an_empty_address_is_refused_and_keeps_the_ol
         insert_contact_with_handle(&mut conn, account.account_id, "Ada", "+15555550100").await;
     drop(conn);
 
-    let (status, sentence) = crate::test_support::patch_failure(
+    let sentence = crate::test_support::patch_failure(
         &fixture.state,
         &format!("/v1/contacts/{ada}"),
         &account.token,
         serde_json::json!({
             "update_identity": { "previous_address": "+15555550100", "address": "  " }
         }),
+        ProblemType::ValidationFailed,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(sentence, "previous_address and address must not be empty");
 
     let detail: serde_json::Value = crate::test_support::get_json(
@@ -359,14 +360,15 @@ async fn contact_match_rejects_an_oversized_batch() {
     let identifiers: Vec<String> = (0..MAX_MATCH_IDENTIFIERS + 1)
         .map(|i| format!("+1555{i:06}"))
         .collect();
-    let status = post_status(
+    let (status, text) = post_raw(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
         &account.token,
-        serde_json::json!({ "identifiers": identifiers }),
+        "application/json",
+        serde_json::json!({ "identifiers": identifiers }).to_string(),
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
 #[tokio::test]
@@ -2457,7 +2459,7 @@ async fn contacts_route_accepts_last_heard_and_refuses_other_keys() {
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    expect_problem(status, &body, ProblemType::ValidationFailed);
     assert!(body.contains("name, last_heard"), "{body}");
 }
 
@@ -2669,7 +2671,7 @@ async fn the_mode_parameter_picks_append_or_edit() {
     assert_eq!(body["contacts_updated"], 1, "{text}");
 
     let (status, text) = load_address_book(&fixture, &account, "?mode=replace", file).await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{text}");
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 }
 
 /// The file is the body and `text/csv` is its only format. A vCard, which
@@ -3069,10 +3071,10 @@ async fn contact_list_takes_the_search_language() {
 #[tokio::test]
 async fn contact_list_refuses_a_word_from_another_list() {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
-    let status =
-        crate::test_support::get_status(&fixture.state, "/v1/contacts?q=from:me", &account.token)
+    let (status, text) =
+        crate::test_support::get_raw(&fixture.state, "/v1/contacts?q=from:me", &account.token)
             .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    expect_problem(status, &text, ProblemType::SearchQueryInvalid);
 }
 
 #[test]
@@ -3108,9 +3110,9 @@ async fn the_contact_list_is_a_page_and_summaries_are_items() {
     assert!(page["items"].is_array());
     assert!(page.get("contacts").is_none());
 
-    let status =
-        crate::test_support::get_status(&state, "/v1/contacts?limit=501", &user.token).await;
-    assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+    let (status, text) =
+        crate::test_support::get_raw(&state, "/v1/contacts?limit=501", &user.token).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
 
     let summaries: serde_json::Value = crate::test_support::post_json(
         &state,
@@ -3287,7 +3289,7 @@ async fn contact_delete_refuses_a_contact_that_is_not_in_the_trash() {
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    expect_problem(status, &body, ProblemType::StateConflict);
     assert!(body.contains("not in the trash"), "{body}");
     let mut conn = fixture.conn().await;
     assert_eq!(
@@ -3303,22 +3305,18 @@ async fn contact_delete_404s_for_an_unknown_id_and_for_another_accounts() {
     let (fixture, alice, alices) = trashed_contact_fixture().await;
     let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status =
-        crate::test_support::delete_status(&fixture.state, "/v1/contacts/999999", &alice.token)
-            .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, text) =
+        crate::test_support::delete_raw(&fixture.state, "/v1/contacts/999999", &alice.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 
-    let status = crate::test_support::delete_status(
+    // Bob must not learn the id exists.
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/contacts/{alices}"),
         &bob.token,
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::NOT_FOUND,
-        "Bob must not learn the id exists"
-    );
+    expect_problem(status, &text, ProblemType::NotFound);
     let mut conn = fixture.conn().await;
     assert_eq!(
         contact_name_and_origin(&mut conn, alices).await.0,
@@ -3332,13 +3330,13 @@ async fn contact_delete_needs_the_delete_permission() {
     let (fixture, account, id) = trashed_contact_fixture().await;
     fixture.turn_off_delete(account.account_id).await;
 
-    let status = crate::test_support::delete_status(
+    let (status, text) = crate::test_support::delete_raw(
         &fixture.state,
         &format!("/v1/contacts/{id}"),
         &account.token,
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    expect_problem(status, &text, ProblemType::InsufficientScope);
     let mut conn = fixture.conn().await;
     assert_eq!(contact_name_and_origin(&mut conn, id).await.0, "Contact 0");
 }
@@ -3463,28 +3461,30 @@ async fn contact_restore_twice_is_204_with_marker_gone() {
 async fn contact_trash_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_raw(
         &fixture.state,
         "/v1/contacts/999999/trash",
         &account.token,
-        serde_json::json!({}),
+        "application/json",
+        "{}",
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
 async fn contact_restore_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_raw(
         &fixture.state,
         "/v1/contacts/999999/restore",
         &account.token,
-        serde_json::json!({}),
+        "application/json",
+        "{}",
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 }
 
 #[tokio::test]
@@ -3498,14 +3498,15 @@ async fn contact_trash_404s_for_another_accounts_contact() {
 
     // Bob trashing Alice's contact id must 404, not 403 — a 403 would
     // confirm the id exists in someone else's account.
-    let status = crate::test_support::post_status(
+    let (status, text) = post_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/trash"),
         &bob.token,
-        serde_json::json!({}),
+        "application/json",
+        "{}",
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = fixture.state.db.acquire().await.unwrap();
     assert_eq!(
@@ -3532,14 +3533,15 @@ async fn contact_restore_404s_for_another_accounts_contact() {
 
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let status = crate::test_support::post_status(
+    let (status, text) = post_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/restore"),
         &bob.token,
-        serde_json::json!({}),
+        "application/json",
+        "{}",
     )
     .await;
-    assert_eq!(status, axum::http::StatusCode::NOT_FOUND);
+    expect_problem(status, &text, ProblemType::NotFound);
 
     let mut conn = fixture.state.db.acquire().await.unwrap();
     assert_eq!(
@@ -3566,9 +3568,14 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.status(), reqwest::StatusCode::UNPROCESSABLE_ENTITY);
-    let body: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(body["detail"], "The search has too many parts.", "{body}");
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("The search has too many parts."),
+        "{text}"
+    );
 }
 
 /// The Demo Account holds Demo Data every visitor shares (ADR 0016). A load

@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, delete_status, expect_problem, get_json, get_raw, get_status, patch_failure,
-    patch_json, patch_status, post_created_json, post_raw, post_status, problem, register_via_api,
+    RegisteredAccount, delete_raw, delete_status, expect_problem, get_json, get_raw, get_status,
+    patch_failure, patch_json, patch_raw, post_created_json, post_raw, register_via_api,
     test_fixture,
 };
 
@@ -147,10 +147,8 @@ async fn create_list_update_and_delete_a_set() {
             StatusCode::NO_CONTENT
         );
         assert_eq!(names(state, kind, &user.token).await, vec!["Work"]);
-        assert_eq!(
-            delete_status(state, &format!("{}/{id}", kind.base()), &user.token).await,
-            StatusCode::NOT_FOUND
-        );
+        let (status, text) = delete_raw(state, &format!("{}/{id}", kind.base()), &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
     }
 }
 
@@ -163,38 +161,49 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
         create(state, kind, &user.token, "Family").await;
         let work = create(state, kind, &user.token, "Work").await;
 
-        assert_eq!(
-            post_status(state, kind.base(), &user.token, json!({ "name": "family" })).await,
-            StatusCode::CONFLICT
-        );
-        assert_eq!(
-            post_status(state, kind.base(), &user.token, json!({ "name": "Trash" })).await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
-        assert_eq!(
-            post_status(state, kind.base(), &user.token, json!({ "name": "  " })).await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{}/{work}", kind.base()),
-                &user.token,
-                json!({ "name": "FAMILY" })
-            )
-            .await,
-            StatusCode::CONFLICT
-        );
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{}/{work}", kind.base()),
-                &user.token,
-                json!({ "name": "" })
-            )
-            .await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
+        let (status, text) = post_raw(
+            state,
+            kind.base(),
+            &user.token,
+            "application/json",
+            json!({ "name": "family" }).to_string(),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NameTaken);
+        let (status, text) = post_raw(
+            state,
+            kind.base(),
+            &user.token,
+            "application/json",
+            json!({ "name": "Trash" }).to_string(),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
+        let (status, text) = post_raw(
+            state,
+            kind.base(),
+            &user.token,
+            "application/json",
+            json!({ "name": "  " }).to_string(),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
+        let (status, text) = patch_raw(
+            state,
+            &format!("{}/{work}", kind.base()),
+            &user.token,
+            json!({ "name": "FAMILY" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NameTaken);
+        let (status, text) = patch_raw(
+            state,
+            &format!("{}/{work}", kind.base()),
+            &user.token,
+            json!({ "name": "" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
     }
 }
 
@@ -216,18 +225,19 @@ async fn a_contact_group_cannot_be_named_unknown_or_none() {
             json!({ "name": name }).to_string(),
         )
         .await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "create {name}");
-        assert_eq!(problem(&text).sentence(), sentence);
+        let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
+        assert_eq!(problem.sentence(), sentence, "create {name}");
 
         assert_eq!(
             patch_failure(
                 state,
                 &format!("{base}/{family}"),
                 &user.token,
-                json!({ "name": name })
+                json!({ "name": name }),
+                ProblemType::ValidationFailed,
             )
             .await,
-            (StatusCode::UNPROCESSABLE_ENTITY, sentence)
+            sentence
         );
     }
     assert_eq!(
@@ -243,34 +253,26 @@ async fn an_unknown_id_answers_404_on_every_route() {
         let state = &fixture.state;
         let user = alice(state).await;
         let base = kind.base();
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{base}/999"),
-                &user.token,
-                json!({ "name": "X" })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            delete_status(state, &format!("{base}/999"), &user.token).await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(state, &format!("{base}/999/members"), &user.token).await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{base}/999/members"),
-                &user.token,
-                json!({ "add": [1] })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
+        let (status, text) = patch_raw(
+            state,
+            &format!("{base}/999"),
+            &user.token,
+            json!({ "name": "X" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = delete_raw(state, &format!("{base}/999"), &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = get_raw(state, &format!("{base}/999/members"), &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = patch_raw(
+            state,
+            &format!("{base}/999/members"),
+            &user.token,
+            json!({ "add": [1] }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
     }
 }
 
@@ -300,10 +302,8 @@ async fn members_patch_adds_and_removes_in_one_call() {
         assert_eq!(changed, json!({ "added": 0, "removed": 1 }));
         assert_eq!(member_ids(state, kind, &user.token, id).await, vec![a]);
 
-        assert_eq!(
-            patch_status(state, &members, &user.token, json!({})).await,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
+        let (status, text) = patch_raw(state, &members, &user.token, json!({})).await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
     }
 }
 
@@ -321,11 +321,10 @@ async fn members_patch_with_a_foreign_member_writes_nothing() {
         let id = create(state, kind, &user.token, "Family").await;
         let bob_set = create(state, kind, &bob.token, "Family").await;
         let members = format!("{}/{id}/members", kind.base());
-        assert_eq!(
-            patch_status(state, &members, &user.token, json!({ "add": [a, bobs] })).await,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "an id to add that names another account's row is a body that broke a rule"
-        );
+        // An id to add that names another account's row is a body that broke a rule.
+        let (status, text) =
+            patch_raw(state, &members, &user.token, json!({ "add": [a, bobs] })).await;
+        expect_problem(status, &text, ProblemType::ValidationFailed);
         assert!(member_ids(state, kind, &user.token, id).await.is_empty());
         assert!(
             member_ids(state, kind, &bob.token, bob_set)
@@ -379,34 +378,26 @@ async fn another_accounts_set_is_not_visible() {
         let base = kind.base();
 
         assert!(names(state, kind, &user.token).await.is_empty());
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{base}/{id}"),
-                &user.token,
-                json!({ "name": "X" })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            delete_status(state, &format!("{base}/{id}"), &user.token).await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get_status(state, &format!("{base}/{id}/members"), &user.token).await,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            patch_status(
-                state,
-                &format!("{base}/{id}/members"),
-                &user.token,
-                json!({ "add": [1] })
-            )
-            .await,
-            StatusCode::NOT_FOUND
-        );
+        let (status, text) = patch_raw(
+            state,
+            &format!("{base}/{id}"),
+            &user.token,
+            json!({ "name": "X" }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = delete_raw(state, &format!("{base}/{id}"), &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = get_raw(state, &format!("{base}/{id}/members"), &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        let (status, text) = patch_raw(
+            state,
+            &format!("{base}/{id}/members"),
+            &user.token,
+            json!({ "add": [1] }),
+        )
+        .await;
+        expect_problem(status, &text, ProblemType::NotFound);
         assert_eq!(names(state, kind, &bob.token).await, vec!["Holiday"]);
     }
 }

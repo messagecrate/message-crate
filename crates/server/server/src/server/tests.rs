@@ -6,7 +6,8 @@ use crate::imports_api::{
     UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
     update_import,
 };
-use crate::test_support::http_client;
+use crate::problem::ProblemType;
+use crate::test_support::{expect_problem, http_client};
 use axum::extract::State;
 use tempfile::TempDir;
 
@@ -834,10 +835,9 @@ async fn literal_contact_routes_are_not_captured_by_the_id_route() {
 
     // A real id still reaches the detail handler: an unknown contact is its
     // 404, not a 400 from a failed `i64` path parse.
-    assert_eq!(
-        crate::test_support::get_status(&state, "/v1/contacts/999999", &user.token).await,
-        StatusCode::NOT_FOUND
-    );
+    let (status, text) =
+        crate::test_support::get_raw(&state, "/v1/contacts/999999", &user.token).await;
+    expect_problem(status, &text, ProblemType::NotFound);
 
     for path in [
         "/v1/contacts/summaries",
@@ -875,11 +875,9 @@ async fn import_endpoint_honors_can_import_flag() {
         .await,
         StatusCode::OK
     );
-    assert_eq!(
-        crate::test_support::get_status(&state, "/v1/imports", &user.token).await,
-        StatusCode::FORBIDDEN,
-        "can_import=false must refuse GET /v1/imports"
-    );
+    // can_import=false refuses GET /v1/imports.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/imports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 
     assert_eq!(
         crate::test_support::patch_status(
@@ -919,11 +917,9 @@ async fn export_endpoint_honors_can_export_flag() {
         .await,
         StatusCode::OK
     );
-    assert_eq!(
-        crate::test_support::get_status(&state, "/v1/exports", &user.token).await,
-        StatusCode::FORBIDDEN,
-        "can_export=false must refuse GET /v1/exports"
-    );
+    // can_export=false refuses GET /v1/exports.
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/exports", &user.token).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 
     assert_eq!(
         crate::test_support::patch_status(
@@ -1064,7 +1060,10 @@ async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
     );
 
     for _ in 1..crate::credentials::AUTH_RATE_MAX {
-        assert_eq!(login().await.unwrap().status(), StatusCode::UNAUTHORIZED);
+        let wrong = login().await.unwrap();
+        let status = wrong.status();
+        let text = wrong.text().await.unwrap();
+        expect_problem(status, &text, ProblemType::InvalidCredentials);
     }
     let limited = login().await.unwrap();
     let retry_after: u64 = limited.headers()[header::RETRY_AFTER]
@@ -1095,19 +1094,15 @@ async fn every_spelling_of_a_username_counts_against_one_limit() {
     for spellings in [["alice", "Alice", "aLice"], ["nobody", "NOBODY", "noBody"]] {
         for attempt in 0..crate::credentials::AUTH_RATE_MAX {
             let username = spellings[attempt % spellings.len()];
-            assert_eq!(
-                crate::test_support::login_status(&state, username, "not-it-at-all").await,
-                StatusCode::UNAUTHORIZED,
-                "attempt {} as {username}",
-                attempt + 1
-            );
+            let (status, text) =
+                crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
+            expect_problem(status, &text, ProblemType::InvalidCredentials);
         }
         for username in spellings {
-            assert_eq!(
-                crate::test_support::login_status(&state, username, "not-it-at-all").await,
-                StatusCode::TOO_MANY_REQUESTS,
-                "past the limit as {username}"
-            );
+            // Past the limit.
+            let (status, text) =
+                crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
+            expect_problem(status, &text, ProblemType::RateLimited);
         }
     }
 }
@@ -1964,9 +1959,9 @@ async fn a_limited_body_discarded_over_the_cap_is_too_large() {
 }
 
 /// Send `PUT path` with `Transfer-Encoding: chunked` and `body` as one chunk,
-/// and return the answer's status. reqwest sends every body it is given here
-/// with a `Content-Length`, so the request is written by hand.
-async fn put_chunked(base: &str, path: &str, token: &str, body: &[u8]) -> StatusCode {
+/// and return the answer's status and body. reqwest sends every body it is
+/// given here with a `Content-Length`, so the request is written by hand.
+async fn put_chunked(base: &str, path: &str, token: &str, body: &[u8]) -> (StatusCode, String) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let address = base.strip_prefix("http://").unwrap();
     let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
@@ -1987,7 +1982,13 @@ async fn put_chunked(base: &str, path: &str, token: &str, body: &[u8]) -> Status
         .split_whitespace()
         .nth(1)
         .unwrap_or_else(|| panic!("no status line in {response:?}"));
-    StatusCode::from_u16(code.parse().unwrap()).unwrap()
+    let (_, text) = response
+        .split_once("\r\n\r\n")
+        .unwrap_or_else(|| panic!("no end to the headers in {response:?}"));
+    (
+        StatusCode::from_u16(code.parse().unwrap()).unwrap(),
+        text.to_string(),
+    )
 }
 
 /// An attachment upload with no `Content-Length` and a body over the
@@ -1999,7 +2000,7 @@ async fn a_chunked_attachment_upload_over_the_limit_is_413() {
     let server = crate::test_support::serve(&fixture.state).await;
     let sha = "0".repeat(64);
 
-    let status = put_chunked(
+    let (status, text) = put_chunked(
         server.base(),
         &format!("/v1/assets/{sha}"),
         &user.token,
@@ -2007,7 +2008,7 @@ async fn a_chunked_attachment_upload_over_the_limit_is_413() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    expect_problem(status, &text, ProblemType::PayloadTooLarge);
 }
 
 /// A part of a multipart upload with no `Content-Length` and a body over the
@@ -2038,9 +2039,9 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
         started["upload_id"].as_str().unwrap()
     );
 
-    let status = put_chunked(server.base(), &path, &user.token, &[b'x'; 17]).await;
+    let (status, text) = put_chunked(server.base(), &path, &user.token, &[b'x'; 17]).await;
 
-    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+    expect_problem(status, &text, ProblemType::PayloadTooLarge);
 }
 
 /// The server's log names every request, and a media link in a URL is a
