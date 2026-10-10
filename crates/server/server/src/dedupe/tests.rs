@@ -1,10 +1,9 @@
-use crate::test_support::stored_time;
 use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::db::engine;
 use crate::progress::Progress;
-use crate::test_support::MessageRow;
+use crate::test_support::{MessageRow, stored_time};
 
 #[test]
 fn normalize_collapses_whitespace() {

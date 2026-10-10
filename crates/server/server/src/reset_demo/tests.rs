@@ -2,8 +2,7 @@ use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
 use crate::progress::Progress;
-use crate::test_support::stored_time;
-use crate::test_support::{MessageRow, conversation_header, message_line};
+use crate::test_support::{MessageRow, conversation_header, message_line, stored_time};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 

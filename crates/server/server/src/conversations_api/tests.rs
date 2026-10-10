@@ -1,14 +1,13 @@
 use super::*;
 use crate::db::conversations::{ConversationSort, display_service_label};
 use crate::db::participant_names::Participant;
-use crate::test_support::stored_time;
 use message_ir::IdentityType;
 use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
 use crate::test_support::{
     MessageRow, RegisteredAccount, TestFixture, fixture_with_account, register_via_api,
-    seed_one_message, test_fixture,
+    seed_one_message, stored_time, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these

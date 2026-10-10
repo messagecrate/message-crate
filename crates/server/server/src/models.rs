@@ -544,9 +544,8 @@ pub(crate) fn utc_timestamp_text(instant: DateTime<Utc>) -> StoredTime {
 /// [`utc_timestamp_text`] makes one, so a time built another way, such as
 /// `2015-03-12T00:00:00Z`, which sorts after `2015-03-12T00:00:00.000Z`,
 /// cannot reach a stored time or a comparison with one (#1963, #1965). It
-/// binds as text, and decodes from a column only it writes
-/// (`messages.timestamp`, `backup_taken_at`), so a stored time read back to
-/// be compared again keeps the type.
+/// binds as text, and decodes only text in its own form, so a stored time
+/// read back to be compared again keeps the type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(transparent)]
 pub struct StoredTime(String);
@@ -564,8 +563,17 @@ impl sqlx::Type<sqlx::Sqlite> for StoredTime {
 }
 
 impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for StoredTime {
+    /// Refuses text that is not the stored form, such as `…T00:00:00Z`, so a
+    /// column written another way cannot become a `StoredTime` by being read.
     fn decode(value: sqlx::sqlite::SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
-        <String as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value).map(StoredTime)
+        let text = <String as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value)?;
+        let stored = DateTime::parse_from_rfc3339(&text)
+            .ok()
+            .map(|instant| utc_timestamp_text(instant.with_timezone(&Utc)));
+        match stored {
+            Some(stored) if stored.0 == text => Ok(stored),
+            _ => Err(format!("{text:?} is not a stored message time").into()),
+        }
     }
 }
 
@@ -599,6 +607,32 @@ mod tests {
             at(1_426_183_462_250).to_string(),
             "2015-03-12T18:04:22.250Z"
         );
+    }
+
+    /// A stored time read back decodes, and text in another form is refused,
+    /// so reading a column cannot make a `StoredTime` that sorts wrong.
+    #[tokio::test]
+    async fn only_the_stored_form_decodes_as_a_stored_time() {
+        use sqlx::Connection;
+        let mut conn = sqlx::SqliteConnection::connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let stored: StoredTime = sqlx::query_scalar("SELECT '2015-03-12T18:04:22.250Z'")
+            .fetch_one(&mut conn)
+            .await
+            .unwrap();
+        assert_eq!(stored.to_string(), "2015-03-12T18:04:22.250Z");
+        for other in [
+            "2015-03-12T18:04:22Z",
+            "2015-03-12T18:04:22.250+00:00",
+            "yesterday",
+        ] {
+            let read = sqlx::query_scalar::<_, StoredTime>("SELECT $1")
+                .bind(other)
+                .fetch_one(&mut conn)
+                .await;
+            assert!(read.is_err(), "{other}");
+        }
     }
 
     /// An incoming SMS from Sam, "hello", sent at 1400773261000.

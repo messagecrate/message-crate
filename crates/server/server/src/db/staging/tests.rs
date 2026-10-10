@@ -1,6 +1,5 @@
 use super::*;
-use crate::test_support::stored_time;
-use crate::test_support::test_fixture;
+use crate::test_support::{stored_time, test_fixture};
 
 const A1: i64 = 7;
 const A2: i64 = 8;

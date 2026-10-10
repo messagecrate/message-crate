@@ -1,12 +1,12 @@
 //! Tests at the module's interface: seed a SQLite database, compile a query
 //! for a list, run it, and assert which ids come back.
 
-use crate::test_support::stored_time;
 use chrono::NaiveDate;
 use sqlx::SqliteConnection;
 
 use super::{CompileRequest, ListKind, QueryError, compile};
 use crate::db::sql::bind_args;
+use crate::test_support::stored_time;
 
 pub(crate) const ACCOUNT: i64 = 7;
 pub(crate) const OTHER_ACCOUNT: i64 = 8;

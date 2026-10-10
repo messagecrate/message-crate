@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::models::StoredTime;
 use sqlx::Arguments;
 use sqlx::SqliteConnection;
 use sqlx::sqlite::{SqliteArguments, SqliteRow};
@@ -15,8 +16,8 @@ pub enum SqlParam {
     Text(String),
     Int(i64),
     /// A stored message time, for a comparison with `messages.timestamp`
-    /// (`crate::models::StoredTime`, #1965).
-    Time(crate::models::StoredTime),
+    /// (`StoredTime`, #1965).
+    Time(StoredTime),
 }
 
 /// Encode `params` into sqlx arguments, in order.
