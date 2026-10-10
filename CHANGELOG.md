@@ -229,6 +229,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **A password typed into the username field no longer reaches
+  the Audit Trail.** A refused login as a username no account has kept the
+  text exactly as typed for 90 days, so a password typed into the wrong
+  field, which happens when a browser fills it in, was there for the owner
+  to read. The Audit Trail now keeps the text only when it could be a
+  username, and otherwise says the login was refused for something that is
+  not a valid username (#2135).
 - 2026-10-10: **The time zone picker and Sources end an empty-state
   message without a full stop.** The time zone picker said "No time zone
   matches." when nothing matched what was typed, and Sources said "No

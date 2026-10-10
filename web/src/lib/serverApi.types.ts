@@ -2007,7 +2007,9 @@ export interface components {
             status: components["schemas"]["RunStatus"] | null;
             /**
              * @description The username of the account the entry is about, as it was; for a
-             *     refused login, the username as typed. Kept after the account is deleted.
+             *     refused login as a username no account holds, the username as typed,
+             *     or `null` when the text typed could not be a username. Kept after the
+             *     account is deleted.
              */
             username: string | null;
         };
@@ -3989,7 +3991,9 @@ export interface components {
                 status: components["schemas"]["RunStatus"] | null;
                 /**
                  * @description The username of the account the entry is about, as it was; for a
-                 *     refused login, the username as typed. Kept after the account is deleted.
+                 *     refused login as a username no account holds, the username as typed,
+                 *     or `null` when the text typed could not be a username. Kept after the
+                 *     account is deleted.
                  */
                 username: string | null;
             }[];

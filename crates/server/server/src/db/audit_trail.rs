@@ -15,6 +15,12 @@
 //! nothing here says what a message said or which conversation it was in
 //! (`docs/adr/0008-the-owner-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+//!
+//! A refused login as a username no account holds keeps the text typed only
+//! when it could be a username ([`record_refused_login`]), because a person
+//! whose browser fills the wrong field types their password there. Anything
+//! else is recorded with no username. A password made only of letters,
+//! digits, `_`, `-` and `.` could be a username, so it is still kept as typed.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -23,6 +29,7 @@ use sqlx::{Row, SqliteConnection};
 
 use message_crate_api_types::{ExportQueryList, ExportStatus};
 
+use crate::credentials::is_valid_username;
 use crate::db::account_profile;
 use crate::db::address_book::LoadMode;
 use crate::db::exports::ExportScopeKind;
@@ -34,9 +41,6 @@ use crate::db::session_tokens::{AppKind, ConnectingApp};
 /// entry belongs to no one, so without a limit anyone who can reach the
 /// server could grow the record forever.
 pub const UNKNOWN_USERNAME_RETENTION_DAYS: i64 = 90;
-
-/// The longest username kept from a refused login: the username length limit.
-const MAX_TYPED_USERNAME_CHARS: usize = 128;
 
 /// What an entry records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -433,7 +437,9 @@ pub struct AuditEntry {
     /// the account has been deleted.
     pub account_id: Option<i64>,
     /// The username of the account the entry is about, as it was; for a
-    /// refused login, the username as typed. Kept after the account is deleted.
+    /// refused login as a username no account holds, the username as typed,
+    /// or `null` when the text typed could not be a username. Kept after the
+    /// account is deleted.
     pub username: Option<String>,
     /// `session_ended`: how the Session ended. `login_refused`: why.
     pub reason: Option<AuditReason>,
@@ -539,7 +545,8 @@ pub struct NewEntry<'a> {
     pub actor: AuditActor,
     /// The account it is about, or `None` when it is about no account.
     pub account_id: Option<i64>,
-    /// That account's username; for a refused login, the username as typed.
+    /// That account's username; for a refused login as a username no account
+    /// holds, the username as typed when it could be one.
     pub username: Option<&'a str>,
     /// `session_ended` and `login_refused`: how or why.
     pub reason: Option<AuditReason>,
@@ -756,8 +763,10 @@ pub async fn record_session_end(
 }
 
 /// Write the entry for a refused login. `account` is the account the
-/// username named, when it named one; otherwise the username is kept as
-/// typed, cut to the username length limit, and belongs to no account.
+/// username named, when it named one. Otherwise the entry belongs to no
+/// account, and keeps the username as typed only when it could be a username
+/// (`is_valid_username`); any other text, which may be a password typed into
+/// the wrong field, is left out and the entry has no username.
 ///
 /// # Errors
 ///
@@ -769,15 +778,12 @@ pub async fn record_refused_login(
     reason: AuditReason,
     app: Option<&ConnectingApp>,
 ) -> Result<()> {
-    let typed: String = typed_username
-        .chars()
-        .take(MAX_TYPED_USERNAME_CHARS)
-        .collect();
+    let typed = is_valid_username(typed_username).then_some(typed_username);
     let entry = NewEntry {
         action: AuditAction::LoginRefused,
         actor: AuditActor::Anonymous,
         account_id: account.map(|(id, _)| id),
-        username: Some(account.map_or(typed.as_str(), |(_, username)| username)),
+        username: account.map_or(typed, |(_, username)| Some(username)),
         reason: Some(reason),
         app,
         details: Details::default(),
