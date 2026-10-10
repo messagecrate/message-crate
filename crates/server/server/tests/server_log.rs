@@ -12,16 +12,16 @@ mod common;
 
 use std::path::Path;
 
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 
+use common::claim::{
+    ALICE_PASSWORD, Claimed, OWNER_PASSWORD, call, claimed_with_account, json_body,
+};
 use common::lines::{attachment, conversation_header, message_line};
 use common::{empty_message_crate, listen, serve};
 
-/// The owner's password.
-const OWNER_PASSWORD: &str = "Owner-Pw-7q2Lx9Vb";
-/// The account's first password, and the one it changes to.
-const ALICE_PASSWORD: &str = "Alice-Pw-3kN8wZr4";
+/// The account's new password.
 const ALICE_NEW_PASSWORD: &str = "Alice-Pw-Next-5Hd2Qm";
 /// What the imported message says, and the word a search looks for.
 const MESSAGE_TEXT: &str = "Meet me by the Tangerine Lighthouse at nine";
@@ -33,102 +33,11 @@ const CONTACT_EMAIL: &str = "zebediah.quixote@example.com";
 /// The attachment's bytes.
 const ATTACHMENT: &[u8] = b"Attachment-Bytes-Pelican-Orchard-41";
 
-/// One call, answered with its status and JSON body (`Null` when it has
-/// none).
-async fn call(
-    base: &str,
-    method: reqwest::Method,
-    path: &str,
-    token: Option<&str>,
-    body: Option<(&str, Vec<u8>)>,
-) -> (reqwest::StatusCode, Value) {
-    let mut request = common::client::http_client().request(method, format!("{base}{path}"));
-    if let Some(token) = token {
-        request = request.bearer_auth(token);
-    }
-    if let Some((content_type, body)) = body {
-        request = request
-            .header(reqwest::header::CONTENT_TYPE, content_type)
-            .body(body);
-    }
-    let response = request.send().await.unwrap();
-    let status = response.status();
-    let text = response.text().await.unwrap();
-    (status, serde_json::from_str(&text).unwrap_or(Value::Null))
-}
-
-fn json_body(value: &Value) -> Option<(&'static str, Vec<u8>)> {
-    Some(("application/json", serde_json::to_vec(value).unwrap()))
-}
-
 fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
-}
-
-/// What `claimed_with_account` answers, each named so the two session
-/// tokens cannot be swapped.
-struct Claimed {
-    /// The owner's session token.
-    owner_token: String,
-    /// Alice's account id.
-    alice_id: i64,
-    /// Alice's session token.
-    alice_token: String,
-}
-
-/// Claims the Message Crate as the owner, opens public registration,
-/// registers `alice`, and logs her in.
-async fn claimed_with_account(base: &str) -> Claimed {
-    use reqwest::Method;
-    use reqwest::StatusCode as S;
-
-    let (status, claimed) = call(
-        base,
-        Method::POST,
-        "/v1/server/claim",
-        None,
-        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{claimed}");
-    let owner = claimed["token"].as_str().unwrap().to_string();
-    let (status, _) = call(
-        base,
-        Method::PATCH,
-        "/v1/server/settings",
-        Some(&owner),
-        json_body(&json!({ "public_registration": true })),
-    )
-    .await;
-    assert_eq!(status, S::OK);
-    let (status, registered) = call(
-        base,
-        Method::POST,
-        "/v1/accounts",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{registered}");
-    let alice_id = registered["account_id"].as_i64().unwrap();
-    let (status, session) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::CREATED, "{session}");
-    let alice = session["token"].as_str().unwrap().to_string();
-    Claimed {
-        owner_token: owner,
-        alice_id,
-        alice_token: alice,
-    }
 }
 
 /// Everything in the server's log files, and how many files there are.
