@@ -55,9 +55,7 @@ Conversations open in a browser or the desktop app, years of messages are search
 There is no cloud service, no trial, and no AI feature in the product.
 Messages never leave the computer they are imported on.
 
-<div align="center">
-  <img src="docs/img/message-crate-overview-screenshot.jpg" alt="Message Crate screenshot" width="600">
-</div>
+![Message Crate screenshot](docs/img/message-crate-overview-screenshot.jpg)
 
 ### Project Details
 
@@ -145,7 +143,7 @@ Contributions are welcome. The [Contributing guide](https://messagecrate.app/doc
 Most documentation lives in the guidebook at [messagecrate.app](https://messagecrate.app):
 
 - [User Guide](https://messagecrate.app/docs/user/)
-- [Developer Guide](https://messagecrate.app/docs/developer/) — including [Architecture](https://messagecrate.app/docs/developer/design/) (System Design, Message Transfer, Common message)
+- [Developer Guide](https://messagecrate.app/docs/developer/), with its Architecture pages: [System Design](https://messagecrate.app/docs/developer/design/), [Message Transfer](https://messagecrate.app/docs/developer/message-transfer/), and [Common message](https://messagecrate.app/docs/developer/architecture/common-message/)
 
 ## License
 
