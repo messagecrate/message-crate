@@ -383,7 +383,7 @@ fn a_program_held_open_for_writing_is_found_once_the_writer_closes() {
     let mut writer = Some(fs::File::options().write(true).open(&ffmpeg).unwrap());
     let mut starts = 0;
 
-    let runs = runs_once_not_busy(|| {
+    let runs = runs_once_the_file_is_free(|| {
         starts += 1;
         let started = start_version(&ffmpeg);
         if starts == 1 {
@@ -412,7 +412,6 @@ fn a_program_held_open_for_writing_throughout_is_not_found() {
         .write(true)
         .open(tools.path().join("ffmpeg"))
         .unwrap();
-
     assert_eq!(tool_in_dir(tools.path(), "ffmpeg"), None);
     assert_eq!(
         tool_in_dir(tools.path(), "ffprobe"),
@@ -421,13 +420,14 @@ fn a_program_held_open_for_writing_throughout_is_not_found() {
 }
 
 /// Only a busy file is started again. A start refused for another reason,
-/// as one a missing shared library gives, is refused once: a hundred
-/// starts per lookup would make every lookup of a broken program slow.
+/// as one a missing shared library gives, is refused once. Making all
+/// [`BUSY_STARTS`] starts on every lookup would make every lookup of a
+/// broken program slow.
 #[test]
 fn a_start_refused_for_another_reason_is_not_made_again() {
     let mut starts = 0;
 
-    let runs = runs_once_not_busy(|| {
+    let runs = runs_once_the_file_is_free(|| {
         starts += 1;
         Err(io::Error::from(io::ErrorKind::NotFound))
     });

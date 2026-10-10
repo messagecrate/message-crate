@@ -246,12 +246,22 @@ pub fn require_ffmpeg() -> Result<()> {
 /// outlasts it: a refused start costs about one spawn, and only a file that
 /// stays open pays for all of them. A file still open for writing after
 /// them, as one being written is, does not run.
-const BUSY_STARTS: usize = 100;
+///
+/// Twenty is more than three times the most starts the instant has needed.
+/// Over fifty runs of this crate's tests with 32 and 64 test threads on 32
+/// processors, the most was six. Pinned to two loaded processors, as CI
+/// has, it was two.
+/// The number has to stay small, because a failure is not kept
+/// ([`candidate_runs`]), so every lookup of a file that stays open for
+/// writing makes every one of these starts. Twenty refused starts took
+/// between a fifth and a half of a second on two loaded processors.
+const BUSY_STARTS: usize = 20;
 
-/// True when the program `start` starts exits successfully. A start refused
-/// because the program's file is busy is made again, up to [`BUSY_STARTS`]
-/// starts in all; a start refused for any other reason is not.
-fn runs_once_not_busy(mut start: impl FnMut() -> io::Result<ExitStatus>) -> bool {
+/// True when the program that `start` starts exits successfully, once its
+/// file is free. While a start is refused because the file is busy, the
+/// program is started again, up to [`BUSY_STARTS`] starts in all. A start
+/// refused for any other reason is final.
+fn runs_once_the_file_is_free(mut start: impl FnMut() -> io::Result<ExitStatus>) -> bool {
     let mut starts = 0;
     loop {
         starts += 1;
@@ -266,9 +276,9 @@ fn runs_once_not_busy(mut start: impl FnMut() -> io::Result<ExitStatus>) -> bool
 }
 
 /// True when running `bin` with `args` exits successfully, trying again
-/// while the file is busy ([`runs_once_not_busy`]).
+/// while the file is busy ([`runs_once_the_file_is_free`]).
 fn command_runs(bin: &Path, args: &[&str]) -> bool {
-    runs_once_not_busy(|| {
+    runs_once_the_file_is_free(|| {
         Command::new(bin)
             .args(args)
             .stdin(Stdio::null())

@@ -239,14 +239,10 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
-- 2026-10-10: **A downloaded ffmpeg is not read as broken for the instant
-  another program starts.** On Linux, a program file cannot run while any
-  process holds it open for writing, and every program the desktop app
-  starts, its own Message Crate among them, holds the app's open files for
-  an instant as it starts. The check that a downloaded ffmpeg or ffprobe
-  runs could land in that instant and report a working file as one that
-  does not run. The check now tries again until the instant has passed
-  (#2031).
+- 2026-10-10: **A downloaded ffmpeg is not reported as broken by
+  mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
+  runs could wrongly report it as not running. The check now tries again,
+  and a file still being written is still reported as not running (#2031).
 - 2026-10-07: **The desktop app remembers the server address.** An address
   entered under **Change server address** was saved only with the login.
   Logging out, or a login the server no longer accepted, forgot it. The next
