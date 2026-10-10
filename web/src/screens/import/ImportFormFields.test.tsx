@@ -16,6 +16,7 @@ import {
 } from "../../lib/whatsappImport";
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
+import { WAIT_UNDER_LOAD } from "../../test/waits";
 import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -1039,7 +1040,7 @@ describe("ImportFormFields programs the import needs", () => {
     const line =
       "A check of the Tools Directory is already running. This form shows its result when it ends.";
     expect(await screen.findByText(line)).toBeTruthy();
-    await waitFor(() => expect(screen.queryByText(line)).toBeNull(), { timeout: 4000 });
+    await waitFor(() => expect(screen.queryByText(line)).toBeNull(), WAIT_UNDER_LOAD);
     expect(importButton()).toBeDisabled();
   }, 10_000);
 

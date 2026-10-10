@@ -23,6 +23,7 @@ import { createMessageTag, listConversations, updateMessageTagMembers } from "..
 import type { Conversation } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
+import { WAIT_UNDER_LOAD } from "../test/waits";
 import ConversationList from "./ConversationList";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -177,12 +178,8 @@ describe("ConversationList", () => {
       });
       renderList();
       const user = setupUser();
-      // Drawing the first rows takes 100 to 230 ms on an idle machine and crossed
-      // findBy's 1000 ms default at a load average near 160 (#1654). 4000 ms leaves
-      // the rest of the test inside Vitest's 5000 ms budget, and the wait still ends
-      // the moment the row appears.
       await user.click(
-        await screen.findByRole("checkbox", { name: "Select Chat 1" }, { timeout: 4000 }),
+        await screen.findByRole("checkbox", { name: "Select Chat 1" }, WAIT_UNDER_LOAD),
       );
       await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
 
