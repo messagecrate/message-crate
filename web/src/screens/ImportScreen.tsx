@@ -210,7 +210,7 @@ export default function ImportScreen() {
   const [whatsappWa, setWhatsappWa] = useState("");
   const [whatsappMedia, setWhatsappMedia] = useState("");
   const [whatsappDb, setWhatsappDb] = useState("");
-  const [whatsappBusiness, setWhatsappBusiness] = useState(false);
+  const [isBusinessApp, setIsBusinessApp] = useState(false);
   /** The holder's WhatsApp number; seeded from the profile's first phone. */
   const [whatsappOwnerPhone, setWhatsappOwnerPhone] = useState("");
   const [whatsappStats, setWhatsappStats] = useState(emptyWhatsappPathStats);
@@ -316,7 +316,7 @@ export default function ImportScreen() {
     setWhatsappWa(restored.whatsappWa);
     setWhatsappMedia(restored.whatsappMedia);
     setWhatsappDb(restored.whatsappDb);
-    setWhatsappBusiness(restored.whatsappBusiness);
+    setIsBusinessApp(restored.isBusinessApp);
     whatsappOwnerPhoneSeededRef.current = true;
     setWhatsappOwnerPhone(restored.whatsappOwnerPhone);
     setAttachments(attachmentChoicesOf(restored));
@@ -624,7 +624,7 @@ export default function ImportScreen() {
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
     setPathStats(emptyImessagePathStats());
     setWhatsappStats(emptyWhatsappPathStats());
-    if (resolved !== "whatsapp-ios") setWhatsappBusiness(false);
+    if (resolved !== "whatsapp-ios") setIsBusinessApp(false);
     const loadedBackup = applyRememberedPaths(resolved);
 
     if (resolved !== "imessage-macos" || loadedBackup.trim() !== "" || !isTauri()) {
@@ -725,8 +725,8 @@ export default function ImportScreen() {
           onWhatsappMediaChange={updateWhatsappMedia}
           whatsappDb={whatsappDb}
           onWhatsappDbChange={updateWhatsappDb}
-          whatsappBusiness={whatsappBusiness}
-          onWhatsappBusinessChange={setWhatsappBusiness}
+          isBusinessApp={isBusinessApp}
+          onIsBusinessAppChange={setIsBusinessApp}
           whatsappOwnerPhone={whatsappOwnerPhone}
           onWhatsappOwnerPhoneChange={(value) => {
             whatsappOwnerPhoneSeededRef.current = true;
@@ -780,7 +780,7 @@ export default function ImportScreen() {
               whatsappWa,
               whatsappMedia,
               whatsappDb,
-              whatsappBusiness,
+              isBusinessApp,
               whatsappOwnerPhone,
             })
           }
