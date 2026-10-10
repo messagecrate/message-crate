@@ -500,8 +500,7 @@ impl<R: Rng> Seeder<'_, R> {
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 
     /// Write the same contact into both the iMessage and Android directories.
@@ -602,8 +601,7 @@ impl<R: Rng> Seeder<'_, R> {
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 
     /// The Android side of an overlapping conversation: shared rows, then extra messages.
@@ -651,8 +649,7 @@ impl<R: Rng> Seeder<'_, R> {
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 }
 
@@ -729,8 +726,7 @@ impl<R: Rng> Seeder<'_, R> {
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 
     /// Write one group conversation. The first group, when it has a title, starts
@@ -848,8 +844,7 @@ impl<R: Rng> Seeder<'_, R> {
                 }
                 Ok(())
             },
-        )?;
-        Ok(())
+        )
     }
 }
 
