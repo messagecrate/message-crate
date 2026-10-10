@@ -206,6 +206,53 @@ describe("ContactList", () => {
     expect(exportMock).toHaveBeenLastCalledWith({ ids: [1] });
   });
 
+  it("clears every Contact Group on the checked contacts at once", async () => {
+    listContactsMock.mockResolvedValue({
+      items: ["Alice", "Bob"].map((name, i) => ({
+        id: i + 1,
+        name,
+        identity_count: 1,
+        addresses: [],
+        groups: ["Family", "Work"],
+      })),
+      total: 2,
+      limit: 200,
+      offset: 0,
+    } as unknown as Awaited<ReturnType<typeof listContacts>>);
+    listContactGroupsMock.mockResolvedValue([
+      { id: 10, name: "Family" },
+      { id: 11, name: "Work" },
+    ]);
+    // The first write never answers, so Clear all reaches the second Contact
+    // Group only if it does not wait for the first.
+    updateMembersMock.mockReturnValueOnce(new Promise(() => {}));
+    updateMembersMock.mockResolvedValue({ added: 0, removed: 2 });
+
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+    const user = setupUser();
+    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Bob" }));
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(await screen.findByRole("button", { name: "Clear all" }));
+
+    await waitFor(() => expect(updateMembersMock).toHaveBeenCalledTimes(2));
+    const writes = updateMembersMock.mock.calls
+      .map(([id, body]) => ({ id, remove: [...(body?.remove ?? [])].sort((a, b) => a - b) }))
+      .sort((a, b) => a.id - b.id);
+    expect(writes).toEqual([
+      { id: 10, remove: [1, 2] },
+      { id: 11, remove: [1, 2] },
+    ]);
+  });
+
   it("checks every contact between a shift-click and the last clicked contact", async () => {
     const names = ["Alice", "Bob", "Carol", "Dave", "Erin"];
     listContactsMock.mockResolvedValue({
