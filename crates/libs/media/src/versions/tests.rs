@@ -34,7 +34,7 @@ fn video(path: &Path, codec: &[&str]) {
 
 /// `codec,width,height` of the first video stream, as ffprobe reads it.
 fn shape(path: &Path) -> (String, u32, u32) {
-    let probe = probe_video(path).expect("ffprobe reads the file");
+    let probe = probe_media(path).expect("ffprobe reads the file");
     (probe.codec, probe.width, probe.height)
 }
 
