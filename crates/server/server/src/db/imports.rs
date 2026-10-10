@@ -1,6 +1,6 @@
 //! Per-account Import Run records (one row per Import Run).
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 use message_crate_api_types::RunIssueKind;
 use serde::{Deserialize, Serialize};
@@ -1177,35 +1177,6 @@ pub async fn top_attachments_by_size(
             },
         )
         .collect())
-}
-
-/// Record what started the Import Run on its row: a Session and the app it
-/// named, or an API token's label and hint as they are now.
-///
-/// # Errors
-///
-/// Returns an error when the update fails.
-pub async fn record_credential(
-    conn: &mut SqliteConnection,
-    import_id: i64,
-    credential: &crate::db::audit_trail::CredentialUsed,
-) -> Result<()> {
-    let columns = credential.run_columns();
-    sqlx::query(
-        "UPDATE imports SET credential = $1, app_kind = $2, app_build = $3,
-                api_token_label = $4, api_token_hint = $5
-         WHERE id = $6",
-    )
-    .bind(columns.credential)
-    .bind(columns.app_kind)
-    .bind(columns.app_build)
-    .bind(columns.api_token_label)
-    .bind(columns.api_token_hint)
-    .bind(import_id)
-    .execute(&mut *conn)
-    .await
-    .with_context(|| format!("record what started import {import_id}"))?;
-    Ok(())
 }
 
 /// Ready the account's Import Runs to outlive it, just before the account is

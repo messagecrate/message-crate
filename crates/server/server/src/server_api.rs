@@ -24,19 +24,20 @@ pub(crate) mod log_lines;
 
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
-use crate::server::{ApiError, AppState, Created, Owner};
+use crate::server::{ApiError, AppState, Created, Owner, run_blocking};
 
 /// Run `read`, a blocking read of the server's log files, off the async
 /// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
-/// its cause.
+/// its cause. A read that panics or is cancelled is a `500 Internal Server Error`
+/// too, through `run_blocking`, naming the task "log read".
 async fn read_log<T: Send + 'static>(
     what: &'static str,
     read: impl FnOnce() -> std::io::Result<T> + Send + 'static,
 ) -> Result<T, ApiError> {
-    tokio::task::spawn_blocking(read)
-        .await
-        .map_err(|error| ApiError::Internal(error.into()))?
-        .map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
+    run_blocking("log read", move || {
+        read().map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
+    })
+    .await
 }
 
 /// What state a Message Crate is in, from outside.

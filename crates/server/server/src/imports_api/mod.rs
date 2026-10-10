@@ -51,7 +51,7 @@ use crate::paging::{
 };
 use crate::server::{
     ApiError, AppState, Created, ImportAccess, content_type_base, is_jsonl_content_type,
-    resolve_import_account, stream_body_to_file,
+    resolve_import_account, run_blocking, stream_body_to_file,
 };
 
 /// Full import settings: paths, mode, and media handling.
@@ -1316,7 +1316,13 @@ pub(crate) async fn create_import(
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
     let id = crate::db::imports::start_import(&mut tx, &args).await?;
-    crate::db::imports::record_credential(&mut tx, id, &auth.credential).await?;
+    crate::db::audit_trail::record_run_credential(
+        &mut tx,
+        crate::db::audit_trail::RunTable::Imports,
+        id,
+        &auth.credential,
+    )
+    .await?;
     tx.commit().await?;
 
     Ok(Created {
@@ -1744,11 +1750,10 @@ pub(crate) async fn create_import_batch(
         // hashing and copies) — run it off the async workers so a large
         // import cannot stall unrelated requests.
         let handle = tokio::runtime::Handle::current();
-        let response = tokio::task::spawn_blocking(move || {
+        let response = run_blocking("import", move || {
             handle.block_on(run_import_path(state, context, jsonl_path))
         })
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("import task failed: {e}")))?;
+        .await;
         drop(temp);
         return response;
     }
