@@ -616,7 +616,7 @@ impl ApiError {
     }
 
     /// `404` for a `kind` of row this account does not hold, with the detail
-    /// "{kind} not found", so every route words the same miss the same way.
+    /// "{kind} not found", so the routes that use it word a miss the same way.
     pub(crate) fn not_found(kind: &str) -> Self {
         Self::NotFound(format!("{kind} not found"))
     }

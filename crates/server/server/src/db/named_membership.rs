@@ -24,7 +24,10 @@ pub const MAX_NAME_LEN: usize = 80;
 #[derive(Debug)]
 pub enum MembershipError {
     BadRequest(String),
+    /// A member id this account does not hold; carries the sentence naming it.
     NotFound(String),
+    /// The set itself is missing; carries its label (`"tag"` / `"group"`).
+    SetNotFound(&'static str),
     Conflict(String),
     Internal(anyhow::Error),
 }
@@ -40,6 +43,7 @@ impl From<MembershipError> for crate::server::ApiError {
         match e {
             MembershipError::BadRequest(m) => Self::validation(m),
             MembershipError::NotFound(m) => Self::NotFound(m),
+            MembershipError::SetNotFound(label) => Self::not_found(label),
             MembershipError::Conflict(m) => Self::NameTaken(m),
             MembershipError::Internal(e) => Self::Internal(e),
         }
@@ -442,7 +446,7 @@ pub async fn list_sets(
         .collect())
 }
 
-/// One set by id, or `NotFound` when it is not this account's.
+/// One set by id, or `SetNotFound` when it is not this account's.
 pub async fn get_set(
     spec: &MembershipSpec,
     conn: &mut SqliteConnection,
@@ -458,15 +462,12 @@ pub async fn get_set(
         .bind(account_id)
         .fetch_optional(&mut *conn)
         .await?
-        .ok_or_else(|| MembershipError::NotFound(format!("{} not found", spec.label)))?;
+        .ok_or(MembershipError::SetNotFound(spec.label))?;
     // A reserved-name row can only be a leftover (create_set and rename_set
     // both refuse reserved names): list_sets never shows it, so its id must
     // not work either.
     if is_reserved(spec, &row.1) {
-        return Err(MembershipError::NotFound(format!(
-            "{} not found",
-            spec.label
-        )));
+        return Err(MembershipError::SetNotFound(spec.label));
     }
     Ok(row)
 }
