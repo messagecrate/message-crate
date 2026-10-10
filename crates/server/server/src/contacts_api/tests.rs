@@ -571,12 +571,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    for (body, ts) in [
+    for (body, rfc3339) in [
         ("hi", "2024-06-01T12:00:00.000Z"),
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: stored_time(ts),
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(peer),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -736,12 +736,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    for (body, ts) in [
+    for (body, rfc3339) in [
         ("hi", "2024-06-01T12:00:00.000Z"),
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: stored_time(ts),
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(sam_handle),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -1014,9 +1014,9 @@ async fn insert_held_message(
     owner: i64,
     sender: Option<i64>,
 ) {
-    let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
+    let rfc3339 = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
     MessageRow {
-        timestamp: stored_time(&ts),
+        timestamp: stored_time(&rfc3339),
         is_from_me: sender.is_none(),
         owner_handle_id: Some(owner),
         sender_handle_id: sender,
@@ -2201,11 +2201,11 @@ async fn insert_direct_conversation(
     .await
     .unwrap();
     // Received messages, so the peer is their sender, as an import records.
-    for (i, ts) in timestamps.iter().enumerate() {
+    for (i, rfc3339) in timestamps.iter().enumerate() {
         MessageRow {
             source: service,
             service: Some(service),
-            timestamp: stored_time(ts),
+            timestamp: stored_time(rfc3339),
             sender_handle_id: Some(handle_id),
             sort_order: i as i64,
             body: Some("hi"),
@@ -2262,14 +2262,14 @@ async fn list_contacts_filters_has_messages_and_never_messaged() {
     assert_eq!(never.items[0].name, "Silent");
 }
 
-/// One message in `conversation_id` at `ts`, with `phone`'s handle as its
+/// One message in `conversation_id` at `rfc3339`, with `phone`'s handle as its
 /// sender handle; `is_from_me` marks it as the owner's own.
 async fn insert_message_from(
     conn: &mut SqliteConnection,
     account: i64,
     conversation_id: i64,
     phone: &str,
-    ts: &str,
+    rfc3339: &str,
     is_from_me: bool,
 ) {
     let handle_id: i64 = sqlx::query_scalar(
@@ -2282,7 +2282,7 @@ async fn insert_message_from(
     .unwrap();
     MessageRow {
         service: Some("imessage"),
-        timestamp: stored_time(ts),
+        timestamp: stored_time(rfc3339),
         is_from_me,
         sender_handle_id: Some(handle_id),
         body: Some("hi"),
