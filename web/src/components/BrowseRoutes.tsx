@@ -68,7 +68,7 @@ function useReplaceSearchParams(): (updates: Record<string, string>) => void {
  * The address of `pathname` searched for `q` in the query parameter `param`,
  * with nothing else in its query: a new search starts the list again.
  */
-function searchedAddress(pathname: string, param: string, q: string): string {
+function searchedAddress(pathname: string, param: "cq" | "tq", q: string): string {
   return `${pathname}${q ? `?${param}=${encodeURIComponent(q)}` : ""}`;
 }
 

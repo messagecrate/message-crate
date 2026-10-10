@@ -1,12 +1,10 @@
+// What the app layout and the routes under it share: the section each route
+// declares for the header and the navigation panel, and the contact panel
+// the layout holds for them.
+
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import type { HeaderSearch } from "./AppHeader";
 import type { ContactBrowseKind, ContactPreview } from "./contactDrawer/contactDrawerTypes";
-
-/**
- * What the app layout and the routes under it share: the section each route
- * declares for the header and the navigation panel, and the contact panel
- * the layout holds for them.
- */
 
 /**
  * What a route under the app layout tells the layout's header and navigation
