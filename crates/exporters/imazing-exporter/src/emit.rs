@@ -224,11 +224,12 @@ struct Conversation {
 
 /// Which pending conversation a session's rows go to.
 ///
-/// The [`ConversationKey`]'s chat id, with the transport family and, for a
-/// group, the CSV session it was read from. Two pending conversations can
-/// share one `ConversationKey`: a group session read from two exports stays
-/// two entries here until `separate_groups_with_one_earliest_row` merges
-/// them.
+/// Built when a session's rows are read, from its [`ConversationKey`]'s chat
+/// id, with the transport family and, for a group, the CSV session. Groups
+/// that share one `ConversationKey` are separate entries here.
+/// `separate_groups_with_one_earliest_row` merges those with one session
+/// name and gives the others new keys, but does not re-key this map, so
+/// after it runs a group's `chat_id` here can differ from its conversation's.
 ///
 /// A one-to-one conversation is one conversation across every CSV that
 /// names its address. A group session is a conversation of its own, even
