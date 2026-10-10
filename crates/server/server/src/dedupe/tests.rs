@@ -1,8 +1,8 @@
-use crate::progress::Progress;
 use std::collections::{HashMap, HashSet};
 
 use super::*;
 use crate::db::engine;
+use crate::progress::Progress;
 use crate::test_support::MessageRow;
 
 #[test]
@@ -2032,4 +2032,309 @@ async fn the_source_that_holds_a_message_most_often_sets_how_many_stay() {
     assert_eq!(duplicate_of(&mut conn, ids[3]).await, Some(ids[0]));
     assert_eq!((stats.exact_groups, stats.exact_flagged), (1, 2));
     assert_eq!(stats.near_flagged, 0);
+}
+
+// Which copy is shown, one rank at a time (`rank`, #1969). Each test sets
+// the rank under test against every rank after it, so the copy that wins it
+// loses all the others.
+
+/// One finished Import Run of `source`, and its id.
+async fn import_run(conn: &mut SqliteConnection, source: &str) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO imports (account_id, source, mode, status, started_at)
+         VALUES ($1, $2, 'append', 'completed', '2026-10-09T00:00:00Z') RETURNING id",
+    )
+    .bind(TEST_ACCOUNT_ID)
+    .bind(source)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// One received "On my way" from `source`, sent at `timestamp` and recorded
+/// with `precision`, brought by the Import Run `import_id`; its id.
+async fn copy(
+    conn: &mut SqliteConnection,
+    source: &str,
+    timestamp: &'static str,
+    precision: message_ir::TimePrecision,
+    import_id: i64,
+) -> i64 {
+    MessageRow {
+        source,
+        timestamp,
+        time_precision: precision,
+        body: Some("On my way"),
+        import_id: Some(import_id),
+        ..MessageRow::new(TEST_ACCOUNT_ID, 1)
+    }
+    .insert(conn)
+    .await
+}
+
+/// `n` more messages of the run `import_id`, each its own text a day apart,
+/// so they make the run larger and duplicate nothing.
+async fn more_of_run(conn: &mut SqliteConnection, source: &str, import_id: i64, n: usize) {
+    const DAYS: [&str; 3] = [
+        "2015-04-01T00:00:00.000Z",
+        "2015-04-02T00:00:00.000Z",
+        "2015-04-03T00:00:00.000Z",
+    ];
+    for (i, timestamp) in DAYS.iter().take(n).enumerate() {
+        let body = format!("{source} filler {i}");
+        MessageRow {
+            source,
+            timestamp,
+            body: Some(&body),
+            import_id: Some(import_id),
+            ..MessageRow::new(TEST_ACCOUNT_ID, 1)
+        }
+        .insert(conn)
+        .await;
+    }
+}
+
+const SECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Seconds;
+const MILLISECONDS: message_ir::TimePrecision = message_ir::TimePrecision::Milliseconds;
+
+/// The copy with more attachments is shown, though the other is timed to
+/// the millisecond, came from the larger Import Run and from the source
+/// imported first.
+#[tokio::test]
+async fn the_copy_with_more_attachments_is_shown_first() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let plain = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        sms_run,
+    )
+    .await;
+    more_of_run(&mut conn, "sms", sms_run, 3).await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    let with_photo = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.000Z",
+        SECONDS,
+        imessage_run,
+    )
+    .await;
+    add_attachment(&mut conn, with_photo, "photo-sha").await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, with_photo).await, None);
+    assert_eq!(duplicate_of(&mut conn, plain).await, Some(with_photo));
+}
+
+/// Of copies with as many attachments, the one timed to the millisecond is
+/// shown, though the other came from the larger Import Run and from the
+/// source imported first.
+#[tokio::test]
+async fn a_copy_timed_to_the_millisecond_is_shown_before_one_timed_to_the_second() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let whole = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.000Z",
+        SECONDS,
+        sms_run,
+    )
+    .await;
+    more_of_run(&mut conn, "sms", sms_run, 3).await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    let exact = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, exact).await, None);
+    assert_eq!(duplicate_of(&mut conn, whole).await, Some(exact));
+}
+
+/// Of copies alike in attachments and precision, the one from the Import
+/// Run that brought more messages is shown, though the other's source was
+/// imported first.
+#[tokio::test]
+async fn the_copy_from_the_larger_import_run_is_shown_before_the_earlier_source() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let small = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        sms_run,
+    )
+    .await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    let large = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+    more_of_run(&mut conn, "imessage", imessage_run, 2).await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, large).await, None);
+    assert_eq!(duplicate_of(&mut conn, small).await, Some(large));
+}
+
+/// Of copies alike in everything else, the one from the source imported
+/// first is shown, though the other has the lower id.
+#[tokio::test]
+async fn the_copy_of_the_source_imported_first_is_shown_before_the_lower_id() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    // The sms source's first message comes first, so sms is the source
+    // imported first; its copy of the message comes after imessage's.
+    more_of_run(&mut conn, "sms", sms_run, 1).await;
+    let lower_id = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+    more_of_run(&mut conn, "imessage", imessage_run, 1).await;
+    let first_source = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        sms_run,
+    )
+    .await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert!(lower_id < first_source);
+    assert_eq!(duplicate_of(&mut conn, first_source).await, None);
+    assert_eq!(duplicate_of(&mut conn, lower_id).await, Some(first_source));
+}
+
+/// Of copies alike in everything else, from one source and one Import
+/// Run, the one with the lower id is shown.
+#[tokio::test]
+async fn of_copies_alike_in_everything_the_lower_id_is_shown() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    let sms = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        sms_run,
+    )
+    .await;
+    // Both runs bring two messages, so the run size ties.
+    more_of_run(&mut conn, "sms", sms_run, 1).await;
+    let lower = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+    let higher = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+
+    // The source imported first, sms, gives the shown copy; imessage holds
+    // the message twice, so two stay shown, and its lower id takes the
+    // second place.
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, sms).await, None);
+    assert_eq!(duplicate_of(&mut conn, lower).await, None);
+    assert_eq!(duplicate_of(&mut conn, higher).await, Some(sms));
+}
+
+/// When one source holds a message more often than the others, the places
+/// beyond the first go to the copies `rank` puts first, not to the source
+/// imported first: two whole-second copies from the first source and one
+/// millisecond copy each from two later sources show a millisecond copy
+/// second.
+#[tokio::test]
+async fn the_second_shown_place_goes_to_the_copy_ranked_first() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let a_run = import_run(&mut conn, "a").await;
+    let a1 = copy(&mut conn, "a", "2015-03-12T18:04:22.000Z", SECONDS, a_run).await;
+    let a2 = copy(&mut conn, "a", "2015-03-12T18:04:22.000Z", SECONDS, a_run).await;
+    let b_run = import_run(&mut conn, "b").await;
+    let b = copy(
+        &mut conn,
+        "b",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        b_run,
+    )
+    .await;
+    let c_run = import_run(&mut conn, "c").await;
+    let c = copy(
+        &mut conn,
+        "c",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        c_run,
+    )
+    .await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, b).await, None, "b is first by rank");
+    assert_eq!(
+        duplicate_of(&mut conn, c).await,
+        None,
+        "c takes the second place"
+    );
+    assert_eq!(duplicate_of(&mut conn, a1).await, Some(b));
+    assert_eq!(duplicate_of(&mut conn, a2).await, Some(b));
 }

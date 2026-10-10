@@ -397,4 +397,4 @@ A backup that records no date at all keeps a mark once given, and takes a newer 
 It also keeps the attachments and reactions each backup holds of a message, each one once, so one import of two backups stores what two separate imports of them store.
 
 Some backups record a message's time to the second and others to the millisecond, and an SMS Backup+ backup can hold both for one message.
-When the Message Crate hides duplicates (the server's `import` and `dedupe-cross-source` commands do), a message one backup app holds once to the second and once to the millisecond is shown once, at its time to the millisecond. When another backup app holds the same message too, the Message Crate may show that app's copy instead, which can have only whole seconds.
+Every import hides duplicates, so a message one backup app holds once to the second and once to the millisecond is shown once, at its time to the millisecond. When another backup app holds the same message too, the Message Crate shows the copy with more attachments, then the one timed to the millisecond, then the one from the larger import.

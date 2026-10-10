@@ -405,14 +405,12 @@ fn address(sender: &str) -> Option<Handle> {
 fn member(party: &str) -> IrParticipant {
     match address(party) {
         Some(address) => IrParticipant {
-            identity_type: Some(address.kind()),
             identity: Some(address.into_key()),
             display_name: None,
         },
         None => IrParticipant {
             identity: None,
             display_name: Some(party.to_string()),
-            identity_type: None,
         },
     }
 }
@@ -618,12 +616,10 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
             Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                identity_type: Handle::parse(handle).map(|handle| handle.kind()),
             }],
             Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
                 identity: None,
                 display_name: convo.first_contact_name(),
-                identity_type: None,
             }],
         }
     }

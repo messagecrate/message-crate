@@ -59,19 +59,6 @@ pub struct ParticipantCell {
     /// Display name; empty string when unknown.
     #[serde(default)]
     pub display_name: String,
-    /// Explicit `null` → `None`; any string is parsed leniently via
-    /// [`message_ir::IdentityType::parse`]. The writer always writes the field.
-    #[serde(deserialize_with = "deserialize_identity_type")]
-    pub identity_type: Option<message_ir::IdentityType>,
-}
-
-/// Parse an identity type cell, accepting `null`.
-fn deserialize_identity_type<'de, D>(de: D) -> Result<Option<message_ir::IdentityType>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = Option::<String>::deserialize(de)?;
-    Ok(s.map(|s| message_ir::IdentityType::parse(&s)))
 }
 
 /// Timestamp formatting (defined in `message-ir`, where the shared
@@ -137,8 +124,7 @@ pub fn field(rec: &csv::StringRecord, idx: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParticipantCell, col, field, json_cell, parse_bool};
-    use message_ir::IdentityType;
+    use super::{col, field, json_cell, parse_bool};
 
     #[test]
     fn col_finds_a_column_by_name_and_names_a_missing_one() {
@@ -169,35 +155,5 @@ mod tests {
     #[test]
     fn json_cell_writes_json() {
         assert_eq!(json_cell(&vec!["a", "b"]), r#"["a","b"]"#);
-    }
-
-    fn identity_type_of(json: &str) -> Option<IdentityType> {
-        serde_json::from_str::<ParticipantCell>(json)
-            .unwrap()
-            .identity_type
-    }
-
-    #[test]
-    fn a_participant_cell_with_a_null_identity_type_has_none() {
-        assert_eq!(
-            identity_type_of(r#"{"identity": "+15555550101", "identity_type": null}"#),
-            None
-        );
-    }
-
-    #[test]
-    fn a_participant_cell_identity_type_is_parsed_leniently() {
-        assert_eq!(
-            identity_type_of(r#"{"identity": "+15555550101", "identity_type": "Phone"}"#),
-            Some(IdentityType::Phone)
-        );
-    }
-
-    #[test]
-    fn a_participant_cell_without_an_identity_type_is_refused() {
-        // The writer always writes the field, so a cell without it is not
-        // one Message Crate wrote.
-        let parsed = serde_json::from_str::<ParticipantCell>(r#"{"identity": "+15555550101"}"#);
-        assert!(parsed.is_err(), "{parsed:?}");
     }
 }

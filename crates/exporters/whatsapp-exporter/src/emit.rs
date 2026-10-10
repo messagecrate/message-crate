@@ -291,14 +291,9 @@ fn ingest_chat(
         return None;
     }
 
-    let participants = roster.participants;
     // The phone numbers name an untitled group's file.
-    pending.participant_e164s = participants
-        .iter()
-        .filter(|p| p.identity_type == Some(IdentityType::Phone))
-        .filter_map(|p| p.identity.clone())
-        .collect();
-    Some((chat_id, pending, participants))
+    pending.participant_e164s = roster.numbers;
+    Some((chat_id, pending, roster.participants))
 }
 
 /// One person of a group as the fork's JSON gives them: a member entry or a
@@ -307,11 +302,10 @@ struct Person {
     /// Their WhatsApp id: the phone id, or an `@lid` id the backup could not
     /// map to one. `None` when the backup names no sender.
     jid: Option<String>,
-    /// What they are written as: the phone number of a phone id, typed
-    /// `phone`, or else the raw id typed `other`, because the exporter knows
-    /// an `@lid` id is no phone number. The one-to-one chat with the same
-    /// person writes the same id ([`Roster::add_peer`]), so both are one
-    /// identity.
+    /// What they are written as: the phone number of a phone id, or else
+    /// the raw id, which the server types `other` because WhatsApp carries
+    /// no email address. The one-to-one chat with the same person writes the
+    /// same id ([`Roster::add_peer`]), so both are one identity.
     identity: Option<(String, IdentityType)>,
     name: Option<String>,
 }
@@ -379,6 +373,8 @@ fn is_a_name(sender: &str) -> bool {
 struct Roster<'a> {
     owner: Option<&'a str>,
     participants: Vec<IrParticipant>,
+    /// The phone numbers among `participants`, in the same order.
+    numbers: Vec<String>,
     /// Index into `participants` of each person already added.
     seen: BTreeMap<PersonKey, usize>,
 }
@@ -396,6 +392,7 @@ impl<'a> Roster<'a> {
         Self {
             owner,
             participants: Vec::new(),
+            numbers: Vec::new(),
             seen: BTreeMap::new(),
         }
     }
@@ -428,27 +425,28 @@ impl<'a> Roster<'a> {
         }
         self.seen.insert(key, self.participants.len());
         let (identity, identity_type) = identity.unzip();
+        if identity_type == Some(IdentityType::Phone)
+            && let Some(number) = &identity
+        {
+            self.numbers.push(number.clone());
+        }
         self.participants.push(IrParticipant {
             identity,
             display_name: name,
-            identity_type,
         });
     }
 
     /// A one-to-one chat's one participant, named by the chat. A chat whose
-    /// id is not a phone id, such as an internal `@lid` id, has its raw id
-    /// typed `other`, because the exporter knows it is no phone number and
-    /// no WhatsApp id is an email address.
+    /// id is not a phone id, such as an internal `@lid` id, has its raw id,
+    /// which the server types `other` because WhatsApp carries no email
+    /// address (#1671).
     fn add_peer(&mut self, jid: &str, chat_id: &str, name: Option<String>) {
-        let identity_type = if jid_to_e164(jid).is_some() {
-            IdentityType::Phone
-        } else {
-            IdentityType::Other
-        };
+        if jid_to_e164(jid).is_some() {
+            self.numbers.push(chat_id.to_string());
+        }
         self.participants.push(IrParticipant {
             identity: Some(chat_id.to_string()),
             display_name: name,
-            identity_type: Some(identity_type),
         });
     }
 

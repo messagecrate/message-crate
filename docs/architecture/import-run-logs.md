@@ -82,7 +82,12 @@ part, each with its time and level.
   Import Errors row of kind `error`.
 - `WARN`: what the run went on without, an attachment not uploaded, an
   Import Errors row of kind `skip`, a digest that did not match, a session
-  the server stopped accepting.
+  the server stopped accepting. Also the whole output of a failed
+  `wtsexporter` run, one line per line of it, written before the failure is
+  turned into the error the window shows. Why: a full disk is shown as the
+  free-space sentence for the Scratch Directory, and the output is the only
+  record of which disk filled, or of a warning ahead of a different error
+  ([#1938](https://github.com/messagecrate/message-crate/issues/1938)).
 - `INFO`: what the run did.
 
 ## Reading it

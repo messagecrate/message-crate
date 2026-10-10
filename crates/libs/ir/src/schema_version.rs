@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the import client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-11
-//! file is not expected to match version 12 (version 11 did not say whether
-//! a message's time has milliseconds, so a time ending in `.000` could be
-//! either, and the import could not tell a whole-second copy of a message
-//! from a millisecond one), and the person should read "schema version 11",
-//! not a file that imports by other rules than its own.
+//! words, and refuses it before parsing the rest of the file: a version-12
+//! file is not expected to match version 13 (version 12 gave each
+//! participant an `identity_type` that the import trusted over the address,
+//! where version 13 leaves the type to the server, which works it out from
+//! the service and the address), and the person should read "schema version
+//! 12", not a file that imports by other rules than its own.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -122,7 +122,21 @@ mod tests {
                 .to_string(),
             format!("This file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 12);
+    }
+
+    /// Version 12 gave each participant an `identity_type`, which the import
+    /// took over the address's shape; version 13 has none, and the server
+    /// types every address from its service and shape. A version-12 file is
+    /// refused by its version, never read with its stated types ignored.
+    #[test]
+    fn refuses_a_version_12_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":12,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("This file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 13);
     }
 
     #[test]

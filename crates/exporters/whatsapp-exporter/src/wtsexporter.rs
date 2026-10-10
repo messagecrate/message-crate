@@ -2,6 +2,7 @@
 
 use crate::ios_backup::DecryptedWhatsapp;
 use anyhow::{Context, Result, bail};
+use message_crate_core::{LogSink, emit_warning};
 use message_staging::scratch_disk_full;
 use std::env;
 use std::io::Write;
@@ -170,6 +171,11 @@ fn wtsexporter_in(tools_dir: Option<&Path>) -> Result<PathBuf> {
 /// Run wtsexporter in `args.work_dir`; write JSON to `json_out`.
 /// Returns stderr+stdout for logging.
 ///
+/// A failed run's whole output goes to `log` as a warning before the
+/// failure is mapped, whatever the failure, so the Import Run's log holds
+/// what wtsexporter said even when the error the person sees is the
+/// free-space sentence (#1938).
+///
 /// # Errors
 ///
 /// Returns an error when the work directory is missing, the process cannot start, or
@@ -181,6 +187,7 @@ pub(crate) fn run_wtsexporter(
     bin: &Path,
     args: &WtsexporterArgs,
     json_out: &Path,
+    log: Option<&LogSink>,
 ) -> Result<String> {
     if !args.work_dir.is_dir() {
         bail!("work directory does not exist: {}", args.work_dir.display());
@@ -209,6 +216,16 @@ pub(crate) fn run_wtsexporter(
         String::from_utf8_lossy(&output.stderr)
     );
     if !output.status.success() {
+        if !combined.trim().is_empty() {
+            emit_warning(
+                log,
+                format!(
+                    "wtsexporter failed ({}). Its output:\n{}",
+                    output.status,
+                    combined.trim_end()
+                ),
+            );
+        }
         // wtsexporter writes everything into the work directory, under the
         // Scratch Directory: the decrypted msgstore.db, the extract and the
         // JSON. A decrypted Android database has no size until it is written,
@@ -954,6 +971,7 @@ mod tests {
             &bin,
             &android_run_args(&input, &work),
             &work.join("result.json"),
+            None,
         )
         .unwrap_err()
         .to_string();
@@ -964,6 +982,63 @@ mod tests {
         );
         assert!(!err.contains("wtsexporter failed"), "{err}");
         assert!(!err.contains("Errno 28"), "{err}");
+    }
+
+    /// A failed run's whole output goes to the log as one warning, while
+    /// the error is still the free-space sentence:
+    /// the Import Run's log keeps what wtsexporter said about a full disk
+    /// that may not be the Scratch Directory's (#1938).
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_runs_output_goes_to_the_log_as_a_warning() {
+        let _one_at_a_time = STAND_IN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("backup");
+        let work = dir.path().join("work");
+        fs::create_dir_all(&input).unwrap();
+        fs::create_dir_all(&work).unwrap();
+        let bin = failing_wtsexporter(
+            dir.path(),
+            "Copying media\nOSError: [Errno 28] No space left on device: /tmp/x",
+        );
+        let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let warnings = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = {
+            let lines = lines.clone();
+            let warnings = warnings.clone();
+            message_crate_core::LogSink::new(move |line| {
+                lines.lock().unwrap().push(line.to_string())
+            })
+            .with_warnings(move |text| warnings.lock().unwrap().push(text.to_string()))
+        };
+
+        let err = run_wtsexporter(
+            &bin,
+            &android_run_args(&input, &work),
+            &work.join("result.json"),
+            Some(&log),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(
+            err.starts_with("Not enough space on the disk that holds the Scratch Directory"),
+            "{err}"
+        );
+        let warnings = warnings.lock().unwrap();
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(
+            warnings[0].starts_with("wtsexporter failed ("),
+            "{warnings:?}"
+        );
+        assert!(warnings[0].contains("\nCopying media\n"), "{warnings:?}");
+        assert!(
+            warnings[0].contains("OSError: [Errno 28] No space left on device: /tmp/x"),
+            "{warnings:?}"
+        );
+        assert!(lines.lock().unwrap().is_empty());
     }
 
     /// Any other wtsexporter failure is reported as wtsexporter gave it.
@@ -984,6 +1059,7 @@ mod tests {
             &bin,
             &android_run_args(&input, &work),
             &work.join("result.json"),
+            None,
         )
         .unwrap_err()
         .to_string();
@@ -1016,6 +1092,7 @@ mod tests {
             &bin,
             &android_run_args(&input, work.path()),
             &work.path().join("result.json"),
+            None,
         )
         .unwrap_err();
         let partial = work.path().join("msgstore.db");

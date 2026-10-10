@@ -20,17 +20,15 @@ async fn import_with_country(
     phone_country: Option<&str>,
     body: String,
 ) {
-    import_run(state, token, "sms-backup-plus", phone_country, false, body).await;
+    import_run(state, token, "sms-backup-plus", phone_country, body).await;
 }
 
-/// [`import_with_country`] from `source`, with dedupe on or off for the run,
-/// completed once its one batch is in.
+/// [`import_with_country`] from `source`, completed once its one batch is in.
 async fn import_run(
     state: &crate::server::AppState,
     token: &str,
     source: &str,
     phone_country: Option<&str>,
-    dedupe: bool,
     body: String,
 ) {
     let (_, created): (String, serde_json::Value) = post_created_json(
@@ -40,7 +38,6 @@ async fn import_run(
         serde_json::json!({
             "source": source,
             "phone_country": phone_country,
-            "dedupe": dedupe,
         }),
     )
     .await;
@@ -519,9 +516,9 @@ async fn a_merge_keys_again_every_message_of_a_group_whose_member_changed() {
     };
     let token = &account.token;
     let sms = group("sms", "group-sms", NATIONAL);
-    import_run(state, token, "sms", None, true, sms).await;
+    import_run(state, token, "sms", None, sms).await;
     let imessage = group("imessage", "group-imessage", FULL);
-    import_run(state, token, "imessage", None, true, imessage).await;
+    import_run(state, token, "imessage", None, imessage).await;
     assert_eq!(messages_shown(state, token).await, 2);
     let contact = contact_of(state, "07700900123").await;
 
@@ -741,9 +738,9 @@ async fn an_own_number_merge_keys_again_the_groups_of_the_plus_form() {
         )
     };
     let sms = group("sms", "group-sms", &[FULL, ann, bob]);
-    import_run(state, token, "sms", None, true, sms).await;
+    import_run(state, token, "sms", None, sms).await;
     let imessage = group("imessage", "group-imessage", &[ann, bob]);
-    import_run(state, token, "imessage", None, true, imessage).await;
+    import_run(state, token, "imessage", None, imessage).await;
     link_own(state, &account, "07700900123").await;
     assert_eq!(messages_shown(state, token).await, 2);
 

@@ -8,11 +8,10 @@ use sqlx::SqliteConnection;
 
 use super::ImportCounts;
 use crate::db::contacts;
-use crate::db::handles::{
-    HandleIdCache, handle_type_on, normalize_handle, upsert_handle_row_cached,
-};
+use crate::db::handles::{HandleIdCache, normalize_handle, upsert_handle_row_cached};
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
+use crate::models::HandleValue;
 
 /// The contact that owns `handle_id`, creating one when nothing owns it yet.
 ///
@@ -99,7 +98,7 @@ pub(super) fn count_other_identity(
     }
 }
 
-/// What one message says about who sent it. Its own type because these four
+/// What one message says about who sent it. Its own type because these three
 /// facts travel together and come from the message, while the connection,
 /// handle cache, account and counts around them belong to the import run.
 pub(super) struct IncomingSender<'a> {
@@ -107,11 +106,9 @@ pub(super) struct IncomingSender<'a> {
     /// handle to resolve.
     pub is_from_me: bool,
     /// The sender's address as the backup recorded it, or the name it gave
-    /// with no address (typed `Other`), when it recorded either.
-    pub address: Option<&'a str>,
-    /// The address's type when the source stated it, else its shape decides.
-    /// Either way the service has the last word ([`handle_type_on`]).
-    pub handle_type: Option<IdentityType>,
+    /// with no address, when it recorded either. Typed by
+    /// [`HandleValue::handle_type_on`].
+    pub value: Option<&'a HandleValue>,
     /// Service the message arrived on: `phone` or `whatsapp`.
     pub service: IdentityService,
 }
@@ -144,10 +141,13 @@ pub(super) async fn resolve_incoming_sender_handle(
     if sender.is_from_me {
         return Ok(None);
     }
-    let Some(address) = sender.address.and_then(trimmed) else {
+    let Some(value) = sender.value else {
         return Ok(None);
     };
-    let handle_type = handle_type_on(address, sender.handle_type, sender.service);
+    let Some(address) = trimmed(value.as_str()) else {
+        return Ok(None);
+    };
+    let handle_type = value.handle_type_on(sender.service);
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
         cache,

@@ -11,7 +11,7 @@ use crate::imports_api::{
 };
 use crate::models::AttachmentRecord;
 use crate::test_support::{attachment, conversation_header, message_line};
-use message_ir::{IdentityType, IrAttachment, IrMessageKind, IrService};
+use message_ir::{IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -60,7 +60,6 @@ fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportO
         mode: ImportMode::Append,
         source,
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     })
@@ -469,7 +468,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "120363042@g.us")
         .group()
-        .typed_participant("+15555550156", None, IdentityType::Phone)
+        .participant("+15555550156", None)
         .line()
         + &incoming_whatsapp("g-group-1", "+15555550156");
     import_one(&mut conn, "120363042@g.us.jsonl", &body)
@@ -485,16 +484,17 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     );
 }
 
-/// A one-to-one WhatsApp chat keyed by an internal `@lid` id: the header
-/// types its one participant `other`. The chat's identity and the sender of
-/// its messages take that type, so neither becomes an email identity, as they
-/// did when the chat id and the sender were typed by their shape (#1141).
+/// A one-to-one WhatsApp chat keyed by an internal `@lid` id. WhatsApp
+/// carries no email address, so the chat's identity, its participant and the
+/// sender of its messages are one `other` identity, on one contact. Typed by
+/// their shape alone, the chat id and the sender were email identities
+/// (#1141).
 #[tokio::test]
-async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header() {
+async fn a_whatsapp_lid_chat_its_participant_and_its_sender_are_one_other_identity() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456@lid")
-        .typed_participant("123456@lid", None, IdentityType::Other)
+        .participant("123456@lid", None)
         .line()
         + &incoming_whatsapp("g-lid-1", "123456@lid");
     import_one(&mut conn, "123456@lid.jsonl", &body)
@@ -533,7 +533,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "+15555550101")
-        .typed_participant("+15555550101", Some("Sam"), IdentityType::Phone)
+        .participant("+15555550101", Some("Sam"))
         .line()
         + &incoming("g-sat-1", "+15555550101")
         + &incoming_unknown_service("g-sat-2", "+15555550101");
@@ -556,12 +556,12 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
 }
 
 /// One number is one identity type whether it arrives as a sender or as a
-/// participant the header gives no type. The participant `tel:+15555550157`
+/// participant. The participant `tel:+15555550157`
 /// was typed by its characters, which a `tel:` prefix makes `other`, while
 /// the sender `+15555550157` was typed by `Handle::parse` as `phone`, so the
 /// one number became two identities that were never linked (#1432).
 #[tokio::test]
-async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
+async fn a_number_is_one_type_as_a_sender_and_as_a_participant() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000006")
@@ -596,7 +596,7 @@ async fn a_phone_number_sender_is_phone_on_any_service() {
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("imessage", "chat1000000005")
         .group()
-        .typed_participant("+15555550156", None, IdentityType::Phone)
+        .participant("+15555550156", None)
         .line()
         + &incoming_unknown_service("g-sat-3", "+15555550199");
     import_one(&mut conn, "chat1000000005.jsonl", &body)
@@ -613,18 +613,18 @@ async fn a_phone_number_sender_is_phone_on_any_service() {
     );
 }
 
-/// A WhatsApp header can name a participant by an internal id and give it no
-/// type, as a hand-written or third-party file can. WhatsApp carries no email
-/// address, so the id is `other` though it holds an `@`. Typed by its shape
-/// alone it was stored as an email identity on WhatsApp (#1671).
+/// A WhatsApp header can name a participant by an internal id. WhatsApp
+/// carries no email address, so the id is `other` though it holds an `@`.
+/// Typed by its shape alone it was stored as an email identity on WhatsApp
+/// (#1671).
 #[tokio::test]
-async fn an_untyped_whatsapp_participant_with_an_at_is_other() {
+async fn a_whatsapp_participant_with_an_at_is_other() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = conversation_header("whatsapp", "123456789012345@lid")
         .participant("123456789012345@lid", Some("Ada"))
         .line()
-        + &incoming_whatsapp("g-lid-untyped-1", "123456789012345@lid");
+        + &incoming_whatsapp("g-lid-participant-1", "123456789012345@lid");
     import_one(&mut conn, "123456789012345@lid.jsonl", &body)
         .await
         .unwrap();
@@ -650,7 +650,7 @@ async fn email_identities_on(conn: &mut SqliteConnection, service: &str) -> Vec<
 }
 
 /// Every place an import meets an address on WhatsApp: a one-to-one chat id
-/// no participant names, an untyped participant, a sender the header does
+/// no participant names, a participant, a sender the header does
 /// not list, a reaction's sender, and the holder's own address. Each holds an
 /// `@`, and none becomes an email identity, because WhatsApp carries none
 /// (#1671).
@@ -715,7 +715,7 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
         + &incoming("g-at-im-1", "alerts@example.com");
     let group = conversation_header("sms-backup-restore", "chat1000000007")
         .group()
-        .typed_participant("+15555550156", None, IdentityType::Phone)
+        .participant("+15555550156", None)
         .line()
         + &message_line("g-at-sms-1", "hi")
             .sms()
@@ -750,6 +750,102 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
         contacts,
         ["Alerts".to_string()],
         "the one contact the participant named holds the address"
+    );
+}
+
+/// A participant who reacts is one identity, whatever their address looks
+/// like. A sender name written as a number, such as `5550123`, is a phone
+/// number to the server whether it names a participant or a reaction's
+/// sender. While the header's stated type won over the shape, an exporter
+/// that typed it `other` made the participant `other` and the reactor
+/// `phone`: two identities never linked, and the reactor on a new contact
+/// with no name (#1959). The header here still states `identity_type`
+/// `other`, as a schema version 12 file does, and the server ignores it.
+#[tokio::test]
+async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let header = conversation_header("sms-backup-restore", "chat1000000008")
+        .group()
+        .participant("5550123", Some("Sam"))
+        .line();
+    let typed_other = header.replace(
+        r#""identity":"5550123","#,
+        r#""identity":"5550123","identity_type":"other","#,
+    );
+    assert_ne!(typed_other, header, "the header states the type `other`");
+    let body = typed_other
+        + &message_line("g-react-1", "hi")
+            .outgoing()
+            .reaction(message_ir::Reaction {
+                part_index: 0,
+                kind: "liked".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("5550123".into()),
+                reactor_display_name: None,
+            })
+            .line();
+    import_one(&mut conn, "chat1000000008.jsonl", &body)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        handle_types(&mut conn).await,
+        [
+            ("5550123".to_string(), "phone".to_string()),
+            ("chat1000000008".to_string(), "other".to_string()),
+        ]
+    );
+    let contacts: Vec<String> = sqlx::query_scalar(
+        "SELECT c.preferred_name FROM contacts c
+         JOIN contact_handles ch ON ch.account_id = c.account_id AND ch.contact_id = c.id
+         WHERE c.account_id = $1",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(contacts, ["Sam".to_string()], "one person, one contact");
+}
+
+/// Text Message carries short codes and sender names as well as numbers and
+/// email addresses. The server types each from its shape: a short code is
+/// written as a number and is `phone`, a sender name is `other`, and an `@`
+/// address is `email` whatever transport carried it (#1933).
+#[tokio::test]
+async fn text_message_types_a_short_code_a_sender_name_and_an_email_by_shape() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = conversation_header("sms-backup-restore", "chat1000000009")
+        .group()
+        .participant("72727", None)
+        .participant("AMAZON", None)
+        .line()
+        + &message_line("g-shape-1", "code")
+            .sms()
+            .sender("72727")
+            .line()
+        + &message_line("g-shape-2", "parcel")
+            .sms()
+            .sender("AMAZON")
+            .line()
+        + &message_line("g-shape-3", "alert")
+            .sms()
+            .sender("alerts@example.com")
+            .line();
+    import_one(&mut conn, "chat1000000009.jsonl", &body)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        handle_types(&mut conn).await,
+        [
+            ("72727".to_string(), "phone".to_string()),
+            ("AMAZON".to_string(), "other".to_string()),
+            ("alerts@example.com".to_string(), "email".to_string()),
+            ("chat1000000009".to_string(), "other".to_string()),
+        ]
     );
 }
 
