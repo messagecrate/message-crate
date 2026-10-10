@@ -1,3 +1,8 @@
+# syntax=docker/dockerfile:1
+# The line above makes BuildKit parse this file with the current Dockerfile
+# frontend rather than the one bundled with the engine, because the frontend
+# bundled with Docker Engine 24 and older refuses HEALTHCHECK --start-interval.
+#
 # Multi-stage release image built from the current checkout.
 # Usage (from the repository root):
 #   docker build -f docker/Dockerfile -t message-crate-server .
