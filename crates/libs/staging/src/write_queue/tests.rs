@@ -69,9 +69,7 @@ fn drain(
         units,
         options,
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
-        None,
-        None,
-        None,
+        Sinks::default(),
     )
 }
 
@@ -148,9 +146,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
         build(),
         &options(MediaMode::Clone, true),
         &mut never,
-        None,
-        None,
-        None,
+        Sinks::default(),
     )
     .unwrap();
 
@@ -310,9 +306,10 @@ fn progress_lines_cover_all_units_with_global_counts() {
         units,
         &options(MediaMode::Clone, false),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
-        Some(&sink),
-        None,
-        None,
+        Sinks {
+            log: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -353,7 +350,7 @@ fn parallel_drain_writes_every_unit() {
     let mut options = options(MediaMode::Clone, false);
     options.writer_count = 4;
 
-    let report = drain_write_queue(&out, units, &options, None, None, None).unwrap();
+    let report = drain_write_queue(&out, units, &options, Sinks::default()).unwrap();
 
     assert_eq!(report.conversations_written, 12);
     assert_eq!(report.attachments_saved, 12);
@@ -387,7 +384,7 @@ fn parallel_drain_stops_on_the_first_error() {
     let mut options = options(MediaMode::Clone, false);
     options.writer_count = 2;
 
-    let err = drain_write_queue(&out, units, &options, None, None, None).unwrap_err();
+    let err = drain_write_queue(&out, units, &options, Sinks::default()).unwrap_err();
     assert!(
         format!("{err:#}").contains(&blocked),
         "the error should name the conversation that failed: {err:#}"
@@ -452,13 +449,23 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
             units,
             &options,
             &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
-            None,
-            Some(&sink),
-            None,
+            Sinks {
+                progress: Some(&sink),
+                ..Sinks::default()
+            },
         )
         .unwrap();
     } else {
-        drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
+        drain_write_queue(
+            &out,
+            units,
+            &options,
+            Sinks {
+                progress: Some(&sink),
+                ..Sinks::default()
+            },
+        )
+        .unwrap();
     }
 
     attachment_counts(&seen.lock().unwrap())
@@ -597,9 +604,10 @@ fn parallel_progress_counts_are_snapshots_that_never_go_back() {
         &tmp.path().join("out"),
         units,
         &options,
-        None,
-        Some(&sink),
-        None,
+        Sinks {
+            progress: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -660,7 +668,16 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
     let sink_seen = Arc::clone(&seen);
     let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
 
-    drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
+    drain_write_queue(
+        &out,
+        units,
+        &options,
+        Sinks {
+            progress: Some(&sink),
+            ..Sinks::default()
+        },
+    )
+    .unwrap();
 
     let seen = seen.lock().unwrap().clone();
     assert_eq!(
@@ -717,9 +734,10 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
         build(),
         &options(MediaMode::Clone, true),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
-        None,
-        Some(&sink),
-        None,
+        Sinks {
+            progress: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -748,9 +766,10 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
         &out,
         units,
         &options(MediaMode::Clone, false),
-        Some(&sink),
-        None,
-        None,
+        Sinks {
+            log: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -791,9 +810,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
         &out,
         build(),
         &options(MediaMode::Clone, false),
-        None,
-        None,
-        None,
+        Sinks::default(),
     )
     .unwrap();
 
@@ -804,9 +821,10 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
         &out,
         build(),
         &options(MediaMode::Clone, true),
-        Some(&sink),
-        None,
-        None,
+        Sinks {
+            log: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -840,9 +858,7 @@ fn a_drain_the_disk_cannot_hold_is_refused_before_anything_is_written() {
         &out,
         hinted(),
         &options(MediaMode::Clone, false),
-        None,
-        None,
-        None,
+        Sinks::default(),
     )
     .unwrap_err();
     assert!(err.to_string().contains("Not enough space"), "{err}");
@@ -1040,9 +1056,7 @@ fn media_disabled_is_not_refused_for_attachments_it_will_not_write() {
         &out,
         hinted(),
         &options(MediaMode::Disabled, false),
-        None,
-        None,
-        None,
+        Sinks::default(),
     );
     assert!(result.is_ok(), "refused: {:?}", result.err());
 }
@@ -1126,9 +1140,10 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
         vec![unit(6, b"a"), unit(7, b"b")],
         &options(MediaMode::Clone, true),
         &mut load,
-        None,
-        Some(&sink),
-        None,
+        Sinks {
+            progress: Some(&sink),
+            ..Sinks::default()
+        },
     )
     .unwrap();
 
@@ -1166,7 +1181,16 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
     let sink_seen = Arc::clone(&seen);
     let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
 
-    drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
+    drain_write_queue(
+        &out,
+        units,
+        &options,
+        Sinks {
+            progress: Some(&sink),
+            ..Sinks::default()
+        },
+    )
+    .unwrap();
 
     let mut done = files_written(&seen.lock().unwrap());
     done.sort_by(|a, b| a.0.cmp(&b.0));

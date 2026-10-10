@@ -161,7 +161,6 @@ fn restore_sms(mut attrs: BTreeMap<String, String>, msg: &IrMessage) -> SbrMessa
 }
 
 /// An `<mms>` from the original attributes, parts, and addresses, with the IR-owned fields written back.
-#[allow(clippy::too_many_arguments)]
 fn restore_mms(
     mut attrs: BTreeMap<String, String>,
     mut parts: Vec<BTreeMap<String, String>>,

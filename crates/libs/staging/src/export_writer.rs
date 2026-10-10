@@ -5,7 +5,8 @@ use crate::counted_attachments::{CountedAttachments, PathSources};
 use crate::headroom::{Disk, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
-    AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
+    AttachmentSource, ConversationUnit, Sinks, WriteQueueOptions, drain_units,
+    load_attachment_source,
 };
 use anyhow::Result;
 use media::{CompressOptions, MediaMode};
@@ -249,9 +250,11 @@ impl ExportWriter {
                 &self.output_dir,
                 units,
                 &options,
-                self.log.as_ref(),
-                self.progress.as_ref(),
-                cancel,
+                Sinks {
+                    log: self.log.as_ref(),
+                    progress: self.progress.as_ref(),
+                    cancel,
+                },
                 report,
             );
         }

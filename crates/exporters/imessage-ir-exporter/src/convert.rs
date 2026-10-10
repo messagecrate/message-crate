@@ -806,9 +806,11 @@ fn drain_conversations(
         resume: options.resume,
         writer_count: 0,
     };
-    let log = options.log.clone();
-    let progress = options.progress.clone();
-    let cancel = options.cancel.as_ref();
+    let sinks = message_staging::Sinks {
+        log: options.log.as_ref(),
+        progress: options.progress.as_ref(),
+        cancel: options.cancel.as_ref(),
+    };
 
     let queue_report = if collected.encrypted {
         // The program decrypts one file at a time over one pipe, so the
@@ -833,19 +835,10 @@ fn drain_conversations(
             units,
             &queue,
             &mut load,
-            log.as_ref(),
-            progress.as_ref(),
-            cancel,
+            sinks,
         )
     } else {
-        message_staging::drain_write_queue(
-            &options.export_path,
-            units,
-            &queue,
-            log.as_ref(),
-            progress.as_ref(),
-            cancel,
-        )
+        message_staging::drain_write_queue(&options.export_path, units, &queue, sinks)
     }
     .map_err(|e| anyhow!("write conversations: {e:#}"))?;
 

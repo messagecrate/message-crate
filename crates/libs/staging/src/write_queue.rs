@@ -308,6 +308,18 @@ fn signed(bytes: u64) -> i64 {
 pub type AttachmentLoader<'a> =
     dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
+/// Where a drain reports and what stops it: the log, the progress events,
+/// and the cancel flag. Each is optional; [`Sinks::default`] has none.
+#[derive(Clone, Copy, Default)]
+pub struct Sinks<'a> {
+    /// Where the drain writes its log lines.
+    pub log: Option<&'a LogSink>,
+    /// Where the drain sends its progress events.
+    pub progress: Option<&'a ProgressSink>,
+    /// Set to stop the drain; it then fails with `"cancelled"`.
+    pub cancel: Option<&'a CancelFlag>,
+}
+
 /// Drain `units` with a caller-supplied loader.
 ///
 /// Exporters whose attachment loader cannot cross threads — an encrypted iOS
@@ -323,13 +335,15 @@ pub fn drain_write_queue_with_loader(
     mut units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     check_units_headroom(output_dir, &units, options.media)?;
-    let attachments_dir = output_dir.join("attachments");
     let mut report = WriteQueueReport::default();
 
     let unit_count = units.len();
@@ -342,15 +356,7 @@ pub fn drain_write_queue_with_loader(
     };
 
     for unit in units {
-        let outcome = write_one_unit(
-            output_dir,
-            &attachments_dir,
-            unit,
-            options,
-            load,
-            &report_progress,
-            cancel,
-        )?;
+        let outcome = write_one_unit(output_dir, unit, options, load, &report_progress, cancel)?;
         report.attachments_saved += outcome.attachments_saved;
         if outcome.written {
             report.conversations_written += 1;
@@ -367,7 +373,7 @@ pub fn drain_write_queue_with_loader(
         );
     }
 
-    report.media = run_media_post_pass(output_dir, options, log, progress, cancel)?;
+    report.media = run_media_post_pass(output_dir, options, sinks)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
@@ -484,12 +490,10 @@ pub fn drain_units(
     output_dir: &Path,
     units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
     report: &mut message_crate_core::ExportReport,
 ) -> Result<()> {
-    drain_write_queue(output_dir, units, options, log, progress, cancel)?.fold_into(report);
+    drain_write_queue(output_dir, units, options, sinks)?.fold_into(report);
     Ok(())
 }
 
@@ -507,10 +511,13 @@ pub fn drain_write_queue(
     output_dir: &Path,
     mut units: Vec<ConversationUnit>,
     options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     if options.media != MediaMode::Disabled {
         leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
@@ -579,7 +586,6 @@ pub fn drain_write_queue(
                     };
                     match write_one_unit(
                         output_dir,
-                        &attachments_dir,
                         unit,
                         options,
                         &mut load,
@@ -629,7 +635,7 @@ pub fn drain_write_queue(
         attachments_saved: attachments_saved.load(Ordering::Relaxed),
         media: media::MediaReport::default(),
     };
-    report.media = run_media_post_pass(output_dir, options, log, progress, cancel)?;
+    report.media = run_media_post_pass(output_dir, options, sinks)?;
     announce_finish(log, &report, options.resume);
     Ok(report)
 }
@@ -643,10 +649,13 @@ pub fn drain_write_queue(
 fn run_media_post_pass(
     output_dir: &Path,
     options: &WriteQueueOptions,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<media::MediaReport> {
+    let Sinks {
+        log,
+        progress,
+        cancel,
+    } = sinks;
     if !matches!(options.media, MediaMode::Convert | MediaMode::Compress) {
         return Ok(media::MediaReport::default());
     }
@@ -767,7 +776,6 @@ fn announce_finish(log: Option<&LogSink>, report: &WriteQueueReport, resume: boo
 /// so its presence on disk vouches for everything it points at.
 fn write_one_unit(
     output_dir: &Path,
-    attachments_dir: &Path,
     unit: ConversationUnit,
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
@@ -841,7 +849,7 @@ fn write_one_unit(
         let sources = &mut sources;
         run_attachment_jobs(
             &mut jobs,
-            attachments_dir,
+            &output_dir.join("attachments"),
             &MediaConfig {
                 mode: stage_mode,
                 compress: options.compress.clone(),
