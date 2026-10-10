@@ -17,7 +17,7 @@ use message_crate_core::{
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks, parse_android_type,
+    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks, android_source,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
@@ -279,17 +279,7 @@ impl ProjectionHooks for SbpProjection {
                 fields.insert(key.into(), serde_json::Value::String(value.to_string()));
             }
         }
-        if let Some(title) = convo.display_name.as_deref().filter(|t| !t.is_empty()) {
-            // Android group title stored as data only. Filenames do not use it.
-            fields.insert(
-                "android_group_title".into(),
-                serde_json::Value::String(title.to_string()),
-            );
-        }
-        IrSource {
-            android_type: parse_android_type(msg.extra_str("android_type")),
-            fields,
-        }
+        android_source(convo, msg, fields)
     }
 }
 
