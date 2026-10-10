@@ -162,6 +162,42 @@
         "sender_lid": null,
         "sender_contact_name": null,
         "sender_push_name": null
+      },
+      "M8": {
+        "from_me": false,
+        "timestamp": 1609459620,
+        "time": "00:07",
+        "key_id": "M8",
+        "data": "From an @lid id with no name",
+        "sender": "555555555555555",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "555555555555555@lid",
+        "sender_lid": "555555555555555@lid",
+        "sender_contact_name": null,
+        "sender_push_name": null
+      },
+      "M9": {
+        "from_me": false,
+        "timestamp": 1609459680,
+        "time": "00:08",
+        "key_id": "M9",
+        "data": "From another person with the same push name",
+        "sender": "666666666666666",
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {},
+        "sender_jid": "666666666666666@lid",
+        "sender_lid": "666666666666666@lid",
+        "sender_contact_name": null,
+        "sender_push_name": "Lid Person"
       }
     }
   },

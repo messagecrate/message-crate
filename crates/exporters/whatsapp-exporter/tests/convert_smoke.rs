@@ -312,7 +312,8 @@ fn sender_of<'a>(
 /// from an `@lid` id are not a phone number. The name is the first of
 /// `sender_contact_name`, `sender` when it is a name, and
 /// `sender_push_name`. A sender whose `sender_jid` is still an `@lid` id
-/// has a name and no number (#1092).
+/// has no number, and is written under that id, typed `other` (#1092), so
+/// a sender with no name keeps their sender.
 #[test]
 fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
     let documents = senders_fixture();
@@ -335,8 +336,12 @@ fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
     );
     assert_eq!(
         sender_of(club, "From an @lid id the backup cannot map"),
-        (None, Some("Lid Person")),
+        (Some("123456789012345@lid"), Some("Lid Person")),
         "an @lid id is no phone number"
+    );
+    assert_eq!(
+        sender_of(club, "From an @lid id with no name"),
+        (Some("555555555555555@lid"), None)
     );
     assert_eq!(
         sender_of(club, "From a sender named in sender"),
@@ -355,7 +360,7 @@ fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
 /// the owner is never a participant of their own conversation.
 #[test]
 fn a_group_has_its_members_and_its_other_senders_as_participants() {
-    use message_ir::IdentityType::Phone;
+    use message_ir::IdentityType::{Other, Phone};
     let documents = senders_fixture();
     let club = &documents["120363042222222222@g.us"];
     assert_eq!(
@@ -363,10 +368,13 @@ fn a_group_has_its_members_and_its_other_senders_as_participants() {
         vec![
             (Some("+15555550133"), Some(Phone), Some("Ada Lovelace")),
             (Some("+15555550144"), Some(Phone), Some("Benny")),
-            (None, None, Some("Lid Person")),
+            (Some("123456789012345@lid"), Some(Other), Some("Lid Person")),
             (Some("+15555550155"), Some(Phone), Some("Cy")),
             (Some("+15555550166"), Some(Phone), None),
             (Some("+15555550177"), Some(Phone), Some("Dee")),
+            (Some("555555555555555@lid"), Some(Other), None),
+            // Another person with the same name stays another participant.
+            (Some("666666666666666@lid"), Some(Other), Some("Lid Person")),
         ]
     );
 }

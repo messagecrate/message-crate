@@ -227,12 +227,14 @@ fn ingest_chat(
             (String::new(), None)
         } else if group {
             let sender = Person::sender(msg);
-            let written = (
-                sender.number.clone().unwrap_or_default(),
-                sender.name.clone(),
-            );
+            let identity = sender
+                .identity
+                .as_ref()
+                .map(|(identity, _)| identity.clone())
+                .unwrap_or_default();
+            let name = sender.name.clone();
             roster.add(sender);
-            written
+            (identity, name)
         } else {
             (chat_id.clone(), chat_name.clone())
         };
@@ -287,7 +289,7 @@ fn ingest_chat(
         return None;
     }
 
-    let participants = roster.into_participants();
+    let participants = roster.participants;
     // The phone numbers name an untitled group's file.
     pending.participant_e164s = participants
         .iter()
@@ -303,21 +305,35 @@ struct Person {
     /// Their WhatsApp id: the phone id, or an `@lid` id the backup could not
     /// map to one. `None` when the backup names no sender.
     jid: Option<String>,
-    /// Their phone number in E.164, only ever from a phone id.
-    number: Option<String>,
+    /// What they are written as: the phone number of a phone id, typed
+    /// `phone`, or else the raw id typed `other`. An `@lid` id is no phone
+    /// number, and its `@` would otherwise make the server read it as an
+    /// email address.
+    identity: Option<(String, IdentityType)>,
     name: Option<String>,
 }
 
 impl Person {
+    fn new(jid: Option<&str>, name: Option<String>) -> Self {
+        let jid = jid.and_then(message_ir::nonempty);
+        let identity = jid.as_deref().map(|jid| match phone_id_to_e164(jid) {
+            Some(number) => (number, IdentityType::Phone),
+            None => (jid.to_string(), IdentityType::Other),
+        });
+        Self {
+            jid,
+            identity,
+            name,
+        }
+    }
+
     /// A member entry, named by the owner's address book first and the
     /// member's own profile second.
     fn member(member: &MemberJson) -> Self {
-        let jid = member.jid.as_deref().and_then(message_ir::nonempty);
-        Self {
-            number: jid.as_deref().and_then(phone_id_to_e164),
-            name: first_name([member.contact_name.as_deref(), member.push_name.as_deref()]),
-            jid,
-        }
+        Self::new(
+            member.jid.as_deref(),
+            first_name([member.contact_name.as_deref(), member.push_name.as_deref()]),
+        )
     }
 
     /// A received group message's sender. The number comes only from
@@ -326,19 +342,14 @@ impl Person {
     /// the first of `sender_contact_name`, `sender` when it is a name, and
     /// `sender_push_name`.
     fn sender(msg: &MessageJson) -> Self {
-        let jid = msg
-            .sender_jid
-            .get()
-            .and_then(|jid| message_ir::nonempty(jid));
-        Self {
-            number: jid.as_deref().and_then(phone_id_to_e164),
-            name: first_name([
+        Self::new(
+            msg.sender_jid.get().map(String::as_str),
+            first_name([
                 msg.sender_contact_name.get().map(String::as_str),
                 msg.sender.as_deref().filter(|sender| is_a_name(sender)),
                 msg.sender_push_name.get().map(String::as_str),
             ]),
-            jid,
-        }
+        )
     }
 }
 
@@ -365,9 +376,16 @@ fn is_a_name(sender: &str) -> bool {
 struct Roster<'a> {
     owner: Option<&'a str>,
     participants: Vec<IrParticipant>,
-    /// Index into `participants` by WhatsApp id, or by name for a person the
-    /// JSON gives no id for.
-    seen: BTreeMap<String, usize>,
+    /// Index into `participants` of each person already added.
+    seen: BTreeMap<PersonKey, usize>,
+}
+
+/// What tells two people of one conversation apart: their WhatsApp id, or
+/// their name when the JSON gives no id for them.
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum PersonKey {
+    Jid(String),
+    Name(String),
 }
 
 impl<'a> Roster<'a> {
@@ -380,16 +398,23 @@ impl<'a> Roster<'a> {
     }
 
     /// Add `person`, or give the participant already there their name when
-    /// it has none. A person with neither a number nor a name has nothing to
-    /// write. One with a name and no number is written with no identity,
-    /// which the server stores as the name.
+    /// it has none. A person with neither an id nor a name has nothing to
+    /// write.
     fn add(&mut self, person: Person) {
-        let Person { jid, number, name } = person;
-        if number.as_deref().is_some_and(|n| self.is_owner(n)) {
+        let Person {
+            jid,
+            identity,
+            name,
+        } = person;
+        if let Some((number, IdentityType::Phone)) = &identity
+            && self.is_owner(number)
+        {
             return;
         }
-        let Some(key) = jid.or_else(|| name.as_ref().map(|n| format!("name:{n}"))) else {
-            return;
+        let key = match (jid, &name) {
+            (Some(jid), _) => PersonKey::Jid(jid),
+            (None, Some(name)) => PersonKey::Name(name.clone()),
+            (None, None) => return,
         };
         if let Some(&at) = self.seen.get(&key) {
             let known = &mut self.participants[at];
@@ -398,14 +423,12 @@ impl<'a> Roster<'a> {
             }
             return;
         }
-        if number.is_none() && name.is_none() {
-            return;
-        }
         self.seen.insert(key, self.participants.len());
+        let (identity, identity_type) = identity.unzip();
         self.participants.push(IrParticipant {
-            identity_type: number.as_ref().map(|_| IdentityType::Phone),
-            identity: number,
+            identity,
             display_name: name,
+            identity_type,
         });
     }
 
@@ -432,10 +455,6 @@ impl<'a> Roster<'a> {
         let digits = |s: &str| s.chars().filter(char::is_ascii_digit).collect::<String>();
         self.owner
             .is_some_and(|owner| digits(owner) == digits(number))
-    }
-
-    fn into_participants(self) -> Vec<IrParticipant> {
-        self.participants
     }
 }
 

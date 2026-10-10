@@ -16,20 +16,21 @@ Two things make it hard:
 The desktop app runs `wtsexporter`, from Message Crate's fork of the open-source [WhatsApp Chat Exporter](https://github.com/KnugiHK/WhatsApp-Chat-Exporter), [messagecrate/WhatsApp-Chat-Exporter](https://github.com/messagecrate/WhatsApp-Chat-Exporter), because only the fork records who sent each group message, the members of each group, and the ids a quoted reply is linked by.
 Import refuses a `result.json` that another `wtsexporter` wrote, and names the fork, because without those fields a group message's sender is a name or a number, never both, and the number can be an internal WhatsApp id rather than a phone number.
 
-## Who is imported
-
-Each person keeps the phone number and the name the backup holds for them.
-
-- A group's participants are its members, including a member who never wrote, and anyone else who wrote in it. The phone's owner is not one of them. A group whose member list the backup doesn't hold has the people who wrote in it.
-- A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported by name.
-- A name is the one in the phone's address book first, then the name the person set in their own WhatsApp profile.
-- A one-to-one chat's person has the chat's name.
-- Some old group messages name no sender in the backup, and are imported with none.
 Each time it starts, the desktop app downloads the pinned release into its Tools Directory when it isn't there, in the background, and [**Settings → System**](/docs/user/features/settings/system/#media) shows the program or how its download stands.
 The app runs `wtsexporter` only from the Tools Directory, never from `PATH`.
 A WhatsApp import can't start without it, and the Import form names the reason and offers **Try again**.
 An import started while `wtsexporter` is still downloading waits for the download, and its progress line says so.
 A program in the Tools Directory whose checksum is the pinned program's is kept, whoever put it there, and anything else under its name is replaced by the pinned program.
+
+## Who is imported
+
+Each person keeps the phone number and the name the backup holds for them.
+
+- A group's participants are its members, including a member who never wrote, and anyone else who wrote in it. The phone's owner is not one of them. A group whose member list the backup doesn't hold has the people who wrote in it.
+- A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported under that id, with their name.
+- A name is the one in the phone's address book first, then the name the person set in their own WhatsApp profile.
+- A one-to-one chat's person has the chat's name.
+- Some old group messages name no sender in the backup, and are imported with none.
 
 ## WhatsApp on Android
 

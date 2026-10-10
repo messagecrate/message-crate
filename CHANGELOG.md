@@ -381,10 +381,11 @@ released versions carry their date on the heading.
   `~/message-crate/tools` too, because a WhatsApp import no longer finds it
   on `PATH`. If you start the server with a script, it takes `serve
   --tools-dir <directory>` for the same purpose (#1053).
-- A `wtsexporter` installed before this release reads WhatsApp replies without
-  their link. Install Message Crate's fork of WhatsApp Chat Exporter, release
-  `0.13.0-mc.2`, with the line on the guide's WhatsApp page; it replaces the
-  old one. Then link or copy it into `~/message-crate/tools`, the Tools
+- A `wtsexporter` installed before this release writes a WhatsApp file that
+  Import refuses, because it records no group members and no sender's name
+  beside their number. Install Message Crate's fork of WhatsApp Chat
+  Exporter, release `0.13.0-mc.2`, with the line on the guide's WhatsApp
+  page; it replaces the old one. Then link or copy it into `~/message-crate/tools`, the Tools
   Directory, because the app runs it from there only (#1936).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the

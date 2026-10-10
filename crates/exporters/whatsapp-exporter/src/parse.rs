@@ -27,20 +27,37 @@ pub(crate) struct ChatJson {
     pub members: ForkField<Vec<MemberJson>>,
 }
 
-/// One entry of a group's `members`. The fork also writes `lid`, `active`
-/// and `admin`, which are not read: an `@lid` id is not a phone number, and
-/// the conversation model has no place for the other two.
+/// One entry of a group's `members`.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct MemberJson {
     /// As [`MessageJson::sender_jid`].
     #[serde(default)]
     pub jid: Option<String>,
+    /// As [`MessageJson::sender_lid`]. `jid` is the id the member is
+    /// written under.
+    #[serde(default)]
+    #[expect(dead_code, reason = "read and not written: `jid` names the member")]
+    pub lid: Option<String>,
     /// The name the owner gave the member in the address book.
     #[serde(default)]
     pub contact_name: Option<String>,
     /// The name the member typed into their own WhatsApp profile.
     #[serde(default)]
     pub push_name: Option<String>,
+    /// Whether the member was in the group when the backup was made.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub active: bool,
+    /// Whether the member was an admin of the group.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub admin: bool,
 }
 
 /// A field only Message Crate's fork of WhatsApp Chat Exporter writes, told
