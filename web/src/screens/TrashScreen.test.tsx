@@ -199,7 +199,7 @@ describe("TrashScreen", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/applies to/)).toBeNull();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
+    expect(screen.queryByText("Trash is empty")).toBeNull();
   });
 
   it("shows the error, not an empty Trash, when trashed contacts cannot be loaded", async () => {
@@ -208,7 +208,7 @@ describe("TrashScreen", () => {
     renderAt("/trash");
 
     expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
+    expect(screen.queryByText("Trash is empty")).toBeNull();
     expect(screen.queryByText("No contacts in Trash")).toBeNull();
     expect(screen.getByRole("button", { name: "Empty Trash" })).toBeTruthy();
   });
@@ -218,7 +218,7 @@ describe("TrashScreen", () => {
     renderAt("/trash");
 
     expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
-    expect(screen.queryByText("Trash is empty.")).toBeNull();
+    expect(screen.queryByText("Trash is empty")).toBeNull();
     expect(screen.queryByText("No conversations in Trash")).toBeNull();
   });
 
@@ -226,7 +226,7 @@ describe("TrashScreen", () => {
     listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
     renderAt("/trash");
 
-    expect(await screen.findByText("Trash is empty.")).toBeTruthy();
+    expect(await screen.findByText("Trash is empty")).toBeTruthy();
     expect(screen.queryByText("Conversations")).toBeNull();
     expect(screen.queryByText("Contacts")).toBeNull();
   });
@@ -257,7 +257,7 @@ describe("TrashScreen", () => {
       expect(screen.queryByRole("button", { name: "Restore" })).toBeNull();
     });
     expect(
-      screen.getByText(/in Trash\. Select one on the left to view it\.|Trash is empty\./),
+      screen.getByText(/in Trash\. Select one on the left to view it\.|Trash is empty/),
     ).toBeTruthy();
   });
 
@@ -363,6 +363,14 @@ describe("TrashScreen", () => {
 
       expect(await screen.findByText("Grace Hopper")).toBeTruthy();
       expect(screen.getByText("No conversations match this search")).toBeTruthy();
+    });
+
+    it("says nothing in Trash matches a search that finds neither kind", async () => {
+      listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
+      listContactsMock.mockResolvedValue(contactPage([]));
+      renderAt("/trash?tq=nobody");
+
+      expect(await screen.findByText("Nothing in Trash matches this search")).toBeTruthy();
     });
   });
 
@@ -477,7 +485,7 @@ describe("TrashScreen", () => {
       listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
       renderAt("/trash");
 
-      expect(await screen.findByText("Trash is empty.")).toBeTruthy();
+      expect(await screen.findByText("Trash is empty")).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Empty Trash" })).toBeNull();
     });
 

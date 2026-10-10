@@ -287,7 +287,7 @@ export default function TrashScreen() {
         </div>
       ) : nothingInTrash ? (
         <div className="text-[0.875rem] text-muted">
-          {searching ? "Nothing in Trash matches this search." : "Trash is empty."}
+          {searching ? "Nothing in Trash matches this search" : "Trash is empty"}
         </div>
       ) : (
         <>
