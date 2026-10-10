@@ -653,7 +653,7 @@ export async function invokeSaveFile(bytes: Uint8Array, fileName: string): Promi
 /** `value` as a JSON string, with every character outside ASCII written as `\uXXXX`. */
 function asciiJson(value: string): string {
   return JSON.stringify(value).replace(
-    /[\u007f-￿]/g,
+    /[\u007f-\uffff]/g,
     (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
   );
 }
