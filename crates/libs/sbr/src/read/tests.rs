@@ -113,6 +113,48 @@ fn a_group_of_twenty_is_keyed_by_a_short_hash_of_its_roster() {
     assert_ne!(group_mms(21).chat_key, key);
 }
 
+/// The key and title come from `phone::group_chat_id`, the rule the
+/// SMS exporters share: the roster sorted, without repeats, each number
+/// prefixed by its length. So a roster written in another order, or with
+/// an address twice, is the same group, and a different roster is not.
+#[test]
+fn one_roster_in_any_order_or_with_a_repeat_is_one_group() {
+    let mms = |address: &str| {
+        format!(
+            r#"<mms date="1" msg_box="1" address="{address}"><parts><part ct="text/plain" text="hi"/></parts><addrs/></mms>"#
+        )
+    };
+    let xml = format!(
+        "<smses>{}{}{}{}</smses>",
+        mms("+15555550101~+15555550102~+15555550103"),
+        mms("+15555550103~+15555550101~+15555550102"),
+        mms("+15555550102~+15555550101~+15555550103~+15555550101"),
+        mms("+15555550101~+15555550102~+15555550104"),
+    );
+    let (records, _) = parse_reader(xml.as_bytes(), None).unwrap();
+    let keys: Vec<&str> = records.iter().map(|r| r.chat_key.as_str()).collect();
+    let roster = "group-12:+15555550101_12:+15555550102_12:+15555550103";
+    assert_eq!(
+        keys,
+        [
+            roster,
+            roster,
+            roster,
+            "group-12:+15555550101_12:+15555550102_12:+15555550104",
+        ]
+    );
+    let others: Vec<String> = ["+15555550103", "+15555550102", "+15555550101"]
+        .map(String::from)
+        .to_vec();
+    assert_eq!(
+        (
+            records[0].chat_key.clone(),
+            records[0].group_title.clone().unwrap()
+        ),
+        phone::group_chat_id("group-", &others)
+    );
+}
+
 #[test]
 fn attachments_without_smil_keep_the_order_of_their_parts() {
     let names = [
