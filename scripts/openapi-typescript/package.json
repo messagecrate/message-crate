@@ -1,6 +1,9 @@
 {
   "name": "message-crate-openapi-typescript",
   "private": true,
+  "scripts": {
+    "generate": "npm ci --no-audit --no-fund --silent && openapi-typescript ../../docs/src/assets/openapi.json -o"
+  },
   "description": "The generator of web/src/lib/serverApi.types.ts, in a tree of its own: it declares a peer dependency on TypeScript 5 and web/ is on TypeScript 7.",
   "dependencies": {
     "openapi-typescript": "7.13.0"

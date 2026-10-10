@@ -14,8 +14,9 @@
 # fails to resolve. It has a tree of its own instead, scripts/openapi-typescript/,
 # whose package-lock.json pins every package it runs, so a new release of one of
 # its dependencies cannot run here unreviewed, and Dependabot and `npm audit` see
-# that tree. Only its text output ever reaches the repository. web/package.json's
-# gen:api script runs the same tree.
+# that tree. Its `generate` script installs the tree with npm ci and writes the
+# types to the path it is given; this check and web/package.json's gen:api both
+# run it. Only its text output ever reaches the repository.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,9 +34,7 @@ fi
 tmp="$(mktemp -t serverApi.types.XXXXXX.ts)"
 trap 'rm -f "${tmp}"' EXIT
 
-GENERATOR="scripts/openapi-typescript"
-npm ci --prefix "${GENERATOR}" --no-audit --no-fund --silent
-npm exec --no --prefix "${GENERATOR}" -- openapi-typescript "${SPEC}" -o "${tmp}" >/dev/null
+npm run --prefix scripts/openapi-typescript --silent generate -- "${tmp}" >/dev/null
 
 if ! diff -u "${GENERATED}" "${tmp}"; then
   echo >&2
