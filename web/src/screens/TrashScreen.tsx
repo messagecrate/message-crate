@@ -222,7 +222,7 @@ export default function TrashScreen() {
   const selectedName =
     selected?.label ||
     (selected?.is_group
-      ? `${selected.participants.length} participants`
+      ? countOf(selected.participants.length, "participant")
       : selected?.participants[0]?.name) ||
     "this conversation";
 
