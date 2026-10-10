@@ -43,19 +43,46 @@ instead of dropping them.
 #### Review on the pull request
 
 The ruleset on `main` blocks a merge while any review conversation is open,
-and requires no approval: the reviewing agent and the author share one GitHub
-account, and GitHub does not let an author approve their own pull request.
+and requires no approval: the conversations are the review.
 Why: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Review a pull request with the `pr-review` skill (`.claude/skills/pr-review/`).
 It runs the steps below, fixes what it finds, and merges the pull request.
 
+`pr-review` posts as the `message-crate-reviewer` GitHub App: every call that
+posts or resolves (a review, a comment, a reply, a resolved thread, a deferred
+finding's issue) runs through `scripts/gh-as-reviewer.sh` in place of `gh`,
+so it counts against the app's posting limit, not the user's ("Posting
+pace").
+Reads, pushes, `gh pr ready` and the merge stay on the logged-in `gh` account.
+The app never pushes.
+
+Run `main`'s copy of the script, never the one in the review worktree, so the
+pull request under review never supplies the code that handles the app's key.
+At the start of a review, write it to a scratch file outside the worktree,
+named with the pull request number so parallel reviews never share it. That
+file is `<gh-as-reviewer>` in the commands below, and it works from any
+directory, including a branch older than the script:
+
+```bash
+git fetch origin main
+git show origin/main:scripts/gh-as-reviewer.sh > <scratch>/gh-as-reviewer-<N>.sh
+bash <scratch>/gh-as-reviewer-<N>.sh <gh arguments>
+```
+
+The script reads the key from
+`~/.ssh/message-crate-reviewer.pem`. When its own calls for a token fail, it
+prints `gh-as-reviewer:`, the step, GitHub's HTTP status and reply, and exits
+1. The `gh` call after them fails as `gh` does, with its own message and exit
+code. Why: `docs/adr/0007-ci-is-the-only-gate.md`.
+
 ##### The marker
 
-Every comment `pr-review` posts starts with the line `<!-- pr-review -->`. The user and the agents post from one GitHub account,
-so the marker is how their threads are told apart. A thread whose first
-comment carries it is an agent thread. Any other thread is a user thread, and
-only the user resolves it.
+Every comment `pr-review` posts starts with the line `<!-- pr-review -->`.
+The marker, not the author, is how agent and user threads are told apart, so
+the rule holds whichever account posted. A thread whose first comment carries
+it is an agent thread. Any other thread is a user thread, and only the user
+resolves it.
 
 1. **Read the pull request**: its head, base, draft state, the issues it
    closes, and the diff.
@@ -72,7 +99,7 @@ only the user resolves it.
    commit that was reviewed so a later push cannot move the lines:
 
    ```bash
-   gh api repos/messagecrate/message-crate/pulls/<N>/reviews \
+   bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/reviews \
      -f commit_id=<headRefOid> -f event=COMMENT \
      -f body=$'<!-- pr-review -->\n<summary>' \
      -f 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
@@ -81,9 +108,13 @@ only the user resolves it.
 
    Repeat the three `comments[]` fields for each finding. The marker goes in
    each `comments[][body]`, because that comment opens the thread. A finding
-   with no line in the diff goes in a top-level comment instead
-   (`gh pr comment <N>`), with the marker on its first line. It has no thread,
-   so it is answered by a new marked `gh pr comment <N>` that quotes it.
+   with no line in the diff goes in a top-level comment instead, with the
+   marker on its first line. It has no thread, so it is answered by a new
+   marked top-level comment that quotes it:
+
+   ```bash
+   bash <gh-as-reviewer> pr comment <N> --body-file <file>
+   ```
 3. **Work on a detached worktree** made at the pull request's head, before
    the review. The branch may be checked out in another worktree, and a
    detached one works either way. Before every push, run the **local
@@ -106,12 +137,12 @@ only the user resolves it.
    stays as it is. Then resolve it if it is an agent thread:
 
    ```bash
-   gh api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
+   bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
        -f body=$'<!-- pr-review -->\nFixed in <sha>: <what changed>.'
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
-   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
+   bash <gh-as-reviewer> api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
    ```
 
    Never resolve a thread without a reply in it.
@@ -229,11 +260,13 @@ only the user resolves it.
 ##### Posting pace
 
 GitHub limits how fast one account creates content (reviews, comments,
-replies, pull requests), apart from its hourly limit, and every session posts
-from the same account. So make those calls one at a time, at least a second
-apart. When GitHub refuses one ("submitted too quickly", or a 403 or 422 that
-names a secondary rate limit), check that it did not land, wait a minute (or
-the `retry-after` it gives), and send the same call again.
+replies, pull requests), apart from its hourly limit: about 80 a minute and
+500 an hour. Every session shares one account: the user's, or the app's for
+`pr-review` ("Review on the pull request"). So make those calls one at a time,
+at least a second apart. When GitHub refuses one for this limit ("submitted
+too quickly", or a 403, 422 or 429 whose reply names a secondary rate limit),
+check that it did not land, wait a minute (or the `retry-after` it gives), and
+send the same call again.
 
 #### Merging
 
