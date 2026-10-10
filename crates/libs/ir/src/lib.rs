@@ -368,7 +368,7 @@ impl IrService {
 
 /// Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS).
 ///
-/// UI labels: `Phone` → "Text message", `Whatsapp` → "WhatsApp".
+/// On screen, `Phone` is "Text Message" and `Whatsapp` is "WhatsApp".
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentityService {
