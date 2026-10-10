@@ -31,8 +31,9 @@ fixed, never declined for being small.
 ## Pushing and posting
 
 The PR is a draft until step 5. Before CI, it is pushed at most twice: in
-step 1, to bring it up to date, and in step 5, with every fix. A conflict that
-appears before the PR is marked ready adds one push, with the base merged in.
+step 1, to bring it up to date, and in step 5, with every fix. Each conflict
+that appears before the PR is marked ready adds a push, with the base merged
+in.
 Step 5 marks it ready after its push, and CI is watched on that head alone
 (AGENTS.md step 6).
 
@@ -174,9 +175,9 @@ failed job or at a conflict (AGENTS.md step 6). A job that fails because of
 the PR is a finding: fix it, run the local checks, push, and watch the new
 run.
 
-**A conflict ends the watch.** No run on a `CONFLICTING` head can lead to a
-merge, so leave the run and push the base merged in at once, with the merge
-review. AGENTS.md step 6 says what the push carries.
+**A conflict ends the watch.** AGENTS.md step 6 says what the push that
+replaces the run carries. A merge that resolves a conflict gets the merge
+review.
 
 A check that fails for a reason outside the PR (a runner fault, a network
 fetch) gets one rerun of its failed jobs. If it fails again, or `main` fails

@@ -121,8 +121,8 @@ only the user resolves it.
    base in too. A push made only to bring the base in is made only on
    `CONFLICTING`: GitHub cannot merge a pull request that conflicts with the
    base, and merges one that is only behind as it is, untested on the new
-   base (ADR 0007 says why that is accepted). A conflict ends the CI watch
-   at any point (step 6).
+   base (ADR 0007 says why that is accepted). Step 6 says what a conflict
+   does to the CI watch.
    Merge rather than rebase: a rebase needs a force-push, and the squash
    merge drops the merge commit. GitHub reports `UNKNOWN`
    for a few seconds after a push, so wait for a settled answer:
@@ -186,7 +186,7 @@ only the user resolves it.
 
    ```bash
    conflicting() { m=$(gh pr view <N> --json mergeable -q .mergeable) && [ "$m" = CONFLICTING ]; }
-   stop_if_conflicting() { [ "$m" != CONFLICTING ] || { echo conflicting; exit 1; }; }   # merge the base (step 5), push
+   stop_if_conflicting() { [ "$m" != CONFLICTING ] || { echo conflicting; exit 1; }; }   # tests the state the last read left in $m
    before=$(gh pr view <N> --json headRefOid -q .headRefOid)
    git push origin HEAD:<headRefName> || exit 1   # rejected: see step 3
    sha=$(git rev-parse HEAD)
