@@ -14,6 +14,7 @@ mod parse_emit;
 mod row_marks;
 mod run;
 mod unnamed_files;
+mod zone;
 
 pub use run::run;
 

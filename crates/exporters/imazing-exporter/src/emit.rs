@@ -15,11 +15,11 @@ use crate::parse_emit::{
 };
 use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
+use crate::zone::Zone;
 use anyhow::Result;
 use message_crate_core::{
     ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
 };
-use message_csv::Zone;
 use message_ir::{
     ConversationKey, Deletion, EarlierVersion, ExportMeta, IrAttachment, IrParticipant, IrService,
     IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectedRole,

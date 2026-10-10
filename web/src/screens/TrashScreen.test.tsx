@@ -82,7 +82,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label: null,
+    shown_title: null,
     tags: [],
     ...overrides,
   };

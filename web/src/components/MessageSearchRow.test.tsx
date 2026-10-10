@@ -26,7 +26,7 @@ function message(over: Partial<Message> = {}): Message {
       conversation_type: "group",
       is_group: true,
       group_title: "Family",
-      label: "Family",
+      shown_title: "Family",
       participants: [
         participant({ name: "Alice", identity: "+15555550100" }),
         participant({ name: "Bob", identity: "+15555550120" }),
