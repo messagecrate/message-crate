@@ -650,17 +650,30 @@ mod tests {
         path.to_str().unwrap().to_string()
     }
 
-    /// The arguments every iPhone command starts with, before the paths the
-    /// backup forwards.
-    fn base_args(out: &Path, json: &Path) -> Vec<String> {
+    /// The arguments every command starts with: the platform flag (`-a` or
+    /// `-i`), then the fixed ones, before the paths the backup forwards.
+    fn base_args(platform_flag: &str, out: &Path, json: &Path) -> Vec<String> {
         vec![
-            "-i".to_string(),
+            platform_flag.to_string(),
             "--no-html".to_string(),
             "--no-banner".to_string(),
             "-o".to_string(),
             text(out),
             "-j".to_string(),
             text(json),
+        ]
+    }
+
+    /// The arguments that pass an iPhone backup's files read straight from
+    /// disk: its database, contacts and media directory.
+    fn files_args(db: &Path, contacts: &Path, media: &Path) -> Vec<String> {
+        vec![
+            "-d".to_string(),
+            text(db),
+            "-w".to_string(),
+            text(contacts),
+            "-m".to_string(),
+            text(media),
         ]
     }
 
@@ -689,23 +702,20 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-a".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-k".to_string(),
-                text(&key_file),
-                "-b".to_string(),
-                text(&crypt),
-                "-w".to_string(),
-                text(&wa),
-                "-m".to_string(),
-                text(&media),
-                "--business".to_string(),
+                base_args("-a", &out, &json),
+                vec![
+                    "-k".to_string(),
+                    text(&key_file),
+                    "-b".to_string(),
+                    text(&crypt),
+                    "-w".to_string(),
+                    text(&wa),
+                    "-m".to_string(),
+                    text(&media),
+                    "--business".to_string(),
+                ],
             ]
+            .concat()
         );
         assert_eq!(fs::read(&key_file).unwrap(), [0xde, 0xad, 0xbe, 0xef]);
     }
@@ -800,15 +810,8 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                base_args(&out, &json),
-                vec![
-                    "-d".to_string(),
-                    text(&db),
-                    "-w".to_string(),
-                    text(&contacts),
-                    "-m".to_string(),
-                    text(&domain),
-                ],
+                base_args("-i", &out, &json),
+                files_args(&db, &contacts, &domain),
             ]
             .concat()
         );
@@ -840,7 +843,7 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                base_args(&out, &json),
+                base_args("-i", &out, &json),
                 vec!["-b".to_string(), text(backup.path())],
             ]
             .concat()
@@ -872,15 +875,8 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                base_args(&out, &json),
-                vec![
-                    "-d".to_string(),
-                    text(&db),
-                    "-w".to_string(),
-                    text(&contacts),
-                    "-m".to_string(),
-                    text(&shared),
-                ],
+                base_args("-i", &out, &json),
+                files_args(&db, &contacts, &shared),
             ]
             .concat()
         );
