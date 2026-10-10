@@ -668,7 +668,7 @@ pub(crate) async fn head_asset(
 ) -> Result<Json<Asset>, ApiError> {
     let (_account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     let Some(stored) = existing else {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     };
     Ok(Asset::stored(stored, true))
 }
@@ -722,7 +722,7 @@ pub(crate) async fn get_asset(
 ) -> Result<Response, ApiError> {
     let account = reader.account_id;
     let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     };
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
@@ -843,7 +843,7 @@ async fn stream_version(
 ) -> Result<Response, ApiError> {
     let account = reader.account_id;
     let Some(stored) = lookup_for_read(state, account, sha256).await? else {
-        return Err(ApiError::NotFound("asset not found".into()));
+        return Err(ApiError::not_found("asset"));
     };
     let file = crate::db::attachment_versions::file_of(
         &mut *state.db.acquire().await?,

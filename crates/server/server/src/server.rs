@@ -615,6 +615,12 @@ impl ApiError {
         Self::ValidationFailed(vec![sentence.into()])
     }
 
+    /// `404` for a `kind` of row this account does not hold, with the detail
+    /// "{kind} not found", so every route words the same miss the same way.
+    pub(crate) fn not_found(kind: &str) -> Self {
+        Self::NotFound(format!("{kind} not found"))
+    }
+
     /// `401` for a credential whose account is gone: the token passed, but no
     /// account row has its id any more. It answers as a credential that names
     /// no account, because to the caller the two are the same.
