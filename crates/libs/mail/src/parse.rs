@@ -483,49 +483,26 @@ fn collect_mime_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::base_sms;
     use crate::{MailMessage, Participant, write_conversation_mbox, write_message_file};
 
     #[test]
     fn roundtrip_eml_headers_and_body() {
+        let base = base_sms();
         let msg = MailMessage {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: "individual".into(),
-            group_title: None,
-            participants: vec![Participant {
-                identity: "+15555550101".into(),
-                display_name: Some("Sam".into()),
-            }],
-            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
-            export_source: "sms-backup-restore".into(),
-            export_tool: "SMS Backup & Restore".into(),
-            export_tool_version: "10.26.003".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
             message: IrMessage {
-                guid: "aabbccddeeff00112233445566778899".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
                 direction: IrDirection::Outgoing,
-                service: IrService::Sms,
-                message_kind: IrMessageKind::Sms,
                 sender_identity: Some("+15555550100".into()),
                 sender_display_name: Some("Me".into()),
-                owner_identity: None,
-                subject: None,
                 text: "hello roundtrip".into(),
-                attachments: Vec::new(),
-                reactions: Vec::new(),
-                deletion: None,
-                edits: Vec::new(),
-                reply_to: None,
-                imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
                     fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
                 }),
+                ..base.message
             },
-            attachments: vec![],
+            ..base
         };
 
         let tmp = tempfile::tempdir().unwrap();
@@ -605,6 +582,7 @@ mod tests {
             tapback_emoji: Some("\u{2764}".into()),
             tapback_action: Some("add".into()),
         };
+        let base = base_sms();
         let msg = MailMessage {
             chat_identifier: "chat-group1".into(),
             conversation_type: "group".into(),
@@ -619,35 +597,28 @@ mod tests {
                     display_name: None,
                 },
             ],
-            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
             message: IrMessage {
                 guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_identity: None,
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
-                attachments: Vec::new(),
                 reactions: reactions.clone(),
                 deletion: Some(message_ir::Deletion::Unsent),
                 edits: edits.clone(),
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
-                    android_type: Some(1),
-                    fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
+                    android_type: None,
+                    fields: serde_json::from_str(r#"{"delivered_date":"2014-05-22 15:41:01"}"#)
+                        .unwrap(),
                 }),
+                ..base.message
             },
             attachments: vec![MailAttachment {
                 bytes: b"\xff\xd8\xfffakejpeg".to_vec(),
@@ -663,6 +634,7 @@ mod tests {
                 transcription: Some("a beach".into()),
                 sticker_effect: Some("stroke".into()),
             }],
+            ..base
         };
 
         let tmp = tempfile::tempdir().unwrap();
@@ -687,10 +659,10 @@ mod tests {
         assert_eq!(parsed.export_tool, "imessage-exporter");
         assert_eq!(parsed.export_tool_version, "3.1.0");
         let source = parsed.message.source.as_ref().expect("source bag");
-        assert_eq!(source.android_type, Some(1));
+        assert_eq!(source.android_type, None);
         assert_eq!(
             serde_json::to_value(&source.fields).unwrap(),
-            serde_json::json!({"address": "+15555550101"})
+            serde_json::json!({"delivered_date": "2014-05-22 15:41:01"})
         );
 
         assert_eq!(
@@ -740,46 +712,25 @@ mod tests {
             transcription: None,
             sticker_effect: None,
         };
+        let base = base_sms();
         MailMessage {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: "individual".into(),
-            group_title: None,
-            participants: vec![Participant {
-                identity: "+15555550101".into(),
-                display_name: Some("Sam".into()),
-            }],
-            owner_identity: "+15555550100".into(),
-            owner_display_name: None,
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
             export_tool_version: "3.1.0".into(),
-            backup_taken_at_unix_ms: None,
-            filename_suffix: None,
             message: IrMessage {
                 guid: "11111111-2222-3333-4444-555555555555".into(),
-                timestamp_unix_ms: 1_400_773_261_000,
-                time_precision: message_ir::TimePrecision::Milliseconds,
-                direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_identity: Some("+15555550101".into()),
-                sender_display_name: Some("Sam".into()),
-                owner_identity: None,
-                subject: None,
                 text: "the message text".into(),
-                attachments: Vec::new(),
-                reactions: Vec::new(),
-                deletion: None,
-                edits: Vec::new(),
-                reply_to: None,
-                imessage: None,
                 source: None,
+                ..base.message
             },
             attachments: vec![
                 attachment("notes.txt", "text/plain", b"the notes file\nline two\n"),
                 attachment("photo.jpg", "image/jpeg", b"\xff\xd8\xfffakejpeg"),
                 attachment("page.html", "text/html", b"<p>the page</p>"),
             ],
+            ..base
         }
     }
 
