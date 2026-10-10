@@ -309,14 +309,14 @@ pub type AttachmentLoader<'a> =
     dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
 /// Where a drain reports and what stops it: the log, the progress events,
-/// and the cancel flag. Each is optional; [`Sinks::default`] has none.
+/// and the cancel flag. Each is optional, and [`Sinks::default`] has none.
 #[derive(Clone, Copy, Default)]
 pub struct Sinks<'a> {
     /// Where the drain writes its log lines.
     pub log: Option<&'a LogSink>,
     /// Where the drain sends its progress events.
     pub progress: Option<&'a ProgressSink>,
-    /// Set to stop the drain; it then fails with `"cancelled"`.
+    /// Set to stop the drain. The drain then fails with `"cancelled"`.
     pub cancel: Option<&'a CancelFlag>,
 }
 

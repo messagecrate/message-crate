@@ -238,24 +238,16 @@ pub fn transcode_staged(
                     ),
                 );
             }
+            let is_heal = matches!(item, PendingWork::HealTranscode { .. });
             match item {
-                PendingWork::Transcode { recorded_rel, src } => {
+                PendingWork::Transcode { recorded_rel, src }
+                | PendingWork::HealTranscode { recorded_rel, src } => {
                     let target = TranscodeTarget {
                         run_dir,
                         jsonl,
                         recorded_rel: &recorded_rel,
                         src: &src,
-                        is_heal: false,
-                    };
-                    apply_transcode(&target, &mut doc, options, issues, &mut report)?;
-                }
-                PendingWork::HealTranscode { recorded_rel, src } => {
-                    let target = TranscodeTarget {
-                        run_dir,
-                        jsonl,
-                        recorded_rel: &recorded_rel,
-                        src: &src,
-                        is_heal: true,
+                        is_heal,
                     };
                     apply_transcode(&target, &mut doc, options, issues, &mut report)?;
                 }
@@ -646,7 +638,7 @@ struct TranscodeTarget<'a> {
     /// A crash-heal recovery: `recorded_rel` points at a `-mv` name nothing
     /// produced yet, rather than at `src` itself. That distinction only
     /// matters when the Media stage declines the file (the `Skipped` arm of
-    /// [`apply_transcode`]) or fails on it (the `Err` arm); everywhere else
+    /// [`apply_transcode`]) or fails on it (the `Err` arm). Everywhere else
     /// a heal behaves exactly like a fresh transcode.
     is_heal: bool,
 }
