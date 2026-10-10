@@ -7,9 +7,9 @@ import VirtualizedImportIssuesTable, {
 } from "../../components/import/VirtualizedImportIssuesTable";
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
-import { formatBytes } from "../../lib/attachmentProgressCopy";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
+import { formatBytes } from "../../lib/formatBytes";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import {

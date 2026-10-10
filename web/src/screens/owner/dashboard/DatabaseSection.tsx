@@ -1,4 +1,4 @@
-import { formatBytes } from "../../settings/storage/storageUtils";
+import { formatBytes } from "../../../lib/formatBytes";
 import { DashboardSection } from "./DashboardSection";
 import type { ServerStorage } from "./types";
 

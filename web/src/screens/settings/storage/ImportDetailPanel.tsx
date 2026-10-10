@@ -2,11 +2,11 @@ import ImportSummaryPanel, {
   type ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
+import { formatBytes } from "../../../lib/formatBytes";
 import ImportContactsPanel from "./ImportContactsPanel";
 import ImportRunLog from "./ImportRunLog";
 import type { AccountImportRun } from "./storageUtils";
 import {
-  formatBytes,
   formatImportDate,
   importBackup,
   importStatusLabel,
