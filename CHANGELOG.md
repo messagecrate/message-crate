@@ -228,7 +228,7 @@ released versions carry their date on the heading.
   and hides duplicates never reached the **Logs** panel. They do now, and so
   do the lines of the Demo Account's import when it is built or rebuilt. An
   import that was running when the desktop app crashed could also stop
-  part-way while writing one of those lines; it no longer does. The server's
+  part-way while writing one of those lines. It no longer does. The server's
   `import` and `reset-demo` commands still print the same lines as they run
   (#1945).
 - 2026-10-08: **A number written without its country code is no longer read

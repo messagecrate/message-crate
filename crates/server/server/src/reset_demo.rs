@@ -596,9 +596,8 @@ async fn build_from_bundle(
         &prepared,
         DEMO_ACCOUNT_ID,
         actor,
-        Vacuum::Skip,
+        BuildRun::Serve,
         stop,
-        Progress::Log,
     )
     .await
 }
@@ -656,12 +655,8 @@ async fn reset_prepared_bundle_with(
         &prepared,
         account_id,
         AuditActor::CommandLine,
-        // The command serves no one while it runs, and the database it
-        // writes is a copy swapped in afterwards, so rewriting the file
-        // holds up no other writer.
-        Vacuum::Run,
+        BuildRun::Command,
         &AtomicBool::new(false),
-        Progress::Print,
     )
     .await
     {
@@ -722,27 +717,23 @@ async fn install_reset_state_or_keep_work(
 
 /// Wipe, seed, import, load the address book, dedupe, and convert media for
 /// the demo account in the database `db`, the one `cfg` names, then run
-/// `VACUUM` when `vacuum` asks for it. A new database, a reset and a build on
-/// a running server all run exactly this; what differs is what the caller
-/// does around it (a reset snapshots the database first, asks for
-/// `Vacuum::Run`, and swaps it in after). Every step uses `db`, so on a
+/// `VACUUM` when `run` is [`BuildRun::Command`]. A new database, a reset and
+/// a build on a running server all run exactly this; what differs is what
+/// the caller does around it (a reset snapshots the database first, runs as
+/// [`BuildRun::Command`], and swaps it in after). Every step uses `db`, so on a
 /// running server the build shares the server's pool. The build's record in
 /// `demo_account_build` is written first and removed last, so a database
 /// that still holds it after a stop has a part-built Demo Account (#1215).
-/// The import, dedupe and `VACUUM` say how far they have got through
-/// `progress`: standard output for `reset-demo`, the server's log under
-/// `serve`.
-#[allow(clippy::too_many_arguments)]
 async fn rebuild_demo_account(
     cfg: &Config,
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
     actor: AuditActor,
-    vacuum: Vacuum,
+    run: BuildRun,
     stop: &AtomicBool,
-    progress: Progress,
 ) -> Result<ResetPreparedStats> {
+    let progress = run.progress();
     begin_demo_build(db).await?;
     wipe_demo_account(cfg, db, account_id, actor).await?;
     print_reset_header(account_id, prepared, &cfg.paths.db.display());
@@ -751,7 +742,7 @@ async fn rebuild_demo_account(
     let address_book = load_demo_address_book(db, prepared, account_id).await?;
     let (dedupe_stats, process_stats) =
         dedupe_and_process_assets(cfg, db, account_id, stop, progress).await?;
-    if vacuum == Vacuum::Run {
+    if run == BuildRun::Command {
         vacuum_after_demo(db, progress).await;
     }
     let mut conn = db.acquire().await?;
@@ -767,15 +758,31 @@ async fn rebuild_demo_account(
     })
 }
 
-/// Whether a Demo Account build ends by running `VACUUM`, which rewrites the
-/// whole database file and holds the write lock while it does.
+/// What runs a Demo Account build, which decides two things: whether it ends
+/// by running `VACUUM`, which rewrites the whole database file and holds the
+/// write lock while it does, and where its progress goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Vacuum {
-    /// Run it: the `reset-demo` command, on a copy no one else writes.
-    Run,
-    /// Leave the freed pages for the database to reuse: a build on a running
-    /// server, and the build `serve` runs on a new database.
-    Skip,
+enum BuildRun {
+    /// The `reset-demo` command. It runs `VACUUM`: the command serves no one
+    /// while it runs, and the database it writes is a copy swapped in
+    /// afterwards, so rewriting the file holds up no other writer. Its
+    /// progress is its output, on standard output.
+    Command,
+    /// A build on a running server, and the build `serve` runs on a new
+    /// database. It leaves the freed pages for the database to reuse, and
+    /// its progress goes into the server's log.
+    Serve,
+}
+
+impl BuildRun {
+    /// Where the build's import, dedupe and `VACUUM` say how far they have
+    /// got.
+    fn progress(self) -> Progress {
+        match self {
+            Self::Command => Progress::Print,
+            Self::Serve => Progress::Log,
+        }
+    }
 }
 
 /// The most JSONL a build imports in one transaction: what an Upload sends
@@ -2016,7 +2023,8 @@ fn remove_any_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Reclaim space after the demo import replaced most rows. Best effort:
-/// failures are warnings, not returned, because the demo rows are already
+/// failures are written as warnings through `progress`, not returned,
+/// because the demo rows are already
 /// committed and a failed vacuum only costs disk space.
 async fn vacuum_after_demo(db: &SqlitePool, progress: Progress) {
     let mut conn = match db.acquire().await {
