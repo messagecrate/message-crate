@@ -148,22 +148,23 @@ list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
 
 **Text Message is one service, and a message's transport never changes an
-identity's type.** Text Message (`phone` in the database) carries phone
-numbers and email addresses; an email address on Text Message means iMessage.
-SMS, MMS, RCS and iMessage are transports, recorded on each message
-(`messages.service`), and the transport says how that one message travelled,
-not what the address is. So an address with an `@` is an `email` identity on
-Text Message whatever carried it: an email-to-text gateway such as
-`alerts@example.com` that writes over SMS is one `email` row on `phone`, on
-one contact. WhatsApp is the other way, as above: its `@` ids are `other`.
-Why: one conversation holds both transports, and identities of one address
-are linked only when their types are equal. Typed by transport, an address
-became `email` from a header or an iMessage and `other` from an SMS message,
-two identities on two contacts, the second with no name, and the contact's
-counts left the SMS messages out
-([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
-Whether the file's type is needed at all, once service and shape decide, is
+identity's type.** SMS, MMS, RCS and iMessage are transports. Each message
+records the one that carried it in `messages.service` as `sms`, `rcs` or
+`imessage`, and an MMS is recorded as `sms` with the message kind `mms`. The
+transport says how that one message travelled, not what its address is. So
+when the source states no type, an address with an `@` is an `email` identity
+on Text Message whatever transport carried it. An email-to-text gateway such
+as `alerts@example.com` that writes over SMS is one `email` row on `phone`,
+on one contact. A type the source states stands on Text Message, as above;
+whether the file's type is needed at all is
 [#1933](https://github.com/messagecrate/message-crate/issues/1933).
+WhatsApp is the other way, as above: its `@` ids are `other`. Why: one
+conversation holds both transports, and identities of one address are linked
+only when their types are equal. Typed by transport, an address became
+`email` from a header or an iMessage and `other` from an SMS message. That
+made two identities on two contacts, and the second contact had no name. The
+first contact's counts left the SMS messages out
+([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
 
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a

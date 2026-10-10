@@ -239,14 +239,13 @@ other word as `phone`.
 _Avoid_: Handle, Address, Number
 
 **Text Message**:
-The one service for a phone's own messages, `phone` in the database. It
-carries phone numbers and email addresses; an email address on Text Message
-means iMessage. SMS, MMS, RCS and iMessage are transports: each message records
-the one that carried it, and the transport never changes what an identity is,
-so an address with an `@` is an email address on Text Message whatever carried
-it. A contact with one phone number and one email address under Text Message
-has every way a text can reach them covered. WhatsApp is a second service,
-and an `@` id there is not an email address.
+The one service for a phone's own messages, carrying phone numbers and email
+addresses. An email address on Text Message means iMessage. SMS, MMS, RCS and
+iMessage are the transports a message took, and a transport never changes what
+an identity is: an `@` address is an email address on Text Message whatever
+transport carried it, so a person's numbers and email addresses under Text
+Message cover every way a text reaches them. WhatsApp is a separate service,
+where an `@` id is not an email address.
 _Avoid_: SMS (for the service), iMessage (for the service)
 
 **Participant**:

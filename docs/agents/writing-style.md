@@ -190,12 +190,13 @@ conversation.
 | **Contact Groups** — collections of contacts, usable in searches | "Groups" |
 | **Saved Searches** — stored queries that re-resolve as messages arrive | "Saved Groups" |
 | **Message Tags** — marks on conversations | "Thread Tags" |
-| **Text Message** — the reader-facing label for iMessage and SMS/MMS alike | "iMessage" or "SMS" as a UI label |
+| **Text Message** — the service for iMessage, SMS, MMS and RCS alike, and its reader-facing label | "iMessage" or "SMS" as a UI label |
 | **Message Crate** for the product and for one installation of it, **the server** for the running process, **the database** for the store | "vault", and never "crate" alone |
 
 WhatsApp keeps its own name. The Text Message collapsing covers the Apple and
-carrier texting transports only, and the underlying `service` value still
-records `imessage`, `sms`, and `mms` — only the presentation collapses.
+carrier texting transports only. Each message's `service` value still
+records its transport as `imessage`, `sms`, or `rcs`, with an MMS recorded
+as `sms`; only the presentation collapses.
 
 One thing carries two names on purpose. A phone number, email address, or
 username a person is reached at is a **handle** in the database (`handles`,
