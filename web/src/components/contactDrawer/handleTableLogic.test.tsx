@@ -22,9 +22,12 @@ function bodyText(conversationCount: number): string {
 
 describe("removeIdentityConfirmBody", () => {
   it("writes the conversation count with a thousands separator", () => {
-    expect(bodyText(1234)).toContain(
-      `will unlink ${(1234).toLocaleString()} conversations from this contact`,
+    // Seven digits, because some locales leave a four-digit number ungrouped.
+    const text = bodyText(1234567);
+    expect(text).toContain(
+      `will unlink ${(1234567).toLocaleString()} conversations from this contact`,
     );
+    expect(text).not.toContain("unlink 1234567 ");
   });
 
   it("writes one conversation in the singular", () => {
