@@ -227,6 +227,7 @@ fn parse_mms(
 ) -> Option<Record> {
     stats.mms_seen += 1;
     let (date_ms, timestamp_secs) = timestamp_from_date(attrs, stats)?;
+    // Trimmed for `android_type` below; `MmsBox::parse` trims on its own.
     let msg_box = get(attrs, "msg_box").trim().to_string();
     let mms_box = MmsBox::parse(&msg_box);
     if mms_box.is_some_and(MmsBox::is_unsent) {
