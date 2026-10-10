@@ -29,6 +29,7 @@ target
 web/node_modules
 web/tsconfig.tsbuildinfo
 docs/node_modules
+scripts/openapi-typescript/node_modules
 docs/.astro
 docs/dist
 

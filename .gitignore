@@ -62,8 +62,10 @@ config/contacts.vcf
 
 # Frontend (web/) dependencies and build output
 /web/node_modules
-/scripts/openapi-typescript/node_modules
 /web/dist/
+
+# The API type generator's own tree (scripts/openapi-typescript/)
+/scripts/openapi-typescript/node_modules
 
 # Restored Next.js browse UI (web-next/)
 /web-next/node_modules
