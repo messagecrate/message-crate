@@ -43,6 +43,11 @@ fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
     if let Some(source) = &mut doc.messages[0].source {
         source.fields.insert("address".into(), json!(handle));
     }
+    let first = sample_doc().conversation.chat_identifier;
+    assert!(
+        handle == first || !serde_json::to_string(&doc).unwrap().contains(&first),
+        "the sample conversation writes {first} somewhere sample_doc_for does not replace"
+    );
     doc
 }
 
