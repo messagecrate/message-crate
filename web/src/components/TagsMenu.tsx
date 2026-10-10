@@ -1,4 +1,4 @@
-import type { MembershipCheckState } from "../lib/membershipChecks";
+import type { MembershipCheckState } from "../lib/membership";
 import { MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
 import GroupsMenu from "./GroupsMenu";
 import { TagIcon } from "./icons";
