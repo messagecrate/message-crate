@@ -7,11 +7,11 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_with_body, delete_raw, delete_raw_with_body, delete_status,
-    delete_status_with_body, expect_problem, fixture_with_account, get_json, get_raw, get_status,
-    http_client, log_in, log_in_raw, login_status, message_line, patch_failure, patch_json,
-    patch_raw, post_created_json, post_logged_out, post_raw, post_status, post_status_logged_out,
-    put_json, put_raw, put_status, register_via_api, seed_conversation, seed_one_message,
-    stored_time, test_fixture,
+    delete_status_with_body, expect_problem, expect_problem_for, fixture_with_account, get_json,
+    get_raw, get_status, http_client, log_in, log_in_raw, login_status, message_line,
+    patch_failure, patch_json, patch_raw, post_created_json, post_json_raw, post_logged_out,
+    post_raw, post_status, post_status_logged_out, put_json, put_json_raw, put_raw, put_status,
+    register_via_api, seed_conversation, seed_one_message, stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
@@ -358,14 +358,8 @@ async fn a_closed_server_and_an_ordinary_session_are_both_refused() {
     // an account, and an account asking for another is not the owner.
     let (status, text) = post_logged_out(&state, "/v1/accounts", body.clone()).await;
     expect_problem(status, &text, ProblemType::RegistrationClosed);
-    let (status, text) = crate::test_support::post_raw(
-        &state,
-        "/v1/accounts",
-        &alice.token,
-        "application/json",
-        body.to_string(),
-    )
-    .await;
+    let (status, text) =
+        crate::test_support::post_json_raw(&state, "/v1/accounts", &alice.token, body).await;
     expect_problem(status, &text, ProblemType::NotTheOwner);
 }
 
@@ -380,14 +374,18 @@ async fn a_taken_username_is_a_conflict() {
     // beside "alice" and leave one of the two unreachable at login, because
     // the lookup is the same comparison.
     for taken in ["alice", "ALICE", "Alice"] {
-        // Registering a taken username is refused.
         let (status, text) = post_logged_out(
             &state,
             "/v1/accounts",
             serde_json::json!({ "username": taken, "password": "otherpassword" }),
         )
         .await;
-        expect_problem(status, &text, ProblemType::UsernameTaken);
+        expect_problem_for(
+            &format!("registering {taken}"),
+            status,
+            &text,
+            ProblemType::UsernameTaken,
+        );
     }
 
     assert_eq!(
@@ -940,7 +938,16 @@ async fn owner_routes_on_a_missing_account_are_404() {
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
-    let (status, text) = put_raw(&state, &format!("{missing}/password"), &owner.token, "application/json", serde_json::json!({ "password": "hunter2hunter2", "password_confirmation": "hunter2hunter2" }).to_string()).await;
+    let (status, text) = put_json_raw(
+        &state,
+        &format!("{missing}/password"),
+        &owner.token,
+        serde_json::json!({
+            "password": "hunter2hunter2",
+            "password_confirmation": "hunter2hunter2",
+        }),
+    )
+    .await;
     expect_problem(status, &text, ProblemType::NotFound);
     let (status, text) = delete_raw(&state, &format!("{missing}/messages"), &owner.token).await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -1098,9 +1105,28 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
     let path = format!("{}/password", member(owner.account_id));
 
     // The session alone does not change the owner's password.
-    let (status, text) = put_raw(&state, &path, &owner.token, "application/json", serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice" }).to_string()).await;
+    let (status, text) = put_json_raw(
+        &state,
+        &path,
+        &owner.token,
+        serde_json::json!({
+            "password": "keeperschoice",
+            "password_confirmation": "keeperschoice",
+        }),
+    )
+    .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
-    let (status, text) = put_raw(&state, &path, &owner.token, "application/json", serde_json::json!({ "password": "keeperschoice", "password_confirmation": "keeperschoice", "current_password": "notthisone" }).to_string()).await;
+    let (status, text) = put_json_raw(
+        &state,
+        &path,
+        &owner.token,
+        serde_json::json!({
+            "password": "keeperschoice",
+            "password_confirmation": "keeperschoice",
+            "current_password": "notthisone",
+        }),
+    )
+    .await;
     expect_problem(status, &text, ProblemType::InvalidCredentials);
     // A refused change leaves the password as it was. Logging in opens a new
     // session, so the change that follows uses its token.
@@ -1134,17 +1160,15 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     let path = format!("{}/password", member(owner.account_id));
 
     // Wrong current password: the mismatched pair is not mentioned.
-    let (status, text) = put_raw(
+    let (status, text) = put_json_raw(
         &state,
         &path,
         &owner.token,
-        "application/json",
         serde_json::json!({
             "password": "one",
             "password_confirmation": "two",
             "current_password": "notthisone",
-        })
-        .to_string(),
+        }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::InvalidCredentials);
@@ -1154,17 +1178,15 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     );
 
     // Right current password, pair differs.
-    let (status, text) = put_raw(
+    let (status, text) = put_json_raw(
         &state,
         &path,
         &owner.token,
-        "application/json",
         serde_json::json!({
             "password": "hunter2hunter2",
             "password_confirmation": "two",
             "current_password": "hunter2hunter2",
-        })
-        .to_string(),
+        }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -1174,17 +1196,15 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     );
 
     // Pair agrees, but it is the password already in place.
-    let (status, text) = put_raw(
+    let (status, text) = put_json_raw(
         &state,
         &path,
         &owner.token,
-        "application/json",
         serde_json::json!({
             "password": "hunter2hunter2",
             "password_confirmation": "hunter2hunter2",
             "current_password": "hunter2hunter2",
-        })
-        .to_string(),
+        }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -1203,12 +1223,11 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
 
     // A user account sends no current password, but its pair must still agree.
     let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
-    let (status, text) = put_raw(
+    let (status, text) = put_json_raw(
         &state,
         &format!("{}/password", member(bob.account_id)),
         &bob.token,
-        "application/json",
-        serde_json::json!({ "password": "one", "password_confirmation": "two" }).to_string(),
+        serde_json::json!({ "password": "one", "password_confirmation": "two" }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -1227,17 +1246,15 @@ async fn the_owner_cannot_clear_their_own_password() {
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
 
-    let (status, text) = put_raw(
+    let (status, text) = put_json_raw(
         &state,
         &path,
         &owner.token,
-        "application/json",
         serde_json::json!({
             "password": "",
             "password_confirmation": "",
             "current_password": "hunter2hunter2",
-        })
-        .to_string(),
+        }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -1845,13 +1862,37 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
     let path = member(demo);
 
     for (who, token) in [("the owner", &owner.token), ("the account", &demo_token)] {
-        // Neither may set the Demo Account's password.
-        let (status, text) = put_raw(&state, &format!("{path}/password"), token, "application/json", serde_json::json!({ "password": "chosen4demo", "password_confirmation": "chosen4demo" }).to_string()).await;
-        expect_problem(status, &text, ProblemType::DemoAccountProtected);
-        // Neither may change the Demo Account's identities.
-        let (status, text) = patch_raw(&state, &path, token, serde_json::json!({ "identities": [{ "address": "demo@example.com", "service": "phone" }] })).await;
-        expect_problem(status, &text, ProblemType::DemoAccountProtected);
-        // Neither may delete the Demo Account's messages for good.
+        let (status, text) = put_json_raw(
+            &state,
+            &format!("{path}/password"),
+            token,
+            serde_json::json!({
+                "password": "chosen4demo",
+                "password_confirmation": "chosen4demo",
+            }),
+        )
+        .await;
+        expect_problem_for(
+            &format!("{who} setting a password"),
+            status,
+            &text,
+            ProblemType::DemoAccountProtected,
+        );
+        let (status, text) = patch_raw(
+            &state,
+            &path,
+            token,
+            serde_json::json!({
+                "identities": [{ "address": "demo@example.com", "service": "phone" }]
+            }),
+        )
+        .await;
+        expect_problem_for(
+            &format!("{who} changing its identities"),
+            status,
+            &text,
+            ProblemType::DemoAccountProtected,
+        );
         let (status, text) = delete_raw_with_body(
             &state,
             &format!("{path}/messages"),
@@ -1859,7 +1900,12 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
             serde_json::json!({ "confirm": true }),
         )
         .await;
-        expect_problem(status, &text, ProblemType::DemoAccountProtected);
+        expect_problem_for(
+            &format!("{who} deleting its messages for good"),
+            status,
+            &text,
+            ProblemType::DemoAccountProtected,
+        );
         // Every visitor shares the account, so a name or zone one visitor
         // sets would greet the next; the seed's "Demo User" and UTC stay.
         for (field, body) in [
@@ -1928,12 +1974,11 @@ async fn the_demo_account_refuses_imports_and_deletes_whatever_its_permission_ro
         "the Demo Account's profile must report export only, whatever its row says"
     );
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &state,
         "/v1/imports",
         &token,
-        "application/json",
-        serde_json::json!({ "source": "imessage" }).to_string(),
+        serde_json::json!({ "source": "imessage" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::DemoAccountProtected);
@@ -2876,35 +2921,19 @@ async fn guessing_the_owners_current_password_is_rate_limited() {
         })
     };
 
-    for _ in 1..=crate::credentials::AUTH_RATE_MAX {
-        let (status, text) = put_raw(
-            &state,
-            &path,
-            &owner.token,
-            "application/json",
-            change("notthisone").to_string(),
-        )
-        .await;
-        expect_problem(status, &text, ProblemType::InvalidCredentials);
+    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
+        let (status, text) = put_json_raw(&state, &path, &owner.token, change("notthisone")).await;
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
     }
-    let (status, text) = put_raw(
-        &state,
-        &path,
-        &owner.token,
-        "application/json",
-        change("notthisone").to_string(),
-    )
-    .await;
+    let (status, text) = put_json_raw(&state, &path, &owner.token, change("notthisone")).await;
     expect_problem(status, &text, ProblemType::RateLimited);
     // Past the limit the guess is not checked.
-    let (status, text) = put_raw(
-        &state,
-        &path,
-        &owner.token,
-        "application/json",
-        change("hunter2hunter2").to_string(),
-    )
-    .await;
+    let (status, text) = put_json_raw(&state, &path, &owner.token, change("hunter2hunter2")).await;
     expect_problem(status, &text, ProblemType::RateLimited);
 }
 
@@ -2919,10 +2948,15 @@ async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
     let delete =
         |current: &str| serde_json::json!({ "confirm": true, "current_password": current });
 
-    for _ in 1..=crate::credentials::AUTH_RATE_MAX {
+    for attempt in 1..=crate::credentials::AUTH_RATE_MAX {
         let (status, text) =
             delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
-        expect_problem(status, &text, ProblemType::InvalidCredentials);
+        expect_problem_for(
+            &format!("attempt {attempt}"),
+            status,
+            &text,
+            ProblemType::InvalidCredentials,
+        );
     }
     let (status, text) = delete_raw_with_body(&state, &path, &alice.token, delete("not-it")).await;
     expect_problem(status, &text, ProblemType::RateLimited);

@@ -4,9 +4,9 @@ use std::sync::atomic::AtomicBool;
 use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, expect_problem, get_json, get_raw, get_status,
-    http_client, patch_raw, post_logged_out, post_raw, post_status, register_via_api,
-    seed_conversation, stored_time, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, expect_problem, expect_problem_for, get_json,
+    get_raw, get_status, http_client, patch_raw, post_json_raw, post_logged_out, post_status,
+    register_via_api, seed_conversation, stored_time, test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -193,12 +193,11 @@ async fn a_server_can_only_be_claimed_once() {
     let state = fixture.state.clone();
     let _owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &state,
         "/v1/server/claim",
         "",
-        "application/json",
-        serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }).to_string(),
+        serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::StateConflict);
@@ -264,12 +263,11 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
     .unwrap();
     let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_raw(
+        post_json_raw(
             &state,
             "/v1/server/claim",
             "",
-            "application/json",
-            serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }).to_string(),
+            serde_json::json!({ "username": "usurper", "password": "hunter2hunter2" }),
         ),
     )
     .await;
@@ -290,12 +288,11 @@ async fn claiming_needs_a_password_of_one_character_or_more() {
     let state = fixture.state.clone();
 
     // The owner must have a password.
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &state,
         "/v1/server/claim",
         "",
-        "application/json",
-        serde_json::json!({ "username": "keeper", "password": "" }).to_string(),
+        serde_json::json!({ "username": "keeper", "password": "" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -322,14 +319,18 @@ async fn claiming_is_rate_limited_across_the_server() {
     // An empty password is refused after the limiter has counted the
     // attempt, so every try counts and none claims this Message Crate.
     for attempt in 0..crate::credentials::AUTH_RATE_MAX {
-        // Inside the limit, a refusal still counts.
         let (status, text) = post_logged_out(
             &state,
             "/v1/server/claim",
             serde_json::json!({ "username": format!("keeper{attempt}"), "password": "" }),
         )
         .await;
-        expect_problem(status, &text, ProblemType::ValidationFailed);
+        expect_problem_for(
+            &format!("attempt {attempt} inside the limit"),
+            status,
+            &text,
+            ProblemType::ValidationFailed,
+        );
     }
     let (status, text) = crate::test_support::post_logged_out(
         &state,
@@ -1063,14 +1064,7 @@ async fn the_demo_username_stays_reserved_after_the_demo_account_is_deleted() {
     let body =
         |username: &str| serde_json::json!({ "username": username, "password": "hunter2hunter2" });
     // The owner may not create an account named demo.
-    let (status, text) = post_raw(
-        &state,
-        "/v1/accounts",
-        &owner.token,
-        "application/json",
-        body("demo").to_string(),
-    )
-    .await;
+    let (status, text) = post_json_raw(&state, "/v1/accounts", &owner.token, body("demo")).await;
     expect_problem(status, &text, ProblemType::UsernameTaken);
     let (status, text) =
         crate::test_support::post_logged_out(&state, "/v1/accounts", body("Demo")).await;

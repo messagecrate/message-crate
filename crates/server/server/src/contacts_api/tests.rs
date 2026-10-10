@@ -7,8 +7,9 @@ use message_ir::IdentityType;
 use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, expect_problem, fixture_with_account, http_client,
-    post_json, post_raw, register_via_api, stored_time, test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, expect_problem, expect_problem_response,
+    fixture_with_account, http_client, post_json, post_json_raw, register_via_api, stored_time,
+    test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -360,12 +361,11 @@ async fn contact_match_rejects_an_oversized_batch() {
     let identifiers: Vec<String> = (0..MAX_MATCH_IDENTIFIERS + 1)
         .map(|i| format!("+1555{i:06}"))
         .collect();
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
         &account.token,
-        "application/json",
-        serde_json::json!({ "identifiers": identifiers }).to_string(),
+        serde_json::json!({ "identifiers": identifiers }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -3145,12 +3145,11 @@ async fn summaries_of_no_contacts_are_refused() {
         &text,
         crate::problem::ProblemType::ValidationFailed,
     );
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/contacts/summaries",
         &user.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     crate::test_support::expect_problem(
@@ -3461,12 +3460,11 @@ async fn contact_restore_twice_is_204_with_marker_gone() {
 async fn contact_trash_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/999999/trash",
         &account.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -3476,12 +3474,11 @@ async fn contact_trash_404s_for_an_unknown_id() {
 async fn contact_restore_404s_for_an_unknown_id() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/contacts/999999/restore",
         &account.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -3498,12 +3495,11 @@ async fn contact_trash_404s_for_another_accounts_contact() {
 
     // Bob trashing Alice's contact id must 404, not 403 — a 403 would
     // confirm the id exists in someone else's account.
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/trash"),
         &bob.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -3533,12 +3529,11 @@ async fn contact_restore_404s_for_another_accounts_contact() {
 
     let bob = crate::test_support::register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/contacts/{alice_contact_id}/restore"),
         &bob.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -3568,13 +3563,11 @@ async fn a_long_comma_list_is_refused_as_too_many_parts() {
         .send()
         .await
         .unwrap();
-    let status = response.status();
-    let text = response.text().await.unwrap();
-    let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+    let problem = expect_problem_response(response, ProblemType::SearchQueryInvalid).await;
     assert_eq!(
         problem.detail.as_deref(),
         Some("The search has too many parts."),
-        "{text}"
+        "{problem:?}"
     );
 }
 

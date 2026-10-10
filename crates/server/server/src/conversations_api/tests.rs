@@ -1728,12 +1728,11 @@ async fn conversation_trash_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/trash",
         &user.token,
-        "application/json",
-        serde_json::json!({}).to_string(),
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -1744,12 +1743,11 @@ async fn conversation_restore_404s_for_an_unknown_id() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = fixture.state.clone();
 
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         "/v1/conversations/999999/restore",
         &user.token,
-        "application/json",
-        serde_json::json!({}).to_string(),
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -1769,12 +1767,11 @@ async fn conversation_trash_404s_for_another_accounts_conversation() {
 
     // Bob trashing Alice's conversation id must 404, not 403 — a 403
     // would confirm the id exists in someone else's account.
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/trash"),
         &bob.token,
-        "application/json",
-        serde_json::json!({}).to_string(),
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);
@@ -1807,12 +1804,11 @@ async fn conversation_restore_404s_for_another_accounts_conversation() {
     let bob = crate::test_support::register_via_api(&state, "bob", "hunter2hunter2").await;
     crate::test_support::seed_one_message(&state, bob.account_id).await;
 
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/conversations/{alice_conversation_id}/restore"),
         &bob.token,
-        "application/json",
-        serde_json::json!({}).to_string(),
+        serde_json::json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::NotFound);

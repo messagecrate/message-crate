@@ -7,7 +7,9 @@ use crate::imports_api::{
     update_import,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{expect_problem, http_client};
+use crate::test_support::{
+    expect_problem, expect_problem_for, expect_problem_response, http_client,
+};
 use axum::extract::State;
 use tempfile::TempDir;
 
@@ -1060,10 +1062,7 @@ async fn a_wrong_password_is_401_and_the_limit_answers_429_with_retry_after() {
     );
 
     for _ in 1..crate::credentials::AUTH_RATE_MAX {
-        let wrong = login().await.unwrap();
-        let status = wrong.status();
-        let text = wrong.text().await.unwrap();
-        expect_problem(status, &text, ProblemType::InvalidCredentials);
+        expect_problem_response(login().await.unwrap(), ProblemType::InvalidCredentials).await;
     }
     let limited = login().await.unwrap();
     let retry_after: u64 = limited.headers()[header::RETRY_AFTER]
@@ -1096,13 +1095,22 @@ async fn every_spelling_of_a_username_counts_against_one_limit() {
             let username = spellings[attempt % spellings.len()];
             let (status, text) =
                 crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
-            expect_problem(status, &text, ProblemType::InvalidCredentials);
+            expect_problem_for(
+                &format!("attempt {attempt} as {username}"),
+                status,
+                &text,
+                ProblemType::InvalidCredentials,
+            );
         }
         for username in spellings {
-            // Past the limit.
             let (status, text) =
                 crate::test_support::log_in_raw(&state, username, "not-it-at-all").await;
-            expect_problem(status, &text, ProblemType::RateLimited);
+            expect_problem_for(
+                &format!("past the limit as {username}"),
+                status,
+                &text,
+                ProblemType::RateLimited,
+            );
         }
     }
 }

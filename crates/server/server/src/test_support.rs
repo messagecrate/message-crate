@@ -475,13 +475,39 @@ pub fn expect_problem(
     text: &str,
     kind: crate::problem::ProblemType,
 ) -> message_crate_api_types::Problem {
+    expect_problem_for("", status, text, kind)
+}
+
+/// [`expect_problem`] for a check made more than once, such as in a loop:
+/// `what` names this one in the failure, as in `attempt 3 as aLice`.
+pub fn expect_problem_for(
+    what: &str,
+    status: StatusCode,
+    text: &str,
+    kind: crate::problem::ProblemType,
+) -> message_crate_api_types::Problem {
+    let context = if what.is_empty() {
+        text.to_string()
+    } else {
+        format!("{what}: {text}")
+    };
     let problem = problem(text);
-    assert_eq!(status, kind.status(), "{text}");
-    assert_eq!(problem.status, kind.status().as_u16(), "{text}");
-    assert_eq!(problem.kind, kind.url(), "{text}");
-    assert_eq!(problem.title, kind.title(), "{text}");
-    assert!(problem.request_id.is_some(), "no request_id: {text}");
+    assert_eq!(status, kind.status(), "{context}");
+    assert_eq!(problem.status, kind.status().as_u16(), "{context}");
+    assert_eq!(problem.kind, kind.url(), "{context}");
+    assert_eq!(problem.title, kind.title(), "{context}");
+    assert!(problem.request_id.is_some(), "no request_id: {context}");
     problem
+}
+
+/// Read a response a test sent itself and check it with [`expect_problem`].
+pub async fn expect_problem_response(
+    response: reqwest::Response,
+    kind: crate::problem::ProblemType,
+) -> message_crate_api_types::Problem {
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    expect_problem(status, &text, kind)
 }
 
 /// Assert a failure is the `500 Internal Server Error` problem, which has no
@@ -512,6 +538,42 @@ pub async fn post_status(
     )
     .await
     .0
+}
+
+/// POST a JSON body with a Bearer token, returning the status and the
+/// response text, for a refusal checked with [`expect_problem`].
+pub async fn post_json_raw(
+    state: &AppState,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::POST,
+        path,
+        Some(token),
+        Some(json_body(body)),
+    )
+    .await
+}
+
+/// PUT a JSON body with a Bearer token, returning the status and the
+/// response text, for a refusal checked with [`expect_problem`].
+pub async fn put_json_raw(
+    state: &AppState,
+    path: &str,
+    token: &str,
+    body: serde_json::Value,
+) -> (StatusCode, String) {
+    request(
+        state,
+        reqwest::Method::PUT,
+        path,
+        Some(token),
+        Some(json_body(body)),
+    )
+    .await
 }
 
 /// POST a JSON body with no credential at all, returning only the status.
