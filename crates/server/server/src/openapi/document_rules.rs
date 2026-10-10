@@ -38,7 +38,7 @@ use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
-use crate::test_support::http_client;
+use crate::test_support::{self, http_client};
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
 /// "Naming a route").
@@ -615,11 +615,7 @@ async fn call_with(
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default()
         .to_string();
-    let location = response
-        .headers()
-        .get(reqwest::header::LOCATION)
-        .and_then(|v| v.to_str().ok())
-        .map(str::to_string);
+    let location = test_support::location(&response);
     let text = response.text().await.unwrap_or_default();
     Answer {
         status,

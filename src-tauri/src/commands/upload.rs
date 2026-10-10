@@ -250,10 +250,7 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
     use message_crate_import::{FileResult, ImportReport};
-    use message_ir::{
-        ConversationMeta, ConversationStats, ExportMeta, IrConversationType, IrDirection,
-        IrMessage, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
-    };
+    use message_ir::testutil::sample_document;
     use serde_json::json;
 
     /// Each conversation's lines are sentences, with no "Starting:" or
@@ -362,47 +359,13 @@ mod tests {
     /// A run directory holding one staged conversation of one message.
     fn staged_conversation() -> tempfile::TempDir {
         let run_dir = staged_directory(512 * 1024 * 1024);
+        let doc = sample_document("hello there");
         let header = json!({
-            "schema_version": SCHEMA_VERSION,
-            "export": ExportMeta {
-                source: "sms-backup-restore".into(),
-                tool: "SMS Backup & Restore".into(),
-                tool_version: "10.26.003".into(),
-                owner_identity: Some("+15555550100".into()),
-                owner_display_name: Some("Me".into()),
-                backup_taken_at_unix_ms: None,
-            },
-            "conversation": ConversationMeta {
-                chat_identifier: "+15555550101".into(),
-                conversation_type: IrConversationType::Individual,
-                group_title: None,
-                participants: vec![IrParticipant {
-                    identity: Some("+15555550101".into()),
-                    display_name: Some("Sam".into()),
-                }],
-                stats: ConversationStats::default(),
-            },
+            "schema_version": doc.schema_version,
+            "export": doc.export,
+            "conversation": doc.conversation,
         });
-        let message = json!(IrMessage {
-            guid: "guid-1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hello there".into(),
-            attachments: vec![],
-            reactions: vec![],
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        });
+        let message = json!(doc.messages[0]);
         std::fs::write(
             run_dir.path().join("sam.jsonl"),
             format!("{header}\n{message}\n"),

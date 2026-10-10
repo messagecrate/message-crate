@@ -142,6 +142,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **The Export screen names its format menu Output format.** It
+  was Format there and Output format under Convert in Settings; both now read
+  Output format, on screen and to a screen reader.
+
 - 2026-10-09: **Every import hides duplicates.** An import from the desktop
   app never hid duplicates, so a message two backup apps both held, or one
   SMS Backup+ held to the second and to the millisecond, was shown twice.
@@ -218,6 +222,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **API Tokens, Identities, Export History, Import History,
+  the largest attachments in Storage, the Audit Trail and the log viewer
+  end an empty-list message without a full stop.** They ended theirs with
+  one, where Contacts and Trash did not. "No API Tokens yet.",
+  "No identities yet.", "No exports recorded yet.", "No imports recorded
+  yet.", "No attachments with sizes yet.", "Nothing recorded yet.", "No line
+  matches the search." and "No line at this level." now end without one
+  (#2428).
 - 2026-10-10: **The contacts picked on Contacts and a message's attachments
   in search results are counted with a separator.** The heading over the
   picked contacts said "1234 contacts selected", and a search result's
@@ -262,6 +274,12 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **A new SMS Backup+ export clears out every conversation
+  directory of the one before it.** An SMS Backup+ export that stopped part
+  way could leave an empty conversation directory behind, and the next
+  export into the same directory kept it. A new export into that directory
+  now removes every conversation directory an earlier SMS Backup+ export
+  wrote, empty or not (#2299).
 - 2026-10-10: **A downloaded ffmpeg is not reported as broken by
   mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
   runs could wrongly report it as not running. The check now tries again,

@@ -1,12 +1,13 @@
 import { useCallback, useRef, useState } from "react";
 import { ListBoxItem } from "react-aria-components";
 import { useSearchParams } from "react-router-dom";
+import DesktopJobFormShell from "../components/DesktopJobFormShell";
+import ExportFormatSelect from "../components/ExportFormatSelect";
 import FormRow from "../components/FormRow";
 import PathPicker from "../components/PathPicker";
 import Select, { selectItemClassName } from "../components/Select";
-import TauriJobFormShell from "../components/TauriJobFormShell";
 import TextField from "../components/TextField";
-import { useTauriJob } from "../hooks/useTauriJob";
+import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { holdDesktopJob } from "../lib/desktopJob";
@@ -20,8 +21,7 @@ import {
   invokeExport,
   invokeFormat,
 } from "../lib/tauri";
-
-const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
+import { isTauri } from "../lib/tauri-check";
 
 /**
  * What an export covers. `everything` sends a blank query, which message-crate-export
@@ -111,7 +111,7 @@ export default function ExportScreen() {
   const [busy, setBusy] = useState(false);
   // The directory each export wrote to and its format, so the success
   // message names what was written even after the form changes.
-  const { running, finished, run } = useTauriJob<{ savePath: string; format: ExportFormat }>({
+  const { running, finished, run } = useRunDesktopJob<{ savePath: string; format: ExportFormat }>({
     job: "Export",
   });
   // The Cancel of the export under way. A Cancel pressed after the export step and
@@ -198,11 +198,14 @@ export default function ExportScreen() {
     })();
   };
 
+  if (!isTauri()) {
+    return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;
+  }
+
   return (
-    <TauriJobFormShell
+    <DesktopJobFormShell
       title="Export"
       job="Export"
-      requireTauri
       startLabel="Export"
       runningLabel="Exporting…"
       running={running || busy}
@@ -285,23 +288,7 @@ export default function ExportScreen() {
           isDisabled={running || busy}
         />
       </FormRow>
-      <FormRow label="Format">
-        <Select
-          selectedKey={format}
-          onSelectionChange={(key) => {
-            const next = parseSelectKey(key, FORMAT_IDS);
-            if (next) setFormat(next);
-          }}
-          aria-label="Format"
-          isDisabled={running || busy}
-        >
-          {EXPORT_FORMATS.map((option) => (
-            <ListBoxItem key={option.id} id={option.id} className={selectItemClassName}>
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </Select>
-      </FormRow>
-    </TauriJobFormShell>
+      <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running || busy} />
+    </DesktopJobFormShell>
   );
 }
