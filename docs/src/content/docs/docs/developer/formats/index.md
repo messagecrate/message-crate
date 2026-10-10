@@ -12,7 +12,7 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 All converters build a **common message** per conversation (`ConversationDocument`, schema version 13 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
-- A participant carries its identity and display name and no type: the server works out each identity's type (`phone` / `email` / `other`) from the service and the address on import. The CSV `identity_type` column carries the sender's type as the address's shape gives it
+- A participant carries its identity and display name and no type: the server works out each identity's type (`phone` / `email` / `other`) from the service and the address on import. The CSV `identity_type` column carries the sender's type as the server works it out
 - Direction is `direction` (`incoming` / `outgoing`) — there is **no** `is_from_me` column
 - Outgoing rows fill `sender_identity` / `sender_display_name` from owner identity (`owner_identity` / `owner_display_name` columns)
 - Vendor leftovers live in `source_fields_json` (not `xml_fields_json`)

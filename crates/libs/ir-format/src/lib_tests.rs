@@ -324,7 +324,7 @@ fn sender_identity_type_cell(dir: &Path, doc: &ConversationDocument) -> String {
 }
 
 #[test]
-fn csv_serializes_identity_type_in_cell_and_column() {
+fn csv_writes_the_sender_type_column_and_no_participant_type() {
     fn first_row_cols(csv: &str) -> (Vec<String>, csv::StringRecord) {
         let mut lines = csv.lines();
         let headers = lines.next().unwrap().to_string();
@@ -361,6 +361,20 @@ fn csv_serializes_identity_type_in_cell_and_column() {
         doc.messages[0].sender_identity = sender.map(str::to_string);
         assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "");
     }
+}
+
+/// The CSV sender type is the one the server stores: WhatsApp carries no
+/// email address, so a WhatsApp `@lid` sender is `other`, and the same shape
+/// over SMS is `email` (#1933).
+#[test]
+fn csv_types_an_at_sender_by_its_service() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut doc = message_ir::testutil::sample_document("hello ir");
+    doc.messages[0].sender_identity = Some("123456@lid".into());
+    doc.messages[0].service = message_ir::IrService::Whatsapp;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "other");
+    doc.messages[0].service = message_ir::IrService::Sms;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "email");
 }
 
 /// An address written with `tel:` is a phone number in the CSV
