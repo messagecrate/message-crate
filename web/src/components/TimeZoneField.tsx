@@ -97,7 +97,7 @@ export default function TimeZoneField({
           }}
         />
         <Button className="absolute inset-y-0 right-0 flex w-9 items-center justify-center border-0 bg-transparent text-muted outline-none">
-          <SelectChevronIcon />
+          <SelectChevronIcon className="" />
         </Button>
       </div>
       <Popover

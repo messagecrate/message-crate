@@ -313,7 +313,7 @@ export default function SearchBar({
           }}
           className="flex items-center rounded-xl border border-border bg-bg focus-within:border-accent"
         >
-          <SearchFieldIcon size={16} className="ml-3 shrink-0 text-muted" />
+          <SearchFieldIcon className="ml-3 size-4 shrink-0 text-muted" />
           <div className="relative flex min-w-0 flex-1 overflow-hidden">
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
               <div
@@ -418,10 +418,10 @@ export default function SearchBar({
                 }`}
               >
                 {option.kind === "recent" ? (
-                  <ClockIcon size={14} className="shrink-0 text-muted" />
+                  <ClockIcon className="size-3.5 shrink-0 text-muted" />
                 ) : null}
                 {option.kind === "advanced" ? (
-                  <SlidersIcon size={14} className="shrink-0 text-muted" />
+                  <SlidersIcon className="size-3.5 shrink-0 text-muted" />
                 ) : null}
                 <span className="min-w-0 truncate">{option.label}</span>
               </ListBoxItem>

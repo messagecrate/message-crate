@@ -57,7 +57,7 @@ function GroupParticipantCount({ count }: { count: number }) {
       title={`${count} participants`}
     >
       <span>{count}</span>
-      <GroupConversationIcon className="inline-block shrink-0 align-[-1px]" />
+      <GroupConversationIcon size={12} className="inline-block shrink-0 align-[-1px]" />
     </span>
   );
 }

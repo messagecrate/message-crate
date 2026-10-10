@@ -5,6 +5,10 @@ type IconProps = {
   className?: string;
 } & Omit<SVGProps<SVGSVGElement>, "width" | "height" | "children">;
 
+/**
+ * The svg every icon is drawn in. With no `className` the icon gets
+ * `shrink-0`; pass `className=""` for an svg with no class at all.
+ */
 function IconShell({
   size = 13,
   className,
@@ -232,7 +236,11 @@ export function SelectChevronIcon({ size = 10, className, ...rest }: IconProps) 
   );
 }
 
-/** Magnifying glass inside the search box. */
+/**
+ * Magnifying glass inside the search box. Its handle is shorter than
+ * `SearchIcon`'s (it ends at 20,20, not 21,21), which keeps the glyph compact
+ * at the left edge of the box.
+ */
 export function SearchFieldIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
@@ -263,7 +271,7 @@ export function SlidersIcon({ size, className, ...rest }: IconProps) {
 }
 
 /** Calendar page — opens a date picker. */
-export function CalendarIcon({ size = 15, className, ...rest }: IconProps) {
+export function CalendarIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
       <rect x="3" y="4" width="18" height="18" rx="2" />
@@ -275,7 +283,7 @@ export function CalendarIcon({ size = 15, className, ...rest }: IconProps) {
 }
 
 /** An arrow up beside an arrow down — the sort menu. */
-export function SortIcon({ size = 16, className, ...rest }: IconProps) {
+export function SortIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} viewBox="0 0 16 16" strokeWidth="1.5" {...rest}>
       <path d="M5 3v10M5 3l-2.5 2.5M5 3l2.5 2.5M11 13V3M11 13l-2.5-2.5M11 13l2.5-2.5" />
@@ -283,8 +291,11 @@ export function SortIcon({ size = 16, className, ...rest }: IconProps) {
   );
 }
 
-/** Check mark beside the chosen item of a menu. */
-export function MenuCheckIcon({ size = 14, className, ...rest }: IconProps) {
+/**
+ * Check mark beside the chosen item of a menu. Drawn on a 12-unit grid with a
+ * 1.8 stroke, so at 14 pixels it is heavier and wider-set than `CheckIcon`.
+ */
+export function MenuCheckIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} viewBox="0 0 12 12" strokeWidth="1.8" {...rest}>
       <path d="M2 6.2L4.6 9 10 3" />
@@ -292,7 +303,11 @@ export function MenuCheckIcon({ size = 14, className, ...rest }: IconProps) {
   );
 }
 
-/** Check mark inside a chosen radio dot or a ticked checkbox. */
+/**
+ * Check mark inside a chosen radio dot or a ticked checkbox. Drawn on a
+ * 16-unit grid with a 2.25 stroke, heavier than `CheckIcon`, so it still reads
+ * at 12 pixels inside a small control.
+ */
 export function ToggleCheckIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} viewBox="0 0 16 16" strokeWidth="2.25" {...rest}>
@@ -302,7 +317,7 @@ export function ToggleCheckIcon({ size, className, ...rest }: IconProps) {
 }
 
 /** Two sheets, one over the other — copy. */
-export function CopyIcon({ size = 14, className, ...rest }: IconProps) {
+export function CopyIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
       <rect x="9" y="9" width="13" height="13" rx="2" />
@@ -312,7 +327,7 @@ export function CopyIcon({ size = 14, className, ...rest }: IconProps) {
 }
 
 /** Two people, one behind the other — a group conversation. */
-export function GroupConversationIcon({ size = 12, className, ...rest }: IconProps) {
+export function GroupConversationIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
       <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -367,7 +382,7 @@ export function ExportIcon({ size, className, ...rest }: IconProps) {
 }
 
 /** Open eye — the password is hidden, and pressing shows it. */
-export function EyeIcon({ size = 16, className, ...rest }: IconProps) {
+export function EyeIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -377,7 +392,7 @@ export function EyeIcon({ size = 16, className, ...rest }: IconProps) {
 }
 
 /** Eye struck through — the password is shown, and pressing hides it. */
-export function EyeOffIcon({ size = 16, className, ...rest }: IconProps) {
+export function EyeOffIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} {...rest}>
       <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />

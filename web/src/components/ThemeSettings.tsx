@@ -109,7 +109,7 @@ export default function ThemeSettings() {
                         : "border-border bg-panel"
                     }`}
                   >
-                    {isSelected ? <ToggleCheckIcon size={12} /> : null}
+                    {isSelected ? <ToggleCheckIcon className="h-3 w-3" /> : null}
                   </span>
                   <span className="text-[0.875rem] font-medium text-text">{opt.label}</span>
                 </div>
@@ -140,7 +140,7 @@ export default function ThemeSettings() {
                   : "border-border bg-elevated"
               }`}
             >
-              {isSelected ? <ToggleCheckIcon size={14} /> : null}
+              {isSelected ? <ToggleCheckIcon className="h-3.5 w-3.5" /> : null}
             </span>
             Match your device theme
           </>
