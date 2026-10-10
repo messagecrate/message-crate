@@ -1,8 +1,10 @@
 /**
- * The Android SMS backup sources share one form: a backup directory, media
- * options, and the owner's phone numbers so the exporter can tell sent from
- * received. SMS Backup+ adds the owner's email addresses, because its archive
- * is Gmail-backed and the sender of a sent message is an email account.
+ * The Android SMS backup sources share one form: the backup, media options,
+ * and the owner's phone numbers so the exporter can tell sent from received.
+ * The backup is one `.xml` file for SMS Backup & Restore and a directory for
+ * the others. SMS Backup+ adds the owner's email addresses, because its
+ * archive is Gmail-backed and the sender of a sent message is an email
+ * account.
  */
 export const SMS_BACKUP_RESTORE_SOURCE = "sms-backup-restore";
 export const GO_SMS_PRO_SOURCE = "go-sms-pro";
@@ -32,26 +34,45 @@ export function splitEmails(raw: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-/** What the backup directory holds, per source, for the form's hint line. */
-export function backupDirectoryHint(source: string): string {
-  switch (source) {
-    case SMS_BACKUP_PLUS_SOURCE:
-      return "Point at a directory of .eml files archived from SMS Backup+ (Gmail or IMAP). This does not connect to a mail server.";
-    case GO_SMS_PRO_SOURCE:
-      return "Point at the directory holding the GO SMS Pro backup files.";
-    default:
-      return "Point at a directory of SMS Backup & Restore XML files (not a single ZIP). Unlock encrypted backups before selecting the directory.";
-  }
-}
+/** How the Import form asks for one Android source's backup. */
+export type BackupField = {
+  label: string;
+  /** True for a directory picker, false for a file picker. */
+  directory: boolean;
+  /** The file picker's filters, for a backup that is one file. */
+  filters?: { name: string; extensions: string[] }[];
+  hint: string;
+  placeholder: string;
+};
 
-/** The backup files each source writes, for the backup directory's placeholder. */
-export function backupDirectoryPlaceholder(source: string): string {
+/**
+ * The backup field, per source. SMS Backup & Restore writes each backup as
+ * one `.xml` file, and an Import Run reads one backup, so its field takes one
+ * file. GO SMS Pro and SMS Backup+ backups are directories.
+ */
+export function backupField(source: string): BackupField {
   switch (source) {
     case SMS_BACKUP_PLUS_SOURCE:
-      return "Directory containing .eml files";
+      return {
+        label: "Backup Directory",
+        directory: true,
+        hint: "Point at a directory of .eml files archived from SMS Backup+ (Gmail or IMAP). This does not connect to a mail server.",
+        placeholder: "Directory containing .eml files",
+      };
     case GO_SMS_PRO_SOURCE:
-      return "Directory containing gosms_sys*.xml backup files";
+      return {
+        label: "Backup Directory",
+        directory: true,
+        hint: "Point at the directory holding the GO SMS Pro backup files.",
+        placeholder: "Directory containing gosms_sys*.xml backup files",
+      };
     default:
-      return "Directory containing sms-*.xml backup files";
+      return {
+        label: "Backup File",
+        directory: false,
+        filters: [{ name: "SMS Backup & Restore", extensions: ["xml"] }],
+        hint: "Point at one SMS Backup & Restore .xml file (not a ZIP). To import another backup, start another import. Unlock an encrypted backup before selecting it.",
+        placeholder: "Path to an sms-*.xml backup file",
+      };
   }
 }

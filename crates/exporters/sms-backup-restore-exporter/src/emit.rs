@@ -116,7 +116,6 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             owner_phones: args.owner_phones,
             attachments_dir: Some(writer.attachments_dir()),
             spool: writer.spool(),
-            exclude_dir: Some(args.output_dir),
             media: writer.media_mode(),
             compress,
             log: writer.log(),

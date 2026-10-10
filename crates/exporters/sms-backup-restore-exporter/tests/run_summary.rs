@@ -33,23 +33,23 @@ const SKIPS_XML: &str = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes'
 </smses>
 "#;
 
-/// A backup directory holding `SKIPS_XML` and a file cut off mid-element.
-fn backup_directory(root: &Path) -> std::path::PathBuf {
-    let input = root.join("backup");
-    fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("sms-1.xml"), SKIPS_XML).unwrap();
-    fs::write(
-        input.join("sms-2-broken.xml"),
-        "<smses count=\"1\">\n  <sms address=\"+15555550102\" date=\"1\" body=\"cut",
-    )
-    .unwrap();
+/// A backup file holding `SKIPS_XML`, cut off mid-element after its last
+/// message, so the read keeps every message and names the file it could not
+/// read in full.
+fn backup_file(root: &Path) -> std::path::PathBuf {
+    let input = root.join("sms-1.xml");
+    let cut = SKIPS_XML.replace(
+        "</smses>\n",
+        "  <sms address=\"+15555550102\" date=\"1\" body=\"cut",
+    );
+    fs::write(&input, cut).unwrap();
     input
 }
 
 #[test]
 fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_directory(tmp.path());
+    let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(
         &[&input],
@@ -95,7 +95,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
     let errors = &result.messages[heading + 1..];
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
-    let broken_file = input.join("sms-2-broken.xml").display().to_string();
+    let broken_file = input.display().to_string();
     assert!(
         errors[0].starts_with(&format!(
             "    The file {broken_file} could not be read in full: "
@@ -107,34 +107,31 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     // each message kept with something left out is a note naming the file
     // and the message (#1707).
     let issues = issues.lock().unwrap();
-    let rows: Vec<(&str, &str, &str, &str)> = issues
+    let rows: Vec<(message_crate_core::RunIssueKind, &str, &str, &str)> = issues
         .iter()
-        .map(|i| {
-            (
-                i.kind.as_str(),
-                i.step.as_str(),
-                i.item.as_str(),
-                i.reason.as_str(),
-            )
-        })
+        .map(|i| (i.kind, i.step.as_str(), i.item.as_str(), i.reason.as_str()))
         .collect();
-    let file = |name: &str| input.join(name).display().to_string();
-    let (sms_1, broken) = (file("sms-1.xml"), file("sms-2-broken.xml"));
+    let sms_1 = input.display().to_string();
     let hey = format!("{sms_1} (message of 2014-05-22T15:42:01Z with +15555550101)");
     let photo = format!("{sms_1} (message of 2014-05-22T15:51:40Z with +15555550101)");
     assert_eq!(
         rows,
         [
-            ("error", "parse", broken.as_str(), rows[0].3),
             (
-                "note",
+                message_crate_core::RunIssueKind::Error,
+                "parse",
+                sms_1.as_str(),
+                rows[0].3
+            ),
+            (
+                message_crate_core::RunIssueKind::Note,
                 "parse",
                 hey.as_str(),
                 "1 character reference in this message is not a character and was left out. \
                  The message itself is kept."
             ),
             (
-                "note",
+                message_crate_core::RunIssueKind::Note,
                 "parse",
                 photo.as_str(),
                 "1 part of this message could not be read and was left out. The message \
@@ -150,7 +147,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 #[test]
 fn convert_and_import_word_every_count_and_error_alike() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_directory(tmp.path());
+    let input = backup_file(tmp.path());
     let output = tmp.path().join("out");
     let config = jsonl_run_config(
         &[&input],
@@ -167,7 +164,6 @@ fn convert_and_import_word_every_count_and_error_alike() {
             owner_phones: &owner,
             attachments_dir: None,
             spool: None,
-            exclude_dir: None,
             media: media::MediaMode::Disabled,
             compress: media::CompressOptions::default(),
             log: None,
@@ -194,7 +190,7 @@ fn convert_and_import_word_every_count_and_error_alike() {
 #[test]
 fn the_report_counts_conversations_and_directions() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_directory(tmp.path());
+    let input = backup_file(tmp.path());
     let cache = tempfile::tempdir().unwrap();
     let report = convert_export(ConvertExportArgs {
         input: &input,

@@ -1,0 +1,127 @@
+{
+  "15555550122@s.whatsapp.net": {
+    "name": "Sam Example",
+    "type": "ANDROID",
+    "members": null,
+    "messages": {
+      "A1": {
+        "from_me": true,
+        "timestamp": 1609459200,
+        "time": "00:00",
+        "key_id": "A1A1A1A1A1A1A1A1A1",
+        "full_key_id": "A1A1A1A1A1A1A1A1A1",
+        "data": "Lunch on Friday?",
+        "sender": null,
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {"Sam Example": "👍"},
+        "reaction_details": [
+          {"emoji": "👍", "from_me": false, "jid": "15555550122@s.whatsapp.net", "lid": null, "timestamp": 1609459260.5},
+          {"emoji": "❤️", "from_me": true, "jid": null, "lid": null, "timestamp": 1609459270}
+        ]
+      },
+      "A2": {
+        "from_me": false,
+        "timestamp": 1609459300,
+        "time": "00:01",
+        "key_id": "A2A2A2A2A2A2A2A2A2",
+        "full_key_id": "A2A2A2A2A2A2A2A2A2",
+        "data": "No reactions here",
+        "sender": null,
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {},
+        "reaction_details": []
+      },
+      "A3": {
+        "from_me": false,
+        "timestamp": 1609459400,
+        "time": "00:02",
+        "key_id": "A3A3A3A3A3A3A3A3A3",
+        "data": "From an older export",
+        "sender": null,
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reactions": {"Sam Example": "😂"}
+      },
+      "A4": {
+        "from_me": false,
+        "timestamp": 1609459500,
+        "time": "00:03",
+        "key_id": "A4A4A4A4A4A4A4A4A4",
+        "full_key_id": "A4A4A4A4A4A4A4A4A4",
+        "data": "Reactions not known",
+        "sender": null,
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {},
+        "reaction_details": null
+      }
+    }
+  },
+  "120363042111111111@g.us": {
+    "name": "Family Chat",
+    "type": "ios",
+    "members": null,
+    "messages": {
+      "B1": {
+        "from_me": false,
+        "timestamp": 1609632000,
+        "time": "00:00",
+        "key_id": "3EB0B1B1B1B1B1B1B",
+        "full_key_id": "3EB0B1B1B1B1B1B1B1B1B1B1B1B1B1B1",
+        "data": "Who likes this?",
+        "sender": "15555550133@s.whatsapp.net",
+        "sender_jid": "15555550133@s.whatsapp.net",
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null,
+        "media": false,
+        "mime": null,
+        "caption": null,
+        "sticker": false,
+        "reply": null,
+        "reply_key_id": null,
+        "reactions": {},
+        "reaction_details": [
+          {"emoji": "👍", "from_me": false, "jid": "15555550144@s.whatsapp.net", "lid": null, "timestamp": 1609632060},
+          {"emoji": "🔥", "from_me": false, "jid": "15555550155@s.whatsapp.net", "lid": "123456789012345@lid", "timestamp": 1609632120},
+          {"emoji": "🎉", "from_me": false, "jid": "222333444555666@lid", "lid": "222333444555666@lid", "timestamp": 1609632180},
+          {"emoji": "😮", "from_me": false, "jid": null, "lid": null, "timestamp": null},
+          {"emoji": "❤️", "from_me": true, "jid": null, "lid": null, "timestamp": 1609632240}
+        ]
+      }
+    }
+  }
+}

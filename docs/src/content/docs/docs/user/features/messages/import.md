@@ -42,7 +42,7 @@ The fields under it depend on the source.
 |---|---|
 | **iMessage** | An iPhone backup directory, or `chat.db` from a Mac. Covers SMS and MMS as well as iMessage. |
 | **WhatsApp** | A WhatsApp database from Android, or an iPhone backup that includes WhatsApp. |
-| **SMS Backup & Restore** | A directory of SMS Backup & Restore XML files. |
+| **SMS Backup & Restore** | One SMS Backup & Restore XML file. |
 | **GO SMS Pro** | A directory of GO SMS Pro backup files. |
 | **iMazing** | An iMazing export. |
 | **SMS Backup+** | A directory of `.eml` files archived from SMS Backup+. |
@@ -122,7 +122,8 @@ The three Android SMS sources share one form.
 
 | Field | What it takes |
 |---|---|
-| **Backup Directory** | The directory that holds the backup files. For SMS Backup & Restore that is a directory of XML files, not a single ZIP, and an encrypted backup must be unlocked first. |
+| **Backup File** | **SMS Backup & Restore** only. The backup's one `.xml` file, not a ZIP. An encrypted backup must be unlocked first. One import reads one backup, so each further `.xml` file is an import of its own. |
+| **Backup Directory** | **GO SMS Pro** and **SMS Backup+**. The directory that holds the backup files. |
 | **Attachments** | Described under [Attachments](#attachments). |
 | **Backup Device Phone Numbers** | Every phone number the backup's phone had. Filled in from the account's profile. A number from another SIM can be added. |
 | **Backup Device Email Addresses** | **SMS Backup+** only. The Gmail or IMAP account SMS Backup+ synced to, filled in from the profile. Commas separate several addresses. |
@@ -316,6 +317,9 @@ A resumed Stage reads again what it had not finished, and an Error it reports ag
 An Upload Error about a conversation that the resumed Upload then sends is dropped, so the run never records a failure for a conversation that reached the Message Crate.
 A Staging Error about an attachment of a conversation that the resumed Staging then writes is dropped too, because that Staging read the attachment again and reports it afresh if it still fails.
 A Staging Error about a conversation that was already written before the stop is kept, because the resumed Staging does not read that conversation again.
+A Staging Error about a file the backup could not read, such as a mail file on a network drive that dropped, is dropped once the resumed Staging has read the whole backup again and read that file clean.
+A Staging note is dropped the same way, because the resumed Staging's read sends again every note that still holds.
+A run resumed at a Review, Media, or Upload keeps them, because none of those reads the backup again.
 
 | The run stopped | The screen reads | The button |
 |---|---|---|

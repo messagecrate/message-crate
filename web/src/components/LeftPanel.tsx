@@ -314,7 +314,6 @@ export default function LeftPanel({
             setFormError(null);
             setShowGroupForm(true);
           }}
-          className="px-3 pt-3"
         >
           {groups.length === 0 ? (
             <div className={`${NAV_LEADING_ROW_CLASS} py-1.5 text-[0.813rem] text-muted`}>

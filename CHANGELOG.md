@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-09: **A WhatsApp import brings each reaction in under the person
+  who reacted.** A WhatsApp conversation from an Android phone or an iPhone
+  now shows its reactions, each stored under the reactor's phone number, or
+  under their internal WhatsApp id when the backup has no number for them.
+  Your own reactions are yours. Reactions that were taken back are left out.
+  The copy of the reactor names and emoji that a conversation file kept
+  beside each WhatsApp message (`reactions` in `source.fields`) is gone,
+  because the reactions themselves are on the message (#1646).
+
 - 2026-10-08: **The Import form says when a program the import needs is
   missing, with Try again.** A WhatsApp import needs wtsexporter, and
   **Convert** and **Compress** need ffmpeg and ffprobe. When one hasn't been
@@ -116,6 +125,16 @@ released versions carry their date on the heading.
   for both writes both words, as `deleted:yes or unsent:yes`.
 
 ### Design
+
+- 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
+  The Import form's **Backup File** field takes the backup's one `.xml`
+  file, where **Backup Directory** took a directory of them, because an
+  import reads one backup. A second backup is a second import, and the
+  server keeps the later copy of a message by the date each file records.
+  A directory is refused. **Settings → Convert** refuses a directory that
+  holds more than one SMS Backup & Restore file, naming each, and finds a
+  backup the app wrote under any name. GO SMS Pro and SMS Backup+ still take
+  a directory (#2009).
 
 - 2026-10-08: **The desktop app finds an installed ffmpeg first, and its
   Tools Directory second.** ffmpeg and ffprobe are found among the programs
@@ -222,6 +241,35 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A resumed import drops a Staging Error about a file it then
+  reads clean.** When Staging could not read a file of the backup, such as a
+  mail file on a network drive that dropped, and the run was paused and
+  resumed after the cause went away, the finished run still listed the file
+  as unreadable. A resumed Staging reads the whole backup again, so once it
+  has, its Errors and notes about the backup's files replace the earlier
+  parts', and an Error stays only while its file still can't be read. A run
+  resumed at a Review, Media, or Upload reads nothing of the backup again and
+  keeps them (#1947).
+- 2026-10-09: **WhatsApp people are imported with their numbers and names,
+  and every group with its members.** A group message's sender had a name or
+  a number, never both, some numbers were made from WhatsApp's internal ids
+  and reached nobody, no group listed its members, and every one-to-one
+  contact had no name and was listed under Unknown. Each sender now has the
+  phone number the backup holds and the name from the phone's address book,
+  or else the one they set in WhatsApp. A group's participants are its
+  members, including those who never wrote, and anyone else who wrote in it.
+  A one-to-one contact has the chat's name. A person WhatsApp knows only by
+  an internal id is imported under that id, with their name, and is listed
+  under Unknown until given an address. A WhatsApp file that another
+  version of wtsexporter wrote is refused, naming Message Crate's own (#1092).
+- 2026-10-09: **Owner Home's Logs panel shows how each import went.** The
+  lines an import writes as it reads its files, writes them into the account
+  and hides duplicates never reached the **Logs** panel. They do now, and so
+  do the lines of the Demo Account's import when it is built or rebuilt. An
+  import that was running when the desktop app crashed could also stop
+  part-way while writing one of those lines. It no longer does. The server's
+  `import` and `reset-demo` commands still print the same lines as they run
+  (#1945).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,
@@ -295,6 +343,13 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-09: **The left panel's rows are one size, and its sections one gap
+  apart.** A named Contact Group, Saved Search, or Message Tag was drawn
+  smaller than the rows around it, such as **Unknown** and **No Contact
+  Group**, and the space above Saved Searches and above Message Tags differed
+  from the space above the other sections. Every row is now the same size,
+  and each section sits the same distance below the one above it.
+
 - 2026-10-07: **A hit found by an earlier version says so in the Messages
   list.** A search finds a message when one of its earlier versions holds a
   searched word, but the row showed only the final text, so a word only an
@@ -365,11 +420,12 @@ released versions carry their date on the heading.
   guide says which files to put there by hand. If you start the server with
   a script, it takes `serve --tools-dir <directory>` for the same purpose
   (#1053).
-- A `wtsexporter` installed before this release reads WhatsApp replies without
-  their link, and the app no longer runs it. The desktop app downloads
-  Message Crate's fork of WhatsApp Chat Exporter, release `0.13.0-mc.2`, into
-  `~/message-crate/tools` when it starts, and replaces any other
-  `wtsexporter` there with it, so nothing needs doing (#1936, #1053).
+- A WhatsApp `result.json` that a `wtsexporter` from before this release
+  wrote is refused, because it records no group members and no sender's
+  name beside their number. The desktop app replaces an older `wtsexporter`
+  in its Tools Directory with Message Crate's own on its next start with an
+  internet connection. Run the WhatsApp import again from the backup rather
+  than from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

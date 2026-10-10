@@ -1,9 +1,9 @@
 ---
 title: Import your backup
-description: Point the desktop app's Import form at the backup directory, approve the review, and open the imported conversations.
+description: Point the desktop app's Import form at the backup, an iPhone's backup directory or an SMS Backup & Restore .xml file, approve the review, and open the imported conversations.
 ---
 
-This step reads the phone's backup directory and stores its messages in the Message Crate.
+This step reads the phone's backup, an iPhone's backup directory or an SMS Backup & Restore `.xml` file, and stores its messages in the Message Crate.
 It happens in the desktop app, logged in as the account made in [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
 
 ## Open Import
@@ -26,7 +26,7 @@ The Owner's login doesn't show **Import**, because the Owner holds no messages.
 ### For an Android backup
 
 1. The first list is the source. Choose **SMS Backup & Restore**.
-2. **Backup Directory**: select **Browse** and pick the directory that holds the `.xml` files.
+2. **Backup File**: select **Browse** and pick the backup's `.xml` file, such as `sms-20261001120000.xml`. One import reads one backup, so a second `.xml` file is a second import.
 3. **Backup Device Phone Numbers**: every number that belonged to the phone. The numbers on the account's profile are filled in already.
 
 When none of the numbers in the field is on the account's profile, **Import** stays greyed out until **Allow import from phone numbers not on my profile** is ticked.

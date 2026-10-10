@@ -124,6 +124,15 @@ describe("LeftPanel", () => {
     expect(row?.className).not.toContain("pl-[calc(15px+0.5rem)]");
   });
 
+  it("pads every section the same, so the gaps between them match", () => {
+    renderPanel();
+    const sectionOf = (name: string) => screen.getByRole("region", { name });
+    const groups = sectionOf("Contact Groups");
+    expect(groups.className).toBeTruthy();
+    expect(sectionOf("Saved Searches").className).toBe(groups.className);
+    expect(sectionOf("Message Tags").className).toBe(groups.className);
+  });
+
   it("indents named saved searches like nested group rows", () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },

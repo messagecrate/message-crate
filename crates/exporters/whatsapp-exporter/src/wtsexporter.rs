@@ -11,8 +11,9 @@ use std::process::{Command, Stdio};
 /// Where a copy of `wtsexporter` put in the Tools Directory by hand comes
 /// from: a `wtsexporter_<platform>` file of Message Crate's fork at release
 /// `0.13.0-mc.2`, the first that records `full_key_id` and `reply_key_id`, the
-/// ids a quoted reply is linked by, renamed to the name `resolve_wtsexporter`
-/// looks for. Upstream records neither.
+/// ids a quoted reply is linked by, and `reaction_details`, each reaction
+/// under the reactor's id, renamed to the name `resolve_wtsexporter` looks
+/// for. Upstream records none of them.
 const RELEASE_FILE_HINT: &str = "a wtsexporter_<platform> file from the messagecrate/WhatsApp-Chat-Exporter 0.13.0-mc.2 release, renamed to wtsexporter (wtsexporter.exe on Windows) and made executable (chmod +x on Linux and macOS)";
 
 /// The sentence that sends a person to the user guide's section on a

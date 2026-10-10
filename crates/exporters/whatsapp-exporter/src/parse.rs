@@ -1,7 +1,7 @@
 //! Load KnugiHK WhatsApp-Chat-Exporter single-file JSON (`ChatCollection.to_dict`).
 
-use anyhow::{Context, Result};
-use serde::Deserialize;
+use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,6 +18,78 @@ pub(crate) struct ChatJson {
     pub media_base: Option<String>,
     #[serde(default)]
     pub messages: BTreeMap<String, MessageJson>,
+    /// On a group, one entry per person the backup has a member row for,
+    /// the owner of the phone included where the backup has one. `null`
+    /// on any other chat, and on a group whose member table was absent or
+    /// unreadable. An empty list means the table was read and holds no row
+    /// for the group.
+    #[serde(default)]
+    pub members: ForkField<Vec<MemberJson>>,
+}
+
+/// One entry of a group's `members`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct MemberJson {
+    /// As [`MessageJson::sender_jid`].
+    #[serde(default)]
+    pub jid: Option<String>,
+    /// As [`MessageJson::sender_lid`]. `jid` is the id the member is
+    /// written under.
+    #[serde(default)]
+    #[expect(dead_code, reason = "read and not written: `jid` names the member")]
+    pub lid: Option<String>,
+    /// The name the owner gave the member in the address book.
+    #[serde(default)]
+    pub contact_name: Option<String>,
+    /// The name the member typed into their own WhatsApp profile.
+    #[serde(default)]
+    pub push_name: Option<String>,
+    /// Whether the member was in the group when the backup was made.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub active: bool,
+    /// Whether the member was an admin of the group.
+    #[serde(default)]
+    #[expect(
+        dead_code,
+        reason = "read and not written: the conversation model has no place for it"
+    )]
+    pub admin: bool,
+}
+
+/// A field only Message Crate's fork of WhatsApp Chat Exporter writes, told
+/// apart from one it wrote as `null`. Upstream's JSON lacks the field, and
+/// [`load_chat_store`] refuses such a file rather than read it the old way.
+#[derive(Debug, Clone, Default)]
+pub(crate) enum ForkField<T> {
+    /// The JSON has no such field.
+    #[default]
+    Absent,
+    /// The field's value, `None` for `null`.
+    Present(Option<T>),
+}
+
+impl<T> ForkField<T> {
+    /// The value, when the field is there and not `null`.
+    pub fn get(&self) -> Option<&T> {
+        match self {
+            Self::Present(value) => value.as_ref(),
+            Self::Absent => None,
+        }
+    }
+
+    fn is_absent(&self) -> bool {
+        matches!(self, Self::Absent)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for ForkField<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Option::<T>::deserialize(deserializer).map(Self::Present)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -52,18 +124,100 @@ pub(crate) struct MessageJson {
     /// [`Self::full_key_id`] is.
     #[serde(default)]
     pub reply_key_id: Option<Value>,
+    /// The reactions that stand on the message, one entry each: `[]` when
+    /// the backup's reaction source was read and the message has none,
+    /// `null` when it is not known (the source table is absent, the record
+    /// does not decode, or the message comes from an older export or from
+    /// WhatsApp's own text export). A withdrawn reaction is already left
+    /// out. Absent from a JSON that upstream WhatsApp Chat Exporter wrote:
+    /// only the fork writes it, from release `0.13.0-mc.2`. The fork's
+    /// `reactions`, a map from the reactor's display name to the emoji on
+    /// Android and always empty on an iPhone, is not read: a name is not an
+    /// identity.
     #[serde(default)]
-    pub reactions: Value,
+    pub reaction_details: Option<Vec<ReactionJson>>,
+    /// The sender's phone id (`…@s.whatsapp.net`) whenever the backup can
+    /// supply one, else their `@lid` id. `null` unless the message is a
+    /// received group message, and on one whose backup names no sender.
+    #[serde(default)]
+    pub sender_jid: ForkField<String>,
+    /// The sender's `@lid` id, when the backup stores the sender under one.
+    /// Only its presence is checked: an `@lid` id is not a phone number.
+    #[serde(default)]
+    pub sender_lid: ForkField<String>,
+    /// The name the owner gave the sender in the address book.
+    #[serde(default)]
+    pub sender_contact_name: ForkField<String>,
+    /// The name the sender typed into their own WhatsApp profile.
+    #[serde(default)]
+    pub sender_push_name: ForkField<String>,
+}
+
+impl MessageJson {
+    /// True when the message lacks a sender field the fork writes on every
+    /// message.
+    fn lacks_fork_sender_fields(&self) -> bool {
+        self.sender_jid.is_absent()
+            || self.sender_lid.is_absent()
+            || self.sender_contact_name.is_absent()
+            || self.sender_push_name.is_absent()
+    }
+}
+
+/// One reaction as the fork writes it in `reaction_details`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ReactionJson {
+    /// The reaction, a non-empty string.
+    pub emoji: Option<String>,
+    /// `true` when the owner of the phone reacted.
+    #[serde(default)]
+    pub from_me: bool,
+    /// The reactor's id by the fork's `sender_jid` rule: the phone id
+    /// (`…@s.whatsapp.net`), resolved from an `@lid` id where the backup
+    /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
+    /// and on a group reaction whose reactor the backup does not name. The
+    /// fork's `lid`, the `@lid` id the reactor is stored under, is not read:
+    /// `jid` already holds it when there is no phone behind it, and a
+    /// reaction's `lid` is not needed to tell the fork's JSON from
+    /// upstream's, which [`MessageJson::lacks_fork_sender_fields`] does from
+    /// `sender_lid`.
+    pub jid: Option<String>,
 }
 
 /// Load a wtsexporter `result.json` (one JSON object: JID → chat).
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be read or parsed.
+/// Returns an error when the file cannot be read or parsed, or when it lacks
+/// the sender ids, names and group members that only Message Crate's fork of
+/// WhatsApp Chat Exporter writes. Upstream's JSON is refused rather than read
+/// without them, because it gives a group message's sender as a name or as
+/// digits that may be an internal id, never both.
 pub(crate) fn load_chat_store(path: &Path) -> Result<ChatStoreFile> {
     let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
+    let store: ChatStoreFile =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    let lacks_fork_fields =
+        store
+            .iter()
+            .filter(|(jid, _)| !jid.starts_with('_'))
+            .any(|(_, chat)| {
+                chat.members.is_absent()
+                    || chat
+                        .messages
+                        .values()
+                        .any(MessageJson::lacks_fork_sender_fields)
+            });
+    if lacks_fork_fields {
+        bail!(
+            "{} has no sender ids, names or group members, so Message Crate's fork of \
+             WhatsApp Chat Exporter did not write it. Export the backup again with \
+             wtsexporter from the messagecrate/WhatsApp-Chat-Exporter release 0.13.0-mc.2 \
+             or later.",
+            path.display()
+        );
+    }
+    Ok(store)
 }
 
 /// True when the message's `media` field is the boolean `true`.

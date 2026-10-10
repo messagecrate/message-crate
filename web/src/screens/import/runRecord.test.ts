@@ -208,7 +208,7 @@ describe("recordToCarry", () => {
   it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
     // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
     // before it started sending, so it reported nothing on b.jsonl.
-    const earlier = {
+    const earlier: RunRecord = {
       issues: [],
       lastStopIssues: [
         { ...upload("b.jsonl"), kind: "error", reason: "connection refused" },
@@ -222,7 +222,7 @@ describe("recordToCarry", () => {
   });
 
   it("drops an earlier pause's failed conversation once a later Upload reported on it", () => {
-    const earlier = {
+    const earlier: RunRecord = {
       issues: [],
       lastStopIssues: [{ ...upload("b.jsonl"), kind: "error", reason: "connection refused" }],
     };
@@ -242,7 +242,11 @@ describe("recordToCarry", () => {
 });
 
 describe("the record written while a stage runs (#1639)", () => {
-  const skip = { ...upload("a.jsonl", "a.jsonl:big.mov"), kind: "skip", reason: "too large" };
+  const skip: ImportIssue = {
+    ...upload("a.jsonl", "a.jsonl:big.mov"),
+    kind: "skip",
+    reason: "too large",
+  };
 
   it("holds an Upload's row apart until its conversation is on the server", () => {
     // A crash now would leave a.jsonl out of the journal, and the resumed
@@ -306,7 +310,12 @@ describe("the record written while a stage runs (#1639)", () => {
   });
 
   it("drops a row a later try resolved, wherever the record keeps it", () => {
-    const media = { kind: "skip", stage: "media" as const, item: "a.jsonl:IMG.HEIC", reason: "x" };
+    const media: ImportIssue = {
+      kind: "skip",
+      stage: "media" as const,
+      item: "a.jsonl:IMG.HEIC",
+      reason: "x",
+    };
     const record: RunRecord = { issues: [media], lastStopIssues: [skip] };
     expect(resolveInRecord(record, { stage: "media", item: "a.jsonl:IMG.HEIC" })).toEqual({
       issues: [],
@@ -317,7 +326,12 @@ describe("the record written while a stage runs (#1639)", () => {
   it("keeps once a row that a resumed stage reports again", () => {
     // Staging closed after reporting the photo but before writing its
     // conversation, so the resumed Staging read it again.
-    const photo = { kind: "error", stage: "staging" as const, item: "IMG_1.HEIC", reason: "x" };
+    const photo: ImportIssue = {
+      kind: "error",
+      stage: "staging" as const,
+      item: "IMG_1.HEIC",
+      reason: "x",
+    };
     const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [photo] }));
     expect(wholeRun(carried, part({ issues: [photo] })).issues).toEqual([photo]);
     // An Upload row reported again by the resumed Upload is kept once too.
@@ -380,6 +394,60 @@ describe("a Staging row waits until its conversation is written (#1688)", () => 
     const uploaded = part({ conversations: new Map([["c.jsonl", "ok"]]) });
     expect(wholeRun(carried, uploaded).issues).toEqual([notDecrypted]);
     expect(issuesToDiscard(recordToCarry(carried, uploaded))).toEqual([notDecrypted]);
+  });
+});
+
+describe("a resumed Staging's read of the backup replaces the earlier parts' (#1947)", () => {
+  // The SMS Backup+ exporter could not read x.eml in part 1, for example on a
+  // network drive that dropped. The row names no conversation.
+  const unreadable: ImportIssue = {
+    kind: "error",
+    stage: "staging",
+    item: "x.eml",
+    reason: "This mail could not be read and was left out: permission denied",
+  };
+  const stillUnreadable: ImportIssue = { ...unreadable, item: "y.eml" };
+
+  it("completes without the row once the resumed Staging reads the file clean", () => {
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    expect(carried.issues).toEqual([unreadable]);
+    // Part 2 reads the whole backup again, x.eml clean, and writes a.jsonl.
+    const resumed = part({ staged: new Map([["a.jsonl", "written"]]) });
+    expect(wholeRun(carried, resumed).issues).toEqual([]);
+    expect(recordToCarry(carried, resumed).issues).toEqual([]);
+  });
+
+  it("keeps the row the resumed Staging reports again, once", () => {
+    const carried = recordToCarry(
+      EMPTY_RUN_RECORD,
+      part({ issues: [unreadable, stillUnreadable] }),
+    );
+    const resumed = part({ issues: [stillUnreadable], filesParsed: 3 });
+    expect(wholeRun(carried, resumed).issues).toEqual([stillUnreadable]);
+  });
+
+  it("keeps the earlier rows while the resumed Staging is still reading", () => {
+    // Part 2 stopped before its write queue started: it has not read it all.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    expect(recordToCarry(carried, part()).issues).toEqual([unreadable]);
+  });
+
+  it("keeps the earlier rows in a run resumed past Staging", () => {
+    // Part 2 resumes at the Upload, which reads nothing of the backup.
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ issues: [unreadable] }));
+    const uploaded = part({ conversations: new Map([["a.jsonl", "ok"]]), report: report() });
+    expect(wholeRun(carried, uploaded).issues).toEqual([unreadable]);
+  });
+
+  it("replaces the earlier parts' Staging notes with the resumed Staging's", () => {
+    // a.jpg's note no longer holds at the resume. b.jpg's still does.
+    const stale = { stage: "staging" as const, item: "a.jpg", text: "named by 2 rows" };
+    const stillHolds = { stage: "staging" as const, item: "b.jpg", text: "kept with a caveat" };
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [stale, stillHolds] }));
+    const resumed = part({ notes: [stillHolds], staged: new Map([["a.jsonl", "written"]]) });
+    expect(wholeRun(carried, resumed).notes).toEqual([stillHolds]);
+    // A part resumed past Staging reads nothing again and keeps them.
+    expect(wholeRun(carried, part({ report: report() })).notes).toEqual([stale, stillHolds]);
   });
 });
 

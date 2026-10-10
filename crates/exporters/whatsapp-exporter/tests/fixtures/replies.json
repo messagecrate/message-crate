@@ -17,7 +17,11 @@
         "sticker": false,
         "reply": null,
         "reply_key_id": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       },
       "1002": {
         "from_me": false,
@@ -33,7 +37,11 @@
         "sticker": false,
         "reply": null,
         "reply_key_id": null,
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       },
       "1003": {
         "from_me": true,
@@ -49,7 +57,11 @@
         "sticker": false,
         "reply": "3EB0A1B2C3D4E5F6A",
         "reply_key_id": "3EB0A1B2C3D4E5F6A00000000000FFFF",
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       },
       "1004": {
         "from_me": false,
@@ -65,7 +77,11 @@
         "sticker": false,
         "reply": "99AA88BB77CC66DD5",
         "reply_key_id": "99AA88BB77CC66DD55EE44FF",
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       },
       "1005": {
         "from_me": true,
@@ -80,9 +96,14 @@
         "caption": null,
         "sticker": false,
         "reply": "3EB0A1B2C3D4E5F6A",
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       }
-    }
+    },
+    "members": null
   },
   "15555550133@s.whatsapp.net": {
     "name": "Ada Example",
@@ -102,8 +123,13 @@
         "sticker": false,
         "reply": "3EB0A1B2C3D4E5F6A",
         "reply_key_id": "3EB0A1B2C3D4E5F6A7B8C9D0E1F2A3B4",
-        "reactions": {}
+        "reactions": {},
+        "sender_jid": null,
+        "sender_lid": null,
+        "sender_contact_name": null,
+        "sender_push_name": null
       }
-    }
+    },
+    "members": null
   }
 }
