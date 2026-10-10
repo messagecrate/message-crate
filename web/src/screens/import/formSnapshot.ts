@@ -11,7 +11,41 @@ import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import type { ImportJobFormValues } from "./useImportJob";
 
 /**
- * Form snapshot for the run record, without the secrets.
+ * The form fields the run record stores: exactly the ones
+ * `restoreFormFromSnapshot` reads back. The snapshot is built from this list
+ * rather than from the whole form less its secrets, so a field added to the
+ * form is not stored until it is added here on purpose, and a new secret is
+ * never stored by default. The server drops `backupPassword` and
+ * `whatsappKey` again before it writes the record.
+ */
+const SNAPSHOT_FIELDS = [
+  "source",
+  "backupPath",
+  "attachmentMedia",
+  "maxResolution",
+  "maxFps",
+  "minSizeMb",
+  "ownerPhones",
+  "ownerEmails",
+  "obfuscate",
+  "timeZone",
+  "phoneCountry",
+  "attachmentRoot",
+  "appleContacts",
+  "whatsappWa",
+  "whatsappMedia",
+  "whatsappDb",
+  "isBusinessApp",
+  "whatsappOwnerPhone",
+  "assetMaxBytes",
+] as const satisfies readonly Exclude<
+  keyof ImportJobFormValues,
+  "backupPassword" | "whatsappKey"
+>[];
+
+/**
+ * Form snapshot for the run record, without the secrets: the fields in
+ * `SNAPSHOT_FIELDS` and nothing else.
  *
  * It carries `assetMaxBytes`, the server's attachment size limit as the run
  * read it before Staging, so a resumed run works to the same number.
@@ -23,13 +57,14 @@ import type { ImportJobFormValues } from "./useImportJob";
  * WhatsApp from an iPhone backup) and the Android WhatsApp key.
  */
 export function formSnapshot(form: ImportJobFormValues): Record<string, unknown> {
-  const { backupPassword, whatsappKey, ...rest } = form;
+  const snapshot: Record<string, unknown> = {};
+  for (const field of SNAPSHOT_FIELDS) {
+    snapshot[field] = form[field];
+  }
   const secret = findImportSource(form.source)?.snapshotSecret(form.source) ?? null;
-  return {
-    ...rest,
-    backupPasswordGiven: secret === "backupPassword" && backupPassword.trim() !== "",
-    whatsappKeyGiven: secret === "whatsappKey" && whatsappKey.trim() !== "",
-  };
+  snapshot.backupPasswordGiven = secret === "backupPassword" && form.backupPassword.trim() !== "";
+  snapshot.whatsappKeyGiven = secret === "whatsappKey" && form.whatsappKey.trim() !== "";
+  return snapshot;
 }
 
 /**
