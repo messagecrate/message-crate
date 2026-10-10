@@ -33,8 +33,8 @@ not as options offered to a reviewer:
 - `.github/PULL_REQUEST_TEMPLATE/bugfix.md` for a fix: expected against
   actual, the root cause stated separately from the fix, steps to reproduce
   before and verify after, impact, and regression risk.
-- `.github/pull_request_template.md` is the generic default applied
-  automatically. Use it for changes that are neither, such as documentation.
+- `.github/pull_request_template.md`, the generic template, for changes that
+  are neither, such as documentation.
 
 Fill the sections in rather than deleting them. Root Cause and Regression
 Risk on a fix are the two that make it reviewable, so answer them plainly
