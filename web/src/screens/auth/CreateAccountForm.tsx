@@ -1,11 +1,9 @@
-import { type FormEvent, useState } from "react";
+import type { FormEvent } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
 import AuthSubmitButton from "../../components/AuthSubmitButton";
-import { LockIcon, PersonIcon } from "../../components/icons";
-import PasswordField from "../../components/PasswordField";
-import TextField from "../../components/TextField";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import CredentialFields from "./CredentialFields";
 import { useCreateAccountForm } from "./useCreateAccountForm";
 
 /**
@@ -29,8 +27,6 @@ export default function CreateAccountForm({
   disabled?: boolean;
 }) {
   const { login } = useAuth();
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const {
     username,
     setUsername,
@@ -66,42 +62,12 @@ export default function CreateAccountForm({
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={setUsername}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
-
-      {/* The same gap the Login tab puts above its Password field, so the field
-          does not shift under the pointer when the tabs are switched. */}
-      <PasswordField
-        label="Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={setPassword}
-        name="new-password"
+      <CredentialFields
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="new-password"
-        showPassword={showPassword}
-        onToggle={() => setShowPassword((v) => !v)}
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Confirm Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={confirmPassword}
-        onChange={setConfirmPassword}
-        name="confirm-password"
-        autoComplete="new-password"
-        showPassword={showConfirm}
-        onToggle={() => setShowConfirm((v) => !v)}
-        isDisabled={disabled}
+        confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
+        disabled={disabled}
       />
 
       {/* "Continue", not "Create account": this step opens the account but does
