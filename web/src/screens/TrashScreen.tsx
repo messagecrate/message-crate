@@ -329,7 +329,7 @@ export default function TrashScreen() {
               </div>
             ) : error ? null : total === 0 ? (
               <div className="text-[0.875rem] text-muted">
-                {searching ? "No conversations match this search." : "No conversations in Trash."}
+                {searching ? "No conversations match this search" : "No conversations in Trash"}
               </div>
             ) : (
               <div className="text-[0.875rem] text-muted">
@@ -358,7 +358,7 @@ export default function TrashScreen() {
               </div>
             ) : contactsError ? null : contacts.length === 0 ? (
               <div className="text-[0.875rem] text-muted">
-                {searching ? "No contacts match this search." : "No contacts in Trash."}
+                {searching ? "No contacts match this search" : "No contacts in Trash"}
               </div>
             ) : (
               <>

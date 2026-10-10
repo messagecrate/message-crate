@@ -209,7 +209,7 @@ describe("TrashScreen", () => {
 
     expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
     expect(screen.queryByText("Trash is empty.")).toBeNull();
-    expect(screen.queryByText("No contacts in Trash.")).toBeNull();
+    expect(screen.queryByText("No contacts in Trash")).toBeNull();
     expect(screen.getByRole("button", { name: "Empty Trash" })).toBeTruthy();
   });
 
@@ -219,7 +219,7 @@ describe("TrashScreen", () => {
 
     expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
     expect(screen.queryByText("Trash is empty.")).toBeNull();
-    expect(screen.queryByText("No conversations in Trash.")).toBeNull();
+    expect(screen.queryByText("No conversations in Trash")).toBeNull();
   });
 
   it("reads correctly when the trash is empty", async () => {
@@ -305,13 +305,13 @@ describe("TrashScreen", () => {
       await waitFor(() => {
         expect(screen.queryByText("Grace Hopper")).toBeNull();
       });
-      expect(screen.getByText("No contacts in Trash.")).toBeTruthy();
+      expect(screen.getByText("No contacts in Trash")).toBeTruthy();
     });
 
     it("says so when conversations are in the trash but no contacts are", async () => {
       renderAt("/trash");
 
-      expect(await screen.findByText("No contacts in Trash.")).toBeTruthy();
+      expect(await screen.findByText("No contacts in Trash")).toBeTruthy();
       expect(screen.getByText(/in Trash\. Select one on the left to view it\./)).toBeTruthy();
     });
 
@@ -330,7 +330,7 @@ describe("TrashScreen", () => {
       renderAt("/trash");
 
       expect(await screen.findByText("Grace Hopper")).toBeTruthy();
-      expect(screen.getByText("No conversations in Trash.")).toBeTruthy();
+      expect(screen.getByText("No conversations in Trash")).toBeTruthy();
     });
 
     it("shows an error when restoring a contact fails", async () => {
@@ -349,11 +349,20 @@ describe("TrashScreen", () => {
       listContactsMock.mockResolvedValue(contactPage([]));
       renderAt("/trash?tq=ada");
 
-      expect(await screen.findByText("No contacts match this search.")).toBeTruthy();
+      expect(await screen.findByText("No contacts match this search")).toBeTruthy();
       expect(listContactsMock).toHaveBeenCalledWith(
         expect.objectContaining({ q: "trashed:yes (ada)" }),
         expect.anything(),
       );
+    });
+
+    it("says no conversation matches a search that finds only contacts", async () => {
+      listConversationsMock.mockResolvedValue({ items: [], total: 0, limit: 1, offset: 0 });
+      listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
+      renderAt("/trash?tq=grace");
+
+      expect(await screen.findByText("Grace Hopper")).toBeTruthy();
+      expect(screen.getByText("No conversations match this search")).toBeTruthy();
     });
   });
 
@@ -424,7 +433,7 @@ describe("TrashScreen", () => {
       await waitFor(() => {
         expect(screen.queryByText("Grace Hopper")).toBeNull();
       });
-      expect(screen.getByText("No contacts in Trash.")).toBeTruthy();
+      expect(screen.getByText("No contacts in Trash")).toBeTruthy();
     });
 
     it("empties the trash after the dialog is confirmed", async () => {

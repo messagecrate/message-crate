@@ -218,6 +218,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Trash writes an empty list the way Contacts does.** Trash
+  said "No contacts match this search." with a full stop where Contacts said
+  "No contacts match this search" without one. The four messages Trash shows
+  for an empty list or a search that finds nothing now end without a full
+  stop, like the empty lists in Contacts (#2415).
 - 2026-10-10: **Removing an identity from a contact writes a large count
   with a separator.** The confirm dialog said it would unlink "1234
   conversations"; it now writes "1,234 conversations", with the separator of
