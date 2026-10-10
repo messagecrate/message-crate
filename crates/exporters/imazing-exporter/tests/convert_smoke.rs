@@ -28,7 +28,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
     let report = convert(&messages, tmp.path()).expect("convert");
 
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.messages, 3);
+    assert_eq!(report.messages, 8);
     assert_eq!(report.extra(crate::emit::MESSAGES_FILES), 1);
     assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 0);
     assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
@@ -39,7 +39,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
     assert!(body.contains("iMazing"));
     assert!(body.contains("3.5.5"));
 
-    // The three messages, read back by column. The substring assertions above
+    // The first three messages, read back by column. The substring assertions above
     // are satisfied by the export metadata, so they hold even if every row was
     // dropped.
     assert_csv_row(
@@ -77,6 +77,107 @@ fn convert_messages_keys_the_chat_by_its_number() {
         "the attachment must be recorded on its own message, not merely \
          somewhere in the file: {photo:#?}"
     );
+}
+
+/// The fixture's reaction, reply, deleted and edited rows reach the
+/// message's own fields (#2030): each reaction under its reactor's display
+/// name, `Me` being the account holder; a reply linked to the message of
+/// the same chat whose Message Date it quotes, and a reply quoting a date
+/// the export lacks left a reply with no link; a Deleted Date marking the
+/// message Deleted in the source app, never Unsent; and an Edited Date
+/// giving one earlier version with no text and the edit's time. None of the
+/// four cells is a vendor leftover any more.
+#[test]
+fn reactions_replies_deletions_and_edits_reach_the_message() {
+    use message_ir::{Deletion, EarlierVersion, Reaction, ReplyTo};
+
+    let messages = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/messages.csv");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    convert_export(ConvertExportArgs {
+        input: &messages,
+        output: tmp.path(),
+        timezone: Some("UTC"),
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Json,
+        cancel: None,
+        resume: false,
+        issues: None,
+    })
+    .expect("convert");
+    let doc = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
+        .expect("read the conversation back");
+    let by_text = |text: &str| {
+        doc.messages
+            .iter()
+            .find(|m| m.text == text)
+            .unwrap_or_else(|| panic!("no message reads {text:?}"))
+    };
+
+    let lunch = by_text("Lunch tomorrow?");
+    let reaction = |emoji: &str, name: &str, is_from_me: bool| Reaction {
+        part_index: 0,
+        kind: "emoji".into(),
+        emoji: Some(emoji.into()),
+        is_from_me,
+        reactor_identity: None,
+        reactor_display_name: Some(name.into()),
+    };
+    assert_eq!(
+        lunch.reactions,
+        vec![
+            reaction("\u{2764}\u{fe0f}", "Me", true),
+            reaction("\u{1f44d}", "Bob Sample", false),
+        ]
+    );
+    assert_eq!(
+        by_text("Yes at noon").reply_to,
+        Some(ReplyTo {
+            guid: Some(lunch.guid.clone()),
+            part_index: None,
+        })
+    );
+    assert_eq!(
+        by_text("That was before this export").reply_to,
+        Some(ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
+    assert_eq!(
+        by_text("Deleted later").deletion,
+        Some(Deletion::DeletedInSourceApp)
+    );
+    assert_eq!(
+        by_text("See you at noon").edits,
+        vec![EarlierVersion {
+            part_index: 0,
+            text: None,
+            // 2020-01-01 12:10:00 UTC, the Edited Date.
+            edited_at_unix_ms: Some(1_577_880_600_000),
+        }]
+    );
+    for message in &doc.messages {
+        assert_eq!(message.deletion.is_some(), message.text == "Deleted later");
+        assert_eq!(message.edits.is_empty(), message.text != "See you at noon");
+        assert_eq!(
+            message.reactions.is_empty(),
+            message.text != "Lunch tomorrow?"
+        );
+        assert_eq!(
+            message.reply_to.is_some(),
+            ["Yes at noon", "That was before this export"].contains(&message.text.as_str()),
+            "{}",
+            message.text
+        );
+        let fields = message.source.as_ref().map(|source| &source.fields);
+        for key in ["reactions", "replying_to", "edited_date", "deleted_date"] {
+            assert!(
+                fields.is_none_or(|fields| !fields.contains_key(key)),
+                "{key} is the message's own field, not a vendor leftover: {}",
+                message.text
+            );
+        }
+    }
 }
 
 #[test]

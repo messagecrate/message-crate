@@ -898,14 +898,22 @@ mod tests {
         msg.earlier_versions = vec![
             message_crate_api_types::EarlierVersion {
                 part_index: 0,
-                text: "helo".into(),
+                text: Some("helo".into()),
                 edited_at: Some("2015-03-12T18:05:22Z".into()),
                 matched: true,
             },
             message_crate_api_types::EarlierVersion {
                 part_index: 1,
-                text: "second".into(),
+                text: Some("second".into()),
                 edited_at: None,
+                matched: false,
+            },
+            // A version with no text, as iMazing records an edit, keeps its
+            // part and time and no text.
+            message_crate_api_types::EarlierVersion {
+                part_index: 0,
+                text: None,
+                edited_at: Some("2015-03-12T18:06:22Z".into()),
                 matched: false,
             },
         ];
@@ -914,13 +922,18 @@ mod tests {
             vec![
                 EarlierVersion {
                     part_index: 0,
-                    text: "helo".into(),
+                    text: Some("helo".into()),
                     edited_at_unix_ms: Some(1_426_183_522_000),
                 },
                 EarlierVersion {
                     part_index: 1,
-                    text: "second".into(),
+                    text: Some("second".into()),
                     edited_at_unix_ms: None,
+                },
+                EarlierVersion {
+                    part_index: 0,
+                    text: None,
+                    edited_at_unix_ms: Some(1_426_183_582_000),
                 },
             ]
         );

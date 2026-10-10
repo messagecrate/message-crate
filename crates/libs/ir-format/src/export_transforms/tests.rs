@@ -271,7 +271,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             deletion: None,
             edits: vec![EarlierVersion {
                 part_index: 0,
-                text: "LEAK-19".into(),
+                text: Some("LEAK-19".into()),
                 edited_at_unix_ms: Some(1),
             }],
             reply_to: Some(ReplyTo {

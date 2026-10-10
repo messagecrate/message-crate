@@ -112,9 +112,12 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
             obfuscate_reactor(reaction, anon);
         }
         // Earlier versions are imported too, so each keeps its part and time
-        // and has its text rewritten like the final version's.
+        // and has its text, when it has one, rewritten like the final
+        // version's.
         for version in &mut msg.edits {
-            version.text = anon.obfuscate_text(&version.text);
+            if let Some(text) = &version.text {
+                version.text = Some(anon.obfuscate_text(text));
+            }
         }
         if let Some(im) = msg.imessage.as_mut() {
             obfuscate_imessage(im, anon);

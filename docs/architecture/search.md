@@ -246,6 +246,12 @@ whose row shows nothing that matched looks like a search bug.
 so.** Each free-text word matches a message when its final text (the body,
 subject, and attachment text above) holds it or any one of its earlier
 versions does; the words of one query may be found in different versions.
+A source may record an edit without the text it replaced: iMazing writes an
+Edited Date and the final text only, so its version has no text
+(`message_versions.text` is NULL). Such a version is in no index, because
+nothing could find the message by it; the conversation shows it as
+"Earlier version not in the backup" with its time, and it never carries
+`matched` (#2030).
 The `body:` word reads the final body only. A hit the query would not find
 by its final text alone, with every free-text word reading only
 `messages_fts` and the file names, was found by an earlier version: the

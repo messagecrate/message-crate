@@ -9,11 +9,11 @@
 //! attachment mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
-    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    MessageCopy, MessageGuid, MessageIdentity, PendingAttachment, PendingConversation,
-    PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
-    one_copy_per_message, owner_sender,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
+    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
+    IrParticipant, IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity,
+    PendingAttachment, PendingConversation, PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION,
+    TimePrecision, format_local_ts, one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -134,6 +134,18 @@ pub trait ProjectionHooks {
     /// reacted, in the order the source gives them. The default records
     /// none.
     fn reactions(&self, _msg: &PendingMessage) -> Vec<Reaction> {
+        Vec::new()
+    }
+
+    /// Whether the message was deleted in the source app or unsent by its
+    /// sender. The default marks none.
+    fn deletion(&self, _msg: &PendingMessage) -> Option<Deletion> {
+        None
+    }
+
+    /// The earlier versions of an edited message, oldest first within each
+    /// part. The default records none.
+    fn edits(&self, _msg: &PendingMessage) -> Vec<EarlierVersion> {
         Vec::new()
     }
 
@@ -344,11 +356,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             text: msg.text.clone(),
             attachments,
             reactions: hooks.reactions(msg),
-            // No source that stages its rows here records a message deleted
-            // in the source app or unsent.
-            deletion: None,
-            // Nor an edited message's earlier versions.
-            edits: Vec::new(),
+            deletion: hooks.deletion(msg),
+            edits: hooks.edits(msg),
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,
@@ -356,10 +365,14 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         });
     }
     for (index, reply) in replies {
+        // A key that names the reply itself (a source that keys by the
+        // second, when the quoted message is gone and the reply shares its
+        // second) links to nothing: a message never quotes itself.
         let guid = reply
             .quoted_key
             .as_ref()
-            .and_then(|key| guid_by_reply_key.get(key).cloned().flatten());
+            .and_then(|key| guid_by_reply_key.get(key).cloned().flatten())
+            .filter(|guid| *guid != messages[index].guid);
         // No source that stages its rows here records the part a reply
         // answers.
         messages[index].reply_to = Some(ReplyTo {
@@ -589,8 +602,9 @@ mod tests {
     }
 
     /// A reply links to the one message whose key it names. A key no
-    /// message has, a key two messages share, and a reply that names no key
-    /// leave a reply with no link; a message that is not a reply has none.
+    /// message has, a key two messages share, a reply that names no key,
+    /// and a reply that names its own key leave a reply with no link; a
+    /// message that is not a reply has none.
     #[test]
     fn a_reply_links_only_to_the_one_message_with_its_key() {
         let mut convo =
@@ -603,6 +617,7 @@ mod tests {
             keyed(1_609_459_204, "absent", "K4", Some("K9")),
             keyed(1_609_459_205, "ambiguous", "K5", Some("K2")),
             keyed(1_609_459_206, "no key", "K6", Some("")),
+            keyed(1_609_459_207, "itself", "K7", Some("K7")),
         ];
 
         let (doc, _) = pending_to_document("+15555550122", &convo, &KeyedHooks);
@@ -626,6 +641,7 @@ mod tests {
         assert_eq!(reply_of("absent"), unlinked);
         assert_eq!(reply_of("ambiguous"), unlinked);
         assert_eq!(reply_of("no key"), unlinked);
+        assert_eq!(reply_of("itself"), unlinked);
     }
 
     #[test]

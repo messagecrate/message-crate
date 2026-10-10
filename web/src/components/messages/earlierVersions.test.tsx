@@ -73,6 +73,24 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
     expect(screen.queryByText("See you at noon")).not.toBeInTheDocument();
   });
 
+  it("reads a version whose text the backup does not hold as one line with its time", async () => {
+    const user = setupUser();
+    renderBubbleInUtc(
+      Bubble,
+      edited(source, service, {
+        earlier_versions: [
+          { part_index: 0, text: null, edited_at: "2026-08-11T15:06:00Z", matched: false },
+        ],
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edited" }));
+
+    const [only] = versionItems();
+    expect(only).toHaveTextContent("Aug 11, 3:06 PM · Earlier version not in the backup");
+    expect(only.querySelector("div")).toBeNull();
+  });
+
   it("opens a message a search found only by an earlier version, with that version highlighted", () => {
     renderBubbleInUtc(
       Bubble,

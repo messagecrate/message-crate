@@ -281,7 +281,7 @@ function EarlierVersionsList({ state, mine }: { state: EarlierVersionsState; min
       >
         {state.versions.map((version) => (
           <EarlierVersionItem
-            key={`${version.part_index}\u0000${version.edited_at ?? ""}\u0000${version.text}`}
+            key={`${version.part_index}\u0000${version.edited_at ?? ""}\u0000${version.text ?? ""}`}
             version={version}
             zone={zone}
           />
@@ -291,7 +291,28 @@ function EarlierVersionsList({ state, mine }: { state: EarlierVersionsState; min
   );
 }
 
+/**
+ * What a version reads when the backup records the edit and not the text it
+ * replaced, as an iMazing export does.
+ */
+export const EARLIER_VERSION_NOT_IN_BACKUP_TEXT = "Earlier version not in the backup";
+
+/**
+ * One earlier version: its time above its text. A version whose text the
+ * backup does not hold reads as one line, the time and
+ * "Earlier version not in the backup", because the edit is known and the
+ * text is not.
+ */
 function EarlierVersionItem({ version, zone }: { version: EarlierVersion; zone: string }) {
+  const time = version.edited_at ? formatMessageTime(version.edited_at, zone) : null;
+  if (version.text === null) {
+    return (
+      <li className="rounded-[12px] border border-dashed border-border bg-transparent px-[0.6rem] py-[0.3rem] text-[0.813rem] leading-[1.35] text-muted italic">
+        {time ? `${time} · ` : null}
+        {EARLIER_VERSION_NOT_IN_BACKUP_TEXT}
+      </li>
+    );
+  }
   return (
     <li
       data-matched={version.matched ? "" : undefined}
@@ -299,11 +320,7 @@ function EarlierVersionItem({ version, zone }: { version: EarlierVersion; zone: 
         version.matched ? "bg-search-mark text-text" : "bg-transparent text-muted"
       }`}
     >
-      {version.edited_at ? (
-        <div className="text-[0.688rem] text-muted">
-          {formatMessageTime(version.edited_at, zone)}
-        </div>
-      ) : null}
+      {time ? <div className="text-[0.688rem] text-muted">{time}</div> : null}
       <div className="whitespace-pre-wrap break-words">{version.text}</div>
     </li>
   );
