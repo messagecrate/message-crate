@@ -31,6 +31,7 @@ message-ir-format = { path = "../crates/libs/ir-format" }
 message-staging = { path = "../crates/libs/staging" }
 media = { path = "../crates/libs/media" }
 message-ir = { path = "../crates/libs/ir" }
+file-io = { path = "../crates/libs/file-io" }
 sms-backup-restore-exporter = { path = "../crates/exporters/sms-backup-restore-exporter", default-features = false }
 go-sms-pro-exporter = { path = "../crates/exporters/go-sms-pro-exporter", default-features = false }
 sms-backup-plus-exporter = { path = "../crates/exporters/sms-backup-plus-exporter", default-features = false }

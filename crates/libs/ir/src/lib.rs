@@ -4,8 +4,7 @@
 //! export metadata, participants, and messages. Backup converters parse
 //! vendor formats into this type. Writing files (JSON, CSV, EML, and so on)
 //! lives in `message-ir-format`. The atomic, synced write those files go
-//! through ([`write_atomic`]) lives here, so attachment staging, media
-//! conversion and the journal use the same one. Converting an existing export
+//! through lives in `file-io`. Converting an existing export
 //! directory lives in `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 //!
 //! Converters stage parsed rows in [`PendingMessage`] and
@@ -19,7 +18,6 @@ use std::collections::{HashMap, HashSet};
 
 mod attachment_path;
 mod conversation_key;
-mod durable;
 mod identity;
 mod projection;
 mod schema_version;
@@ -30,7 +28,6 @@ pub use attachment_path::{UNSAFE_ATTACHMENT_PATH, UnsafeAttachmentPath, safe_att
 pub use conversation_key::{
     ConversationKey, GROUP_CHAT_ID_PREFIX, NAME_CHAT_ID_PREFIX, NAMELESS_CHAT_ID, name_of_chat_id,
 };
-pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use identity::{
     MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
@@ -945,33 +942,6 @@ pub fn format_local_ts(secs: i64) -> Option<(String, String, String)> {
         utc.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         display,
     ))
-}
-
-/// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
-///
-/// Returns 64 lowercase hex digits — the same fingerprint format
-/// `digest_sha256` fields carry.
-///
-/// # Errors
-///
-/// Returns an error when the file cannot be opened or read; the error message
-/// names the file.
-pub fn file_sha256(path: &std::path::Path) -> std::io::Result<String> {
-    use std::io::Read;
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| std::io::Error::new(e.kind(), format!("open {}: {e}", path.display())))?;
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 64 * 1024];
-    loop {
-        let n = file
-            .read(&mut buf)
-            .map_err(|e| std::io::Error::new(e.kind(), format!("read {}: {e}", path.display())))?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hex::encode(hasher.finalize()))
 }
 
 /// `s` trimmed, or `None` when blank. The one place "blank means absent"

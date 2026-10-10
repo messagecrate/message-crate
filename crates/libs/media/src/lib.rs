@@ -267,19 +267,6 @@ impl Default for CompressOptions {
     }
 }
 
-/// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
-///
-/// Returns 64 lowercase hex digits. Thin wrapper over
-/// [`message_ir::file_sha256`], kept so media callers do not need their own
-/// `message-ir` dependency edge.
-///
-/// # Errors
-///
-/// Returns an error when the file cannot be opened or read.
-pub fn file_sha256(path: &std::path::Path) -> anyhow::Result<String> {
-    Ok(message_ir::file_sha256(path)?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
