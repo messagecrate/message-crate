@@ -16,11 +16,11 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     };
     message_crate_core::check_cancel(config.cancel.as_ref())?;
     let input = config.require_input().map_err(anyhow::Error::msg)?;
-    message_crate_core::run_pipeline(config, |run| {
+    message_crate_core::run_pipeline(config, |convert_run| {
         convert_export(ConvertExportArgs {
             input,
             output: &config.output,
-            run,
+            run: convert_run,
         })
     })
 }
