@@ -16,11 +16,11 @@
 //! (`docs/adr/0008-the-owner-holds-no-messages.md`,
 //! `docs/adr/0020-the-audit-trail-outlives-the-account.md`).
 //!
-//! A refused login as a username no account holds keeps the text typed only
-//! when it could be a username ([`record_refused_login`]), because a person
-//! whose browser fills the wrong field types their password there. Anything
-//! else is recorded with no username. A password made only of letters,
-//! digits, `_`, `-` and `.` could be a username, so it is still kept as typed.
+//! A refused login as a username no account holds keeps the username,
+//! trimmed, only when `is_valid_username` accepts it
+//! ([`record_refused_login`]), because a person whose browser fills the
+//! wrong field types their password there. Anything else is recorded with no
+//! username. A password that is also a valid username is still kept.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
