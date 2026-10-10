@@ -23,8 +23,8 @@ of `ci.yml` skips every job, and marking it ready starts a run that does the
 work. `pr-review` marks it ready after the review's last push. A draft's checks are skipped, and a
 skipped check reads as passed, so they say nothing. Why:
 `docs/adr/0007-ci-is-the-only-gate.md`, "Consequences".
-**Write the description to one of the templates in `.github/PULL_REQUEST_TEMPLATE/`.**
-They exist for whoever opens the pull request to fill in — an agent included —
+**Write the description to the matching pull request template.**
+The templates exist for whoever opens the pull request to fill in — an agent included —
 not as options offered to a reviewer:
 
 - `feature.md` for new behaviour: what it does and for whom, the key files
