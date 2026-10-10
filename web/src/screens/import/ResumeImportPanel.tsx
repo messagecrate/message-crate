@@ -4,7 +4,7 @@ import PasswordField from "../../components/PasswordField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
 import type { SnapshotSecret } from "../../lib/importSources/types";
-import { hintStyle, StackedField } from "./ImportFormUi";
+import { hintClass, StackedField } from "./ImportFormUi";
 import type { ResumeDecision } from "./resumeDecision";
 
 type ResumableKind = Exclude<ResumeDecision["kind"], "none">;
@@ -170,7 +170,7 @@ export default function ResumeImportPanel({
               showPassword={showSecret}
               onToggle={() => setShowSecret((shown) => !shown)}
             />
-            <p className={hintStyle}>{secretCopy.hint}</p>
+            <p className={hintClass}>{secretCopy.hint}</p>
           </StackedField>
         </div>
       ) : null}

@@ -52,7 +52,7 @@ export default function SourcesPanel({
           {apiErrorMessage(error, "Could not load sources.")}
         </div>
       ) : sources.length === 0 ? (
-        <div className="text-[0.875rem] text-muted">No source data available.</div>
+        <div className="text-[0.875rem] text-muted">No source data available</div>
       ) : (
         <>
           {sources.map((s) => (
