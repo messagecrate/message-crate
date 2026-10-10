@@ -28,7 +28,7 @@ The Export screen has five fields.
 | **Search in** | **Conversations** or **Messages**: the list the search runs on. Shown only when **Scope** is **Search**. |
 | **Search** | The search an export is limited to. Shown only when **Scope** is **Search**. |
 | **Save to** | The directory the export is written into. Left empty, the export gets a directory of its own in the Export Directory. |
-| **Format** | One of six formats. **JSON Lines (.jsonl)** is the default. |
+| **Output format** | One of seven formats. **JSON Lines (.jsonl)** is the default. |
 
 **Export** starts the run and **Cancel** stops it.
 Under **Search**, the **Export** button stays disabled until the search box holds a search.
