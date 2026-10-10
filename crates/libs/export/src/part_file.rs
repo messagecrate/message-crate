@@ -27,7 +27,7 @@ fn part_path(dest: &Path, sha256: &str) -> PathBuf {
 }
 
 /// Write the Asset whose SHA-256 is `sha256` to `dest` through its temporary
-/// file ([`part_path`]), with [`message_ir::write_atomic_via`]: `write` fills
+/// file ([`part_path`]), with [`file_io::write_atomic_via`]: `write` fills
 /// the temporary file, which is synced and renamed onto `dest` only when
 /// `write` succeeds, and removed when it fails. A synced rename matters,
 /// because the export journal records the Asset next, and a later Export Run
@@ -43,7 +43,7 @@ pub(crate) fn write_asset(
     sha256: &str,
     write: impl FnOnce(&mut dyn Write) -> Result<()>,
 ) -> Result<()> {
-    message_ir::write_atomic_via(&part_path(dest, sha256), dest, write)
+    file_io::write_atomic_via(&part_path(dest, sha256), dest, write)
 }
 
 #[cfg(test)]

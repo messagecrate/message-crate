@@ -626,7 +626,7 @@ struct DiskAttachmentFields {
 /// be left standing, since nothing will ever exist under it.
 fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     let rel = attachment_rel(src)?;
-    let digest = media::file_sha256(src)?;
+    let digest = file_io::file_sha256(src)?;
     let size = std::fs::metadata(src)
         .with_context(|| format!("stat {}", src.display()))?
         .len();
@@ -771,7 +771,7 @@ fn apply_transcode(
             }
             // Read the file on disk. A replayed digest can be
             // stale, and the server dedupes assets by sha256.
-            let digest = media::file_sha256(&marker)?;
+            let digest = file_io::file_sha256(&marker)?;
             let rel = attachment_rel(&final_path)?;
             let mime = mime_for_rel(&rel);
             patch_all_matching(doc, recorded_rel, |att| {
@@ -794,7 +794,7 @@ fn apply_transcode(
             );
             // Synced before the original goes, so a power loss cannot
             // leave an empty derivative and no original.
-            message_ir::rename_into_place(&marker, &final_path)
+            file_io::rename_into_place(&marker, &final_path)
                 .with_context(|| format!("commit {}", final_path.display()))?;
             let _ = std::fs::remove_file(src);
             // A note from an earlier run under a lower limit no longer

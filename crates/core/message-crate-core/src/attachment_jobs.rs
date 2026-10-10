@@ -335,7 +335,7 @@ fn persist_clone(
     let tmp = attachments_dir.join(next_clone_temp_name(&name));
     // Synced before the conversation file that names it is written, so that
     // file never vouches for an attachment a power loss left empty.
-    message_ir::write_atomic_via(&tmp, &dest, |out| Ok(out.write_all(bytes)?))
+    file_io::write_atomic_via(&tmp, &dest, |out| Ok(out.write_all(bytes)?))
         .map_err(|e| format!("{e:#}"))?;
     job.attachment.path = Some(format!("attachments/{name}"));
     job.attachment.digest_sha256 = Some(digest_hex);

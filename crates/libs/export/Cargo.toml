@@ -14,6 +14,7 @@ message-crate-api-types = { path = "../../libs/api-types" }
 message-crate-http = { path = "../../libs/http" }
 message-crate-core = { path = "../../core/message-crate-core" }
 media = { path = "../media" }
+file-io = { workspace = true }
 message-ir = { path = "../../libs/ir" }
 message-ir-format = { path = "../../libs/ir-format" }
 reqwest = { workspace = true, features = ["blocking"] }

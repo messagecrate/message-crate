@@ -749,7 +749,7 @@ impl Ingest {
             }
             for index in claims {
                 let claim = &self.claims[index];
-                let digest = message_ir::file_sha256(&claim.source)
+                let digest = file_io::file_sha256(&claim.source)
                     .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
                 digests.push((claim.convo_key.clone(), claim.message, digest));
             }
