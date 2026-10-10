@@ -129,6 +129,20 @@ export default function ConversationList({
     [targetConversations, setTagMembers.mutateAsync],
   );
 
+  /** Drop every tag on the selected conversations: one write per name, each with its own rollback. */
+  const clearAllMembership = useCallback(async () => {
+    const ids = targetConversations.map((c) => c.id);
+    if (ids.length === 0) return;
+    const names = new Set<string>();
+    for (const c of targetConversations) {
+      for (const t of c.tags ?? []) names.add(t);
+    }
+    if (names.size === 0) return;
+    await Promise.allSettled(
+      [...names].map((name) => setTagMembers.mutateAsync({ name, patch: { remove: ids } })),
+    );
+  }, [targetConversations, setTagMembers.mutateAsync]);
+
   useEffect(() => {
     setRightToolbar(
       <TagsMenu
@@ -143,15 +157,7 @@ export default function ConversationList({
           await applyMembership(await tagActions.ensure(name), true);
         }}
         onClearAll={() => {
-          const names = new Set<string>();
-          for (const c of targetConversations) {
-            for (const t of c.tags ?? []) names.add(t);
-          }
-          void (async () => {
-            for (const name of names) {
-              await applyMembership(name, false);
-            }
-          })();
+          void clearAllMembership();
         }}
       />,
     );
@@ -159,6 +165,7 @@ export default function ConversationList({
   }, [
     allTags,
     applyMembership,
+    clearAllMembership,
     setRightToolbar,
     tagChecks,
     targetConversations,
