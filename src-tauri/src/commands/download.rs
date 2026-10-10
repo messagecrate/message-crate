@@ -278,13 +278,17 @@ mod tests {
     }
 
     #[test]
-    fn an_unreachable_server_is_reported_without_the_media_link() {
-        // A port nothing listens on: bound, read, and released.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+    fn a_server_that_hangs_up_is_reported_without_the_media_link() {
+        // A server that hangs up on every connection before it answers. The
+        // listener lives as long as its thread, so no other test can take
+        // the port, and the request fails at once rather than after a timeout.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for connection in listener.incoming() {
+                drop(connection);
+            }
+        });
         let url = Url::parse(&format!(
             "http://127.0.0.1:{port}/v1/assets/{SHA}?media_link=1.2.sig"
         ))
