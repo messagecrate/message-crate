@@ -10,8 +10,6 @@ import type { SnapshotSecret } from "../../lib/importSources/types";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import type { ImportJobFormValues } from "./useImportJob";
 
-export type { SnapshotSecret };
-
 /**
  * Form snapshot for the run record, without the secrets.
  *
