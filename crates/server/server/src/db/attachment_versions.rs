@@ -175,8 +175,11 @@ pub async fn stored_originals(
     .await
 }
 
-/// The attachment rows of `account_id` for the original `original_sha`: the
-/// rows every write to an original's versions and decision changes.
+/// The attachment rows of `account_id` for the original `original_sha`.
+/// Every write to these rows takes them as one value: a version write
+/// ([`VersionWrite`]) and the record of whether the original is shown as it
+/// is ([`record_shown_as_is`]). Reads such as [`file_of`] still take the
+/// account and the fingerprint apart.
 #[derive(Debug, Clone, Copy)]
 pub struct OriginalRows<'a> {
     pub account_id: i64,
