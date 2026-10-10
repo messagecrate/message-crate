@@ -1,7 +1,7 @@
 use super::*;
 use mailparse::MailHeaderMap;
 
-fn base_sms() -> MailMessage {
+pub(crate) fn base_sms() -> MailMessage {
     MailMessage {
         chat_identifier: "+15555550101".into(),
         conversation_type: "individual".into(),
