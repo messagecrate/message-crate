@@ -105,14 +105,16 @@ account has is a measure of the database; who they are is the account holder's
 address book.
 
 An Import Run's log is the one place the owner reads a conversation's
-identities. (Revised 2026-10-09.) A run log may name the conversation files
-and attachments the run read. A conversation file is named for the people in
-it, so its name can carry a phone number, an email address or a group's
-title. The owner reads those names in the log. Why: the file name is part of
-what explains a failure. The log sits on the computer the account imported
-from, and anyone at that computer can open the Staging Directory and see the
-same names, so a log that hid them would protect nothing
-([#1990](https://github.com/messagecrate/message-crate/issues/1990)).
+identities. (Revised 2026-10-09. Until then whether the owner may read them
+was open in [#1990](https://github.com/messagecrate/message-crate/issues/1990).)
+A run log may name the conversation files and attachments the run read. A
+conversation file is named for the people in it, so its name can carry a
+phone number, an email address or a group's title. The owner reads those
+names in the log. Why: the file name is part of what explains a failure. The
+log is a plain file in the Logs Directory of the computer the account
+imported from, and anyone using that computer can open it with or without
+Message Crate. While the run lasts, the Staging Directory holds the same
+names. Keeping them off the owner's screen would protect nothing.
 
 Nothing in the owner's routes reads `messages.body`,
 `attachments.transcription`, or any other content column. A new owner route
@@ -138,7 +140,8 @@ the owner as a type of its own, `OwnerImportRun` or `OwnerExportRun`, holding
 the source, mode, tool, times, outcome and counts: an import's summary lists
 the addresses in the backup, its issues name conversations, and an export's
 query is a search over the account's messages, so none of them reach the
-owner. The installation-wide totals are
+owner through the server. The run log on the importing computer names the
+conversation files (above). The installation-wide totals are
 `GET /v1/server/storage`, the owner's alone, and Owner Home's Dashboard shows
 them. The per-account and installation-wide numbers come from the same queries
 (`crates/server/server/src/db/storage.rs`), with and without an account
