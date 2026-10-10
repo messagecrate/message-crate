@@ -89,7 +89,7 @@ export default function ChoiceMultiSelect({
         }`}
       >
         <span className="min-w-0 truncate text-muted">{value.length > 0 ? "Select…" : "Any"}</span>
-        <SelectChevronIcon className="ml-1 shrink-0 text-muted" />
+        <SelectChevronIcon size={10} className="ml-1 shrink-0 text-muted" />
       </AriaButton>
       <Popover
         ref={popoverRef}

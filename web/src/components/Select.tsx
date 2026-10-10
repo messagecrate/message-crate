@@ -84,7 +84,7 @@ export default function Select<T extends object>({
         className={`box-border flex w-full min-w-0 items-center justify-between gap-2 overflow-hidden border border-border bg-bg font-normal text-text outline-none focus:border-accent ${TRIGGER_SIZE[size]} ${triggerClassName ?? ""}`}
       >
         <SelectValue className={`min-w-0 truncate ${valueClassName ?? ""}`} />
-        <SelectChevronIcon className="shrink-0 text-muted" />
+        <SelectChevronIcon size={10} className="shrink-0 text-muted" />
       </Button>
       <Popover
         data-mc-overlay=""

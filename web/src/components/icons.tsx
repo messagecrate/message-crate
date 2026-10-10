@@ -228,7 +228,7 @@ export function PlayIcon({ size, className, ...rest }: IconProps) {
  * Drawn on a 10-unit grid with a 1.5 stroke, heavier than `ChevronDownIcon`, so
  * it still reads at 10 pixels.
  */
-export function SelectChevronIcon({ size = 10, className, ...rest }: IconProps) {
+export function SelectChevronIcon({ size, className, ...rest }: IconProps) {
   return (
     <IconShell size={size} className={className} viewBox="0 0 10 10" strokeWidth="1.5" {...rest}>
       <path d="M2.5 3.5 5 6l2.5-2.5" />
