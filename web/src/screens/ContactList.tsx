@@ -469,7 +469,7 @@ export default function ContactList({
         !loading ? (
           <div className="p-4 text-[0.813rem] text-muted">
             {filterActive
-              ? "No contacts match this filter"
+              ? "No contacts match this search"
               : groupFilter === "none"
                 ? "Every contact is in a Contact Group"
                 : groupFilter === UNKNOWN_GROUP
