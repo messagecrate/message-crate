@@ -11,8 +11,8 @@ chrono = { workspace = true }
 csv = { workspace = true }
 hex = { workspace = true }
 mail = { path = "../../libs/mail" }
-mail-builder = "1.0.0"
-mailparse = "0.18.0"
+mail-builder = { workspace = true }
+mailparse = { workspace = true }
 message-crate-core = { path = "../../core/message-crate-core" }
 message-ir = { path = "../../libs/ir" }
 mms-parts = { path = "../../libs/mms-parts" }
