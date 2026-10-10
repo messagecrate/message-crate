@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { ActiveImportRun } from "../../lib/importRun";
+import { activeImportRun } from "../../test/apiShapes";
 import { fill, setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
@@ -11,24 +11,6 @@ import type { ResumeDecision } from "./resumeDecision";
 afterEach(() => {
   cleanup();
 });
-
-function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
-  return {
-    id: 7,
-    source: "imessage",
-    mode: "append",
-    status: "running",
-    started_at: "2026-08-30T00:00:00Z",
-    stage: "upload",
-    run_dir: "/home/u/message-crate/staging-260830",
-    device_id: "this-device",
-    form: { source: "imessage-ios" },
-    source_fingerprint: null,
-    source_identities: null,
-    summary: null,
-    ...overrides,
-  };
-}
 
 describe("ResumeImportPanel", () => {
   it("renders nothing when there is no run to decide about", () => {
@@ -43,7 +25,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_upload", run: importRun() };
+    const decision: ResumeDecision = { kind: "resume_upload", run: activeImportRun() };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
     expect(screen.getByText("Finish your last import")).toBeInTheDocument();
@@ -67,7 +49,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "restart",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -91,7 +73,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -115,7 +97,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_media",
-      run: importRun({ stage: "media" }),
+      run: activeImportRun({ stage: "media" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -139,7 +121,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
+      run: activeImportRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -165,7 +147,7 @@ describe("ResumeImportPanel", () => {
     // a tool of someone's own — stores a null run_dir.
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ run_dir: null }),
+      run: activeImportRun({ run_dir: null }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -189,7 +171,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_unknown",
-      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
+      run: activeImportRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -212,7 +194,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "other_device",
-      run: importRun({ device_id: "other-device" }),
+      run: activeImportRun({ device_id: "other-device" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -234,7 +216,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "settings_unreadable",
-      run: importRun(),
+      run: activeImportRun(),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -255,7 +237,7 @@ describe("ResumeImportPanel", () => {
   it("says nothing extra when there is no error to report", () => {
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -266,7 +248,7 @@ describe("ResumeImportPanel", () => {
     const onResume = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_review",
-      run: importRun({ stage: "staging_review" }),
+      run: activeImportRun({ stage: "staging_review" }),
     };
     render(
       <ResumeImportPanel
@@ -290,7 +272,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -314,7 +296,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "source_changed",
-      run: importRun({
+      run: activeImportRun({
         stage: "write",
         source_fingerprint: {
           path: "/backups/iphone.tar",
@@ -339,7 +321,7 @@ describe("ResumeImportPanel", () => {
   it("says the backup changed without a path when the run recorded none", () => {
     const decision: ResumeDecision = {
       kind: "source_changed",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
 
@@ -356,7 +338,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(
       <ResumeImportPanel
@@ -382,7 +364,7 @@ describe("ResumeImportPanel", () => {
   it("asks for the backup password and holds Start over until it is filled", async () => {
     const user = setupUser();
     const onResume = vi.fn();
-    const decision: ResumeDecision = { kind: "restart", run: importRun({ stage: "parse" }) };
+    const decision: ResumeDecision = { kind: "restart", run: activeImportRun({ stage: "parse" }) };
     render(
       <ResumeImportPanel
         decision={decision}
@@ -411,7 +393,10 @@ describe("ResumeImportPanel", () => {
     async (kind, stage, label) => {
       const user = setupUser();
       const onResume = vi.fn();
-      const decision: ResumeDecision = { kind, run: importRun({ source: "whatsapp", stage }) };
+      const decision: ResumeDecision = {
+        kind,
+        run: activeImportRun({ source: "whatsapp", stage }),
+      };
       render(
         <ResumeImportPanel
           decision={decision}
@@ -434,7 +419,7 @@ describe("ResumeImportPanel", () => {
   it("shows no password or key field when the Import Run had neither", () => {
     const decision: ResumeDecision = {
       kind: "resume_write",
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
 
@@ -449,7 +434,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_upload", run: importRun() };
+    const decision: ResumeDecision = { kind: "resume_upload", run: activeImportRun() };
     const release = holdDesktopJob("Export");
     try {
       render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
@@ -471,7 +456,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("leaves a discard-only decision alone while another desktop job runs", () => {
-    const decision: ResumeDecision = { kind: "other_device", run: importRun() };
+    const decision: ResumeDecision = { kind: "other_device", run: activeImportRun() };
     const release = holdDesktopJob("Convert");
     try {
       render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);

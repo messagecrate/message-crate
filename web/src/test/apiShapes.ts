@@ -3,6 +3,7 @@
  * present, and `null` where it has no value. Pass the fields a test cares about.
  */
 
+import type { ActiveImportRun } from "../lib/importRun";
 import type { components } from "../lib/serverApi.types";
 
 type Schema = components["schemas"];
@@ -71,6 +72,50 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
       participants: [],
     },
     ...fields,
+  };
+}
+
+/**
+ * A received iMessage reading "hi" from +1555, in a one-to-one conversation
+ * with Ada at +1555.
+ */
+export function imessageMessage(fields: Partial<Schema["Message"]> = {}): Schema["Message"] {
+  return message({
+    service: "iMessage",
+    sender: "+1555",
+    text: "hi",
+    conversation: {
+      id: 1,
+      chat_identifier: "x",
+      conversation_type: "individual",
+      is_group: false,
+      group_title: null,
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
+    },
+    ...fields,
+  });
+}
+
+/**
+ * An iPhone Messages Import Run on this device, running and stopped at the
+ * upload stage, with no fingerprint, identities, or summary.
+ */
+export function activeImportRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
+  return {
+    id: 7,
+    source: "imessage",
+    mode: "append",
+    status: "running",
+    started_at: "2026-08-30T00:00:00Z",
+    stage: "upload",
+    run_dir: "/home/u/message-crate/staging-260830",
+    device_id: "this-device",
+    form: { source: "imessage-ios" },
+    source_fingerprint: null,
+    source_identities: null,
+    summary: null,
+    ...overrides,
   };
 }
 

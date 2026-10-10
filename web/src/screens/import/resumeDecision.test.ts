@@ -1,24 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ActiveImportRun } from "../../lib/importRun";
+import { activeImportRun } from "../../test/apiShapes";
 import { checkSourceFingerprint, resumeDecisionFor } from "./resumeDecision";
-
-function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
-  return {
-    id: 7,
-    source: "imessage",
-    mode: "append",
-    status: "running",
-    started_at: "2026-08-30T00:00:00Z",
-    stage: "upload",
-    run_dir: "/home/u/message-crate/staging-260830",
-    device_id: "this-device",
-    form: { source: "imessage-ios" },
-    source_fingerprint: null,
-    source_identities: null,
-    summary: null,
-    ...overrides,
-  };
-}
 
 describe("resumeDecisionFor", () => {
   it("has nothing to decide without a run", () => {
@@ -34,7 +16,7 @@ describe("resumeDecisionFor", () => {
 
   it("says where a run belongs when another install owns it", () => {
     const decision = resumeDecisionFor({
-      run: importRun({ device_id: "other-device" }),
+      run: activeImportRun({ device_id: "other-device" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -44,7 +26,7 @@ describe("resumeDecisionFor", () => {
 
   it("offers discard alone when the run directory is gone", () => {
     const decision = resumeDecisionFor({
-      run: importRun(),
+      run: activeImportRun(),
       deviceId: "this-device",
       directory: "missing",
       fingerprint: "unknown",
@@ -58,7 +40,7 @@ describe("resumeDecisionFor", () => {
     for (const stage of ["upload", "staging_review", "media", "write", "parse"] as const) {
       expect(
         resumeDecisionFor({
-          run: importRun({ stage }),
+          run: activeImportRun({ stage }),
           deviceId: "this-device",
           directory: "unknown",
           fingerprint: "unknown",
@@ -70,7 +52,7 @@ describe("resumeDecisionFor", () => {
   it("puts a run that never recorded a directory ahead of the directory check", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ run_dir: null }),
+        run: activeImportRun({ run_dir: null }),
         deviceId: "this-device",
         directory: "unknown",
         fingerprint: "unknown",
@@ -80,7 +62,7 @@ describe("resumeDecisionFor", () => {
 
   it("resumes the Upload when it was interrupted", () => {
     const decision = resumeDecisionFor({
-      run: importRun({ stage: "upload" }),
+      run: activeImportRun({ stage: "upload" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -93,7 +75,7 @@ describe("resumeDecisionFor", () => {
     // already copied are work worth keeping.
     expect(
       resumeDecisionFor({
-        run: importRun({ stage: "parse" }),
+        run: activeImportRun({ stage: "parse" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "match",
@@ -104,7 +86,7 @@ describe("resumeDecisionFor", () => {
   it("sends a run waiting at a Review back to its Review", () => {
     for (const stage of ["staging_review", "media_review"] as const) {
       const decision = resumeDecisionFor({
-        run: importRun({ stage }),
+        run: activeImportRun({ stage }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -115,7 +97,7 @@ describe("resumeDecisionFor", () => {
 
   it("sends a run that died converting back to the Media stage", () => {
     const decision = resumeDecisionFor({
-      run: importRun({ stage: "media" }),
+      run: activeImportRun({ stage: "media" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -129,7 +111,7 @@ describe("resumeDecisionFor", () => {
     for (const stage of ["staging_review", "media_review", "media"] as const) {
       expect(
         resumeDecisionFor({
-          run: importRun({ stage }),
+          run: activeImportRun({ stage }),
           deviceId: "this-device",
           directory: "missing",
           fingerprint: "unknown",
@@ -141,7 +123,7 @@ describe("resumeDecisionFor", () => {
   it("treats a missing device id as this install rather than locking the user out", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ device_id: null }),
+        run: activeImportRun({ device_id: null }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -150,7 +132,7 @@ describe("resumeDecisionFor", () => {
   });
   it("offers to pick up a copy that was interrupted", () => {
     const decision = resumeDecisionFor({
-      run: importRun({ stage: "write" }),
+      run: activeImportRun({ stage: "write" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "match",
@@ -161,7 +143,7 @@ describe("resumeDecisionFor", () => {
   it("still offers to pick up when the backup cannot be checked", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ stage: "write" }),
+        run: activeImportRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -172,7 +154,7 @@ describe("resumeDecisionFor", () => {
   it("says the backup changed rather than copying against a different source", () => {
     for (const fingerprint of ["mismatch", "source_missing"] as const) {
       const decision = resumeDecisionFor({
-        run: importRun({ stage: "write" }),
+        run: activeImportRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint,
@@ -184,7 +166,7 @@ describe("resumeDecisionFor", () => {
   it("restarts a run that died in parse, whatever the backup looks like", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ stage: "parse" }),
+        run: activeImportRun({ stage: "parse" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "mismatch",
@@ -197,7 +179,7 @@ describe("resumeDecisionFor", () => {
     // the Upload — the staged directory is what those stages work from.
     expect(
       resumeDecisionFor({
-        run: importRun({ stage: "upload" }),
+        run: activeImportRun({ stage: "upload" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "mismatch",
@@ -208,7 +190,7 @@ describe("resumeDecisionFor", () => {
   it("puts a missing directory ahead of any fingerprint answer", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ stage: "write" }),
+        run: activeImportRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "missing",
         fingerprint: "match",

@@ -4,7 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchAssetObjectUrl } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
-import { attachment, message as baseMessage, participant } from "../../test/apiShapes";
+import { attachment, imessageMessage, participant } from "../../test/apiShapes";
 import {
   installIntersectionObserver,
   observersWithin,
@@ -22,24 +22,6 @@ vi.mock("../../lib/serverApi", () => ({
 afterEach(() => {
   cleanup();
 });
-
-function message(partial: Partial<Message> = {}): Message {
-  return baseMessage({
-    service: "iMessage",
-    sender: "+1555",
-    text: "hi",
-    conversation: {
-      id: 1,
-      chat_identifier: "x",
-      conversation_type: "individual",
-      is_group: false,
-      group_title: null,
-      label: null,
-      participants: [participant({ identity: "+1555", name: "Ada" })],
-    },
-    ...partial,
-  });
-}
 
 const baseProps = {
   loading: false,
@@ -79,7 +61,7 @@ describe("MessageThread", () => {
   });
 
   it("renders messages when there are some", () => {
-    render(<MessageThread {...baseProps} messages={[message()]} />);
+    render(<MessageThread {...baseProps} messages={[imessageMessage()]} />);
     expect(screen.getByText("hi")).toBeInTheDocument();
     expect(screen.queryByText("No messages in this conversation")).not.toBeInTheDocument();
   });
@@ -98,7 +80,7 @@ describe("MessageThread", () => {
       ],
     };
     const from = (id: number, sender: string, timestamp: string) =>
-      message({ id, sender, timestamp, text: `m${id}`, conversation: group });
+      imessageMessage({ id, sender, timestamp, text: `m${id}`, conversation: group });
     render(
       <MessageThread
         {...baseProps}
@@ -115,7 +97,7 @@ describe("MessageThread", () => {
   });
 
   it("says older messages load by scrolling, with no Previous or Next", () => {
-    render(<MessageThread {...baseProps} messages={[message()]} hasOlder={true} />);
+    render(<MessageThread {...baseProps} messages={[imessageMessage()]} hasOlder={true} />);
     expect(screen.getByText("Scroll up for older messages")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Previous" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
@@ -152,9 +134,9 @@ describe("MessageThread landing on a message", () => {
       <MessageThread
         {...baseProps}
         messages={[
-          message({ id: 1, timestamp: "2026-08-11T15:00:00Z", text: "m1" }),
-          message({ id: 2, timestamp: "2026-08-11T15:05:00Z", text: "m2" }),
-          message({ id: 3, timestamp: "2026-08-11T15:06:00Z", text: "m3" }),
+          imessageMessage({ id: 1, timestamp: "2026-08-11T15:00:00Z", text: "m1" }),
+          imessageMessage({ id: 2, timestamp: "2026-08-11T15:05:00Z", text: "m2" }),
+          imessageMessage({ id: 3, timestamp: "2026-08-11T15:06:00Z", text: "m3" }),
         ]}
         landing={{ seq: 1, to: { id: 2, align } }}
       />,
@@ -175,7 +157,7 @@ describe("MessageThread landing on a message", () => {
  */
 describe("MessageThread and attachments", () => {
   function withPhoto(id: number, sha256: string): Message {
-    return message({
+    return imessageMessage({
       id,
       text: null,
       attachments: [
