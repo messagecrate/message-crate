@@ -60,7 +60,7 @@ Document every public item — type, variant, field, const, function. The worksp
 
 - `crates/server/demo-seed/src/personas.rs`, `const EMPTY_GROUP_HANDLE`, `const EMPTY_THREAD_HANDLE`, `const ORPHAN_SENDER` — no doc on any of the three, and `struct Roster` just above them documents the struct but none of its fields. Bad: the module is private, so the lint is silent, and nothing says why an empty group, an empty thread, and an orphaned sender exist in the demo data.
 - `crates/libs/export/src/http.rs`, `struct ExportMessagesArgs` — `export_id` is documented and `base_url`, `key`, `limit`, `offset` are not. Bad: forgotten rather than deliberate, and `pub(crate)` keeps it out of the lint.
-- `crates/libs/sbr/src/read.rs`, `MmsPart::filename_attr` — "Filename from the XML `fn` attribute (not a function attribute)." — Good: the field used to be `fn_attr` with no doc; the rename and the doc together say what it holds and head off the misreading.
+- `crates/libs/sbr/src/parts.rs`, `MmsPart::filename_attr` — "Filename from the XML `fn` attribute (not a function attribute)." — Good: the field used to be `fn_attr` with no doc; the rename and the doc together say what it holds and head off the misreading.
 - `crates/core/message-crate-core/src/exporters.rs`, `struct Form` — every one of its fields carries a doc, for example "Packaging format projected from the common message (`json` default)." on `output_format`. Good: the GUI-facing form is where an undocumented field costs the most, because the desktop app is built against it.
 
 ## Say when a `Result` never errors

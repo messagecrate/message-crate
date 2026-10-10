@@ -3,12 +3,18 @@
 //! Writers produce a single backup file (`smses.xml`) with root
 //! `<smses count="N">`. See the [SMS Backup & Restore XML output](https://messagecrate.app/docs/developer/formats/sms-backup-restore-xml/).
 
+mod addresses;
+mod conversations;
+mod owner;
+mod parts;
 mod read;
+mod xml;
 
-pub use read::{
-    AttachmentBlob, ConversationKind, ParseStats, Record, SourceFields, address_handle,
-    contact_name, infer_owner_phones, parse_file_with,
-};
+pub use addresses::address_handle;
+pub use conversations::{ConversationKind, contact_name};
+pub use owner::infer_owner_phones;
+pub use parts::AttachmentBlob;
+pub use read::{ParseStats, Record, SourceFields, parse_file_with};
 
 use anyhow::{Context, Result};
 use base64::Engine;
