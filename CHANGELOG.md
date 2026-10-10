@@ -244,6 +244,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A resumed import drops a Staging Error about a file it then
+  reads clean.** When Staging could not read a file of the backup, such as a
+  mail file on a network drive that dropped, and the run was paused and
+  resumed after the cause went away, the finished run still listed the file
+  as unreadable. A resumed Staging reads the whole backup again, so once it
+  has, its Errors and notes about the backup's files replace the earlier
+  parts', and an Error stays only while its file still can't be read. A run
+  resumed at a Review, Media, or Upload reads nothing of the backup again and
+  keeps them (#1947).
 - 2026-10-09: **WhatsApp people are imported with their numbers and names,
   and every group with its members.** A group message's sender had a name or
   a number, never both, some numbers were made from WhatsApp's internal ids
