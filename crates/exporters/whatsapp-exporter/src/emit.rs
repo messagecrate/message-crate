@@ -306,9 +306,10 @@ struct Person {
     /// map to one. `None` when the backup names no sender.
     jid: Option<String>,
     /// What they are written as: the phone number of a phone id, typed
-    /// `phone`, or else the raw id typed `other`. An `@lid` id is no phone
-    /// number, and its `@` would otherwise make the server read it as an
-    /// email address.
+    /// `phone`, or else the raw id typed `other`, because the exporter knows
+    /// an `@lid` id is no phone number. The one-to-one chat with the same
+    /// person writes the same id ([`Roster::add_peer`]), so both are one
+    /// identity.
     identity: Option<(String, IdentityType)>,
     name: Option<String>,
 }
@@ -434,8 +435,8 @@ impl<'a> Roster<'a> {
 
     /// A one-to-one chat's one participant, named by the chat. A chat whose
     /// id is not a phone id, such as an internal `@lid` id, has its raw id
-    /// typed `other`: the `@` in it would otherwise make the server read it
-    /// as an email address, and no WhatsApp id is one.
+    /// typed `other`, because the exporter knows it is no phone number and
+    /// no WhatsApp id is an email address.
     fn add_peer(&mut self, jid: &str, chat_id: &str, name: Option<String>) {
         let identity_type = if jid_to_e164(jid).is_some() {
             IdentityType::Phone

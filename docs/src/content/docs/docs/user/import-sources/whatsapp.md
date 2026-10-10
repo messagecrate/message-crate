@@ -27,7 +27,7 @@ A program in the Tools Directory whose checksum is the pinned program's is kept,
 Each person keeps the phone number and the name the backup holds for them.
 
 - A group's participants are its members, including a member who never wrote, and anyone else who wrote in it. The phone's owner is not one of them. A group whose member list the backup doesn't hold has the people who wrote in it.
-- A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported under that id, with their name.
+- A group message's sender has the phone number WhatsApp stores for them. A person WhatsApp knows only by an internal id, with no phone number in the backup, is imported under that id, with their name when the backup has one, and is listed under Unknown until given a phone number.
 - A name is the one in the phone's address book first, then the name the person set in their own WhatsApp profile.
 - A one-to-one chat's person has the chat's name.
 - Some old group messages name no sender in the backup, and are imported with none.
