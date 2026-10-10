@@ -74,7 +74,7 @@ pub(crate) fn extract_bytes(source: &WhatsappConfig) -> Result<Option<u64>> {
 
 /// The app-group domain `source` names.
 fn domain(source: &WhatsappConfig) -> &'static str {
-    if source.business {
+    if source.is_business_app {
         BUSINESS_DOMAIN
     } else {
         DOMAIN
@@ -136,12 +136,12 @@ fn decrypt_with(
             if !database.is_file() {
                 bail!(
                     "{} is not in this iPhone backup. {}",
-                    if source.business {
+                    if source.is_business_app {
                         "WhatsApp Business"
                     } else {
                         "WhatsApp"
                     },
-                    if source.business {
+                    if source.is_business_app {
                         "If the phone has WhatsApp, clear WhatsApp Business."
                     } else {
                         "If the phone has WhatsApp Business, tick WhatsApp Business."
@@ -232,9 +232,9 @@ mod tests {
     fn an_encrypted_backup_is_decrypted_into_the_work_directory() {
         let backup = backup(true);
         let work = tempdir().unwrap();
-        for (business, expected_domain) in [(false, DOMAIN), (true, BUSINESS_DOMAIN)] {
+        for (is_business_app, expected_domain) in [(false, DOMAIN), (true, BUSINESS_DOMAIN)] {
             let source = WhatsappConfig {
-                business,
+                is_business_app,
                 ..source(backup.path(), Some("secret"))
             };
             let found = decrypt_with(&source, work.path(), |from, password, domain| {
@@ -318,7 +318,7 @@ mod tests {
             Some(30 * 2 + 5 * 2 + 2 * 2 + 700)
         );
         let business = WhatsappConfig {
-            business: true,
+            is_business_app: true,
             ..personal
         };
         assert_eq!(extract_bytes(&business).unwrap(), Some(40 * 2));

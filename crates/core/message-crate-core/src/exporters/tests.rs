@@ -334,7 +334,7 @@ fn whatsapp_passes_platform_and_media() {
         whatsapp_key: "abc123".into(),
         whatsapp_backup: "/tmp/backup".into(),
         whatsapp_media: "/tmp/media".into(),
-        whatsapp_business: true,
+        is_business_app: true,
         attachment_media: AttachmentMedia::Clone,
         ..Form::default()
     };
@@ -351,7 +351,7 @@ fn whatsapp_passes_platform_and_media() {
     assert_eq!(wa.backup, Some(PathBuf::from("/tmp/backup")));
     assert_eq!(wa.media, Some(PathBuf::from("/tmp/media")));
     assert_eq!(wa.owner_phone.as_deref(), Some("+15555550100"));
-    assert!(wa.business);
+    assert!(wa.is_business_app);
 
     // iPhone reads the number from the backup, so the field may be empty.
     let ios = Form {

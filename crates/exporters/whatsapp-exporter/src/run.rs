@@ -112,7 +112,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             wa: source.wa.clone(),
             media: source.media.clone(),
             db: source.db.clone(),
-            business: source.business,
+            is_business_app: source.is_business_app,
         };
         // Read before an encrypted backup's files are decrypted, which points
         // `args` at the decrypted copy, dated the moment it was made.
@@ -409,7 +409,7 @@ mod tests {
             wa: None,
             media: None,
             db: None,
-            business: false,
+            is_business_app: false,
         }
     }
 

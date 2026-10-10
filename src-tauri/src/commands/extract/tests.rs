@@ -24,7 +24,7 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
         whatsapp_wa: String::new(),
         whatsapp_media: String::new(),
         whatsapp_db: String::new(),
-        whatsapp_business: false,
+        is_business_app: false,
     }
 }
 
@@ -501,7 +501,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
     options.whatsapp_wa = "/tmp/wa.db".into();
     options.whatsapp_media = "/tmp/WhatsApp".into();
     options.whatsapp_db = "/tmp/msgstore.db".into();
-    options.whatsapp_business = true;
+    options.is_business_app = true;
     let dump = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
@@ -526,7 +526,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
                 Some(std::path::Path::new("/tmp/msgstore.db"))
             );
             assert!(wa.backup.is_none());
-            assert!(!wa.business);
+            assert!(!wa.is_business_app);
             assert_eq!(wa.owner_phone.as_deref(), Some("+15555550100"));
         }
         other => panic!("{other:?}"),
@@ -635,7 +635,7 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
 #[test]
 fn whatsapp_ios_sets_backup_from_directory_and_business() {
     let mut options = test_options(Vec::new());
-    options.whatsapp_business = true;
+    options.is_business_app = true;
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
@@ -649,7 +649,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
         SourceConfig::Whatsapp(wa) => {
             assert_eq!(wa.platform, Some(WhatsappPlatform::Ios));
             assert_eq!(wa.backup.as_deref(), Some(backup.path()));
-            assert!(wa.business);
+            assert!(wa.is_business_app);
             assert!(wa.key.is_none());
         }
         other => panic!("{other:?}"),

@@ -36,7 +36,7 @@ fn pin_with(
     program: Program,
     release: &'static str,
     published: &[u8],
-    gzip: bool,
+    gzipped: bool,
     sha256: &str,
 ) -> (Pinned, Vec<u8>) {
     let pinned = Pinned {
@@ -46,10 +46,10 @@ fn pin_with(
         asset: leak(format!(
             "{}-test{}",
             program.name(),
-            if gzip { ".gz" } else { "" }
+            if gzipped { ".gz" } else { "" }
         )),
         sha256: leak(sha256.to_string()),
-        program_sha256: leak(if gzip {
+        program_sha256: leak(if gzipped {
             let mut program = Vec::new();
             flate2::read::GzDecoder::new(published)
                 .read_to_end(&mut program)
@@ -58,14 +58,19 @@ fn pin_with(
         } else {
             sha256.to_string()
         }),
-        gzip,
+        gzipped,
     };
     (pinned, published.to_vec())
 }
 
 /// `program` pinned to the asset `published`, with its true checksum.
-fn pin(program: Program, release: &'static str, published: &[u8], gzip: bool) -> (Pinned, Vec<u8>) {
-    pin_with(program, release, published, gzip, &sha256_hex(published))
+fn pin(
+    program: Program,
+    release: &'static str,
+    published: &[u8],
+    gzipped: bool,
+) -> (Pinned, Vec<u8>) {
+    pin_with(program, release, published, gzipped, &sha256_hex(published))
 }
 
 /// Serve `body` at `pinned`'s path on `server`.
