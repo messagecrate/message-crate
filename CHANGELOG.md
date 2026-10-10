@@ -253,6 +253,20 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A file without a backup date imported beside a dated one
+  gives the same result in any order.** When one import held a dated backup
+  and a message file that says nothing about when its backup was made, such
+  as Message Crate's own export of a conversation whose messages came from
+  two backups, the order the files were read in decided what a later import
+  could change. An Unsent mark from the undated file could be cleared by a
+  later backup, or kept, and a later edit it recorded could be dropped
+  against a newer backup already stored. Message Crate now keeps what a file
+  without a date gave a message apart from the dated backups' date: its mark
+  stays, and its text stays until a copy records a later edit, whichever
+  file is read first and whether the files arrive in one import or several,
+  until a dated backup says the same. A conversation exported while one of
+  its messages holds such a mark or text carries no backup date, so
+  importing the export again keeps those rules (#1989).
 - 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
   wtsexporter's output named a full disk, the import asked to free space on
   the Scratch Directory's disk. The output itself was lost. So a full disk
@@ -412,6 +426,16 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-09: **A person who reacts to a message is the same contact as when
+  they write.** An import could take a person in a conversation's list and
+  the same person reacting to a message for two identities, and put the
+  reaction on a second contact with no name. That happened when the backup
+  said the person's address was a name while it reads as a phone number, such
+  as `5550123`. Message Crate now works out what every address is itself,
+  from the service and the address, for the people in a conversation, the
+  senders of its messages and the people who react alike, and no longer reads
+  it from the exported file (#1933, #1959).
+
 - 2026-10-08: **Adding or removing an identity updates the conversations with
   yourself already imported.** Notes imported before your number was added as an
   identity still listed you among the conversation's people. They also kept you
@@ -478,6 +502,9 @@ released versions carry their date on the heading.
   milliseconds are refused when you import or convert them. Export the
   backup again with this build. A program that reads the HTTP API finds it
   in a message's `time_precision`, `seconds` or `milliseconds`.
+- Message files exported before Message Crate worked out each address's kind
+  itself are refused when you import or convert them. Export the backup
+  again with this build.
 
 ## [0.10.1] - 2026-10-05
 

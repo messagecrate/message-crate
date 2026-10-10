@@ -18,7 +18,8 @@ use crate::db::staging::{
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
 use crate::models::{
-    AttachmentRecord, ConversationRecord, ExportRecord, MessageRecord, TapbackRecord, clean_body,
+    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
+    clean_body,
 };
 use media::MediaMode;
 
@@ -282,10 +283,10 @@ impl StagingInserts {
     }
 }
 
-/// One participant as the conversation header records it: handle (the name,
-/// typed `Other`, for a person named with no address), the name this backup
-/// used for them, and the handle type when the source said.
-type StagedParticipant = (String, Option<String>, Option<IdentityType>);
+/// One participant as the conversation header records it: their address, or
+/// the name the source gave in its place, and the name this backup used for
+/// them.
+type StagedParticipant = (HandleValue, Option<String>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
 ///
@@ -387,7 +388,7 @@ impl StagedConversation {
             participants: record
                 .participants
                 .into_iter()
-                .map(|p| (p.handle, p.name_alias, p.handle_type))
+                .map(|p| (p.handle, p.name_alias))
                 .collect(),
             source,
             backup_taken_at: record.backup_taken_at,
@@ -461,26 +462,16 @@ impl FileStaging<'_> {
         });
         let service = service_for(conversation.header_service.as_deref(), &conversation.source);
 
-        // What each participant's address is: the type the header gives it
-        // or its shape, within what the service carries. The exporter knows
-        // its source's ids, and `Handle::parse` does not; WhatsApp carries no
-        // email address, so a `123456@lid` the header leaves untyped is
-        // `other` all the same (#1671).
-        let header_types = header_handle_types(&conversation.participants, service);
         let individual = conversation
             .conversation_type
             .eq_ignore_ascii_case("individual");
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
         // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
-        // `orphaned:` key. A one-to-one chat's id takes the type
-        // the participant with the same address has, and the service and
-        // shape decide only when no participant has it.
+        // `orphaned:` key. A one-to-one chat's id is an address, typed by the
+        // service and its shape like every other (#1933).
         let chat_handle_type = if individual {
-            header_types
-                .get(conversation.chat_identifier.trim())
-                .copied()
-                .unwrap_or_else(|| handle_type_on(&conversation.chat_identifier, None, service))
+            handle_type_on(&conversation.chat_identifier, service)
         } else {
             IdentityType::Other
         };
@@ -592,7 +583,6 @@ impl FileStaging<'_> {
             prepared_messages,
             first_sort_order,
             service,
-            &header_types,
             &mut counts,
         )
         .await?;
@@ -615,24 +605,6 @@ impl FileStaging<'_> {
         self.counts.merge_file(&counts);
         Ok(())
     }
-}
-
-/// The type each participant's address takes on `service`, keyed by the
-/// trimmed address: the header's type or the address's shape, within what the
-/// service carries ([`handle_type_on`]).
-fn header_handle_types(
-    participants: &[StagedParticipant],
-    service: IdentityService,
-) -> HashMap<String, IdentityType> {
-    participants
-        .iter()
-        .map(|(handle, _, handle_type)| {
-            (
-                handle.trim().to_string(),
-                handle_type_on(handle, *handle_type, service),
-            )
-        })
-        .collect()
 }
 
 /// The service of chat and participant handles: the conversation's own hint,
@@ -691,19 +663,19 @@ async fn insert_participant(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
     conversation_id: i64,
-    (handle, name_alias, handle_type): StagedParticipant,
+    (value, name_alias): StagedParticipant,
     service: IdentityService,
     counts: &mut ImportCounts,
 ) -> Result<()> {
-    // The source's type, else the shape, within what the service carries.
-    let handle_type = handle_type_on(&handle, handle_type, service);
+    let handle_type = value.handle_type_on(service);
+    let handle = value.as_str();
     // The account holder is never a participant: a member at one of the
     // account's identities gets no handle, contact or participant row. The
     // exporters drop the addresses their backup names as the owner's; this
     // catches the ones only the account knows (#1093).
     if is_account_identity(
         &stmts.identities,
-        &handle,
+        handle,
         handle_type,
         stmts.handles.country(),
     ) {
@@ -713,7 +685,7 @@ async fn insert_participant(
         tx,
         &mut stmts.handles,
         stmts.account_id,
-        &handle,
+        handle,
         handle_type,
         Some(service.as_str()),
     )
@@ -745,10 +717,10 @@ async fn insert_participant(
 
 /// Resolve each message's body text and sender handle into a row ready for
 /// the bulk staging insert. The messages take `sort_order` in the source's
-/// order, counting up from `first_sort_order`. A sender the header names as a
-/// participant takes the participant's type, so the sender and the
-/// participant are one identity; any other sender's type is its address's
-/// shape, within what its message's service carries.
+/// order, counting up from `first_sort_order`. A sender's type is its
+/// address's shape, within what its message's service carries, the rule a
+/// participant's type follows, so a sender the header lists is the
+/// participant's identity.
 ///
 /// # Errors
 ///
@@ -759,7 +731,6 @@ async fn resolve_message_rows(
     prepared: Vec<(MessageRecord, Vec<PreparedAttachment>)>,
     first_sort_order: i64,
     service: IdentityService,
-    header_types: &HashMap<String, IdentityType>,
     counts: &mut ImportCounts,
 ) -> Result<Vec<PendingStagingMessage>> {
     let mut rows = Vec::with_capacity(prepared.len());
@@ -781,13 +752,7 @@ async fn resolve_message_rows(
             stmts.import_id,
             IncomingSender {
                 is_from_me: msg.is_from_me,
-                address: msg.sender.as_deref(),
-                handle_type: msg
-                    .sender
-                    .as_deref()
-                    .and_then(|address| header_types.get(address.trim()))
-                    .copied()
-                    .or(msg.sender_handle_type),
+                value: msg.sender.as_ref(),
                 service: sender_service,
             },
             counts,
@@ -833,7 +798,7 @@ async fn resolve_owner_handle(
         tx,
         stmts.account_id,
         address,
-        handle_type_on(address, None, service),
+        handle_type_on(address, service),
         Some(service.as_str()),
         stmts.handles.country(),
     )
@@ -920,16 +885,26 @@ async fn flush_staging_message_chunk(
 /// from the same import, adds, by the rules a later import of the copy would
 /// follow (`db::staging::promote_deletion_marks`,
 /// `db::staging::write_edit_map`): the attachments and reactions the staged
-/// message does not hold yet, and its mark and text as follows. When both
-/// backups have a date, a copy from a later backup gives its text, earlier
-/// versions and mark, mark or no mark, and one from an earlier backup gives
-/// neither (#1741, #1804). When either has no date, or the two dates are
-/// equal ([`db_staging::later_backup`]), the copy gives its text and earlier
-/// versions when it records a later edit, and its mark when it carries one.
-/// A copy at the staged message's time that has milliseconds marks it
-/// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import
-/// of two backups then stores what two separate imports of them store, in
-/// either file order (#1806, #1837).
+/// message does not hold yet, and its mark and text as follows.
+///
+/// The staged row keeps what a file without a backup date gave it apart
+/// from the date of the dated backups it met: the mark such a file gave
+/// (`undated_deletion`) and whether its text came from one
+/// (`undated_body`). So the date rules decide only between dated copies,
+/// and the rules for files without one decide an undated copy's part,
+/// whichever file is read first (#1989).
+///
+/// The mark follows [`db_staging::add_staged_copy_mark`]: a mark from a file
+/// without a date stands, a later dated backup gives its mark or none, and
+/// an earlier one gives nothing (#1741). The text: when both copies' texts
+/// come from dated backups with different dates, a copy from the later
+/// backup gives its text and earlier versions, and one from an earlier
+/// backup gives neither (#1804); otherwise
+/// ([`db_staging::later_backup`]) the copy gives them when it records a
+/// later edit. A copy at the staged message's time that has milliseconds
+/// marks it `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]).
+/// One import of two backups then stores what two separate imports of them
+/// store, in either file order (#1806, #1837).
 async fn add_staged_copy(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -958,37 +933,36 @@ async fn add_staged_copy(
     if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
         db_staging::add_staged_copy_milliseconds(tx, staged, &row.msg.timestamp).await?;
     }
-    let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
-    match db_staging::later_backup(staged_source.backup_taken_at, held_backup.as_deref()) {
-        BackupOrder::Later(copy_backup) => {
-            db_staging::take_staged_copy_from_later_backup(
-                tx,
-                staged,
-                &StagedCopy {
-                    body: row.body.as_deref(),
-                    deletion: row.msg.deletion,
-                    versions: &row.msg.earlier_versions,
-                    backup_taken_at: copy_backup,
-                },
-            )
-            .await?;
+    let held = db_staging::staged_text(tx, staged).await?;
+    let copy = StagedCopy {
+        body: row.body.as_deref(),
+        versions: &row.msg.earlier_versions,
+        undated: staged_source.backup_taken_at.is_none(),
+    };
+    let order = if held.undated {
+        BackupOrder::Undecided
+    } else {
+        db_staging::later_backup(
+            staged_source.backup_taken_at,
+            held.backup_taken_at.as_deref(),
+        )
+    };
+    match order {
+        BackupOrder::Later => {
+            db_staging::replace_staged_text(tx, staged, &copy).await?;
         }
         BackupOrder::Earlier => {}
         BackupOrder::Undecided => {
-            if !row.msg.earlier_versions.is_empty() {
-                db_staging::take_later_staged_copy(
-                    tx,
-                    staged,
-                    row.body.as_deref(),
-                    &row.msg.earlier_versions,
-                )
-                .await?;
-            }
-            if let Some(deletion) = row.msg.deletion {
-                db_staging::add_staged_copy_mark(tx, staged, deletion).await?;
+            let taken = !row.msg.earlier_versions.is_empty()
+                && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
+            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+                db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }
+    db_staging::add_staged_copy_mark(tx, staged, row.msg.deletion, staged_source.backup_taken_at)
+        .await?;
+
     let att_rows: Vec<StagingAttachment> = row
         .attachments
         .iter()
@@ -1092,6 +1066,8 @@ async fn tapback_row(
     row: &PendingStagingMessage,
     tap: &TapbackRecord,
 ) -> Result<StagingTapback> {
+    // A reaction names its sender by address only.
+    let reactor = tap.sender.clone().map(HandleValue::Address);
     let sender_handle_id = resolve_incoming_sender_handle(
         tx,
         &mut stmts.handles,
@@ -1100,8 +1076,7 @@ async fn tapback_row(
         stmts.import_id,
         IncomingSender {
             is_from_me: tap.is_from_me,
-            address: tap.sender.as_deref(),
-            handle_type: None,
+            value: reactor.as_ref(),
             service: row.sender_service,
         },
         counts,

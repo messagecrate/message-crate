@@ -2,8 +2,8 @@
 
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IdentityType, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
+    ExportMeta, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
+    IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -28,7 +28,6 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                identity_type: Some(crate::IdentityType::Phone),
             }],
             stats: ConversationStats::default(),
         },
@@ -106,7 +105,6 @@ pub fn sample_imessage_document() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                identity_type: Some(IdentityType::Phone),
             }],
             stats: ConversationStats::default(),
         },

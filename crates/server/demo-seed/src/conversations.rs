@@ -589,7 +589,6 @@ fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<I
     vec![IrParticipant {
         identity: Some(chat_id.into()),
         display_name,
-        identity_type: None,
     }]
 }
 
@@ -793,7 +792,6 @@ fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
         participants.push(IrParticipant {
             identity: Some(handle.clone()),
             display_name: None,
-            identity_type: None,
         });
     }
     participants
@@ -810,7 +808,6 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
         participants.push(IrParticipant {
             identity: Some(contact.primary_phone().into()),
             display_name: None,
-            identity_type: None,
         });
     }
     participants
@@ -849,7 +846,6 @@ impl<R: Rng> Seeder<'_, R> {
         let sender = IrParticipant {
             identity: Some(ORPHAN_SENDER.into()),
             display_name: None,
-            identity_type: None,
         };
         for (file_name, sender, messages) in [
             ("orphaned-person.jsonl", Some(sender), with_person),
@@ -901,7 +897,6 @@ fn write_header_only(
         participants.push(IrParticipant {
             identity: Some((*handle).into()),
             display_name: None,
-            identity_type: None,
         });
     }
     write_conversation_header(

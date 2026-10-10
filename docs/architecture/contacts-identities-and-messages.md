@@ -119,15 +119,13 @@ sender `AMAZON`, and a contact for the key as well as for the name made one
 person two contacts
 ([#1541](https://github.com/messagecrate/message-crate/issues/1541)).
 
-**A chat handle's type comes from the header, not its shape.** A group's chat
-handle is stored with the type `other`, whatever it looks like. A one-to-one
-chat handle takes the type the participant with the same address has, and so
-does a message sender that is a participant. The service and the shape decide
-only when no participant has it (below). Why: the exporter knows what its
-source's ids are, and the address alone does not. A WhatsApp group id
-(`120363042@g.us`) and an internal WhatsApp id (`123456@lid`) both hold an
-`@`, and typed by shape alone each was stored as an email identity that
-reaches nobody
+**A group's chat handle is `other`, whatever its shape.** A group's chat
+handle, and the key of a conversation of orphaned messages, is stored with
+the type `other`, whatever it looks like. The conversation's type says it is
+a group, and a group's id is nobody's address. A one-to-one chat handle is an
+address, typed by its service and shape like every other (below). Why: a
+WhatsApp group id (`120363042@g.us`) holds an `@`, and typed by shape alone
+it was stored as an email identity that reaches nobody
 ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
 
 **An identity's type is decided by its service first and its shape second.**
@@ -137,15 +135,37 @@ internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`. T
 `phone` service carries phone numbers and email addresses, because iMessage
 reaches an email address. A shape the service cannot carry is never that
 type: an address with an `@` on WhatsApp is not an email address, however it
-looks, and an import stores it as `other`. An import applies the rule to every
-address it meets: a chat handle, a participant, a sender, a reaction's sender
-and the holder's own address (`db/handles.rs`, `handle_type_on`). A type the
-file states is held to it too. Why: the service knows what it can carry, and
-the address alone does not. Typed by shape alone, a WhatsApp participant the
-file left untyped, such as `123456789012345@lid`, was stored as an email
-identity on WhatsApp, which no WhatsApp identity can be, and the identities
-list named it `email`
+looks, and an import stores it as `other`. A name that is neither a number
+nor an address, such as the sender `AMAZON`, is `other` on every service. Why:
+the service knows what it can carry, and the address alone does not. Typed
+by shape alone, a WhatsApp participant such as `123456789012345@lid` was
+stored as an email identity on WhatsApp, which no WhatsApp identity can be,
+and the identities list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
+
+**The server types every address; the conversation file states no type.**
+An import types each address it meets by the rule above (`db/handles.rs`,
+`handle_type_on`): a one-to-one chat handle, a participant, a message's
+sender, a reaction's sender and the holder's own address. A participant, a
+message's sender and a reaction's sender go through one function,
+`HandleValue::handle_type_on` (`models.rs`), which also keeps a name the
+source gave in place of an address as `other`. The server knows it is a
+name because the file gave it in the name's place. A participant is typed
+by the conversation's service, and a sender or a reaction's sender by its
+message's service. The conversation file carries no `identity_type`. Why:
+the type follows from the service and the address, so a type in the file
+could only disagree with it, and every place it did made one person two
+identities. A message's sender took the type the header gave a participant
+with the same address, while a reaction's sender was typed by its shape. So
+a participant the file typed `other` whose address reads as a number became
+a `phone` identity when they reacted, on a new contact with no name
+([#1959](https://github.com/messagecrate/message-crate/issues/1959)).
+Checked against every exporter, the file never knew more than the service
+and the shape: an Apple Messages sender that is an email address has an
+`@`, an SMS short code such as `72727` is written as a number and is
+`phone`, an alphanumeric sender such as `AMAZON` is `other`, and a WhatsApp
+internal id has an `@` on WhatsApp
+([#1933](https://github.com/messagecrate/message-crate/issues/1933)).
 
 **Text Message is one service, and a message's transport never changes an
 identity's type.** SMS, MMS, RCS and iMessage are transports. Each message
@@ -153,8 +173,8 @@ records the one that carried it in `messages.service`, such as `sms`, `rcs`
 or `imessage`. An MMS is recorded as `sms`, and a message whose source names
 no transport is recorded as `unknown` and stays on Text Message. The
 transport says how that one message travelled, not what its address is. So
-when the file states no type, an address with an `@` is an `email` identity
-on Text Message whatever transport carried it. An email-to-text gateway such
+an address with an `@` is an `email` identity on Text Message whatever
+transport carried it. An email-to-text gateway such
 as `alerts@example.com` that writes over SMS is one `email` row on `phone`,
 on one contact. Why: one conversation holds both transports, and identities
 of one address are linked only when their types are equal. Typed by
@@ -164,10 +184,7 @@ the second contact had no name. The first contact's counts left the SMS
 messages out
 ([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
 
-A type the file states stands on Text Message, as above. Whether the file's
-type is needed at all is
-[#1933](https://github.com/messagecrate/message-crate/issues/1933). WhatsApp
-is the other way, as above: its `@` ids are `other`.
+WhatsApp is the other way, as above: its `@` ids are `other`.
 
 **A phone number's type never depends on the message's service.** The service
 only takes away a type it cannot carry, the email address; it never makes a
@@ -369,7 +386,7 @@ Why: the SMS exporters once stripped every address to its digits first, so
 `AMAZON` was dropped.
 
 **The server reads an address's shape by `phone::Handle::parse` alone.** A
-chat handle, a participant or a sender whose source gave no type, an owner
+chat handle, a participant, a sender, a reaction's sender, an owner
 address, an identifier checked before an import, an identity a person adds
 or swaps in on a contact, and one an account adds to its own profile all take
 their shape from it, and no second rule reads the characters. An import then
@@ -573,20 +590,36 @@ backup decides its mark and text.** One message from one source is one row
 already there, in the same import or a later one. The conversation file says
 when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
 that date on each staged row, and `messages.backup_taken_at` keeps the date of
-the backup that decided the stored copy. When both copies have a date, the
-copy from the later backup gives the message its deletion mark, mark or no
-mark, and its text and earlier versions, whatever the versions' times say; a
-copy from an earlier backup changes neither. The duplicate flag follows the
-text, because the dedupe compares the text. The date is kept to the
-millisecond, the form every stored time takes. When either copy has no date,
-or the two dates are equal, nothing says which backup is newer, so the rules
-for files without one hold: a copy with a mark adds it and one without leaves
-the mark held, and a copy takes the text when its newest earlier version is
-newer
-(`later_edit_sql` in `db/staging.rs`). Attachments and reactions add from
-either copy, because a backup that lacks one does not say it is gone. The
-rule is the same in one import as across several, in any file order
-(`later_backup_sql` in `db/staging.rs`, `add_staged_copy` in
+the newest backup with a date that the message has met. When both copies
+have a date, the copy from the later backup gives the message its deletion
+mark, mark or no mark, and its text and earlier versions, whatever the
+versions' times say; a copy from an earlier backup changes neither. The
+duplicate flag follows the text, because the dedupe compares the text. The
+date is kept to the millisecond, the form every stored time takes. When
+either copy has no date, or the two dates are equal, nothing says which
+backup is newer, so the rules for files without one hold: a copy with a mark
+adds it and one without leaves the mark held, and a copy takes the text when
+its newest earlier version is newer (`later_edit_sql` in `db/staging.rs`).
+What a file without a date gave a message is kept apart from the date, on
+the staged row and the stored message alike: the mark it gave
+(`undated_deletion`), which outlasts every copy without a mark, dated or
+not, and whether the text came from it (`undated_body`), which leaves the
+text to the later edit whatever the other copy's date. The date rules then
+decide only between dated copies, and the newest dated copy a message meets
+gives it its date. A dated backup at least as new as that date which says
+the same, the same mark or the same text and earlier versions, backs the
+undated part, and it is the dates' to decide from then on
+(`kept_undated_mark_sql`, `backs_undated_sql`). The message API reports no
+backup date for a message that still holds an undated part, so an Export
+Run writes none for its conversation. Why: a row that kept one date for
+both could hold an undated mark or edit under a dated backup's date, and a
+later import, or a re-import of an export, would then judge it by that date,
+so the order the files were read in decided the result
+([#1989](https://github.com/messagecrate/message-crate/issues/1989)).
+Attachments and reactions add from either copy, because a backup that lacks
+one does not say it is gone. The rule is the same in one import as across
+several, in any file order (`copy_mark_sql` for the mark and
+`later_backup_sql` for the text in `db/staging.rs`, `add_staged_copy` in
 `imports_api/staging.rs`). Why: a person recovers a deleted message and
 unsends or edits a sent one between two backups, and only the backup's own
 date says which state is the newer; the message's own times record when it
@@ -923,7 +956,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
-| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs` |
+| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs`, `HandleValue::handle_type_on` in `crates/server/server/src/models.rs`, and `IdentityService::type_on` in `crates/libs/ir/src/lib.rs` |
 | A phone number's key and its country | `key_typed_handle` and `COUNTRIES` in `crates/libs/phone` |
 | Picking a number's country, and merging it into the `+` form | `crates/server/server/src/identity_country.rs`, `crates/server/server/src/db/identity_country.rs` |
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |

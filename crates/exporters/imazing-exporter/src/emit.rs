@@ -25,7 +25,6 @@ use message_ir::{
     PendingAttachment, PendingConversation, PendingMessage, ProjectedRole, ProjectionHooks,
 };
 use message_staging::{AttachmentSource, ExportWriter};
-use phone::Handle;
 use serde_json::Map;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -170,20 +169,10 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     );
     let mut documents = Vec::new();
     let mut sources = Vec::new();
-    for (
-        _,
-        Conversation {
-            key,
-            address,
-            mut convo,
-            ..
-        },
-    ) in conversations
-    {
+    for (_, Conversation { key, mut convo, .. }) in conversations {
         let hooks = ImazingProjection {
             export: &export,
             key: &key,
-            address: address.as_ref(),
             sources: RefCell::new(Vec::new()),
         };
         let chat_id = convo.chat_id.clone();
@@ -218,8 +207,6 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// One conversation being read: its key, and its messages so far.
 struct Conversation {
     key: ConversationKey,
-    /// A one-to-one conversation's address (`Session::address`).
-    address: Option<Handle>,
     convo: PendingConversation,
     /// For a group, its rows' digests, earliest first (`Session::row_digests`).
     row_digests: Vec<[u8; 32]>,
@@ -553,7 +540,6 @@ impl Ingest {
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
                 Conversation {
                     key: session.key.clone(),
-                    address: session.address.clone(),
                     convo,
                     row_digests: session.row_digests.clone(),
                 }
@@ -899,8 +885,6 @@ struct ImazingProjection<'a> {
     export: &'a ExportMeta,
     /// The key of the conversation being projected.
     key: &'a ConversationKey,
-    /// A one-to-one conversation's address (`Session::address`).
-    address: Option<&'a Handle>,
     /// The source file of each attachment of the messages the projection
     /// keeps, in the order it writes them, which is the order the writer
     /// asks for them. A message the dedupe step drops is never mapped, so
@@ -959,12 +943,10 @@ impl ProjectionHooks for ImazingProjection<'_> {
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                identity_type: self.address.map(Handle::kind),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,
                 display_name: convo.first_contact_name(),
-                identity_type: None,
             }],
         }
     }

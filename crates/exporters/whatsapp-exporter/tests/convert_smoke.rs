@@ -277,20 +277,12 @@ fn senders_fixture() -> std::collections::BTreeMap<String, message_ir::Conversat
     convert_with_owner(&json, Some("+15555550100")).1
 }
 
-/// Each participant as (identity, type, name).
-fn roster(
-    doc: &message_ir::ConversationDocument,
-) -> Vec<(Option<&str>, Option<message_ir::IdentityType>, Option<&str>)> {
+/// Each participant as (identity, name).
+fn roster(doc: &message_ir::ConversationDocument) -> Vec<(Option<&str>, Option<&str>)> {
     doc.conversation
         .participants
         .iter()
-        .map(|p| {
-            (
-                p.identity.as_deref(),
-                p.identity_type,
-                p.display_name.as_deref(),
-            )
-        })
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect()
 }
 
@@ -312,7 +304,7 @@ fn sender_of<'a>(
 /// from an `@lid` id are not a phone number. The name is the first of
 /// `sender_contact_name`, `sender` when it is a name, and
 /// `sender_push_name`. A sender whose `sender_jid` is still an `@lid` id
-/// has no number, and is written under that id, typed `other` (#1092), so
+/// has no number, and is written under that id (#1092), so
 /// a sender with no name keeps their sender.
 #[test]
 fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
@@ -360,21 +352,20 @@ fn a_group_sender_has_the_number_of_a_phone_id_and_the_first_name_present() {
 /// the owner is never a participant of their own conversation.
 #[test]
 fn a_group_has_its_members_and_its_other_senders_as_participants() {
-    use message_ir::IdentityType::{Other, Phone};
     let documents = senders_fixture();
     let club = &documents["120363042222222222@g.us"];
     assert_eq!(
         roster(club),
         vec![
-            (Some("+15555550133"), Some(Phone), Some("Ada Lovelace")),
-            (Some("+15555550144"), Some(Phone), Some("Benny")),
-            (Some("123456789012345@lid"), Some(Other), Some("Lid Person")),
-            (Some("+15555550155"), Some(Phone), Some("Cy")),
-            (Some("+15555550166"), Some(Phone), None),
-            (Some("+15555550177"), Some(Phone), Some("Dee")),
-            (Some("555555555555555@lid"), Some(Other), None),
+            (Some("+15555550133"), Some("Ada Lovelace")),
+            (Some("+15555550144"), Some("Benny")),
+            (Some("123456789012345@lid"), Some("Lid Person")),
+            (Some("+15555550155"), Some("Cy")),
+            (Some("+15555550166"), None),
+            (Some("+15555550177"), Some("Dee")),
+            (Some("555555555555555@lid"), None),
             // Another person with the same name stays another participant.
-            (Some("666666666666666@lid"), Some(Other), Some("Lid Person")),
+            (Some("666666666666666@lid"), Some("Lid Person")),
         ]
     );
 }
@@ -383,11 +374,10 @@ fn a_group_has_its_members_and_its_other_senders_as_participants() {
 /// senders are all its participants.
 #[test]
 fn a_group_with_no_member_table_has_its_senders_as_participants() {
-    use message_ir::IdentityType::Phone;
     let documents = senders_fixture();
     assert_eq!(
         roster(&documents["120363042333333333@g.us"]),
-        vec![(Some("+15555550188"), Some(Phone), Some("Ed Example"))]
+        vec![(Some("+15555550188"), Some("Ed Example"))]
     );
 }
 
@@ -395,12 +385,11 @@ fn a_group_with_no_member_table_has_its_senders_as_participants() {
 /// is the peer, named by the chat.
 #[test]
 fn a_one_to_one_participant_has_the_chat_name() {
-    use message_ir::IdentityType::Phone;
     let documents = senders_fixture();
     let sam = &documents["+15555550122"];
     assert_eq!(
         roster(sam),
-        vec![(Some("+15555550122"), Some(Phone), Some("Sam Example"))]
+        vec![(Some("+15555550122"), Some("Sam Example"))]
     );
     assert_eq!(
         sender_of(sam, "Hello from Sam"),
@@ -426,7 +415,7 @@ fn a_dropped_row_adds_no_participant() {
     let (_, documents) = convert_to_documents(&json);
     let identities: Vec<_> = roster(&documents["120363042111111111@g.us"])
         .into_iter()
-        .map(|(identity, _, _)| identity)
+        .map(|(identity, _)| identity)
         .collect();
     assert_eq!(identities, vec![Some("+15555550133")]);
 }
@@ -626,10 +615,10 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
 }
 
 /// A one-to-one chat keyed by an internal `@lid` id has no phone number to
-/// write. Its one participant is the raw id typed `other`, so the server
-/// does not read the `@` in it as an email address (#1141).
+/// write. Its one participant is the raw id, which the server types `other`
+/// because WhatsApp carries no email address (#1141, #1933).
 #[test]
-fn a_lid_chat_has_its_id_as_an_other_participant() {
+fn a_lid_chat_has_its_id_as_its_participant() {
     let json = serde_json::json!({
         "123456@lid": {
             "name": "Lid Peer",
@@ -643,12 +632,9 @@ fn a_lid_chat_has_its_id_as_an_other_participant() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.identity.as_deref(), p.identity_type))
+        .map(|p| p.identity.as_deref())
         .collect();
-    assert_eq!(
-        participants,
-        vec![(Some("123456@lid"), Some(message_ir::IdentityType::Other))]
-    );
+    assert_eq!(participants, vec![Some("123456@lid")]);
     assert_eq!(
         doc.messages[0].sender_identity.as_deref(),
         Some("123456@lid")
