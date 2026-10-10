@@ -1,12 +1,9 @@
-import type { AttachmentMediaMode, ExtractConfig } from "./types";
+import type { AttachmentChoices, ExtractConfig } from "./types";
 
 /** Build the media fields shared by the iMessage, WhatsApp, and Android SMS extract payloads. */
-export function mediaExtractFields(args: {
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-}): Pick<
+export function mediaExtractFields(
+  args: AttachmentChoices,
+): Pick<
   ExtractConfig,
   "attachment_media" | "media_max_resolution" | "media_max_fps" | "media_min_size"
 > {
@@ -22,15 +19,13 @@ export function mediaExtractFields(args: {
  * Build extract options for the Android SMS sources (owner phones required;
  * SMS Backup+ also carries the owner's email addresses).
  */
-export function sbrExtractFields(args: {
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-  ownerPhones: string[];
-  ownerEmails?: string[];
-  obfuscate: boolean;
-}): Pick<
+export function sbrExtractFields(
+  args: AttachmentChoices & {
+    ownerPhones: string[];
+    ownerEmails?: string[];
+    obfuscate: boolean;
+  },
+): Pick<
   ExtractConfig,
   | "attachment_media"
   | "media_max_resolution"

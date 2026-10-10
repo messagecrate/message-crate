@@ -57,6 +57,7 @@ import {
 import { isTauri } from "../../lib/tauri-check";
 import { waitingLine } from "../../lib/toolStatusCopy";
 import type {
+  AttachmentChoices,
   AttachmentMediaMode,
   ConversationStatus,
   ImportFileDoneEvent,
@@ -68,6 +69,7 @@ import type {
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
 import { isWhatsappMethod } from "../../lib/whatsappImport";
+import { attachmentChoicesOf } from "./attachmentChoices";
 import { formSnapshot, isAttachmentMediaMode, isStringArray } from "./formSnapshot";
 import { importOutcome } from "./importOutcome";
 import {
@@ -252,14 +254,10 @@ function resumeSteps(attachmentMedia: AttachmentMediaMode, mediaDone: boolean): 
   });
 }
 
-export type ImportJobFormValues = {
+export type ImportJobFormValues = AttachmentChoices & {
   source: string;
   backupPath: string;
   backupPassword: string;
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
   ownerPhones: string[];
   /** Owner email addresses; only SMS Backup+ reads them. */
   ownerEmails: string[];
@@ -1441,12 +1439,7 @@ async function startRunLog(
  * them before anything is staged and records them for the later stages.
  */
 function extractFieldsFor(form: ImportJobFormValues) {
-  const media = {
-    attachmentMedia: form.attachmentMedia,
-    maxResolution: form.maxResolution,
-    maxFps: form.maxFps,
-    minSizeMb: form.minSizeMb,
-  };
+  const media = attachmentChoicesOf(form);
   if (isImessageMethod(form.source)) {
     return imessageExtractFields({
       source: form.source,

@@ -1,5 +1,5 @@
 import { mediaExtractFields } from "./sbrExtractFields";
-import type { AttachmentMediaMode, ExtractConfig } from "./types";
+import type { AttachmentChoices, ExtractConfig } from "./types";
 
 /** iMessage extract method keys sent to the desktop `extract` command. */
 export type ImessageExtractSource = "imessage-ios" | "imessage-macos" | "imessage-jailbreak";
@@ -12,17 +12,15 @@ export type ImessageExtractSource = "imessage-ios" | "imessage-macos" | "imessag
  * only to Mac Messages and jailbreak, and only when the path is non-empty
  * after trim so Mac auto-scan still runs.
  */
-export function imessageExtractFields(args: {
-  source: ImessageExtractSource;
-  backupPassword: string;
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-  obfuscate: boolean;
-  attachmentRoot: string;
-  appleContacts: string;
-}): Pick<
+export function imessageExtractFields(
+  args: AttachmentChoices & {
+    source: ImessageExtractSource;
+    backupPassword: string;
+    obfuscate: boolean;
+    attachmentRoot: string;
+    appleContacts: string;
+  },
+): Pick<
   ExtractConfig,
   | "attachment_media"
   | "media_max_resolution"

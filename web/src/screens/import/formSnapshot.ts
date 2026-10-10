@@ -5,7 +5,7 @@
  * rebuilds form values from it when Import reopens on that run. They sit
  * together so a field added to one is added to the other in the same place.
  */
-import type { AttachmentMediaMode } from "../../lib/types";
+import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import type { ImportJobFormValues } from "./useImportJob";
 
 /** The one secret an Import Run can be started with: neither is ever stored. */
@@ -65,6 +65,20 @@ export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+/** The four attachment choices out of a stored snapshot, or null when any is missing or not of its type. */
+function attachmentChoicesFromSnapshot(r: Record<string, unknown>): AttachmentChoices | null {
+  if (!isAttachmentMediaMode(r.attachmentMedia)) return null;
+  if (typeof r.maxResolution !== "string") return null;
+  if (typeof r.maxFps !== "string") return null;
+  if (typeof r.minSizeMb !== "string") return null;
+  return {
+    attachmentMedia: r.attachmentMedia,
+    maxResolution: r.maxResolution,
+    maxFps: r.maxFps,
+    minSizeMb: r.minSizeMb,
+  };
+}
+
 /**
  * Rebuild form values from a run's stored snapshot.
  *
@@ -83,12 +97,8 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
   const r = raw as Record<string, unknown>;
   if (typeof r.source !== "string") return null;
   if (typeof r.backupPath !== "string") return null;
-  if (!isAttachmentMediaMode(r.attachmentMedia)) {
-    return null;
-  }
-  if (typeof r.maxResolution !== "string") return null;
-  if (typeof r.maxFps !== "string") return null;
-  if (typeof r.minSizeMb !== "string") return null;
+  const attachments = attachmentChoicesFromSnapshot(r);
+  if (attachments === null) return null;
   if (!isStringArray(r.ownerPhones)) return null;
   // Snapshots written before SMS Backup+ had an email field carry none.
   const ownerEmails = isStringArray(r.ownerEmails) ? r.ownerEmails : [];
@@ -112,10 +122,7 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
     source: r.source,
     backupPath: r.backupPath,
     backupPassword: "",
-    attachmentMedia: r.attachmentMedia as AttachmentMediaMode,
-    maxResolution: r.maxResolution,
-    maxFps: r.maxFps,
-    minSizeMb: r.minSizeMb,
+    ...attachments,
     ownerPhones: r.ownerPhones,
     ownerEmails,
     obfuscate: r.obfuscate,
