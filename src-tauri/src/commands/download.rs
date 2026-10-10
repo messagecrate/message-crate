@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unreachable_server_is_reported_without_the_media_link() {
+    fn a_server_that_hangs_up_is_reported_without_the_media_link() {
         // A server that hangs up on every connection before it answers. The
         // listener lives as long as its thread, so no other test can take
         // the port, and the request fails at once rather than after a timeout.
