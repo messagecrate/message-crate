@@ -112,61 +112,19 @@ fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::{
-        ConversationMeta, ConversationStats, ExportMeta, IrAttachment, IrConversationType,
-        IrDirection, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
-    };
+    use message_ir::IrAttachment;
+    use message_ir::testutil::sample_document;
 
     #[test]
     fn serializes_ir_sms() {
-        let doc = ConversationDocument {
-            schema_version: SCHEMA_VERSION,
-            export: ExportMeta {
-                source: "sms-backup-restore".into(),
-                tool: "SMS Backup & Restore".into(),
-                tool_version: "10.26.003".into(),
-                owner_identity: Some("+15555550100".into()),
-                owner_display_name: Some("Me".into()),
-                backup_taken_at_unix_ms: None,
-            },
-            conversation: ConversationMeta {
-                chat_identifier: "+15555550101".into(),
-                conversation_type: IrConversationType::Individual,
-                group_title: None,
-                participants: vec![IrParticipant {
-                    identity: Some("+15555550101".into()),
-                    display_name: Some("Sam".into()),
-                }],
-                stats: ConversationStats::default(),
-            },
-            messages: vec![],
-            packaging_stem_suffix: None,
-        };
+        let mut doc = sample_document("hello");
+        let mut msg = doc.messages.remove(0);
+        msg.guid = "g1".into();
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
         assert!(header.contains(r#""schema_version":14"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
-        let msg = IrMessage {
-            guid: "g1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hello".into(),
-            attachments: vec![],
-            reactions: Vec::new(),
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        };
         let (line, guid) = message_line(&msg, &[]).unwrap();
         assert_eq!(guid, "g1");
         let s = String::from_utf8(line).unwrap();
@@ -176,37 +134,19 @@ mod tests {
 
     #[test]
     fn projects_missing_reason_and_clears_digest() {
-        let msg = IrMessage {
-            guid: "g1".into(),
-            timestamp_unix_ms: 1,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: None,
-            sender_display_name: None,
-            owner_identity: None,
-            subject: None,
-            text: "with attachment".into(),
-            attachments: vec![IrAttachment {
-                path: Some("attachments/big.bin".into()),
-                original_name: Some("big.bin".into()),
-                mime_type: Some("application/octet-stream".into()),
-                digest_sha256: Some("deadbeef".into()),
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: Some(99),
-                missing_reason: None,
-                bytes: None,
-            }],
-            reactions: Vec::new(),
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        };
+        let mut msg = sample_document("with attachment").messages.remove(0);
+        msg.attachments = vec![IrAttachment {
+            path: Some("attachments/big.bin".into()),
+            original_name: Some("big.bin".into()),
+            mime_type: Some("application/octet-stream".into()),
+            digest_sha256: Some("deadbeef".into()),
+            is_sticker: false,
+            transcription: None,
+            sticker_effect: None,
+            size_bytes: Some(99),
+            missing_reason: None,
+            bytes: None,
+        }];
         let (line, _) = message_line(
             &msg,
             &[AttachmentProjection::Missing {
