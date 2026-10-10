@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
@@ -14,12 +14,7 @@ vi.mock("../lib/serverApi", () => ({
 }));
 
 function renderPanel() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <QueryClientProvider client={client}>
-      <SourcesPanel conversationId={1} onClose={() => {}} />
-    </QueryClientProvider>,
-  );
+  renderWithProviders(<SourcesPanel conversationId={1} onClose={() => {}} />);
 }
 
 describe("SourcesPanel", () => {
