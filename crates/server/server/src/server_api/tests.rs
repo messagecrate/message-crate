@@ -1,3 +1,4 @@
+use crate::test_support::stored_time;
 use axum::http::StatusCode;
 use std::sync::atomic::AtomicBool;
 
@@ -661,7 +662,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             .iter()
             .map(|body| SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body,
             })

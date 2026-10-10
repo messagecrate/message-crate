@@ -891,7 +891,7 @@ impl MessageRow<'_> {
             account_id,
             source: "imessage",
             guid: Some(unique_guid()),
-            timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+            timestamp: stored_time("2020-01-01T00:00:00.000Z"),
             time_precision: message_ir::TimePrecision::Milliseconds,
             is_from_me: false,
             sender_handle_id: None,
@@ -1085,7 +1085,7 @@ pub async fn seed_one_message(state: &AppState, account_id: i64) {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],
@@ -1266,13 +1266,13 @@ mod tests {
                 messages: &[
                     SeedMessage {
                         source: "imessage",
-                        timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                        timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                         is_from_me: true,
                         body: "first",
                     },
                     SeedMessage {
                         source: "imessage",
-                        timestamp: crate::test_support::stored_time("2020-01-02T00:00:00.000Z"),
+                        timestamp: stored_time("2020-01-02T00:00:00.000Z"),
                         is_from_me: false,
                         body: "second",
                     },
@@ -1317,7 +1317,7 @@ mod tests {
                     source_file: "seed.jsonl",
                     messages: &[SeedMessage {
                         source: "imessage",
-                        timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                        timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                         is_from_me: true,
                         body: "hello, this is a message long enough to add up",
                     }],

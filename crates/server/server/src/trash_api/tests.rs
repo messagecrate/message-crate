@@ -1,3 +1,4 @@
+use crate::test_support::stored_time;
 use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
@@ -19,7 +20,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],

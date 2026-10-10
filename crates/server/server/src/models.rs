@@ -544,18 +544,12 @@ pub(crate) fn utc_timestamp_text(instant: DateTime<Utc>) -> StoredTime {
 /// [`utc_timestamp_text`] makes one, so a time built another way, such as
 /// `2015-03-12T00:00:00Z`, which sorts after `2015-03-12T00:00:00.000Z`,
 /// cannot reach a stored time or a comparison with one (#1963, #1965). It
-/// binds as text.
+/// binds as text, and decodes from a column only it writes
+/// (`messages.timestamp`, `backup_taken_at`), so a stored time read back to
+/// be compared again keeps the type.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 #[serde(transparent)]
 pub struct StoredTime(String);
-
-impl StoredTime {
-    /// The stored text.
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
 
 impl std::fmt::Display for StoredTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -566,6 +560,12 @@ impl std::fmt::Display for StoredTime {
 impl sqlx::Type<sqlx::Sqlite> for StoredTime {
     fn type_info() -> sqlx::sqlite::SqliteTypeInfo {
         <String as sqlx::Type<sqlx::Sqlite>>::type_info()
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Sqlite> for StoredTime {
+    fn decode(value: sqlx::sqlite::SqliteValueRef<'r>) -> Result<Self, sqlx::error::BoxDynError> {
+        <String as sqlx::Decode<'r, sqlx::Sqlite>>::decode(value).map(StoredTime)
     }
 }
 
@@ -591,8 +591,14 @@ mod tests {
     #[test]
     fn a_stored_time_has_milliseconds_and_a_z() {
         let at = |ms| utc_timestamp_text(Utc.timestamp_millis_opt(ms).single().unwrap());
-        assert_eq!(at(1_426_183_462_000).as_str(), "2015-03-12T18:04:22.000Z");
-        assert_eq!(at(1_426_183_462_250).as_str(), "2015-03-12T18:04:22.250Z");
+        assert_eq!(
+            at(1_426_183_462_000).to_string(),
+            "2015-03-12T18:04:22.000Z"
+        );
+        assert_eq!(
+            at(1_426_183_462_250).to_string(),
+            "2015-03-12T18:04:22.250Z"
+        );
     }
 
     /// An incoming SMS from Sam, "hello", sent at 1400773261000.

@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::stored_time;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -1489,7 +1490,7 @@ pub(crate) async fn seed_attachment_with_preview(
             source_file: "seed.jsonl",
             messages: &[crate::test_support::SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2020-01-01T00:00:00.000Z"),
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "two photos",
             }],

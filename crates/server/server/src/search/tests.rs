@@ -1,6 +1,7 @@
 //! Tests at the module's interface: seed a SQLite database, compile a query
 //! for a list, run it, and assert which ids come back.
 
+use crate::test_support::stored_time;
 use chrono::NaiveDate;
 use sqlx::SqliteConnection;
 
@@ -210,7 +211,7 @@ pub(crate) fn msg<'a>(
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: m.source,
-        timestamp: crate::test_support::stored_time(m.timestamp),
+        timestamp: stored_time(m.timestamp),
         is_from_me: m.from_me,
         sender_handle_id: m.sender,
         service: Some(m.service),

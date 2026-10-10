@@ -20,7 +20,8 @@ impl Sql {
         self.text.push_str(s);
     }
 
-    /// Write `?` and bind a text value.
+    /// Write `?` and bind a text value. Not for a time compared with
+    /// `messages.timestamp`: [`Self::bind_time`] binds that.
     pub fn bind_text(&mut self, v: impl Into<String>) {
         self.text.push('?');
         self.params.push(SqlParam::Text(v.into()));
@@ -31,7 +32,8 @@ impl Sql {
     /// [`crate::models::StoredTime`], so the bound text has the stored form
     /// (#1965).
     pub fn bind_time(&mut self, t: &crate::models::StoredTime) {
-        self.bind_text(t.as_str());
+        self.text.push('?');
+        self.params.push(SqlParam::Time(t.clone()));
     }
 
     /// Write `?` and bind an integer.

@@ -1,6 +1,7 @@
 use super::*;
 use crate::db::contacts::read::DEFAULT_CONTACT_SORT;
 use crate::paging::{DEFAULT_LIST_LIMIT, parse_sort};
+use crate::test_support::stored_time;
 use edit::ContactEditError;
 use message_ir::IdentityType;
 
@@ -574,7 +575,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: crate::test_support::stored_time(ts),
+            timestamp: stored_time(ts),
             sender_handle_id: Some(peer),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -584,7 +585,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     }
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
     MessageRow {
-        timestamp: crate::test_support::stored_time("2024-06-01T14:00:00.000Z"),
+        timestamp: stored_time("2024-06-01T14:00:00.000Z"),
         is_from_me: true,
         body: Some("back at you"),
         ..MessageRow::new(account, 1)
@@ -620,7 +621,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: crate::test_support::stored_time("2024-07-01T12:00:00.000Z"),
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(peer),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -648,7 +649,7 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: crate::test_support::stored_time("2024-08-01T12:00:00.000Z"),
+        timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("nope"),
         ..MessageRow::new(account, 9)
     }
@@ -739,7 +740,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         ("there", "2024-06-01T13:00:00.000Z"),
     ] {
         MessageRow {
-            timestamp: crate::test_support::stored_time(ts),
+            timestamp: stored_time(ts),
             sender_handle_id: Some(sam_handle),
             body: Some(body),
             ..MessageRow::new(account, 1)
@@ -774,7 +775,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: crate::test_support::stored_time("2024-07-01T12:00:00.000Z"),
+        timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         sender_handle_id: Some(sam_handle),
         body: Some("group hi"),
         ..MessageRow::new(account, 2)
@@ -826,7 +827,7 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .await
     .unwrap();
     MessageRow {
-        timestamp: crate::test_support::stored_time("2024-05-01T09:00:00.000Z"),
+        timestamp: stored_time("2024-05-01T09:00:00.000Z"),
         sender_handle_id: Some(pat_handle),
         body: Some("hey"),
         ..MessageRow::new(account, 3)
@@ -1014,7 +1015,7 @@ async fn insert_held_message(
 ) {
     let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
     MessageRow {
-        timestamp: crate::test_support::stored_time(&ts),
+        timestamp: stored_time(&ts),
         is_from_me: sender.is_none(),
         owner_handle_id: Some(owner),
         sender_handle_id: sender,
@@ -2203,7 +2204,7 @@ async fn insert_direct_conversation(
         MessageRow {
             source: service,
             service: Some(service),
-            timestamp: crate::test_support::stored_time(ts),
+            timestamp: stored_time(ts),
             sender_handle_id: Some(handle_id),
             sort_order: i as i64,
             body: Some("hi"),
@@ -2280,7 +2281,7 @@ async fn insert_message_from(
     .unwrap();
     MessageRow {
         service: Some("imessage"),
-        timestamp: crate::test_support::stored_time(ts),
+        timestamp: stored_time(ts),
         is_from_me,
         sender_handle_id: Some(handle_id),
         body: Some("hi"),
