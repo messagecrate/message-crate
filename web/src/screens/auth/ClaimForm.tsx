@@ -1,13 +1,11 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
 import AuthSubmitButton from "../../components/AuthSubmitButton";
-import { LockIcon, PersonIcon } from "../../components/icons";
-import PasswordField from "../../components/PasswordField";
-import TextField from "../../components/TextField";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { claimServer } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
+import CredentialFields from "./CredentialFields";
 
 /**
  * Create the owner, which is the only thing an unclaimed Message Crate offers.
@@ -29,8 +27,6 @@ export default function ClaimForm({
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirm, setShowConfirm] = useState(false);
   const { busy, error, run } = useAsyncAction();
 
   const submit = (event: FormEvent) => {
@@ -59,40 +55,14 @@ export default function ClaimForm({
         An owner is required to create and manage users.
       </p>
 
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={setUsername}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={setPassword}
-        name="new-password"
+      <CredentialFields
+        username={username}
+        onUsernameChange={setUsername}
+        password={password}
+        onPasswordChange={setPassword}
         autoComplete="new-password"
-        showPassword={showPassword}
-        onToggle={() => setShowPassword((v) => !v)}
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Confirm Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={confirmPassword}
-        onChange={setConfirmPassword}
-        name="confirm-password"
-        autoComplete="new-password"
-        showPassword={showConfirm}
-        onToggle={() => setShowConfirm((v) => !v)}
-        isDisabled={disabled}
+        confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
+        disabled={disabled}
       />
 
       <AuthSubmitButton disabled={busy || disabled}>
