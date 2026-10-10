@@ -200,8 +200,11 @@ pub enum IrConversationType {
     Individual,
     /// A group conversation. Where the source marks its groups (a WhatsApp
     /// `@g.us` id, Apple's chat style), the mark decides, whatever the number
-    /// of other people in it. Where the source has no mark (an SMS or MMS
-    /// backup), two or more other people make a group.
+    /// of other people in it. Where the source has no mark, two or more
+    /// people other than the account holder make a group: an SMS or MMS
+    /// backup counts the addresses a message names, and an iMazing or
+    /// OpenExtract export counts who wrote, not who was in the group. iMazing
+    /// also takes a Messages session named as a roster ("A & B") as a group.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
