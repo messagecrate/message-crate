@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { rejectionMessage } from "../lib/apiErrorMessage";
 import { openPathInExplorer } from "../lib/openPath";
 import PlainButton from "./PlainButton";
 
@@ -20,9 +20,7 @@ export default function OpenPathButton({ path, children, className, title }: Ope
     try {
       await openPathInExplorer(path);
     } catch (caught) {
-      // A desktop command rejects with its error as a string.
-      const fallback = typeof caught === "string" && caught ? caught : "Could not open path";
-      setError(apiErrorMessage(caught, fallback));
+      setError(rejectionMessage(caught, "Could not open path"));
       console.error("Failed to open path", caught);
     }
   }

@@ -12,6 +12,15 @@ export function apiErrorMessage(err: unknown, fallback: string): string {
 }
 
 /**
+ * What went wrong, in a sentence, for a call that reaches either the server or
+ * the desktop app: a desktop command rejects with its error as a string, which
+ * is shown as it is, and anything else goes through `apiErrorMessage`.
+ */
+export function rejectionMessage(err: unknown, fallback: string): string {
+  return typeof err === "string" && err ? err : apiErrorMessage(err, fallback);
+}
+
+/**
  * Turn anything a promise rejected with, or a `catch` caught, into text: the
  * message of an `Error`, and `String(err)` of anything else. An `Error` whose
  * message is empty gives `String(err)`, which is the error's `name` (`"Error"`

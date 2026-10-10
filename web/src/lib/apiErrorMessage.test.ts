@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apiErrorMessage, errorText } from "./apiErrorMessage";
+import { apiErrorMessage, errorText, rejectionMessage } from "./apiErrorMessage";
 
 describe("apiErrorMessage", () => {
   it("gives the message of an Error", () => {
@@ -16,6 +16,19 @@ describe("apiErrorMessage", () => {
 
   it("gives the fallback for anything that is not an Error", () => {
     expect(apiErrorMessage("text", "Fallback.")).toBe("Fallback.");
+  });
+});
+
+describe("rejectionMessage", () => {
+  it("gives the string a desktop command rejected with", () => {
+    expect(rejectionMessage("No such file or directory", "Fallback.")).toBe(
+      "No such file or directory",
+    );
+  });
+
+  it("gives the fallback for an empty string or an Error whose message is empty", () => {
+    expect(rejectionMessage("", "Fallback.")).toBe("Fallback.");
+    expect(rejectionMessage(new Error(""), "Fallback.")).toBe("Fallback.");
   });
 });
 
