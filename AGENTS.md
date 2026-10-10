@@ -27,11 +27,12 @@ skipped check reads as passed, so they say nothing. Why:
 The templates exist for whoever opens the pull request to fill in — an agent included —
 not as options offered to a reviewer:
 
-- `feature.md` for new behaviour: what it does and for whom, the key files
-  changed, HTTP API and schema changes, how to test it.
-- `bugfix.md` for a fix: expected against actual, the root cause stated
-  separately from the fix, steps to reproduce before and verify after,
-  impact, and regression risk.
+- `.github/PULL_REQUEST_TEMPLATE/feature.md` for new behaviour: what it does
+  and for whom, the key files changed, HTTP API and schema changes, how to
+  test it.
+- `.github/PULL_REQUEST_TEMPLATE/bugfix.md` for a fix: expected against
+  actual, the root cause stated separately from the fix, steps to reproduce
+  before and verify after, impact, and regression risk.
 - `.github/pull_request_template.md` is the generic default applied
   automatically. Use it for changes that are neither, such as documentation.
 
