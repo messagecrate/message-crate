@@ -1,8 +1,6 @@
 /**
  * Complete answers as the server sends them, for test fixtures: every field is
  * present, and `null` where it has no value. Pass the fields a test cares about.
- * `activeImportRun` is the answer as `getActiveImportRun` in lib/importRun.ts
- * hands it on, since that is the shape the Import screens read.
  */
 
 import type { ActiveImportRun } from "../lib/importRun";
@@ -101,7 +99,9 @@ export function imessageMessage(fields: Partial<Schema["Message"]> = {}): Schema
 
 /**
  * An Apple Messages Import Run from an iPhone backup on this device, running,
- * at the Upload Stage, with no fingerprint, identities, or summary.
+ * at the Upload Stage, with no fingerprint, identities, or summary. Unlike the
+ * other builders here, it is the answer as `getActiveImportRun` in lib/importRun.ts
+ * hands it on, since that is the shape the Import screens read.
  */
 export function activeImportRun(fields: Partial<ActiveImportRun> = {}): ActiveImportRun {
   return {
