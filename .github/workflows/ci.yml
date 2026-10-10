@@ -92,10 +92,11 @@ jobs:
           while IFS= read -r f; do
             case "$f" in
               # The committed OpenAPI document feeds the web app's generated
-              # types, and the script that checks them runs in the web job,
-              # so a change to either must run that job.
+              # types, and the script that checks them and the generator's
+              # own tree run in the web job, so a change to any of them must
+              # run that job.
               docs/src/assets/openapi.json) docs=true; web=true ;;
-              scripts/check-generated-api-types.sh) web=true ;;
+              scripts/check-generated-api-types.sh|scripts/openapi-typescript/*) web=true ;;
               docs/*) docs=true ;;
               web/*) web=true ;;
               web-next/*) ;;                # legacy tree, not the product path

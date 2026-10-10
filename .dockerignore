@@ -31,6 +31,7 @@ web/tsconfig.tsbuildinfo
 docs/node_modules
 docs/.astro
 docs/dist
+scripts/openapi-typescript/node_modules
 
 # Local export working trees at repo root
 /staging
