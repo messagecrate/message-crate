@@ -463,6 +463,23 @@ impl AppState {
     }
 }
 
+/// Run `f` on the blocking thread pool and answer its result. A task that
+/// panics or is cancelled answers an internal error naming `task`; an error
+/// `f` returns becomes the [`ApiError`] it converts to.
+pub(crate) async fn blocking<T, E>(
+    task: &'static str,
+    f: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    E: Into<ApiError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{task} task: {e}")))?
+        .map_err(Into::into)
+}
+
 /// The answer to a request that made one new resource: `201 Created`, a
 /// `Location` header naming it, and the JSON body the route documents.
 ///
