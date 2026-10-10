@@ -13,7 +13,7 @@ use crate::addresses::{MmsAddr, addr, address_handle, mms_participants, mms_peer
 use crate::conversations::{ConversationKind, MmsConversation, contact_name};
 use crate::mms_box::MmsBox;
 use crate::parts::{
-    AttachmentBlob, DecodedPartData, MmsPart, decode_part_data, mms_body, part, part_fields,
+    AttachmentBytes, DecodedPartData, MmsPart, decode_part_data, mms_body, part, part_fields,
 };
 use crate::xml::{attrs, btree, decode_body, get};
 
@@ -69,8 +69,8 @@ pub struct Record {
     pub text: String,
     /// Message subject, if any.
     pub subject: String,
-    /// Decoded attachment blobs.
-    pub attachments: Vec<AttachmentBlob>,
+    /// Decoded attachments.
+    pub attachments: Vec<AttachmentBytes>,
     /// `"sms"` or `"mms"`.
     pub message_kind: &'static str,
     /// Raw `date` attribute in milliseconds.

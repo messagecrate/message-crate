@@ -5,7 +5,7 @@ use message_ir::IrConversationType;
 use phone::Handle;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct AttachmentBlob {
+pub(crate) struct AttachmentBytes {
     pub filename: String,
     pub original_name: Option<String>,
     pub mime_type: Option<String>,
@@ -30,7 +30,7 @@ pub(crate) struct ParsedMessage {
     pub is_from_me: bool,
     pub sender: Option<Handle>,
     pub text: String,
-    pub attachments: Vec<AttachmentBlob>,
+    pub attachments: Vec<AttachmentBytes>,
     /// MIME parts dropped because their content could not be decoded.
     pub unreadable_parts: u64,
     pub name_alias: Option<String>,

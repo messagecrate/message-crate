@@ -760,7 +760,7 @@ impl<'a> EmlIngest<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::AttachmentBlob;
+    use crate::types::AttachmentBytes;
     use message_ir::{
         ConversationMeta, ConversationStats, IrMessage, IrMessageKind, SCHEMA_VERSION,
     };
@@ -796,15 +796,15 @@ mod tests {
         let att_dir = dir.path().join("attachments");
         std::fs::create_dir_all(&att_dir).unwrap();
         // Empty bytes: the runner records file_missing and continues.
-        let blobs = vec![
-            AttachmentBlob {
+        let attachments = vec![
+            AttachmentBytes {
                 filename: "missing.jpg".into(),
                 original_name: None,
                 mime_type: Some("image/jpeg".into()),
                 digest_hex: "aaa".into(),
                 data: vec![],
             },
-            AttachmentBlob {
+            AttachmentBytes {
                 filename: "ok.jpg".into(),
                 original_name: None,
                 mime_type: Some("image/jpeg".into()),
@@ -813,7 +813,7 @@ mod tests {
             },
         ];
         let spool = AttachmentSpool::new(dir.path());
-        let queued = queue_attachments(&blobs, Some(&spool)).unwrap();
+        let queued = queue_attachments(&attachments, Some(&spool)).unwrap();
         assert_eq!(queued.len(), 2);
 
         let mut atts: Vec<_> = queued.iter().map(PendingAttachment::to_ir).collect();

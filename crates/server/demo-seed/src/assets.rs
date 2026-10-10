@@ -85,7 +85,7 @@ pub const OTHER_ATTACHMENTS: &[(&str, &str, bool)] = &[
 /// # Errors
 ///
 /// Returns an error if a JPEG cannot be written or a file cannot be read back.
-pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64)>> {
+pub fn write_attachment_assets(dir: &Path) -> Result<HashMap<String, (String, u64)>> {
     let mut digests = HashMap::new();
     for photo in JPG_PHOTOS {
         let name = photo
@@ -95,21 +95,21 @@ pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64
         let path = dir.join(name);
         write_color_jpeg(&path, photo.color, 320, 240)?;
         let bytes = std::fs::read(&path)?;
-        record_blob(&mut digests, photo.path, &bytes);
+        record_asset(&mut digests, photo.path, &bytes);
     }
 
     fs::write(dir.join("landscape.png"), MINI_PNG)?;
-    record_blob(&mut digests, "attachments/landscape.png", MINI_PNG);
+    record_asset(&mut digests, "attachments/landscape.png", MINI_PNG);
 
     fs::write(dir.join("sticker.gif"), MINI_GIF)?;
-    record_blob(&mut digests, "attachments/sticker.gif", MINI_GIF);
+    record_asset(&mut digests, "attachments/sticker.gif", MINI_GIF);
 
     let voice = mini_wav();
     fs::write(dir.join("voice.wav"), &voice)?;
-    record_blob(&mut digests, "attachments/voice.wav", &voice);
+    record_asset(&mut digests, "attachments/voice.wav", &voice);
 
     fs::write(dir.join("notes.pdf"), MINI_PDF)?;
-    record_blob(&mut digests, "attachments/notes.pdf", MINI_PDF);
+    record_asset(&mut digests, "attachments/notes.pdf", MINI_PDF);
 
     // attachments/missing-file.heic is left out of this map on purpose.
     // Conversation JSONL still points at it, but the file is not on disk, so
@@ -119,7 +119,7 @@ pub fn write_attachment_blobs(dir: &Path) -> Result<HashMap<String, (String, u64
 }
 
 /// Store the content fingerprint and byte length for `relative_path`.
-fn record_blob(digests: &mut HashMap<String, (String, u64)>, relative_path: &str, bytes: &[u8]) {
+fn record_asset(digests: &mut HashMap<String, (String, u64)>, relative_path: &str, bytes: &[u8]) {
     let sha = hex::encode(Sha256::digest(bytes));
     digests.insert(relative_path.into(), (sha, bytes.len() as u64));
 }

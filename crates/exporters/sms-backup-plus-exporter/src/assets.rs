@@ -1,6 +1,6 @@
-//! Read the text and attachment blobs of SMS Backup+ EML messages.
+//! Read the text and attachment bytes of SMS Backup+ EML messages.
 
-use crate::types::AttachmentBlob;
+use crate::types::AttachmentBytes;
 use mailparse::{MailHeaderMap, ParsedMail};
 use message_crate_core::attachments::{attachment_date_prefix, digest_prefix};
 use regex::Regex;
@@ -81,7 +81,7 @@ pub(crate) struct MailBody {
     /// The `text/plain` parts joined with a newline.
     pub text: String,
     /// Every other part with content.
-    pub attachments: Vec<AttachmentBlob>,
+    pub attachments: Vec<AttachmentBytes>,
     /// Parts dropped because their content could not be decoded.
     pub unreadable_parts: u64,
 }
@@ -180,7 +180,7 @@ pub(crate) fn extract_body(
                 Payload::Text(text) => text.clone().into_bytes(),
                 Payload::None | Payload::Unreadable => return None,
             };
-            Some(attachment_blob(leaves[index], data, &prefix, seq))
+            Some(attachment_bytes(leaves[index], data, &prefix, seq))
         })
         .collect();
     MailBody {
@@ -190,9 +190,14 @@ pub(crate) fn extract_body(
     }
 }
 
-/// One attachment blob. `prefix` is the file key and the date, and `seq` the
+/// One decoded attachment. `prefix` is the file key and the date, and `seq` the
 /// attachment's position, which names a part that has no file name.
-fn attachment_blob(part: &ParsedMail<'_>, data: Vec<u8>, prefix: &str, seq: u32) -> AttachmentBlob {
+fn attachment_bytes(
+    part: &ParsedMail<'_>,
+    data: Vec<u8>,
+    prefix: &str,
+    seq: u32,
+) -> AttachmentBytes {
     let ctype = part.ctype.mimetype.to_ascii_lowercase();
     let disposition = part.get_content_disposition();
     let original = disposition
@@ -220,7 +225,7 @@ fn attachment_blob(part: &ParsedMail<'_>, data: Vec<u8>, prefix: &str, seq: u32)
         Some(orig) => format!("{prefix}_{digest_prefix}_{}", safe_basename(orig)),
         None => format!("{prefix}_{digest_prefix}_{seq}{ext}"),
     };
-    AttachmentBlob {
+    AttachmentBytes {
         filename,
         original_name: original,
         mime_type: media::mime_for_ext(&ext)
@@ -279,13 +284,13 @@ mod tests {
             "--b--\r\n",
         );
         let mail = mailparse::parse_mail(raw.as_bytes()).expect("parse");
-        let blobs = extract_body(&mail, 1_710_547_199_000.0, Some("abc")).attachments;
-        assert_eq!(blobs.len(), 1);
+        let attachments = extract_body(&mail, 1_710_547_199_000.0, Some("abc")).attachments;
+        assert_eq!(attachments.len(), 1);
         assert!(
-            blobs[0].filename.starts_with("abc_20240315_235959_"),
+            attachments[0].filename.starts_with("abc_20240315_235959_"),
             "got {}",
-            blobs[0].filename
+            attachments[0].filename
         );
-        assert!(blobs[0].filename.ends_with("_photo.jpg"));
+        assert!(attachments[0].filename.ends_with("_photo.jpg"));
     }
 }

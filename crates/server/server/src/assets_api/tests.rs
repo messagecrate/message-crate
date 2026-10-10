@@ -1780,7 +1780,7 @@ async fn c1_1_a_put_the_server_cannot_store_is_not_a_422() {
         .paths
         .assets_dir_for_account(user.account_id);
     std::fs::create_dir_all(&assets_dir).unwrap();
-    // A file where the shard directory must go: create_dir_all in install_blob fails.
+    // A file where the shard directory must go: create_dir_all in install_asset fails.
     std::fs::write(assets_dir.join(&sha[..2]), b"not a directory").unwrap();
     let (status, text) = crate::test_support::put_raw(
         &fixture.state,

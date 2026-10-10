@@ -252,7 +252,7 @@ fn store_verified_inner(
     // The export's claim, else a guess from the source file's name. The stored
     // file has no extension, so it can say nothing about its own type.
     let mime_type = resolve_mime(export_mime, source);
-    let already = install_blob(
+    let already = install_asset(
         source,
         assets_root,
         claimed,
@@ -286,7 +286,7 @@ fn store_verified_inner(
 ///    while writing, and refuse to keep the file unless the written bytes match
 ///    the claimed fingerprint. The bytes that land on disk are therefore always
 ///    bytes this call checked, even if the source changed underneath.
-fn install_blob(
+fn install_asset(
     source: &Path,
     assets_root: &Path,
     claimed_sha256: &Sha256,
@@ -613,7 +613,7 @@ pub(crate) struct Asset {
 }
 
 impl Asset {
-    /// Response body for a blob that is now in the store.
+    /// Response body for an Asset that is now in the store.
     fn stored(asset: StoredAsset, already_present: bool) -> Json<Self> {
         Json(Self {
             sha256: asset.sha256,
@@ -623,11 +623,11 @@ impl Asset {
     }
 }
 
-/// Resolve the account an asset route targets and look the blob up by
+/// Resolve the account an asset route targets and look the Asset up by
 /// sha256 in that account's one assets directory.
 ///
 /// The probe and every write decide whether a client may skip sending bytes,
-/// so the stored blob is hashed here, and a truncated or replaced file is
+/// so the stored file is hashed here, and a truncated or replaced file is
 /// not found. A read looks up without hashing ([`lookup_for_read`]).
 async fn resolve_asset_lookup(
     state: &AppState,
