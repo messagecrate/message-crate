@@ -243,10 +243,10 @@ impl From<anyhow::Error> for ExtractErrorEvent {
     }
 }
 
-/// Send `line` to the window's log and add it to the Import Run's log.
+/// Send `line` to the window's log and add it to the Import Run's log, as
+/// [`run_log_sink`] does.
 pub(crate) fn log_to_run(app: &AppHandle, run_log: &crate::app_directories::RunLog, line: String) {
-    run_log.line(&line);
-    emit(app, LOG, line);
+    run_log_sink(app, run_log).emit(&line);
 }
 
 /// The run's log sink: each line and each warning goes into the Import
