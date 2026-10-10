@@ -364,10 +364,14 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         });
     }
     for (index, reply) in replies {
+        // A key that names the reply itself (a source that keys by the
+        // second, when the quoted message is gone and the reply shares its
+        // second) links to nothing: a message never quotes itself.
         let guid = reply
             .quoted_key
             .as_ref()
-            .and_then(|key| guid_by_reply_key.get(key).cloned().flatten());
+            .and_then(|key| guid_by_reply_key.get(key).cloned().flatten())
+            .filter(|guid| *guid != messages[index].guid);
         // No source that stages its rows here records the part a reply
         // answers.
         messages[index].reply_to = Some(ReplyTo {

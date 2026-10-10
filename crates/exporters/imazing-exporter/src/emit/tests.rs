@@ -516,6 +516,22 @@ Bob,2020-01-01 12:03:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00:
     assert!(by_text("Third").reply_to.is_none());
 }
 
+/// A reply whose quoted date is its own second, when the quoted message is
+/// not in the export, does not link to itself: it is a reply with no link.
+#[test]
+fn a_reply_never_quotes_itself() {
+    let documents = convert_rows(
+        "Bob,2020-01-01 12:00:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00: \u{ab} Gone \u{bb}\",,Same second as the reply,,,\n",
+    );
+    assert_eq!(
+        documents[0].messages[0].reply_to,
+        Some(message_ir::ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
+}
+
 /// A Subject column value is the message's subject; an empty one is none.
 #[test]
 fn a_subject_reaches_the_message() {
