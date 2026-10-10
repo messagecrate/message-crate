@@ -240,12 +240,12 @@ _Avoid_: Handle, Address, Number
 
 **Text Message**:
 The one service for a phone's own messages, carrying phone numbers and email
-addresses. An email address on Text Message means iMessage. SMS, MMS, RCS and
-iMessage are the transports a message took, and a transport never changes what
-an identity is: an `@` address is an email address on Text Message whatever
-transport carried it, so a person's numbers and email addresses under Text
-Message cover every way a text reaches them. WhatsApp is a separate service,
-where an `@` id is not an email address.
+addresses, `phone` in the database. An email address on Text Message means
+iMessage. SMS, MMS, RCS and iMessage are the transports a message took. A
+transport never changes what an identity is, so an `@` address is an email
+address on Text Message whatever transport carried it. A person's numbers and
+email addresses under Text Message therefore cover every way a text reaches
+them. WhatsApp is a separate service, where an `@` id is not an email address.
 _Avoid_: SMS (for the service), iMessage (for the service)
 
 **Participant**:

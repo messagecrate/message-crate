@@ -195,8 +195,8 @@ conversation.
 
 WhatsApp keeps its own name. The Text Message collapsing covers the Apple and
 carrier texting transports only. Each message's `service` value still
-records its transport as `imessage`, `sms`, or `rcs`, with an MMS recorded
-as `sms`; only the presentation collapses.
+records its transport, such as `imessage`, `sms`, or `rcs`, with an MMS
+recorded as `sms`. Only the presentation collapses.
 
 One thing carries two names on purpose. A phone number, email address, or
 username a person is reached at is a **handle** in the database (`handles`,
