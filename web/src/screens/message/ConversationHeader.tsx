@@ -80,8 +80,8 @@ export default function ConversationHeader({
   const groupMembers = useContactGroupMembers(conversation);
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
 
-  // The conversation just left the list this conversation was opened from, so go
-  // back to it rather than leave the person on a conversation that has quietly gone.
+  // The conversation just left the list it was opened from, so go back to that
+  // list rather than leave the person on a conversation that has quietly gone.
   const handleMoveToTrash = () => {
     trashConversation.mutate(conversation.id, { onSuccess: () => navigate("/") });
   };

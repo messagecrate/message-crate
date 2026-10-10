@@ -260,7 +260,7 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
     // Replies and tapbacks are placed on a stride, so how many there are
     // says nothing a pinned number could check. What has to hold is that
     // every reply names a message written earlier in the same conversation:
-    // a reply whose target is missing is a thread the server cannot show.
+    // a reply whose target is missing points at a message the server cannot show.
     let mut replies = 0;
     let mut tapbacks = 0;
     for (source, doc) in &documents {

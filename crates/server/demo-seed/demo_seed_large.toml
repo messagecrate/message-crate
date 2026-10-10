@@ -57,7 +57,7 @@ participants_max = 25
 large_min_count = 10
 large_participants_min = 8
 large_participants_max = 20
-# Messages per year. Typical band + log-skewed high tail (same shape as 1:1).
+# Messages per year. Typical band + log-skewed high tail (same shape as one-to-one).
 # Timestamps are bursty: several msgs on active days, quiet gaps, occasional floods.
 typical_min = 180
 typical_max = 550
@@ -95,7 +95,7 @@ empty_group = true
 
 # Backup sources: imessage (primary), sms-backup-restore (Android XML-style), and whatsapp.
 [sources]
-# Share of 1:1 contacts (after overlap) that are Android-only.
+# Share of one-to-one contacts (after overlap) that are Android-only.
 android_only_fraction = 0.12
 # Contacts present in both staging trees (light overlap for Sources + dedupe).
 overlap_count = 10
