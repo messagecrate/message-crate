@@ -2324,6 +2324,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "media",
+ "message-crate-api-types",
  "message-crate-log-lines",
  "message-ir",
  "obfuscate",

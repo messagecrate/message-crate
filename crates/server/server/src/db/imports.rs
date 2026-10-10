@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use message_crate_api_types::RunIssueKind;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -260,8 +261,9 @@ impl CompleteImportArgs {
 /// One problem to record against an Import Run.
 #[derive(Debug, Clone)]
 pub struct ImportIssueInput {
-    /// Issue category: `error` or `skip`.
-    pub kind: String,
+    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
+    /// The request handlers refuse every other kind.
+    pub kind: RunIssueKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -289,8 +291,8 @@ pub struct ImportIssueRow {
     pub id: i64,
     /// Run the issue belongs to.
     pub import_id: i64,
-    /// Issue category: `error` or `skip`.
-    pub kind: String,
+    /// Issue category: [`RunIssueKind::Error`] or [`RunIssueKind::Skip`].
+    pub kind: RunIssueKind,
     /// Stage the issue came from.
     pub stage: ImportIssueStage,
     /// The file or message the issue is about.
@@ -315,12 +317,6 @@ pub enum ImportLookupError {
     InvalidRun {
         /// Why the run cannot be reused.
         message: String,
-    },
-    /// An issue kind other than `error` or `skip`, which no run stores.
-    #[error("invalid import issue kind '{kind}'; expected 'error' or 'skip'")]
-    InvalidIssueKind {
-        /// The kind that was asked for.
-        kind: String,
     },
     /// Database failure. It holds a `sqlx::Error` and nothing else, so a
     /// refusal written as an `anyhow` error does not compile into a database
@@ -641,7 +637,6 @@ async fn not_running(
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
 /// [`ImportLookupError::InvalidRun`] when it is no longer running,
-/// [`ImportLookupError::InvalidIssueKind`] for an issue kind no run stores,
 /// and [`ImportLookupError::Db`] when a statement fails.
 pub async fn discard_import(
     conn: &mut SqliteConnection,
@@ -650,9 +645,6 @@ pub async fn discard_import(
     issues: &[ImportIssueInput],
     notes: &[ImportNoteRow],
 ) -> std::result::Result<(), ImportLookupError> {
-    for issue in issues {
-        validate_issue_kind(&issue.kind)?;
-    }
     // The update and the inserts are one write transaction, so a discarded
     // run never lands without the issues and notes it was discarded with.
     let mut tx = begin_write(conn).await?;
@@ -723,7 +715,6 @@ pub async fn discard_running_import(
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
 /// [`ImportLookupError::InvalidRun`] when it is no longer running,
-/// [`ImportLookupError::InvalidIssueKind`] for an issue kind no run stores,
 /// and [`ImportLookupError::Db`] when a statement fails.
 pub async fn complete_import(
     conn: &mut SqliteConnection,
@@ -731,10 +722,6 @@ pub async fn complete_import(
     import_id: i64,
     args: &CompleteImportArgs,
 ) -> std::result::Result<ImportRow, ImportLookupError> {
-    for issue in &args.issues {
-        validate_issue_kind(&issue.kind)?;
-    }
-
     // The check, the counts, the update and the issue inserts are one write
     // transaction: the counts are of the run the update closes, and a failed
     // commit rolls back (sqlx drops the transaction).
@@ -833,7 +820,7 @@ async fn insert_issues(
             ",
         )
         .bind(import_id)
-        .bind(&issue.kind)
+        .bind(issue.kind.as_str())
         .bind(issue.stage.as_str())
         .bind(&issue.item)
         .bind(&issue.reason)
@@ -868,17 +855,6 @@ async fn insert_notes(
     Ok(())
 }
 
-/// Only `error` and `skip` are stored issue kinds. The handlers call this
-/// before they open a connection, and the database functions call it again.
-pub(crate) fn validate_issue_kind(kind: &str) -> std::result::Result<(), ImportLookupError> {
-    match kind {
-        "error" | "skip" => Ok(()),
-        other => Err(ImportLookupError::InvalidIssueKind {
-            kind: other.to_string(),
-        }),
-    }
-}
-
 /// The issues recorded for one import, oldest first. The caller has already
 /// established that `import_id` is the account's.
 ///
@@ -903,6 +879,11 @@ pub async fn list_import_issues(
     Ok(issue_rows
         .into_iter()
         .map(|(id, import_id, kind, stage, item, reason, created_at)| {
+            let kind = RunIssueKind::parse(&kind).ok_or_else(|| {
+                sqlx::Error::Decode(
+                    format!("import_issues.kind holds unknown value '{kind}'").into(),
+                )
+            })?;
             let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
                 sqlx::Error::Decode(
                     format!("import_issues.stage holds unknown value '{stage}'").into(),

@@ -137,7 +137,7 @@ fn lines_come_newest_first_filtered_by_level_and_text_a_page_at_a_time() {
         log.line(&format!("Uploaded chat-{n}.jsonl"));
     }
     log.issue(&message_crate_core::RunIssue {
-        kind: "skip".into(),
+        kind: message_crate_core::RunIssueKind::Skip,
         step: "attachments".into(),
         item: "a.jpg".into(),
         reason: "the file is missing".into(),

@@ -208,7 +208,7 @@ fn run_sends_an_import_error_for_each_file_it_cannot_read() {
     assert!(
         issues
             .iter()
-            .all(|i| i.kind == "error" && i.step == "parse")
+            .all(|i| i.kind == message_crate_core::RunIssueKind::Error && i.step == "parse")
     );
     assert!(
         issues
