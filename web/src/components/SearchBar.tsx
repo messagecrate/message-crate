@@ -44,65 +44,12 @@ import {
 import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import Button from "./Button";
+import { ClockIcon, SearchFieldIcon, SlidersIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
 // the entry chunk that most visits never open. It loads when the panel does.
 const AdvancedSearchForm = lazy(() => import("./AdvancedSearchForm"));
-
-function MagnifyingGlassIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="ml-3 size-4 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="M20 20l-3.5-3.5" />
-    </svg>
-  );
-}
-
-function ClockIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="size-3.5 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
-    </svg>
-  );
-}
-
-function SlidersIcon() {
-  return (
-    <svg
-      aria-hidden
-      viewBox="0 0 24 24"
-      className="size-3.5 shrink-0 text-muted"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3" />
-      <path d="M1 14h6M9 8h6M17 16h6" />
-    </svg>
-  );
-}
 
 /** While the advanced panel is open, focusing the box does not open the popdown over it. */
 function KeepPopdownClosed({ when }: { when: boolean }) {
@@ -366,7 +313,7 @@ export default function SearchBar({
           }}
           className="flex items-center rounded-xl border border-border bg-bg focus-within:border-accent"
         >
-          <MagnifyingGlassIcon />
+          <SearchFieldIcon size={16} className="ml-3 shrink-0 text-muted" />
           <div className="relative flex min-w-0 flex-1 overflow-hidden">
             <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
               <div
@@ -470,8 +417,12 @@ export default function SearchBar({
                       : ""
                 }`}
               >
-                {option.kind === "recent" ? <ClockIcon /> : null}
-                {option.kind === "advanced" ? <SlidersIcon /> : null}
+                {option.kind === "recent" ? (
+                  <ClockIcon size={14} className="shrink-0 text-muted" />
+                ) : null}
+                {option.kind === "advanced" ? (
+                  <SlidersIcon size={14} className="shrink-0 text-muted" />
+                ) : null}
                 <span className="min-w-0 truncate">{option.label}</span>
               </ListBoxItem>
             )}

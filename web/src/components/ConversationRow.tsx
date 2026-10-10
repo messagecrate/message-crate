@@ -8,29 +8,8 @@ import type { Conversation } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
 import Checkbox from "./Checkbox";
 import { useColumnResizing } from "./columnResizeState";
+import { GroupConversationIcon } from "./icons";
 import PlainButton from "./PlainButton";
-
-function GroupIcon() {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="inline-block shrink-0 align-[-1px]"
-    >
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="7" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  );
-}
 
 /** Comma-separated names; each name stays whole; at most two lines then ellipsis. */
 function GroupNames({ conv }: { conv: Conversation }) {
@@ -78,7 +57,7 @@ function GroupParticipantCount({ count }: { count: number }) {
       title={`${count} participants`}
     >
       <span>{count}</span>
-      <GroupIcon />
+      <GroupConversationIcon className="inline-block shrink-0 align-[-1px]" />
     </span>
   );
 }

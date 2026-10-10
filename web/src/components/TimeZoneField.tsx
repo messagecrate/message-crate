@@ -14,6 +14,7 @@ import { browserTimeZone } from "../lib/timeZone";
 import { choiceForZone, searchTimeZones } from "../lib/timeZoneChoices";
 import { popupShadow } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
+import { SelectChevronIcon } from "./icons";
 import { selectItemClassName, selectSectionHeaderClassName } from "./Select";
 import { textInputClassName } from "./TextField";
 
@@ -96,16 +97,7 @@ export default function TimeZoneField({
           }}
         />
         <Button className="absolute inset-y-0 right-0 flex w-9 items-center justify-center border-0 bg-transparent text-muted outline-none">
-          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-            <path
-              d="M2.5 3.5 5 6l2.5-2.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <SelectChevronIcon />
         </Button>
       </div>
       <Popover

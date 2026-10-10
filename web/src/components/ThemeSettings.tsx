@@ -4,6 +4,7 @@ import { parseSelectKey } from "../lib/selectKey";
 import { useTheme } from "../lib/ThemeProvider";
 import type { ThemeSeeds } from "../lib/theme";
 import { focusOutline, focusRing } from "../lib/uiStyles";
+import { ToggleCheckIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { ColorRow, formatCompare } from "./theme/ThemeColorRow";
 
@@ -25,24 +26,6 @@ const MODE_OPTIONS = [
 const sectionTitleClass = "m-0 text-[0.75rem] font-semibold uppercase tracking-[0.05em] text-muted";
 
 const mutedTextClass = "mt-1 text-[0.813rem] text-muted";
-
-/** Check glyph shared by the mode radio dots and the system-mode checkbox. */
-function CheckIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.25"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className={className}
-    >
-      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-    </svg>
-  );
-}
 
 export default function ThemeSettings() {
   const {
@@ -126,7 +109,7 @@ export default function ThemeSettings() {
                         : "border-border bg-panel"
                     }`}
                   >
-                    {isSelected ? <CheckIcon className="h-3 w-3" /> : null}
+                    {isSelected ? <ToggleCheckIcon size={12} /> : null}
                   </span>
                   <span className="text-[0.875rem] font-medium text-text">{opt.label}</span>
                 </div>
@@ -157,7 +140,7 @@ export default function ThemeSettings() {
                   : "border-border bg-elevated"
               }`}
             >
-              {isSelected ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+              {isSelected ? <ToggleCheckIcon size={14} /> : null}
             </span>
             Match your device theme
           </>

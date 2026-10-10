@@ -1,5 +1,6 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
 import { focusRing, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
+import { MenuCheckIcon, SortIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
 export type SortOrder = "asc" | "desc";
@@ -106,39 +107,11 @@ function SortOption({ id, label }: { id: string; label: string }) {
       {({ isSelected }) => (
         <>
           <span className="flex w-4 justify-center text-accent">
-            {isSelected ? <CheckIcon /> : null}
+            {isSelected ? <MenuCheckIcon /> : null}
           </span>
           {label}
         </>
       )}
     </MenuItem>
-  );
-}
-
-function SortIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-      <path
-        d="M5 3v10M5 3l-2.5 2.5M5 3l2.5 2.5M11 13V3M11 13l-2.5-2.5M11 13l2.5-2.5"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function CheckIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 12 12" fill="none" aria-hidden>
-      <path
-        d="M2 6.2L4.6 9 10 3"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
