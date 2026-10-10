@@ -31,6 +31,7 @@ import {
 import { invokeHomeDir, invokeIosBackupEncrypted, invokePathStat } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
 import { useTimeZone } from "../lib/timeZone";
+import type { AttachmentChoices } from "../lib/types";
 import {
   useAccountProfile,
   useFetchAccountProfile,
@@ -44,11 +45,7 @@ import {
   WHATSAPP_SOURCE_ID,
   type WhatsappMethodId,
 } from "../lib/whatsappImport";
-import {
-  type AttachmentChoices,
-  attachmentChoicesOf,
-  DEFAULT_ATTACHMENT_CHOICES,
-} from "./import/attachmentChoices";
+import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";

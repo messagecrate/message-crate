@@ -15,9 +15,6 @@ mod row_marks;
 mod run;
 mod unnamed_files;
 
-#[cfg(test)]
-mod test_support;
-
 pub use run::run;
 
 #[cfg(test)]

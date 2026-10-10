@@ -1,16 +1,4 @@
-import type { AttachmentMediaMode } from "../../lib/types";
-
-/**
- * The four attachment choices: what happens to attachments, and the three
- * limits Compress works to. The names match the import's form values, so the
- * choices spread into them as they are.
- */
-export type AttachmentChoices = {
-  attachmentMedia: AttachmentMediaMode;
-  maxResolution: string;
-  maxFps: string;
-  minSizeMb: string;
-};
+import type { AttachmentChoices } from "../../lib/types";
 
 /** The choices a new Import form starts with. */
 export const DEFAULT_ATTACHMENT_CHOICES: AttachmentChoices = {

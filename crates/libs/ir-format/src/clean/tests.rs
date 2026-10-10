@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(unix)]
+use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 
 fn names(dir: &Path) -> Vec<String> {
     let mut out: Vec<String> = fs::read_dir(dir)
@@ -237,9 +239,9 @@ fn a_subdirectory_that_cannot_be_read_fails_the_mail_clean_and_names_it() {
     let sub = tmp.path().join("+15555550102");
     fs::create_dir(&sub).unwrap();
     fs::write(sub.join("0001.eml"), "Subject: x\n").unwrap();
-    let Some(result) =
-        crate::with_directory_mode(&sub, 0o000, || clean_previous_mail_output(tmp.path()))
-    else {
+    let Some(result) = with_directory_mode(&sub, 0o000, DirectoryProbe::Write, || {
+        clean_previous_mail_output(tmp.path())
+    }) else {
         return;
     };
 

@@ -43,6 +43,20 @@ export type FreeTextTerm = Schema["FreeTextTerm"];
 
 export type AttachmentMediaMode = "copy" | "convert" | "compress" | "skip";
 
+/**
+ * The four attachment choices an import is started with: what happens to
+ * attachments, and the three limits Compress works to. `mediaExtractFields`
+ * (`sbrExtractFields.ts`) turns them into the `attachment_media`,
+ * `media_max_resolution`, `media_max_fps`, and `media_min_size` fields of
+ * `ExtractConfig`.
+ */
+export type AttachmentChoices = {
+  attachmentMedia: AttachmentMediaMode;
+  maxResolution: string;
+  maxFps: string;
+  minSizeMb: string;
+};
+
 export interface ExtractConfig {
   source: string;
   path: string;
