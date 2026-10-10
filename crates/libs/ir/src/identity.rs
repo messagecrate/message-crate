@@ -11,42 +11,15 @@
 //! so the id carries no counter of occurrences: a counter would depend on the
 //! order the copies are read in.
 
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 /// How finely a source recorded a message's time: a message's
-/// `time_precision` in the conversation file.
-///
-/// The flag, never the value, says whether a time has milliseconds: a
-/// millisecond time can end in `.000`, and a whole-second one always does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum TimePrecision {
-    /// Whole seconds: the milliseconds are zero because the source has none.
-    Seconds,
-    /// Milliseconds, as the phone stored them.
-    Milliseconds,
-}
-
-impl TimePrecision {
-    /// Both precisions.
-    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
-
-    /// The name the conversation file, the database and the HTTP API use:
-    /// `seconds` or `milliseconds`.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Seconds => "seconds",
-            Self::Milliseconds => "milliseconds",
-        }
-    }
-
-    /// The precision [`Self::as_str`] names, or `None` for any other text.
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|p| p.as_str() == value)
-    }
-}
+/// `time_precision` in the conversation file. Defined in
+/// `imessage-reader-protocol` beside `Reaction`, because the Apple Messages
+/// Reader sends each message's precision in the shape the conversation file
+/// carries.
+pub use imessage_reader_protocol::TimePrecision;
 
 /// What a message's identity is made from.
 ///

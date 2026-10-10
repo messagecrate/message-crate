@@ -123,7 +123,7 @@ Every message has a required `time_precision`: `milliseconds` when the source re
 
 | Source | Precision |
 |--------|-----------|
-| Apple Messages | `milliseconds` |
+| Apple Messages | `milliseconds`; `seconds` for a message from a `chat.db` older than macOS 10.13 and iOS 11, which stores times in seconds, and for one whose date the Apple Messages Reader could read only from the raw stamp |
 | WhatsApp | `milliseconds` |
 | SMS Backup & Restore | `milliseconds`, from the `date` attribute |
 | GO SMS Pro | `milliseconds` for a message from the XML backup; `seconds` for one read only from a PDU file, whose name records the second |

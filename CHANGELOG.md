@@ -253,6 +253,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **Apple Messages from an older Mac or iPhone keep their times
+  in whole seconds.** A Messages database from before macOS 10.13 and iOS 11
+  stores each message's time in whole seconds, and the import said those
+  times had milliseconds. It now says they are whole seconds, as it does for
+  a message whose date the database holds in a form that could only be read
+  to the second. A message also held with milliseconds by another backup of
+  the same phone is then shown once (#1970).
 - 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
   wtsexporter's output named a full disk, the import asked to free space on
   the Scratch Directory's disk. The output itself was lost. So a full disk

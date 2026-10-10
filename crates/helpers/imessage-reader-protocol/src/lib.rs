@@ -77,7 +77,9 @@ use serde_json::Value;
 /// 13: a reply carries [`Message::reply_to`], a [`ReplyTo`] naming the
 /// message it quotes and the part, and `Imessage::is_reply`,
 /// `in_reply_to_guid`, `thread_originator_part` and `num_replies` are gone.
-pub const PROTOCOL_VERSION: u32 = 13;
+/// 14: a message carries [`Message::time_precision`], whether `chat.db`
+/// recorded its time below the second.
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -372,6 +374,11 @@ pub struct Message {
     pub guid: String,
     /// Sent time as milliseconds since 1970-01-01 UTC.
     pub timestamp_unix_ms: i64,
+    /// How finely `chat.db` recorded the time: `milliseconds` for a
+    /// nanosecond stamp (macOS 10.13 and iOS 11 on), `seconds` for a stamp
+    /// in seconds from an older database, or for a time read from the raw
+    /// stamp because the library could not read the date.
+    pub time_precision: TimePrecision,
     /// `true` for a message the owner sent.
     pub outgoing: bool,
     /// `iMessage`, `SMS`, `RCS`, or empty when unknown.
@@ -467,6 +474,39 @@ pub struct Reaction {
     /// The name of the person who reacted, when the source knows one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reactor_display_name: Option<String>,
+}
+
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file.
+///
+/// The flag, never the value, says whether a time has milliseconds: a
+/// millisecond time can end in `.000`, and a whole-second one always does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimePrecision {
+    /// Whole seconds: the milliseconds are zero because the source has none.
+    Seconds,
+    /// Milliseconds, as the phone stored them.
+    Milliseconds,
+}
+
+impl TimePrecision {
+    /// Both precisions.
+    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
+
+    /// The name the conversation file, the database and the HTTP API use:
+    /// `seconds` or `milliseconds`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Milliseconds => "milliseconds",
+        }
+    }
+
+    /// The precision [`Self::as_str`] names, or `None` for any other text.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
+    }
 }
 
 /// Why a message's content is gone, or marked as going, in the app it came
