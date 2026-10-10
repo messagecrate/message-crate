@@ -242,6 +242,18 @@ released versions carry their date on the heading.
   Error stays only while its file still can't be read. A run resumed at a
   Review, Media or Upload reads nothing of the backup again and keeps them
   (#1947).
+- 2026-10-09: **WhatsApp people are imported with their numbers and names,
+  and every group with its members.** A group message's sender had a name or
+  a number, never both, some numbers were made from WhatsApp's internal ids
+  and reached nobody, no group listed its members, and every one-to-one
+  contact had no name and was listed under Unknown. Each sender now has the
+  phone number the backup holds and the name from the phone's address book,
+  or else the one they set in WhatsApp. A group's participants are its
+  members, including those who never wrote, and anyone else who wrote in it.
+  A one-to-one contact has the chat's name. A person WhatsApp knows only by
+  an internal id is imported under that id, with their name, and is listed
+  under Unknown until given an address. A WhatsApp file that another
+  version of wtsexporter wrote is refused, naming Message Crate's own (#1092).
 - 2026-10-09: **Owner Home's Logs panel shows how each import went.** The
   lines an import writes as it reads its files, writes them into the account
   and hides duplicates never reached the **Logs** panel. They do now, and so
@@ -398,11 +410,12 @@ released versions carry their date on the heading.
   `~/message-crate/tools` too, because a WhatsApp import no longer finds it
   on `PATH`. If you start the server with a script, it takes `serve
   --tools-dir <directory>` for the same purpose (#1053).
-- A `wtsexporter` installed before this release reads WhatsApp replies without
-  their link. Install Message Crate's fork of WhatsApp Chat Exporter, release
-  `0.13.0-mc.2`, with the line on the guide's WhatsApp page; it replaces the
-  old one. Then link or copy it into `~/message-crate/tools`, the Tools
-  Directory, because the app runs it from there only (#1936).
+- A WhatsApp `result.json` that a `wtsexporter` from before this release
+  wrote is refused, because it records no group members and no sender's
+  name beside their number. The desktop app replaces an older `wtsexporter`
+  in its Tools Directory with Message Crate's own on its next start with an
+  internet connection. Run the WhatsApp import again from the backup rather
+  than from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts
