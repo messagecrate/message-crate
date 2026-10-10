@@ -95,32 +95,45 @@ shows the identity where the name would be. Why: a list of rows that all read
 `(unknown)` cannot be told apart, and the italics keep an address from reading
 as a name someone gave the contact.
 
-**The source's record of a group decides, and where there is none, two other
-people do.** WhatsApp marks a group by its id, which ends in `@g.us`. Apple
-Messages marks it by the chat's `style`: 43 is a group and 45 one-to-one.
-Where the style is missing or another value, a chat id of `chat` and digits
-marks a group. Where a source marks its groups, the mark decides, whatever
-the number of other people in the conversation. A source that records no
-groups names only who took part, so there two or more people other than the
-account holder make a group, and one makes a one-to-one conversation:
+**The source's record of a group decides, and where there is none, two or more
+other people do.** A WhatsApp backup marks a group by its id, which ends in
+`@g.us`. An Apple Messages database marks it by the chat's `style`: 43 is a
+group and 45 one-to-one. Where the style is missing or another value, a chat
+id of `chat` and digits marks a group, because an older database has no
+`style` column and gives a group an id of that shape.
 
-- An SMS or MMS backup (SMS Backup & Restore, SMS Backup+, GO SMS Pro) counts
-  the addresses a message names other than the account holder's. It needs the
-  account holder's number or email address to leave them out.
-- An iMazing export counts the people who wrote in a session, and leaves the
-  account holder out by each row's direction (`is_outgoing`). A Messages
-  session named as a roster ("A & B") is a group too. A WhatsApp session with
-  that name decides nothing.
-- An OpenExtract export counts the people who wrote in a chat file or under a
-  `Conversation` label, and leaves the account holder out by each row's
-  direction (`resolve_is_from_me`).
+Where a source marks its groups, the mark decides, whatever the number of
+other people in the conversation. Why: the source's group is the one the
+person saw in the app, so it stays a group even with a single other person
+left in it.
 
-iMazing and OpenExtract count who wrote, not who was in the group, so a group
-in which only one other person wrote comes in as a one-to-one conversation with
-them. Why: a source's group is the one the person saw in the app, so it stays
-one even with a single other person left in it. A source with no record of
-groups gives nothing but the people it names, and one other person is what a
-one-to-one conversation is.
+A source that records no groups names only who took part, so there two or
+more people other than the account holder make a group, and one makes a
+one-to-one conversation. Why: such a source gives nothing but the people it
+names, and one other person is what a one-to-one conversation is. Each source
+counts its own way.
+
+An SMS or MMS backup (SMS Backup & Restore, SMS Backup+, GO SMS Pro) counts
+the addresses a message names other than the account holder's numbers and
+email addresses. SMS Backup & Restore works those numbers out from the
+backup's sent MMS where none are given.
+
+An iMazing export counts the people who wrote in a session, and an
+OpenExtract export the people who wrote in a chat file or under a
+`Conversation` label. Both leave the account holder out by each row's
+direction (`is_outgoing` in iMazing, `resolve_is_from_me` in OpenExtract),
+not by the account holder's number.
+
+iMazing also takes a Messages session named as a roster ("A & B") as a group,
+even when one member wrote, because the roster lists the group's members. A
+WhatsApp session with that name decides nothing, because a WhatsApp session
+name is the group's title, not a roster.
+
+iMazing and OpenExtract count who wrote, not who was in the group. So a group
+in which only one other person wrote comes in as a one-to-one conversation.
+It is keyed by that person's address where a row gives one. Otherwise it is
+keyed by the session name or the `Conversation` label, as a person known only
+by that name.
 
 **A group conversation is not a person.** A source gives a group an id of its
 own, such as `chat1000000005`. The server stores it as the conversation's chat
@@ -991,4 +1004,5 @@ flowchart LR
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
 | Writing and loading the address book | `crates/server/server/src/db/address_book.rs` |
 | The display name rule | `crates/server/server/src/db/participant_names.rs` |
+| Whether a conversation is a group | `is_group` in `crates/helpers/imessage-reader/src/session.rs`, `is_group_jid` in `crates/exporters/whatsapp-exporter/src/jid.rs`, `MmsConversation::for_peers` in `crates/libs/sbr/src/conversations.rs`, `pdu_target` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`, `names_a_group` in `crates/exporters/sms-backup-plus-exporter/src/flat_eml.rs`, `session_key` in `crates/exporters/imazing-exporter/src/parse_emit.rs`, `ingest_per_chat_file` and `labelled_conversation` in `crates/exporters/openextract-exporter/src/emit.rs` |
 | Which conversations involve a contact | `involves_contact_expr` in `db/contacts/read.rs`, `conversation_involves` in `search/bridge.rs` |
