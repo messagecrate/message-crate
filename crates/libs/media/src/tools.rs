@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
@@ -232,15 +232,50 @@ pub fn require_ffmpeg() -> Result<()> {
     )
 }
 
-/// True when running `bin` with `args` exits successfully.
+/// How many times a program whose file is busy is started before it is
+/// given up on.
+///
+/// Linux refuses to run a file that any process holds open for writing
+/// (`ETXTBSY`, [`io::ErrorKind::ExecutableFileBusy`]). A child this process
+/// starts on another thread holds every descriptor the process had open
+/// from its fork until its exec, so a program written and run at once, a
+/// tool the desktop app has just downloaded or a mock a test has just
+/// written, is busy for that instant whenever another child is starting
+/// (#2031). The instant ends when that child execs, a few system calls
+/// later, so a bounded run of starts, each giving the processor up first,
+/// outlasts it: a refused start costs about one spawn, and only a file that
+/// stays open pays for all of them. A file still open for writing after
+/// them, as one being written is, does not run.
+const BUSY_STARTS: usize = 100;
+
+/// True when the program `start` starts exits successfully. A start refused
+/// because the program's file is busy is made again, up to [`BUSY_STARTS`]
+/// starts in all; a start refused for any other reason is not.
+fn runs_once_not_busy(mut start: impl FnMut() -> io::Result<ExitStatus>) -> bool {
+    let mut starts = 0;
+    loop {
+        starts += 1;
+        match start() {
+            Ok(status) => return status.success(),
+            Err(err) if err.kind() == io::ErrorKind::ExecutableFileBusy && starts < BUSY_STARTS => {
+                std::thread::yield_now();
+            }
+            Err(_) => return false,
+        }
+    }
+}
+
+/// True when running `bin` with `args` exits successfully, trying again
+/// while the file is busy ([`runs_once_not_busy`]).
 fn command_runs(bin: &Path, args: &[&str]) -> bool {
-    Command::new(bin)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    runs_once_not_busy(|| {
+        Command::new(bin)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    })
 }
 
 /// Where ffmpeg and ffprobe are, by [`find_tools`] over this process's
