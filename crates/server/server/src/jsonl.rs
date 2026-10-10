@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::imports_api::ImportFailure;
-use crate::models::{self, ExportRecord};
+use crate::imports_api::records::{self, ExportRecord};
 
 /// Why [`read_records`] could not read a file: a line the sender can fix, or
 /// a file the server cannot read.
@@ -79,7 +79,7 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> 
         // it, so a failure names the line as it is numbered in the file.
         lines.push(line);
     }
-    models::parse_ir_lines(lines).map_err(rejected)
+    records::parse_ir_lines(lines).map_err(rejected)
 }
 
 #[cfg(test)]
