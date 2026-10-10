@@ -218,6 +218,10 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Removing an identity from a contact writes a large count
+  with a separator.** The confirm dialog said it would unlink "1234
+  conversations"; it now writes "1,234 conversations", with the separator of
+  the language the browser or desktop app is set to (#2397).
 - 2026-10-10: **Trash, Export History and the Audit Trail write a large
   count the way Storage does.** Trash wrote "1234 conversations" where the
   storage screens wrote "1,234 messages". Every count in Trash, the count of
@@ -469,6 +473,11 @@ released versions carry their date on the heading.
   messages of one second in the order the backup gives them, as before.
 
 #### Contacts and identities
+
+- 2026-10-10: **Contacts calls a search that finds nothing a search.** When
+  the text in **Search contacts** matched no contact, the list said "No
+  contacts match this filter". It now says "No contacts match this search"
+  (#2290).
 
 - 2026-10-09: **A person who reacts to a message is the same contact as when
   they write.** An import could take a person in a conversation's list and

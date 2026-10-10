@@ -1,6 +1,7 @@
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { sourceLabel } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, isImessageMethod } from "../../lib/imessageImport";
+import { countOf } from "../../lib/plural";
 import { isWhatsappMethod, WHATSAPP_METHODS } from "../../lib/whatsappImport";
 import { ATTACHMENT_OPTIONS } from "./ImportFormUi";
 import type { ImportPhase } from "./importProgressState";
@@ -43,7 +44,7 @@ export function runHeading(
   const status = summaryView?.status;
   const inserted = summaryView?.messagesInserted;
   if ((status === "completed" || status === "completed_with_issues") && inserted != null) {
-    const imported = `Imported ${inserted.toLocaleString()} ${inserted === 1 ? "message" : "messages"}`;
+    const imported = `Imported ${countOf(inserted, "message")}`;
     return status === "completed_with_issues" ? `${imported}, with errors` : imported;
   }
   return completionText ?? "Import finished";
