@@ -12,6 +12,7 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
@@ -86,6 +87,19 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
 });
+
+/** Renders the list inside the providers and panes it needs on the page. */
+function renderList(props: Partial<ComponentProps<typeof ContactList>> = {}) {
+  return render(
+    <Providers>
+      <RightToolbarProvider>
+        <RightPane>
+          <ContactList onSelect={() => {}} {...props} />
+        </RightPane>
+      </RightToolbarProvider>
+    </Providers>,
+  );
+}
 
 describe("ContactList", () => {
   it("keeps the Groups menu's checkmark live after unticking the group the page is filtered to", async () => {
@@ -349,17 +363,9 @@ describe("ContactList", () => {
   });
 
   it("names the search box's text a search when no contact matches it", async () => {
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList filter="zzz" onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList({ filter: "zzz" });
 
-    expect(await screen.findByText("No contacts match this search")).toBeTruthy();
+    expect(await screen.findByText("No contacts match this search")).toBeInTheDocument();
   });
 
   it("checks a contact from its avatar in the desktop list without opening it", async () => {
