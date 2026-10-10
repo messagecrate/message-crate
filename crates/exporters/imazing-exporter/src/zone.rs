@@ -1,5 +1,5 @@
 //! The zone a naive wall-clock time is read in: the machine's, a fixed UTC
-//! offset (`UTC±HH:MM`), or an IANA zone by name.
+//! offset, or an IANA zone by name.
 
 use anyhow::{Result, bail};
 use chrono::{DateTime, Duration, FixedOffset, Local, NaiveDateTime, Offset, TimeZone, Utc};
@@ -73,9 +73,10 @@ fn instant_in<Z: TimeZone>(zone: &Z, naive: NaiveDateTime) -> Option<DateTime<Ut
 
 /// Parse a fixed UTC offset string into [`FixedOffset`].
 ///
-/// Accepted forms:
-/// - `UTC` → +00:00
-/// - `UTC+00:00`, `UTC-05:00`, `UTC+05:30`, `UTC+05:45`
+/// Accepted forms, in any case:
+/// - `UTC` or `Z` → +00:00
+/// - `UTC±HH:MM`, such as `UTC-05:00`, `UTC+05:30`, `UTC+05:45`
+/// - `UTC±H` or `UTC±HH`, whole hours, such as `UTC-5`
 ///
 /// IANA names are rejected here; [`Zone::parse`] accepts both.
 fn parse_utc_offset(raw: &str) -> Result<FixedOffset> {
@@ -90,9 +91,6 @@ fn parse_utc_offset(raw: &str) -> Result<FixedOffset> {
     let rest = upper
         .strip_prefix("UTC")
         .ok_or_else(|| anyhow::anyhow!("expected UTC offset like UTC-05:00, got {raw:?}"))?;
-    if rest.is_empty() {
-        return FixedOffset::east_opt(0).ok_or_else(|| anyhow::anyhow!("invalid UTC offset"));
-    }
     let (sign, body) = match rest.chars().next() {
         Some('+') => (1i32, &rest[1..]),
         Some('-') => (-1i32, &rest[1..]),
@@ -113,25 +111,20 @@ fn parse_utc_offset(raw: &str) -> Result<FixedOffset> {
 
 /// Hours and minutes from `HH` or `HH:MM`.
 fn parse_hh_mm(body: &str) -> Result<(i32, i32)> {
-    let parts: Vec<&str> = body.split(':').collect();
-    match parts.as_slice() {
-        [hh] => {
-            let hours: i32 = hh
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid hours in UTC offset: {body:?}"))?;
-            Ok((hours, 0))
-        }
-        [hh, mm] => {
-            let hours: i32 = hh
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid hours in UTC offset: {body:?}"))?;
-            let minutes: i32 = mm
-                .parse()
-                .map_err(|_| anyhow::anyhow!("invalid minutes in UTC offset: {body:?}"))?;
-            Ok((hours, minutes))
-        }
-        _ => bail!("expected HH or HH:MM in UTC offset, got {body:?}"),
-    }
+    let (hh, mm) = match body.split_once(':') {
+        Some((hh, mm)) => (hh, Some(mm)),
+        None => (body, None),
+    };
+    let hours: i32 = hh
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid hours in UTC offset: {body:?}"))?;
+    let minutes: i32 = match mm {
+        Some(mm) => mm
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid minutes in UTC offset: {body:?}"))?,
+        None => 0,
+    };
+    Ok((hours, minutes))
 }
 
 #[cfg(test)]
@@ -194,28 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn parses_utc_and_offsets() {
-        assert_eq!(parse_utc_offset("UTC").unwrap().local_minus_utc(), 0);
-        assert_eq!(parse_utc_offset("UTC+00:00").unwrap().local_minus_utc(), 0);
-        assert_eq!(
-            parse_utc_offset("UTC-05:00").unwrap().local_minus_utc(),
-            -5 * 3600
-        );
-        assert_eq!(
-            parse_utc_offset("UTC+05:30").unwrap().local_minus_utc(),
-            5 * 3600 + 30 * 60
-        );
-        assert_eq!(
-            parse_utc_offset("UTC+05:45").unwrap().local_minus_utc(),
-            5 * 3600 + 45 * 60
-        );
-        assert_eq!(
-            parse_utc_offset("UTC+14:00").unwrap().local_minus_utc(),
-            14 * 3600
-        );
-    }
-
-    #[test]
     fn rejects_iana() {
         assert!(parse_utc_offset("America/New_York").is_err());
         assert!(parse_utc_offset("Not/AZone").is_err());
@@ -230,7 +201,10 @@ mod tests {
             ("z", 0),
             ("UTC-5", -5 * 3600),
             ("UTC+9", 9 * 3600),
+            ("UTC+00:00", 0),
+            ("UTC-05:00", -5 * 3600),
             ("UTC+05:30", 5 * 3600 + 30 * 60),
+            ("UTC+05:45", 5 * 3600 + 45 * 60),
             ("UTC-14:00", -14 * 3600),
             ("UTC+14:00", 14 * 3600),
         ] {
