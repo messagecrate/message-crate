@@ -470,6 +470,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-10: **Contacts calls a search that finds nothing a search.** When
+  the text in **Search contacts** matched no contact, the list said "No
+  contacts match this filter". It now says "No contacts match this search"
+  (#2290).
+
 - 2026-10-09: **A person who reacts to a message is the same contact as when
   they write.** An import could take a person in a conversation's list and
   the same person reacting to a message for two identities, and put the
