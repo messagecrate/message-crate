@@ -44,7 +44,11 @@ import {
   WHATSAPP_SOURCE_ID,
   type WhatsappMethodId,
 } from "../lib/whatsappImport";
-import { type AttachmentChoices, attachmentChoicesOf } from "./import/attachmentChoices";
+import {
+  type AttachmentChoices,
+  attachmentChoicesOf,
+  DEFAULT_ATTACHMENT_CHOICES,
+} from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
@@ -218,12 +222,7 @@ export default function ImportScreen() {
   const [whatsappStats, setWhatsappStats] = useState(emptyWhatsappPathStats);
   const [backupPassword, setBackupPassword] = useState("");
   const [showBackupPassword, setShowBackupPassword] = useState(false);
-  const [attachments, setAttachments] = useState<AttachmentChoices>({
-    attachmentMedia: "copy",
-    maxResolution: "720p",
-    maxFps: "30",
-    minSizeMb: "20",
-  });
+  const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);
   const [ownerPhones, setOwnerPhones] = useState<string[]>([]);
   /** Owner email addresses as typed; split into a list when the import starts. */
   const [ownerEmails, setOwnerEmails] = useState("");
