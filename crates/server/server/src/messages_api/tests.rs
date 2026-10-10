@@ -1313,8 +1313,8 @@ async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_tra
             conversation["conversation_type"] = "group".into();
             conversation["group_title"] = chat.into();
             conversation["participants"] = serde_json::json!([
-                {"identity": "+15555550107", "display_name": null, "identity_type": "phone"},
-                {"identity": "+15555550108", "display_name": null, "identity_type": "phone"}
+                {"identity": "+15555550107", "display_name": null},
+                {"identity": "+15555550108", "display_name": null}
             ]);
         }
     };

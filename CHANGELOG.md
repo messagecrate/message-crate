@@ -412,6 +412,16 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-09: **A person who reacts to a message is the same contact as when
+  they write.** An import could take a person in a conversation's list and
+  the same person reacting to a message for two identities, and put the
+  reaction on a second contact with no name. That happened when the backup
+  said the person's address was a name while it reads as a phone number, such
+  as `5550123`. Message Crate now works out what every address is itself,
+  from the service and the address, for the people in a conversation, the
+  senders of its messages and the people who react alike, and no longer reads
+  it from the exported file (#1933, #1959).
+
 - 2026-10-08: **Adding or removing an identity updates the conversations with
   yourself already imported.** Notes imported before your number was added as an
   identity still listed you among the conversation's people. They also kept you
@@ -478,6 +488,9 @@ released versions carry their date on the heading.
   milliseconds are refused when you import or convert them. Export the
   backup again with this build. A program that reads the HTTP API finds it
   in a message's `time_precision`, `seconds` or `milliseconds`.
+- Message files exported before Message Crate worked out each address's kind
+  itself are refused when you import or convert them. Export the backup
+  again with this build.
 
 ## [0.10.1] - 2026-10-05
 

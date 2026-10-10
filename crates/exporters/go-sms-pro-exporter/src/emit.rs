@@ -11,8 +11,8 @@ use message_crate_core::{
     SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ExportMeta, IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation,
-    PendingMessage, ProjectionHooks, default_participants, ensure_conversation, parse_android_type,
+    ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
+    ProjectionHooks, ensure_conversation, parse_android_type,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
@@ -341,18 +341,6 @@ impl ProjectionHooks for GoSmsProjection {
     /// Every handle is a [`Handle`] key already.
     fn normalize_handle(&self, raw: &str) -> String {
         raw.to_string()
-    }
-
-    /// The default roster, with each identity's kind read from its key: a
-    /// GO SMS Pro address can be an email address or a sender name.
-    fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
-        let mut participants = default_participants(chat_id, convo, &str::to_string);
-        for p in &mut participants {
-            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
-                p.identity_type = Some(handle.kind());
-            }
-        }
-        participants
     }
 
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
