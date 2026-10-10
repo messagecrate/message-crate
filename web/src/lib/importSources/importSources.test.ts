@@ -172,7 +172,7 @@ describe("snapshotSecret", () => {
 });
 
 describe("rememberedPaths", () => {
-  // A path the form clears when its source is picked, and never stores for it.
+  // A path not listed for a source is cleared when the source is picked, and never stored for it.
   it("names the paths beside the backup that each source keeps", () => {
     const expected: Record<string, readonly string[]> = {
       imessage: ["attachmentRoot", "appleContacts"],
