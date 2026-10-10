@@ -3,8 +3,8 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
+import { imessageMessage } from "../../test/apiShapes";
 import { BUBBLES, renderBubbleInUtc } from "../../test/bubbles";
-import { sampleMessage } from "../../test/messages";
 import { setupUser } from "../../test/user";
 
 afterEach(() => {
@@ -16,7 +16,7 @@ afterEach(() => {
  * to "See you at half past noon", and later to its final text.
  */
 function edited(source: string, service: string, partial: Partial<Message> = {}): Message {
-  return sampleMessage({
+  return imessageMessage({
     source,
     service,
     text: "See you at one",
@@ -178,7 +178,7 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
   });
 
   it("draws no Edited control on a message never edited", () => {
-    renderBubbleInUtc(Bubble, sampleMessage({ source, service }));
+    renderBubbleInUtc(Bubble, imessageMessage({ source, service }));
 
     expect(screen.queryByRole("button", { name: "Edited" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Edited/)).not.toBeInTheDocument();
