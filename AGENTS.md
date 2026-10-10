@@ -50,13 +50,14 @@ Review a pull request with the `pr-review` skill (`.claude/skills/pr-review/`).
 It runs the steps below, fixes what it finds, and merges the pull request.
 
 `pr-review` posts as the `message-crate-reviewer` GitHub App: every call that
-posts (a review, a comment, a reply, a deferred finding's issue) runs through
-`./scripts/gh-as-reviewer` in place of `gh`, so it counts against the app's
-posting limit, not the user's ("Posting pace"). Reads, resolving a thread,
-pushes, `gh pr ready` and the merge stay on the logged-in `gh` account:
-GitHub lets an app resolve a thread only with write access to the code, and
-the app has read access. The script reads the app's private key from
-`~/.ssh/message-crate-reviewer.pem` and stops when it is missing.
+posts or resolves (a review, a comment, a reply, a resolved thread, a deferred
+finding's issue) runs through `./scripts/gh-as-reviewer` in place of `gh`, so
+it counts against the app's posting limit, not the user's ("Posting pace").
+Reads, pushes, `gh pr ready` and the merge stay on the logged-in `gh` account.
+The app has write access to the code only because GitHub lets an app resolve
+a thread with nothing less; it never pushes. The script reads the app's
+private key from `~/.ssh/message-crate-reviewer.pem` and stops when it is
+missing.
 
 ##### The marker
 
@@ -121,7 +122,7 @@ resolves it.
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
-   gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
+   ./scripts/gh-as-reviewer api graphql -f query='mutation { resolveReviewThread(input: {threadId: "<thread-id>"}) { thread { isResolved } } }'
    ```
 
    Never resolve a thread without a reply in it.
