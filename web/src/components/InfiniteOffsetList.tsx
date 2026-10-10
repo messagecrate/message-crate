@@ -397,21 +397,10 @@ function SectionedLetterList<T>({
   currentLetter,
   onVisibleRangeChange,
   empty,
-}: {
-  items: T[];
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
+}: Omit<VirtualListProps<T>, "estimateSize" | "dynamicSize" | "getTextValue"> & {
   sectionLead?: ReactNode;
-  getId: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
   getSectionLetter: (item: T) => string;
   currentLetter: string | null;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
 }) {
   // This list is not virtualized, so both of these walk every contact. Rebuilding
   // them on each render is what made scrolling a large catalog expensive.
