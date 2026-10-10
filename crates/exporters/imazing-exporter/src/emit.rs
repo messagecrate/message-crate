@@ -225,16 +225,16 @@ struct Conversation {
 /// Which pending conversation a session's rows go to.
 ///
 /// Built when a session's rows are read, from its [`ConversationKey`]'s chat
-/// id, with the transport family and, for a group, the CSV session. Groups
-/// that share one `ConversationKey` are separate entries here.
-/// `separate_groups_with_one_earliest_row` merges those with one session
-/// name and gives the others new keys, but does not re-key this map, so
-/// after it runs a group's `chat_id` here can differ from its conversation's.
+/// id, with the transport family and, for a group, the CSV session.
 ///
 /// A one-to-one conversation is one conversation across every CSV that
 /// names its address. A group session is a conversation of its own, even
-/// when another starts with the same row: `separate_groups_with_one_earliest_row`
-/// decides which ones are one group once every CSV is read.
+/// when another starts with the same row and so has the same
+/// `ConversationKey`. Once every CSV is read,
+/// `separate_groups_with_one_earliest_row` merges such groups that have one
+/// session name, and gives the others new keys. It does not re-key this map,
+/// so after it runs a group's `chat_id` here can differ from its
+/// conversation's.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct ChatIdKey {
     /// Keeps a Messages conversation and a WhatsApp conversation with the
@@ -1017,34 +1017,30 @@ impl ProjectionHooks for ImazingProjection<'_> {
     /// one-to-one conversation's one participant is the person it is with:
     /// their address, or for a conversation keyed by a name, the name and no
     /// address.
-    fn participants(
-        &self,
-        _chat_id: &str,
-        conversation: &PendingConversation,
-    ) -> Vec<IrParticipant> {
+    fn participants(&self, _chat_id: &str, pending: &PendingConversation) -> Vec<IrParticipant> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
-                display_name: conversation.first_contact_name(),
+                display_name: pending.first_contact_name(),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,
-                display_name: conversation.first_contact_name(),
+                display_name: pending.first_contact_name(),
             }],
         }
     }
 
-    fn packaging_stem_suffix(&self, conversation: &PendingConversation) -> Option<String> {
-        imazing_packaging_stem_suffix(conversation.extra_str("source_kind"))
+    fn packaging_stem_suffix(&self, pending: &PendingConversation) -> Option<String> {
+        imazing_packaging_stem_suffix(pending.extra_str("source_kind"))
     }
 
-    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, pending: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
         // CSV/mail stem).
-        let session_title = conversation.display_name.as_deref().unwrap_or("");
+        let session_title = pending.display_name.as_deref().unwrap_or("");
         if !session_title.is_empty() {
             fields.insert(
                 "group_title".into(),
