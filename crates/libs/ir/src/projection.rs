@@ -5,8 +5,8 @@
 //! sent/received tallying, the dedupe step, GUID derivation, linking each
 //! reply to the message it quotes, and document assembly — lives here once;
 //! the genuine per-exporter deltas (vendor `source` fields, service
-//! selection, attachment digests and vendor keys, reply keys, attachment
-//! mapping) are supplied through [`ProjectionHooks`].
+//! selection, attachment digests and vendor keys, reply keys, reactions,
+//! attachment mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
@@ -130,8 +130,9 @@ pub trait ProjectionHooks {
         None
     }
 
-    /// The reactions that stand on the message, each naming who reacted.
-    /// The default records none.
+    /// The reactions that stand on the message, each naming the person who
+    /// reacted, in the order the source gives them. The default records
+    /// none.
     fn reactions(&self, _msg: &PendingMessage) -> Vec<Reaction> {
         Vec::new()
     }
