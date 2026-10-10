@@ -334,7 +334,7 @@ fn normalize_lexically(path: &Path) -> PathBuf {
 }
 
 /// Trim `raw` and require it to be a non-empty absolute path.
-fn resolve_absolute(
+pub(crate) fn resolve_absolute(
     raw: &str,
     empty_message: &str,
     relative_message: &str,

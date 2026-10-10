@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
 use crate::app_directories::{MESSAGE_CRATE_DIRECTORY_NAME, import_run_log};
-use crate::commands::paths::{resolve_openable_path, resolve_staging_root};
+use crate::commands::paths::{resolve_absolute, resolve_openable_path, resolve_staging_root};
 
 /// File in the app-data directory that holds the Staging Directory setting
 /// and the run directories this app made.
@@ -278,7 +278,7 @@ impl RunDirectories {
     /// Returns an error when `dir` is empty or relative, is not on disk, was
     /// not made by [`RunDirectories::create`], or has no sentinel.
     pub fn directory(&self, dir: &str) -> Result<PathBuf, String> {
-        let path = absolute(dir)?;
+        let path = resolve_absolute(dir, "Path is empty", "Path must be absolute")?;
         let canonical = path
             .canonicalize()
             .map_err(|error| format!("Could not find the run directory {dir}: {error}"))?;
@@ -315,7 +315,7 @@ impl RunDirectories {
     /// Returns an error when the directory fails [`RunDirectories::directory`]'s
     /// checks, cannot be removed, or the record cannot be saved.
     pub fn delete(&self, dir: &str) -> Result<(), String> {
-        let path = absolute(dir)?;
+        let path = resolve_absolute(dir, "Path is empty", "Path must be absolute")?;
         let made = self
             .read()?
             .directories
@@ -354,7 +354,7 @@ impl RunDirectories {
     /// Returns an error when the path is empty or relative, or is in no
     /// run directory this app made.
     pub fn openable(&self, path: &str) -> Result<PathBuf, String> {
-        absolute(path)?;
+        resolve_absolute(path, "Path is empty", "Path must be absolute")?;
         self.read()?
             .directories
             .iter()
@@ -434,19 +434,6 @@ fn remove_sentinel_last(directory: &Path) -> std::io::Result<()> {
     }
     std::fs::remove_file(directory.join(EXPORT_SENTINEL))?;
     std::fs::remove_dir(directory)
-}
-
-/// `raw`, trimmed, when it is a non-empty absolute path.
-fn absolute(raw: &str) -> Result<PathBuf, String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Err("Path is empty".to_string());
-    }
-    let path = PathBuf::from(trimmed);
-    if !path.is_absolute() {
-        return Err("Path must be absolute".to_string());
-    }
-    Ok(path)
 }
 
 /// The short name a run directory carries for `label`: an Import source id
