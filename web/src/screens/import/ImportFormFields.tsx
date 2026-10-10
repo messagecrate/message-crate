@@ -9,8 +9,7 @@ import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import TimeZoneField from "../../components/TimeZoneField";
 import {
-  backupDirectoryHint,
-  backupDirectoryPlaceholder,
+  backupField,
   isAndroidSmsSource,
   needsOwnerEmails,
   splitEmails,
@@ -307,6 +306,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const isIos = props.source === "imessage-ios";
   const isImazing = props.source === IMAZING_SOURCE_ID;
   const isAndroidSms = isAndroidSmsSource(props.source);
+  const androidBackup = isAndroidSms ? backupField(props.source) : null;
   const wantsEmails = needsOwnerEmails(props.source);
   const imessageMethod = isImessageMethod(props.source) ? props.source : null;
   const whatsappMethod = isWhatsappMethod(props.source) ? props.source : null;
@@ -727,16 +727,17 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
               onMinSizeMbChange={props.onMinSizeMbChange}
             />
           </>
-        ) : isAndroidSms ? (
+        ) : androidBackup ? (
           <>
-            <StackedField label="Backup Directory" required={required.backupPath}>
+            <StackedField label={androidBackup.label} required={required.backupPath}>
               <PathPicker
                 value={props.backupPath}
                 onChange={props.onBackupPathChange}
-                directory
-                placeholder={backupDirectoryPlaceholder(props.source)}
+                directory={androidBackup.directory}
+                filters={androidBackup.filters}
+                placeholder={androidBackup.placeholder}
               />
-              <p className={hintStyle}>{backupDirectoryHint(props.source)}</p>
+              <p className={hintStyle}>{androidBackup.hint}</p>
             </StackedField>
 
             <AttachmentFields

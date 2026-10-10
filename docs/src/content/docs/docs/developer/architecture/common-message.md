@@ -149,7 +149,7 @@ CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Tim
 | WhatsApp from an iPhone backup | The `Date` in the backup's `Manifest.plist` |
 | WhatsApp from Android | The modification time of the database file, `msgstore.db.crypt15` or a decrypted `msgstore.db` |
 | WhatsApp from a ready-made `result.json` | The JSON file's modification time |
-| SMS Backup & Restore | The root element's `backup_date` attribute; a file without one is dated by its modification time. A conversation read from two files is as new as the newer. Message Crate's own XML export writes `backup_date` back, the newest date of the conversations it holds |
+| SMS Backup & Restore | The root element's `backup_date` attribute; a file without one is dated by its modification time. An import reads one file, so every conversation in it has that one date. Message Crate's own XML export writes `backup_date` back, the newest date of the conversations it holds |
 | iMazing | The export date: the newest modification time of the CSV files iMazing wrote |
 | OpenExtract, GO SMS Pro, SMS Backup+ | The newest modification time of the files read, because none of them records a date of its own |
 | An Export Run of the server | The backup date of the conversation's messages when they all have the same one, else `null`, because one date for messages from two backups would be wrong for some of them |

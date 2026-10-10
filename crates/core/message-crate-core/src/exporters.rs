@@ -509,6 +509,14 @@ impl Form {
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
+        // SMS Backup & Restore writes each backup as one file, and an
+        // Import Run reads one backup.
+        if let Some(dir) = inputs.iter().find(|input| input.is_dir()) {
+            errors.push(format!(
+                "Input must be one SMS Backup & Restore .xml file, not a directory: {}",
+                dir.display()
+            ));
+        }
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
@@ -915,10 +923,35 @@ mod tests {
         assert_eq!(apple.copy_method, "clone");
     }
 
+    /// An Import Run reads one backup: SMS Backup & Restore writes each as
+    /// one file, GO SMS Pro as a directory.
+    #[test]
+    fn sbr_refuses_a_directory_and_go_sms_pro_takes_one() {
+        let form = Form {
+            input: env!("CARGO_MANIFEST_DIR").into(),
+            output: "out".into(),
+            owner_phones: "+15555550100".into(),
+            ..Form::default()
+        };
+        let errors = form
+            .to_config(Exporter::SmsBackupRestore, Path::new("/cache"))
+            .unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|e| e.contains("one SMS Backup & Restore .xml file, not a directory")),
+            "{errors:?}"
+        );
+        assert!(
+            form.to_config(Exporter::GoSmsPro, Path::new("/cache"))
+                .is_ok()
+        );
+    }
+
     #[test]
     fn sbr_passes_output_format() {
         let form = Form {
-            input: std::env::current_dir().unwrap().display().to_string(),
+            input: concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").into(),
             output: "out".into(),
             owner_phones: "+15555550100".into(),
             output_format: OutputFormat::Eml,
