@@ -16,7 +16,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
-use crate::db::attachment_versions::Version;
+use crate::db::attachment_versions::{OriginalRows, Version};
 use crate::extract::{Json, Path as AxumPath};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -849,8 +849,10 @@ async fn stream_version(
     let file = crate::db::attachment_versions::file_of(
         &mut *state.db.acquire().await?,
         version,
-        account,
-        &stored.sha256,
+        OriginalRows {
+            account_id: account,
+            original_sha: &stored.sha256,
+        },
     )
     .await?;
     let Some((path, mime_type)) = file else {

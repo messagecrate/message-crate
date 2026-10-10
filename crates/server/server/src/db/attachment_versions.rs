@@ -178,8 +178,7 @@ pub async fn stored_originals(
 /// The attachment rows of `account_id` for the original `original_sha`.
 /// Every write to these rows takes them as one value: a version write
 /// ([`VersionWrite`]) and the record of whether the original is shown as it
-/// is ([`record_shown_as_is`]). Reads such as [`file_of`] still take the
-/// account and the fingerprint apart.
+/// is ([`record_shown_as_is`]).
 #[derive(Debug, Clone, Copy)]
 pub struct OriginalRows<'a> {
     pub account_id: i64,
@@ -331,7 +330,7 @@ pub async fn clear(
     tx.commit().await
 }
 
-/// Where the `version` of one of the account's originals is stored, and its
+/// Where the `version` of the original `rows` names is stored, and its
 /// media type: the path under the account's converted directory. `None`
 /// when the account holds no attachment with that fingerprint, or none of
 /// its rows names such a version yet.
@@ -342,9 +341,12 @@ pub async fn clear(
 pub async fn file_of(
     conn: &mut SqliteConnection,
     version: Version,
-    account_id: i64,
-    sha256: &str,
+    rows: OriginalRows<'_>,
 ) -> Result<Option<(String, Option<String>)>, sqlx::Error> {
+    let OriginalRows {
+        account_id,
+        original_sha,
+    } = rows;
     let [_, path_column, mime_column] = version.columns();
     // Every row that names the fingerprint carries the same version, so any
     // one of them answers.
@@ -357,7 +359,7 @@ pub async fn file_of(
          LIMIT 1"
     ))
     .bind(account_id)
-    .bind(sha256)
+    .bind(original_sha)
     .fetch_optional(&mut *conn)
     .await
 }
