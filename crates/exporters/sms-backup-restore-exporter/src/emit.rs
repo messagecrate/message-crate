@@ -5,8 +5,8 @@ use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, DUPLICATES_DROPPED, ExportReport, ExportTransforms, IssueSink, ItemKind,
-    OutputFormat, SKIPPED_INVALID_DATE, unreadable_parts_note,
+    ConvertRun, DUPLICATES_DROPPED, ExportReport, IssueSink, ItemKind, OutputFormat,
+    SKIPPED_INVALID_DATE, unreadable_parts_note,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
@@ -77,14 +77,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub run: ConvertRun<'a>,
 }
 
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
@@ -95,17 +88,19 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Returns an error when the XML cannot be read, a conversation cannot be
 /// written, or the user cancels.
 pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport> {
+    let ConvertRun {
+        transforms,
+        output_format,
+        cancel,
+        resume,
+        issues,
+    } = args.run;
     // The read options still need the compress settings after `transforms`
     // moves into the writer.
-    let compress = args.transforms.compress.clone();
-    let mut writer = ExportWriter::open(
-        args.output_dir,
-        args.output_format,
-        args.transforms,
-        args.resume,
-    )?
-    .with_spool(args.scratch_dir);
-    if args.output_format == OutputFormat::Xml {
+    let compress = transforms.compress.clone();
+    let mut writer = ExportWriter::open(args.output_dir, output_format, transforms, resume)?
+        .with_spool(args.scratch_dir);
+    if output_format == OutputFormat::Xml {
         // This crate owns the backup format, so a round trip back to
         // `smses.xml` goes through its own archive writer.
         writer = writer.with_archive(Box::new(SbrArchive));
@@ -120,19 +115,19 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             compress,
             log: writer.log(),
             progress: writer.progress(),
-            cancel: args.cancel,
+            cancel,
         },
     )?;
 
     // The reader already counted conversations; zero the conversation
     // counter so the shared write tail's fold counts only the documents it
     // actually writes.
-    let mut core = to_core_report(report, args.issues);
+    let mut core = to_core_report(report, issues);
     core.conversations = 0;
     writer.finish(
         documents,
         &mut AttachmentSource::take_bytes,
-        args.cancel,
+        cancel,
         &mut core,
     )?;
     Ok(core)

@@ -10,7 +10,7 @@
 use crate::emit::{ConvertExportArgs, convert_export};
 use go_sms_mms::testutil::{BuildPart, PduBuilder};
 use message_crate_core::testutil::{csv_files, csv_rows};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, OutputFormat};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -60,11 +60,10 @@ fn convert(input_dir: &Path, output_dir: &Path) -> ExportReport {
         output_dir,
         scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert_export")
 }
@@ -305,14 +304,14 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         output_dir: &output,
         scratch_dir: cache.path(),
         owner_phones: &[OWNER.into()],
-        transforms: ExportTransforms {
-            media: media::MediaMode::Disabled,
-            ..ExportTransforms::none()
+        run: ConvertRun {
+            transforms: ExportTransforms {
+                media: media::MediaMode::Disabled,
+                ..ExportTransforms::none()
+            },
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
         },
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
     })
     .expect("convert_export");
 

@@ -132,9 +132,9 @@ struct Collected {
 pub(crate) fn open_output(options: &ExportOptions) -> Result<ExportWriterParts> {
     Ok(ExportWriter::open(
         &options.export_path,
-        options.output_format,
-        options.transforms.clone(),
-        options.resume,
+        options.run.output_format,
+        options.run.transforms.clone(),
+        options.run.resume,
     )
     .map_err(|e| anyhow!("open export sink: {e:#}"))?
     .into_parts())
@@ -153,7 +153,7 @@ pub(crate) fn export(
     options: &ExportOptions,
     output: ExportWriterParts,
 ) -> Result<ExportReport> {
-    let format = options.output_format;
+    let format = options.run.output_format;
     options.emit_log("");
     options.emit_log(format!(
         "Preparing {} messages in {}",
@@ -280,7 +280,7 @@ fn is_file_backed(format: OutputFormat) -> bool {
 /// Whether this run leaves attachment files for `run_attachment_jobs` to
 /// load and write later.
 fn stages_attachment_files(options: &ExportOptions) -> bool {
-    options.transforms.copies_attachments() && is_file_backed(options.output_format)
+    options.run.transforms.copies_attachments() && is_file_backed(options.run.output_format)
 }
 
 /// Read events until the program says the export is done, grouping messages
@@ -665,7 +665,7 @@ fn write_conversations(
     sink: &mut FormatSink,
     conversations: BTreeMap<String, PendingConversation>,
 ) -> Result<u64> {
-    let format = options.output_format;
+    let format = options.run.output_format;
     let total = conversations.len();
     options.emit_log("");
     options.emit_log(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
@@ -801,14 +801,14 @@ fn drain_conversations(
         .collect();
 
     let queue = WriteQueueOptions {
-        media: options.transforms.media,
-        compress: options.transforms.compress.clone(),
-        resume: options.resume,
+        media: options.run.transforms.media,
+        compress: options.run.transforms.compress.clone(),
+        resume: options.run.resume,
         writer_count: 0,
     };
     let log = options.log.clone();
     let progress = options.progress.clone();
-    let cancel = options.cancel.as_ref();
+    let cancel = options.run.cancel;
 
     let queue_report = if collected.encrypted {
         // The program decrypts one file at a time over one pipe, so the
@@ -869,8 +869,8 @@ fn stage_attachments(
     not_decrypted: &mut NotDecrypted,
 ) -> Result<u64> {
     let media = MediaConfig {
-        mode: options.transforms.media,
-        compress: options.transforms.compress.clone(),
+        mode: options.run.transforms.media,
+        compress: options.run.transforms.compress.clone(),
     };
     let encrypted = collected.encrypted;
     let mut loads = Vec::new();
@@ -895,7 +895,7 @@ fn stage_attachments(
     if stages_attachment_files(options) {
         check_headroom(
             &options.export_path,
-            counted.bytes_to_write(options.output_format),
+            counted.bytes_to_write(options.run.output_format),
             Disk::Staging,
         )?;
     }
@@ -922,7 +922,7 @@ fn stage_attachments(
             },
             options.log.as_ref(),
             options.progress.as_ref(),
-            options.cancel.as_ref(),
+            options.run.cancel,
         )
         .map_err(|e| anyhow!(e))
         .context("stage attachments")?;
@@ -952,7 +952,7 @@ mod tests {
         }
     }
 
-    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions {
+    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions<'static> {
         ExportOptions {
             source: imessage_reader_protocol::Source {
                 db_path: PathBuf::from("/nowhere/chat.db"),
@@ -965,16 +965,16 @@ mod tests {
             export_path: PathBuf::from("/nowhere/out"),
             scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
-            transforms: message_crate_core::ExportTransforms {
-                obfuscate,
-                ..message_crate_core::ExportTransforms::none()
-            },
-            output_format,
             log: None,
             progress: None,
-            issues: None,
-            cancel: None,
-            resume: false,
+            run: message_crate_core::ConvertRun {
+                transforms: message_crate_core::ExportTransforms {
+                    obfuscate,
+                    ..message_crate_core::ExportTransforms::none()
+                },
+                output_format,
+                ..message_crate_core::ConvertRun::default()
+            },
         }
     }
 

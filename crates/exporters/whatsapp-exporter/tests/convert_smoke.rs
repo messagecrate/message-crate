@@ -1,6 +1,6 @@
 use crate::emit::{ConvertRequest, convert_json};
 use message_crate_core::testutil::assert_jsonl_resumes;
-use message_crate_core::{ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, OutputFormat};
 use std::fs;
 use std::path::PathBuf;
 
@@ -13,14 +13,13 @@ fn convert_fixture_json_individual_and_group() {
     let report = convert_json(ConvertRequest {
         json_path: &fixture,
         output: tmp.path(),
-        transforms: ExportTransforms::none(),
         media_search_roots: &[],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
 
@@ -88,14 +87,13 @@ fn copies_ios_style_media_true_data_paths() {
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: out.path(),
-        transforms: ExportTransforms::none(),
         media_search_roots: &[media_root.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
 
@@ -126,14 +124,14 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_json(ConvertRequest {
             json_path: &fixture,
             output: tmp.path(),
-            transforms: ExportTransforms::none(),
             media_search_roots: &[],
             owner_identity: None,
             backup_taken_at_unix_ms: None,
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            resume,
-            issues: None,
+            run: ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
     assert_eq!(report.conversations, 2, "one individual chat and one group");
@@ -165,14 +163,10 @@ fn convert_with_owner(
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: &out,
-        transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: owner_identity.map(str::to_string),
         backup_taken_at_unix_ms: None,
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun::default(),
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -463,14 +457,10 @@ fn a_json_without_the_forks_fields_is_refused() {
         let err = convert_json(ConvertRequest {
             json_path: &json_path,
             output: &dir.path().join("out"),
-            transforms: ExportTransforms::none(),
             media_search_roots: &[],
             owner_identity: None,
             backup_taken_at_unix_ms: None,
-            output_format: OutputFormat::Json,
-            cancel: None,
-            resume: false,
-            issues: None,
+            run: ConvertRun::default(),
         })
         .expect_err("refused");
         let text = format!("{err:#}");
@@ -545,14 +535,13 @@ fn a_media_path_in_the_media_field_is_copied() {
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: &out,
-        transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);
@@ -596,14 +585,10 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: &out,
-        transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun::default(),
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);

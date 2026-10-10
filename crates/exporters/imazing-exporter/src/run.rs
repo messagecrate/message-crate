@@ -16,16 +16,12 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     };
     message_crate_core::check_cancel(config.cancel.as_ref())?;
     let input = config.require_input().map_err(anyhow::Error::msg)?;
-    message_crate_core::run_pipeline(config, |transforms| {
+    message_crate_core::run_pipeline(config, |run| {
         convert_export(ConvertExportArgs {
             input,
             output: &config.output,
             timezone: config.timezone.as_deref(),
-            transforms,
-            output_format: config.output_format,
-            cancel: config.cancel.as_ref(),
-            resume: config.resume,
-            issues: config.issues.as_ref(),
+            run,
         })
     })
 }

@@ -17,8 +17,7 @@ use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
-    project_conversation,
+    ConvertRun, Counter, ExportReport, prepare_outputs, project_conversation,
 };
 use message_csv::Zone;
 use message_ir::{
@@ -91,14 +90,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub timezone: Option<&'a str>,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub run: ConvertRun<'a>,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -117,11 +109,14 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         input,
         output,
         timezone,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        run:
+            ConvertRun {
+                transforms,
+                output_format,
+                cancel,
+                resume,
+                issues,
+            },
     } = args;
     let tz = Zone::parse(timezone)?;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;

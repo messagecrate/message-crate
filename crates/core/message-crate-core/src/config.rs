@@ -12,6 +12,7 @@ use crate::exporters::{ApplePlatform, WhatsappPlatform};
 use crate::pipeline::{IssueSink, RunIssue, emit_issue};
 use crate::process::{CancelFlag, LogSink, emit_log};
 use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
+use crate::transforms::ExportTransforms;
 
 /// Output packaging projected from the common message.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -133,6 +134,18 @@ impl ExporterConfig {
         emit_issue(self.issues.as_ref(), issue);
     }
 
+    /// The run-wide settings an exporter's convert step takes beside its own
+    /// inputs, with the transforms [`ExportTransforms::from_config`] builds.
+    pub fn convert_run(&self) -> ConvertRun<'_> {
+        ConvertRun {
+            transforms: ExportTransforms::from_config(self),
+            output_format: self.output_format,
+            cancel: self.cancel.as_ref(),
+            resume: self.resume,
+            issues: self.issues.as_ref(),
+        }
+    }
+
     /// First input path, if any.
     pub fn primary_input(&self) -> Option<&Path> {
         self.inputs.first().map(PathBuf::as_path)
@@ -155,6 +168,28 @@ impl ExporterConfig {
     pub fn obfuscate_active(&self) -> bool {
         self.obfuscate.enabled || self.obfuscate.seed.is_some()
     }
+}
+
+/// The run-wide settings every exporter's convert step takes beside its own
+/// inputs. [`ExporterConfig::convert_run`] builds them, so a new run-wide
+/// setting is added here once, not to each exporter's arguments.
+///
+/// The default writes [`OutputFormat::Json`] with no transforms, cannot be
+/// cancelled, does not resume, and sends its rows nowhere.
+#[derive(Debug, Clone, Default)]
+pub struct ConvertRun<'a> {
+    /// Media and obfuscation applied as conversations are written.
+    pub transforms: ExportTransforms,
+    /// The packaging the run writes.
+    pub output_format: OutputFormat,
+    /// Checked between files and before writing; `None` means the run cannot
+    /// be cancelled.
+    pub cancel: Option<&'a CancelFlag>,
+    /// Continue an interrupted export: keep previous output and skip the
+    /// conversations already written.
+    pub resume: bool,
+    /// Where each row for the Import Run's record goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 #[derive(Debug, Clone, Default)]

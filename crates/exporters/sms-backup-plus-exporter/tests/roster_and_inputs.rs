@@ -6,7 +6,7 @@
 //! header with no image data.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, OutputFormat};
 use message_ir::ConversationDocument;
 use message_ir_format::read_conversation_jsonl;
 use std::collections::BTreeMap;
@@ -38,13 +38,12 @@ fn convert_in(
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
         log: None,
-        issues: None,
-        resume: false,
         phone_country,
+        run: ConvertRun {
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert")
 }
@@ -570,13 +569,12 @@ Hello Dee\r\n",
         owner_phones: &["07700900123".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
         log: None,
-        issues: None,
-        resume: false,
         phone_country: phone::country("GB"),
+        run: ConvertRun {
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
 

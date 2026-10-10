@@ -1,7 +1,7 @@
 use crate::emit::{ConvertExportArgs, convert_export};
 use anyhow::Result;
 use message_crate_core::testutil::{assert_csv_row, assert_jsonl_resumes, csv_rows};
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,11 +10,10 @@ fn convert(input: &Path, output: &Path) -> Result<ExportReport> {
         input,
         output,
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
 }
 
@@ -97,11 +96,7 @@ fn reactions_replies_deletions_and_edits_reach_the_message() {
         input: &messages,
         output: tmp.path(),
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Json,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun::default(),
     })
     .expect("convert");
     let doc = message_ir_format::read_conversation_json(&tmp.path().join("+13215550100.json"))
@@ -264,11 +259,11 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             input: &messages,
             output: tmp.path(),
             timezone: Some("UTC"),
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            resume,
-            issues: None,
+            run: ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
     assert_eq!(report.conversations, 1);
@@ -292,11 +287,10 @@ fn the_backup_date_is_the_export_date_of_the_csv() {
         input: &messages,
         output: output.path(),
         timezone: Some("UTC"),
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        resume: false,
-        issues: None,
+        run: ConvertRun {
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
     assert_eq!(
