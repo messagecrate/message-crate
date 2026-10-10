@@ -12,7 +12,9 @@ fn message(key: &str, timestamp: &str, text: &str) -> String {
         r#""{key}": {{
         "from_me": false, "timestamp": {timestamp}, "time": "00:00", "key_id": "{key}",
         "data": "{text}", "sender": null, "media": false, "mime": null,
-        "caption": null, "sticker": false, "reply": null, "reactions": {{}}
+        "caption": null, "sticker": false, "reply": null, "reactions": {{}},
+        "sender_jid": null, "sender_lid": null, "sender_contact_name": null,
+        "sender_push_name": null
       }}"#
     )
 }
@@ -34,7 +36,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_rows() {
         format!(
             r#"{{ "15555550122@s.whatsapp.net": {{
     "name": "Sam Example", "type": "ANDROID",
-    "messages": {{ {messages} }}
+    "members": null, "messages": {{ {messages} }}
   }} }}"#
         ),
     )
@@ -79,7 +81,7 @@ fn run_records_the_form_owner_on_the_header() {
         format!(
             r#"{{ "15555550122@s.whatsapp.net": {{
     "name": "Sam Example", "type": "ANDROID",
-    "messages": {{ {} }}
+    "members": null, "messages": {{ {} }}
   }} }}"#,
             message("AAA", "1609459200", "Hello from Sam")
         ),
@@ -117,11 +119,12 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
         &json,
         r#"{ "15555550122@s.whatsapp.net": {
     "name": "Sam Example", "type": "ANDROID",
-    "messages": { "AAA": {
+    "members": null, "messages": { "AAA": {
         "from_me": false, "timestamp": 1609459200, "time": "00:00", "key_id": "AAA",
         "data": "Media/WhatsApp Images/IMG-1.jpg", "sender": null, "media": true,
         "mime": "image/jpeg", "caption": "A photo", "sticker": false, "reply": null,
-        "reactions": {}
+        "reactions": {}, "sender_jid": null, "sender_lid": null,
+        "sender_contact_name": null, "sender_push_name": null
     } }
   } }"#,
     )
@@ -144,7 +147,7 @@ fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
     assert_eq!(
         *issues.lock().unwrap(),
         [RunIssue {
-            kind: "note".into(),
+            kind: message_crate_core::RunIssueKind::Note,
             step: "parse".into(),
             item: "Media/WhatsApp Images/IMG-1.jpg".into(),
             reason:

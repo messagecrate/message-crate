@@ -116,15 +116,14 @@ impl RunLog {
         self.write(RunLogLevel::Info, line);
     }
 
-    /// Add an Import Errors row to the log: a skip as a warning, an error as
-    /// an error, and a note as something the run did.
+    /// Add a row of the Import Run's record to the log, at the level its
+    /// kind gives it: a skip as a warning, an error as an error, and a note
+    /// as something the run did.
     pub fn issue(&self, issue: &RunIssue) {
-        let level = match issue.kind.as_str() {
-            "error" => RunLogLevel::Error,
-            "skip" => RunLogLevel::Warn,
-            _ => RunLogLevel::Info,
-        };
-        self.write(level, &format!("{}: {}", issue.item, issue.reason));
+        self.write(
+            issue.kind.into(),
+            &format!("{}: {}", issue.item, issue.reason),
+        );
     }
 
     /// Add `text` at `level`. A line that cannot be written is dropped: the

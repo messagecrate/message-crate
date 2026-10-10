@@ -5,7 +5,7 @@ use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
     SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, discover_files, document_messages, import_error_lines, is_cancelled, item_line,
+    check_cancel, document_messages, import_error_lines, is_cancelled, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -22,8 +22,7 @@ use sbr::{
     AttachmentBlob, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
 };
 use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::Path;
 
 const EXPORT_SOURCE: &str = "sms-backup-restore";
 const EXPORT_TOOL: &str = "SMS Backup & Restore";
@@ -220,10 +219,6 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// A directory under the input whose files the read leaves out: the run's
-    /// output when it sits inside the backup's directory, so a backup or an
-    /// attachment an earlier run wrote there is never read back in as input.
-    pub exclude_dir: Option<&'a Path>,
     /// How to write attachment files after parse.
     pub media: MediaMode,
     /// Image/video compress settings used when `media` converts or compresses.
@@ -232,7 +227,7 @@ pub struct ReadOptions<'a> {
     pub log: Option<&'a LogSink>,
     /// Typed progress events while staging attachments.
     pub progress: Option<&'a ProgressSink>,
-    /// Cancellation flag checked between files.
+    /// Cancellation flag checked between records.
     pub cancel: Option<&'a CancelFlag>,
 }
 
@@ -259,8 +254,6 @@ struct PendingMessage {
     contact_name: String,
     android_type: String,
     source_fields: serde_json::Map<String, serde_json::Value>,
-    /// The file the message was read from, shared by every message in it.
-    file: Arc<str>,
     /// What the read left out of the message.
     left_out: LeftOutCounts,
 }
@@ -274,29 +267,22 @@ struct PendingConversation {
     messages: Vec<PendingMessage>,
 }
 
-/// The XML files to read: the file itself, or every `.xml` under the directory
-/// outside `exclude_dir`.
-fn collect_xml_paths(input: &Path, exclude_dir: Option<&Path>) -> Result<Vec<PathBuf>> {
-    if input.is_file() {
-        return Ok(vec![input.to_path_buf()]);
+/// The backup file to read: SMS Backup & Restore writes each backup as one
+/// `.xml` file, and an Import Run reads one backup.
+fn require_backup_file(input: &Path) -> Result<()> {
+    if input.is_dir() {
+        bail!(
+            "Input must be one SMS Backup & Restore .xml file, not a directory: {}",
+            input.display()
+        );
     }
-    if !input.is_dir() {
-        bail!("input is not a file or directory: {}", input.display());
+    if !input.is_file() {
+        bail!("input is not a file: {}", input.display());
     }
-    let mut paths = discover_files(input, &|p| {
-        p.extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| e.eq_ignore_ascii_case("xml"))
-            && !exclude_dir.is_some_and(|dir| p.starts_with(dir))
-    })?;
-    paths.sort();
-    if paths.is_empty() {
-        bail!("no .xml files found in {}", input.display());
-    }
-    Ok(paths)
+    Ok(())
 }
 
-/// Add one file's parse counts onto the report.
+/// Add the file's parse counts onto the report.
 fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.sms_seen += stats.sms_seen;
     report.mms_seen += stats.mms_seen;
@@ -399,11 +385,10 @@ fn chat_id(record: &Record) -> String {
     }
 }
 
-/// Append a parsed SMS or MMS from `file` to its conversation, creating the
+/// Append a parsed SMS or MMS to its conversation, creating the
 /// conversation on first sight.
 fn add_record(
     conversations: &mut BTreeMap<String, PendingConversation>,
-    file: &Arc<str>,
     record: Record,
     attachments: Vec<PendingAttachment>,
 ) -> Result<()> {
@@ -439,7 +424,6 @@ fn add_record(
         contact_name: record.contact_name,
         android_type: record.android_type,
         source_fields,
-        file: Arc::clone(file),
         left_out: LeftOutCounts {
             unreadable_parts: record.unreadable_parts,
             dropped_character_references: record.dropped_character_references,
@@ -535,6 +519,7 @@ fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String
 /// Project one pending conversation into a document and fold its counts into the report.
 fn to_document(
     id: &str,
+    file_path: &str,
     conversation: &PendingConversation,
     owner_identity: Option<&str>,
     backup_taken_at_unix_ms: Option<i64>,
@@ -562,7 +547,7 @@ fn to_document(
             // dropped there can change which time the message keeps.
             if !message.left_out.is_empty() {
                 report.left_out.push(LeftOut {
-                    file: message.file.to_string(),
+                    file: file_path.to_string(),
                     message: describe(message, conversation),
                     counts: message.left_out,
                 });
@@ -704,40 +689,30 @@ fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
         .collect()
 }
 
-/// Parse SMS Backup & Restore XML into conversation documents.
+/// Parse one SMS Backup & Restore XML file into conversation documents.
 ///
 /// Drops duplicate messages. Each attachment's payload is left in
 /// `options.spool` for [`stage_read_attachments`] or the write queue to
-/// stage.
+/// stage. Every conversation is dated by the file's `backup_date`, or by
+/// its modification time when it has none.
 ///
 /// # Errors
 ///
-/// Returns an error when no XML files are found, owner phones cannot be
-/// inferred, or a file cannot be parsed.
+/// Returns an error when `input` is not a file, owner phones cannot be
+/// inferred, or a payload cannot be written to the spool.
 pub fn read_backup(
     input: &Path,
     options: ReadOptions<'_>,
 ) -> Result<(Vec<ConversationDocument>, ReadReport)> {
-    let paths = collect_xml_paths(input, options.exclude_dir)?;
+    require_backup_file(input)?;
     let mut owner_phones = options.owner_phones.to_vec();
     if owner_phones.is_empty() {
-        // Owner inference is best-effort: the main pass below already reports
-        // per-file parse errors, so one malformed file must not abort the whole
-        // export. Only give up when no file could be parsed at all.
-        let mut parse_errors = Vec::new();
-        for path in &paths {
-            match infer_owner_phones(path) {
-                Ok(phones) => owner_phones.extend(phones),
-                Err(error) => parse_errors.push(format!("{}: {error:#}", path.display())),
-            }
-        }
-        if owner_phones.is_empty() && !parse_errors.is_empty() && parse_errors.len() == paths.len()
-        {
-            bail!(
-                "could not infer owner phones from any input file ({}), and none were supplied",
-                parse_errors.join("; ")
-            );
-        }
+        owner_phones = infer_owner_phones(input).map_err(|error| {
+            anyhow::anyhow!(
+                "could not infer owner phones from {} ({error:#}), and none were supplied",
+                input.display()
+            )
+        })?;
         owner_phones.sort();
         owner_phones.dedup();
     }
@@ -752,56 +727,49 @@ pub fn read_backup(
         .and_then(OwnerHandleSet::primary_owner_handle);
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
-    // When each file's backup was made: its `backup_date`, or the file's
-    // modification time when it has none.
-    let mut backup_dates: HashMap<Arc<str>, i64> = HashMap::new();
-    for path in paths {
+    let file_path = input.display().to_string();
+    check_cancel(options.cancel)?;
+    // Each record's attachment payloads go to the spool as the record is
+    // parsed; staging waits until every conversation is built. Messages
+    // that parse before an XML error are kept, and so are the counts.
+    let mut stats = ParseStats::default();
+    // A spool that cannot be written stops the read rather than counting
+    // as an error in the file.
+    let mut spool_error = None;
+    let parse_result = parse_file_with(input, owners.as_ref(), &mut stats, |record| {
         check_cancel(options.cancel)?;
-        let file: Arc<str> = path.display().to_string().into();
-        // Each record's attachment payloads go to the spool as the record is
-        // parsed; staging waits until every conversation is built. Messages
-        // that parse before an XML error are kept; stats are merged even
-        // when the file is truncated.
-        let mut stats = ParseStats::default();
-        // A spool that cannot be written stops the read rather than counting
-        // as an error in one file.
-        let mut spool_error = None;
-        let parse_result = parse_file_with(&path, owners.as_ref(), &mut stats, |record| {
-            check_cancel(options.cancel)?;
-            let attachments = match queue_attachments(&record.attachments, options.spool) {
-                Ok(attachments) => attachments,
-                Err(error) => {
-                    let stop = anyhow::anyhow!("{error:#}");
-                    spool_error = Some(error);
-                    return Err(stop);
-                }
-            };
-            match add_record(&mut conversations, &file, record, attachments) {
-                Ok(()) => Ok(()),
-                Err(error) => {
-                    // Keep parsing the rest of the file; one bad record
-                    // must not abort the whole backup.
-                    report.errors.push(ReadError::new(&path, &error));
-                    Ok(())
-                }
+        let attachments = match queue_attachments(&record.attachments, options.spool) {
+            Ok(attachments) => attachments,
+            Err(error) => {
+                let stop = anyhow::anyhow!("{error:#}");
+                spool_error = Some(error);
+                return Err(stop);
             }
-        });
-        merge_stats(&mut report, stats);
-        if let Some(date) = stats
-            .backup_date_unix_ms
-            .or_else(|| message_crate_core::file_modified_unix_ms(&path))
-        {
-            backup_dates.insert(file.clone(), date);
+        };
+        match add_record(&mut conversations, record, attachments) {
+            Ok(()) => Ok(()),
+            Err(error) => {
+                // Keep parsing the rest of the file; one bad record
+                // must not abort the whole backup.
+                report.errors.push(ReadError::new(input, &error));
+                Ok(())
+            }
         }
-        if let Some(error) = spool_error {
+    });
+    merge_stats(&mut report, stats);
+    // When the backup was made: its `backup_date`, or the file's
+    // modification time when it has none.
+    let backup_taken_at_unix_ms = stats
+        .backup_date_unix_ms
+        .or_else(|| message_crate_core::file_modified_unix_ms(input));
+    if let Some(error) = spool_error {
+        return Err(error);
+    }
+    if let Err(error) = parse_result {
+        if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
             return Err(error);
         }
-        if let Err(error) = parse_result {
-            if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
-                return Err(error);
-            }
-            report.errors.push(ReadError::new(&path, &error));
-        }
+        report.errors.push(ReadError::new(input, &error));
     }
     check_cancel(options.cancel)?;
     let mut documents = Vec::new();
@@ -817,14 +785,9 @@ pub fn read_backup(
         if conversation.messages.is_empty() {
             continue;
         }
-        // A conversation read from two backups is as new as the newer one.
-        let backup_taken_at_unix_ms = conversation
-            .messages
-            .iter()
-            .filter_map(|message| backup_dates.get(&message.file).copied())
-            .max();
         documents.push(to_document(
             &id,
+            &file_path,
             &conversation,
             owner_identity.as_deref(),
             backup_taken_at_unix_ms,

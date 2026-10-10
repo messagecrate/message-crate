@@ -166,12 +166,12 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
     assert_eq!(issues.len(), 1, "{issues:?}");
     let issue = &issues[0];
     assert_eq!(
+        (issue.kind, issue.step.as_str(), issue.item.as_str()),
         (
-            issue.kind.as_str(),
-            issue.step.as_str(),
-            issue.item.as_str()
-        ),
-        ("skip", "parse", "1.eml (sender)")
+            message_crate_core::RunIssueKind::Skip,
+            "parse",
+            "1.eml (sender)"
+        )
     );
     assert!(issue.reason.contains("left out"), "{}", issue.reason);
     assert!(issue.reason.contains("kept"), "{}", issue.reason);
@@ -235,7 +235,7 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
 /// The note the run sends about `item`.
 fn note(item: &str, text: &str) -> RunIssue {
     RunIssue {
-        kind: "note".into(),
+        kind: message_crate_core::RunIssueKind::Note,
         step: "parse".into(),
         item: item.into(),
         reason: text.into(),

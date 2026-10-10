@@ -23,7 +23,7 @@ use imessage_reader_protocol::{
 use ios_backup::Helper;
 use message_crate_core::{
     Counter, ExportReport, ItemKind, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
-    RunIssue, item_line, item_reason,
+    RunIssue, RunIssueKind, item_line, item_reason,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, IdentityType, IrAttachment,
@@ -552,7 +552,7 @@ impl NotDecrypted {
         let line = item_line(ItemKind::Attachment, &item, &what_happened);
         options.emit_log(line.clone());
         options.emit_issue(RunIssue {
-            kind: "error".into(),
+            kind: RunIssueKind::Error,
             step: "attachments".into(),
             item,
             reason: item_reason(ItemKind::Attachment, &what_happened),

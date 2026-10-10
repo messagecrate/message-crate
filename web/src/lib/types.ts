@@ -124,7 +124,7 @@ export interface ImportIssueEvent {
    * with the same stage and item no longer holds, as when Media converts a
    * file on a later try.
    */
-  kind: "error" | "skip" | "note" | "resolved";
+  kind: components["schemas"]["RunIssueKind"];
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;

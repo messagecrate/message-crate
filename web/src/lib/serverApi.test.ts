@@ -193,7 +193,9 @@ describe("Import Run routes", () => {
   });
 
   it("addresses a discard by session id, with the Import Errors it carries", async () => {
-    const issues = [{ kind: "skip", stage: "staging" as const, item: "a.jsonl", reason: "empty" }];
+    const issues = [
+      { kind: "skip" as const, stage: "staging" as const, item: "a.jsonl", reason: "empty" },
+    ];
     await discardImport(9, { issues, notes: [] });
     expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues, notes: [] });
   });

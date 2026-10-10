@@ -120,26 +120,19 @@ fn convert_export_smoke_on_sample_fixture() {
 }
 
 #[test]
-fn dedupes_overlapping_xml_files() {
+fn dedupes_a_message_the_file_holds_twice() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let input_dir = tmp.path().join("in");
-    fs::create_dir_all(&input_dir).unwrap();
+    let input = tmp.path().join("sms.xml");
 
     let xml = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-<smses count="1">
+<smses count="2">
+  <sms address="+15555550101" date="1400773261000" type="1" body="same text" contact_name="Sam" />
   <sms address="+15555550101" date="1400773261000" type="1" body="same text" contact_name="Sam" />
 </smses>"#;
-    fs::write(input_dir.join("a.xml"), xml).unwrap();
-    fs::write(input_dir.join("b.xml"), xml).unwrap();
+    fs::write(&input, xml).unwrap();
 
     let out = tmp.path().join("out");
-    let report = convert(
-        &input_dir,
-        &out,
-        &["+15555550100".into()],
-        OutputFormat::Csv,
-    )
-    .unwrap();
+    let report = convert(&input, &out, &["+15555550100".into()], OutputFormat::Csv).unwrap();
     assert_eq!(report.extra(crate::read::SMS_SEEN), 2);
     assert_eq!(report.conversations, 1);
     assert_eq!(report.received, 1); // one row after dedupe
@@ -150,50 +143,6 @@ fn dedupes_overlapping_xml_files() {
     // header + one message row (duplicate dropped)
     assert_eq!(body.lines().count(), 2);
     assert!(body.contains("same text"));
-}
-
-/// With no owner phone on the form, each file is read once to find one. A
-/// file that cannot be read then is one bad file, not the end of the export:
-/// the readable file beside it is still exported. Only when every file is
-/// unreadable is there nothing to export, and the run says so.
-#[test]
-fn one_unreadable_xml_does_not_stop_an_export_without_owner_phones() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let input_dir = tmp.path().join("in");
-    fs::create_dir_all(&input_dir).unwrap();
-    let broken = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-<smses count="1">
-  <sms address="+15555550101" </oops>
-</smses>"#;
-    fs::write(input_dir.join("a-broken.xml"), broken).unwrap();
-    fs::write(
-        input_dir.join("b-readable.xml"),
-        r#"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-<smses count="1">
-  <sms address="+15555550101" date="1400773261000" type="1" body="still here" contact_name="Sam" />
-</smses>"#,
-    )
-    .unwrap();
-
-    let out = tmp.path().join("out");
-    let report = convert(&input_dir, &out, &[], OutputFormat::Csv).unwrap();
-    assert_eq!(report.conversations, 1);
-    assert_csv_row(&out.join("+15555550101.csv"), &[("text", "still here")]);
-
-    let only_broken = tmp.path().join("only-broken");
-    fs::create_dir_all(&only_broken).unwrap();
-    fs::write(only_broken.join("a-broken.xml"), broken).unwrap();
-    let err = convert(
-        &only_broken,
-        &tmp.path().join("out-2"),
-        &[],
-        OutputFormat::Csv,
-    )
-    .unwrap_err();
-    assert!(
-        err.to_string().contains("could not infer owner phones"),
-        "unexpected error: {err:#}"
-    );
 }
 
 #[test]
