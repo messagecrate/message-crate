@@ -105,6 +105,15 @@ pub(crate) struct SkippedEmptyPduDetail {
     pub pdu_filename: String,
 }
 
+impl SkippedEmptyPduDetail {
+    /// The header of `skipped_empty_pdu.csv`, one column per field of [`Self::csv_row`].
+    const CSV_HEADER: &[&str] = &["pdu_filename"];
+
+    fn csv_row(&self) -> Vec<String> {
+        vec![self.pdu_filename.clone()]
+    }
+}
+
 /// Diagnostic row for a PDU whose every address is the owner's.
 #[derive(Debug, Clone)]
 pub(crate) struct SkippedNoPartyDetail {
@@ -112,6 +121,20 @@ pub(crate) struct SkippedNoPartyDetail {
     pub sender: String,
     pub recipients: String,
     pub is_sent: bool,
+}
+
+impl SkippedNoPartyDetail {
+    /// The header of `skipped_no_party.csv`, one column per field of [`Self::csv_row`].
+    const CSV_HEADER: &[&str] = &["pdu_filename", "sender", "recipients", "is_sent"];
+
+    fn csv_row(&self) -> Vec<String> {
+        vec![
+            self.pdu_filename.clone(),
+            self.sender.clone(),
+            self.recipients.clone(),
+            if self.is_sent { "1" } else { "0" }.to_owned(),
+        ]
+    }
 }
 
 /// Append parsed XML SMS rows to pending conversations.
@@ -494,47 +517,27 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     write_skipped_csv(
         &output_dir,
         "skipped_invalid_address.csv",
-        &[
-            "xml_file",
-            "address",
-            "contact_name",
-            "android_type",
-            "date_ms",
-            "body",
-        ],
-        skips.invalid_address.iter().map(|d| {
-            vec![
-                d.xml_file.clone(),
-                d.address.clone(),
-                d.contact_name.clone(),
-                d.android_type.clone(),
-                d.date_ms.clone(),
-                d.body.clone(),
-            ]
-        }),
+        SkippedBadAddrDetail::CSV_HEADER,
+        skips
+            .invalid_address
+            .iter()
+            .map(SkippedBadAddrDetail::csv_row),
         skips.invalid_address_more,
     )?;
     // Stub PDU files.
     write_skipped_csv(
         &output_dir,
         "skipped_empty_pdu.csv",
-        &["pdu_filename"],
-        skips.empty_pdu.iter().map(|d| vec![d.pdu_filename.clone()]),
+        SkippedEmptyPduDetail::CSV_HEADER,
+        skips.empty_pdu.iter().map(SkippedEmptyPduDetail::csv_row),
         skips.empty_pdu_more,
     )?;
     // MMS with no participant other than the owner.
     write_skipped_csv(
         &output_dir,
         "skipped_no_party.csv",
-        &["pdu_filename", "sender", "recipients", "is_sent"],
-        skips.no_party.iter().map(|d| {
-            vec![
-                d.pdu_filename.clone(),
-                d.sender.clone(),
-                d.recipients.clone(),
-                if d.is_sent { "1" } else { "0" }.to_owned(),
-            ]
-        }),
+        SkippedNoPartyDetail::CSV_HEADER,
+        skips.no_party.iter().map(SkippedNoPartyDetail::csv_row),
         skips.no_party_more,
     )?;
 

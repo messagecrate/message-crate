@@ -39,6 +39,29 @@ pub(crate) struct SkippedBadAddrDetail {
     pub body: String,
 }
 
+impl SkippedBadAddrDetail {
+    /// The header of `skipped_invalid_address.csv`, one column per field of [`Self::csv_row`].
+    pub(crate) const CSV_HEADER: &[&str] = &[
+        "xml_file",
+        "address",
+        "contact_name",
+        "android_type",
+        "date_ms",
+        "body",
+    ];
+
+    pub(crate) fn csv_row(&self) -> Vec<String> {
+        vec![
+            self.xml_file.clone(),
+            self.address.clone(),
+            self.contact_name.clone(),
+            self.android_type.clone(),
+            self.date_ms.clone(),
+            self.body.clone(),
+        ]
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct XmlParseStats {
     pub messages: u64,
