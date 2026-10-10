@@ -245,10 +245,10 @@ pub async fn share(
 }
 
 /// Point the attachment rows of `account_id` for the original
-/// `original_sha` at `file` as its `version`, only the rows that name no
-/// `version` yet when `only_unset` is true, and answer how many rows it
-/// pointed. [`record`] and [`share`] are this one statement, so a change to
-/// how a version is pointed at is made once.
+/// `original_sha` at `file` as its `version`, and answer how many rows it
+/// pointed. When `only_unset` is true, rows that already name a `version`
+/// are left alone. [`record`] and [`share`] are this one statement, so a
+/// change to how a version is pointed at is made once.
 async fn point_rows(
     conn: &mut SqliteConnection,
     version: Version,
@@ -258,7 +258,7 @@ async fn point_rows(
     only_unset: bool,
 ) -> Result<u64, sqlx::Error> {
     let [sha_column, path_column, mime_column] = version.columns();
-    let unset = if only_unset {
+    let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")
     } else {
         String::new()
@@ -268,7 +268,7 @@ async fn point_rows(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
          WHERE sha256 = $4
-           {unset}
+           {unset_filter}
            AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
     ))
     .bind(&file.sha256)
