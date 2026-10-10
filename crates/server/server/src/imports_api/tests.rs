@@ -2690,6 +2690,41 @@ pub(super) async fn batches_path(
     format!("/v1/imports/{}/batches", created["id"].as_i64().unwrap())
 }
 
+/// Each server counts its own import slots. With every slot of one server
+/// taken, a second server in the same process still imports, and an import
+/// waits on its own server's slots: closing them refuses it.
+#[tokio::test]
+async fn import_slots_belong_to_one_server() {
+    let (busy, _busy_fixture, busy_token) = importer().await;
+    let (idle, _idle_fixture, idle_token) = importer().await;
+    let every_slot = busy
+        .import_slots
+        .try_acquire_many(MAX_CONCURRENT_IMPORTS as u32)
+        .expect("a new server has every import slot free");
+    let body = format!(
+        "{}\n{}\n",
+        conversation_header("imessage", "+15555550123").participant("+15555550123", None),
+        message_line("g-slots", "hi").sender("+15555550123"),
+    );
+
+    let path = batches_path(&idle, &idle_token, "imessage").await;
+    let (status, text) =
+        crate::test_support::post_raw(&idle, &path, &idle_token, "application/jsonl", body.clone())
+            .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+
+    busy.import_slots.close();
+    drop(every_slot);
+    let path = batches_path(&busy, &busy_token, "imessage").await;
+    let (status, text) =
+        crate::test_support::post_raw(&busy, &path, &busy_token, "application/jsonl", body).await;
+    assert_eq!(
+        status,
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        "{text}"
+    );
+}
+
 /// A schema-4 header was read: version 4 named every identity a `handle`,
 /// and nothing upgrades it. Its version breaks a rule, so it is 422.
 #[tokio::test]

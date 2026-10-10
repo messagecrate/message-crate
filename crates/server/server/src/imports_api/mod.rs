@@ -1768,13 +1768,9 @@ pub(crate) async fn create_import_batch(
 
 /// Bound on concurrent HTTP imports: each import holds one pooled connection
 /// for its whole run, so at most this many may overlap and the remaining
-/// connections stay available for auth, search, and export.
-const MAX_CONCURRENT_IMPORTS: usize = 2;
-
-fn import_semaphore() -> &'static tokio::sync::Semaphore {
-    static SEMAPHORE: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
-    SEMAPHORE.get_or_init(|| tokio::sync::Semaphore::new(MAX_CONCURRENT_IMPORTS))
-}
+/// connections stay available for auth, search, and export. Counted by
+/// `AppState::import_slots`, one count per server.
+pub(crate) const MAX_CONCURRENT_IMPORTS: usize = 2;
 
 /// `create_import_batch` is the only entry point, and the run's `source`,
 /// validated when the run was created, names an on-disk directory.
@@ -1785,9 +1781,10 @@ async fn run_import_path(
 ) -> Result<Json<CreateImportBatchResponse>, ApiError> {
     // An import holds one pooled connection for its whole run (JSONL parse,
     // asset IO, promote). Bound concurrent imports here so they can never
-    // drain the pool; the semaphore is taken before the per-account lock so
-    // lock order (semaphore → account → pool) is consistent everywhere.
-    let _import_permit = import_semaphore()
+    // drain the pool; the slot is taken before the per-account lock so
+    // lock order (slot → account → pool) is consistent everywhere.
+    let _import_permit = state
+        .import_slots
         .acquire()
         .await
         .map_err(|_| ApiError::Internal(anyhow::anyhow!("server is shutting down")))?;
@@ -1802,7 +1799,7 @@ async fn run_import_path(
 
     let _guard = state.account_import_locks.lock(account.to_string()).await;
 
-    // One pooled connection held for the whole import; the import semaphore
+    // One pooled connection held for the whole import; the import slot
     // taken above keeps enough of the pool free for other requests.
     let mut conn = state.db.acquire().await?;
 
