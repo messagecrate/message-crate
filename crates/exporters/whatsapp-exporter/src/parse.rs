@@ -177,8 +177,10 @@ pub(crate) struct ReactionJson {
     /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
     /// and on a group reaction whose reactor the backup does not name. The
     /// fork's `lid`, the `@lid` id the reactor is stored under, is not read:
-    /// `jid` already holds it when there is no phone behind it, and only its
-    /// presence would say anything, as `sender_lid`'s does.
+    /// `jid` already holds it when there is no phone behind it, and a
+    /// reaction's `lid` is not needed to tell the fork's JSON from
+    /// upstream's, which [`MessageJson::lacks_fork_sender_fields`] does from
+    /// `sender_lid`.
     pub jid: Option<String>,
 }
 
