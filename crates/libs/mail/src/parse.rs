@@ -614,8 +614,9 @@ mod tests {
                 reply_to: Some(reply_to.clone()),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
-                    android_type: Some(1),
-                    fields: serde_json::from_str(r#"{"address":"+15555550101"}"#).unwrap(),
+                    android_type: None,
+                    fields: serde_json::from_str(r#"{"delivered_date":"2014-05-22 15:41:01"}"#)
+                        .unwrap(),
                 }),
                 ..base.message
             },
@@ -658,10 +659,10 @@ mod tests {
         assert_eq!(parsed.export_tool, "imessage-exporter");
         assert_eq!(parsed.export_tool_version, "3.1.0");
         let source = parsed.message.source.as_ref().expect("source bag");
-        assert_eq!(source.android_type, Some(1));
+        assert_eq!(source.android_type, None);
         assert_eq!(
             serde_json::to_value(&source.fields).unwrap(),
-            serde_json::json!({"address": "+15555550101"})
+            serde_json::json!({"delivered_date": "2014-05-22 15:41:01"})
         );
 
         assert_eq!(
