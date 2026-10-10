@@ -5,12 +5,13 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
-import type { ApiToken } from "./apiTokensUtils";
+import type { components } from "../../lib/serverApi.types";
 
 const fetchTokens = (signal: AbortSignal) => listApiTokens({ signal });
 
 type NewToken = Parameters<typeof createApiToken>[0];
 type CreatedToken = Awaited<ReturnType<typeof createApiToken>>;
+type ApiToken = components["schemas"]["ApiToken"];
 
 /** Every token write marks the account's cache stale, and the list refetches itself. */
 function useApiTokenWrite<T, V>(
@@ -110,9 +111,9 @@ export function useApiTokens() {
   }, [clearError]);
 
   const openRename = useCallback(
-    (item: ApiToken) => {
-      setRenameTarget(item);
-      setRenameLabel(item.label);
+    (token: ApiToken) => {
+      setRenameTarget(token);
+      setRenameLabel(token.label);
       clearError();
     },
     [clearError],
@@ -161,8 +162,8 @@ export function useApiTokens() {
   };
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiToken) => {
-    revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
+  const revoke = (token: ApiToken) => {
+    revokeToken.mutate(token.id, { onSettled: () => setRevokeTarget(null) });
   };
 
   return {
@@ -210,8 +211,8 @@ export function useManagedApiTokens(accountId: number) {
   const revokeToken = useApiTokenWrite((id: number) => deleteApiToken(id, accountId));
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiToken) => {
-    revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
+  const revoke = (token: ApiToken) => {
+    revokeToken.mutate(token.id, { onSettled: () => setRevokeTarget(null) });
   };
 
   return {
