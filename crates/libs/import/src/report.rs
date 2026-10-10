@@ -73,9 +73,9 @@ impl FileResult {
 /// Timing and size stats for one conversation (used for the log line that
 /// says where its time went).
 ///
-/// These numbers help answer "why was this conversation slow?" — reading
-/// JSON Lines, hashing/scanning attachments, uploading media, or importing
-/// messages.
+/// These numbers help answer "why was this conversation slow?" They split
+/// the time between reading JSON Lines, hashing and scanning attachments,
+/// uploading media, and importing messages.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UploadProfile {
     /// Reading and parsing the JSON Lines file.

@@ -2,11 +2,11 @@
 //!
 //! A [`ConversationDocument`] is the in-memory form of one conversation:
 //! export metadata, participants, and messages. Backup converters parse
-//! vendor formats into this type. Writing files (JSON, CSV, EML, and so on) lives
-//! in `message-ir-format`. The atomic, synced write those files go through
-//! ([`write_atomic`]) lives here, so attachment staging, media conversion and
-//! the journal use the same one. Converting an existing export directory lives in
-//! `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
+//! vendor formats into this type. Writing files (JSON, CSV, EML, and so on)
+//! lives in `message-ir-format`. The atomic, synced write those files go
+//! through ([`write_atomic`]) lives here, so attachment staging, media
+//! conversion and the journal use the same one. Converting an existing export
+//! directory lives in `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 //!
 //! Converters stage parsed rows in [`PendingMessage`] and
 //! [`PendingConversation`] (with per-converter metadata in their `extra`
@@ -149,7 +149,8 @@ impl std::error::Error for UnknownDeletion {}
 /// Schema version written into every [`ConversationDocument`].
 pub const SCHEMA_VERSION: u32 = 14;
 
-/// One exported chat: export metadata, conversation roster and stats, and messages.
+/// One exported conversation: export metadata, conversation roster and
+/// stats, and messages.
 ///
 /// This is the common-message schema every exporter writes and every reader
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
@@ -159,7 +160,7 @@ pub struct ConversationDocument {
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
-    /// Roster and computed stats for this chat.
+    /// Roster and computed stats for this conversation.
     pub conversation: ConversationMeta,
     /// Messages in timestamp order.
     pub messages: Vec<IrMessage>,
@@ -194,9 +195,11 @@ pub struct ExportMeta {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IrConversationType {
-    /// A one-to-one conversation with a single other person.
+    /// A one-to-one conversation: one the source app keeps with a single
+    /// other person, not as a group.
     Individual,
-    /// A group conversation with several other people.
+    /// A group conversation: one the source app keeps as a group, whatever
+    /// the number of other people in it.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
@@ -263,7 +266,7 @@ impl IdentityType {
     }
 }
 
-/// Roster and computed stats for one chat.
+/// Roster and computed stats for one conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationMeta {
     /// Stable chat id from the source (E.164, group key, or app thread id).
@@ -282,17 +285,17 @@ pub struct ConversationMeta {
 /// computed from `messages` at write time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ConversationStats {
-    /// Number of messages in the chat.
+    /// Number of messages in the conversation.
     pub message_count: u64,
     /// Total attachments across all messages.
     pub attachment_count: u64,
-    /// Earliest message timestamp; `None` when the chat has no messages.
+    /// Earliest message timestamp; `None` when the conversation has no messages.
     pub first_timestamp_unix_ms: Option<i64>,
-    /// Latest message timestamp; `None` when the chat has no messages.
+    /// Latest message timestamp; `None` when the conversation has no messages.
     pub last_timestamp_unix_ms: Option<i64>,
 }
 
-/// One chat member: an identity, a display name, or both.
+/// One conversation member: an identity, a display name, or both.
 ///
 /// `identity` is `None` when the source named a person without recording any
 /// address for them — the rescue exporters (iMazing, OpenExtract, SMS
@@ -1020,7 +1023,7 @@ pub struct ConversationHeader {
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
-    /// Roster and computed stats for this chat.
+    /// Roster and computed stats for this conversation.
     pub conversation: ConversationMeta,
 }
 
@@ -1139,13 +1142,13 @@ impl PendingAttachment {
 pub struct PendingConversation {
     /// Stable chat id from the source.
     pub chat_id: String,
-    /// Display name for the chat; `None` when the source has none.
+    /// Display name for the conversation; `None` when the source has none.
     pub display_name: Option<String>,
     /// Participant handles in E.164 form.
     pub participant_e164s: Vec<String>,
     /// Messages awaiting conversion to [`IrMessage`].
     pub messages: Vec<PendingMessage>,
-    /// Whether this is a group chat.
+    /// Whether this is a group conversation.
     pub is_group: bool,
     /// Whether any message in this conversation has attachments.
     pub has_attachments: bool,
