@@ -19,8 +19,8 @@ import { ApiError } from "../../lib/api";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
 import type {
+  DesktopJobResult,
   StagingSummary,
-  TauriJobResult,
   ToolsStatus,
   UploadFinishedReport,
 } from "../../lib/tauri";
@@ -38,7 +38,7 @@ import { importRunStore } from "./importRunStore";
 const createImportMock = vi.fn();
 const getServerStateMock = vi.fn();
 const completeImportMock = vi.fn();
-const runMock = vi.fn<(fn: () => Promise<unknown>) => Promise<TauriJobResult>>();
+const runMock = vi.fn<(fn: () => Promise<unknown>) => Promise<DesktopJobResult>>();
 const cancelMock = vi.fn();
 const createRunDirMock = vi.fn();
 const invokePathStatMock = vi.fn();
@@ -77,7 +77,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   EXPORT_FORMATS: (await importOriginal<typeof import("../../lib/tauri")>()).EXPORT_FORMATS,
   invokeFormat: vi.fn(),
   // The job's name comes first; the canned results below take what follows it.
-  awaitTauriJob: (_job: string, ...args: Parameters<typeof runMock>) => runMock(...args),
+  awaitDesktopJob: (_job: string, ...args: Parameters<typeof runMock>) => runMock(...args),
   invokeCancel: (...args: unknown[]) => cancelMock(...args),
   invokeExtract: (...args: unknown[]) => invokeExtractMock(...args),
   invokeUpload: (...args: unknown[]) => invokeUploadMock(...args),
@@ -159,13 +159,13 @@ const { useImportJob, parseStoredStagingSummary, resetImportRun } = await import
 const { ConvertSection } = await import("../settings/ConvertSection");
 
 /**
- * `runMock` stands in for `awaitTauriJob`, which always calls the
+ * `runMock` stands in for `awaitDesktopJob`, which always calls the
  * invoke function it is given before resolving. Tests that assert on
  * `invokeExtract`/`invokeTranscodeStaging`/`invokeUpload` args need that same
  * behaviour, so every canned result below goes through this instead of
  * `mockResolvedValueOnce` (which would never call the function at all).
  */
-function runResult(result: TauriJobResult) {
+function runResult(result: DesktopJobResult) {
   return async (fn: () => Promise<unknown>) => {
     await fn();
     return result;
@@ -173,11 +173,11 @@ function runResult(result: TauriJobResult) {
 }
 
 /**
- * Like `runResult`, but also fires `onIssue` — the real `awaitTauriJob`
+ * Like `runResult`, but also fires `onIssue` — the real `awaitDesktopJob`
  * does this from the job's own event stream, which the mock above otherwise
  * never exercises. Needed to simulate an Upload that reports a skip.
  */
-function runResultWithIssue(result: TauriJobResult, ...issues: ImportIssueEvent[]) {
+function runResultWithIssue(result: DesktopJobResult, ...issues: ImportIssueEvent[]) {
   return async (
     fn: () => Promise<unknown>,
     _onLog?: (line: string) => void,
@@ -274,7 +274,7 @@ function ffmpegMissing(): ToolsStatus {
   return { ...okProbe(), ffmpeg: { state: "missing" } };
 }
 
-const EXTRACT_RESULT: TauriJobResult = {
+const EXTRACT_RESULT: DesktopJobResult = {
   summary: "Extracted 8000 messages.",
   extraction: { files_parsed: 681, messages_parsed: 8_000 },
 };
@@ -1717,7 +1717,7 @@ describe("useImportJob wiring", () => {
   it("unwedges on a cancelled Media stage instead of freezing the screen", async () => {
     // Critical: transcode_staging used to end a cancelled Media stage quietly (an
     // extract:log line, Ok(())) with no extract:finished and no
-    // extract:error, so awaitTauriJob's promise never settled and the
+    // extract:error, so awaitDesktopJob's promise never settled and the
     // screen was stuck. It now reports through extract:error like any other
     // failure, so run() rejects here exactly as it would for a real error.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
@@ -2055,8 +2055,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not run the Media stage twice on a double click", async () => {
-    let resolveTranscode!: (value: TauriJobResult) => void;
-    const pending = new Promise<TauriJobResult>((resolve) => {
+    let resolveTranscode!: (value: DesktopJobResult) => void;
+    const pending = new Promise<DesktopJobResult>((resolve) => {
       resolveTranscode = resolve;
     });
     // Deliberately left unresolved: lets the two approve() calls below
@@ -2734,7 +2734,7 @@ describe("useImportJob resume path", () => {
   });
 
   /**
-   * An Upload that stands in for `awaitTauriJob`: it calls the invoke function,
+   * An Upload that stands in for `awaitDesktopJob`: it calls the invoke function,
    * sends `events` to the job's listeners, and returns what the run directory held
    * once the window wrote the record they lead to. That is what an app that
    * closed at that moment, before the Upload ended, would leave.
@@ -3127,8 +3127,8 @@ describe("useImportJob resumeAtReview", () => {
     // A deliberately unresolved run() call, so the state mid-stage can be
     // inspected before the Media stage (and the resume) finishes -- the same
     // pattern the double-click guard test above uses.
-    let resolveTranscode!: (value: TauriJobResult) => void;
-    const pending = new Promise<TauriJobResult>((resolve) => {
+    let resolveTranscode!: (value: DesktopJobResult) => void;
+    const pending = new Promise<DesktopJobResult>((resolve) => {
       resolveTranscode = resolve;
     });
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {

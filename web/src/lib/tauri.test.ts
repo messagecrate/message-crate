@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
 import type { UploadFinishedReport } from "./tauri";
 import {
-  awaitTauriJob,
+  awaitDesktopJob,
   invokeCreateRunDir,
   invokeDeleteRunDir,
   invokeReadImportRunRecord,
@@ -10,7 +10,7 @@ import {
   invokeSaveImportRunRecord,
   invokeSummarizeStaging,
   invokeTranscodeStaging,
-  parseTauriJobResult,
+  parseDesktopJobResult,
 } from "./tauri";
 
 const invoke = vi.fn();
@@ -50,9 +50,9 @@ function reportJson(overrides: Partial<UploadFinishedReport> = {}): string {
   return JSON.stringify(report);
 }
 
-describe("parseTauriJobResult", () => {
+describe("parseDesktopJobResult", () => {
   it("attaches a report that carries every field the verdict depends on", () => {
-    const result = parseTauriJobResult(reportJson());
+    const result = parseDesktopJobResult(reportJson());
     expect(result.report).toBeDefined();
     expect(result.report?.conversations_failed).toBe(0);
     expect(result.report?.conversations_skipped).toBe(0);
@@ -66,14 +66,14 @@ describe("parseTauriJobResult", () => {
   it("does not attach a report missing conversations_failed", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
     delete parsed.conversations_failed;
-    const result = parseTauriJobResult(JSON.stringify(parsed));
+    const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
 
   it("does not attach a report missing conversations_skipped", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
     delete parsed.conversations_skipped;
-    const result = parseTauriJobResult(JSON.stringify(parsed));
+    const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
 
@@ -82,7 +82,7 @@ describe("parseTauriJobResult", () => {
   it("does not attach a report missing conversations_cancelled", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
     delete parsed.conversations_cancelled;
-    const result = parseTauriJobResult(JSON.stringify(parsed));
+    const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
 
@@ -90,19 +90,19 @@ describe("parseTauriJobResult", () => {
   it("does not attach a report missing cancelled", () => {
     const parsed: Record<string, unknown> = JSON.parse(reportJson());
     delete parsed.cancelled;
-    const result = parseTauriJobResult(JSON.stringify(parsed));
+    const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.report).toBeUndefined();
   });
 
   it("still parses an extraction summary", () => {
-    const result = parseTauriJobResult(
+    const result = parseDesktopJobResult(
       JSON.stringify({ summary: "done", files_parsed: 3, messages_parsed: 20 }),
     );
     expect(result.extraction).toEqual({ files_parsed: 3, messages_parsed: 20 });
   });
 
   it("falls back to a plain summary for a non-JSON string", () => {
-    const result = parseTauriJobResult("Extracted 10 messages.");
+    const result = parseDesktopJobResult("Extracted 10 messages.");
     expect(result).toEqual({ summary: "Extracted 10 messages." });
   });
 
@@ -127,7 +127,7 @@ describe("parseTauriJobResult", () => {
       bytes_after: 100_000,
     });
 
-    const result = parseTauriJobResult(payload);
+    const result = parseDesktopJobResult(payload);
 
     expect(result.summary).toBe(summarySentence);
     expect(result.summary).not.toContain("{");
@@ -159,7 +159,7 @@ describe("parseTauriJobResult", () => {
         // bytes_after omitted
       }),
     );
-    const result = parseTauriJobResult(JSON.stringify(parsed));
+    const result = parseDesktopJobResult(JSON.stringify(parsed));
     expect(result.transcode).toBeUndefined();
   });
 });
@@ -201,10 +201,10 @@ describe("staging command wrappers name only the directory", () => {
   });
 });
 
-describe("awaitTauriJob", () => {
+describe("awaitDesktopJob", () => {
   it("holds the desktop job under its name until the job finishes", async () => {
     let seenWhileRunning: string | null = null;
-    const done = awaitTauriJob("Export", async () => {
+    const done = awaitDesktopJob("Export", async () => {
       seenWhileRunning = currentDesktopJob();
       queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Export complete" }));
     });
@@ -218,7 +218,7 @@ describe("awaitTauriJob", () => {
     // job ending must not release it before the next job starts (#1407).
     const releaseRun = holdDesktopJob("Import Run");
     try {
-      await awaitTauriJob("Import Run", async () => {
+      await awaitDesktopJob("Import Run", async () => {
         queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Staged" }));
       });
       expect(currentDesktopJob()).toBe("Import Run");
@@ -229,7 +229,7 @@ describe("awaitTauriJob", () => {
   });
 
   it("lets the desktop job go when the job fails", async () => {
-    const done = awaitTauriJob("Convert", async () => {
+    const done = awaitDesktopJob("Convert", async () => {
       queueMicrotask(() => listeners.get("extract:error")?.({ payload: { detail: "disk full" } }));
     });
     await expect(done).rejects.toThrow("disk full");

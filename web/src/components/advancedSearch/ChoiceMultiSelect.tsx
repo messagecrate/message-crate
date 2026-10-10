@@ -10,6 +10,7 @@ import {
 } from "react-aria-components";
 import { popupShadow } from "../../lib/uiStyles";
 import { Z_POPOVER } from "../../lib/zLayers";
+import { SelectChevronIcon } from "../icons";
 import { compactSelectItemClassName, labelClass } from "./advancedSearchStyles";
 
 /** One value of a Choice word: what the query says, and what the person reads. */
@@ -88,22 +89,7 @@ export default function ChoiceMultiSelect({
         }`}
       >
         <span className="min-w-0 truncate text-muted">{value.length > 0 ? "Select…" : "Any"}</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          aria-hidden
-          className="ml-1 shrink-0 text-muted"
-        >
-          <path
-            d="M2.5 3.5 5 6l2.5-2.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <SelectChevronIcon size={10} className="ml-1 shrink-0 text-muted" />
       </AriaButton>
       <Popover
         ref={popoverRef}

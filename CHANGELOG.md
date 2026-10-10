@@ -222,6 +222,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **API Tokens, Identities, Export History, Import History,
+  the largest attachments in Storage, the Audit Trail and the log viewer
+  end an empty-list message without a full stop.** They ended theirs with
+  one, where Contacts and Trash did not. "No API Tokens yet.",
+  "No identities yet.", "No exports recorded yet.", "No imports recorded
+  yet.", "No attachments with sizes yet.", "Nothing recorded yet.", "No line
+  matches the search." and "No line at this level." now end without one
+  (#2428).
 - 2026-10-10: **The contacts picked on Contacts and a message's attachments
   in search results are counted with a separator.** The heading over the
   picked contacts said "1234 contacts selected", and a search result's

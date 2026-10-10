@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
@@ -14,7 +14,15 @@ import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
 import { useReportColumnResizing } from "./columnResizeState";
 import GroupsNav from "./GroupsNav";
-import { EllipsisIcon, SearchIcon, TrashIcon } from "./icons";
+import {
+  ContactsIcon,
+  ConversationsIcon,
+  EllipsisIcon,
+  ExportIcon,
+  ImportIcon,
+  SearchIcon,
+  TrashIcon,
+} from "./icons";
 import { LIST_TOOLBAR_CLASS } from "./ListRangeHeader";
 import {
   LEFT_PANEL_DEFAULT_WIDTH,
@@ -44,68 +52,6 @@ const IMPORT_BADGE: Record<ImportAttention, { label: string; title: string }> = 
   paused: { label: "Paused", title: "An import is paused and can be resumed" },
   failed: { label: "Failed", title: "The last import failed" },
 };
-
-function NavIcon({ children }: { children: ReactNode }) {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-      className="shrink-0"
-    >
-      {children}
-    </svg>
-  );
-}
-
-function ConversationsIcon() {
-  return (
-    <NavIcon>
-      {/* Message bubble */}
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </NavIcon>
-  );
-}
-
-function ContactsIcon() {
-  return (
-    <NavIcon>
-      {/* Address book */}
-      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      <circle cx="12" cy="8" r="2" />
-      <path d="M9 14c0-1.1 1.3-2 3-2s3 .9 3 2" />
-    </NavIcon>
-  );
-}
-
-function ImportIcon() {
-  return (
-    <NavIcon>
-      {/* Import: arrow into tray */}
-      <path d="M12 3v12" />
-      <path d="m8 11 4 4 4-4" />
-      <path d="M4 19h16" />
-    </NavIcon>
-  );
-}
-
-function ExportIcon() {
-  return (
-    <NavIcon>
-      {/* Export: arrow out of tray */}
-      <path d="M12 15V3" />
-      <path d="m8 7 4-4 4 4" />
-      <path d="M4 19h16" />
-    </NavIcon>
-  );
-}
 
 /** Browse rows: same leading slot as section headings (no extra row padding). */
 function browseLinkClass(active: boolean): string {
@@ -228,7 +174,7 @@ export default function LeftPanel({
         <div className="px-3 py-2">
           <PlainButton className={browseLinkClass(isActive("/"))} onPress={() => navigate("/")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ConversationsIcon />
+              <ConversationsIcon size={15} />
             </span>
             Messages
           </PlainButton>
@@ -237,7 +183,7 @@ export default function LeftPanel({
             onPress={() => navigate("/contacts")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ContactsIcon />
+              <ContactsIcon size={15} />
             </span>
             Contacts
           </PlainButton>
@@ -265,7 +211,7 @@ export default function LeftPanel({
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ImportIcon />
+                  <ImportIcon size={15} />
                 </span>
                 <span className="truncate">Import</span>
                 {importAttention ? (
@@ -294,7 +240,7 @@ export default function LeftPanel({
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ExportIcon />
+                  <ExportIcon size={15} />
                 </span>
                 <span className="truncate">Export</span>
               </span>

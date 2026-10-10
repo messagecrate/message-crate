@@ -102,7 +102,7 @@ export default function IdentityTable({
   loading = false,
   busy = false,
   totalConversations,
-  emptyText = "No identities yet.",
+  emptyText = "No identities yet",
   ariaLabel = "Identities",
   onRemove,
   onBrowse,

@@ -672,7 +672,7 @@ describe("OwnerHome", () => {
         remove_identities: [{ address: "+15555550100", service: "phone" }],
       }),
     );
-    expect(await screen.findByText("No identities yet.")).toBeInTheDocument();
+    expect(await screen.findByText("No identities yet")).toBeInTheDocument();
   });
 
   it("shows an account's last login and its app on Profile, marking another release", async () => {

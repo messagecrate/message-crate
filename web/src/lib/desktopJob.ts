@@ -13,7 +13,7 @@ export type DesktopJobName = "Import Run" | "Export" | "Convert";
  * desktop refuses.
  *
  * Holds nest: an Import Run holds it from its first stage to its end and an
- * Export from its export step to the end of its format step, and `awaitTauriJob`
+ * Export from its export step to the end of its format step, and `awaitDesktopJob`
  * holds it again for each desktop job call inside them. A call ending
  * releases only its own hold, so the run's hold covers the gaps between its
  * jobs, when the desktop itself has nothing running to refuse a Convert with.
