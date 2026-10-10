@@ -191,22 +191,20 @@ impl<R: Rng> Seeder<'_, R> {
         self.orphaned(staging.imessage)?;
 
         if self.cfg.edge_cases.empty_individual {
-            self.write_header_only(
+            self.create_empty_conversation_file(
                 staging.imessage,
                 EMPTY_THREAD_HANDLE,
                 IrConversationType::Individual,
                 &[],
-                IMESSAGE_SOURCE,
             )?;
             self.stats.conversation_files += 1;
         }
         if self.cfg.edge_cases.empty_group {
-            self.write_header_only(
+            self.create_empty_conversation_file(
                 staging.imessage,
                 EMPTY_GROUP_HANDLE,
                 IrConversationType::Group,
                 &EMPTY_GROUP_MEMBERS,
-                IMESSAGE_SOURCE,
             )?;
             self.stats.conversation_files += 1;
         }
@@ -924,21 +922,19 @@ impl<R: Rng> Seeder<'_, R> {
         }
         Ok(())
     }
-}
 
-impl<R: Rng> Seeder<'_, R> {
-    /// Write a conversation header with no messages (empty individual or empty group).
+    /// Create an iMessage conversation file with a header and no messages
+    /// (the empty one-to-one or the empty group conversation).
     ///
     /// # Errors
     ///
     /// Returns an error if the file cannot be written.
-    fn write_header_only(
+    fn create_empty_conversation_file(
         &self,
         staging: &Path,
         chat_id: &str,
-        conv_type: IrConversationType,
+        conversation_type: IrConversationType,
         member_phones: &[&str],
-        source: &str,
     ) -> Result<()> {
         let participants = member_phones
             .iter()
@@ -951,11 +947,11 @@ impl<R: Rng> Seeder<'_, R> {
             &staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id))),
             ConversationFileHeader {
                 chat_id,
-                conversation_type: conv_type,
+                conversation_type,
                 group_title: None,
                 participants,
                 message_count: 0,
-                source,
+                source: IMESSAGE_SOURCE,
                 owner_identity: OWNER_PHONE,
             },
         )?;
