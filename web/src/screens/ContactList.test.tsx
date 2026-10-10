@@ -348,6 +348,20 @@ describe("ContactList", () => {
     await waitFor(() => expect(listed()).toEqual(["Alice"]));
   });
 
+  it("names the search box's text a search when no contact matches it", async () => {
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList filter="zzz" onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+
+    expect(await screen.findByText("No contacts match this search")).toBeTruthy();
+  });
+
   it("checks a contact from its avatar in the desktop list without opening it", async () => {
     tauriMock.current = true;
     // jsdom lays out nothing; give React Aria's Virtualizer a viewport to fill.
