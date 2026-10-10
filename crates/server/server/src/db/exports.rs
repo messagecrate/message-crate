@@ -518,35 +518,6 @@ pub async fn export_messages(
     })
 }
 
-/// Record what started the Export Run on its row: a Session and the app it
-/// named, or an API token's label and hint as they are now.
-///
-/// # Errors
-///
-/// Returns an error when the update fails.
-pub async fn record_credential(
-    conn: &mut SqliteConnection,
-    export_id: i64,
-    credential: &crate::db::audit_trail::CredentialUsed,
-) -> Result<()> {
-    let columns = credential.run_columns();
-    sqlx::query(
-        "UPDATE exports SET credential = $1, app_kind = $2, app_build = $3,
-                api_token_label = $4, api_token_hint = $5
-         WHERE id = $6",
-    )
-    .bind(columns.credential)
-    .bind(columns.app_kind)
-    .bind(columns.app_build)
-    .bind(columns.api_token_label)
-    .bind(columns.api_token_hint)
-    .bind(export_id)
-    .execute(&mut *conn)
-    .await
-    .with_context(|| format!("record what started export {export_id}"))?;
-    Ok(())
-}
-
 /// Ready the account's Export Runs to outlive it, just before the account is
 /// deleted: each keeps `username`, what was asked for and how much matched,
 /// and is marked with `deletion_entry_id`, the account's `account_deleted`
