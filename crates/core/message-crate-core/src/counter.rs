@@ -31,7 +31,7 @@ impl Counter {
         Self { key, one, many }
     }
 
-    /// The counter's key, such as `skipped_draft_or_outbox`.
+    /// The counter's key, such as `skipped_unsent`.
     pub const fn key(self) -> &'static str {
         self.key
     }

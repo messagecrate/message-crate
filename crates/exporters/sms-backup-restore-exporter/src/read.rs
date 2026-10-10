@@ -48,7 +48,7 @@ pub struct ReadReport {
     /// SMS dropped for an unknown `type`.
     pub skipped_unknown_type: u64,
     /// Draft/outbox/failed/queued messages dropped.
-    pub skipped_draft_or_outbox: u64,
+    pub skipped_unsent: u64,
     /// MMS dropped with no participants.
     pub skipped_empty_participants: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
@@ -155,7 +155,7 @@ impl ReadReport {
             (MMS_SEEN, self.mms_seen),
             (SKIPPED_UNKNOWN_ADDRESS, self.skipped_unknown_address),
             (SKIPPED_UNKNOWN_TYPE, self.skipped_unknown_type),
-            (SKIPPED_DRAFT_OR_OUTBOX, self.skipped_draft_or_outbox),
+            (SKIPPED_UNSENT, self.skipped_unsent),
             (SKIPPED_EMPTY_PARTICIPANTS, self.skipped_empty_participants),
             (SKIPPED_UNREADABLE_PART, self.skipped_unreadable_part()),
             (
@@ -187,8 +187,8 @@ pub(crate) const SMS_SEEN: Counter = Counter::new("sms_seen", "Read 1 SMS", "Rea
 pub(crate) const MMS_SEEN: Counter = Counter::new("mms_seen", "Read 1 MMS", "Read {n} MMS");
 
 /// Drafts and outbox, failed and queued messages skipped.
-pub(crate) const SKIPPED_DRAFT_OR_OUTBOX: Counter = Counter::new(
-    "skipped_draft_or_outbox",
+pub(crate) const SKIPPED_UNSENT: Counter = Counter::new(
+    "skipped_unsent",
     "Skipped 1 draft or unsent message",
     "Skipped {n} drafts or unsent messages",
 );
@@ -289,7 +289,7 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.skipped_invalid_date += stats.skipped_invalid_date;
     report.skipped_unknown_address += stats.skipped_unknown_address;
     report.skipped_unknown_type += stats.skipped_unknown_type;
-    report.skipped_draft_or_outbox += stats.skipped_draft_or_outbox;
+    report.skipped_unsent += stats.skipped_unsent;
     report.skipped_empty_participants += stats.skipped_empty_participants;
 }
 
