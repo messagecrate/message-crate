@@ -4,11 +4,12 @@
 //! its JSON Lines header — the format reader, the import client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
 //! words, and refuses it before parsing the rest of the file. The refusal is
-//! the one rule for every bump, whichever way the shapes differ: a version-12
-//! file would parse under version 13's rules (version 13 made the text of an
-//! earlier version optional, and version 12 always has it), but a file is
-//! imported by its own version's rules or not at all, and the person should
-//! read "schema version 12", not an import that quietly read an older shape.
+//! the one rule for every bump, whichever way the shapes differ. A version-12
+//! file would parse under version 13's rules, because version 13 only made
+//! the text of an earlier version optional. It is refused all the same: a
+//! file is imported by its own version's rules or not at all, and the person
+//! should read "schema version 12", not an import that quietly read an older
+//! shape.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;

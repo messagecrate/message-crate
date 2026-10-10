@@ -25,8 +25,8 @@ released versions carry their date on the heading.
   and edits.** Each reaction in an iMazing export is kept with its emoji and
   whether the account holder gave it. The export names the person who
   reacted by display name alone, with no phone number or address, so a
-  reaction is not matched to a contact, and the server does not yet show the
-  name: another person's reaction reads as from "Someone". A reply is linked
+  reaction is not matched to a contact. The server does not yet keep the
+  name, so another person's reaction reads as from "Someone". A reply is linked
   to the message it quotes when that message is in the same conversation of
   the export, and stays a reply without a link otherwise. A message deleted
   on the phone before the export is marked **Deleted in the source app**. An

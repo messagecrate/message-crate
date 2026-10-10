@@ -604,8 +604,9 @@ mod tests {
     }
 
     /// A reply links to the one message whose key it names. A key no
-    /// message has, a key two messages share, and a reply that names no key
-    /// leave a reply with no link; a message that is not a reply has none.
+    /// message has, a key two messages share, a reply that names no key,
+    /// and a reply that names its own key leave a reply with no link; a
+    /// message that is not a reply has none.
     #[test]
     fn a_reply_links_only_to_the_one_message_with_its_key() {
         let mut convo =
@@ -618,6 +619,7 @@ mod tests {
             keyed(1_609_459_204, "absent", "K4", Some("K9")),
             keyed(1_609_459_205, "ambiguous", "K5", Some("K2")),
             keyed(1_609_459_206, "no key", "K6", Some("")),
+            keyed(1_609_459_207, "itself", "K7", Some("K7")),
         ];
 
         let (doc, _) = pending_to_document("+15555550122", &convo, &KeyedHooks);
@@ -641,6 +643,7 @@ mod tests {
         assert_eq!(reply_of("absent"), unlinked);
         assert_eq!(reply_of("ambiguous"), unlinked);
         assert_eq!(reply_of("no key"), unlinked);
+        assert_eq!(reply_of("itself"), unlinked);
     }
 
     #[test]

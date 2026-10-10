@@ -117,13 +117,17 @@ fn us_date_at(text: &str) -> Option<usize> {
 /// starts at an emoji-like character, or at the character a variation
 /// selector or keycap turns into one, as `\u{203c}\u{fe0f}` (the Emphasize
 /// tapback) and `1\u{fe0f}\u{20e3}` are written: their first character is
-/// punctuation or a digit by itself.
+/// punctuation or a digit by itself. A selector or joiner on its own never
+/// starts a run: it belongs to the character before it.
 fn emoji_run(line: &str) -> Option<(usize, usize)> {
     let mut chars = line.char_indices().peekable();
     let start = loop {
         let (at, c) = chars.next()?;
         let next = chars.peek().map(|&(_, next)| next);
-        if is_emoji_like(c) || (!c.is_whitespace() && next.is_some_and(is_emoji_selector)) {
+        let selector_next = next.is_some_and(is_emoji_selector);
+        if (is_emoji_like(c) && !is_emoji_selector(c) && c != '\u{200D}')
+            || (selector_next && starts_with_a_selector(c))
+        {
             break at;
         }
     };
@@ -133,6 +137,14 @@ fn emoji_run(line: &str) -> Option<(usize, usize)> {
         .find(|&(_, c)| !is_emoji_like(c))
         .map_or(line.len(), |(at, _)| start + at);
     Some((start, end))
+}
+
+/// Whether a selector after `c` makes it an emoji: a digit, `#`, `*`, or a
+/// symbol. A letter it does not, because some CJK names are written with
+/// a variation selector after a letter (`\u{8fbb}\u{fe00}`), and the
+/// selector keeps the name's character a letter.
+fn starts_with_a_selector(c: char) -> bool {
+    c.is_ascii_digit() || (!c.is_whitespace() && !c.is_alphanumeric())
 }
 
 /// Whether `c` turns the character before it into an emoji: a variation
@@ -285,7 +297,8 @@ mod tests {
     /// An emoji whose first character is punctuation or a digit by itself,
     /// made an emoji by the selector after it (the Emphasize tapback, a
     /// keycap, a trademark sign), is read whole, and the name before it
-    /// keeps no part of it. A digit in a name stays in the name.
+    /// keeps no part of it. A digit in a name stays in the name, and so
+    /// does a letter a variation selector follows.
     #[test]
     fn a_selector_makes_the_character_before_it_part_of_the_emoji() {
         assert_eq!(
@@ -293,13 +306,15 @@ mod tests {
                 "Bob Sample \u{203c}\u{fe0f} 1/1/2020 12:04:00 PM\n\
                  Bob Sample 1\u{fe0f}\u{20e3} 1/1/2020 12:05:00 PM\n\
                  \u{2122}\u{fe0f} Bob Sample 1/1/2020 12:06:00 PM\n\
-                 Agent 47 \u{1f44d} 1/1/2020 12:07:00 PM"
+                 Agent 47 \u{1f44d} 1/1/2020 12:07:00 PM\n\
+                 \u{8fbb}\u{fe00} \u{1f44d} 1/1/2020 12:08:00 PM"
             ),
             vec![
                 one(Some("Bob Sample"), Some("\u{203c}\u{fe0f}"), false),
                 one(Some("Bob Sample"), Some("1\u{fe0f}\u{20e3}"), false),
                 one(Some("Bob Sample"), Some("\u{2122}\u{fe0f}"), false),
                 one(Some("Agent 47"), Some("\u{1f44d}"), false),
+                one(Some("\u{8fbb}\u{fe00}"), Some("\u{1f44d}"), false),
             ]
         );
     }
