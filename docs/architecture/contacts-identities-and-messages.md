@@ -147,14 +147,20 @@ identity on WhatsApp, which no WhatsApp identity can be, and the identities
 list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
 
-Does an address with an `@` that sends over SMS become an email identity?
-
-Yes, for now. Text Message over SMS or RCS carries phone numbers only, but
-SMS and iMessage share the one `phone` service, and an address has one type
-on one service. Typing it by the message's transport made one address two
-identities, `email` from iMessage or from a header and `other` from an SMS
-message, and identities of one address are linked only when their types are
-equal. How the `phone` service holds the SMS rule is open
+**Text Message is one service, and a message's transport never changes an
+identity's type.** Text Message (`phone` in the database) carries phone
+numbers and email addresses; an email address on Text Message means iMessage.
+SMS, MMS, RCS and iMessage are transports, recorded on each message
+(`messages.service`), and the transport says how that one message travelled,
+not what the address is. So an address with an `@` is an `email` identity on
+Text Message whatever carried it: an email-to-text gateway such as
+`alerts@example.com` that writes over SMS is one `email` row on `phone`, on
+one contact. WhatsApp is the other way, as above: its `@` ids are `other`.
+Why: one conversation holds both transports, and identities of one address
+are linked only when their types are equal. Typed by transport, an address
+became `email` from a header or an iMessage and `other` from an SMS message,
+two identities on two contacts, the second with no name, and the contact's
+counts left the SMS messages out
 ([#1958](https://github.com/messagecrate/message-crate/issues/1958)).
 Whether the file's type is needed at all, once service and shape decide, is
 [#1933](https://github.com/messagecrate/message-crate/issues/1933).

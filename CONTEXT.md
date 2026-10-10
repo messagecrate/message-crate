@@ -238,6 +238,17 @@ and `whatsapp` and refuses any other word, where the shared enum reads any
 other word as `phone`.
 _Avoid_: Handle, Address, Number
 
+**Text Message**:
+The one service for a phone's own messages, `phone` in the database. It
+carries phone numbers and email addresses; an email address on Text Message
+means iMessage. SMS, MMS, RCS and iMessage are transports: each message records
+the one that carried it, and the transport never changes what an identity is,
+so an address with an `@` is an email address on Text Message whatever carried
+it. A contact with one phone number and one email address under Text Message
+has every way a text can reach them covered. WhatsApp is a second service,
+and an `@` id there is not an email address.
+_Avoid_: SMS (for the service), iMessage (for the service)
+
 **Participant**:
 Another person in a Conversation, as the account holder sees it. The account
 holder is never a participant: every conversation in an account is the holder's
