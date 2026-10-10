@@ -8,6 +8,7 @@
  * (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
  */
 
+import { countOf } from "./plural";
 import type { components } from "./serverApi.types";
 
 export type AuditEntry = components["schemas"]["AuditEntry"];
@@ -15,10 +16,9 @@ type AuditActor = components["schemas"]["AuditActor"];
 
 const APP_NAMES = { desktop: "desktop app", website: "website" } as const;
 
-/** "3 conversations", "1 conversation". */
-function count(n: number | null | undefined, one: string, many = `${one}s`): string {
-  const value = n ?? 0;
-  return `${value.toLocaleString()} ${value === 1 ? one : many}`;
+/** "3 conversations", "1 conversation"; a count the entry lacks reads as 0. */
+function countOrZero(n: number | null | undefined, one: string, many?: string): string {
+  return countOf(n ?? 0, one, many);
 }
 
 /** "import", "import and export", "import, export and delete". */
@@ -44,7 +44,7 @@ function startedBy(entry: AuditEntry): string {
 
 function importRun(entry: AuditEntry): string {
   const source = entry.source ? ` from ${entry.source}` : "";
-  return `Import Run${source}, ${entry.status ?? "running"}: ${count(entry.messages, "message")}, ${count(entry.attachments, "attachment")}${startedBy(entry)}`;
+  return `Import Run${source}, ${entry.status ?? "running"}: ${countOrZero(entry.messages, "message")}, ${countOrZero(entry.attachments, "attachment")}${startedBy(entry)}`;
 }
 
 function exportRun(entry: AuditEntry): string {
@@ -54,7 +54,7 @@ function exportRun(entry: AuditEntry): string {
       : entry.scope_kind === "selection"
         ? "picked conversations and messages"
         : "everything";
-  return `Export Run of ${scope}, ${entry.status ?? "running"}: ${count(entry.messages, "message")} in ${count(entry.conversations, "conversation")}${startedBy(entry)}`;
+  return `Export Run of ${scope}, ${entry.status ?? "running"}: ${countOrZero(entry.messages, "message")} in ${countOrZero(entry.conversations, "conversation")}${startedBy(entry)}`;
 }
 
 function sessionEnded(entry: AuditEntry): string {
@@ -116,11 +116,11 @@ export function describeAuditEntry(entry: AuditEntry): string {
     case "permissions_changed":
       return permissionsChanged(entry);
     case "messages_deleted":
-      return `Messages deleted for good: ${count(entry.conversations, "conversation")}, ${count(entry.attachments, "attachment")}`;
+      return `Messages deleted for good: ${countOrZero(entry.conversations, "conversation")}, ${countOrZero(entry.attachments, "attachment")}`;
     case "conversation_deleted":
       return "A conversation deleted for good from the trash";
     case "trash_emptied":
-      return `Trash emptied: ${count(entry.conversations, "conversation")} deleted, ${count(entry.contacts, "contact")} made Unknown`;
+      return `Trash emptied: ${countOrZero(entry.conversations, "conversation")} deleted, ${countOrZero(entry.contacts, "contact")} made Unknown`;
     case "account_deleted":
       return "Account deleted";
     case "registration_opened":
@@ -132,9 +132,9 @@ export function describeAuditEntry(entry: AuditEntry): string {
     case "api_token_deleted":
       return `API token “${entry.api_token_label ?? ""}” deleted (${entry.api_token_hint ?? ""})`;
     case "address_book_loaded":
-      return `Address book loaded (${entry.mode ?? "append"}): ${count(entry.contacts_created, "contact")} added, ${entry.contacts_updated ?? 0} changed, ${entry.contacts_deleted ?? 0} removed`;
+      return `Address book loaded (${entry.mode ?? "append"}): ${countOrZero(entry.contacts_created, "contact")} added, ${(entry.contacts_updated ?? 0).toLocaleString()} changed, ${(entry.contacts_deleted ?? 0).toLocaleString()} removed`;
     case "address_book_exported":
-      return `Address book exported: ${count(entry.contacts, "contact")}, ${count(entry.identities, "Identity", "Identities")}`;
+      return `Address book exported: ${countOrZero(entry.contacts, "contact")}, ${countOrZero(entry.identities, "Identity", "Identities")}`;
     case "import_run":
       return importRun(entry);
     case "export_run":
