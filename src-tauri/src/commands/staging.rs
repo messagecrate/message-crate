@@ -178,7 +178,7 @@ fn plural_s(count: usize) -> &'static str {
 ///
 /// Used both as the `desktop-job:finished` payload's `summary` field (so a
 /// client that falls back to raw JSON still has readable text) and, when
-/// either count is nonzero, as an `desktop-job:log` line so the same wording is
+/// either count is nonzero, as a `desktop-job:log` line so the same wording is
 /// visible while the Media stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
@@ -213,21 +213,22 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
 /// a cancel flag of its own, the Media stage runs on a background thread, and
-/// progress/log/finished go back as `desktop-job:*` events so the UI reuses one
-/// progress view. A cancelled Media stage is reported through `desktop-job:error` the
-/// same way any other failure is — exactly how a cancelled `extract` run
-/// already behaves (`extract` never special-cases its own cancellation
-/// either; `spawn_job`'s generic `Err` handling covers both). An earlier
-/// version of this command ended a cancelled Media stage quietly instead (an
-/// `desktop-job:log` line, `Ok(())`, no `desktop-job:error`); that left
-/// `awaitDesktopJob`'s promise on the web side permanently unsettled — no
-/// `desktop-job:finished`, no `desktop-job:error` — wedging the screen with `running`
-/// stuck true and no way back except restarting the app. Do not restore the
-/// quiet path.
+/// progress/log/finished go back as `desktop-job:*` events so the UI reuses
+/// one progress view. A cancelled Media stage is reported through
+/// `desktop-job:error` the same way any other failure is — exactly how a
+/// cancelled `extract` run already behaves (`extract` never special-cases
+/// its own cancellation either; `spawn_job`'s generic `Err` handling covers
+/// both). An earlier version of this command ended a cancelled Media stage
+/// quietly instead (a `desktop-job:log` line, `Ok(())`, no
+/// `desktop-job:error`); that left `awaitDesktopJob`'s promise on the web
+/// side permanently unsettled — no `desktop-job:finished`, no
+/// `desktop-job:error` — wedging the screen with `running` stuck true and no
+/// way back except restarting the app. Do not restore the quiet path.
 ///
-/// Each file the Media stage could not convert goes to the window as an
-/// `desktop-job:issue` the moment the Media stage gives up on it, so the window has
-/// written it into the run record before an app that closes during the Media stage stops.
+/// Each file the Media stage could not convert goes to the window as a
+/// `desktop-job:issue` the moment the Media stage gives up on it, so the
+/// window has written it into the run record before an app that closes
+/// during the Media stage stops.
 /// The report carries counts only, so a nonzero `failed`/`too_large` count
 /// is also surfaced as one summarizing `desktop-job:log` line (see
 /// [`transcode_summary`]).

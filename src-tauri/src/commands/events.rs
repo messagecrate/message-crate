@@ -78,7 +78,8 @@ pub fn progress_sink(app: &AppHandle) -> ProgressSink {
 pub enum WindowEvent {
     /// A count for the progress bar (`desktop-job:progress`).
     Progress(ImportProgressEvent),
-    /// A conversation file the write queue finished (`desktop-job:file-written`).
+    /// A conversation file the write queue finished
+    /// (`desktop-job:file-written`).
     FileWritten(ImportFileWrittenEvent),
 }
 
@@ -157,8 +158,7 @@ impl From<ProgressEvent> for WindowEvent {
 }
 
 /// One row of the Import Run's issues, from an exporter's or the Media
-/// stage's [`RunIssue`], or from the Upload. Matches `ImportIssueEvent` in
-/// `web/src/lib/types.ts`.
+/// stage's [`RunIssue`], or from the Upload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportIssueEvent {
     /// What the row is, sent as its lowercase word.
@@ -189,8 +189,7 @@ impl From<&RunIssue> for ImportIssueEvent {
     }
 }
 
-/// The Upload finished with one conversation file. Matches
-/// `ImportFileDoneEvent` in `web/src/lib/types.ts`. The window drops from
+/// The Upload finished with one conversation file. The window drops from
 /// the run record the rows of an earlier stop about a conversation that is
 /// now on the server.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -202,10 +201,9 @@ pub struct ImportFileDoneEvent {
     pub status: String,
 }
 
-/// Staging's write queue finished with one conversation file. Matches
-/// `ImportFileWrittenEvent` in `web/src/lib/types.ts`. The window keeps a
-/// Staging row about a conversation apart until its file is written, and
-/// drops an earlier part's row about a file this Staging wrote again
+/// Staging's write queue finished with one conversation file. The window
+/// keeps a Staging row about a conversation apart until its file is written,
+/// and drops an earlier part's row about a file this Staging wrote again
 /// (#1688).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportFileWrittenEvent {

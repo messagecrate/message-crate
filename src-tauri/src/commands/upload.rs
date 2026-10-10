@@ -82,7 +82,8 @@ pub struct UploadArgs {
 /// Ask this process to upload extracted conversations to a server.
 ///
 /// Returns as soon as the background thread starts. Upload progress uses the
-/// same `desktop-job:*` events as Extract so the UI can reuse one progress view.
+/// same `desktop-job:*` events as the `extract` command so the UI can reuse
+/// one progress view.
 ///
 /// # Errors
 ///

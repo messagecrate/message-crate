@@ -16,8 +16,9 @@ use crate::state::{AppState, JobName};
 /// Ask this process to rewrite an extract directory in a different file format.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `desktop-job:log` / `desktop-job:finished` / `desktop-job:error`
-/// events as Extract, so the UI can reuse one progress view.
+/// summary use the same `desktop-job:log` / `desktop-job:finished` /
+/// `desktop-job:error` events as the `extract` command, so the UI can reuse
+/// one progress view.
 ///
 /// # Errors
 ///

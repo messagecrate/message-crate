@@ -37,8 +37,8 @@ pub struct ExportArgs {
 /// Ask this process to export conversations from a server.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
-/// summary use the same `desktop-job:log` / `desktop-job:finished` / `desktop-job:error`
-/// events as Extract.
+/// summary use the same `desktop-job:log` / `desktop-job:finished` /
+/// `desktop-job:error` events as the `extract` command.
 ///
 /// # Errors
 ///

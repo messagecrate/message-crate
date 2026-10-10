@@ -2,19 +2,20 @@
 //! `export`, `upload`, `transcode_staging`).
 //!
 //! One job runs at a time in this process. Every job reports on the same
-//! `desktop-job:*` events, which do not say which job sent them, so a second job
-//! would end the first one's wait in the web app with its own finished event.
+//! `desktop-job:*` events, which do not say which job sent them, so a second
+//! job would end the first one's wait in the web app with its own finished
+//! event.
 //! A job command therefore starts its job with [`start_job`], which refuses
 //! while another job runs and names that job. The job gets a cancel flag of
 //! its own, and [`cancel_running_job`] sets the flag of the job that is
 //! running, so a Cancel stops that job and never one started after it.
 //!
 //! [`spawn_job`] runs the job on a worker thread, ends it, and only then sends
-//! its `desktop-job:finished` or `desktop-job:error` event: the web app starts the
-//! next stage's job as soon as that event arrives, and the job must have
-//! ended by then or the next one would be refused. What differs per command
-//! (building the config, mapping progress events, and shaping the finished
-//! summary) stays in the command.
+//! its `desktop-job:finished` or `desktop-job:error` event: the web app
+//! starts the next stage's job as soon as that event arrives, and the job
+//! must have ended by then or the next one would be refused. What differs per
+//! command (building the config, mapping progress events, and shaping the
+//! finished summary) stays in the command.
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
@@ -134,9 +135,9 @@ where
 /// `desktop-job:error` payload the UI needs.
 ///
 /// A panic counts as a failure. Without this, a panicking job sends neither
-/// `desktop-job:finished` nor `desktop-job:error`, and the UI waits forever. The
-/// message the person reads names the work as the screens do, because "job"
-/// is a word for the code only.
+/// `desktop-job:finished` nor `desktop-job:error`, and the UI waits forever.
+/// The message the person reads names the work as the screens do, because
+/// "job" is a word for the code only.
 fn run_job<F>(job: Job, run: F) -> Result<String, DesktopJobErrorEvent>
 where
     F: FnOnce() -> Result<String, DesktopJobErrorEvent>,
