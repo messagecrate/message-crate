@@ -16,43 +16,72 @@ pub use crate::phones::OWNER_PHONE;
 /// Demo owner email address. Matches the value in `crates/server/demo-seed/config/seed.toml`.
 pub const OWNER_EMAIL: &str = "demo.ingest@example.com";
 
+/// Which conversations a contact appears in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageScope {
+    /// A one-to-one conversation only; the contact rarely joins a group.
     OneToOne,
+    /// Group conversations only, with no one-to-one conversation.
     Group,
+    /// A one-to-one conversation and group conversations. A contact with no
+    /// messages also gets this scope, and `has_messages` keeps it out of both.
     Both,
 }
 
+/// One invented person in the demo address book.
 #[derive(Debug, Clone)]
 pub struct Contact {
+    /// The contact's phone numbers, the primary one first.
     pub phones: Vec<String>,
+    /// First name. Every contact has one.
     pub first_name: String,
+    /// Middle name, empty when the contact has none.
     pub middle_name: String,
+    /// Last name, empty when the contact has none.
     pub last_name: String,
+    /// The contact's labels, such as Family or Work, from the `[labels]` names.
     pub groups: Vec<String>,
+    /// False for a contact that appears in no conversation.
     pub has_messages: bool,
+    /// Which conversations the contact appears in.
     pub message_scope: MessageScope,
+    /// Messages per year in the contact's one-to-one conversation.
     pub msgs_per_year: f64,
+    /// Age in years of the first message in the contact's one-to-one conversation.
     pub span_years: f64,
     /// Also write a WhatsApp conversation for this contact's primary phone.
     pub has_whatsapp: bool,
 }
 
+/// A phone number or email address that has a one-to-one conversation but no
+/// contact in the address book.
 #[derive(Debug, Clone)]
 pub struct Unassigned {
+    /// The phone number or email address.
     pub handle: String,
+    /// The name the conversation file gives the handle, if any.
     pub name_alias: Option<String>,
+    /// True when `handle` is an email address rather than a phone number.
     pub email_only: bool,
 }
 
+/// One group conversation to write.
 #[derive(Debug, Clone)]
 pub struct GroupSpec {
+    /// The group's position in [`Roster::groups`], which also names its file
+    /// and its chat id.
     pub index: usize,
+    /// The members, as positions in [`Roster::contacts`]. Empty on a phone-only group.
     pub member_idxs: Vec<usize>,
+    /// True when the members are phone numbers with no contact behind them.
     pub phone_only: bool,
+    /// The members of a phone-only group. Empty on any other group.
     pub phone_only_handles: Vec<String>,
+    /// Messages per year in the group.
     pub msgs_per_year: f64,
+    /// Age in years of the group's first message.
     pub span_years: f64,
+    /// The group's name, or `None` for an unnamed group.
     pub title: Option<String>,
 }
 
@@ -64,9 +93,16 @@ pub struct Roster {
     pub groups: Vec<GroupSpec>,
 }
 
+/// Chat id of the group conversation with no messages, written when
+/// `edge_cases.empty_group` is set.
 pub const EMPTY_GROUP_HANDLE: &str = "chat0000000001";
+/// The two members of the group conversation with no messages.
 pub const EMPTY_GROUP_MEMBERS: [&str; 2] = ["+12125550101", "+13035550102"];
+/// The other person in the one-to-one conversation with no messages, written
+/// when `edge_cases.empty_individual` is set.
 pub const EMPTY_THREAD_HANDLE: &str = "+13125550100";
+/// The person in the orphaned messages, ones the backup holds without
+/// recording which conversation they were said in.
 pub const ORPHAN_SENDER: &str = "+447700900999";
 
 /// The numbers the generator writes by name. They are kept out of the

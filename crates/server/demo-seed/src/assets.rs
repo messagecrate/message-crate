@@ -16,6 +16,8 @@ pub struct JpgPhoto {
     pub color: [u8; 3],
 }
 
+/// The photos the demo conversations attach, each written once and attached
+/// to many messages in turn.
 pub const JPG_PHOTOS: &[JpgPhoto] = &[
     JpgPhoto {
         path: "attachments/sunset.jpg",

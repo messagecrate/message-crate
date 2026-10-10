@@ -8,12 +8,18 @@ use super::error::{QueryError, QueryErrorKind};
 /// Reject huge query strings before doing anything else.
 pub(crate) const MAX_QUERY_BYTES: usize = 2_048;
 
+/// What a token is, with the text it carries where it carries any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TokenKind {
+    /// `(`, opening a group.
     LParen,
+    /// `)`, closing a group.
     RParen,
+    /// The word `or`, in any case, with no `-` before it.
     Or,
+    /// The word `and`, in any case, with no `-` before it.
     And,
+    /// The word `not`, in any case, with no `-` before it.
     Not,
     /// `word:value`. `quoted` says the value came in quotes, so a comma in it
     /// is text rather than a list separator.
@@ -23,17 +29,18 @@ pub(crate) enum TokenKind {
         quoted: bool,
     },
     /// A bare word; `prefix` when it ended in `*`.
-    Word {
-        text: String,
-        prefix: bool,
-    },
+    Word { text: String, prefix: bool },
     /// A quoted phrase.
     Phrase(String),
 }
 
+/// One token of a query string, with where it came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Token {
+    /// What the token is.
     pub kind: TokenKind,
+    /// The byte range of the query string the token was read from, so an
+    /// error can point at it.
     pub span: Range<usize>,
     /// A leading `-` was attached to this token.
     pub negated: bool,
