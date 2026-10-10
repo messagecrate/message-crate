@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(unix)]
+use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
@@ -341,7 +343,7 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     )
     .unwrap();
     // Write and search but no read: the CSV opens, the listing does not.
-    let Some(result) = crate::test_support::with_directory_mode(&chat, 0o300, || {
+    let Some(result) = with_directory_mode(&chat, 0o300, DirectoryProbe::List, || {
         convert(&csv, &dir.path().join("out"))
     }) else {
         return;

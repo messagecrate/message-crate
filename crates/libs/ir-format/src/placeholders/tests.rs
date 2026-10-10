@@ -1,5 +1,7 @@
 use super::*;
 use crate::export_dir;
+#[cfg(unix)]
+use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 
 /// The committed bytes of the image placeholder.
 fn placeholder_jpg() -> &'static [u8] {
@@ -68,9 +70,9 @@ fn a_real_attachment_that_cannot_be_removed_fails_the_pass_and_names_the_file() 
     let photo = attachments.join("IMG_0001.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) =
-        crate::with_directory_mode(&attachments, 0o555, || materialize_placeholders(dir.path()))
-    else {
+    let Some(result) = with_directory_mode(&attachments, 0o555, DirectoryProbe::Write, || {
+        materialize_placeholders(dir.path())
+    }) else {
         return;
     };
 
@@ -97,9 +99,9 @@ fn a_file_in_a_subdirectory_that_cannot_be_removed_is_the_one_the_error_names() 
     let photo = sub.join("photo.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) =
-        crate::with_directory_mode(&sub, 0o555, || materialize_placeholders(dir.path()))
-    else {
+    let Some(result) = with_directory_mode(&sub, 0o555, DirectoryProbe::Write, || {
+        materialize_placeholders(dir.path())
+    }) else {
         return;
     };
 

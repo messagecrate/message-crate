@@ -411,3 +411,60 @@ pub fn jsonl_backup_dates(dir: &Path) -> Vec<Option<i64>> {
         })
         .collect()
 }
+
+/// How [`with_directory_mode`] checks whether a mode keeps the running user
+/// out of a directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DirectoryProbe {
+    /// List the directory: for a test of reading it.
+    List,
+    /// Write a file into the directory: for a test of writing into it.
+    Write,
+}
+
+/// Run `f` with the permissions of `directory` set to `mode`, then set them
+/// back to `0o755` before returning, so the temporary directory can still be
+/// removed.
+///
+/// `None`, with a line on stderr, when `probe` still succeeds on `directory`
+/// under `mode`: a user such as root gets past the permissions, cannot
+/// exercise the failure, and the test has nothing to check.
+///
+/// # Panics
+///
+/// Panics when the directory's mode cannot be set or restored.
+#[cfg(unix)]
+pub fn with_directory_mode<T>(
+    directory: &Path,
+    mode: u32,
+    probe: DirectoryProbe,
+    f: impl FnOnce() -> T,
+) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(directory, fs::Permissions::from_mode(mode))
+        .expect("set the directory's mode");
+    let (got_past, verb) = match probe {
+        DirectoryProbe::List => (fs::read_dir(directory).is_ok(), "listed"),
+        DirectoryProbe::Write => {
+            let file = directory.join("probe");
+            let written = fs::write(&file, b"").is_ok();
+            if written {
+                let _ = fs::remove_file(&file);
+            }
+            (written, "written")
+        }
+    };
+    let result = if got_past {
+        eprintln!(
+            "skipped: {} can still be {verb} with mode {mode:o}",
+            directory.display()
+        );
+        None
+    } else {
+        Some(f())
+    };
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o755))
+        .expect("restore the directory's mode");
+    result
+}

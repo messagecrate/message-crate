@@ -140,6 +140,8 @@ fn has_extension(path: &Path, extensions: &[&str]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use message_crate_core::testutil::{DirectoryProbe, with_directory_mode};
 
     #[test]
     fn the_second_is_read_only_from_a_name_that_starts_with_one() {
@@ -174,9 +176,9 @@ mod tests {
             pictures: &pictures,
             texts_at: &texts_at,
         };
-        let Some(result) =
-            crate::test_support::with_directory_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
-        else {
+        let Some(result) = with_directory_mode(&chat, 0o000, DirectoryProbe::List, || {
+            unnamed_files(&chat, &rows)
+        }) else {
             return;
         };
 

@@ -18,6 +18,7 @@ phone = { path = "../phone" }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 message-ir = { path = "../ir", features = ["testutil"] }
 tempfile = { workspace = true }
 
