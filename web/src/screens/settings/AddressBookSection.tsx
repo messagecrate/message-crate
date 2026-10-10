@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Label, Radio, RadioGroup } from "react-aria-components";
 import Button from "../../components/Button";
 import { ApiError } from "../../lib/api";
+import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useRouteCache } from "../../lib/routeQuery";
 import { type AddressBookLoadMode, loadAddressBook } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
@@ -48,7 +49,7 @@ function refusalLines(err: unknown): string[] {
     const errors = err.errors.map((e) => e.trim()).filter(Boolean);
     if (errors.length > 0) return errors;
   }
-  return [err instanceof Error && err.message ? err.message : "Could not load that address book."];
+  return [apiErrorMessage(err, "Could not load that address book.")];
 }
 
 /**
