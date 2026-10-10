@@ -135,8 +135,8 @@ impl FixtureBackup {
     }
 }
 
-/// An attachment row with `guid` and every other field blank, a base row for
-/// tests to fill in.
+/// An attachment row with `guid` and every other field blank. A test that
+/// needs other fields sets them with `..attachment(..)`.
 pub(crate) fn attachment(guid: Option<&str>) -> Attachment {
     Attachment {
         rowid: 0,
