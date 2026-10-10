@@ -740,7 +740,7 @@ export default function ImportScreen() {
           whatsappDb={whatsappDb}
           onWhatsappDbChange={updateWhatsappDb}
           isBusinessApp={isBusinessApp}
-          onWhatsappBusinessChange={setIsBusinessApp}
+          onIsBusinessAppChange={setIsBusinessApp}
           whatsappOwnerPhone={whatsappOwnerPhone}
           onWhatsappOwnerPhoneChange={(value) => {
             whatsappOwnerPhoneSeededRef.current = true;

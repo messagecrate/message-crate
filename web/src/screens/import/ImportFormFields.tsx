@@ -56,7 +56,7 @@ export type ImportFormFieldsProps = {
   whatsappDb: string;
   onWhatsappDbChange: (path: string) => void;
   isBusinessApp: boolean;
-  onWhatsappBusinessChange: (value: boolean) => void;
+  onIsBusinessAppChange: (value: boolean) => void;
   /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
   whatsappOwnerPhone: string;
   onWhatsappOwnerPhoneChange: (value: string) => void;

@@ -146,7 +146,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
         <Checkbox
           labelClassName="mb-[1.1rem] flex text-[0.875rem]"
           checked={props.isBusinessApp}
-          onChange={props.onWhatsappBusinessChange}
+          onChange={props.onIsBusinessAppChange}
         >
           WhatsApp Business
         </Checkbox>

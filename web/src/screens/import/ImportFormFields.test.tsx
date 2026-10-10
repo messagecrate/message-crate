@@ -92,7 +92,7 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
     isBusinessApp: false,
     whatsappOwnerPhone: "",
     onWhatsappOwnerPhoneChange: vi.fn(),
-    onWhatsappBusinessChange: vi.fn(),
+    onIsBusinessAppChange: vi.fn(),
     whatsappStats: emptyWhatsappPathStats(),
     attachments: copyAttachments,
     onAttachmentsChange: vi.fn(),

@@ -277,6 +277,7 @@ export type ImportJobFormValues = AttachmentChoices & {
   whatsappWa: string;
   whatsappMedia: string;
   whatsappDb: string;
+  /** Whether an iPhone WhatsApp backup is from WhatsApp Business. */
   isBusinessApp: boolean;
   /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
   whatsappOwnerPhone: string;
