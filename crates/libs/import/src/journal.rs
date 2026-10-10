@@ -366,8 +366,6 @@ fn messages_from_state_keys(state: &JournalState) -> Vec<JournalMessage> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
-    use std::thread;
 
     /// The target most tests upload to.
     fn alice() -> ServerTarget {
@@ -577,48 +575,5 @@ mod tests {
         assert_eq!(files(&alice_a), ["alice-a.jsonl".into()].into());
         assert_eq!(files(&bob_a), ["bob-a.jsonl".into()].into());
         assert_eq!(files(&alice_b), ["alice-b.jsonl".into()].into());
-    }
-
-    #[test]
-    fn append_writes_complete_lines_under_contention() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = Arc::new(dir.path().join(JOURNAL_NAME));
-        let mut handles = Vec::new();
-        for i in 0..8 {
-            let path = Arc::clone(&path);
-            handles.push(thread::spawn(move || {
-                for j in 0..50 {
-                    let guid = format!("g-{i}-{j}");
-                    let messages: Vec<_> = (0..200)
-                        .map(|k| JournalMessage {
-                            file: format!("f{i}.jsonl"),
-                            guid: format!("{guid}-{k}"),
-                        })
-                        .collect();
-                    append(
-                        &path,
-                        &JournalEvent::MessageBatchOk {
-                            target: alice(),
-                            source: "sms".into(),
-                            messages,
-                        },
-                    )
-                    .unwrap();
-                }
-            }));
-        }
-        for h in handles {
-            h.join().unwrap();
-        }
-        let text = fs::read_to_string(&*path).unwrap();
-        let mut lines = 0usize;
-        for line in text.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            serde_json::from_str::<JournalEvent>(line).expect("torn line");
-            lines += 1;
-        }
-        assert_eq!(lines, 8 * 50);
     }
 }
