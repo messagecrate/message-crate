@@ -553,8 +553,28 @@ fn detect_ir_export(input_dir: &Path) -> Result<DetectedExport> {
 
 /// The one SMS Backup & Restore file in `input_dir`: a conversion reads one
 /// backup, and SMS Backup & Restore writes each backup as one file.
+///
+/// Every `.xml` file beside it counts, not only those detection names an
+/// SMS Backup & Restore file: a backup the app wrote opens with an
+/// `<?xml ...?>` line, which detection does not look past, and leaving one
+/// out would drop its messages without a word.
 fn sms_backup_file(input_dir: &Path) -> Result<PathBuf> {
-    let mut files = list_artifacts(input_dir, OutputFormat::Xml)?;
+    let mut files = Vec::new();
+    for entry in fs::read_dir(input_dir).with_context(|| format!("read {}", input_dir.display()))? {
+        let path = entry?.path();
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let is_xml = path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("xml"));
+        if is_xml && path.is_file() && !ignored_artifact(&name) {
+            files.push(path);
+        }
+    }
+    files.sort();
     if files.len() > 1 {
         bail!(
             "{} holds {} SMS Backup & Restore files ({}): a conversion reads one backup",

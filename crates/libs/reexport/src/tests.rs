@@ -1090,6 +1090,27 @@ fn a_directory_with_two_sms_backups_is_refused() {
     );
 }
 
+/// A backup the app wrote opens with an `<?xml ...?>` line, so detection
+/// does not name it an SMS Backup & Restore file. Beside `smses.xml` it is
+/// still a second backup, and the conversion is refused rather than run
+/// without its messages.
+#[test]
+fn a_dated_backup_beside_smses_xml_is_refused() {
+    let input = tempfile::tempdir().unwrap();
+    let backup = fs::read_to_string(sms_fixture("sms-backup-every-skip/smses.xml")).unwrap();
+    fs::write(input.path().join("smses.xml"), &backup).unwrap();
+    fs::write(input.path().join("sms-20240101120000.xml"), &backup).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("holds 2 SMS Backup & Restore files (sms-20240101120000.xml, smses.xml)"),
+        "{err:#}"
+    );
+}
+
 /// An SMS Backup & Restore file counts when it is named `smses.xml` or its
 /// first line opens `<smses`. No other file does.
 #[test]
