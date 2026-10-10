@@ -414,9 +414,9 @@ released versions carry their date on the heading.
   read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
   or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
   found, and a WhatsApp import no longer finds wtsexporter on `PATH`. The
-  desktop app downloads all three into `~/message-crate/tools` when it
-  starts, ffmpeg and ffprobe only when they aren't installed on `PATH`, so
-  nothing needs doing. Without a connection, Troubleshooting in the user
+  desktop app downloads all three into its Tools Directory when it starts,
+  ffmpeg and ffprobe only when they aren't installed on `PATH`, so nothing
+  needs doing. Without a connection, Troubleshooting in the user
   guide says which files to put there by hand. If you start the server with
   a script, it takes `serve --tools-dir <directory>` for the same purpose
   (#1053).
@@ -424,8 +424,10 @@ released versions carry their date on the heading.
   wrote is refused, because it records no group members and no sender's
   name beside their number. The desktop app replaces an older `wtsexporter`
   in its Tools Directory with Message Crate's own on its next start with an
-  internet connection. Run the WhatsApp import again from the backup rather
-  than from an old `result.json` (#1092).
+  internet connection, except on Linux on ARM, where it has no download of
+  its own and Troubleshooting in the user guide says how to install the
+  fork by hand. Run the WhatsApp import again from the backup rather than
+  from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
   United States, or pick the country of each such number on the Contacts

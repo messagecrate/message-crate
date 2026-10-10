@@ -114,7 +114,7 @@ The Import form names a program the chosen import needs and can't use, with the 
 A WhatsApp import can't start without `wtsexporter`, and the Import form says so.
 The app runs it only from the Tools Directory, so a `wtsexporter` installed anywhere else on the computer isn't used.
 
-When the download failed, the reason on the Import form says why, and [What a failed download's reason means](#what-a-failed-downloads-reason-means) says what to do about it.
+When the download failed, the reason on the Import form says why, and [The download failed](#the-download-failed) says what to do about it.
 **Try again** on the Import form downloads it again.
 
 Without a working connection, a copy downloaded on another computer works too.
@@ -135,7 +135,7 @@ On Linux and macOS it also needs permission to run:
 chmod +x ~/message-crate/tools/wtsexporter
 ```
 
-[A program put in the Tools Directory by hand](#a-program-put-in-the-tools-directory-by-hand) says when the app keeps it.
+The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds; [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
 #### Linux on ARM
 
@@ -149,6 +149,7 @@ ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/to
 ```
 
 The app never replaces it there, because it has no file of its own for this computer.
+When a WhatsApp import fails as soon as it starts the program, with `a link to a pipx install whose Python interpreter has gone`, the Python that install used was removed, and an older `pipx` can't repair the install in place: run `pipx uninstall whatsapp-chat-exporter` first, then the two lines above.
 
 ### ffmpeg or ffprobe not found
 
@@ -156,6 +157,8 @@ The app never replaces it there, because it has no file of its own for this comp
 Without them an import with either choice still starts, because Staging reads the original files and needs neither program.
 At the Staging Review, the **Convert media** or **Compress media** button stays disabled until both are there.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) covers what each choice does.
+
+When the download failed, the reason on the Import form and at the Staging Review says why, and [The download failed](#the-download-failed) says what to do about it.
 
 The app looks on the system `PATH`, then in the Tools Directory, and takes both programs from the same one.
 It downloads neither when both are on `PATH`, because a person who installed ffmpeg chose that copy.
@@ -192,38 +195,31 @@ chmod +x ~/message-crate/tools/ffmpeg ~/message-crate/tools/ffprobe
 
 Both go in the same place, because the app takes them from one place only.
 With one on `PATH` and the other only in the Tools Directory, **Settings → System** reports both as not used and says why.
+The app keeps files put there by hand when they are these pinned files, and replaces anything else once a download succeeds; [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
 #### Windows on ARM
 
 Windows on ARM gets the x64 ffmpeg and ffprobe, because `ffmpeg-static` publishes no ARM build for Windows, and Windows runs x64 programs under emulation.
-Whether these run there has not been checked yet.
-When they don't, **Settings → System** says the program doesn't run on this computer, and `winget install -e --id Gyan.FFmpeg` puts a copy on `PATH` that the app uses instead.
+When they don't run, **Settings → System** says the program doesn't run on this computer, and `winget install -e --id Gyan.FFmpeg` puts a copy on `PATH` that the app uses instead.
 
-### What a failed download's reason means
+### The download failed
 
-The Import form and **Settings → System** give the same reason, and a run that waited for the download ends with it.
+`<program> download failed` in **Settings → System**, and the same reason on the Import form, say why.
+A run that waited for the download ends with an error that gives the reason after `The <program> download failed.`
 A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form.
 
 | The reason starts with | What it means | What fixes it |
 |---|---|---|
-| `No connection to the download's server` | The computer couldn't reach `github.com`, where every file comes from: no internet, or a firewall or proxy in the way. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
+| `No connection to the download's server` | The connection to `github.com`, where every file comes from, failed or dropped: no internet, a firewall or proxy in the way, or a connection cut off partway through. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
 | `The download's server answered`, then a status such as `503 Service Unavailable` | GitHub refused the request or had trouble. `404 Not Found` means the pinned file is no longer there. | **Try again** later. A `404 Not Found` that stays belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), and meanwhile a copy put in the Tools Directory by hand is used. |
 | `The downloaded file's checksum did not match the one this app carries` | The file that arrived isn't the one the app was built to accept, so the app deleted it. A proxy that rewrites downloads, or a damaged transfer, does this. | **Try again**. A mismatch that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the two checksums the reason names. |
 | `The file could not be written to the Tools Directory` | The disk is full, or the Tools Directory can't be written to. The reason ends with the operating system's words. | Free space on that disk, or give the account that runs the app permission to write to the Tools Directory, then **Try again**. |
 | `ffmpeg in the Tools Directory doesn't run on this computer`, or ffprobe or wtsexporter | The file passed its checksum and is in place, and the computer won't run it. The app doesn't download it again, because the download would be the same file. | For ffmpeg and ffprobe, the system's package manager, above. For `wtsexporter`, `chmod +x` on Linux and macOS. On macOS, see [macOS blocks a program](#macos-blocks-a-program). |
-| `The download was interrupted` | The check stopped partway through. | **Try again**. |
-| `The download could not be started` | The app couldn't start the check at all. | Starting the app again. |
-
-### A program put in the Tools Directory by hand
-
-The Tools Directory belongs to the app.
-A program put there by hand stays when it is the file the app would download: the pinned release's file for this computer, checked by its SHA-256 checksum.
-Anything else under the same name, such as another version or a link to an installed copy, is replaced by the pinned file the next time a download succeeds.
-The old file is replaced only after the new one has arrived and passed its checksum, so until then, with no connection or after a failed download, the file put there by hand is the one used.
+| `The download was interrupted` | The download stopped partway through. | **Try again**. |
+| `The download could not be started` | The app couldn't start the download at all. | Starting the app again. |
 
 ### macOS blocks a program
 
-Whether macOS lets the downloaded programs run hasn't been checked yet, because no Mac was available when the download was built.
 macOS can block a program that came from the internet, most often one downloaded by hand in a browser.
 A blocked `ffmpeg` or `ffprobe` shows in **Settings → System** as a program that doesn't run on this computer.
 A blocked `wtsexporter` shows as found, and the WhatsApp import stops with an error when it starts the program.
