@@ -1179,27 +1179,6 @@ pub async fn top_attachments_by_size(
         .collect())
 }
 
-/// Record what started the Import Run on its row, as
-/// [`record_run_credential`](crate::db::audit_trail::record_run_credential)
-/// writes it for both run tables.
-///
-/// # Errors
-///
-/// Returns an error when the update fails.
-pub async fn record_credential(
-    conn: &mut SqliteConnection,
-    import_id: i64,
-    credential: &crate::db::audit_trail::CredentialUsed,
-) -> Result<()> {
-    crate::db::audit_trail::record_run_credential(
-        conn,
-        crate::db::audit_trail::RunTable::Imports,
-        import_id,
-        credential,
-    )
-    .await
-}
-
 /// Ready the account's Import Runs to outlive it, just before the account is
 /// deleted: each keeps `username` and its counts, and is marked with
 /// `deletion_entry_id`, the account's `account_deleted` entry. A run still

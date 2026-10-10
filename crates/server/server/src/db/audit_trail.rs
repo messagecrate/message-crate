@@ -338,8 +338,8 @@ impl RunTable {
 /// Record what started a run on its row: a Session and the app it named, or
 /// an API token's label and hint as they are now. The Audit Trail reads these
 /// columns from both run tables ([`page`]), so the one statement that writes
-/// them is here too; `db::imports` and `db::exports` each call it for their
-/// own table.
+/// them is here too. `POST /v1/imports` and `POST /v1/exports` call it with
+/// their own table.
 ///
 /// # Errors
 ///
