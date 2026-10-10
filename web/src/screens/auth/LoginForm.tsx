@@ -1,13 +1,11 @@
 import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
 import AuthSubmitButton from "../../components/AuthSubmitButton";
-import { LockIcon, PersonIcon } from "../../components/icons";
-import PasswordField from "../../components/PasswordField";
-import TextField from "../../components/TextField";
 import { setBaseUrl } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { login as serverLogin } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
+import CredentialFields from "./CredentialFields";
 
 /** Username and password login. */
 export default function LoginForm({
@@ -20,7 +18,6 @@ export default function LoginForm({
   const { login } = useAuth();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const { busy, error, run } = useAsyncAction();
 
   // A real submit, so the browser treats this as a login: Enter in either
@@ -48,27 +45,11 @@ export default function LoginForm({
 
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={submit}>
-      <TextField
-        label="Username"
-        leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={setUsername}
-        name="username"
-        autoComplete="username"
-        isDisabled={disabled}
-      />
-
-      <PasswordField
-        label="Password"
-        className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={setPassword}
-        name="password"
+      <CredentialFields
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="current-password"
-        showPassword={showPassword}
-        onToggle={() => setShowPassword((v) => !v)}
-        isDisabled={disabled}
+        disabled={disabled}
       />
 
       <AuthSubmitButton disabled={busy || disabled}>

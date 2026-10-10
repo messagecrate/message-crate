@@ -274,6 +274,12 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **A new SMS Backup+ export clears out every conversation
+  directory of the one before it.** An SMS Backup+ export that stopped part
+  way could leave an empty conversation directory behind, and the next
+  export into the same directory kept it. A new export into that directory
+  now removes every conversation directory an earlier SMS Backup+ export
+  wrote, empty or not (#2299).
 - 2026-10-10: **A downloaded ffmpeg is not reported as broken by
   mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
   runs could wrongly report it as not running. The check now tries again,
