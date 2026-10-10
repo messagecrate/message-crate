@@ -139,7 +139,7 @@ describe("ConversationList", () => {
         last_message_at: "2024-01-01T10:00:00Z",
         service: "sms",
         is_group: false,
-        label: `Chat ${id}`,
+        shown_title: `Chat ${id}`,
         tags: [],
       };
     }

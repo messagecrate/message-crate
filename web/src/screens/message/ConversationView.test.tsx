@@ -73,7 +73,7 @@ describe("ConversationView", () => {
       conversation_type: "group",
       is_group: true,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [
         participant({ identity: "+15555550101", name: "Ada" }),
         participant({ identity: "+15555550102", name: "Bo" }),

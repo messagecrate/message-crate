@@ -17,7 +17,7 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     last_message_at: "2024-06-01T12:00:00Z",
     service: "imessage",
     is_group: false,
-    label: null,
+    shown_title: null,
     tags: [],
     ...overrides,
   };

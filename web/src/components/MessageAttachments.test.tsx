@@ -49,7 +49,7 @@ function message(attachments: MessageAttachment[]): Message {
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [participant({ identity: "+1555", name: "Ada" })],
     },
   });

@@ -89,7 +89,7 @@ afterEach(() => {
   cleanup();
 });
 
-function conv(id: number, label: string): Conversation {
+function conv(id: number, shownTitle: string): Conversation {
   return {
     id,
     participants: [],
@@ -98,7 +98,7 @@ function conv(id: number, label: string): Conversation {
     last_message_at: "2024-01-01T10:00:00Z",
     service: "sms",
     is_group: false,
-    label,
+    shown_title: shownTitle,
     tags: [],
   };
 }
@@ -115,7 +115,7 @@ function message(id: number, conversationId: number): Message {
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      label: null,
+      shown_title: null,
       participants: [],
     },
   });
