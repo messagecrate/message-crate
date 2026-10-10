@@ -412,13 +412,13 @@ impl ExportReport {
 /// counts into `report`. Returns `None` when no message survives.
 pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
-    convo: &mut PendingConversation,
+    conversation: &mut PendingConversation,
     hooks: &H,
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
     let unit = hooks.sort_key_unit();
     let (keep, skipped) = prepare_conversation(
-        convo,
+        conversation,
         |a, b| hooks.message_order(a, b),
         |key| unit.to_secs(key),
     );
@@ -426,7 +426,7 @@ pub fn project_conversation<H: ProjectionHooks + ?Sized>(
     if !keep {
         return None;
     }
-    let (doc, tally) = pending_to_document(chat_id, convo, hooks);
+    let (doc, tally) = pending_to_document(chat_id, conversation, hooks);
     report.absorb_tally(tally);
     Some(doc)
 }
