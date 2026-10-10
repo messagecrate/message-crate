@@ -89,9 +89,8 @@ pub(crate) struct ExportOptions<'a> {
     pub log: Option<LogSink>,
     /// Typed progress events for the desktop's progress bar.
     pub progress: Option<ProgressSink>,
-    /// The run-wide settings: transforms, output format, cancel flag
-    /// (checked between events and before every write), resume, and the
-    /// Import Run's issue sink.
+    /// The run-wide settings ([`ConvertRun`]). This exporter checks the
+    /// cancel flag between events and before every write.
     pub run: ConvertRun<'a>,
 }
 
