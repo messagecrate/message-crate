@@ -4,7 +4,7 @@ use crate::db::trash::{Trashable, move_to_trash};
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
     conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
-    message_line, register_via_api, seed_conversation,
+    message_line, register_via_api, seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -19,7 +19,7 @@ async fn seed(fixture: &TestFixture, account: &RegisteredAccount, handle: &str) 
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],

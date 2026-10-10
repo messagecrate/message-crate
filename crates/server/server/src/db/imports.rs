@@ -507,7 +507,7 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
 pub async fn note_backup_taken_at(
     conn: &mut SqliteConnection,
     import_id: i64,
-    backup_taken_at: &str,
+    backup_taken_at: &crate::models::StoredTime,
 ) -> Result<()> {
     sqlx::query(
         "UPDATE imports SET backup_taken_at = $2

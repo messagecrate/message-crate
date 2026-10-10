@@ -4,7 +4,7 @@ use std::sync::atomic::AtomicBool;
 use super::*;
 use crate::test_support::{
     SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, patch_status, post_status,
-    post_status_logged_out, register_via_api, seed_conversation, test_fixture,
+    post_status_logged_out, register_via_api, seed_conversation, stored_time, test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.
@@ -661,7 +661,7 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
             .iter()
             .map(|body| SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body,
             })

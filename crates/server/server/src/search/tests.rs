@@ -6,6 +6,7 @@ use sqlx::SqliteConnection;
 
 use super::{CompileRequest, ListKind, QueryError, compile};
 use crate::db::sql::bind_args;
+use crate::test_support::stored_time;
 
 pub(crate) const ACCOUNT: i64 = 7;
 pub(crate) const OTHER_ACCOUNT: i64 = 8;
@@ -210,7 +211,7 @@ pub(crate) fn msg<'a>(
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: m.source,
-        timestamp: m.timestamp,
+        timestamp: stored_time(m.timestamp),
         is_from_me: m.from_me,
         sender_handle_id: m.sender,
         service: Some(m.service),

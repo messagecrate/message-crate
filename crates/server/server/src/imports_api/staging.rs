@@ -373,7 +373,7 @@ struct StagedConversation {
     source: String,
     /// When the backup the file was read from was made, in the form a
     /// message's timestamp takes; `None` when the file does not say.
-    backup_taken_at: Option<String>,
+    backup_taken_at: Option<crate::models::StoredTime>,
 }
 
 impl StagedConversation {
@@ -451,14 +451,14 @@ impl FileStaging<'_> {
     ) -> Result<()> {
         let mut counts = ImportCounts::default();
         // The title's time: the latest message of this copy, when it has a
-        // title. Every timestamp has one fixed RFC 3339 form, so the greatest
-        // string is the latest instant.
+        // title. Every stored time has one text form, so the greatest is the
+        // latest instant.
         let group_title_at = conversation.group_title.as_ref().and_then(|_| {
             prepared_messages
                 .iter()
-                .map(|(m, _)| m.timestamp.as_str())
+                .map(|(m, _)| &m.timestamp)
                 .max()
-                .map(str::to_owned)
+                .cloned()
         });
         let service = service_for(conversation.header_service.as_deref(), &conversation.source);
 
@@ -538,16 +538,15 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 conversation_type: &conversation.conversation_type,
                 group_title: conversation.group_title.as_deref(),
-                group_title_at: group_title_at.as_deref(),
+                group_title_at: group_title_at.as_ref(),
                 source_file: &self.source_file,
             },
         )
         .await?;
         counts.conversations = 1;
-        if let (Some(import_id), Some(backup_taken_at)) = (
-            self.stmts.import_id,
-            conversation.backup_taken_at.as_deref(),
-        ) {
+        if let (Some(import_id), Some(backup_taken_at)) =
+            (self.stmts.import_id, conversation.backup_taken_at.as_ref())
+        {
             crate::db::imports::note_backup_taken_at(self.tx, import_id, backup_taken_at).await?;
         }
 
@@ -595,7 +594,7 @@ impl FileStaging<'_> {
                 StagedSource {
                     conversation_id,
                     source: &conversation.source,
-                    backup_taken_at: conversation.backup_taken_at.as_deref(),
+                    backup_taken_at: conversation.backup_taken_at.as_ref(),
                 },
                 self.opts.assets_dir,
                 chunk,
@@ -823,7 +822,7 @@ struct PendingStagingMessage {
 struct StagedSource<'a> {
     conversation_id: i64,
     source: &'a str,
-    backup_taken_at: Option<&'a str>,
+    backup_taken_at: Option<&'a crate::models::StoredTime>,
 }
 
 /// Bulk-insert one chunk of message rows, then their attachments, tapbacks
@@ -942,10 +941,7 @@ async fn add_staged_copy(
     let order = if held.undated {
         BackupOrder::Undecided
     } else {
-        db_staging::later_backup(
-            staged_source.backup_taken_at,
-            held.backup_taken_at.as_deref(),
-        )
+        db_staging::later_backup(staged_source.backup_taken_at, held.backup_taken_at.as_ref())
     };
     match order {
         BackupOrder::Later => {

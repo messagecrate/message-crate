@@ -5,7 +5,7 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
-    get_status, message_line, register_via_api, seed_conversation,
+    get_status, message_line, register_via_api, seed_conversation, stored_time,
 };
 use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
 
@@ -25,13 +25,13 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist on tuesday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: true,
                     body: "see you there",
                 },
@@ -49,7 +49,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-02-01T10:00:00.000Z",
+                timestamp: stored_time("2024-02-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "the dentist called again",
             }],
@@ -84,7 +84,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2024-03-01T10:00:00.000Z",
+                timestamp: stored_time("2024-03-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "bob's dentist",
             }],
@@ -1785,19 +1785,19 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: &late_yesterday,
+                    timestamp: late_yesterday.clone(),
                     is_from_me: false,
                     body: "late yesterday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: &early_today,
+                    timestamp: early_today.clone(),
                     is_from_me: false,
                     body: "early today",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: &now,
+                    timestamp: now.clone(),
                     is_from_me: true,
                     body: "right now",
                 },
@@ -1843,25 +1843,25 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-01T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist dentist dentist",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-02T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: false,
                     body: "after work I will call the office of the dentist about next week",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-03T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-03T10:00:00.000Z"),
                     is_from_me: true,
                     body: "the dentist moved it",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2024-01-04T10:00:00.000Z",
+                    timestamp: stored_time("2024-01-04T10:00:00.000Z"),
                     is_from_me: true,
                     body: "nothing to see",
                 },

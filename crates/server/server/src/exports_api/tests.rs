@@ -6,7 +6,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status,
     expect_problem, fixture_with_account, get_json, get_raw, get_status, post_created_json,
-    post_json, post_raw, post_status, register_via_api, seed_conversation, test_fixture,
+    post_json, post_raw, post_status, register_via_api, seed_conversation, stored_time,
+    test_fixture,
 };
 use axum::http::StatusCode;
 use message_crate_api_types::ExportQueryList;
@@ -169,7 +170,7 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
         id: Some(2),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-01-02T00:00:00.000Z",
+        timestamp: stored_time("2020-01-02T00:00:00.000Z"),
         body: Some("hello two"),
         ..MessageRow::new(101, conv2)
     }
@@ -187,7 +188,7 @@ async fn add_message(conn: &mut SqliteConnection, id: i64, conversation: i64, da
         id: Some(id),
         source: "sms",
         service: Some("sms"),
-        timestamp: &timestamp,
+        timestamp: stored_time(&timestamp),
         body: Some(body),
         ..MessageRow::new(101, conversation)
     }
@@ -296,7 +297,7 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
         id: Some(9),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-01-05T00:00:00.000Z",
+        timestamp: stored_time("2020-01-05T00:00:00.000Z"),
         body: Some("hello bob"),
         ..MessageRow::new(202, bobs)
     }
@@ -407,7 +408,7 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
         id: Some(99),
         source: "sms",
         service: Some("sms"),
-        timestamp: "2020-02-01T00:00:00.000Z",
+        timestamp: stored_time("2020-02-01T00:00:00.000Z"),
         body: Some("bob secret"),
         ..MessageRow::new(102, 99)
     }
@@ -693,13 +694,13 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-01T00:00:00.000Z",
+                    timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                     is_from_me: true,
                     body: "pizza tonight",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: "2020-01-02T00:00:00.000Z",
+                    timestamp: stored_time("2020-01-02T00:00:00.000Z"),
                     is_from_me: false,
                     body: "salad tomorrow",
                 },
@@ -717,7 +718,7 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
             source_file: "backup-a.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-03T00:00:00.000Z",
+                timestamp: stored_time("2020-01-03T00:00:00.000Z"),
                 is_from_me: false,
                 body: "the menu",
             }],
@@ -1368,7 +1369,7 @@ async fn insert_message(
     let mut conn = fixture.conn().await;
     MessageRow {
         service: Some("imessage"),
-        timestamp,
+        timestamp: stored_time(timestamp),
         body: Some("arrived"),
         import_id,
         ..MessageRow::new(account, conversation)

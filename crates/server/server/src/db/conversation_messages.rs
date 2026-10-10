@@ -26,6 +26,7 @@ use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
+use crate::models::StoredTime;
 use crate::paging::{Direction, Page, SortKey};
 use crate::search::bridge::Sql;
 use crate::server::ApiError;
@@ -948,7 +949,7 @@ pub async fn get_conversation_messages(
 
     // The message's place in the order: its timestamp, `sort_order` and id,
     // the three keys every message list sorts by.
-    let anchor: Option<(String, i64)> = sqlx::query_as_with(
+    let anchor: Option<(StoredTime, i64)> = sqlx::query_as_with(
         &format!("SELECT m.timestamp, m.sort_order FROM messages m WHERE {where_sql} AND m.id = ?"),
         bind_args(
             &params
@@ -981,7 +982,7 @@ pub async fn get_conversation_messages(
     let beside = |op: &str| {
         let mut side = params.clone();
         side.extend([
-            SqlParam::Text(timestamp.clone()),
+            SqlParam::Time(timestamp.clone()),
             SqlParam::Int(sort_order),
             SqlParam::Int(anchor_id),
         ]);

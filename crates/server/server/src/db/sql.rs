@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 
+use crate::models::StoredTime;
 use sqlx::Arguments;
 use sqlx::SqliteConnection;
 use sqlx::sqlite::{SqliteArguments, SqliteRow};
@@ -14,6 +15,9 @@ use sqlx::sqlite::{SqliteArguments, SqliteRow};
 pub enum SqlParam {
     Text(String),
     Int(i64),
+    /// A stored message time, for a comparison with `messages.timestamp`
+    /// (`StoredTime`, #1965).
+    Time(StoredTime),
 }
 
 /// Encode `params` into sqlx arguments, in order.
@@ -26,6 +30,7 @@ pub fn bind_args<'q>(params: &[SqlParam]) -> SqliteArguments<'q> {
         match p {
             SqlParam::Text(v) => args.add(v.clone()),
             SqlParam::Int(v) => args.add(*v),
+            SqlParam::Time(v) => args.add(v.clone()),
         }
         .expect("error encoding argument");
     }
@@ -167,7 +172,11 @@ mod tests {
     fn bind_args_encodes_every_variant_in_order() {
         // Every variant must encode without panicking, in order; the
         // argument count is the only thing the arguments let us observe.
-        let params = vec![SqlParam::Text("t".into()), SqlParam::Int(7)];
+        let params = vec![
+            SqlParam::Text("t".into()),
+            SqlParam::Int(7),
+            SqlParam::Time(crate::test_support::stored_time("2020-01-01T00:00:00.000Z")),
+        ];
         let args = bind_args(&params);
         assert_eq!(args.len(), params.len());
     }

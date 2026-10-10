@@ -5,7 +5,8 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
     expect_problem, fixture_with_account, get_json, get_raw, get_status, log_in, login_status,
-    post_created_json, post_raw, put_status, register_via_api, seed_conversation, test_fixture,
+    post_created_json, post_raw, put_status, register_via_api, seed_conversation, stored_time,
+    test_fixture,
 };
 
 const TEST_ACCOUNT: i64 = 7;
@@ -233,7 +234,7 @@ async fn seed_source(state: &crate::server::AppState, account_id: i64, source: &
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source,
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "hello",
             }],

@@ -10,7 +10,7 @@ use crate::test_support::{
     fixture_with_account, get_json, get_raw, get_status, log_in, login_status, message_line,
     patch_failure, patch_json, patch_raw, patch_status, post_created_json, post_logged_out,
     post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status, register_via_api,
-    seed_conversation, seed_one_message, test_fixture,
+    seed_conversation, seed_one_message, stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
@@ -2069,13 +2069,13 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
     let two = [
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-01-01T00:00:00.000Z",
+            timestamp: stored_time("2020-01-01T00:00:00.000Z"),
             is_from_me: true,
             body: "a",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-01-02T00:00:00.000Z",
+            timestamp: stored_time("2020-01-02T00:00:00.000Z"),
             is_from_me: false,
             body: "b",
         },
@@ -2095,19 +2095,19 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
     let three = [
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-01T00:00:00.000Z",
+            timestamp: stored_time("2020-02-01T00:00:00.000Z"),
             is_from_me: true,
             body: "c",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-02T00:00:00.000Z",
+            timestamp: stored_time("2020-02-02T00:00:00.000Z"),
             is_from_me: false,
             body: "d",
         },
         SeedMessage {
             source: "imessage",
-            timestamp: "2020-02-03T00:00:00.000Z",
+            timestamp: stored_time("2020-02-03T00:00:00.000Z"),
             is_from_me: false,
             body: "e",
         },
@@ -2247,7 +2247,7 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
             source_file: "seed.jsonl",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: "2020-01-01T00:00:00.000Z",
+                timestamp: stored_time("2020-01-01T00:00:00.000Z"),
                 is_from_me: true,
                 body: "photos",
             }],

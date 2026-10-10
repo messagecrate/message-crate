@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::*;
 use crate::db::engine;
 use crate::progress::Progress;
-use crate::test_support::MessageRow;
+use crate::test_support::{MessageRow, stored_time};
 
 #[test]
 fn normalize_collapses_whitespace() {
@@ -155,7 +155,7 @@ fn a_group_is_keyed_as_a_group_whatever_the_case_of_its_type() {
         chat_id: "chat-group".to_string(),
         conversation_type: conversation_type.to_string(),
         is_from_me: 0,
-        timestamp: "2015-03-12T18:04:23.000Z".to_string(),
+        timestamp: stored_time("2015-03-12T18:04:23.000Z").to_string(),
         body: Some("yo".to_string()),
         sender_normalized: Some("+15555550128".to_string()),
     };
@@ -238,7 +238,7 @@ async fn fill_missing_content_keys_skips_rows_that_already_have_keys() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g-fill".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Need a key"),
         sort_order: 0,
@@ -279,7 +279,7 @@ async fn fill_missing_content_keys_writes_multiple_rows_in_one_batch() {
         MessageRow {
             source: "go-sms-pro",
             guid: Some(guid.into()),
-            timestamp: "2015-03-12T18:04:22.000Z",
+            timestamp: stored_time("2015-03-12T18:04:22.000Z"),
             is_from_me: true,
             body: Some(body),
             sort_order,
@@ -322,7 +322,7 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g-once".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Once"),
         sort_order: 0,
@@ -340,6 +340,8 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
     assert_eq!(second.keys_filled, 0);
 }
 
+/// Two sources hold the same message at the same stored time: the exact
+/// dedupe flags the copy from the source of lower priority.
 #[tokio::test]
 async fn integration_exact_flags_cross_source() {
     let (pool, _dir) = engine::test_pool().await;
@@ -348,7 +350,7 @@ async fn integration_exact_flags_cross_source() {
     let a = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -359,7 +361,7 @@ async fn integration_exact_flags_cross_source() {
     let b = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22+00:00",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -401,7 +403,7 @@ async fn integration_near_flags_within_window() {
     let a = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 0,
@@ -412,7 +414,7 @@ async fn integration_near_flags_within_window() {
     let b = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:24.000Z",
+        timestamp: stored_time("2015-03-12T18:04:24.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 1,
@@ -448,7 +450,7 @@ async fn integration_negative_far_apart_not_flagged() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 0,
@@ -459,7 +461,7 @@ async fn integration_negative_far_apart_not_flagged() {
     MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:05:22.000Z",
+        timestamp: stored_time("2015-03-12T18:05:22.000Z"),
         is_from_me: false,
         body: Some("On my way"),
         sort_order: 1,
@@ -496,7 +498,7 @@ async fn integration_priority_prefers_first_imported_source() {
     let first_imported = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Hello"),
         sort_order: 0,
@@ -507,7 +509,7 @@ async fn integration_priority_prefers_first_imported_source() {
     let second_imported = MessageRow {
         source: "go-sms-pro",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Hello"),
         sort_order: 1,
@@ -560,7 +562,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
         let first = MessageRow {
             source: "go-sms-pro",
             guid: Some("g1".into()),
-            timestamp: "2015-03-12T18:04:22.000Z",
+            timestamp: stored_time("2015-03-12T18:04:22.000Z"),
             is_from_me: false,
             body: Some("On my way"),
             sort_order: 0,
@@ -571,7 +573,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
         let second = MessageRow {
             source: "sms-backup-plus",
             guid: Some("g2".into()),
-            timestamp: second_timestamp,
+            timestamp: stored_time(second_timestamp),
             is_from_me: false,
             body: Some("On my way"),
             sort_order: 1,
@@ -627,7 +629,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
     MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("ok"),
         sort_order: 0,
@@ -638,7 +640,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
     let second = MessageRow {
         source: "go-sms-pro",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:23.000Z",
+        timestamp: stored_time("2015-03-12T18:04:23.000Z"),
         is_from_me: true,
         body: Some("ok"),
         sort_order: 1,
@@ -685,7 +687,7 @@ async fn identical_rows_from_one_source_are_both_kept() {
             MessageRow {
                 source: "go-sms-pro",
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 body: Some("ok"),
                 sort_order: 0,
@@ -717,7 +719,7 @@ async fn sms_backup_plus_row(
     MessageRow {
         source: "sms-backup-plus",
         guid: Some(guid.into()),
-        timestamp,
+        timestamp: stored_time(timestamp),
         time_precision: precision,
         is_from_me: false,
         body: Some("On my way"),
@@ -852,7 +854,7 @@ async fn an_exact_duplicate_across_three_sources_keeps_one() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 body: Some("Running late"),
                 sort_order: 0,
@@ -902,7 +904,7 @@ async fn a_near_duplicate_across_three_sources_keeps_one() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp,
+                timestamp: stored_time(timestamp),
                 is_from_me: true,
                 body: Some("Running late"),
                 sort_order: 0,
@@ -1022,7 +1024,7 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     let from_ann = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         sender_handle_id: Some(ann),
         body: Some("happy birthday!"),
@@ -1033,7 +1035,7 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     let from_bo = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:23.000Z",
+        timestamp: stored_time("2015-03-12T18:04:23.000Z"),
         is_from_me: false,
         sender_handle_id: Some(bo),
         body: Some("happy birthday!"),
@@ -1064,7 +1066,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
     let first = MessageRow {
         source: "go-sms-pro",
         guid: Some("g1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -1075,7 +1077,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
     let second = MessageRow {
         source: "sms-backup-plus",
         guid: Some("g2".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         body: Some("Running late"),
         sort_order: 0,
@@ -1225,7 +1227,7 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     let first = MessageRow {
         source: "imessage",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("look"),
@@ -1242,7 +1244,7 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
     let twin = MessageRow {
         source: "sms-backup-plus",
         guid: Some("b-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("look"),
@@ -1282,7 +1284,7 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     let first = MessageRow {
         source: "imessage",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("dinner at 7?"),
@@ -1300,7 +1302,7 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     let twin = MessageRow {
         source: "sms-backup-plus",
         guid: Some("b-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: true,
         sender_handle_id: None,
         body: Some("dinner at 7?"),
@@ -1342,7 +1344,7 @@ async fn the_holders_own_address_does_not_change_a_groups_content_key() {
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp: "2015-03-12T18:04:22.000Z",
+                timestamp: stored_time("2015-03-12T18:04:22.000Z"),
                 is_from_me: true,
                 sender_handle_id: None,
                 body: Some("dinner at 7?"),
@@ -1374,7 +1376,7 @@ async fn received_notes_to_yourself(
     let before_link = MessageRow {
         source: "imazing",
         guid: Some("a-1".into()),
-        timestamp: "2015-03-12T18:04:22.000Z",
+        timestamp: stored_time("2015-03-12T18:04:22.000Z"),
         is_from_me: false,
         sender_handle_id: Some(holder),
         body: Some("buy milk"),
@@ -1386,7 +1388,7 @@ async fn received_notes_to_yourself(
     let after_link = MessageRow {
         source: "imessage",
         guid: Some("b-1".into()),
-        timestamp: later_timestamp,
+        timestamp: stored_time(later_timestamp),
         is_from_me: false,
         sender_handle_id: None,
         body: Some("buy milk"),
@@ -1469,7 +1471,7 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
                 MessageRow {
                     source,
                     guid: Some(guid.into()),
-                    timestamp,
+                    timestamp: stored_time(timestamp),
                     is_from_me: true,
                     sender_handle_id: None,
                     body: Some(body),
@@ -1629,7 +1631,7 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
             let id = MessageRow {
                 source,
                 guid: Some(format!("g-{guid}")),
-                timestamp: &timestamp,
+                timestamp: timestamp.clone(),
                 is_from_me: from_me,
                 sender_handle_id: sender,
                 body: Some(&copy_body),
@@ -1950,7 +1952,7 @@ async fn insert_ok_rows(
             MessageRow {
                 source,
                 guid: Some(guid.into()),
-                timestamp,
+                timestamp: stored_time(timestamp),
                 is_from_me: from_me,
                 body: Some("ok"),
                 sort_order,
@@ -2062,7 +2064,7 @@ async fn copy(
 ) -> i64 {
     MessageRow {
         source,
-        timestamp,
+        timestamp: stored_time(timestamp),
         time_precision: precision,
         body: Some("On my way"),
         import_id: Some(import_id),
@@ -2084,7 +2086,7 @@ async fn more_of_run(conn: &mut SqliteConnection, source: &str, import_id: i64, 
         let body = format!("{source} filler {i}");
         MessageRow {
             source,
-            timestamp,
+            timestamp: stored_time(timestamp),
             body: Some(&body),
             import_id: Some(import_id),
             ..MessageRow::new(TEST_ACCOUNT_ID, 1)
