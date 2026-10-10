@@ -297,10 +297,10 @@ pub struct ChangedDedupe {
 ///
 /// This computes the changed messages' content keys again, then runs both
 /// passes of [`dedupe_cross_source`] over the messages with a content key,
-/// so a message without one is neither hidden nor a winner here. Only the flags of the messages tied to a
-/// changed one are written: those it was hidden behind or hid, before or
-/// now, and the messages tied to those in turn. Every other flag stays as
-/// it is.
+/// so a message without one is neither hidden nor a winner here. Only the
+/// flags of the messages tied to a changed one are written: those it was
+/// hidden behind or hid, before or now, and the messages tied to those in
+/// turn. Every other flag stays as it is.
 ///
 /// # Errors
 ///
@@ -847,38 +847,20 @@ fn content_key_group_flags(cands: Vec<Cand>, prio: &HashMap<&str, usize>) -> Vec
 /// cluster of the near-time pass ([`cluster_near_dupes`]).
 ///
 /// One source that holds a message twice holds two messages, so the group
-/// stays shown as many times as the source that holds it most often. The
-/// winner's source fills those places first, then the other sources, each
-/// in the order of its best copy by [`rank`]. Within a source, the rows go
-/// in the order [`rank`] puts them. Every other row is hidden as a duplicate of the winner.
+/// stays shown as many times as the source that holds it most often. Those
+/// places go to the copies first by [`rank`], the winner among them, and
+/// every other copy is hidden as a duplicate of the winner.
 fn exact_group_flags(cands: &[Cand], prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
-    let winner = pick_winner(cands, prio);
-    let winner_source = cands
-        .iter()
-        .find(|c| c.id == winner)
-        .map_or("", |c| c.source.as_str());
-    let mut by_source: HashMap<&str, Vec<&Cand>> = HashMap::new();
+    let mut per_source: HashMap<&str, usize> = HashMap::new();
     for c in cands {
-        by_source.entry(c.source.as_str()).or_default().push(c);
+        *per_source.entry(c.source.as_str()).or_default() += 1;
     }
-    let shown = by_source.values().map(Vec::len).max().unwrap_or(0);
-    let mut sources: Vec<Vec<&Cand>> = by_source
-        .into_values()
-        .map(|mut rows| {
-            rows.sort_by(|a, b| rank(a, b, prio));
-            rows
-        })
-        .collect();
-    // The winner's source first, then each source by its best copy, so the
-    // places go to the copies `rank` puts first.
-    sources.sort_by(|a, b| {
-        (a[0].source != winner_source)
-            .cmp(&(b[0].source != winner_source))
-            .then_with(|| rank(a[0], b[0], prio))
-    });
-    sources
+    let shown = per_source.values().copied().max().unwrap_or(0);
+    let winner = pick_winner(cands, prio);
+    let mut ranked: Vec<&Cand> = cands.iter().collect();
+    ranked.sort_by(|a, b| rank(a, b, prio));
+    ranked
         .into_iter()
-        .flatten()
         .skip(shown)
         .map(|c| (c.id, winner))
         .collect()
