@@ -94,7 +94,7 @@ pub(crate) fn build_earlier_versions(edited: &EditedMessage, offset: i64) -> Vec
         for event in earlier {
             out.push(EarlierVersion {
                 part_index,
-                text: event.text.clone(),
+                text: Some(event.text.clone()),
                 edited_at_unix_ms: get_local_time(event.date, offset)
                     .ok()
                     .map(|date| date.timestamp_millis()),
@@ -627,12 +627,12 @@ mod tests {
             vec![
                 EarlierVersion {
                     part_index: 2,
-                    text: "first".to_string(),
+                    text: Some("first".to_string()),
                     edited_at_unix_ms: Some(epoch_ms),
                 },
                 EarlierVersion {
                     part_index: 2,
-                    text: "second".to_string(),
+                    text: Some("second".to_string()),
                     edited_at_unix_ms: Some(epoch_ms + 60_000),
                 },
             ]

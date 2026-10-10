@@ -572,13 +572,18 @@ mod tests {
         let edits = vec![
             EarlierVersion {
                 part_index: 0,
-                text: "full bg".into(),
+                text: Some("full bg".into()),
                 edited_at_unix_ms: Some(1_400_773_261_000),
             },
             EarlierVersion {
                 part_index: 1,
-                text: "=?utf-8?Q?=22?= second\npart".into(),
+                text: Some("=?utf-8?Q?=22?= second\npart".into()),
                 edited_at_unix_ms: None,
+            },
+            EarlierVersion {
+                part_index: 0,
+                text: None,
+                edited_at_unix_ms: Some(1_400_773_321_000),
             },
         ];
         let reply_to = ReplyTo {

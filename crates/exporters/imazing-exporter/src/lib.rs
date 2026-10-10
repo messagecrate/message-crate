@@ -11,6 +11,7 @@ mod chat_directory;
 mod emit;
 mod parse;
 mod parse_emit;
+mod row_marks;
 mod run;
 mod unnamed_files;
 

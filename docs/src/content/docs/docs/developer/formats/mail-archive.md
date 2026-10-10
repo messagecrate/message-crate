@@ -279,7 +279,7 @@ MIME: `multipart/mixed` (or `related`) with flattened `text/plain` first, then a
 ### Edits / unsends
 
 - Body = **current** visible text (empty if unsent).
-- `X-ME-Earlier-Versions`: JSON array of the earlier versions, as CSV `earlier_versions_json`: `{ part_index, text, edited_at_unix_ms? }`, oldest first within each part.
+- `X-ME-Earlier-Versions`: JSON array of the earlier versions, as CSV `earlier_versions_json`: `{ part_index, text?, edited_at_unix_ms? }`, oldest first within each part. `text` is left out when the source recorded the edit and not the text it replaced, as iMazing does.
 - `X-ME-Deletion: deleted_in_source_app` for a message deleted in Messages, `X-ME-Deletion: unsent` for one unsent whole.
 - Do not invent separate “edit event” EMLs.
 

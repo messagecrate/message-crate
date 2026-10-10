@@ -77,9 +77,10 @@ pub use imessage_reader_protocol::Deletion;
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::TimePrecision;
 
-/// One earlier version of one part of an edited message: its part, its text,
-/// and when it was written. A message's `text` is its final version, so
-/// [`IrMessage::edits`] holds only the versions before it.
+/// One earlier version of one part of an edited message: its part, its text
+/// when the source kept it, and when it was written. A message's `text` is
+/// its final version, so [`IrMessage::edits`] holds only the versions before
+/// it.
 ///
 /// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
 /// reason: the Apple Messages Reader writes it in the shape the conversation
@@ -146,7 +147,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///

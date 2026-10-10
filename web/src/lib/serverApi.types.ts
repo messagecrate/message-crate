@@ -2723,8 +2723,12 @@ export interface components {
              *     or only part.
              */
             part_index: number;
-            /** @description The part's text in this version. */
-            text: string;
+            /**
+             * @description The part's text in this version; `null` when the source recorded
+             *     the edit and not the text it replaced, as iMazing does. Search
+             *     never finds a message by such a version.
+             */
+            text: string | null;
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,

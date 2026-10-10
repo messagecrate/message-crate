@@ -753,11 +753,13 @@ fn a_mail_that_keeps_the_edit_history_in_x_me_edits_is_refused() {
 }
 
 /// Earlier versions that do not read are refused rather than read as none.
+/// A version without `text` reads: a source may record an edit and not the
+/// text it replaced (#2030). One without a part does not.
 #[test]
 fn a_mail_whose_earlier_versions_do_not_read_is_refused() {
     assert_json_header_is_refused(
         "X-ME-Earlier-Versions",
-        r#"[{"part_index":0}]"#,
+        r#"[{"text":"hello"}]"#,
         "earlier versions",
     );
 }
@@ -874,7 +876,7 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     }];
     msg.message.edits = vec![message_ir::EarlierVersion {
         part_index: 0,
-        text: value.into(),
+        text: Some(value.into()),
         edited_at_unix_ms: None,
     }];
     msg.message.source.as_mut().unwrap().fields =

@@ -1046,7 +1046,13 @@ fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() 
                 message.guid
             );
             for version in &message.edits {
-                assert_ne!(version.text, message.text, "{}", message.guid);
+                assert_ne!(
+                    version.text.as_deref(),
+                    Some(message.text.as_str()),
+                    "{}",
+                    message.guid
+                );
+                assert!(version.text.is_some(), "{}", message.guid);
                 let at = version
                     .edited_at_unix_ms
                     .expect("every version has its time");
