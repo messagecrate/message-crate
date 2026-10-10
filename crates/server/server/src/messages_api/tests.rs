@@ -1,4 +1,5 @@
 use crate::progress::Progress;
+use crate::test_support::stored_time;
 use axum::http::StatusCode;
 
 use crate::problem::ProblemType;
@@ -25,13 +26,13 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-01T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist on tuesday",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-02T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: true,
                     body: "see you there",
                 },
@@ -49,7 +50,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2024-02-01T10:00:00.000Z"),
+                timestamp: stored_time("2024-02-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "the dentist called again",
             }],
@@ -84,7 +85,7 @@ async fn seeded() -> (TestFixture, RegisteredAccount, i64, i64) {
             source_file: "t.json",
             messages: &[SeedMessage {
                 source: "imessage",
-                timestamp: crate::test_support::stored_time("2024-03-01T10:00:00.000Z"),
+                timestamp: stored_time("2024-03-01T10:00:00.000Z"),
                 is_from_me: false,
                 body: "bob's dentist",
             }],
@@ -1843,25 +1844,25 @@ async fn seeded_for_relevance() -> (TestFixture, RegisteredAccount) {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-01T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-01T10:00:00.000Z"),
                     is_from_me: false,
                     body: "dentist dentist dentist",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-02T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-02T10:00:00.000Z"),
                     is_from_me: false,
                     body: "after work I will call the office of the dentist about next week",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-03T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-03T10:00:00.000Z"),
                     is_from_me: true,
                     body: "the dentist moved it",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: crate::test_support::stored_time("2024-01-04T10:00:00.000Z"),
+                    timestamp: stored_time("2024-01-04T10:00:00.000Z"),
                     is_from_me: true,
                     body: "nothing to see",
                 },

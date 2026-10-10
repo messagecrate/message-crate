@@ -53,7 +53,7 @@ pub struct StagingConversation<'a> {
     /// messages, in the form `staging_messages.timestamp` holds, when it has
     /// a title and a message, else `None`. It decides the title when two
     /// copies of one conversation merge.
-    pub group_title_at: Option<&'a str>,
+    pub group_title_at: Option<&'a crate::models::StoredTime>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
 }
@@ -585,7 +585,7 @@ pub struct StagedCopy<'a> {
 pub struct StagedText {
     /// When the newest backup with a date the row was read from was made,
     /// or `None` when no copy's file said.
-    pub backup_taken_at: Option<String>,
+    pub backup_taken_at: Option<crate::models::StoredTime>,
     /// Whether the row's text came from a copy from a file without a date
     /// (`staging_messages.undated_body`).
     pub undated: bool,
@@ -597,7 +597,7 @@ pub struct StagedText {
 ///
 /// Returns an error when the query fails.
 pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<StagedText> {
-    let (backup_taken_at, undated): (Option<String>, bool) =
+    let (backup_taken_at, undated): (Option<crate::models::StoredTime>, bool) =
         sqlx::query_as("SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1")
             .bind(staged)
             .fetch_one(&mut *conn)
@@ -1454,7 +1454,10 @@ pub enum BackupOrder {
 /// in one import: whether the copy from the backup made at `staged` is
 /// later than the copy held from the backup made at `held`.
 #[must_use]
-pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> BackupOrder {
+pub fn later_backup(
+    staged: Option<&crate::models::StoredTime>,
+    held: Option<&crate::models::StoredTime>,
+) -> BackupOrder {
     match (staged, held) {
         (Some(staged), Some(held)) if staged > held => BackupOrder::Later,
         (Some(staged), Some(held)) if staged < held => BackupOrder::Earlier,
