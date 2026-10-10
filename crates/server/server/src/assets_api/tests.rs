@@ -834,50 +834,13 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
     .await;
 
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = http_client();
-
-    let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-    let part_size = started["part_size"].as_u64().unwrap() as usize;
-    assert_eq!(part_size, 40, "a part is never larger than the limit");
-
-    for (index, chunk) in bytes.chunks(part_size).enumerate() {
-        let response = client
-            .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
-            .bearer_auth(&user.token)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(chunk.to_vec())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "part {}", index + 1);
-    }
-    let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let response = client
-        .get(url(""))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.bytes().await.unwrap().as_ref(), bytes.as_slice());
+    let outcome = upload_in_parts(&server, &user.token, &bytes).await;
+    assert_eq!(
+        outcome.part_size, 40,
+        "a part is never larger than the limit"
+    );
+    assert_eq!(outcome.served, bytes);
 
     // One byte over the limit is refused when the upload is opened.
     let over: Vec<u8> = (0u8..41).collect();
@@ -907,23 +870,10 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     state.asset_part_size = 16;
     let owner = crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = http_client();
 
-    let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-    let part_size = started["part_size"].as_u64().unwrap() as usize;
-    assert_eq!(part_size, 16);
+    let upload = StartedUpload::start(&server, &user.token, &bytes).await;
+    assert_eq!(upload.part_size, 16);
 
     let _: serde_json::Value = crate::test_support::patch_json(
         &state,
@@ -933,32 +883,8 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     )
     .await;
 
-    for (index, chunk) in bytes.chunks(part_size).enumerate() {
-        let response = client
-            .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
-            .bearer_auth(&user.token)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(chunk.to_vec())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "part {}", index + 1);
-    }
-    let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let response = client
-        .get(url(""))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.bytes().await.unwrap().as_ref(), bytes.as_slice());
+    let outcome = upload.send_parts_and_complete().await;
+    assert_eq!(outcome.served, bytes);
 }
 
 /// What `serve` reads as it starts: with a stored limit below the part size
@@ -989,69 +915,155 @@ async fn a_multipart_upload_completes_end_to_end_over_http() {
     let bytes: Vec<u8> = (0u8..40).collect();
     let sha = Sha256::of_bytes(&bytes);
     let server = crate::test_support::serve(&state).await;
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
-    let client = http_client();
 
-    let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-    let part_size = started["part_size"].as_u64().unwrap() as usize;
-    assert_eq!(part_size, 16);
+    let outcome = upload_in_parts(&server, &user.token, &bytes).await;
+    assert_eq!(outcome.part_size, 16);
 
-    for (index, chunk) in bytes.chunks(part_size).enumerate() {
-        let response = client
-            .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
-            .bearer_auth(&user.token)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(chunk.to_vec())
+    // Completing the upload stores the asset: a creation, so it names the
+    // asset in `Location` like the single PUT that stores one.
+    assert_eq!(
+        outcome.completed_location.as_deref(),
+        Some(format!("/v1/assets/{sha}").as_str())
+    );
+    assert_eq!(outcome.completed["sha256"], sha.as_str());
+    assert_eq!(outcome.completed["already_present"], false);
+
+    assert_eq!(outcome.served_type, "image/png");
+    assert_eq!(outcome.served, bytes);
+}
+
+/// What a multipart upload sent by [`upload_in_parts`] got back: the part
+/// size the server handed out, the `201 Created` answer to `complete`, and the
+/// asset as the server then serves it.
+struct UploadOutcome {
+    part_size: usize,
+    completed_location: Option<String>,
+    completed: serde_json::Value,
+    served_type: String,
+    served: Vec<u8>,
+}
+
+/// A multipart upload of `bytes` as an `image/png`, opened over HTTP with
+/// no part sent yet.
+struct StartedUpload<'a> {
+    server: &'a crate::test_support::TestServer,
+    token: &'a str,
+    bytes: &'a [u8],
+    sha: Sha256,
+    upload_id: String,
+    part_size: usize,
+}
+
+impl<'a> StartedUpload<'a> {
+    /// Open the upload, which must answer `201 Created`.
+    async fn start(
+        server: &'a crate::test_support::TestServer,
+        token: &'a str,
+        bytes: &'a [u8],
+    ) -> Self {
+        let sha = Sha256::of_bytes(bytes);
+        let response = http_client()
+            .post(format!("{}/v1/assets/{sha}/uploads", server.base()))
+            .bearer_auth(token)
+            .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
             .send()
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "part {}", index + 1);
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let started: serde_json::Value = response.json().await.unwrap();
+        Self {
+            server,
+            token,
+            bytes,
+            sha,
+            upload_id: started["upload_id"].as_str().unwrap().to_string(),
+            part_size: started["part_size"].as_u64().unwrap() as usize,
+        }
     }
 
-    // Completing the upload stores the asset: a creation, answered like the
-    // single PUT that stores one.
-    let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    assert_eq!(
-        response
+    /// The asset's URL with `rest` appended.
+    fn asset_url(&self, rest: &str) -> String {
+        format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha)
+    }
+
+    /// `PUT` each part at the part size the upload opened with, each of which
+    /// must answer `200 OK`.
+    async fn send_parts(&self) {
+        let client = http_client();
+        let upload_id = &self.upload_id;
+        for (index, chunk) in self.bytes.chunks(self.part_size).enumerate() {
+            let response = client
+                .put(self.asset_url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
+                .bearer_auth(self.token)
+                .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+                .body(chunk.to_vec())
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "part {}", index + 1);
+        }
+    }
+
+    /// [`Self::send_parts`], then `complete` the upload, which must answer
+    /// `201 Created`, and read the asset back, which must answer `200 OK`.
+    async fn send_parts_and_complete(self) -> UploadOutcome {
+        self.send_parts().await;
+        let client = http_client();
+        let upload_id = &self.upload_id;
+        let response = client
+            .post(self.asset_url(&format!("/uploads/{upload_id}/complete")))
+            .bearer_auth(self.token)
+            .send()
+            .await
+            .unwrap();
+        let status = response.status();
+        if status != StatusCode::CREATED {
+            panic!(
+                "complete answered {status}, not 201 Created: {}",
+                response.text().await.unwrap()
+            );
+        }
+        let completed_location = response
             .headers()
             .get(reqwest::header::LOCATION)
-            .and_then(|v| v.to_str().ok()),
-        Some(format!("/v1/assets/{sha}").as_str())
-    );
-    let done: serde_json::Value = response.json().await.unwrap();
-    assert_eq!(done["sha256"], sha.as_str());
-    assert_eq!(done["already_present"], false);
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+        let completed: serde_json::Value = response.json().await.unwrap();
 
-    let response = client
-        .get(url(""))
-        .bearer_auth(&user.token)
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response
+        let response = client
+            .get(self.asset_url(""))
+            .bearer_auth(self.token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let served_type = response
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok()),
-        Some("image/png")
-    );
-    assert_eq!(response.bytes().await.unwrap().as_ref(), bytes.as_slice());
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        UploadOutcome {
+            part_size: self.part_size,
+            completed_location,
+            completed,
+            served_type,
+            served: response.bytes().await.unwrap().to_vec(),
+        }
+    }
+}
+
+/// Send `bytes` to `server` as a multipart upload (open it, `PUT` each part,
+/// `complete` it), then read the asset back.
+async fn upload_in_parts(
+    server: &crate::test_support::TestServer,
+    token: &str,
+    bytes: &[u8],
+) -> UploadOutcome {
+    StartedUpload::start(server, token, bytes)
+        .await
+        .send_parts_and_complete()
+        .await
 }
 
 /// The MIME type recorded for a blob the store already holds. The export's
@@ -1231,22 +1243,11 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     let server = crate::test_support::serve(&state).await;
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
+    let upload = StartedUpload::start(&server, &user.token, &bytes).await;
+    let upload_id = &upload.upload_id;
 
     let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-
-    let response = client
-        .put(url(&format!("/uploads/{upload_id}/parts/1")))
+        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/1")))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[..16].to_vec())
@@ -1256,12 +1257,12 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
     assert_eq!(response.status(), StatusCode::OK);
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
-    let session = asset_uploads::session_dir(&assets_dir, &sha, &upload_id);
+    let session = asset_uploads::session_dir(&assets_dir, &upload.sha, upload_id);
     assert!(session.join("manifest.json").is_file());
     assert!(session.join("part-0001").is_file());
 
     let response = client
-        .delete(url(&format!("/uploads/{upload_id}")))
+        .delete(upload.asset_url(&format!("/uploads/{upload_id}")))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1271,7 +1272,7 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
 
     // The session is gone, so a part for it has nowhere to go.
     let response = client
-        .put(url(&format!("/uploads/{upload_id}/parts/2")))
+        .put(upload.asset_url(&format!("/uploads/{upload_id}/parts/2")))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
         .body(bytes[16..32].to_vec())
@@ -1408,33 +1409,12 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     let server = crate::test_support::serve(&state).await;
     let client = http_client();
     let bytes: Vec<u8> = (0u8..40).collect();
-    let sha = Sha256::of_bytes(&bytes);
-    let url = |rest: &str| format!("{}/v1/assets/{sha}{rest}", server.base());
+    let upload = StartedUpload::start(&server, &user.token, &bytes).await;
+    let upload_id = &upload.upload_id;
+    upload.send_parts().await;
 
     let response = client
-        .post(url("/uploads"))
-        .bearer_auth(&user.token)
-        .json(&serde_json::json!({ "bytes": bytes.len(), "mime": "image/png" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let started: serde_json::Value = response.json().await.unwrap();
-    let upload_id = started["upload_id"].as_str().unwrap().to_string();
-    for (index, chunk) in bytes.chunks(16).enumerate() {
-        let response = client
-            .put(url(&format!("/uploads/{upload_id}/parts/{}", index + 1)))
-            .bearer_auth(&user.token)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(chunk.to_vec())
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    let response = client
-        .put(url(""))
+        .put(upload.asset_url(""))
         .bearer_auth(&user.token)
         .header(reqwest::header::CONTENT_TYPE, "image/png")
         .body(bytes.clone())
@@ -1444,7 +1424,7 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     assert_eq!(response.status(), StatusCode::CREATED);
 
     let response = client
-        .post(url(&format!("/uploads/{upload_id}/complete")))
+        .post(upload.asset_url(&format!("/uploads/{upload_id}/complete")))
         .bearer_auth(&user.token)
         .send()
         .await
@@ -1453,11 +1433,11 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
     assert!(response.headers().get(reqwest::header::LOCATION).is_none());
     let done: serde_json::Value = response.json().await.unwrap();
     assert_eq!(done["already_present"], true);
-    assert_eq!(done["sha256"], sha.as_str());
+    assert_eq!(done["sha256"], upload.sha.as_str());
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
     assert!(
-        !asset_uploads::session_dir(&assets_dir, &sha, &upload_id).exists(),
+        !asset_uploads::session_dir(&assets_dir, &upload.sha, upload_id).exists(),
         "the stale session must be dropped"
     );
 }
