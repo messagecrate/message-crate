@@ -1,15 +1,14 @@
-//! Shared HTTP helpers for the server's own tests. [`serve`] is the one place
-//! that binds a listener and spawns the app; every helper below issues one
-//! request through it, reads the whole response, and lets the server drop.
+//! Shared helpers for the server's own tests: HTTP helpers, and the fixtures,
+//! seeded rows, and input lines those tests and others start from. [`serve`]
+//! is the one place that binds a listener and spawns the app; every HTTP
+//! helper below issues one request through it, reads the whole response, and
+//! lets the server drop.
 //!
 //! Distinct from `test_state()` in `server/tests.rs`, which returns a four-tuple
 //! `(TempDir, AppState, String, i64)` for handler-level tests that call a
-//! handler function directly. This module drives the whole stack over real
-//! HTTP, for tests that check a route's contract end to end: the tests of
-//! most `*_api` route groups and the OpenAPI walks in `openapi/`. Its fixture,
-//! seeding, and JSON Lines helpers ([`test_fixture`], [`seed_conversation`],
-//! [`conversation_header`]) are also used by tests that call the database, the
-//! import pipeline, or the logging code directly, without HTTP.
+//! handler function directly. The HTTP helpers drive the whole stack over real
+//! HTTP, for tests that check a route's contract end to end. Tests that do not
+//! go through HTTP use the other helpers too.
 
 use axum::http::StatusCode;
 use serde::de::DeserializeOwned;
