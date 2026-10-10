@@ -93,7 +93,7 @@ pub(crate) async fn get_conversation(
         get_conversation_summary(&mut conn, auth.account_id, conversation_id).await?;
     conversation
         .map(Json)
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Per-backup message counts for one conversation (the Sources panel).
@@ -121,7 +121,7 @@ pub(crate) async fn list_conversation_sources(
     let mut conn = state.db.acquire().await?;
     let rows = list_conversation_source_stats(&mut conn, auth.account_id, conversation_id).await?;
     rows.map(|rows| Json(page_of(rows, params)))
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Query string for a conversation's messages.
@@ -224,7 +224,7 @@ pub(crate) async fn list_conversation_messages(
     .await?;
     result
         .map(Json)
-        .ok_or_else(|| ApiError::NotFound("conversation not found".into()))
+        .ok_or_else(|| ApiError::not_found("conversation"))
 }
 
 /// Put a conversation in the trash. Idempotent: trashing an
@@ -254,7 +254,7 @@ pub(crate) async fn trash_conversation(
     {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("conversation not found".into()))
+        Err(ApiError::not_found("conversation"))
     }
 }
 
@@ -285,7 +285,7 @@ pub(crate) async fn restore_conversation(
     {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("conversation not found".into()))
+        Err(ApiError::not_found("conversation"))
     }
 }
 
@@ -330,7 +330,7 @@ pub(crate) async fn delete_conversation(
             .await;
             Ok(StatusCode::NO_CONTENT)
         }
-        DeleteOutcome::NotOwned => Err(ApiError::NotFound("conversation not found".into())),
+        DeleteOutcome::NotOwned => Err(ApiError::not_found("conversation")),
         DeleteOutcome::NotTrashed => Err(ApiError::StateConflict(
             "the conversation is not in the trash; move it to the trash first".into(),
         )),
