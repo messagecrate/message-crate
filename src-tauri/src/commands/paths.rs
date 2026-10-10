@@ -333,6 +333,14 @@ fn normalize_lexically(path: &Path) -> PathBuf {
     out
 }
 
+/// The refusal [`resolve_absolute`] gives a path that is empty once trimmed,
+/// where no setting has a message of its own.
+pub(crate) const PATH_EMPTY: &str = "Path is empty";
+
+/// The refusal [`resolve_absolute`] gives a relative path, where no setting
+/// has a message of its own.
+pub(crate) const PATH_NOT_ABSOLUTE: &str = "Path must be absolute";
+
 /// Trim `raw` and require it to be a non-empty absolute path.
 pub(crate) fn resolve_absolute(
     raw: &str,
@@ -413,7 +421,7 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
 /// yet), it is resolved through [`resolve_on_disk`], the same way as the root,
 /// so the two compare in one form.
 pub(crate) fn resolve_openable_path(raw: &str, root: &str) -> Result<PathBuf, String> {
-    let candidate = resolve_absolute(raw, "Path is empty", "Path must be absolute")?;
+    let candidate = resolve_absolute(raw, PATH_EMPTY, PATH_NOT_ABSOLUTE)?;
     let root = resolve_staging_root(root)?;
 
     if candidate.exists() {

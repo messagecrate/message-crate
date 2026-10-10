@@ -24,7 +24,9 @@ use std::path::{Path, PathBuf};
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
 use crate::app_directories::{MESSAGE_CRATE_DIRECTORY_NAME, import_run_log};
-use crate::commands::paths::{resolve_absolute, resolve_openable_path, resolve_staging_root};
+use crate::commands::paths::{
+    PATH_EMPTY, PATH_NOT_ABSOLUTE, resolve_absolute, resolve_openable_path, resolve_staging_root,
+};
 
 /// File in the app-data directory that holds the Staging Directory setting
 /// and the run directories this app made.
@@ -278,7 +280,7 @@ impl RunDirectories {
     /// Returns an error when `dir` is empty or relative, is not on disk, was
     /// not made by [`RunDirectories::create`], or has no sentinel.
     pub fn directory(&self, dir: &str) -> Result<PathBuf, String> {
-        let path = resolve_absolute(dir, "Path is empty", "Path must be absolute")?;
+        let path = resolve_absolute(dir, PATH_EMPTY, PATH_NOT_ABSOLUTE)?;
         let canonical = path
             .canonicalize()
             .map_err(|error| format!("Could not find the run directory {dir}: {error}"))?;
@@ -315,7 +317,7 @@ impl RunDirectories {
     /// Returns an error when the directory fails [`RunDirectories::directory`]'s
     /// checks, cannot be removed, or the record cannot be saved.
     pub fn delete(&self, dir: &str) -> Result<(), String> {
-        let path = resolve_absolute(dir, "Path is empty", "Path must be absolute")?;
+        let path = resolve_absolute(dir, PATH_EMPTY, PATH_NOT_ABSOLUTE)?;
         let made = self
             .read()?
             .directories
@@ -354,7 +356,7 @@ impl RunDirectories {
     /// Returns an error when the path is empty or relative, or is in no
     /// run directory this app made.
     pub fn openable(&self, path: &str) -> Result<PathBuf, String> {
-        resolve_absolute(path, "Path is empty", "Path must be absolute")?;
+        resolve_absolute(path, PATH_EMPTY, PATH_NOT_ABSOLUTE)?;
         self.read()?
             .directories
             .iter()
