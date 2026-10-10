@@ -42,7 +42,7 @@ export default function AuditTrailTable({
   showAccount: boolean;
 }) {
   if (total === 0) {
-    return <p className={`${sectionHint} mt-3`}>Nothing recorded yet.</p>;
+    return <p className={`${sectionHint} mt-3`}>Nothing recorded yet</p>;
   }
   return (
     <div className="mt-3 flex flex-col gap-3">

@@ -9,60 +9,23 @@ use message_ir::{
 use serde_json::{Value, json};
 use std::fs;
 
+/// message_ir's sample conversation, its one message `hi` with a JPEG
+/// attached.
 fn doc_with_image_attachment() -> ConversationDocument {
-    ConversationDocument {
-        schema_version: SCHEMA_VERSION,
-        export: ExportMeta {
-            source: "test".into(),
-            tool: "test".into(),
-            tool_version: "0".into(),
-            owner_identity: None,
-            owner_display_name: None,
-            backup_taken_at_unix_ms: None,
-        },
-        conversation: ConversationMeta {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
-            group_title: None,
-            participants: vec![IrParticipant {
-                identity: Some("+15555550101".into()),
-                display_name: Some("Sam".into()),
-            }],
-            stats: ConversationStats::default(),
-        },
-        messages: vec![IrMessage {
-            guid: "guid-1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hi".into(),
-            attachments: vec![IrAttachment {
-                path: Some("photo.jpg".into()),
-                original_name: Some("photo.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: None,
-                missing_reason: None,
-                bytes: None,
-            }],
-            reactions: vec![],
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        }],
-        packaging_stem_suffix: None,
-    }
+    let mut doc = message_ir::testutil::sample_document("hi");
+    doc.messages[0].attachments = vec![IrAttachment {
+        path: Some("photo.jpg".into()),
+        original_name: Some("photo.jpg".into()),
+        mime_type: Some("image/jpeg".into()),
+        digest_sha256: None,
+        is_sticker: false,
+        transcription: None,
+        sticker_effect: None,
+        size_bytes: None,
+        missing_reason: None,
+        bytes: None,
+    }];
+    doc
 }
 
 /// Obfuscate one document as an export of it alone.

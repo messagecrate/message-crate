@@ -37,3 +37,18 @@ describe("ApiTokensTable focus", () => {
     );
   });
 });
+
+describe("ApiTokensTable empty", () => {
+  it("says when the account has no API Token", () => {
+    render(
+      <ApiTokensTable
+        items={[]}
+        busy={false}
+        composing={false}
+        onRename={() => {}}
+        onRevoke={() => {}}
+      />,
+    );
+    expect(screen.getByText("No API Tokens yet")).toBeInTheDocument();
+  });
+});

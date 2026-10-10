@@ -117,7 +117,7 @@ describe("ImportRunLog", () => {
     expect(
       await screen.findByText(/written before its lines carried a time and a level/),
     ).toBeInTheDocument();
-    expect(screen.queryByText("No line at this level.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No line at this level")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download" })).toBeInTheDocument();
   });
 

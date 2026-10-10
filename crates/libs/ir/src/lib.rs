@@ -200,8 +200,11 @@ pub enum IrConversationType {
     Individual,
     /// A group conversation. Where the source marks its groups (a WhatsApp
     /// `@g.us` id, Apple's chat style), the mark decides, whatever the number
-    /// of other people in it. Where the source has no mark (an SMS or MMS
-    /// backup), two or more other people make a group.
+    /// of other people in it. Where the source has no mark, two or more
+    /// people other than the account holder make a group: an SMS or MMS
+    /// backup counts the addresses a message names, and an iMazing or
+    /// OpenExtract export counts who wrote, not who was in the group. iMazing
+    /// also takes a Messages session named as a roster ("A & B") as a group.
     Group,
     /// Orphaned messages: ones the backup holds without recording which
     /// conversation they were said in. The ones that name one person, sent
@@ -1010,6 +1013,27 @@ pub fn parse_android_type(s: &str) -> Option<i32> {
         return None;
     }
     t.parse::<i32>().ok()
+}
+
+/// The [`IrSource`] of one message from an Android SMS backup: `fields`
+/// with the conversation title added as `android_group_title`, and the
+/// message's `android_type` extra read with [`parse_android_type`]. The
+/// title is stored as data only; filenames do not use it.
+pub fn android_source(
+    convo: &PendingConversation,
+    msg: &PendingMessage,
+    mut fields: Map<String, Value>,
+) -> IrSource {
+    if let Some(title) = convo.display_name.as_deref().filter(|t| !t.is_empty()) {
+        fields.insert(
+            "android_group_title".into(),
+            Value::String(title.to_string()),
+        );
+    }
+    IrSource {
+        android_type: parse_android_type(msg.extra_str("android_type")),
+        fields,
+    }
 }
 
 /// Parse a JSON string into a [`Value`], or return the string as a JSON string value.

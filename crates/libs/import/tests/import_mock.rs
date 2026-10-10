@@ -16,68 +16,38 @@ use httpmock::prelude::*;
 use message_crate_import::{
     AuthError, FileStatus, ImportConfig, ImportReport, ProgressEvent, authenticate, run,
 };
-use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
-    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService,
-    SCHEMA_VERSION,
-};
+use message_ir::testutil::sample_document;
+use message_ir::{ConversationDocument, IrAttachment};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
-/// One SMS conversation used by most mock-server tests.
+/// One SMS conversation used by most mock-server tests: message_ir's sample
+/// conversation, with the message guid the mock server matches on.
 fn sample_doc() -> ConversationDocument {
-    ConversationDocument {
-        schema_version: SCHEMA_VERSION,
-        export: ExportMeta {
-            source: "sms-backup-restore".into(),
-            tool: "SMS Backup & Restore".into(),
-            tool_version: "10.26.003".into(),
-            owner_identity: Some("+15555550100".into()),
-            owner_display_name: Some("Me".into()),
-            backup_taken_at_unix_ms: None,
-        },
-        conversation: ConversationMeta {
-            chat_identifier: "+15555550101".into(),
-            conversation_type: IrConversationType::Individual,
-            group_title: None,
-            participants: vec![IrParticipant {
-                identity: Some("+15555550101".into()),
-                display_name: Some("Sam".into()),
-            }],
-            stats: ConversationStats::default(),
-        },
-        messages: vec![IrMessage {
-            guid: "guid-1".into(),
-            timestamp_unix_ms: 1_400_773_261_000,
-            time_precision: message_ir::TimePrecision::Milliseconds,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_identity: Some("+15555550101".into()),
-            sender_display_name: Some("Sam".into()),
-            owner_identity: None,
-            subject: None,
-            text: "hello there".into(),
-            attachments: vec![],
-            reactions: Vec::new(),
-            deletion: None,
-            edits: Vec::new(),
-            reply_to: None,
-            imessage: None,
-            source: None,
-        }],
-        packaging_stem_suffix: None,
-    }
+    let mut doc = sample_document("hello there");
+    doc.messages[0].guid = "guid-1".into();
+    doc
 }
 
-/// Same fixture as [`sample_doc`], with a different chat handle and message guid.
+/// Same fixture as [`sample_doc`], with a different chat handle and message
+/// guid. The handle replaces the first one everywhere, the source bag's
+/// address included, so a batch holds the first handle only when it holds
+/// the first conversation.
 fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
     let mut doc = sample_doc();
     doc.conversation.chat_identifier = handle.into();
     doc.conversation.participants[0].identity = Some(handle.into());
     doc.messages[0].guid = guid.into();
     doc.messages[0].sender_identity = Some(handle.into());
+    if let Some(source) = &mut doc.messages[0].source {
+        source.fields.insert("address".into(), json!(handle));
+    }
+    let first = sample_doc().conversation.chat_identifier;
+    assert!(
+        handle == first || !serde_json::to_string(&doc).unwrap().contains(&first),
+        "the sample conversation writes {first} somewhere sample_doc_for does not replace"
+    );
     doc
 }
 

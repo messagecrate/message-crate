@@ -93,4 +93,13 @@ describe("Export history", () => {
     expect(await section.findByText("Page 3 of 3")).toBeInTheDocument();
     await waitFor(() => expect(next()).toBeDisabled());
   });
+
+  it("says when no Export Run has been recorded", async () => {
+    listAccountExports.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderWithProviders(<StorageSection />);
+
+    const heading = await screen.findByRole("heading", { name: "Export history" });
+    const section = within(heading.parentElement as HTMLElement);
+    expect(await section.findByText("No exports recorded yet")).toBeInTheDocument();
+  });
 });

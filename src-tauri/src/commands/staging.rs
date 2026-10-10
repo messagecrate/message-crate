@@ -220,7 +220,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// either; `spawn_job`'s generic `Err` handling covers both). An earlier
 /// version of this command ended a cancelled Media stage quietly instead (an
 /// `extract:log` line, `Ok(())`, no `extract:error`); that left
-/// `awaitTauriJob`'s promise on the web side permanently unsettled — no
+/// `awaitDesktopJob`'s promise on the web side permanently unsettled — no
 /// `extract:finished`, no `extract:error` — wedging the screen with `running`
 /// stuck true and no way back except restarting the app. Do not restore the
 /// quiet path.

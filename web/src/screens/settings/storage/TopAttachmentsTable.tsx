@@ -36,7 +36,7 @@ export default function TopAttachmentsTable({
         {topAttachments.length > ATTACHMENT_PAGE_SIZE ? ` · ${ATTACHMENT_PAGE_SIZE} per page` : ""}.
       </p>
       {topAttachments.length === 0 ? (
-        <p className={`${sectionHint} mt-3`}>No attachments with sizes yet.</p>
+        <p className={`${sectionHint} mt-3`}>No attachments with sizes yet</p>
       ) : (
         <div className="mt-3 flex flex-col gap-3">
           <ScrollingTableCard cardClassName={tableCard}>

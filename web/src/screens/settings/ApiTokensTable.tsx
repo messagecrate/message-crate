@@ -53,7 +53,7 @@ export default function ApiTokensTable({
           dependencies={[busy, holder]}
           renderEmptyState={() =>
             composing ? null : (
-              <div className="px-5 py-6 text-[0.75rem] text-muted">No API Tokens yet.</div>
+              <div className="px-5 py-6 text-[0.75rem] text-muted">No API Tokens yet</div>
             )
           }
           className="outline-none"

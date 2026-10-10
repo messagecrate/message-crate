@@ -8,7 +8,7 @@ use std::path::Path;
 use message_ir::IdentityType;
 
 use crate::addresses::{MMS_ADDR_FROM, address_handle};
-use crate::mms_box;
+use crate::mms_box::MmsBox;
 use crate::xml::{attrs, get};
 
 /// Infer owner phones from nested `<addr type="137">` elements in sent MMS.
@@ -24,7 +24,10 @@ pub fn infer_owner_phones(path: &Path) -> Result<Vec<String>> {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => {
                 match e.name().as_ref().to_ascii_lowercase().as_str() {
-                    "mms" => in_sent = get(&attrs(&e, &mut 0), "msg_box").trim() == mms_box::SENT,
+                    "mms" => {
+                        in_sent = MmsBox::parse(get(&attrs(&e, &mut 0), "msg_box"))
+                            .is_some_and(MmsBox::is_sent);
+                    }
                     "addr" if in_sent => {
                         let a = attrs(&e, &mut 0);
                         if get(&a, "type").trim() == MMS_ADDR_FROM {
