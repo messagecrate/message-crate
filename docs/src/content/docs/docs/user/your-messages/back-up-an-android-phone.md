@@ -1,12 +1,12 @@
 ---
 title: Back up an Android phone
-description: Write an Android phone's SMS and MMS to XML files with SMS Backup & Restore, and copy them to the computer.
+description: Write an Android phone's SMS and MMS to an XML file with SMS Backup & Restore, and copy it to the computer.
 ---
 
-An Android phone's SMS and MMS are read from XML files written by the app **SMS Backup & Restore**, by SyncTech.
+An Android phone's SMS and MMS are read from the XML file written by the app **SMS Backup & Restore**, by SyncTech.
 The app is free, needs no root access, and is the only route this guide walks through for Android.
 
-This step ends with one directory on the computer that holds the XML files.
+This step ends with the backup's XML file on the computer.
 
 WhatsApp is a different source with its own page: [WhatsApp](/docs/user/import-sources/whatsapp/).
 
@@ -26,16 +26,16 @@ The steps on the phone follow [SyncTech's documentation](https://www.synctech.co
 The app's own encryption must stay off.
 The desktop app can't open an encrypted backup, because it has no field for that password.
 
-## Copy the files to the computer
+## Copy the file to the computer
 
-The backup is one or more files named like `sms-20261001120000.xml`.
+Each backup is one file named like `sms-20261001120000.xml`.
 
-- From **Your phone**: connect the phone with a cable, choose file transfer on the phone, and copy the `.xml` files from the directory the app wrote them to.
-- From cloud storage: download the `.xml` files from that service's website.
+- From **Your phone**: connect the phone with a cable, choose file transfer on the phone, and copy the `.xml` file from the directory the app wrote it to.
+- From cloud storage: download the `.xml` file from that service's website.
 
-The `.xml` files go into a directory of their own on the computer, with nothing else in it.
-Import takes that directory, not a single file and not a `.zip`.
+Import takes that one `.xml` file, not a directory and not a `.zip`.
 A `.zip` must be unpacked first.
+An older backup is a file of its own, and each one is imported on its own.
 
 ## Note the phone's own number
 
@@ -45,6 +45,6 @@ A phone that changed numbers over the years has several, and each one belongs on
 
 ## Check that it worked
 
-A directory on the computer holds at least one `.xml` file, and the file is larger than a few kilobytes.
+The computer holds the backup's `.xml` file, and the file is larger than a few kilobytes.
 
 Next: [Import the backup](/docs/user/your-messages/import-your-backup/).

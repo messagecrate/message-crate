@@ -13,6 +13,8 @@ Source: SyncTech’s [Fields in XML backup files](https://www.synctech.com.au/sm
 
 ## File structure
 
+Each backup is one file, named like `sms-20261001120000.xml`. The importer reads one file per run.
+
 Root element: `<smses>` (current) or `<allsms>` (legacy).
 
 Child message elements:

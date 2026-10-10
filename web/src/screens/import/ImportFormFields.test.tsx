@@ -536,9 +536,9 @@ describe("ImportFormFields Import button", () => {
     expect(onPhoneCountryChange).toHaveBeenCalledWith("GB");
   });
 
-  it("names each Android SMS source's own backup files in the directory placeholder", () => {
+  it("names each Android SMS source's own backup files in the backup placeholder", () => {
     const placeholders = [
-      ["sms-backup-restore", "Directory containing sms-*.xml backup files"],
+      ["sms-backup-restore", "Path to an sms-*.xml backup file"],
       ["go-sms-pro", "Directory containing gosms_sys*.xml backup files"],
       ["sms-backup-plus", "Directory containing .eml files"],
     ];
@@ -549,10 +549,25 @@ describe("ImportFormFields Import button", () => {
     }
   });
 
+  // An Import Run reads one backup: SMS Backup & Restore writes each as one
+  // file, the other Android sources as a directory.
+  it("asks for one file for SMS Backup & Restore and a directory for the others", () => {
+    const labels = [
+      ["sms-backup-restore", "Backup File"],
+      ["go-sms-pro", "Backup Directory"],
+      ["sms-backup-plus", "Backup Directory"],
+    ];
+    for (const [source, label] of labels) {
+      const { unmount } = renderForm({ source });
+      expect(screen.getByText(label)).toBeTruthy();
+      unmount();
+    }
+  });
+
   // Import stays disabled without either one, so both carry the asterisk.
-  it("marks the Android SMS backup directory and phone numbers required", () => {
+  it("marks the Android SMS backup and phone numbers required", () => {
     renderForm({ source: "sms-backup-restore" });
-    const backupLabel = screen.getByText("Backup Directory").closest("label");
+    const backupLabel = screen.getByText("Backup File").closest("label");
     expect(backupLabel?.textContent).toContain("*");
     const phonesLabel = screen.getByText("Backup Device Phone Numbers").closest("label");
     expect(phonesLabel?.textContent).toContain("*");
@@ -722,8 +737,15 @@ const FORM_CASES: FormCase[] = [
   },
   {
     name: "SMS Backup & Restore",
-    props: { source: "sms-backup-restore", ...androidSmsProps },
-    fields: androidSmsFields,
+    props: {
+      source: "sms-backup-restore",
+      ...androidSmsProps,
+      backupPath: "/backups/sms-20261009.xml",
+    },
+    fields: [
+      { label: "Backup File", empty: { backupPath: "" } },
+      { label: "Backup Device Phone Numbers", empty: { ownerPhones: [] } },
+    ],
   },
   {
     name: "GO SMS Pro",

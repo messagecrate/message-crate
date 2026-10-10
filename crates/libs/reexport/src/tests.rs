@@ -424,11 +424,9 @@ fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<
 
 /// Convert from an SMS Backup & Restore backup says what its reader
 /// dropped and skipped, before the `Conversations:` line the desktop app
-/// shows as the run's summary, and names every file it could not read, not
-/// only the first five (#1603). The fixture holds one of each kind, and six
-/// files cut off partway.
+/// shows as the run's summary (#1603). The fixture holds one of each kind.
 #[test]
-fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
+fn run_from_an_sms_backup_logs_the_reader_counts() {
     let destination = tempfile::tempdir().unwrap();
     let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
 
@@ -448,22 +446,6 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         assert!(
             logged.iter().any(|line| line == expected),
             "{expected:?} in the log: {logged:#?}"
-        );
-    }
-    // Every file it could not read is a sentence naming it, under the
-    // Import Errors heading (#1920).
-    let heading = logged
-        .iter()
-        .position(|line| line == "Import Errors")
-        .unwrap_or_else(|| panic!("no Import Errors heading in the log: {logged:#?}"));
-    for n in 1..=6 {
-        let name = format!("broken-{n}.xml");
-        assert!(
-            logged[heading + 1..]
-                .iter()
-                .any(|line| line.starts_with("  The file ")
-                    && line.contains(&format!("{name} could not be read in full: "))),
-            "an Import Error for {name} in the log: {logged:#?}"
         );
     }
     // The run's summary lines follow everything logged as it ran.
@@ -579,14 +561,14 @@ fn looks_like_smses_reads_only_the_first_line_and_ignores_case() {
     assert!(looks_like_smses(&lower));
     assert!(looks_like_smses(&upper));
     assert!(
-        !looks_like_smses(&second_line),
-        "only the first line is read"
+        looks_like_smses(&second_line),
+        "the XML declaration before the root element is passed over"
     );
     assert!(!looks_like_smses(&dir.path().join("missing.xml")));
 }
 
 #[test]
-fn a_backup_not_named_smses_xml_is_detected_by_its_first_line() {
+fn a_backup_not_named_smses_xml_is_detected_by_its_root_element() {
     let source = tempfile::tempdir().unwrap();
     fs::write(
         source.path().join("sms-20240101.xml"),
@@ -919,7 +901,7 @@ fn a_csv_without_every_ir_column_is_refused() {
 }
 
 /// An `.xml` is an SMS Backup & Restore export only when it is named
-/// `smses.xml` or its first line says `<smses`. Any other XML in the directory —
+/// `smses.xml` or its root element is `<smses>`. Any other XML in the directory —
 /// an Android manifest, a settings dump — must be left alone.
 #[test]
 fn an_xml_that_is_not_an_smses_export_is_refused() {
@@ -1085,10 +1067,49 @@ fn an_eml_directory_with_a_temporary_name_is_skipped() {
     );
 }
 
-/// An SMS Backup & Restore file counts when it is named `smses.xml` or its
-/// first line opens `<smses`. No other file does.
+/// A conversion reads one backup, so a directory holding two SMS Backup &
+/// Restore files is refused, naming both, rather than merged.
 #[test]
-fn list_artifacts_takes_an_smses_file_by_name_or_by_first_line() {
+fn a_directory_with_two_sms_backups_is_refused() {
+    let input = tempfile::tempdir().unwrap();
+    let backup = fs::read_to_string(sms_fixture("sms-backup-every-skip/smses.xml")).unwrap();
+    fs::write(input.path().join("smses.xml"), &backup).unwrap();
+    fs::write(input.path().join("older.xml"), &backup).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("holds 2 SMS Backup & Restore files (older.xml, smses.xml)"),
+        "{err:#}"
+    );
+}
+
+/// A backup the app wrote opens with an `<?xml ...?>` line. Beside
+/// `smses.xml` it is a second backup, and the conversion is refused rather
+/// than run without its messages.
+#[test]
+fn a_dated_backup_beside_smses_xml_is_refused() {
+    let input = tempfile::tempdir().unwrap();
+    let backup = fs::read_to_string(sms_fixture("sms-backup-every-skip/smses.xml")).unwrap();
+    fs::write(input.path().join("smses.xml"), &backup).unwrap();
+    fs::write(input.path().join("sms-20240101120000.xml"), &backup).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    let err = run(&config(input.path(), destination.path(), OutputFormat::Csv)).unwrap_err();
+
+    assert!(
+        err.to_string()
+            .contains("holds 2 SMS Backup & Restore files (sms-20240101120000.xml, smses.xml)"),
+        "{err:#}"
+    );
+}
+
+/// An SMS Backup & Restore file counts when it is named `smses.xml` or its
+/// root element is `<smses>`. No other file does.
+#[test]
+fn list_artifacts_takes_an_smses_file_by_name_or_by_root_element() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("smses.xml"), "<?xml version=\"1.0\"?>\n").unwrap();
     fs::write(
