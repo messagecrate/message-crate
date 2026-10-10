@@ -898,8 +898,8 @@ fn rank(a: &Cand, b: &Cand, prio: &HashMap<&str, usize>) -> std::cmp::Ordering {
 /// Strict RFC3339 is sufficient: `messages.timestamp` is only ever written by
 /// `models::utc_timestamp_text`, so no lenient spellings reach this path.
 /// Unparseable input yields `None`.
-fn parse_rfc3339_utc_secs(ts: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(ts.trim())
+fn parse_rfc3339_utc_secs(rfc3339: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(rfc3339.trim())
         .ok()
         .map(|dt| dt.timestamp())
 }
@@ -1048,7 +1048,7 @@ async fn load_near_rows(
         conversation_id,
         source,
         is_from_me,
-        ts,
+        rfc3339,
         body,
         sender_norm,
         content_key,
@@ -1059,7 +1059,7 @@ async fn load_near_rows(
         if hidden.contains(&id) {
             continue;
         }
-        let Some(secs) = parse_rfc3339_utc_secs(ts.trim()) else {
+        let Some(secs) = parse_rfc3339_utc_secs(rfc3339.trim()) else {
             continue;
         };
         let shas = shas_by_msg.remove(&id).unwrap_or_default();
