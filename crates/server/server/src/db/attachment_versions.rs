@@ -85,7 +85,7 @@ pub struct StoredOriginal {
 }
 
 impl StoredOriginal {
-    /// Extension sources to fall back on when the stored blob has none.
+    /// Extension sources to fall back on when the stored Asset has none.
     pub(crate) fn name_hints(&self) -> [Option<&str>; 2] {
         [self.original_name.as_deref(), self.source_path.as_deref()]
     }

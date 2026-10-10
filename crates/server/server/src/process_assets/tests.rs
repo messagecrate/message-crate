@@ -12,7 +12,7 @@ static NOT_STOPPED: AtomicBool = AtomicBool::new(false);
 
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
-/// A row for a stored blob named `assets_path`, with nothing else known.
+/// A row for a stored Asset named `assets_path`, with nothing else known.
 fn row(assets_path: &str) -> StoredOriginal {
     StoredOriginal {
         sha256: SHA.to_string(),
@@ -554,9 +554,9 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
 }
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
-/// an import leaves it: the blob at `<aa>/<sha><ext>` in the account's
+/// an import leaves it: the Asset at `<aa>/<sha><ext>` in the account's
 /// assets directory and a row pointing at it. Returns the attachment id.
-pub(crate) async fn attach_stored_blob(
+pub(crate) async fn attach_stored_original(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
     message_id: i64,
@@ -589,7 +589,8 @@ async fn fixture_with(source: &str, ext: &str, bytes: &[u8]) -> (OpenDb, tempfil
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, source).await;
-    let attachment_id = attach_stored_blob(&opened, &mut conn, message_id, SHA, ext, bytes).await;
+    let attachment_id =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, ext, bytes).await;
     (opened, dir, attachment_id)
 }
 
@@ -667,12 +668,13 @@ async fn store_and_update_derived_db() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let attachment_id = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".jpg", b"x").await;
+    let attachment_id =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, ".jpg", b"x").await;
 
     let converted = dir.path().join("converted");
     fs::create_dir_all(&converted).unwrap();
-    let blob = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
-    assert!(converted.join(&blob.assets_path).is_file());
+    let version_file = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
+    assert!(converted.join(&version_file.assets_path).is_file());
 
     versions_db::record(
         &mut conn,
@@ -682,7 +684,7 @@ async fn store_and_update_derived_db() {
                 original_sha: SHA,
             },
             version: Version::Preview,
-            file: &blob,
+            file: &version_file,
         },
     )
     .await
@@ -690,7 +692,11 @@ async fn store_and_update_derived_db() {
 
     assert_eq!(
         derived_of(&mut conn, attachment_id).await,
-        Some((blob.sha256, blob.assets_path, "image/jpeg".to_string()))
+        Some((
+            version_file.sha256,
+            version_file.assets_path,
+            "image/jpeg".to_string()
+        ))
     );
 }
 
@@ -720,7 +726,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     assert_eq!(
         plan(&rows[0], &ProcessAssetsOptions::default(), FRESH),
         versions(Kind::Audio, Need::Nothing, Need::Make),
-        "an extensionless blob with no declared MIME must classify from its attachment name"
+        "an extensionless Asset with no declared MIME must classify from its attachment name"
     );
 }
 
@@ -878,7 +884,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+            attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
 
         // The Thumbnail and the Preview are shared with the new rows, so the
@@ -951,7 +957,7 @@ fn one_asset_is_processed_alone() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let other_sha = "b".repeat(64);
-        let other = attach_stored_blob(
+        let other = attach_stored_original(
             &opened,
             &mut conn,
             message_id,
@@ -989,7 +995,7 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let sms_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+            attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
 
         assert_eq!(
             run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1060,7 +1066,7 @@ async fn a_blob_that_is_not_media_is_left_as_is_by_the_run() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let attachment_id =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".txt", b"notes").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, ".txt", b"notes").await;
 
     assert_eq!(
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1082,7 +1088,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         .join(format!("ab/{SHA}.bmp"));
     fs::remove_file(&original).unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
-    attach_stored_blob(
+    attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1113,7 +1119,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     let mut conn = opened.conn().await.unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     let sms_attachment =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
     let preview_sha = "c".repeat(64);
     let rel = format!("cc/{preview_sha}.jpg");
     let preview = opened
@@ -1266,7 +1272,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    attach_stored_blob(&opened, &mut conn, message_id, SHA, ".part", b"half").await;
+    attach_stored_original(&opened, &mut conn, message_id, SHA, ".part", b"half").await;
     let dry_run = ProcessAssetsOptions {
         dry_run: true,
         ..Default::default()
@@ -1281,7 +1287,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
         removed(1, 1)
     );
 
-    attach_stored_blob(
+    attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1316,7 +1322,7 @@ async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     // Two in the read-only shard `aa/`, and one in `bb/` that can go.
-    attach_stored_blob(
+    attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1326,8 +1332,8 @@ async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
     )
     .await;
     let second = format!("{}b", "a".repeat(63));
-    attach_stored_blob(&opened, &mut conn, message_id, &second, ".part", b"half").await;
-    attach_stored_blob(
+    attach_stored_original(&opened, &mut conn, message_id, &second, ".part", b"half").await;
+    attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1367,7 +1373,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first = attach_stored_original(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let dropped = |scanned, dropped| ProcessAssetsStats {
         dropped,
@@ -1384,7 +1390,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     );
     assert!(first_preview.is_file(), "a dry run deletes nothing");
 
-    let second = attach_stored_blob(
+    let second = attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1424,7 +1430,8 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     )
     .await;
     let message_id = seed_message(&mut conn, "sms").await;
-    let second = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+    let second =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
 
     assert_eq!(
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1458,9 +1465,9 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first = attach_stored_original(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
-    let second = attach_stored_blob(
+    let second = attach_stored_original(
         &opened,
         &mut conn,
         message_id,
@@ -1653,8 +1660,8 @@ fn a_truncated_derived_file_is_rewritten() {
 fn storing_a_derived_file_leaves_only_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let buf = vec![9u8; 512];
-    let blob = store_derived_bytes(dir.path(), &buf, ".jpg").unwrap();
-    let dest = dir.path().join(&blob.assets_path);
+    let version_file = store_derived_bytes(dir.path(), &buf, ".jpg").unwrap();
+    let dest = dir.path().join(&version_file.assets_path);
     let names: Vec<_> = std::fs::read_dir(dest.parent().unwrap())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())

@@ -191,13 +191,13 @@ fn lock_session(session: &Path) -> Result<ManifestLock, AssetError> {
     Ok(ManifestLock { _file: file })
 }
 
-/// Canonical extension for an uploaded blob's MIME type, from the shared
+/// Canonical extension for the MIME type of an upload's bytes, from the shared
 /// table in [`media`]; empty for missing or unrecognized MIME types.
 fn ext_for_mime(mime: Option<&str>) -> String {
     mime.and_then(media::ext_for_mime).unwrap_or("").to_string()
 }
 
-/// Start a chunked upload session. Returns `already_present` asset when the blob exists.
+/// Start a chunked upload session. Returns `already_present` when the Asset is already stored.
 pub fn start_upload(
     assets_root: &Path,
     sha: &Sha256,

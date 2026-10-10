@@ -331,12 +331,12 @@ pub fn classify(path: &Path) -> Option<Kind> {
 /// the file's own extension first, then the declared MIME type, then the
 /// names the export supplied for it.
 ///
-/// The server stores blobs as `<directory>/<sha256>` with no extension, so a row
+/// The server stores Assets as `<directory>/<sha256>` with no extension, so a row
 /// whose MIME type is missing would otherwise have no kind and never be
 /// converted. `name_hints` (the attachment's original name and its path
 /// inside the export) are read only when the path and the declared MIME say
 /// nothing. A declared MIME is authoritative even when it names something that
-/// is not media, so a `application/pdf` blob called `clip.mp4` is not a video.
+/// is not media, so an `application/pdf` file called `clip.mp4` is not a video.
 ///
 /// GIFs are animations and are never converted: a `.gif` name or an
 /// `image/gif` MIME answers `None`. The MIME is read as `kind_for_mime` reads

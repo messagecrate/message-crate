@@ -480,7 +480,7 @@ fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     let _ = writeln!(out, "  tapbacks:      {}", import.tapbacks);
     let _ = writeln!(
         out,
-        "  media files stored:  {} (unique blobs under assets/)",
+        "  media files stored:  {} (Assets new to assets/)",
         import.assets_copied
     );
     let _ = writeln!(
@@ -585,7 +585,7 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     println!();
     println!("Media files on disk (assets/)");
     println!(
-        "  unique files stored:   {} (content-addressed blobs)",
+        "  unique files stored:   {} (Assets, each named by its content hash)",
         stats.import.assets_copied
     );
     println!(

@@ -1578,12 +1578,12 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
     )
     .await;
     assert!(status.is_success(), "{status} {text}");
-    let blob = state
+    let stored = state
         .cfg
         .paths
         .assets_dir_for_account(alice.account_id)
         .join(crate::assets_api::shard_rel_path(&sha, ""));
-    assert!(blob.is_file(), "the upload stored {}", blob.display());
+    assert!(stored.is_file(), "the upload stored {}", stored.display());
 
     let deleted: DeleteMessagesResponse = delete_json_with_body(
         &state,
@@ -1627,9 +1627,9 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
     .await
     .unwrap();
     assert!(
-        assets_path.is_some() && blob.is_file(),
+        assets_path.is_some() && stored.is_file(),
         "the imported attachment has no file: assets_path={assets_path:?}, file on disk={}",
-        blob.is_file()
+        stored.is_file()
     );
 }
 
