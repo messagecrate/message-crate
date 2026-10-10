@@ -4,6 +4,7 @@ use crate::test_support::test_fixture;
 /// A refused login as a username nobody holds keeps the text typed only when
 /// it could be a username. Anything else, such as a password typed into the
 /// username field, is recorded with no username, so it never enters the trail.
+/// The text kept is the text checked: surrounding whitespace is not kept.
 #[tokio::test]
 async fn a_refused_login_keeps_the_typed_text_only_when_it_could_be_a_username() {
     let fixture = test_fixture().await;
@@ -13,15 +14,19 @@ async fn a_refused_login_keeps_the_typed_text_only_when_it_could_be_a_username()
         "two words",
         &"x".repeat(129),
         "nobody.here_2",
+        " padded.name ",
     ] {
         record_refused_login(&mut conn, typed, None, AuditReason::UnknownUsername, None)
             .await
             .unwrap();
     }
     let (items, total) = page(&mut conn, Scope::All, 10, 0).await.unwrap();
-    assert_eq!(total, 4);
+    assert_eq!(total, 5);
     let kept: Vec<Option<&str>> = items.iter().rev().map(|i| i.username.as_deref()).collect();
-    assert_eq!(kept, [None, None, None, Some("nobody.here_2")]);
+    assert_eq!(
+        kept,
+        [None, None, None, Some("nobody.here_2"), Some("padded.name")]
+    );
     assert!(
         items
             .iter()

@@ -777,7 +777,9 @@ pub async fn record_refused_login(
     reason: AuditReason,
     app: Option<&ConnectingApp>,
 ) -> Result<()> {
-    let typed = is_valid_username(typed_username).then_some(typed_username);
+    // `is_valid_username` checks the trimmed text, so the trimmed text is
+    // what is kept.
+    let typed = is_valid_username(typed_username).then_some(typed_username.trim());
     let entry = NewEntry {
         action: AuditAction::LoginRefused,
         actor: AuditActor::Anonymous,
