@@ -62,8 +62,8 @@ fn is_conversation_jsonl(path: &Path, exclude: &[&Path]) -> bool {
 
 /// List conversation JSON Lines (`.jsonl`) files in `dir`, sorted, skipping journal/report/log.
 ///
-/// `exclude` names extra files to leave out, such as a custom report path
-/// that happens to end in `.jsonl`.
+/// `exclude` names extra files to leave out, such as a log path the caller
+/// set that happens to end in `.jsonl`.
 ///
 /// # Errors
 ///
