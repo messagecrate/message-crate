@@ -21,6 +21,7 @@ import {
   invokeExport,
   invokeFormat,
 } from "../lib/tauri";
+import { isTauri } from "../lib/tauri-check";
 
 /**
  * What an export covers. `everything` sends a blank query, which message-crate-export
@@ -197,11 +198,14 @@ export default function ExportScreen() {
     })();
   };
 
+  if (!isTauri()) {
+    return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;
+  }
+
   return (
     <DesktopJobFormShell
       title="Export"
       job="Export"
-      requireDesktop
       startLabel="Export"
       runningLabel="Exporting…"
       running={running || busy}

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { type DesktopJobName, desktopJobRunningText, useDesktopJob } from "../lib/desktopJob";
-import { isTauri } from "../lib/tauri-check";
 import Button from "./Button";
 import ProgressBar from "./ProgressBar";
 
@@ -24,7 +23,6 @@ export type DesktopJobFormShellProps = {
   log: string[];
   error?: string | null;
   success?: ReactNode;
-  requireDesktop?: boolean;
   intro?: ReactNode;
 };
 
@@ -42,13 +40,9 @@ export default function DesktopJobFormShell({
   log,
   error,
   success,
-  requireDesktop,
   intro,
 }: DesktopJobFormShellProps) {
   const otherJob = useDesktopJob();
-  if (requireDesktop && !isTauri()) {
-    return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;
-  }
 
   const blockedBy = !running && otherJob !== null && otherJob !== job ? otherJob : null;
   const disabled = running || startDisabled || blockedBy !== null;
