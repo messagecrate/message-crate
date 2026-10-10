@@ -30,7 +30,8 @@ import { completeImport, createImport, getServerState } from "../../lib/serverAp
 import { sessionRefused } from "../../lib/sessionRefusal";
 import {
   type AttachmentForecast,
-  awaitTauriJob,
+  awaitDesktopJob,
+  type DesktopJobResult,
   ffmpegMissing,
   invokeCreateRunDir,
   invokeDeleteRunDir,
@@ -50,7 +51,6 @@ import {
   type RunDirConfig,
   type SizeVerdict,
   type StagingSummary,
-  type TauriJobResult,
   type TranscodeFinishedReport,
   type UploadFinishedReport,
 } from "../../lib/tauri";
@@ -840,9 +840,9 @@ function recordError(stage: ImportIssueStage, message: string): void {
  * run. A job that a Cancel came before is never started, and fails with
  * `CANCELLED_MESSAGE` the way a job cancelled while it runs does.
  */
-function runJob(invokeFn: () => Promise<void>): Promise<TauriJobResult> {
+function runJob(invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
   const guarded = scratch.runCancel.guard(invokeFn);
-  return awaitTauriJob(
+  return awaitDesktopJob(
     "Import Run",
     async () => {
       stopIfAccountLeft();
@@ -1238,7 +1238,7 @@ async function uploadAndFinish(
   }
 
   const uploadStartedAt = performance.now();
-  let uploadResult: TauriJobResult | null = null;
+  let uploadResult: DesktopJobResult | null = null;
   let threw = false;
   // A Pause that came before the Upload started: the guard refused the job.
   let pausedBeforeStart = false;
