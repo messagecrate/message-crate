@@ -26,8 +26,12 @@ vi.mock("../lib/tauri-check", () => ({
 vi.mock("../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/localServer")>()),
   startLocalServer: () => startLocalServer(),
-  localServerStatus: () => localServerStatus(),
-  openDataDirectory: () => openDataDirectory(),
+}));
+
+vi.mock("../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/tauri")>()),
+  invokeLocalServerStatus: () => localServerStatus(),
+  invokeOpenDataDirectory: () => openDataDirectory(),
 }));
 
 const setBaseUrlSpy = vi.hoisted(() => vi.fn());

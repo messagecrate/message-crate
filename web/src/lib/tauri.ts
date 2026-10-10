@@ -3,7 +3,6 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { type CloseRequestedEvent, getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
-import type { LocalServerStatus } from "./localServer";
 import type { LogLinesPage } from "./serverApi";
 import type { components } from "./serverApi.types";
 import type {
@@ -658,12 +657,30 @@ function asciiJson(value: string): string {
   );
 }
 
+/** Why the app's own Message Crate is not running. */
+export type LocalServerFailure = "port_taken" | "start_failed";
+
+/**
+ * What the desktop app reports about its own Message Crate, the server it
+ * ships and runs at its own address while the app is open. The rules are in
+ * `src-tauri/src/local_server.rs`.
+ */
+export type LocalServerStatus =
+  | { status: "idle" }
+  | { status: "starting"; first_time: boolean }
+  | { status: "ready"; started_by_app: boolean }
+  | { status: "failed"; reason: LocalServerFailure; message: string; details: string };
+
 /** Start the app's own Message Crate, or ask the one it found whether it still answers. */
 export async function invokeStartLocalServer(openToNetwork: boolean): Promise<LocalServerStatus> {
   return invoke<LocalServerStatus>("start_local_server", { openToNetwork });
 }
 
-/** Give the network setting to the app's own Message Crate. */
+/**
+ * Give the network setting to the desktop app. It starts nothing: the app's
+ * own server is restarted to match, once no import or other desktop job
+ * runs, and a Message Crate the app only found is left as it is.
+ */
 export async function invokeSetOpenToNetwork(openToNetwork: boolean): Promise<LocalServerStatus> {
   return invoke<LocalServerStatus>("set_open_to_network", { openToNetwork });
 }

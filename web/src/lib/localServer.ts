@@ -1,27 +1,13 @@
 import { DEFAULT_TAURI_SERVER_URL } from "./authGuards";
 import { readPref, removePref, writePref } from "./storage";
-import {
-  invokeLocalServerStatus,
-  invokeOpenDataDirectory,
-  invokeSetOpenToNetwork,
-  invokeStartLocalServer,
-} from "./tauri";
+import { invokeStartLocalServer, type LocalServerStatus } from "./tauri";
 
 /**
  * The Message Crate the desktop app starts for itself. The app ships the
  * server and runs it at its own address while the app is open; the rules are
- * in `src-tauri/src/local_server.rs`.
+ * in `src-tauri/src/local_server.rs`. The commands that read and change it
+ * are in `tauri.ts`.
  */
-
-/** Why the app's own Message Crate is not running. */
-export type LocalServerFailure = "port_taken" | "start_failed";
-
-/** What the desktop app reports about its own Message Crate. */
-export type LocalServerStatus =
-  | { status: "idle" }
-  | { status: "starting"; first_time: boolean }
-  | { status: "ready"; started_by_app: boolean }
-  | { status: "failed"; reason: LocalServerFailure; message: string; details: string };
 
 /**
  * Whether `url` is the app's own address, the one it starts a server for.
@@ -54,29 +40,10 @@ export function getOpenToNetwork(): boolean {
 }
 
 /**
- * Save the setting for the next launch. `setLocalServerOpenToNetwork` gives
- * it to a server the app runs now.
+ * Save the setting for the next launch. `invokeSetOpenToNetwork` in
+ * `tauri.ts` gives it to a server the app runs now.
  */
 export function setOpenToNetwork(on: boolean): void {
   if (on) writePref(OPEN_TO_NETWORK_KEY, "1");
   else removePref(OPEN_TO_NETWORK_KEY);
-}
-
-/**
- * Give the network setting to the desktop app. It starts nothing: the app's
- * own server is restarted to match, once no import or other desktop job
- * runs, and a Message Crate the app only found is left as it is.
- */
-export async function setLocalServerOpenToNetwork(on: boolean): Promise<LocalServerStatus> {
-  return invokeSetOpenToNetwork(on);
-}
-
-/** Read the state of the app's own Message Crate without starting it. */
-export async function localServerStatus(): Promise<LocalServerStatus> {
-  return invokeLocalServerStatus();
-}
-
-/** Open the directory holding the app's own database and attachments. */
-export async function openDataDirectory(): Promise<void> {
-  await invokeOpenDataDirectory();
 }

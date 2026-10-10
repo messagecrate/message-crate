@@ -10,7 +10,11 @@ const localServerStatus = vi.hoisted(() => vi.fn());
 vi.mock("./localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./localServer")>()),
   startLocalServer: () => startLocalServer(),
-  localServerStatus: () => localServerStatus(),
+}));
+
+vi.mock("./tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./tauri")>()),
+  invokeLocalServerStatus: () => localServerStatus(),
 }));
 
 beforeEach(() => {
