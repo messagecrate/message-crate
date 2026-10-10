@@ -296,9 +296,11 @@ hand has a group of its own, so no merge cancels a manual run that is meant to
 push the Docker image (#1555).
 
 The ruleset also requires every review conversation to be resolved before a
-merge. It requires no approving review: GitHub does not let the author of a
-pull request approve it, and the agent that opens a pull request uses the
-same account as the one that reviews it. The review is the conversations: the
+merge. It requires no approving review. When this was decided, the agent that
+opened a pull request used the same account as the one that reviewed it, and
+GitHub does not let the author of a pull request approve it. Reviews are now
+posted by the `message-crate-reviewer` app, which could approve, and still no
+approval is required. The review is the conversations: the
 reviewer leaves each finding as a comment on the line, the author answers it
 with the commit that fixes it or the reason it stays, and resolves it. A pull
 request with an open finding cannot merge. Approvals from a second
@@ -312,8 +314,16 @@ another. Every finding is posted, judgement calls included, and closes as
 fixed, declined with evidence, or deferred to a filed issue, so nothing the
 review raised is dropped without a record. The fix commits get one more
 Standards and Correctness pass. Its comments carry a `<!-- pr-review -->`
-marker, because the user and the agents post from one account, and only the
-user resolves a thread without it. A pull request the skill has taken through
+marker, and only the user resolves a thread without it.
+
+The skill posts as the `message-crate-reviewer` GitHub App, through
+`scripts/gh-as-reviewer`, not as the user's account. GitHub allows one account
+about 80 content-creating requests a minute and 500 an hour, and one review
+posts 20 to 40 times: the review, a reply to each finding, the re-review and
+the summary. With every session on the user's account, a busy hour of reviews
+used up that limit, and every session's posts were refused until it reset.
+The app has a limit of its own. A second account would too, but the app needs
+no seat and its key opens only the repository permissions it was given. A pull request the skill has taken through
 all of that, with green checks, is merged without asking the user. The review
 is the check a merge used to wait on them for.
 

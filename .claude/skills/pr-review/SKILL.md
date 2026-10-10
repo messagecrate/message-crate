@@ -41,8 +41,12 @@ Step 5 marks it ready after its push, and CI is watched on that head alone
 step 1, a push made only to bring the base in is made only on `CONFLICTING`
 (AGENTS.md step 5).
 
-**Every call that posts** (a review, a comment, a reply) goes one at a time,
-and a refusal is retried (AGENTS.md, "Posting pace").
+**Every call that posts** (a review, a comment, a reply, a resolved thread, a
+deferred finding's issue) runs through `./scripts/gh-as-reviewer` in place of
+`gh`, so it posts as the `message-crate-reviewer` app (AGENTS.md, "Review on
+the pull request"). The calls go one at a time, and a refusal is retried
+(AGENTS.md, "Posting pace"). If the script stops for a missing key, stop and
+report it; never post as the logged-in account instead.
 
 **Before every push**, run the local checks (AGENTS.md step 3).
 
