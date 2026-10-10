@@ -800,46 +800,18 @@ mod tests {
 
     #[test]
     fn maps_basic_message() {
-        let msg = Message {
-            id: 1,
-            source: "imessage".into(),
-            service: Some("iMessage".into()),
-            guid: "g1".into(),
-            timestamp: "2015-03-12T18:05:22Z".into(),
-            time_precision: message_crate_api_types::TimePrecision::Milliseconds,
-            is_from_me: false,
-            sender: Some("+1".into()),
-            owner: None,
-            subject: None,
-            text: Some("hi".into()),
-            is_announcement: false,
-            reply_to: None,
-            reply_count: 0,
-            sort_order: 0,
-            conversation: MessageConversation {
-                id: 9,
-                chat_identifier: "+1".into(),
-                conversation_type: "individual".into(),
-                is_group: false,
-                group_title: None,
-                label: None,
-                participants: vec![Participant {
-                    identity: Some("+1".into()),
-                    name: "Sam".into(),
-                    service: None,
-                    contact_id: None,
-                }],
-            },
-            attachments: vec![],
-            tapbacks: vec![],
-            deletion: None,
-            earlier_versions: Vec::new(),
-            backup_taken_at: None,
-            matched_earlier_version: false,
-        };
+        let mut msg = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        msg.guid = "basic-guid".into();
+        msg.text = Some("hello".into());
+        msg.service = Some("iMessage".into());
         let ir = to_ir_message(&msg, false).unwrap();
-        assert_eq!(ir.guid, "g1");
-        assert_eq!(ir.text, "hi");
+        assert_eq!(ir.guid, "basic-guid");
+        assert_eq!(ir.text, "hello");
         assert_eq!(ir.service, IrService::IMessage);
     }
 
