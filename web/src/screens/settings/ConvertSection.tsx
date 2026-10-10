@@ -1,17 +1,13 @@
 import { useCallback, useState } from "react";
-import { ListBoxItem } from "react-aria-components";
+import ExportFormatSelect from "../../components/ExportFormatSelect";
 import FormRow from "../../components/FormRow";
 import PathPicker from "../../components/PathPicker";
-import Select, { selectItemClassName } from "../../components/Select";
 import TauriJobFormShell from "../../components/TauriJobFormShell";
 import { useTauriJob } from "../../hooks/useTauriJob";
 import { writeInExportDir } from "../../lib/exportDir";
-import { parseSelectKey } from "../../lib/selectKey";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { sameDirectory } from "./convertUtils";
-
-const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
 
 /** Label for the chosen format, for the success panel. */
 function formatLabel(id: ExportFormat): string {
@@ -149,23 +145,7 @@ export function ConvertSection() {
           so the two directories must differ.
         </p>
       ) : null}
-      <FormRow label="Output format">
-        <Select
-          selectedKey={format}
-          onSelectionChange={(key) => {
-            const next = parseSelectKey(key, FORMAT_IDS);
-            if (next) setFormat(next);
-          }}
-          aria-label="Output format"
-          isDisabled={running}
-        >
-          {EXPORT_FORMATS.map((option) => (
-            <ListBoxItem key={option.id} id={option.id} className={selectItemClassName}>
-              {option.label}
-            </ListBoxItem>
-          ))}
-        </Select>
-      </FormRow>
+      <ExportFormatSelect value={format} onChange={setFormat} isDisabled={running} />
     </TauriJobFormShell>
   );
 }
