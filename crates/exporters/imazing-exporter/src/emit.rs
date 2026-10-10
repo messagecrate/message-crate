@@ -172,15 +172,24 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     );
     let mut documents = Vec::new();
     let mut sources = Vec::new();
-    for (_, Conversation { key, mut convo, .. }) in conversations {
+    for (
+        _,
+        Conversation {
+            key,
+            pending: mut conversation,
+            ..
+        },
+    ) in conversations
+    {
         let hooks = ImazingProjection {
             export: &export,
             tz,
             key: &key,
             sources: RefCell::new(Vec::new()),
         };
-        let chat_id = convo.chat_id.clone();
-        let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) else {
+        let chat_id = conversation.chat_id.clone();
+        let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
+        else {
             continue;
         };
         sources.extend(hooks.sources.into_inner());
@@ -211,19 +220,22 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// One conversation being read: its key, and its messages so far.
 struct Conversation {
     key: ConversationKey,
-    convo: PendingConversation,
+    pending: PendingConversation,
     /// For a group, its rows' digests, earliest first (`Session::row_digests`).
     row_digests: Vec<[u8; 32]>,
 }
 
 /// Which pending conversation a session's rows go to.
 ///
+/// Built from the chat id a session's rows are read under, where
+/// [`ConversationKey`] is built from who the conversation is with.
+///
 /// A one-to-one conversation is one conversation across every CSV that
 /// names its address. A group session is a conversation of its own, even
 /// when another starts with the same row: `separate_groups_with_one_earliest_row`
 /// decides which ones are one group once every CSV is read.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct ConvoKey {
+struct ChatIdKey {
     /// Keeps a Messages conversation and a WhatsApp conversation with the
     /// same peer apart.
     family: TransportFamily,
@@ -257,8 +269,8 @@ struct GroupSession {
 /// Such a key depends on the groups it is told apart from, so it changes
 /// when one of them is gone from the phone, or a new one shares more of its
 /// earliest rows.
-fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, Conversation>) {
-    let mut by_chat_id: BTreeMap<(TransportFamily, String), Vec<ConvoKey>> = BTreeMap::new();
+fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ChatIdKey, Conversation>) {
+    let mut by_chat_id: BTreeMap<(TransportFamily, String), Vec<ChatIdKey>> = BTreeMap::new();
     for key in conversations
         .keys()
         .filter(|key| key.group_session.is_some())
@@ -272,7 +284,7 @@ fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, 
         // Longest first, so a group read from an older export folds into
         // the newest one.
         keys.sort_by_key(|key| std::cmp::Reverse(conversations[key].row_digests.len()));
-        let mut kept: Vec<ConvoKey> = Vec::new();
+        let mut kept: Vec<ChatIdKey> = Vec::new();
         for key in keys {
             let Some(same_group) = kept
                 .iter()
@@ -323,13 +335,13 @@ fn separate_groups_with_one_earliest_row(conversations: &mut BTreeMap<ConvoKey, 
             if let ConversationKey::Group { vendor_id, .. } = &mut conversation.key {
                 *vendor_id = id;
             }
-            conversation.convo.chat_id = conversation.key.chat_id();
+            conversation.pending.chat_id = conversation.key.chat_id();
         }
     }
 }
 
-/// The session name of a group's [`ConvoKey`].
-fn session_name(key: &ConvoKey) -> Option<&str> {
+/// The session name of a group's [`ChatIdKey`].
+fn session_name(key: &ChatIdKey) -> Option<&str> {
     key.group_session
         .as_ref()
         .map(|session| session.session_name.as_str())
@@ -337,7 +349,7 @@ fn session_name(key: &ConvoKey) -> Option<&str> {
 
 /// Fold `other`, the same group read from another export, into `into`.
 fn merge_group_into(into: &mut Conversation, other: Conversation) {
-    into.convo.messages.extend(other.convo.messages);
+    into.pending.messages.extend(other.pending.messages);
     if let (
         ConversationKey::Group { members, .. },
         ConversationKey::Group {
@@ -361,7 +373,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
 struct Ingest {
     tz: Zone,
     copy_attachments: bool,
-    conversations: BTreeMap<ConvoKey, Conversation>,
+    conversations: BTreeMap<ChatIdKey, Conversation>,
     /// Every row matched to a file, in the order the rows were read.
     claims: Vec<FileClaim>,
     /// Each Messages chat directory's Messages row texts, keyed by the row's
@@ -383,19 +395,19 @@ struct Ingest {
 /// conversation and one second whose row names one file.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct NameGroup {
-    convo_key: ConvoKey,
+    chat_id_key: ChatIdKey,
     /// The row's `Attachment` cell, which is its attachment's `rel_path`.
     name: String,
     second: i64,
 }
 
 impl NameGroup {
-    /// The group of a message in `convo_key`, or `None` when its row names
+    /// The group of a message in `chat_id_key`, or `None` when its row names
     /// no file.
-    fn of(convo_key: &ConvoKey, message: &PendingMessage) -> Option<Self> {
+    fn of(chat_id_key: &ChatIdKey, message: &PendingMessage) -> Option<Self> {
         let attachment = message.attachments.first()?;
         Some(Self {
-            convo_key: convo_key.clone(),
+            chat_id_key: chat_id_key.clone(),
             name: attachment.rel_path.clone(),
             second: message.sort_key,
         })
@@ -412,7 +424,7 @@ struct FileClaim {
     /// Where the row sits in the export: the CSV's place in discovery order,
     /// then the row's place in that CSV.
     order: (usize, usize),
-    convo_key: ConvoKey,
+    chat_id_key: ChatIdKey,
     message: usize,
 }
 
@@ -521,7 +533,7 @@ impl Ingest {
             );
         }
         let chat_id = session.key.chat_id();
-        let convo_key = ConvoKey {
+        let chat_id_key = ChatIdKey {
             family: TransportFamily::from_kind(discovered.kind),
             chat_id: chat_id.clone(),
             group_session: session.key.is_group().then(|| GroupSession {
@@ -530,21 +542,21 @@ impl Ingest {
             }),
         };
         self.conversations
-            .entry(convo_key.clone())
+            .entry(chat_id_key.clone())
             .or_insert_with(|| {
                 let is_group = session.key.is_group();
-                let mut convo = PendingConversation::new(
+                let mut conversation = PendingConversation::new(
                     chat_id,
                     is_group,
                     is_group.then(|| session_name.to_string()),
                     Vec::new(),
                 );
-                convo
+                conversation
                     .extra
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
                 Conversation {
                     key: session.key.clone(),
-                    convo,
+                    pending: conversation,
                     row_digests: session.row_digests.clone(),
                 }
             });
@@ -555,9 +567,9 @@ impl Ingest {
             };
             let messages = &mut self
                 .conversations
-                .get_mut(&convo_key)
+                .get_mut(&chat_id_key)
                 .expect("conversation inserted above")
-                .convo
+                .pending
                 .messages;
             let source = message.extra_str(&attachment_source_key(0));
             if !source.is_empty() {
@@ -566,7 +578,7 @@ impl Ingest {
                     is_image: row.attachment_type.trim().eq_ignore_ascii_case("image"),
                     csv_name: row.attachment.clone(),
                     order: (csv.index, row_index),
-                    convo_key: convo_key.clone(),
+                    chat_id_key: chat_id_key.clone(),
                     message: messages.len(),
                 });
             }
@@ -667,7 +679,7 @@ impl Ingest {
         // Each picture an Image row names, with those rows in CSV order.
         let mut pictures: HashMap<PathBuf, Vec<usize>> = HashMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            if claim.is_image && claim.convo_key.family == TransportFamily::Messages {
+            if claim.is_image && claim.chat_id_key.family == TransportFamily::Messages {
                 pictures
                     .entry(claim.source.clone())
                     .or_default()
@@ -728,12 +740,12 @@ impl Ingest {
     fn tell_apart_files_of_one_name(&mut self) {
         let mut groups: BTreeMap<NameGroup, Vec<usize>> = BTreeMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            let message = &self.conversations[&claim.convo_key].convo.messages[claim.message];
-            if let Some(group) = NameGroup::of(&claim.convo_key, message) {
+            let message = &self.conversations[&claim.chat_id_key].pending.messages[claim.message];
+            if let Some(group) = NameGroup::of(&claim.chat_id_key, message) {
                 groups.entry(group).or_default().push(index);
             }
         }
-        let mut digests: Vec<(ConvoKey, usize, String)> = Vec::new();
+        let mut digests: Vec<(ChatIdKey, usize, String)> = Vec::new();
         let mut hashed: BTreeSet<NameGroup> = BTreeSet::new();
         for (group, claims) in groups {
             let mut files_by_csv: BTreeMap<usize, HashSet<&Path>> = BTreeMap::new();
@@ -751,22 +763,24 @@ impl Ingest {
                 let claim = &self.claims[index];
                 let digest = file_io::file_sha256(&claim.source)
                     .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
-                digests.push((claim.convo_key.clone(), claim.message, digest));
+                digests.push((claim.chat_id_key.clone(), claim.message, digest));
             }
             hashed.insert(group);
         }
-        for (convo_key, message, digest) in digests {
-            self.messages_mut(&convo_key)[message]
+        for (chat_id_key, message, digest) in digests {
+            self.messages_mut(&chat_id_key)[message]
                 .extra
                 .insert(attachment_content_key(0), digest);
         }
-        let convo_keys: BTreeSet<ConvoKey> =
-            hashed.iter().map(|group| group.convo_key.clone()).collect();
-        for convo_key in convo_keys {
-            for message in self.messages_mut(&convo_key) {
+        let chat_id_keys: BTreeSet<ChatIdKey> = hashed
+            .iter()
+            .map(|group| group.chat_id_key.clone())
+            .collect();
+        for chat_id_key in chat_id_keys {
+            for message in self.messages_mut(&chat_id_key) {
                 let no_file = message.extra_str(&attachment_source_key(0)).is_empty();
                 if no_file
-                    && NameGroup::of(&convo_key, message)
+                    && NameGroup::of(&chat_id_key, message)
                         .is_some_and(|group| hashed.contains(&group))
                 {
                     message
@@ -777,13 +791,13 @@ impl Ingest {
         }
     }
 
-    /// The messages of the conversation `convo_key` names.
-    fn messages_mut(&mut self, convo_key: &ConvoKey) -> &mut Vec<PendingMessage> {
+    /// The messages of the conversation `chat_id_key` names.
+    fn messages_mut(&mut self, chat_id_key: &ChatIdKey) -> &mut Vec<PendingMessage> {
         &mut self
             .conversations
-            .get_mut(convo_key)
+            .get_mut(chat_id_key)
             .expect("a claim names a conversation that exists")
-            .convo
+            .pending
             .messages
     }
 
@@ -816,9 +830,9 @@ impl Ingest {
             .into_owned();
         let message = &mut self
             .conversations
-            .get_mut(&first.convo_key)
+            .get_mut(&first.chat_id_key)
             .expect("a claim names a conversation that exists")
-            .convo
+            .pending
             .messages[first.message];
         message.extra.insert(
             attachment_source_key(message.attachments.len()),
@@ -1002,30 +1016,34 @@ impl ProjectionHooks for ImazingProjection<'_> {
     /// one-to-one conversation's one participant is the person it is with:
     /// their address, or for a conversation keyed by a name, the name and no
     /// address.
-    fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(
+        &self,
+        _chat_id: &str,
+        conversation: &PendingConversation,
+    ) -> Vec<IrParticipant> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
             }],
         }
     }
 
-    fn packaging_stem_suffix(&self, convo: &PendingConversation) -> Option<String> {
-        imazing_packaging_stem_suffix(convo.extra_str("source_kind"))
+    fn packaging_stem_suffix(&self, conversation: &PendingConversation) -> Option<String> {
+        imazing_packaging_stem_suffix(conversation.extra_str("source_kind"))
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         // Session string is not a real group title: stored as data only
         // (the document's `group_title` stays `None`, matching the previous
         // CSV/mail stem).
-        let session_title = convo.display_name.as_deref().unwrap_or("");
+        let session_title = conversation.display_name.as_deref().unwrap_or("");
         if !session_title.is_empty() {
             fields.insert(
                 "group_title".into(),

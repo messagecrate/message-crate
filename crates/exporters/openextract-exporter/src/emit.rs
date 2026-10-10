@@ -97,7 +97,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             key: &pending.key,
         };
         if let Some(mut doc) =
-            project_conversation(&chat_id, &mut pending.convo, &hooks, &mut report)
+            project_conversation(&chat_id, &mut pending.conversation, &hooks, &mut report)
         {
             if matches!(pending.key, Key::UnknownPerson) {
                 doc.conversation.conversation_type = IrConversationType::Orphaned;
@@ -126,7 +126,7 @@ struct Ingest {
 /// One conversation and its key, awaiting projection.
 struct Pending {
     key: Key,
-    convo: PendingConversation,
+    conversation: PendingConversation,
 }
 
 /// What a conversation is keyed by.
@@ -312,7 +312,7 @@ impl Ingest {
                 }
                 Pending {
                     key: conversation.key.clone(),
-                    convo: PendingConversation::new(
+                    conversation: PendingConversation::new(
                         chat_id,
                         conversation.key.is_group(),
                         conversation.group_name.clone(),
@@ -330,7 +330,7 @@ impl Ingest {
         if let Some(vendor_key) = vendor_key {
             extra.insert(VENDOR_KEY.into(), vendor_key);
         }
-        pending.convo.messages.push(PendingMessage {
+        pending.conversation.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
             sender_identity,
@@ -586,7 +586,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         msg.extra.get(VENDOR_KEY).cloned()
     }
 
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         fields.insert("source_kind".into(), json!(msg.extra_str("source_kind")));
         fields.insert(
@@ -595,7 +595,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
         );
         // A group's `Conversation` value is kept as data, not as its title:
         // the export does not say whether it is a name or a list of people.
-        if let Some(name) = &convo.display_name {
+        if let Some(name) = &conversation.display_name {
             fields.insert("conversation".into(), json!(name));
         }
         IrSource {
@@ -609,17 +609,21 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// conversation keyed by a name, the name and no address. The conversation
     /// that names nobody, and "Orphaned · Unknown person", have no roster at
     /// all.
-    fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(
+        &self,
+        _chat_id: &str,
+        conversation: &PendingConversation,
+    ) -> Vec<IrParticipant> {
         match self.key {
             Key::Nameless | Key::UnknownPerson => Vec::new(),
             Key::Keyed(ConversationKey::Group { members, .. }) => members.clone(),
             Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
                 identity: Some(handle.clone()),
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
             }],
             Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
                 identity: None,
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
             }],
         }
     }

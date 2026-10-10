@@ -3017,11 +3017,11 @@ mod measure_words {
         let before_any = run(&mut conn, ListKind::Contacts, "messages:>0").await;
         let before_many = run(&mut conn, ListKind::Contacts, "messages:>=3").await;
         for i in 0..5 {
-            let ts = format!("2024-06-0{}T10:00:00Z", i + 1);
+            let rfc3339 = format!("2024-06-0{}T10:00:00Z", i + 1);
             message(
                 &mut conn,
                 ACCOUNT,
-                msg(f.trashed_conv, &ts, false, Some(f.ana_handle), "gone"),
+                msg(f.trashed_conv, &rfc3339, false, Some(f.ana_handle), "gone"),
             )
             .await;
         }

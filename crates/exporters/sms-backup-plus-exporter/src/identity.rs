@@ -55,7 +55,12 @@ pub(crate) fn timestamp_ms(timestamp_secs: f64) -> i64 {
 mod tests {
     use super::*;
 
-    fn sample_msg(address: &str, ts: f64, is_from_me: bool, text: &str) -> ParsedMessage {
+    fn sample_msg(
+        address: &str,
+        timestamp_secs: f64,
+        is_from_me: bool,
+        text: &str,
+    ) -> ParsedMessage {
         let peer = phone::Handle::parse(address);
         ParsedMessage {
             chat_key: peer
@@ -65,7 +70,7 @@ mod tests {
             conversation_type: message_ir::IrConversationType::Individual,
             group_title: None,
             participants: peer.iter().cloned().collect(),
-            timestamp_secs: ts,
+            timestamp_secs,
             has_milliseconds: true,
             is_from_me,
             sender: peer.filter(|_| !is_from_me),

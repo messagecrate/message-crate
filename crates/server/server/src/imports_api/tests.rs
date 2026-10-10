@@ -441,9 +441,9 @@ fn chunk_boundary_jsonl() -> String {
     let mut lines = vec![header.to_string()];
     for i in 0..56 {
         let guid = format!("g-{i:02}");
-        let ts = 1_426_183_462_000i64 + i64::from(i) * 1000;
+        let timestamp_ms = 1_426_183_462_000i64 + i64::from(i) * 1000;
         let mut message = message_line(&guid, &format!("msg {i}"))
-            .at(ts)
+            .at(timestamp_ms)
             .sender("+15555550123");
         if i == 0 {
             message = message.attachment(missing_attachment("first.bin"));
@@ -571,9 +571,9 @@ async fn a_removed_reaction_leaves_no_message_and_no_reaction() {
     let header =
         conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Bob"));
     let target = message_line("g-hi", "hi").outgoing();
-    let reaction = |guid: &str, ts: i64, text: &str, action: &str| {
+    let reaction = |guid: &str, timestamp_ms: i64, text: &str, action: &str| {
         message_line(guid, text)
-            .at(ts)
+            .at(timestamp_ms)
             .kind(IrMessageKind::Tapback)
             .sender("+15555550123")
             .sender_display_name("Bob")
