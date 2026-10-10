@@ -15,7 +15,7 @@ describe("whatsappExtractFields", () => {
         wa: "  ",
         media: "/tmp/WhatsApp",
         db: "/tmp/msgstore.db",
-        business: true,
+        isBusinessApp: true,
         ownerPhone: " +1 555 555 0100 ",
       }),
     ).toEqual({
@@ -45,7 +45,7 @@ describe("whatsappExtractFields", () => {
       wa: "",
       media: "",
       db: "",
-      business: false,
+      isBusinessApp: false,
     };
     expect(whatsappExtractFields({ ...base, ownerPhone: "+15555550100" }).owner_phones).toEqual([
       "+15555550100",
@@ -66,7 +66,7 @@ describe("whatsappExtractFields", () => {
         wa: "/backups/ContactsV2.sqlite",
         media: "/tmp/WhatsApp",
         db: "/tmp/msgstore.db",
-        business: false,
+        isBusinessApp: false,
         ownerPhone: "",
       }),
     ).toEqual({
@@ -89,7 +89,7 @@ describe("whatsappExtractFields", () => {
       wa: "",
       media: "",
       db: "",
-      business: false,
+      isBusinessApp: false,
       ownerPhone: "+15555550100",
     };
     expect(whatsappExtractFields({ ...base, source: "whatsapp-ios" }).backup_password).toBe(
@@ -117,7 +117,7 @@ describe("whatsappExtractFields", () => {
         wa: "/backups/ContactsV2.sqlite",
         media: "",
         db: "",
-        business: true,
+        isBusinessApp: true,
         ownerPhone: "",
       }),
     ).toEqual({
@@ -126,7 +126,7 @@ describe("whatsappExtractFields", () => {
       media_max_fps: "30",
       media_min_size: "20",
       whatsapp_wa: "/backups/ContactsV2.sqlite",
-      whatsapp_business: true,
+      is_business_app: true,
     });
   });
 });

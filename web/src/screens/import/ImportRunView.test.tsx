@@ -83,7 +83,7 @@ function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues
     whatsappWa: "",
     whatsappMedia: "",
     whatsappDb: "",
-    whatsappBusiness: false,
+    isBusinessApp: false,
     whatsappOwnerPhone: "",
     timeZone: "America/New_York",
     phoneCountry: "",

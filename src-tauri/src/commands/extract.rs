@@ -126,7 +126,7 @@ pub struct ExtractArgs {
     /// Optional explicit `msgstore.db` path.
     pub whatsapp_db: Option<String>,
     /// WhatsApp Business backup (iPhone only; Android stays false).
-    pub whatsapp_business: Option<bool>,
+    pub is_business_app: Option<bool>,
     /// Continue an interrupted export in the same output directory: previous
     /// output is kept and conversations already written are skipped.
     pub resume: Option<bool>,
@@ -189,7 +189,7 @@ pub fn extract(
         whatsapp_wa: args.whatsapp_wa.unwrap_or_default(),
         whatsapp_media: args.whatsapp_media.unwrap_or_default(),
         whatsapp_db: args.whatsapp_db.unwrap_or_default(),
-        whatsapp_business: args.whatsapp_business.unwrap_or(false),
+        is_business_app: args.is_business_app.unwrap_or(false),
     };
 
     let media_settings = media_settings_for(&options, args.asset_max_bytes)?;
@@ -259,7 +259,7 @@ struct ExtractOptions {
     whatsapp_wa: String,
     whatsapp_media: String,
     whatsapp_db: String,
-    whatsapp_business: bool,
+    is_business_app: bool,
 }
 
 /// Parse the attachment handling choice from the Import form.
@@ -496,7 +496,7 @@ fn build_exporter_config(
             form.whatsapp_backup = path.to_string();
             form.backup_password.clone_from(&options.backup_password);
             form.whatsapp_wa.clone_from(&options.whatsapp_wa);
-            form.is_business_app = options.whatsapp_business;
+            form.is_business_app = options.is_business_app;
             Exporter::Whatsapp
         }
         _ => return Err(format!("unsupported source '{source}'")),

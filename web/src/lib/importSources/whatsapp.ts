@@ -39,7 +39,7 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
       wa: form.whatsappWa,
       media: form.whatsappMedia,
       db: form.whatsappDb,
-      business: form.whatsappBusiness,
+      isBusinessApp: form.isBusinessApp,
       ownerPhone: form.whatsappOwnerPhone,
     }),
   // The iPhone backup password, or the Android backup's key.

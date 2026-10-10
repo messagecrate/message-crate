@@ -91,7 +91,7 @@ export interface ExtractConfig {
   /** Explicit WhatsApp message database (`msgstore.db`). */
   whatsapp_db?: string;
   /** iPhone WhatsApp Business default files (`--business`). */
-  whatsapp_business?: boolean;
+  is_business_app?: boolean;
   /** Continue an interrupted export in the same directory: previous output is
    * kept and conversations already written are skipped. */
   resume?: boolean;
