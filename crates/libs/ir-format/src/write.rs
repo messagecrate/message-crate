@@ -6,7 +6,8 @@ use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_pac
 use message_crate_core::OutputFormat;
 use message_csv::{AttachmentCell, ParticipantCell, format_local_ts, json_cell};
 use message_ir::{
-    ConversationDocument, ConversationHeader, Deletion, IrImessage, IrMessage, IrMessageKind,
+    ConversationDocument, ConversationHeader, Deletion, IdentityService, IrImessage, IrMessage,
+    IrMessageKind, IrService,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -184,14 +185,20 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
     )
 }
 
-/// CSV `identity_type` cell: the sender's identity type, as
-/// [`phone::Handle::parse`] types the sender identity. Empty when the message
-/// has no sender identity, or when the sender identity is blank, because a
-/// blank one is not an address.
-fn sender_identity_type_cell(sender_identity: Option<&str>) -> &'static str {
+/// CSV `identity_type` cell: the sender's identity type as the server works
+/// it out, from the message's service and the shape
+/// [`phone::Handle::parse`] gives the sender identity, so a WhatsApp
+/// `123456@lid` is `other`. Empty when the message has no sender identity,
+/// or when the sender identity is blank, because a blank one is not an
+/// address.
+fn sender_identity_type_cell(sender_identity: Option<&str>, service: IrService) -> &'static str {
     sender_identity
         .and_then(phone::Handle::parse)
-        .map_or("", |handle| handle.kind().as_str())
+        .map_or("", |handle| {
+            IdentityService::from_ir_service(service)
+                .type_on(handle.kind())
+                .as_str()
+        })
 }
 
 /// Per-conversation CSV using the unified [`CSV_HEADERS`] contract.
@@ -212,7 +219,6 @@ pub(crate) fn write_conversation_csv(
             .map(|p| ParticipantCell {
                 identity: p.identity.clone().unwrap_or_default(),
                 display_name: p.display_name.clone().unwrap_or_default(),
-                identity_type: p.identity_type,
             })
             .collect::<Vec<_>>(),
     );
@@ -399,7 +405,7 @@ fn csv_record<'a>(
         msg.service.as_str(),
         msg.sender_identity.as_deref().unwrap_or(""),
         msg.sender_display_name.as_deref().unwrap_or(""),
-        sender_identity_type_cell(msg.sender_identity.as_deref()),
+        sender_identity_type_cell(msg.sender_identity.as_deref(), msg.service),
         msg.subject.as_deref().unwrap_or(""),
         msg.text.as_str(),
         cells.attachments_json.as_str(),

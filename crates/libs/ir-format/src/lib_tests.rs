@@ -324,7 +324,7 @@ fn sender_identity_type_cell(dir: &Path, doc: &ConversationDocument) -> String {
 }
 
 #[test]
-fn csv_serializes_identity_type_in_cell_and_column() {
+fn csv_writes_the_sender_type_column_and_no_participant_type() {
     fn first_row_cols(csv: &str) -> (Vec<String>, csv::StringRecord) {
         let mut lines = csv.lines();
         let headers = lines.next().unwrap().to_string();
@@ -346,12 +346,11 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     let (cols, row) = first_row_cols(&csv);
     let participants_idx = cols.iter().position(|c| c == "participants_json").unwrap();
     let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
-    // Participants cell carries the typed participant.
+    // The participants cell carries no type: the conversation file has
+    // none, and the server works it out from the service and the address.
     assert!(
-        row.get(participants_idx)
-            .unwrap()
-            .contains(r#""identity_type":"phone""#),
-        "participants_json must carry identity_type"
+        !row.get(participants_idx).unwrap().contains("identity_type"),
+        "participants_json must not carry identity_type"
     );
     // Dedicated column carries the sender identity type.
     assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
@@ -364,9 +363,23 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     }
 }
 
+/// The CSV sender type is the one the server stores: WhatsApp carries no
+/// email address, so a WhatsApp `@lid` sender is `other`, and the same shape
+/// over SMS is `email` (#1933).
+#[test]
+fn csv_types_an_at_sender_by_its_service() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut doc = message_ir::testutil::sample_document("hello ir");
+    doc.messages[0].sender_identity = Some("123456@lid".into());
+    doc.messages[0].service = message_ir::IrService::Whatsapp;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "other");
+    doc.messages[0].service = message_ir::IrService::Sms;
+    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "email");
+}
+
 /// An address written with `tel:` is a phone number in the CSV
-/// `identity_type` cell and in a participant read back from EML or mbox, as
-/// `phone::Handle::parse` types it everywhere else (#1634).
+/// `identity_type` cell, as `phone::Handle::parse` types it everywhere else,
+/// and comes back from EML or mbox as written (#1634).
 #[test]
 fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     let tel = "tel:+15555550157";
@@ -387,12 +400,8 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
             .conversation
             .participants
             .iter()
-            .find(|p| p.identity.as_deref() == Some(tel))
-            .expect("the tel: participant is read back");
-        assert_eq!(
-            participant.identity_type,
-            Some(message_ir::IdentityType::Phone)
-        );
+            .any(|p| p.identity.as_deref() == Some(tel));
+        assert!(participant, "the tel: participant is read back");
     }
 }
 

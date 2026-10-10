@@ -221,7 +221,6 @@ fn group_members(
         let member = members
             .entry(handle.key().to_string())
             .or_insert_with(|| IrParticipant {
-                identity_type: Some(handle.kind()),
                 identity: Some(handle.into_key()),
                 display_name: None,
             });
@@ -275,7 +274,6 @@ fn group_members(
                     named_only.push(IrParticipant {
                         identity: None,
                         display_name: Some(label.to_string()),
-                        identity_type: None,
                     });
                 }
             }

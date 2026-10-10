@@ -19,6 +19,7 @@ import type { Conversation } from "../lib/types";
 import { participant } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
+import { SLOW_STATE_WAIT } from "../test/waits";
 import TrashScreen from "./TrashScreen";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -194,7 +195,7 @@ describe("TrashScreen", () => {
       await screen.findByText(
         "Could not load the search words. Server unreachable",
         {},
-        { timeout: 4000 },
+        SLOW_STATE_WAIT,
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/applies to/)).toBeNull();
@@ -206,7 +207,7 @@ describe("TrashScreen", () => {
     listContactsMock.mockRejectedValue(new Error("Server unreachable"));
     renderAt("/trash");
 
-    expect(await screen.findByText("Server unreachable", {}, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
     expect(screen.queryByText("Trash is empty.")).toBeNull();
     expect(screen.queryByText("No contacts in Trash.")).toBeNull();
     expect(screen.getByRole("button", { name: "Empty Trash" })).toBeTruthy();
@@ -216,7 +217,7 @@ describe("TrashScreen", () => {
     listConversationsMock.mockRejectedValue(new Error("Server unreachable"));
     renderAt("/trash");
 
-    expect(await screen.findByText("Server unreachable", {}, { timeout: 4000 })).toBeTruthy();
+    expect(await screen.findByText("Server unreachable", {}, SLOW_STATE_WAIT)).toBeTruthy();
     expect(screen.queryByText("Trash is empty.")).toBeNull();
     expect(screen.queryByText("No conversations in Trash.")).toBeNull();
   });

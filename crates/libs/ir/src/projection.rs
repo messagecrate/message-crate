@@ -5,14 +5,14 @@
 //! sent/received tallying, the dedupe step, GUID derivation, linking each
 //! reply to the message it quotes, and document assembly — lives here once;
 //! the genuine per-exporter deltas (vendor `source` fields, service
-//! selection, attachment digests and vendor keys, reply keys, attachment
-//! mapping) are supplied through [`ProjectionHooks`].
+//! selection, attachment digests and vendor keys, reply keys, reactions,
+//! attachment mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
-    IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, PendingAttachment,
-    PendingConversation, PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
+    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
+    MessageCopy, MessageGuid, MessageIdentity, PendingAttachment, PendingConversation,
+    PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
     one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
@@ -128,6 +128,13 @@ pub trait ProjectionHooks {
     /// no link. The default records no replies.
     fn reply(&self, _msg: &PendingMessage) -> Option<PendingReply> {
         None
+    }
+
+    /// The reactions that stand on the message, each naming the person who
+    /// reacted, in the order the source gives them. The default records
+    /// none.
+    fn reactions(&self, _msg: &PendingMessage) -> Vec<Reaction> {
+        Vec::new()
     }
 
     /// Map one queued attachment onto the shared [`IrAttachment`] shape.
@@ -336,9 +343,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             subject: hooks.subject(msg),
             text: msg.text.clone(),
             attachments,
-            // No source that stages its rows here records reactions yet.
-            reactions: Vec::new(),
-            // Nor a message deleted in the source app or unsent.
+            reactions: hooks.reactions(msg),
+            // No source that stages its rows here records a message deleted
+            // in the source app or unsent.
             deletion: None,
             // Nor an edited message's earlier versions.
             edits: Vec::new(),
@@ -429,7 +436,6 @@ pub fn default_participants(
         .map(|h| IrParticipant {
             identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
-            identity_type: Some(IdentityType::Phone),
         })
         .collect();
     if participants.is_empty()
@@ -444,7 +450,6 @@ pub fn default_participants(
             participants.push(IrParticipant {
                 identity: None,
                 display_name: convo.first_contact_name(),
-                identity_type: None,
             });
         } else {
             participants.push(IrParticipant {
@@ -453,7 +458,6 @@ pub fn default_participants(
                     .get(chat_id)
                     .cloned()
                     .or_else(|| convo.first_contact_name()),
-                identity_type: Some(IdentityType::Phone),
             });
         }
     }

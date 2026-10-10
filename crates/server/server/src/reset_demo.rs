@@ -293,40 +293,36 @@ pub async fn seed_new_database(cfg: &Config) {
     let started = std::time::Instant::now();
     // Seeding runs before the server listens, on this thread, so no stop
     // can arrive while it generates and nothing sets the flag.
-    if let Some(messages) = seed_new_database_with(cfg, |bundle| {
+    match seed_new_database_with(cfg, |bundle| {
         demo_seed::generate_size_to(size, bundle, &AtomicBool::new(false)).map(|_| ())
     })
     .await
     {
-        eprintln!(
+        Ok(messages) => eprintln!(
             "The Demo Account was added, with {messages} messages, in {:.1} s",
             started.elapsed().as_secs_f64()
-        );
-    }
-}
-
-/// [`seed_new_database`] with the step that writes the bundle injected, so a
-/// test can seed from a few conversations, or from a bundle that fails
-/// partway. Returns the number of messages imported, or `None` when seeding
-/// failed and the Demo Account was removed again.
-async fn seed_new_database_with<G>(cfg: &Config, generate: G) -> Option<u64>
-where
-    G: FnOnce(&Path) -> Result<()>,
-{
-    let built = seed_into_place(cfg, async |seeding: &Config, db: &SqlitePool| {
-        build_demo_account_with(seeding, db, generate).await
-    })
-    .await;
-    match built {
-        Ok(messages) => Some(messages),
+        ),
         Err(error) => {
             eprintln!("The Demo Account could not be added: {error:#}");
             eprintln!(
                 "  This Message Crate starts without it. `message-crate-server reset-demo` adds it"
             );
-            None
         }
     }
+}
+
+/// [`seed_new_database`] with the step that writes the bundle injected, so a
+/// test can seed from a few conversations, or from a bundle that fails
+/// partway. Returns the number of messages imported, or why seeding failed;
+/// the Demo Account was removed again by then.
+async fn seed_new_database_with<G>(cfg: &Config, generate: G) -> Result<u64>
+where
+    G: FnOnce(&Path) -> Result<()>,
+{
+    seed_into_place(cfg, async |seeding: &Config, db: &SqlitePool| {
+        build_demo_account_with(seeding, db, generate).await
+    })
+    .await
 }
 
 /// Where `serve` writes a new database until seeding is complete:
@@ -893,7 +889,6 @@ async fn import_demo_sources_with(
                         mode,
                         source: source.source,
                         account_id,
-                        fill_content_keys: true,
                         import_id: Some(import_run.id),
                         phone_country: None,
                     })

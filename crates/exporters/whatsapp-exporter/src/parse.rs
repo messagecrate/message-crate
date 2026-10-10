@@ -124,8 +124,18 @@ pub(crate) struct MessageJson {
     /// [`Self::full_key_id`] is.
     #[serde(default)]
     pub reply_key_id: Option<Value>,
+    /// The reactions that stand on the message, one entry each: `[]` when
+    /// the backup's reaction source was read and the message has none,
+    /// `null` when it is not known (the source table is absent, the record
+    /// does not decode, or the message comes from an older export or from
+    /// WhatsApp's own text export). A withdrawn reaction is already left
+    /// out. Absent from a JSON that upstream WhatsApp Chat Exporter wrote:
+    /// only the fork writes it, from release `0.13.0-mc.2`. The fork's
+    /// `reactions`, a map from the reactor's display name to the emoji on
+    /// Android and always empty on an iPhone, is not read: a name is not an
+    /// identity.
     #[serde(default)]
-    pub reactions: Value,
+    pub reaction_details: Option<Vec<ReactionJson>>,
     /// The sender's phone id (`…@s.whatsapp.net`) whenever the backup can
     /// supply one, else their `@lid` id. `null` unless the message is a
     /// received group message, and on one whose backup names no sender.
@@ -152,6 +162,26 @@ impl MessageJson {
             || self.sender_contact_name.is_absent()
             || self.sender_push_name.is_absent()
     }
+}
+
+/// One reaction as the fork writes it in `reaction_details`.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ReactionJson {
+    /// The reaction, a non-empty string.
+    pub emoji: Option<String>,
+    /// `true` when the owner of the phone reacted.
+    #[serde(default)]
+    pub from_me: bool,
+    /// The reactor's id by the fork's `sender_jid` rule: the phone id
+    /// (`…@s.whatsapp.net`), resolved from an `@lid` id where the backup
+    /// maps it, else the `@lid` id itself. `null` on the owner's reactions,
+    /// and on a group reaction whose reactor the backup does not name. The
+    /// fork's `lid`, the `@lid` id the reactor is stored under, is not read:
+    /// `jid` already holds it when there is no phone behind it, and a
+    /// reaction's `lid` is not needed to tell the fork's JSON from
+    /// upstream's, which [`MessageJson::lacks_fork_sender_fields`] does from
+    /// `sender_lid`.
+    pub jid: Option<String>,
 }
 
 /// Load a wtsexporter `result.json` (one JSON object: JID → chat).

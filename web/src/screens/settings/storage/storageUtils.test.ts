@@ -19,7 +19,6 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     status: "completed",
     started_at: "2026-08-11T12:00:00Z",
     finished_at: "2026-08-11T12:01:00Z",
-    dedupe: false,
     phone_country: null,
     device_id: null,
     stage: null,

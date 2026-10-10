@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
+import { SLOW_STATE_WAIT } from "../../test/waits";
 import { DemoAccountCard } from "./DemoAccountCard";
 
 const getDemoAccount = vi.hoisted(() => vi.fn());
@@ -76,7 +77,7 @@ describe("DemoAccountCard", () => {
 
     expect(await screen.findByRole("status")).toHaveTextContent("Building the Demo Account");
     expect(
-      await screen.findByRole("button", { name: "Reset Demo Account" }, { timeout: 4000 }),
+      await screen.findByRole("button", { name: "Reset Demo Account" }, SLOW_STATE_WAIT),
     ).toBeEnabled();
   });
 

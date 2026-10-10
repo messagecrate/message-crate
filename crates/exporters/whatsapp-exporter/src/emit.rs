@@ -6,18 +6,18 @@ use crate::jid::{
     phone_id_to_e164,
 };
 use crate::parse::{
-    ChatJson, MemberJson, MessageJson, is_reply, key_string, load_chat_store, media_path,
-    message_text, timestamp_ms, timestamp_secs,
+    ChatJson, MemberJson, MessageJson, ReactionJson, is_reply, key_string, load_chat_store,
+    media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
     CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
     project_conversation,
 };
-use message_csv::{format_local_ts, json_cell};
+use message_csv::format_local_ts;
 use message_ir::{
     ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, SortKeyUnit,
+    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, Reaction, SortKeyUnit,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use serde_json::Map;
@@ -272,7 +272,9 @@ fn ingest_chat(
                 if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
                     e.insert("reply_key_id".into(), quoted);
                 }
-                e.insert("reactions_json".into(), reactions_json(&msg.reactions));
+                if let Some(reactions) = reactions_json(msg) {
+                    e.insert("reactions".into(), reactions);
+                }
                 e.insert(
                     "is_sticker".into(),
                     if msg.sticker { "true" } else { "false" }.into(),
@@ -289,14 +291,9 @@ fn ingest_chat(
         return None;
     }
 
-    let participants = roster.participants;
     // The phone numbers name an untitled group's file.
-    pending.participant_e164s = participants
-        .iter()
-        .filter(|p| p.identity_type == Some(IdentityType::Phone))
-        .filter_map(|p| p.identity.clone())
-        .collect();
-    Some((chat_id, pending, participants))
+    pending.participant_e164s = roster.numbers;
+    Some((chat_id, pending, roster.participants))
 }
 
 /// One person of a group as the fork's JSON gives them: a member entry or a
@@ -305,11 +302,10 @@ struct Person {
     /// Their WhatsApp id: the phone id, or an `@lid` id the backup could not
     /// map to one. `None` when the backup names no sender.
     jid: Option<String>,
-    /// What they are written as: the phone number of a phone id, typed
-    /// `phone`, or else the raw id typed `other`, because the exporter knows
-    /// an `@lid` id is no phone number. The one-to-one chat with the same
-    /// person writes the same id ([`Roster::add_peer`]), so both are one
-    /// identity.
+    /// What they are written as: the phone number of a phone id, or else
+    /// the raw id, which the server types `other` because WhatsApp carries
+    /// no email address. The one-to-one chat with the same person writes the
+    /// same id ([`Roster::add_peer`]), so both are one identity.
     identity: Option<(String, IdentityType)>,
     name: Option<String>,
 }
@@ -377,6 +373,8 @@ fn is_a_name(sender: &str) -> bool {
 struct Roster<'a> {
     owner: Option<&'a str>,
     participants: Vec<IrParticipant>,
+    /// The phone numbers among `participants`, in the same order.
+    numbers: Vec<String>,
     /// Index into `participants` of each person already added.
     seen: BTreeMap<PersonKey, usize>,
 }
@@ -394,6 +392,7 @@ impl<'a> Roster<'a> {
         Self {
             owner,
             participants: Vec::new(),
+            numbers: Vec::new(),
             seen: BTreeMap::new(),
         }
     }
@@ -426,27 +425,28 @@ impl<'a> Roster<'a> {
         }
         self.seen.insert(key, self.participants.len());
         let (identity, identity_type) = identity.unzip();
+        if identity_type == Some(IdentityType::Phone)
+            && let Some(number) = &identity
+        {
+            self.numbers.push(number.clone());
+        }
         self.participants.push(IrParticipant {
             identity,
             display_name: name,
-            identity_type,
         });
     }
 
     /// A one-to-one chat's one participant, named by the chat. A chat whose
-    /// id is not a phone id, such as an internal `@lid` id, has its raw id
-    /// typed `other`, because the exporter knows it is no phone number and
-    /// no WhatsApp id is an email address.
+    /// id is not a phone id, such as an internal `@lid` id, has its raw id,
+    /// which the server types `other` because WhatsApp carries no email
+    /// address (#1671).
     fn add_peer(&mut self, jid: &str, chat_id: &str, name: Option<String>) {
-        let identity_type = if jid_to_e164(jid).is_some() {
-            IdentityType::Phone
-        } else {
-            IdentityType::Other
-        };
+        if jid_to_e164(jid).is_some() {
+            self.numbers.push(chat_id.to_string());
+        }
         self.participants.push(IrParticipant {
             identity: Some(chat_id.to_string()),
             display_name: name,
-            identity_type: Some(identity_type),
         });
     }
 
@@ -584,13 +584,44 @@ fn key_id_string(msg: &MessageJson) -> String {
     }
 }
 
-/// Compact JSON for reactions, or empty when null / empty object.
-fn reactions_json(v: &serde_json::Value) -> String {
-    if v.is_null() || (v.is_object() && v.as_object().is_some_and(|o| o.is_empty())) {
-        String::new()
+/// The message's reactions as the conversation model carries them, serialized
+/// for the `reactions` extra the projection reads back; `None` when the
+/// message has none, or when they are not known.
+fn reactions_json(msg: &MessageJson) -> Option<String> {
+    let reactions: Vec<Reaction> = msg
+        .reaction_details
+        .as_deref()?
+        .iter()
+        .filter_map(reaction_from_json)
+        .collect();
+    (!reactions.is_empty()).then(|| serde_json::to_string(&reactions).expect("serialize reactions"))
+}
+
+/// One reaction under the reactor's WhatsApp id (#1646), the id the same
+/// person is written under as a sender or a member ([`Person::new`]): the
+/// phone number when the fork's `jid` is a phone id, else the raw id, an
+/// `@lid` id the backup maps to no phone. The owner's own reactions carry
+/// `is_from_me` and no id, as the fork writes none for them. No display
+/// name: the fork's `reactions` map names a reactor by display name, and a
+/// name is not an identity. The fork leaves a withdrawn reaction out, so an
+/// entry with no emoji is malformed and is dropped.
+fn reaction_from_json(reaction: &ReactionJson) -> Option<Reaction> {
+    let emoji = reaction.emoji.as_deref().and_then(message_ir::trimmed)?;
+    let reactor_identity = if reaction.from_me {
+        None
     } else {
-        json_cell(v)
-    }
+        Person::new(reaction.jid.as_deref(), None)
+            .identity
+            .map(|(identity, _)| identity)
+    };
+    Some(Reaction {
+        part_index: 0,
+        kind: "emoji".into(),
+        emoji: Some(emoji.to_string()),
+        is_from_me: reaction.from_me,
+        reactor_identity,
+        reactor_display_name: None,
+    })
 }
 
 /// WhatsApp deltas of the shared [`message_ir::pending_to_document`] projection.
@@ -648,6 +679,15 @@ impl ProjectionHooks for WhatsappProjection {
         })
     }
 
+    /// The reactions `ingest_chat` read from the fork's `reaction_details`,
+    /// each under the reactor's WhatsApp id ([`reaction_from_json`]).
+    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
+        match msg.extra.get("reactions") {
+            Some(json) => serde_json::from_str(json).expect("reactions written by ingest_chat"),
+            None => Vec::new(),
+        }
+    }
+
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
         IrAttachment {
             // No path yet: the writer sets it when it stages the file.
@@ -682,7 +722,9 @@ impl ProjectionHooks for WhatsappProjection {
     /// because `reply_to` records it on the message. A reply whose quoted
     /// message is not in the export keeps no quoted id: `reply_to` names
     /// only a message of the same export, and neither the raw `reply` value
-    /// nor `reply_key_id` is stored beside it.
+    /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
+    /// here: `reactions` records each on the message, and the fork's
+    /// name-to-emoji `reactions` map is not read at all.
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
         let whatsapp_jid = convo.extra_str("whatsapp_jid");
@@ -697,14 +739,6 @@ impl ProjectionHooks for WhatsappProjection {
             fields.insert(
                 "key_id".into(),
                 serde_json::Value::String(key_id.to_string()),
-            );
-        }
-        let reactions_json = msg.extra_str("reactions_json");
-        if !reactions_json.is_empty() {
-            fields.insert(
-                "reactions".into(),
-                serde_json::from_str(reactions_json)
-                    .unwrap_or_else(|_| serde_json::Value::String(reactions_json.to_string())),
             );
         }
         IrSource {

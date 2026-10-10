@@ -395,7 +395,6 @@ mod tests {
                 participants: vec![IrParticipant {
                     identity: Some("+15555550101".into()),
                     display_name: Some("Sam".into()),
-                    identity_type: None,
                 }],
                 stats: ConversationStats::default(),
             },

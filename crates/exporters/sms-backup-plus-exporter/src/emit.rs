@@ -16,9 +16,8 @@ use message_crate_core::{
     project_conversation,
 };
 use message_ir::{
-    ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
-    IrSource, PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
-    default_participants, parse_android_type,
+    ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
+    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks, parse_android_type,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
@@ -256,18 +255,6 @@ impl ProjectionHooks for SbpProjection {
     /// Every handle is a [`Handle`] key already.
     fn normalize_handle(&self, raw: &str) -> String {
         raw.to_string()
-    }
-
-    /// The default roster, with each identity's kind read from its key: an
-    /// SMS Backup+ address can be an email address or a sender name.
-    fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
-        let mut participants = default_participants(chat_id, convo, &str::to_string);
-        for p in &mut participants {
-            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
-                p.identity_type = Some(handle.kind());
-            }
-        }
-        participants
     }
 
     /// Of two copies of one message, the dedupe step keeps the first one

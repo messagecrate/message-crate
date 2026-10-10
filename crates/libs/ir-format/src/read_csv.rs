@@ -242,7 +242,6 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
             } else {
                 Some(p.display_name)
             },
-            identity_type: p.identity_type,
         })
         .collect()
 }
