@@ -223,6 +223,18 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A file without a backup date imported beside a dated one
+  gives the same result in any order.** When one import held a dated backup
+  and a message file that says nothing about when its backup was made, such
+  as Message Crate's own export of a conversation whose messages came from
+  two backups, the order the files were read in decided what a later import
+  could change. An Unsent mark from the undated file could be cleared by a
+  later backup, or kept, and a later edit it recorded could be dropped
+  against a newer backup already stored. Message Crate now keeps what a file
+  without a date gave a message apart from the dated backups' date: its mark
+  stays, and its text stays until a copy records a later edit, whichever
+  file is read first and whether the files arrive in one import or several
+  (#1989).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,

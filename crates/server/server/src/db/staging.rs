@@ -348,7 +348,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
-const MESSAGE_BIND_COLUMNS: usize = 20;
+const MESSAGE_BIND_COLUMNS: usize = 22;
 const ATTACHMENT_BIND_COLUMNS: usize = ATTACHMENT_COLUMNS.len();
 const TAPBACK_BIND_COLUMNS: usize = TAPBACK_COLUMNS.len();
 const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
@@ -375,7 +375,8 @@ pub async fn insert_messages(
         INSERT INTO staging_messages (
             conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
+            reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at,
+            undated_deletion, undated_body
         ) VALUES {}
         ON CONFLICT DO NOTHING
         RETURNING id, sort_order
@@ -404,7 +405,13 @@ pub async fn insert_messages(
             .bind(row.deletion.map(message_ir::Deletion::as_str))
             .bind(row.sort_order)
             .bind(row.import_id)
-            .bind(row.backup_taken_at);
+            .bind(row.backup_taken_at)
+            .bind(
+                row.deletion
+                    .filter(|_| row.backup_taken_at.is_none())
+                    .map(message_ir::Deletion::as_str),
+            )
+            .bind(row.backup_taken_at.is_none());
     }
     let returned = q.fetch_all(&mut *conn).await?;
     let mut by_sort = HashMap::with_capacity(returned.len());
@@ -563,44 +570,50 @@ pub async fn staged_message_id(
     .await?)
 }
 
-/// What a second copy of a staged message from the same import decides
-/// when its backup and the staged row's both have a date: everything the
-/// later backup says about the message's mark and text.
+/// The text of a second copy of a staged message from the same import:
+/// what it gives the staged row when its text is taken.
 pub struct StagedCopy<'a> {
     /// The copy's text.
     pub body: Option<&'a str>,
-    /// The copy's mark, or `None` for none.
-    pub deletion: Option<message_ir::Deletion>,
     /// The copy's earlier versions, in the order its file listed them.
     pub versions: &'a [crate::models::EarlierVersionRecord],
-    /// When the copy's backup was made.
-    pub backup_taken_at: &'a str,
+    /// Whether the copy's file has no backup date.
+    pub undated: bool,
 }
 
-/// When the backup the staged message `staged` was read from was made, or
-/// `None` when its file did not say.
+/// What decides whether a second copy of a staged message gives its text:
+/// when the backup the row was read from was made, and whether its text
+/// came from a file without a date.
+pub struct StagedText {
+    /// When the newest backup with a date the row was read from was made,
+    /// or `None` when no copy's file said.
+    pub backup_taken_at: Option<String>,
+    /// Whether the row's text came from a copy from a file without a date
+    /// (`staging_messages.undated_body`).
+    pub undated: bool,
+}
+
+/// [`StagedText`] of the staged message `staged`.
 ///
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn staged_backup_taken_at(
-    conn: &mut SqliteConnection,
-    staged: i64,
-) -> Result<Option<String>> {
-    Ok(
-        sqlx::query_scalar("SELECT backup_taken_at FROM staging_messages WHERE id = $1")
+pub async fn staged_text(conn: &mut SqliteConnection, staged: i64) -> Result<StagedText> {
+    let (backup_taken_at, undated): (Option<String>, bool) =
+        sqlx::query_as("SELECT backup_taken_at, undated_body FROM staging_messages WHERE id = $1")
             .bind(staged)
             .fetch_one(&mut *conn)
-            .await?,
-    )
+            .await?;
+    Ok(StagedText {
+        backup_taken_at,
+        undated,
+    })
 }
 
-/// Give the staged message `staged` everything `copy`, another copy of it
-/// from a later backup in the same import, says about its mark and text:
-/// its text, its earlier versions, its mark or no mark, and its backup's
-/// date. The caller has compared the two backups' dates
-/// ([`later_backup_sql`]'s rule), so the copy staged first no longer
-/// decides whatever its age (#1741, #1804).
+/// Give the staged message `staged` the text and earlier versions of
+/// `copy`, another copy of it from a later backup in the same import. The
+/// caller has compared the two backups' dates ([`later_backup`]), so the
+/// copy staged first no longer decides whatever its age (#1741, #1804).
 ///
 /// # Errors
 ///
@@ -610,33 +623,14 @@ pub async fn take_staged_copy_from_later_backup(
     staged: i64,
     copy: &StagedCopy<'_>,
 ) -> Result<()> {
-    sqlx::query(
-        "UPDATE staging_messages SET body = $1, deletion = $2, backup_taken_at = $3 WHERE id = $4",
-    )
-    .bind(copy.body)
-    .bind(copy.deletion.map(message_ir::Deletion::as_str))
-    .bind(copy.backup_taken_at)
-    .bind(staged)
-    .execute(&mut *conn)
-    .await?;
-    sqlx::query("DELETE FROM staging_message_versions WHERE message_id = $1")
-        .bind(staged)
-        .execute(&mut *conn)
-        .await?;
-    let rows: Vec<StagingEarlierVersion<'_>> = copy
-        .versions
-        .iter()
-        .map(|version| StagingEarlierVersion::from_record(staged, version))
-        .collect();
-    insert_earlier_versions(conn, &rows).await?;
-    Ok(())
+    replace_staged_text(conn, staged, copy).await
 }
 
 /// Give the staged message `staged` the mark `deletion` of another copy of
-/// it from the same import, when the two backups' dates cannot decide
-/// ([`later_backup`]): a copy that carries a mark adds it, and one with
-/// none leaves the staged mark, as [`promote_deletion_marks`] does for a
-/// stored message.
+/// it from the same import, from the backup made at `backup_taken_at`, or
+/// `None` for a file without a date, by the rule a later import of the copy
+/// follows ([`copy_mark_sql`]), and that backup's date when it is the
+/// later one ([`later_dated_backup_sql`]).
 ///
 /// # Errors
 ///
@@ -644,21 +638,46 @@ pub async fn take_staged_copy_from_later_backup(
 pub async fn add_staged_copy_mark(
     conn: &mut SqliteConnection,
     staged: i64,
-    deletion: message_ir::Deletion,
+    deletion: Option<message_ir::Deletion>,
+    backup_taken_at: Option<&str>,
 ) -> Result<()> {
-    sqlx::query("UPDATE staging_messages SET deletion = $1 WHERE id = $2")
-        .bind(deletion.as_str())
+    let undated_deletion = deletion.filter(|_| backup_taken_at.is_none());
+    let sql = format!(
+        "UPDATE staging_messages \
+         SET deletion = {mark}, \
+             undated_deletion = COALESCE($3, undated_deletion), \
+             backup_taken_at = CASE WHEN {later} THEN $1 ELSE backup_taken_at END \
+         WHERE id = $4",
+        mark = copy_mark_sql(
+            &MarkSql {
+                backup_taken_at: "$1",
+                deletion: "$2",
+                undated_deletion: "$3",
+            },
+            &MarkSql {
+                backup_taken_at: "backup_taken_at",
+                deletion: "deletion",
+                undated_deletion: "undated_deletion",
+            },
+        ),
+        later = later_dated_backup_sql("$1", "backup_taken_at"),
+    );
+    sqlx::query(&sql)
+        .bind(backup_taken_at)
+        .bind(deletion.map(message_ir::Deletion::as_str))
+        .bind(undated_deletion.map(message_ir::Deletion::as_str))
         .bind(staged)
         .execute(&mut *conn)
         .await?;
     Ok(())
 }
 
-/// Give the staged message `staged` the text `body` and the earlier
-/// versions `versions` of another copy of it from the same import, when
-/// that copy records a later edit ([`later_edit_sql`]). Returns whether it
-/// did. The caller uses it only when one of the two backups has no date;
-/// otherwise [`take_staged_copy_from_later_backup`] decides.
+/// Give the staged message `staged` the text and earlier versions of
+/// `copy`, another copy of it from the same import, when that copy records
+/// a later edit ([`later_edit_sql`]). Returns whether it did. The caller
+/// uses it only when the backups' dates cannot decide the text
+/// ([`later_backup`]); otherwise [`take_staged_copy_from_later_backup`]
+/// decides.
 ///
 /// Staging keeps one row per guid and skips a second copy, so without this
 /// the copy staged first counted whatever its age: one import of an
@@ -673,11 +692,14 @@ pub async fn add_staged_copy_mark(
 pub async fn take_later_staged_copy(
     conn: &mut SqliteConnection,
     staged: i64,
-    body: Option<&str>,
-    versions: &[crate::models::EarlierVersionRecord],
+    copy: &StagedCopy<'_>,
 ) -> Result<bool> {
-    let n = i64::try_from(versions.len())?;
-    let newest = versions.iter().filter_map(|v| v.edited_at.as_deref()).max();
+    let n = i64::try_from(copy.versions.len())?;
+    let newest = copy
+        .versions
+        .iter()
+        .filter_map(|v| v.edited_at.as_deref())
+        .max();
     let later: bool = sqlx::query_scalar(&format!(
         "SELECT {} FROM staging_message_versions WHERE message_id = $3",
         later_edit_sql("$1", "$2", "COUNT(*)", "MAX(edited_at)")
@@ -690,8 +712,20 @@ pub async fn take_later_staged_copy(
     if !later {
         return Ok(false);
     }
-    sqlx::query("UPDATE staging_messages SET body = $1 WHERE id = $2")
-        .bind(body)
+    replace_staged_text(conn, staged, copy).await?;
+    Ok(true)
+}
+
+/// Replace the staged message `staged`'s text, its earlier versions, and
+/// whether they came from a file without a date with `copy`'s.
+async fn replace_staged_text(
+    conn: &mut SqliteConnection,
+    staged: i64,
+    copy: &StagedCopy<'_>,
+) -> Result<()> {
+    sqlx::query("UPDATE staging_messages SET body = $1, undated_body = $2 WHERE id = $3")
+        .bind(copy.body)
+        .bind(copy.undated)
         .bind(staged)
         .execute(&mut *conn)
         .await?;
@@ -699,12 +733,13 @@ pub async fn take_later_staged_copy(
         .bind(staged)
         .execute(&mut *conn)
         .await?;
-    let rows: Vec<StagingEarlierVersion<'_>> = versions
+    let rows: Vec<StagingEarlierVersion<'_>> = copy
+        .versions
         .iter()
         .map(|version| StagingEarlierVersion::from_record(staged, version))
         .collect();
     insert_earlier_versions(conn, &rows).await?;
-    Ok(true)
+    Ok(())
 }
 
 /// A `(SELECT ...)` of `rows` rows bound in turn, each with one value per
@@ -1083,14 +1118,15 @@ const INSERT_MESSAGES_FROM_STAGING: &str = r"
         INSERT INTO messages (
             conversation_id, account_id, source, guid, timestamp, time_precision, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at
+            reply_to_guid, reply_to_part, deletion, sort_order, import_id, backup_taken_at,
+            undated_deletion, undated_body
         )
         SELECT
             cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.time_precision,
             sm.is_from_me,
             sm.sender_handle_id, sm.owner_handle_id, sm.service, sm.subject, sm.body, sm.is_announcement, sm.is_reply,
             sm.reply_to_guid, sm.reply_to_part, sm.deletion, sm.sort_order, sm.import_id,
-            sm.backup_taken_at
+            sm.backup_taken_at, sm.undated_deletion, sm.undated_body
         FROM staging_messages sm
         JOIN _promote_conv_map cm ON cm.staging_id = sm.conversation_id
         WHERE sm.account_id = $1
@@ -1253,10 +1289,11 @@ pub async fn write_message_map(
 /// not write between, where it adds a mark and takes a later edit as it
 /// would with no dates.
 ///
-/// The one rule for which of two copies of a message from one source is
-/// the later backup, for a stored message ([`promote_deletion_marks`],
-/// [`write_edit_map`]) and, in Rust ([`later_backup`]), for two copies
-/// staged in one import (`imports_api::staging`).
+/// The one rule for which of two copies of a message from one source gives
+/// its text, for a stored message ([`write_edit_map`]) and, in Rust
+/// ([`later_backup`]), for two copies staged in one import
+/// (`imports_api::staging`). The caller treats a text that came from a file
+/// without a date as undated whatever the row's date says (#1989).
 ///
 /// Both dates have the one text form of a stored time, to the millisecond
 /// (`models::utc_timestamp_text`), so the text orders as the time.
@@ -1267,12 +1304,60 @@ fn later_backup_sql(staged: &str, held: &str) -> String {
     )
 }
 
+/// Whether a copy's backup, made at `copy`, is the newest with a date the
+/// message has met, as an SQL expression over the two dates: true when the
+/// copy has a date and the held row has none, or an earlier one. Such a
+/// copy gives the message its date, and its mark under [`copy_mark_sql`].
+/// A held row with no date has met only files without one, whose marks
+/// and text the row keeps apart (`undated_deletion`, `undated_body`), so a
+/// dated copy is the first word on the rest (#1989).
+fn later_dated_backup_sql(copy: &str, held: &str) -> String {
+    format!("({copy} IS NOT NULL AND ({held} IS NULL OR {copy} > {held}))")
+}
+
+/// One side's columns, or bound values, for [`copy_mark_sql`].
+struct MarkSql<'a> {
+    /// When its backup was made.
+    backup_taken_at: &'a str,
+    /// Its mark.
+    deletion: &'a str,
+    /// The mark a file without a date gave it.
+    undated_deletion: &'a str,
+}
+
+/// The mark a message holds after a copy of it, as an SQL expression over
+/// the copy's and the held row's [`MarkSql`]: the one rule for a stored
+/// message ([`promote_deletion_marks`]) and for two copies staged in one
+/// import ([`add_staged_copy_mark`]).
+///
+/// A mark a file without a date gave, the copy's or the one held, stands:
+/// a backup that does not say when a message was deleted or unsent cannot
+/// be outdated by one that does not carry the mark. Otherwise a copy from
+/// a later backup ([`later_dated_backup_sql`]) gives its mark, mark or no
+/// mark; a copy from the same backup date adds its mark when it carries
+/// one; and a copy from an earlier backup changes nothing (#1741, #1989).
+fn copy_mark_sql(copy: &MarkSql<'_>, held: &MarkSql<'_>) -> String {
+    let later = later_dated_backup_sql(copy.backup_taken_at, held.backup_taken_at);
+    format!(
+        "CASE WHEN {later} OR ({copy_at} = {held_at} AND {copy_mark} IS NOT NULL) \
+             THEN COALESCE({copy_undated}, {held_undated}, {copy_mark}) \
+             ELSE COALESCE({copy_undated}, {held_undated}, {held_mark}) \
+         END",
+        copy_at = copy.backup_taken_at,
+        held_at = held.backup_taken_at,
+        copy_mark = copy.deletion,
+        held_mark = held.deletion,
+        copy_undated = copy.undated_deletion,
+        held_undated = held.undated_deletion,
+    )
+}
+
 /// Which of two copies of a message comes from the later backup, by
 /// [`later_backup`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BackupOrder<'a> {
-    /// The copy comes from a later backup, made at this date.
-    Later(&'a str),
+pub enum BackupOrder {
+    /// The copy comes from a later backup.
+    Later,
     /// The copy comes from an earlier backup.
     Earlier,
     /// Either copy has no date, or the two dates are equal: the dates
@@ -1284,26 +1369,20 @@ pub enum BackupOrder<'a> {
 /// in one import: whether the copy from the backup made at `staged` is
 /// later than the copy held from the backup made at `held`.
 #[must_use]
-pub fn later_backup<'a>(staged: Option<&'a str>, held: Option<&str>) -> BackupOrder<'a> {
+pub fn later_backup(staged: Option<&str>, held: Option<&str>) -> BackupOrder {
     match (staged, held) {
-        (Some(staged), Some(held)) if staged > held => BackupOrder::Later(staged),
+        (Some(staged), Some(held)) if staged > held => BackupOrder::Later,
         (Some(staged), Some(held)) if staged < held => BackupOrder::Earlier,
         _ => BackupOrder::Undecided,
     }
 }
 
-/// Give each stored message the mark its staged row carries, through
-/// `_promote_msg_map`. An append-mode import skips a message production
+/// Give each stored message the mark its staged row gives it by
+/// [`copy_mark_sql`], through `_promote_msg_map`, and keep the mark a file
+/// without a date gave the staged row as the message's own
+/// `undated_deletion`. An append-mode import skips a message production
 /// already holds, so a message imported before it was deleted or unsent
 /// takes the mark only here.
-///
-/// When both the staged row's backup and the stored message's have a date
-/// ([`later_backup_sql`]), the later backup decides: a staged row from a
-/// later backup gives its mark or clears the one held, and one from an
-/// earlier backup changes nothing. When either has no date, or the two are
-/// equal, a staged row with no mark leaves the stored mark as it is: a
-/// backup that does not say a message was deleted does not say it was
-/// restored, and nothing says which backup is newer.
 ///
 /// Each message whose mark changes is named in `_promote_mark_map`, so the
 /// search index follows the mark when the promotion indexes
@@ -1314,41 +1393,68 @@ pub fn later_backup<'a>(staged: Option<&'a str>, held: Option<&str>) -> BackupOr
 ///
 /// # Errors
 ///
-/// Returns an error when the update fails.
+/// Returns an error when a statement fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
-    reset_id_map(conn, "_promote_mark_map", &[]).await?;
+    reset_id_map(conn, "_promote_mark_map", &["deletion TEXT"]).await?;
     let sql = format!(
         r"
-        INSERT INTO _promote_mark_map (staging_id, prod_id)
-        SELECT mm.staging_id, mm.prod_id
-        FROM _promote_msg_map mm
-        JOIN staging_messages sm ON sm.id = mm.staging_id
-        JOIN messages m ON m.id = mm.prod_id
-        WHERE m.deletion IS NOT sm.deletion
-          AND COALESCE({later}, sm.deletion IS NOT NULL)
+        INSERT INTO _promote_mark_map (staging_id, prod_id, deletion)
+        SELECT staging_id, prod_id, deletion
+        FROM (
+            SELECT mm.staging_id, mm.prod_id, m.deletion AS held, {mark} AS deletion
+            FROM _promote_msg_map mm
+            JOIN staging_messages sm ON sm.id = mm.staging_id
+            JOIN messages m ON m.id = mm.prod_id
+        )
+        WHERE deletion IS NOT held
         ",
-        later = later_backup_sql("sm.backup_taken_at", "m.backup_taken_at"),
+        mark = copy_mark_sql(
+            &MarkSql {
+                backup_taken_at: "sm.backup_taken_at",
+                deletion: "sm.deletion",
+                undated_deletion: "sm.undated_deletion",
+            },
+            &MarkSql {
+                backup_taken_at: "m.backup_taken_at",
+                deletion: "m.deletion",
+                undated_deletion: "m.undated_deletion",
+            },
+        ),
     );
     sqlx::query(&sql).execute(&mut *conn).await?;
-    Ok(sqlx::query(
+    let changed = sqlx::query(
         r"
         UPDATE messages
-        SET deletion = sm.deletion
+        SET deletion = pm.deletion
         FROM _promote_mark_map pm
-        JOIN staging_messages sm ON sm.id = pm.staging_id
         WHERE messages.id = pm.prod_id
         ",
     )
     .execute(&mut *conn)
     .await?
-    .rows_affected())
+    .rows_affected();
+    sqlx::query(
+        r"
+        UPDATE messages
+        SET undated_deletion = sm.undated_deletion
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE messages.id = mm.prod_id
+          AND sm.undated_deletion IS NOT NULL
+          AND messages.undated_deletion IS NOT sm.undated_deletion
+        ",
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(changed)
 }
 
 /// Give each stored message the backup date of its staged row when that
-/// row comes from a later backup ([`later_backup_sql`]), after its mark
-/// and text were taken from that row, so a later import compares with the
-/// backup the message now reflects. A stored message from a file with no
-/// date keeps none. Returns how many messages changed.
+/// row comes from the newest backup with a date the message has met
+/// ([`later_dated_backup_sql`]), after its mark and text were taken from
+/// that row, so a later import compares with the backup the message now
+/// reflects. A message that has met only files without a date keeps none.
+/// Returns how many messages changed.
 ///
 /// # Errors
 ///
@@ -1361,9 +1467,9 @@ pub async fn promote_backup_dates(conn: &mut SqliteConnection) -> Result<u64> {
         FROM _promote_msg_map mm
         JOIN staging_messages sm ON sm.id = mm.staging_id
         WHERE messages.id = mm.prod_id
-          AND COALESCE({later}, 0)
+          AND {later}
         ",
-        later = later_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
+        later = later_dated_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
     );
     Ok(sqlx::query(&sql).execute(&mut *conn).await?.rows_affected())
 }
@@ -1467,9 +1573,10 @@ fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> Str
 /// When both backups have a date ([`later_backup_sql`]), a staged row from
 /// a later backup gives its text and earlier versions whatever their times
 /// say, when either differs from what the message holds (#1804); one from
-/// an earlier backup gives nothing. When either has no date, or the two
-/// are equal, the staged row gives them when it records a later edit
-/// ([`later_edit_sql`]).
+/// an earlier backup gives nothing. When either has no date, the two are
+/// equal, or either text came from a file without a date
+/// (`undated_body`, #1989), the staged row gives them when it records a
+/// later edit ([`later_edit_sql`]).
 ///
 /// An append skips a message production already holds, so a later backup in
 /// which it was edited again reaches it only here. A message has one staged
@@ -1502,7 +1609,8 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
             SELECT
                 mm.staging_id,
                 mm.prod_id,
-                {later_backup} AS later_backup,
+                CASE WHEN sm.undated_body OR m.undated_body THEN NULL ELSE {later_backup} END
+                    AS later_backup,
                 sm.body IS NOT m.body AS body_changed,
                 {has_content_key} AS keyed,
                 sm.body IS NOT m.body
@@ -1570,7 +1678,8 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<Promoted
         r"
         UPDATE messages
         SET content_key = CASE WHEN em.body_changed THEN NULL ELSE messages.content_key END,
-            body = sm.body
+            body = sm.body,
+            undated_body = sm.undated_body
         FROM _promote_edit_map em
         JOIN staging_messages sm ON sm.id = em.staging_id
         WHERE messages.id = em.prod_id

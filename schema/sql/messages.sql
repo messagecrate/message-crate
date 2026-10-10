@@ -123,12 +123,21 @@ CREATE TABLE IF NOT EXISTS messages (
     duplicate_of INTEGER REFERENCES messages(id) ON DELETE SET NULL,
     -- Import run that inserted this row (`imports.id`).
     import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
-    -- When the backup that gave the message its deletion mark and text was
-    -- made, in the form timestamp holds; NULL when its file did not say. A
-    -- later import's copy from a later backup replaces both; one from an
-    -- earlier backup changes neither
+    -- When the newest backup with a date that gave the message anything was
+    -- made, in the form timestamp holds; NULL when no copy's file said. A
+    -- later import's copy from a later backup replaces its mark and text;
+    -- one from an earlier backup changes neither
     -- (docs/architecture/contacts-identities-and-messages.md).
-    backup_taken_at TEXT
+    backup_taken_at TEXT,
+    -- The mark a copy from a file without a backup date gave the message,
+    -- as `deletion`; NULL for none. It outlasts every later copy without a
+    -- mark, dated or not, because a file without a date does not say when
+    -- the message was deleted or unsent (#1989).
+    undated_deletion TEXT CHECK (undated_deletion IN ('deleted_in_source_app', 'unsent')),
+    -- 1 when the text and earlier versions came from a copy from a file
+    -- without a backup date, so a later copy gives its own only when it
+    -- records a later edit, whatever its backup's date (#1989); 0 otherwise.
+    undated_body INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS ix_messages_conversation_timestamp

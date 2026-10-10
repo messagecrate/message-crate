@@ -122,6 +122,19 @@ struct Imported {
 /// must agree, so each is returned to compare, with its database to look
 /// into further.
 async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Imported; 4] {
+    every_order_between(tmp, label, None, files, None).await
+}
+
+/// [`every_order`] with `before`, when given, imported on its own first,
+/// and `after`, when given, imported on its own last, in each of the four
+/// ways.
+async fn every_order_between(
+    tmp: &Path,
+    label: &str,
+    before: Option<&PathBuf>,
+    files: [&PathBuf; 2],
+    after: Option<&PathBuf>,
+) -> [Imported; 4] {
     let assets = tmp.join("assets");
     let [a, b] = files;
     let mut out = Vec::new();
@@ -132,6 +145,11 @@ async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Imported
         ("apart-reversed", vec![vec![b.clone()], vec![a.clone()]]),
     ] {
         let db = tmp.join(format!("{label}-{order}.db"));
+        let batches = before
+            .map(|file| vec![file.clone()])
+            .into_iter()
+            .chain(batches)
+            .chain(after.map(|file| vec![file.clone()]));
         for batch in batches {
             import(&db, &assets, tmp, &batch).await;
         }
@@ -380,8 +398,7 @@ async fn an_append_of_the_older_backup_after_the_newer_changes_nothing() {
 /// Where either file has no backup date, the rules for files without one
 /// hold. In one import, a second file's mark is added and its edit is
 /// taken when its versions are newer; across imports, a file without the
-/// mark leaves it, and a stored message from an undated file keeps no date
-/// when a dated file later gives it nothing.
+/// mark leaves it. Two files without a date leave the message without one.
 #[tokio::test]
 async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
     let tmp = TempDir::new().unwrap();
@@ -613,4 +630,159 @@ async fn a_message_read_back_carries_its_backup_date() {
         page["items"][0]["backup_taken_at"],
         serde_json::json!(LATER_BACKUP_AT)
     );
+}
+
+/// The first case of #1989. One import holds backup A, dated, without a
+/// mark, and a file without a backup date that marks the message Unsent;
+/// a later import brings backup C, dated after A, without a mark. The
+/// undated file's mark adds, and a copy without a mark never clears one a
+/// file without a date gave, so the message stays Unsent in every order,
+/// with C's date, the newest backup that gave it anything.
+#[tokio::test]
+async fn an_undated_mark_beside_a_dated_backup_outlasts_a_later_backup() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let dated = file("a-earlier.jsonl", Some(EARLIER_BACKUP), None);
+    let undated = file("b-undated.jsonl", None, Some(Deletion::Unsent));
+    let later = file("c-later.jsonl", Some(LATER_BACKUP), None);
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "undated-mark",
+        None,
+        [&dated, &undated],
+        Some(&later),
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "taken back".into(),
+                deletion: Some("unsent".into()),
+                versions: vec![],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
+}
+
+/// The second case of #1989. The server holds the message from backup E,
+/// dated, without a mark; one import then brings a file without a backup
+/// date that marks it Unsent and backup D, dated before E, without a mark.
+/// The undated mark adds and D changes nothing, as when the two files are
+/// imported apart: the message is Unsent with E's date in every order.
+#[tokio::test]
+async fn an_undated_mark_beside_an_earlier_backup_adds_to_a_stored_message() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let stored = file("e-later.jsonl", Some(LATER_BACKUP), None);
+    let undated = file("u-undated.jsonl", None, Some(Deletion::Unsent));
+    let earlier = file("d-earlier.jsonl", Some(EARLIER_BACKUP), None);
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "stored-mark",
+        Some(&stored),
+        [&undated, &earlier],
+        None,
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "taken back".into(),
+                deletion: Some("unsent".into()),
+                versions: vec![],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
+}
+
+/// The text case of #1989. The server holds the message from backup E,
+/// dated; one import then brings a file without a backup date whose copy
+/// records a later edit, and backup D, dated before E. The undated copy's
+/// text is taken because its edit is later, and D changes nothing, as when
+/// the two files are imported apart, in every order.
+#[tokio::test]
+async fn an_undated_later_edit_beside_an_earlier_backup_gives_its_text() {
+    let tmp = TempDir::new().unwrap();
+    let t0 = 1_426_183_462_000;
+    let stored = backup_file(
+        tmp.path(),
+        "e-later.jsonl",
+        &Copy {
+            backup: Some(LATER_BACKUP),
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: None,
+        },
+    );
+    let undated = backup_file(
+        tmp.path(),
+        "u-undated.jsonl",
+        &Copy {
+            backup: None,
+            text: "see you at eight",
+            versions: &[
+                edit_version(0, "see you at six", t0),
+                edit_version(0, "see you at seven", t0 + 60_000),
+            ],
+            deletion: None,
+        },
+    );
+    let earlier = backup_file(
+        tmp.path(),
+        "d-earlier.jsonl",
+        &Copy {
+            backup: Some(EARLIER_BACKUP),
+            text: "see you at six",
+            versions: &[],
+            deletion: None,
+        },
+    );
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "stored-edit",
+        Some(&stored),
+        [&undated, &earlier],
+        None,
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "see you at eight".into(),
+                deletion: None,
+                versions: vec![(0, "see you at six".into()), (0, "see you at seven".into())],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
 }
