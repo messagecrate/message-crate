@@ -716,5 +716,7 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
+/// The note on which test phone numbers are no one's, which comments across
+/// the workspace point to, is the comment at the top of `tests.rs`.
 #[cfg(test)]
 mod tests;
