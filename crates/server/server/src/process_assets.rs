@@ -768,16 +768,16 @@ impl<'a> AccountPass<'a> {
                 self.label(row)
             ));
         }
-        let blob = match self.derive(version, kind, source_path, row)? {
+        let version_file = match self.derive(version, kind, source_path, row)? {
             Derived::DryRun => return Ok(true),
-            Derived::Stored(blob) => blob,
+            Derived::Stored(version_file) => version_file,
         };
         let named = versions_db::record(
             &mut *db.acquire().await?,
             VersionWrite {
                 rows: self.rows(row),
                 version,
-                file: &blob,
+                file: &version_file,
             },
         )
         .await?;
@@ -796,7 +796,7 @@ impl<'a> AccountPass<'a> {
         self.progress.say(format!(
             "Made the {version} of {} at {}",
             self.label(row),
-            blob.assets_path
+            version_file.assets_path
         ));
         Ok(true)
     }
@@ -826,7 +826,7 @@ impl<'a> AccountPass<'a> {
         else {
             return Ok(false);
         };
-        let blob = VersionFile {
+        let version_file = VersionFile {
             sha256,
             assets_path,
             mime_type,
@@ -835,7 +835,7 @@ impl<'a> AccountPass<'a> {
             self.progress.say(format!(
                 "This dry run would point {} at its existing {version} {}",
                 self.label(row),
-                blob.assets_path
+                version_file.assets_path
             ));
             return Ok(true);
         }
@@ -844,7 +844,7 @@ impl<'a> AccountPass<'a> {
             VersionWrite {
                 rows: self.rows(row),
                 version,
-                file: &blob,
+                file: &version_file,
             },
         )
         .await?;
@@ -855,7 +855,7 @@ impl<'a> AccountPass<'a> {
         self.progress.say(format!(
             "{} now names its existing {version} {}",
             self.label(row),
-            blob.assets_path
+            version_file.assets_path
         ));
         Ok(true)
     }
@@ -979,9 +979,9 @@ impl<'a> AccountPass<'a> {
             let _ = fs::remove_file(out);
             bail!("the account's directory is gone");
         }
-        let blob = store_derived_file(&self.converted_dir, out, ext);
+        let version_file = store_derived_file(&self.converted_dir, out, ext);
         let _ = fs::remove_file(out);
-        Ok(Derived::Stored(blob?))
+        Ok(Derived::Stored(version_file?))
     }
 }
 

@@ -182,7 +182,7 @@ async fn import_records_the_conversation_then_dedupe_and_process_assets_run_on_i
 
 #[tokio::test]
 async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names_the_count() {
-    use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message};
+    use crate::process_assets::tests::{ACCOUNT, attach_stored_original, seed_message};
     use media::testutil::PNG_1X1_RGB;
 
     let dir = tempfile::tempdir().unwrap();
@@ -197,7 +197,7 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "imessage").await;
         let sha = "c".repeat(64);
-        attach_stored_blob(&opened, &mut conn, message_id, &sha, ".png", PNG_1X1_RGB).await;
+        attach_stored_original(&opened, &mut conn, message_id, &sha, ".png", PNG_1X1_RGB).await;
         let original = opened
             .cfg
             .paths
@@ -232,7 +232,9 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
 #[cfg(unix)]
 #[tokio::test]
 async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_names_it() {
-    use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message, with_read_only};
+    use crate::process_assets::tests::{
+        ACCOUNT, attach_stored_original, seed_message, with_read_only,
+    };
 
     let dir = tempfile::tempdir().unwrap();
     let config = server_config(dir.path());
@@ -244,7 +246,7 @@ async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_na
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "imessage").await;
         let sha = "c".repeat(64);
-        attach_stored_blob(&opened, &mut conn, message_id, &sha, ".part", b"half").await;
+        attach_stored_original(&opened, &mut conn, message_id, &sha, ".part", b"half").await;
         opened.cfg.paths.assets_dir_for_account(ALICE).join("cc")
     };
 
@@ -541,7 +543,7 @@ fn import_counts_print_one_line_for_each_count() {
          \x20 messages deduped: 0\n\
          \x20 attachment records: 0 (message↔media links in the database)\n\
          \x20 tapbacks:      0\n\
-         \x20 media files stored:  0 (unique blobs under assets/)\n\
+         \x20 media files stored:  0 (Assets new to assets/)\n\
          \x20 media files reused:  0 (same content hash already on disk)\n\
          \x20 media files missing: 0 (attachment path not found on disk)\n"
     );
