@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import type { MembershipCheckState } from "../lib/membershipChecks";
+import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
 import { popupShadow } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";

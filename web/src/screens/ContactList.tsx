@@ -26,7 +26,7 @@ import {
 import { formatDay } from "../lib/formatDate";
 import { highlightText } from "../lib/highlightText";
 import { PAGE_SIZE_CONTACTS_FIRST, PAGE_SIZE_FIRST } from "../lib/listPaging";
-import { checksFromMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { keys } from "../lib/queryKeys";
 import { applyCheckedRange } from "../lib/rangeCheck";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
@@ -352,20 +352,14 @@ export default function ContactList({
     [setGroupMembers.mutateAsync],
   );
 
-  /** Drop every group on the selected contacts: one write per name, each with its own rollback. */
-  const clearAllMembership = useCallback(async () => {
-    const targets = assignTargetsRef.current;
-    const ids = targets.map((c) => Number(c.id)).filter((id) => Number.isFinite(id) && id > 0);
-    if (ids.length === 0) return;
-    const names = new Set<string>();
-    for (const c of targets) {
-      for (const g of c.groups ?? []) names.add(g);
-    }
-    if (names.size === 0) return;
-    await Promise.allSettled(
-      [...names].map((name) => setGroupMembers.mutateAsync({ name, patch: { remove: ids } })),
-    );
-  }, [setGroupMembers.mutateAsync]);
+  const clearAllMembership = useCallback(
+    () =>
+      clearAllMembers(
+        assignTargetsRef.current.map((c) => c.groups ?? []),
+        (name) => applyMembership(name, false),
+      ),
+    [applyMembership],
+  );
 
   const menuDisabled = assignTargets.length === 0 && !groupsMenuOpen;
 
