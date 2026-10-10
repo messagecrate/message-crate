@@ -1471,6 +1471,11 @@ pub fn later_backup(staged: Option<&StoredTime>, held: Option<&StoredTime>) -> B
 /// Returns an error when a statement fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
     reset_id_map(conn, "_promote_mark_map", &["deletion TEXT"]).await?;
+    let staged = MarkSql {
+        backup_taken_at: "sm.backup_taken_at",
+        deletion: "sm.deletion",
+        undated_deletion: "sm.undated_deletion",
+    };
     let sql = format!(
         r"
         INSERT INTO _promote_mark_map (staging_id, prod_id, deletion)
@@ -1484,11 +1489,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
         WHERE deletion IS NOT held
         ",
         mark = copy_mark_sql(
-            &MarkSql {
-                backup_taken_at: "sm.backup_taken_at",
-                deletion: "sm.deletion",
-                undated_deletion: "sm.undated_deletion",
-            },
+            &staged,
             &MarkSql {
                 backup_taken_at: "m.backup_taken_at",
                 deletion: "m.deletion",
@@ -1499,11 +1500,7 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
     sqlx::query(&sql).execute(&mut *conn).await?;
     // Before the mark changes: the rule reads the mark held.
     let undated = kept_undated_mark_sql(
-        &MarkSql {
-            backup_taken_at: "sm.backup_taken_at",
-            deletion: "sm.deletion",
-            undated_deletion: "sm.undated_deletion",
-        },
+        &staged,
         &MarkSql {
             backup_taken_at: "messages.backup_taken_at",
             deletion: "messages.deletion",
