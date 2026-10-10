@@ -518,6 +518,27 @@ pub async fn export_messages(
     })
 }
 
+/// Record what started the Export Run on its row, as
+/// [`record_run_credential`](crate::db::audit_trail::record_run_credential)
+/// writes it for both run tables.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn record_credential(
+    conn: &mut SqliteConnection,
+    export_id: i64,
+    credential: &crate::db::audit_trail::CredentialUsed,
+) -> Result<()> {
+    crate::db::audit_trail::record_run_credential(
+        conn,
+        crate::db::audit_trail::RunTable::Exports,
+        export_id,
+        credential,
+    )
+    .await
+}
+
 /// Ready the account's Export Runs to outlive it, just before the account is
 /// deleted: each keeps `username`, what was asked for and how much matched,
 /// and is marked with `deletion_entry_id`, the account's `account_deleted`

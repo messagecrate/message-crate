@@ -242,12 +242,13 @@ type RecordedCredential = (
 
 async fn recorded_credential(
     conn: &mut SqliteConnection,
-    table: &str,
+    table: RunTable,
     run_id: i64,
 ) -> RecordedCredential {
     sqlx::query_as(&format!(
         "SELECT credential, app_kind, app_build, api_token_label, api_token_hint
-         FROM {table} WHERE id = $1"
+         FROM {} WHERE id = $1",
+        table.name()
     ))
     .bind(run_id)
     .fetch_one(&mut *conn)
@@ -299,7 +300,7 @@ async fn each_run_table_records_its_own_runs_credential() {
         .unwrap();
 
     assert_eq!(
-        recorded_credential(&mut conn, "imports", import_id).await,
+        recorded_credential(&mut conn, RunTable::Imports, import_id).await,
         (
             "session".to_string(),
             Some("desktop".to_string()),
@@ -309,7 +310,7 @@ async fn each_run_table_records_its_own_runs_credential() {
         )
     );
     assert_eq!(
-        recorded_credential(&mut conn, "exports", export_id).await,
+        recorded_credential(&mut conn, RunTable::Exports, export_id).await,
         (
             "api_token".to_string(),
             None,

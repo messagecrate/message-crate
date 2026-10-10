@@ -326,33 +326,20 @@ pub enum RunTable {
 }
 
 impl RunTable {
-    /// The statement that records what started a run on this table's row.
-    const fn record_credential_sql(self) -> &'static str {
+    /// The table's name, as SQL names it.
+    const fn name(self) -> &'static str {
         match self {
-            Self::Imports => {
-                "UPDATE imports SET credential = $1, app_kind = $2, app_build = $3,
-                        api_token_label = $4, api_token_hint = $5
-                 WHERE id = $6"
-            }
-            Self::Exports => {
-                "UPDATE exports SET credential = $1, app_kind = $2, app_build = $3,
-                        api_token_label = $4, api_token_hint = $5
-                 WHERE id = $6"
-            }
-        }
-    }
-
-    /// The run as an error message names it.
-    const fn noun(self) -> &'static str {
-        match self {
-            Self::Imports => "import",
-            Self::Exports => "export",
+            Self::Imports => "imports",
+            Self::Exports => "exports",
         }
     }
 }
 
 /// Record what started a run on its row: a Session and the app it named, or
-/// an API token's label and hint as they are now.
+/// an API token's label and hint as they are now. The Audit Trail reads these
+/// columns from both run tables ([`page`]), so the one statement that writes
+/// them is here too; `db::imports` and `db::exports` each call it for their
+/// own table.
 ///
 /// # Errors
 ///
@@ -364,16 +351,21 @@ pub async fn record_run_credential(
     credential: &CredentialUsed,
 ) -> Result<()> {
     let columns = credential.run_columns();
-    sqlx::query(table.record_credential_sql())
-        .bind(columns.credential)
-        .bind(columns.app_kind)
-        .bind(columns.app_build)
-        .bind(columns.api_token_label)
-        .bind(columns.api_token_hint)
-        .bind(run_id)
-        .execute(&mut *conn)
-        .await
-        .with_context(|| format!("record what started {} {run_id}", table.noun()))?;
+    let table = table.name();
+    sqlx::query(&format!(
+        "UPDATE {table} SET credential = $1, app_kind = $2, app_build = $3,
+                api_token_label = $4, api_token_hint = $5
+         WHERE id = $6"
+    ))
+    .bind(columns.credential)
+    .bind(columns.app_kind)
+    .bind(columns.app_build)
+    .bind(columns.api_token_label)
+    .bind(columns.api_token_hint)
+    .bind(run_id)
+    .execute(&mut *conn)
+    .await
+    .with_context(|| format!("record what started run {run_id} in {table}"))?;
     Ok(())
 }
 
