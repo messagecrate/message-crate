@@ -126,6 +126,17 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-09: **Every import hides duplicates.** An import from the desktop
+  app never hid duplicates, so a message two backup apps both held, or one
+  SMS Backup+ held to the second and to the millisecond, was shown twice.
+  Every import now hides them, within one backup app and across apps, and
+  nothing turns that off: the server's `import` command loses
+  `--skip-dedupe`, and an Import Run made through the HTTP API takes no
+  `dedupe` setting. Of the copies of one message, the one shown is the copy
+  with more attachments, then the one timed to the millisecond, then the one
+  from the import that brought more messages, then the one from the backup
+  app imported first (#1969).
+
 - 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
   The Import form's **Backup File** field takes the backup's one `.xml`
   file, where **Backup Directory** took a directory of them, because an

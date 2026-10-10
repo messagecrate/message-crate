@@ -580,7 +580,6 @@ async fn active_session_is_empty_then_reports_the_live_one() {
     let (_dir, state, token, import_id) = test_state().await;
 
     let body = CreateImportRequest {
-        dedupe: false,
         source: "imessage".into(),
         mode: ImportMode::Append,
         tool: Some("message-crate".into()),
@@ -644,7 +643,6 @@ async fn a_stored_form_snapshot_drops_credentials() {
     .unwrap();
 
     let body = CreateImportRequest {
-        dedupe: false,
         source: "imessage".into(),
         mode: ImportMode::Append,
         tool: None,
@@ -706,7 +704,6 @@ async fn imports_create_stores_source_identities() {
     .unwrap();
 
     let body = CreateImportRequest {
-        dedupe: false,
         source: "imessage".into(),
         mode: ImportMode::Append,
         tool: None,
@@ -739,7 +736,6 @@ async fn imports_create_stores_source_identities() {
 async fn a_second_session_is_refused_with_conflict() {
     let (_dir, state, token, _import_id) = test_state().await;
     let body = CreateImportRequest {
-        dedupe: false,
         source: "imessage".into(),
         mode: ImportMode::Append,
         tool: None,

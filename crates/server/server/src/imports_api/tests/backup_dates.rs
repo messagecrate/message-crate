@@ -104,7 +104,7 @@ async fn fts_hits(db: &Path, table: &str, word: &str) -> i64 {
 
 /// Import `files` into `db` in one import, appending to what it holds.
 async fn import(db: &Path, assets: &Path, root: &Path, files: &[PathBuf]) {
-    import_jsonl_files(db, files, &edit_options(assets, root, false))
+    import_jsonl_files(db, files, &edit_options(assets, root))
         .await
         .unwrap();
 }
@@ -490,7 +490,7 @@ async fn the_later_backup_decides_the_duplicate_flag() {
         ("later-first.db", [later.clone(), earlier.clone()]),
     ] {
         let db = tmp.path().join(name);
-        let options = edit_options(&assets, tmp.path(), true);
+        let options = edit_options(&assets, tmp.path());
         import_jsonl_files(&db, &files, &options).await.unwrap();
         let sms_options = ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
@@ -498,7 +498,6 @@ async fn the_later_backup_decides_the_duplicate_flag() {
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: true,
             import_id: None,
             phone_country: None,
         });

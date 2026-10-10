@@ -71,7 +71,6 @@ Import a message-ir JSONL directory, one Import Run per source (source from expo
 * `--mode <MODE>` — Import mode: replace (wipe sources found in input) or append
 
   Default value: `replace`
-* `--skip-dedupe` — Skip the cross-source soft-dedupe pass after import. The import then writes no content keys either; a later full dedupe writes them
 * `--window-secs <WINDOW_SECS>` — Near-time window in seconds for dedupe Pass B (default 2)
 
   Default value: `2`

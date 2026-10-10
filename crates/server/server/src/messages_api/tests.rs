@@ -407,7 +407,6 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             mode: crate::imports_api::ImportMode::Append,
             source: "imessage",
             account_id,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -494,7 +493,6 @@ async fn import_conversation_file(
             mode: crate::imports_api::ImportMode::Append,
             source,
             account_id,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -1146,7 +1144,7 @@ async fn hidden_under(fixture: &TestFixture, guid: &str) -> Option<String> {
     .unwrap()
 }
 
-/// Run dedupe over `account_id` as an import with dedupe on does.
+/// Run dedupe over `account_id` as every import does.
 async fn dedupe(fixture: &TestFixture, account_id: i64) {
     let mut conn = fixture.conn().await;
     crate::dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, Progress::Log)

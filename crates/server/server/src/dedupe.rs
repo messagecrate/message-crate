@@ -180,9 +180,8 @@ pub async fn source_priority_from_db(
 /// duplicates and the whole-second twins of a message one source holds with
 /// milliseconds too, all in one transaction.
 ///
-/// Survivor preference: most attachments, then the source imported first (min
-/// message id, then source name), then the lowest message id. Optional
-/// `source_priority` overrides (tests); `None` loads order from the DB.
+/// The copy shown is the first by [`rank`]. Optional `source_priority`
+/// overrides the order of the sources (tests); `None` loads it from the DB.
 pub async fn dedupe_cross_source(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -274,8 +273,9 @@ pub async fn dedupe_cross_source(
     Ok(stats)
 }
 
-/// The near-time window, in seconds, of a dedupe nobody chose one for: an
-/// import's, and the pass an import runs for the messages it changed.
+/// The near-time window, in seconds, of a dedupe nobody chose one for: the
+/// one after each import batch, and the pass a phone country change runs
+/// for the messages it changed.
 pub const NEAR_WINDOW_SECS: i64 = 2;
 
 /// What [`dedupe_changed_messages`] did.
@@ -289,20 +289,18 @@ pub struct ChangedDedupe {
 }
 
 /// Put right the duplicate flags of the messages `changed`, whose content
-/// an import changed in the transaction `conn` is in, and of every message
-/// whose flag depends on theirs (#1805).
+/// a change in the transaction `conn` is in made different, and of every
+/// message whose flag depends on theirs (#1805). A phone number given its
+/// country merges conversations and senders, which changes the content
+/// keys of the messages that moved (`crate::identity_country`); an import
+/// leaves this to the full dedupe after each batch instead.
 ///
-/// The import's dedupe setting governs the rows it brings, so this runs
-/// whatever the setting is. `changed` names only messages that had a
-/// content key before the import changed them: a message an import with
-/// dedupe off added has none, no dedupe has compared it, and it stays as it
-/// came. This computes the changed messages' content keys again, then runs
-/// both passes of [`dedupe_cross_source`] over the messages a dedupe has
-/// seen, those with a content key, so a message without one is neither
-/// hidden nor a winner here. Only the flags of the messages tied to a
-/// changed one are written: those it was hidden behind or hid, before or
-/// now, and the messages tied to those in turn. Every other flag stays as
-/// it is.
+/// This computes the changed messages' content keys again, then runs both
+/// passes of [`dedupe_cross_source`] over the messages with a content key,
+/// so a message without one is neither hidden nor a winner here. Only the
+/// flags of the messages tied to a changed one are written: those it was
+/// hidden behind or hid, before or now, and the messages tied to those in
+/// turn. Every other flag stays as it is.
 ///
 /// # Errors
 ///
@@ -701,18 +699,36 @@ async fn apply_content_keys(
     Ok(())
 }
 
+/// One copy of a message, with what decides whether it is the copy shown
+/// ([`rank`]).
 #[derive(Clone)]
 struct Cand {
     id: i64,
     source: String,
     att_count: i64,
+    /// Whether its source recorded its time in whole seconds. The flag
+    /// decides, never the time: a millisecond time can end in `.000`.
+    whole_seconds: bool,
+    /// How many messages its Import Run brought: the account's messages
+    /// stamped with the run, which are the ones it added; 0 for a message
+    /// no run stamped.
+    run_messages: i64,
 }
 
-/// One message of a content-key group in the exact pass: the candidate,
-/// and whether its source recorded its time in whole seconds.
-struct KeyedCand {
-    cand: Cand,
-    whole_seconds: bool,
+/// SQL for the Import Run size of each message: join it as `rc` on
+/// `rc.import_id = m.import_id` and read `COALESCE(rc.n, 0)`. The account is
+/// bound as `$1`.
+const RUN_MESSAGES_SQL: &str = "SELECT import_id, COUNT(*) AS n
+            FROM messages
+            WHERE account_id = $1 AND import_id IS NOT NULL
+            GROUP BY import_id";
+
+/// Whether `time_precision`, as `messages.time_precision` stores it, is
+/// whole seconds.
+fn is_whole_seconds(id: i64, time_precision: &str) -> Result<bool> {
+    Ok(message_ir::TimePrecision::parse(time_precision)
+        .with_context(|| format!("message {id}: time_precision {time_precision:?}"))?
+        == message_ir::TimePrecision::Seconds)
 }
 
 /// Hide the messages that share a fingerprint with a preferred-source twin,
@@ -743,9 +759,10 @@ async fn exact_flags(
 ) -> Result<(u64, Vec<(i64, i64)>)> {
     // One scan of messages + one aggregated attachment pass, then group in Rust.
     // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    let rows: Vec<(i64, String, String, i64, String)> = sqlx::query_as(&format!(
+    let rows: Vec<(i64, String, String, i64, String, i64)> = sqlx::query_as(&format!(
         r"
-        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0), m.time_precision
+        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0), m.time_precision,
+               COALESCE(rc.n, 0)
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN (
@@ -757,6 +774,7 @@ async fn exact_flags(
               AND a.sha256 IS NOT NULL AND a.sha256 != ''
             GROUP BY a.message_id
         ) ac ON ac.message_id = m.id
+        LEFT JOIN ({RUN_MESSAGES_SQL}) rc ON rc.import_id = m.import_id
         WHERE c.account_id = $1
           AND {HAS_CONTENT_KEY_SQL}
         ",
@@ -765,19 +783,14 @@ async fn exact_flags(
     .fetch_all(&mut *conn)
     .await?;
 
-    let mut by_key: HashMap<String, Vec<KeyedCand>> = HashMap::new();
-    for (id, source, content_key, att_count, time_precision) in rows {
-        by_key.entry(content_key).or_default().push(KeyedCand {
-            cand: Cand {
-                id,
-                source,
-                att_count,
-            },
-            // The flag decides, never the time: a millisecond time can end
-            // in `.000`.
-            whole_seconds: message_ir::TimePrecision::parse(&time_precision)
-                .with_context(|| format!("message {id}: time_precision {time_precision:?}"))?
-                == message_ir::TimePrecision::Seconds,
+    let mut by_key: HashMap<String, Vec<Cand>> = HashMap::new();
+    for (id, source, content_key, att_count, time_precision, run_messages) in rows {
+        by_key.entry(content_key).or_default().push(Cand {
+            id,
+            source,
+            att_count,
+            whole_seconds: is_whole_seconds(id, &time_precision)?,
+            run_messages,
         });
     }
 
@@ -804,19 +817,18 @@ async fn exact_flags(
 /// [`exact_group_flags`] when two or more sources hold them, and each twin
 /// is hidden under the rest's winner, which is always shown, so the message
 /// is shown once. It keeps its milliseconds unless another source's copy
-/// wins the cross-source comparison, as one whole-second source imported
-/// first does. A source that holds the message only in whole seconds keeps
+/// wins the cross-source comparison ([`rank`]), as one with more attachments
+/// does. A source that holds the message only in whole seconds keeps
 /// every copy, as one that holds it only with milliseconds does.
-fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
+fn content_key_group_flags(cands: Vec<Cand>, prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
     let with_milliseconds: HashSet<String> = cands
         .iter()
         .filter(|c| !c.whole_seconds)
-        .map(|c| c.cand.source.clone())
+        .map(|c| c.source.clone())
         .collect();
-    let (twins, rest): (Vec<KeyedCand>, Vec<KeyedCand>) = cands
+    let (twins, rest): (Vec<Cand>, Vec<Cand>) = cands
         .into_iter()
-        .partition(|c| c.whole_seconds && with_milliseconds.contains(c.cand.source.as_str()));
-    let rest: Vec<Cand> = rest.into_iter().map(|c| c.cand).collect();
+        .partition(|c| c.whole_seconds && with_milliseconds.contains(c.source.as_str()));
     let sources: HashSet<&str> = rest.iter().map(|c| c.source.as_str()).collect();
     let mut flags = if sources.len() < 2 {
         Vec::new()
@@ -825,7 +837,7 @@ fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -
     };
     if !twins.is_empty() {
         let winner = pick_winner(&rest, prio);
-        flags.extend(twins.into_iter().map(|t| (t.cand.id, winner)));
+        flags.extend(twins.into_iter().map(|t| (t.id, winner)));
     }
     flags
 }
@@ -835,55 +847,48 @@ fn content_key_group_flags(cands: Vec<KeyedCand>, prio: &HashMap<&str, usize>) -
 /// cluster of the near-time pass ([`cluster_near_dupes`]).
 ///
 /// One source that holds a message twice holds two messages, so the group
-/// stays shown as many times as the source that holds it most often. The
-/// winner's source fills those places first, then the other sources in
-/// priority order. Within a source, the rows go in the order [`pick_winner`]
-/// ranks them. Every other row is hidden as a duplicate of the winner.
+/// stays shown as many times as the source that holds it most often. Those
+/// places go to the copies first by [`rank`], the winner among them, and
+/// every other copy is hidden as a duplicate of the winner.
 fn exact_group_flags(cands: &[Cand], prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
-    let winner = pick_winner(cands, prio);
-    let winner_source = cands
-        .iter()
-        .find(|c| c.id == winner)
-        .map_or("", |c| c.source.as_str());
-    let mut by_source: HashMap<&str, Vec<&Cand>> = HashMap::new();
+    let mut per_source: HashMap<&str, usize> = HashMap::new();
     for c in cands {
-        by_source.entry(c.source.as_str()).or_default().push(c);
+        *per_source.entry(c.source.as_str()).or_default() += 1;
     }
-    let shown = by_source.values().map(Vec::len).max().unwrap_or(0);
-    let mut sources: Vec<(&str, Vec<&Cand>)> = by_source.into_iter().collect();
-    sources.sort_by_key(|&(source, _)| {
-        (
-            source != winner_source,
-            prio.get(source).copied().unwrap_or(usize::MAX),
-            source,
-        )
-    });
-    sources
+    let shown = per_source.values().copied().max().unwrap_or(0);
+    let winner = pick_winner(cands, prio);
+    let mut ranked: Vec<&Cand> = cands.iter().collect();
+    ranked.sort_by(|a, b| rank(a, b, prio));
+    ranked
         .into_iter()
-        .flat_map(|(_, mut rows)| {
-            rows.sort_by(|a, b| b.att_count.cmp(&a.att_count).then(a.id.cmp(&b.id)));
-            rows
-        })
         .skip(shown)
         .map(|c| (c.id, winner))
         .collect()
 }
 
-/// The message to keep from a duplicate group: most attachments, then the earliest-imported source, then the lowest id.
+/// The message to keep from a duplicate group: the first by [`rank`].
 fn pick_winner(cands: &[Cand], prio: &HashMap<&str, usize>) -> i64 {
     cands
         .iter()
-        .min_by(|a, b| {
-            b.att_count
-                .cmp(&a.att_count)
-                .then_with(|| {
-                    let pa = prio.get(a.source.as_str()).copied().unwrap_or(usize::MAX);
-                    let pb = prio.get(b.source.as_str()).copied().unwrap_or(usize::MAX);
-                    pa.cmp(&pb)
-                })
-                .then_with(|| a.id.cmp(&b.id))
-        })
+        .min_by(|a, b| rank(a, b, prio))
         .map_or(cands[0].id, |c| c.id)
+}
+
+/// The order in which copies of one message are shown, the first shown
+/// before the rest (`docs/architecture/contacts-identities-and-messages.md`,
+/// "Which copy is shown"): the copy with more attachments; then the copy
+/// timed to the millisecond over one timed to the second; then the copy
+/// from the Import Run that brought more messages; then the copy of the
+/// source imported first (`prio`); then the lower id. The last two only
+/// make the order stable.
+fn rank(a: &Cand, b: &Cand, prio: &HashMap<&str, usize>) -> std::cmp::Ordering {
+    let priority = |c: &Cand| prio.get(c.source.as_str()).copied().unwrap_or(usize::MAX);
+    b.att_count
+        .cmp(&a.att_count)
+        .then(a.whole_seconds.cmp(&b.whole_seconds))
+        .then(b.run_messages.cmp(&a.run_messages))
+        .then_with(|| priority(a).cmp(&priority(b)))
+        .then(a.id.cmp(&b.id))
 }
 
 /// Parse an RFC3339 timestamp into Unix UTC seconds, honoring Z / ±HH:MM
@@ -910,6 +915,8 @@ struct NearRow {
     att_fp: String,
     att_count: i64,
     content_key: String,
+    whole_seconds: bool,
+    run_messages: i64,
 }
 
 impl NearRow {
@@ -937,6 +944,8 @@ impl NearRow {
             id: self.id,
             source: self.source.clone(),
             att_count: self.att_count,
+            whole_seconds: self.whole_seconds,
+            run_messages: self.run_messages,
         }
     }
 }
@@ -989,14 +998,18 @@ async fn load_near_rows(
         Option<String>,
         String,
         String,
+        String,
+        i64,
     );
     let msg_sql = format!(
         r"
         SELECT m.id, m.conversation_id, m.source, m.is_from_me, m.timestamp, m.body,
-               COALESCE({sender}, ''), COALESCE(m.content_key, '')
+               COALESCE({sender}, ''), COALESCE(m.content_key, ''), m.time_precision,
+               COALESCE(rc.n, 0)
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN handles hs ON hs.id = m.sender_handle_id
+        LEFT JOIN ({RUN_MESSAGES_SQL}) rc ON rc.import_id = m.import_id
         WHERE c.account_id = $1 {keyed}
         ",
         sender = sender_for_key_sql(),
@@ -1030,7 +1043,19 @@ async fn load_near_rows(
     }
 
     let mut by_conversation: HashMap<i64, Vec<NearRow>> = HashMap::new();
-    for (id, conversation_id, source, is_from_me, ts, body, sender_norm, content_key) in msg_rows {
+    for (
+        id,
+        conversation_id,
+        source,
+        is_from_me,
+        ts,
+        body,
+        sender_norm,
+        content_key,
+        time_precision,
+        run_messages,
+    ) in msg_rows
+    {
         if hidden.contains(&id) {
             continue;
         }
@@ -1056,6 +1081,8 @@ async fn load_near_rows(
                 att_count: shas.len() as i64,
                 att_fp: shas.join(","),
                 content_key,
+                whole_seconds: is_whole_seconds(id, &time_precision)?,
+                run_messages,
             });
     }
     Ok(by_conversation)

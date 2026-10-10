@@ -392,7 +392,7 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
         Method::POST,
         "/v1/imports",
         Some(&alice),
-        json_body(&json!({ "source": "whatsapp", "dedupe": true })),
+        json_body(&json!({ "source": "whatsapp" })),
     )
     .await;
     assert_eq!(status, S::CREATED, "{run}");

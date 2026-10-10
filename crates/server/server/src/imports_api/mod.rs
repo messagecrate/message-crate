@@ -69,12 +69,6 @@ pub struct ImportOptions<'a> {
     pub source: &'a str,
     /// Account the import writes into.
     pub account_id: i64,
-    /// Fill missing `content_key` values during promote (needed before
-    /// cross-source dedupe). With the fill, promote leaves the duplicate
-    /// flags of the stored messages whose content it changed to the full
-    /// dedupe, [`crate::dedupe::dedupe_cross_source`], which the caller runs
-    /// afterwards; without it, promote puts those flags right itself.
-    pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,
     /// When true, stamp `messages.source` from each conversation's IR `export.source`.
@@ -105,9 +99,6 @@ pub struct FixedImportArgs<'a> {
     pub source: &'a str,
     /// Account the import writes into.
     pub account_id: i64,
-    /// Fill missing `content_key` values during promote, as
-    /// [`ImportOptions::fill_content_keys`] says.
-    pub fill_content_keys: bool,
     /// Optional Import Run id (messages stamped on promote).
     pub import_id: Option<i64>,
     /// The country the run states for phone numbers written without a `+`
@@ -125,7 +116,6 @@ impl<'a> ImportOptions<'a> {
             mode: args.mode,
             source: args.source,
             account_id: args.account_id,
-            fill_content_keys: args.fill_content_keys,
             import_id: args.import_id,
             source_from_jsonl: false,
             media: MediaMode::Clone,
@@ -527,15 +517,9 @@ async fn promote_step(
     wipe_sources: &[String],
     counts: &mut ImportCounts,
 ) -> Result<(), promote::PromoteError> {
-    let promote_stats = promote::promote_append(
-        tx,
-        opts.mode,
-        opts.account_id,
-        opts.fill_content_keys,
-        wipe_sources,
-        opts.progress,
-    )
-    .await?;
+    let promote_stats =
+        promote::promote_append(tx, opts.mode, opts.account_id, wipe_sources, opts.progress)
+            .await?;
     counts.messages_deduped += promote_stats.messages_deduped;
     counts.messages_appended = promote_stats.messages_appended;
     if opts.mode == ImportMode::Append {
@@ -557,7 +541,6 @@ pub(crate) struct BatchContext {
     pub(crate) import_id: i64,
     pub(crate) source: String,
     pub(crate) mode: ImportMode,
-    pub(crate) dedupe: bool,
     pub(crate) phone_country: Option<&'static phone::Country>,
 }
 
@@ -575,7 +558,6 @@ impl BatchContext {
             import_id: row.id,
             source: row.source.clone(),
             mode,
-            dedupe: row.dedupe,
             // The code was checked when the run was created, so one the
             // table no longer holds can only come from a rebuilt server:
             // the run then states none.
@@ -584,7 +566,7 @@ impl BatchContext {
     }
 }
 
-/// Import result: the import counts plus optional dedupe counts.
+/// Import result: the import counts and the dedupe counts.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportBatchResponse {
     /// Source id of the Import Run the batch belongs to, such as `imessage`.
@@ -593,13 +575,12 @@ pub(crate) struct CreateImportBatchResponse {
     account: i64,
     #[serde(flatten)]
     counts: ImportCounts,
-    /// What the cross-source dedupe pass after this batch did, counted over
-    /// the whole account rather than the batch alone. Null when the Import
-    /// Run was created with `dedupe` off, because then no pass runs.
-    dedupe: Option<DedupeCounts>,
+    /// What the dedupe after this batch did, counted over the whole account
+    /// rather than the batch alone. Every batch runs it.
+    dedupe: DedupeCounts,
 }
 
-/// Cross-source dedupe outcome.
+/// What one dedupe did.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct DedupeCounts {
     /// Content keys the pass wrote: one for each message whose key was
@@ -620,7 +601,7 @@ pub(crate) struct DedupeCounts {
     near_flagged: u64,
 }
 
-/// Source, mode, dedupe and tool for a new Import Run. The bearer token
+/// Source, mode and tool for a new Import Run. The bearer token
 /// names the account.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportRequest {
@@ -635,9 +616,6 @@ pub(crate) struct CreateImportRequest {
     /// adds only new ones. `append` when the request leaves it out.
     #[serde(default)]
     pub(crate) mode: ImportMode,
-    /// Run cross-source soft-dedupe after each batch.
-    #[serde(default)]
-    pub(crate) dedupe: bool,
     /// The country of the phone the backup came from, as an ISO 3166-1
     /// alpha-2 code such as `GB`, which `GET /v1/phone-countries` lists.
     /// Every phone number the run's files write without its `+` code is
@@ -928,8 +906,6 @@ pub(crate) struct ImportRunSummary {
     pub(crate) tool: Option<String>,
     /// Import mode (`replace` or `append`).
     pub(crate) mode: String,
-    /// Whether cross-source dedupe runs after each batch.
-    pub(crate) dedupe: bool,
     /// The country the run states for phone numbers written without their
     /// `+` code, as an ISO 3166-1 alpha-2 code; null when it states none.
     pub(crate) phone_country: Option<String>,
@@ -996,7 +972,6 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             source: row.source,
             tool: row.tool,
             mode: row.mode,
-            dedupe: row.dedupe,
             phone_country: row.phone_country,
             status: row.status,
             started_at: row.started_at,
@@ -1328,7 +1303,6 @@ pub(crate) async fn create_import(
         account_id: account,
         source: &body.source,
         mode: body.mode.as_str(),
-        dedupe: body.dedupe,
         phone_country: phone_country.map(|country| country.code),
         tool: body.tool.as_deref(),
         stage,
@@ -1818,7 +1792,6 @@ async fn run_import_path(
         import_id,
         source: source_id,
         mode: run_mode,
-        dedupe: do_dedupe,
         phone_country,
     } = context;
 
@@ -1848,7 +1821,6 @@ async fn run_import_path(
         mode,
         source: &source_id,
         account_id: account,
-        fill_content_keys: do_dedupe,
         import_id: Some(import_id),
         phone_country,
     });
@@ -1860,31 +1832,28 @@ async fn run_import_path(
     )
     .await;
     let counts = import_result?;
-    let dedupe_stats = if do_dedupe {
-        Some(
-            dedupe::dedupe_cross_source(
-                &mut conn,
-                account,
-                None,
-                dedupe::NEAR_WINDOW_SECS,
-                Progress::Log,
-            )
-            .await?,
-        )
-    } else {
-        None
-    };
+    // Every batch is followed by the full dedupe, within one source and
+    // across sources: there is no reason ever to leave a duplicate shown
+    // (#1969).
+    let dedupe_stats = dedupe::dedupe_cross_source(
+        &mut conn,
+        account,
+        None,
+        dedupe::NEAR_WINDOW_SECS,
+        Progress::Log,
+    )
+    .await?;
 
     Ok(Json(CreateImportBatchResponse {
         source: source_id,
         account,
         counts,
-        dedupe: dedupe_stats.map(|d| DedupeCounts {
-            keys_filled: d.keys_filled,
-            exact_groups: d.exact_groups,
-            exact_flagged: d.exact_flagged,
-            near_flagged: d.near_flagged,
-        }),
+        dedupe: DedupeCounts {
+            keys_filled: dedupe_stats.keys_filled,
+            exact_groups: dedupe_stats.exact_groups,
+            exact_flagged: dedupe_stats.exact_flagged,
+            near_flagged: dedupe_stats.near_flagged,
+        },
     }))
 }
 

@@ -138,11 +138,6 @@ pub struct ImportArgs {
     #[arg(long, default_value = "replace")]
     pub mode: ImportMode,
 
-    /// Skip the cross-source soft-dedupe pass after import. The import then
-    /// writes no content keys either; a later full dedupe writes them
-    #[arg(long)]
-    pub skip_dedupe: bool,
-
     /// Near-time window in seconds for dedupe Pass B (default 2)
     #[arg(long, default_value_t = 2)]
     pub window_secs: i64,
@@ -410,7 +405,6 @@ async fn run_import(args: ImportArgs) -> Result<()> {
             source_override: args.source,
             mode: args.mode,
             media,
-            skip_dedupe: args.skip_dedupe,
             window_secs: args.window_secs,
             progress: crate::progress::Progress::Print,
         },
@@ -422,13 +416,8 @@ async fn run_import(args: ImportArgs) -> Result<()> {
     println!("  input:         {}", counts.input_dir.display());
     println!("  sources:       {}", counts.sources.join(", "));
     print!("{}", format_import_counts(&counts.import));
-    match counts.dedupe {
-        Some(dedupe) => {
-            println!("Cross-source soft-dedupe (hide the same SMS across sources)");
-            print!("{}", format_dedupe_stats(&dedupe));
-        }
-        None => println!("Cross-source soft-dedupe skipped (--skip-dedupe)"),
-    }
+    println!("Duplicates hidden");
+    print!("{}", format_dedupe_stats(&counts.dedupe));
     opened.close().await;
     Ok(())
 }

@@ -2458,7 +2458,7 @@ export interface components {
             /** @description Client/tool name recorded on the run, e.g. `message-crate-export`. */
             tool?: string | null;
         };
-        /** @description Import result: the import counts plus optional dedupe counts. */
+        /** @description Import result: the import counts and the dedupe counts. */
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /**
              * Format: int64
@@ -2466,21 +2466,18 @@ export interface components {
              */
             account: number;
             /**
-             * @description What the cross-source dedupe pass after this batch did, counted over
-             *     the whole account rather than the batch alone. Null when the Import
-             *     Run was created with `dedupe` off, because then no pass runs.
+             * @description What the dedupe after this batch did, counted over the whole account
+             *     rather than the batch alone. Every batch runs it.
              */
-            dedupe: components["schemas"]["DedupeCounts"] | null;
+            dedupe: components["schemas"]["DedupeCounts"];
             /** @description Source id of the Import Run the batch belongs to, such as `imessage`. */
             source: string;
         };
         /**
-         * @description Source, mode, dedupe and tool for a new Import Run. The bearer token
+         * @description Source, mode and tool for a new Import Run. The bearer token
          *     names the account.
          */
         CreateImportRequest: {
-            /** @description Run cross-source soft-dedupe after each batch. */
-            dedupe?: boolean;
             /** @description Which install is creating the Import Run. */
             device_id?: string | null;
             /**
@@ -2587,7 +2584,7 @@ export interface components {
             /** @description The username the account logs in with. */
             username: string;
         };
-        /** @description Cross-source dedupe outcome. */
+        /** @description What one dedupe did. */
         DedupeCounts: {
             /**
              * Format: int64
@@ -3191,8 +3188,6 @@ export interface components {
              * @description Contacts this run created.
              */
             contacts_new: number;
-            /** @description Whether cross-source dedupe runs after each batch. */
-            dedupe: boolean;
             /** @description Which install created the run. */
             device_id: string | null;
             /**
@@ -4430,8 +4425,6 @@ export interface components {
                  * @description Contacts this run created.
                  */
                 contacts_new: number;
-                /** @description Whether cross-source dedupe runs after each batch. */
-                dedupe: boolean;
                 /** @description Which install created the run. */
                 device_id: string | null;
                 /**
