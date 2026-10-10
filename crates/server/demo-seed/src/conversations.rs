@@ -96,8 +96,11 @@ fn export_meta(source: &str, owner_identity: &str, backup_taken_at_unix_ms: i64)
 
 /// The three backup directories a run writes into.
 pub struct StagingDirs<'a> {
+    /// The directory that looks like an iMessage backup.
     pub imessage: &'a Path,
+    /// The directory that looks like an SMS Backup & Restore backup.
     pub sbr: &'a Path,
+    /// The directory that looks like a WhatsApp backup.
     pub whatsapp: &'a Path,
 }
 

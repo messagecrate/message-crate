@@ -28,6 +28,8 @@ on:
       - "web/package.json"
       - "docs/package-lock.json"
       - "docs/package.json"
+      - "scripts/openapi-typescript/package-lock.json"
+      - "scripts/openapi-typescript/package.json"
       - ".github/workflows/audit.yml"
       - "scripts/audit-docs.sh"
   schedule:
@@ -76,10 +78,19 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             docs/package-lock.json
+            scripts/openapi-typescript/package-lock.json
 
       - name: Audit web frontend
         run: |
           cd web
+          npm ci
+          npm audit --audit-level=high
+
+      # The generator of the web app's server API types runs in CI and on
+      # developers' machines, from its own tree beside web/.
+      - name: Audit API type generator
+        run: |
+          cd scripts/openapi-typescript
           npm ci
           npm audit --audit-level=high
 
