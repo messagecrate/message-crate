@@ -490,6 +490,8 @@ struct DemoBuildShared {
     /// build runs it to its end without an `await`, so cancelling the task
     /// alone waits for the conversion (#1729).
     conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Told each time the state is set, so [`DemoBuild::ended`] looks again.
+    ended: tokio::sync::Notify,
 }
 
 /// Why the build failed, when the server stopped during it.
@@ -517,6 +519,7 @@ impl DemoBuild {
 
     fn set(&self, state: DemoBuildState) {
         *self.lock_state() = state;
+        self.0.ended.notify_waiters();
     }
 
     /// Mark a build of `size` as running, unless one already is.
@@ -642,6 +645,22 @@ impl DemoBuild {
     /// and logging in to it is refused until it ends.
     pub(crate) fn is_building(&self) -> bool {
         matches!(self.get(), DemoBuildState::Building(_))
+    }
+
+    /// Return once no build is running, waiting for the running one to end.
+    #[cfg(test)]
+    pub(crate) async fn ended(&self) {
+        loop {
+            let ended = self.0.ended.notified();
+            let mut ended = std::pin::pin!(ended);
+            // Registered before the state is read, so an end between the
+            // two is not missed.
+            ended.as_mut().enable();
+            if !self.is_building() {
+                return;
+            }
+            ended.await;
+        }
     }
 }
 
