@@ -105,12 +105,12 @@ pub(crate) struct SkippedEmptyPduDetail {
     pub pdu_filename: String,
 }
 
-impl SkippedEmptyPduDetail {
-    /// The header of `skipped_empty_pdu.csv`, one column per field of [`Self::csv_row`].
-    const CSV_HEADER: &[&str] = &["pdu_filename"];
+impl SkippedCsv<1> for SkippedEmptyPduDetail {
+    const FILE_NAME: &str = "skipped_empty_pdu.csv";
+    const HEADER: [&str; 1] = ["pdu_filename"];
 
-    fn csv_row(&self) -> Vec<String> {
-        vec![self.pdu_filename.clone()]
+    fn row(&self) -> [String; 1] {
+        [self.pdu_filename.clone()]
     }
 }
 
@@ -123,18 +123,50 @@ pub(crate) struct SkippedNoPartyDetail {
     pub is_sent: bool,
 }
 
-impl SkippedNoPartyDetail {
-    /// The header of `skipped_no_party.csv`, one column per field of [`Self::csv_row`].
-    const CSV_HEADER: &[&str] = &["pdu_filename", "sender", "recipients", "is_sent"];
+impl SkippedCsv<4> for SkippedNoPartyDetail {
+    const FILE_NAME: &str = "skipped_no_party.csv";
+    const HEADER: [&str; 4] = ["pdu_filename", "sender", "recipients", "is_sent"];
 
-    fn csv_row(&self) -> Vec<String> {
-        vec![
+    fn row(&self) -> [String; 4] {
+        [
             self.pdu_filename.clone(),
             self.sender.clone(),
             self.recipients.clone(),
             if self.is_sent { "1" } else { "0" }.to_owned(),
         ]
     }
+}
+
+impl SkippedCsv<6> for SkippedBadAddrDetail {
+    const FILE_NAME: &str = "skipped_invalid_address.csv";
+    const HEADER: [&str; 6] = [
+        "xml_file",
+        "address",
+        "contact_name",
+        "android_type",
+        "date_ms",
+        "body",
+    ];
+
+    fn row(&self) -> [String; 6] {
+        [
+            self.xml_file.clone(),
+            self.address.clone(),
+            self.contact_name.clone(),
+            self.android_type.clone(),
+            self.date_ms.clone(),
+            self.body.clone(),
+        ]
+    }
+}
+
+/// A skipped-row type and the CSV file that lists it: its name, its header, and one row per
+/// item. `N` is the column count, so the header and the row cannot differ in width.
+trait SkippedCsv<const N: usize> {
+    const FILE_NAME: &str;
+    const HEADER: [&str; N];
+
+    fn row(&self) -> [String; N];
 }
 
 /// Append parsed XML SMS rows to pending conversations.
@@ -513,33 +545,13 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         &mut report,
     )?;
 
-    // Rows dropped for an unusable address.
     write_skipped_csv(
         &output_dir,
-        "skipped_invalid_address.csv",
-        SkippedBadAddrDetail::CSV_HEADER,
-        skips
-            .invalid_address
-            .iter()
-            .map(SkippedBadAddrDetail::csv_row),
+        &skips.invalid_address,
         skips.invalid_address_more,
     )?;
-    // Stub PDU files.
-    write_skipped_csv(
-        &output_dir,
-        "skipped_empty_pdu.csv",
-        SkippedEmptyPduDetail::CSV_HEADER,
-        skips.empty_pdu.iter().map(SkippedEmptyPduDetail::csv_row),
-        skips.empty_pdu_more,
-    )?;
-    // MMS with no participant other than the owner.
-    write_skipped_csv(
-        &output_dir,
-        "skipped_no_party.csv",
-        SkippedNoPartyDetail::CSV_HEADER,
-        skips.no_party.iter().map(SkippedNoPartyDetail::csv_row),
-        skips.no_party_more,
-    )?;
+    write_skipped_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
+    write_skipped_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
 
     Ok(report)
 }
@@ -657,31 +669,30 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
-/// Write `file_name` in `output_dir` (or remove a stale one) with `header` and one row per item of
-/// `rows`. When `more` entries were left out, a last row says so in its final column, padded with
-/// empty columns to the header's width.
-fn write_skipped_csv(
+/// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
+/// of `details`. When `more` entries were left out, a last row says so in its final column,
+/// padded with empty columns to the header's width.
+fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
-    file_name: &str,
-    header: &[&str],
-    rows: impl Iterator<Item = Vec<String>>,
+    details: &[T],
     more: u64,
 ) -> Result<()> {
-    let path = output_dir.join(file_name);
-    let mut rows = rows.peekable();
-    if rows.peek().is_none() && more == 0 {
+    let path = output_dir.join(T::FILE_NAME);
+    if details.is_empty() && more == 0 {
         remove_if_exists(&path);
         return Ok(());
     }
     let mut wtr =
         csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(header)?;
-    for row in rows {
-        wtr.write_record(&row)?;
+    wtr.write_record(T::HEADER)?;
+    for d in details {
+        wtr.write_record(d.row())?;
     }
     if more > 0 {
-        let mut row = vec![String::new(); header.len().saturating_sub(1)];
-        row.push(format!("...and {more} more entries not shown"));
+        let mut row: [String; N] = std::array::from_fn(|_| String::new());
+        if let Some(last) = row.last_mut() {
+            *last = format!("...and {more} more entries not shown");
+        }
         wtr.write_record(&row)?;
     }
     wtr.flush()?;
