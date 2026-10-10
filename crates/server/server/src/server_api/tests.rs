@@ -897,7 +897,7 @@ impl OpenGate {
         });
         tokio::select! {
             arrived = arrived => arrived.unwrap(),
-            () = build_end(state) => panic!(
+            () = state.demo_build.ended() => panic!(
                 "the build ended before it generated: {:?}",
                 state.demo_build.get()
             ),
@@ -919,34 +919,39 @@ static SECOND_BUILD_GATE: BundleGate = BundleGate::new();
 static STOPPED_BUILD_GATE: BundleGate = BundleGate::new();
 static ENTERED_BUILD_GATE: BundleGate = BundleGate::new();
 
-/// [`tiny_bundle`], once the test opens [`SECOND_BUILD_GATE`].
+/// [`tiny_bundle`], once the test opens `gate`.
+fn gated_tiny_bundle(
+    gate: &BundleGate,
+    size: demo_seed::DemoSize,
+    bundle: &std::path::Path,
+    cancel: &AtomicBool,
+) -> anyhow::Result<()> {
+    gate.pass();
+    tiny_bundle(size, bundle, cancel)
+}
+
 fn second_build_bundle(
     size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    SECOND_BUILD_GATE.pass();
-    tiny_bundle(size, bundle, cancel)
+    gated_tiny_bundle(&SECOND_BUILD_GATE, size, bundle, cancel)
 }
 
-/// [`tiny_bundle`], once the test opens [`STOPPED_BUILD_GATE`].
 fn stopped_build_bundle(
     size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    STOPPED_BUILD_GATE.pass();
-    tiny_bundle(size, bundle, cancel)
+    gated_tiny_bundle(&STOPPED_BUILD_GATE, size, bundle, cancel)
 }
 
-/// [`tiny_bundle`], once the test opens [`ENTERED_BUILD_GATE`].
 fn entered_build_bundle(
     size: demo_seed::DemoSize,
     bundle: &std::path::Path,
     cancel: &AtomicBool,
 ) -> anyhow::Result<()> {
-    ENTERED_BUILD_GATE.pass();
-    tiny_bundle(size, bundle, cancel)
+    gated_tiny_bundle(&ENTERED_BUILD_GATE, size, bundle, cancel)
 }
 
 fn no_bundle(
@@ -999,17 +1004,9 @@ async fn start_demo_build(state: &AppState, token: &str) -> (StatusCode, String)
     .await
 }
 
-/// Return once the running Demo Account build has ended. It yields to the
-/// build between looks rather than waiting on a clock.
-async fn build_end(state: &AppState) {
-    while state.demo_build.is_building() {
-        tokio::task::yield_now().await;
-    }
-}
-
 /// Read the Demo Account once its build has ended.
 async fn demo_account_after_build(state: &AppState, token: &str) -> DemoAccount {
-    build_end(state).await;
+    state.demo_build.ended().await;
     get_json(state, "/v1/server/demo-account", token).await
 }
 
