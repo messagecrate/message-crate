@@ -459,7 +459,7 @@ impl Promote<'_> {
     async fn promote_attachments(&mut self) -> Result<(i64, Vec<i64>)> {
         let phase = Self::begin("Writing the import's attachments…");
         let attachments_before = staging::max_attachment_id(self.tx).await?;
-        let promoted = staging::promote_attachments(self.tx).await?;
+        let promoted = staging::promote_attachments(self.tx, attachments_before).await?;
         self.stats.attachments = promoted.inserted;
         self.done(
             phase,

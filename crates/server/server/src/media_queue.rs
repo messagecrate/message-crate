@@ -1,8 +1,8 @@
 //! The background pass that makes Thumbnails and Previews after each Import
 //! Run (`docs/architecture/media.md`, rule 4).
 //!
-//! When an Import Run ends, [`queue_import_run`] adds the Assets its
-//! messages name to the `media_queue` table and wakes the pass; the run's
+//! When an Import Run ends, [`queue_import_run`] adds the Assets of the
+//! attachment rows it wrote to the `media_queue` table and wakes the pass; the run's
 //! answer never waits for it. The pass, which `serve` starts once, takes the
 //! queued Assets oldest first, makes what each needs with
 //! [`crate::process_assets::process_one_asset`], and removes its row. The

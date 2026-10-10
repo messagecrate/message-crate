@@ -1725,26 +1725,50 @@ fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
 /// Insert the staged attachments under their production messages: fill in
 /// the stored rows another copy has the file for
 /// ([`fill_attachments_sql`]), then insert the rows the message does not
-/// hold yet ([`insert_new_attachments_sql`]).
+/// hold yet ([`insert_new_attachments_sql`]). Every row it fills or inserts
+/// takes the Import Run of its staged message as its `import_id`, so the
+/// Media Stage after the run queues its Asset even when an earlier run
+/// created the message (#1946). `attachments_before` is the highest
+/// attachment id before the insert ([`max_attachment_id`]): the new rows
+/// land above it.
 ///
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
+pub async fn promote_attachments(
+    conn: &mut SqliteConnection,
+    attachments_before: i64,
+) -> Result<PromotedAttachments> {
     let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
-    let mut filled_messages: Vec<i64> = sqlx::query_scalar(&format!(
-        "{} RETURNING message_id",
+    let filled_rows: Vec<(i64, i64)> = sqlx::query_as(&format!(
+        "{} RETURNING id, message_id",
         fill_attachments_sql("attachments", &staged)
     ))
     .fetch_all(&mut *conn)
     .await?;
-    let filled = filled_messages.len() as u64;
+    let filled = filled_rows.len() as u64;
+    let filled_ids: Vec<i64> = filled_rows.iter().map(|(id, _)| *id).collect();
+    let mut filled_messages: Vec<i64> = filled_rows.iter().map(|(_, message)| *message).collect();
     filled_messages.sort_unstable();
     filled_messages.dedup();
     let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
         .execute(&mut *conn)
         .await?
         .rows_affected();
+    sqlx::query(
+        r"
+        UPDATE attachments
+        SET import_id = sm.import_id
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE mm.prod_id = attachments.message_id
+          AND (attachments.id > $1 OR attachments.id IN (SELECT value FROM json_each($2)))
+        ",
+    )
+    .bind(attachments_before)
+    .bind(serde_json::to_string(&filled_ids)?)
+    .execute(&mut *conn)
+    .await?;
     Ok(PromotedAttachments {
         filled,
         filled_messages,

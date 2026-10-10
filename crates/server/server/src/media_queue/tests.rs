@@ -783,3 +783,116 @@ fn a_missing_program_is_named_as_not_found() {
     };
     assert_eq!(tools_unavailable(&Ok(both)), None);
 }
+
+/// One Import Run in Append mode of one message, `g-photo`, with the JPEG
+/// `photo.jpg` (ffmpeg's test pattern, made small) attached: missing, as a
+/// backup that did not hold the file says, or present, uploaded first.
+/// Answers the JPEG's fingerprint.
+async fn import_photo_run(
+    fixture: &TestFixture,
+    alice: &RegisteredAccount,
+    present: bool,
+) -> String {
+    let state = &fixture.state;
+    let bytes = fixture_bytes("photo.jpg");
+    let sha = crate::assets_api::sha256_hex(&bytes);
+    let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
+        state,
+        "/v1/imports",
+        &alice.token,
+        serde_json::json!({ "source": "imessage", "mode": "append" }),
+    )
+    .await;
+    let run = run["id"].as_i64().unwrap();
+    let photo = attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg");
+    let photo = if present {
+        let (status, text) = crate::test_support::put_raw(
+            state,
+            &format!("/v1/assets/{sha}"),
+            &alice.token,
+            "image/jpeg",
+            bytes,
+        )
+        .await;
+        assert!(status.is_success(), "upload: {status} {text}");
+        message_ir::IrAttachment {
+            digest_sha256: Some(sha.clone()),
+            ..photo
+        }
+    } else {
+        message_ir::IrAttachment {
+            missing_reason: Some("not_exported".into()),
+            ..photo
+        }
+    };
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+    let message = message_line("g-photo", "a photo")
+        .sender("+15555550123")
+        .attachment(photo);
+    let (status, text) = crate::test_support::post_raw(
+        state,
+        &format!("/v1/imports/{run}/batches"),
+        &alice.token,
+        "application/jsonl",
+        format!("{header}\n{message}\n"),
+    )
+    .await;
+    assert!(status.is_success(), "batch: {status} {text}");
+    let completed: serde_json::Value = crate::test_support::post_json(
+        state,
+        &format!("/v1/imports/{run}/complete"),
+        &alice.token,
+        serde_json::json!({ "status": "completed" }),
+    )
+    .await;
+    assert_eq!(completed["status"], "completed", "{completed}");
+    sha
+}
+
+/// A backup imported again in Append mode now holds a JPEG that was missing
+/// the first time. The second run gives the stored attachment row its file,
+/// on a message the first run created, and queues that Asset (#1946).
+#[tokio::test]
+async fn a_run_that_gives_a_stored_attachment_its_file_queues_the_asset() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = &fixture.state;
+    import_photo_run(&fixture, &alice, false).await;
+    assert_eq!(queued(state).await, 0, "the first run stored no file");
+
+    let sha = import_photo_run(&fixture, &alice, true).await;
+
+    let queued_sha: Vec<String> = sqlx::query_scalar("SELECT sha256 FROM media_queue")
+        .fetch_all(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(queued_sha, vec![sha]);
+}
+
+/// The Asset the second run queues in
+/// [`a_run_that_gives_a_stored_attachment_its_file_queues_the_asset`] gets
+/// its Thumbnail from the pass.
+#[test]
+fn a_file_a_later_run_fills_in_gets_its_thumbnail() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_photo_run(&fixture, &alice, false).await;
+        let sha = import_photo_run(&fixture, &alice, true).await;
+
+        let made = work_through(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
+
+        assert_eq!(made.thumbnails, 1, "{made:?}");
+        let conversation_id: i64 =
+            sqlx::query_scalar("SELECT id FROM conversations WHERE account_id = $1")
+                .bind(alice.account_id)
+                .fetch_one(&mut *fixture.conn().await)
+                .await
+                .unwrap();
+        let attachments = attachments(state, &alice, conversation_id).await;
+        assert_eq!(attachments.len(), 1, "{attachments:?}");
+        assert_eq!(attachments[0]["sha256"], sha.as_str());
+        assert_eq!(attachments[0]["thumbnail_mime_type"], "image/jpeg");
+    });
+}
