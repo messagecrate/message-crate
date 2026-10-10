@@ -13,6 +13,15 @@ vi.mock("../lib/serverApi", () => ({
   getConversationSources: (...args: unknown[]) => getSources(...args),
 }));
 
+function renderPanel() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <SourcesPanel conversationId={1} onClose={() => {}} />
+    </QueryClientProvider>,
+  );
+}
+
 describe("SourcesPanel", () => {
   afterEach(() => {
     cleanup();
@@ -26,13 +35,7 @@ describe("SourcesPanel", () => {
       { backup_name: "phone-a", message_count: 2, unique_count: 2, percentage: 66.7 },
       { backup_name: "phone-b", message_count: 2, unique_count: 1, percentage: 33.3 },
     ]);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
-      <QueryClientProvider client={client}>
-        <SourcesPanel conversationId={1} onClose={() => {}} />
-      </QueryClientProvider>,
-    );
+    renderPanel();
 
     expect(await screen.findByText("2 unique (66.7% of unique messages)")).toBeTruthy();
     expect(screen.getByText("1 unique (33.3% of unique messages)")).toBeTruthy();
@@ -41,13 +44,7 @@ describe("SourcesPanel", () => {
 
   it("says there is no source data, without a full stop, when the conversation has none", async () => {
     getSources.mockResolvedValue([]);
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
-    render(
-      <QueryClientProvider client={client}>
-        <SourcesPanel conversationId={1} onClose={() => {}} />
-      </QueryClientProvider>,
-    );
+    renderPanel();
 
     expect(await screen.findByText("No source data available")).toBeTruthy();
   });
