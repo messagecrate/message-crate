@@ -24,7 +24,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             output_dir: &output_dir,
             scratch_dir: &config.scratch_dir,
             owner_phones: &source.owner_phones,
-            run: convert_run,
+            convert_run,
         })
     })
 }

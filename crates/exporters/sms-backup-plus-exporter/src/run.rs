@@ -37,7 +37,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         phone_country: source.phone_country,
         verbose: source.verbose,
         log: config.log.as_ref(),
-        run: config.convert_run(),
+        convert_run: config.convert_run(),
     })?;
     if source.include_summary {
         return message_crate_core::finish_run(config, &report, config.media.mode.needs_tools());
@@ -101,7 +101,7 @@ mod tests {
             verbose: false,
             log: None,
             phone_country: phone::country("US"),
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 ..ConvertRun::default()
             },

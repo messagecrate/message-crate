@@ -436,7 +436,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
@@ -455,7 +455,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_dir,
         scratch_dir,
         owner_phones,
-        run:
+        convert_run:
             ConvertRun {
                 transforms,
                 output_format,

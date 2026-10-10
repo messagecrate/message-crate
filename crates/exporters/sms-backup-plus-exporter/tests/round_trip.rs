@@ -30,7 +30,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
         verbose: false,
         log: None,
         phone_country: phone::country("US"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

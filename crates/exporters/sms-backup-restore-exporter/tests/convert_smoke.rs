@@ -19,7 +19,7 @@ fn convert(
         output_dir: output,
         scratch_dir: cache.path(),
         owner_phones,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format,
             ..ConvertRun::default()
         },
@@ -191,7 +191,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
         output_dir: &out,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        run: ConvertRun {
+        convert_run: ConvertRun {
             transforms,
             output_format: OutputFormat::Csv,
             cancel: Some(&cancel),
@@ -364,7 +364,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_dir: tmp.path(),
             scratch_dir: cache.path(),
             owner_phones: &[],
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()

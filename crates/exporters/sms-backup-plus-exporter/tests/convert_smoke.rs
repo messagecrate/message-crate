@@ -22,7 +22,7 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
         verbose: false,
         log: None,
         phone_country: phone::country("US"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -241,7 +241,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             verbose: false,
             log: None,
             phone_country: phone::country("US"),
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -364,7 +364,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         verbose: false,
         log: None,
         phone_country: phone::country("US"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             transforms: ExportTransforms {
                 media: media::MediaMode::Disabled,
                 ..ExportTransforms::none()
@@ -426,7 +426,7 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
         verbose: false,
         log: None,
         phone_country: phone::country("US"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

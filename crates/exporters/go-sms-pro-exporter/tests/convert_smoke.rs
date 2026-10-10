@@ -28,7 +28,7 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
         output_dir,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -119,7 +119,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_dir: &output,
             scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -153,7 +153,7 @@ fn the_backup_date_is_the_newest_files_modification_time() {
         output_dir: &output,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

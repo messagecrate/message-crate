@@ -21,7 +21,7 @@ fn convert(input: &std::path::Path, output: &std::path::Path) -> Result<ExportRe
         input,
         output,
         timezone: Some("UTC"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -276,7 +276,7 @@ Bob,2026-03-08 02:30:00,SMS,Incoming,+15555550100,Bob,Read,,,Gap,,,\n",
         input: dir.path(),
         output: &out,
         timezone: Some("America/New_York"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -437,7 +437,7 @@ fn convert_files(files: &[(&str, &str)]) -> Vec<message_ir::ConversationDocument
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     let mut documents: Vec<_> = fs::read_dir(&out)
@@ -744,7 +744,7 @@ fn a_same_named_file_in_two_chat_directories_goes_to_its_own_chat() {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     for (number, bytes) in [
@@ -859,7 +859,7 @@ fn convert_chat_directory_with(
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
@@ -1207,7 +1207,7 @@ Book Club,2021-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Yes,,,\n
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     assert_eq!(report.conversations, 2);
@@ -1461,7 +1461,7 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_directory() {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
@@ -1536,7 +1536,7 @@ fn convert_fixture(name: &str) -> ChatDirectoryExport {
         input: &input,
         output: &out,
         timezone: Some("UTC"),
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();

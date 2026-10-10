@@ -197,7 +197,7 @@ fn the_report_counts_conversations_and_directions() {
         output_dir: &tmp.path().join("out"),
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

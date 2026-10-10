@@ -31,7 +31,7 @@ fn real_backup_exports_clean_conversations() {
         output_dir: &output,
         scratch_dir: cache.path(),
         owner_phones: &[owner],
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },

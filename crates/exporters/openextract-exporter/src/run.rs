@@ -20,7 +20,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         convert_export(ConvertExportArgs {
             input,
             output: &config.output,
-            run: convert_run,
+            convert_run,
         })
     })
 }

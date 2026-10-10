@@ -16,7 +16,7 @@ fn convert_fixture_json_individual_and_group() {
         media_search_roots: &[],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -90,7 +90,7 @@ fn copies_ios_style_media_true_data_paths() {
         media_search_roots: &[media_root.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -127,7 +127,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             media_search_roots: &[],
             owner_identity: None,
             backup_taken_at_unix_ms: None,
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -166,7 +166,7 @@ fn convert_with_owner(
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: owner_identity.map(str::to_string),
         backup_taken_at_unix_ms: None,
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -460,7 +460,7 @@ fn a_json_without_the_forks_fields_is_refused() {
             media_search_roots: &[],
             owner_identity: None,
             backup_taken_at_unix_ms: None,
-            run: ConvertRun::default(),
+            convert_run: ConvertRun::default(),
         })
         .expect_err("refused");
         let text = format!("{err:#}");
@@ -538,7 +538,7 @@ fn a_media_path_in_the_media_field_is_copied() {
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -588,7 +588,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
         media_search_roots: &[dir.path().to_path_buf()],
         owner_identity: None,
         backup_taken_at_unix_ms: None,
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);

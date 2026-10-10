@@ -77,7 +77,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
@@ -94,7 +94,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         cancel,
         resume,
         issues,
-    } = args.run;
+    } = args.convert_run;
     // The read options still need the compress settings after `transforms`
     // moves into the writer.
     let compress = transforms.compress.clone();

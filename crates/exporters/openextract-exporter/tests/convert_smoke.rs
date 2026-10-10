@@ -9,7 +9,7 @@ fn convert(input: &Path, output: &Path) -> Result<ExportReport> {
     convert_export(ConvertExportArgs {
         input,
         output,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
             ..ConvertRun::default()
         },
@@ -93,7 +93,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input: &csv,
             output: tmp.path(),
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
                 resume,
                 ..ConvertRun::default()
@@ -122,7 +122,7 @@ fn convert_to_documents(
     let report = convert_export(ConvertExportArgs {
         input: &input,
         output: &out,
-        run: ConvertRun::default(),
+        convert_run: ConvertRun::default(),
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -496,7 +496,7 @@ fn the_backup_date_is_the_csv_files_modification_time() {
     convert_export(ConvertExportArgs {
         input: &csv,
         output: output.path(),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

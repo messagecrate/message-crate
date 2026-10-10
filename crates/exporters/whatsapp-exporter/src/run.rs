@@ -191,7 +191,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         media_search_roots: &media_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        run: convert_run,
+        convert_run,
     })?;
     // The work directory goes once the conversion has copied the media.
     drop(work);

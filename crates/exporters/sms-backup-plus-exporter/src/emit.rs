@@ -412,7 +412,7 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub phone_country: Option<&'static phone::Country>,
     pub verbose: bool,
     pub log: Option<&'a LogSink>,
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert SMS Backup+ EML trees into the shared conversation structure, then
@@ -440,7 +440,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         phone_country,
         verbose,
         log,
-        run:
+        convert_run:
             ConvertRun {
                 transforms,
                 output_format,

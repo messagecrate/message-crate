@@ -29,7 +29,7 @@ const VENDOR_KEY: &str = "vendor_key";
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert OpenExtract CSV(s) under `input`.
@@ -45,7 +45,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input,
         output,
-        run:
+        convert_run:
             ConvertRun {
                 transforms,
                 output_format,
@@ -637,7 +637,7 @@ mod tests {
         convert_export(ConvertExportArgs {
             input,
             output,
-            run: ConvertRun {
+            convert_run: ConvertRun {
                 output_format: OutputFormat::Csv,
                 ..ConvertRun::default()
             },

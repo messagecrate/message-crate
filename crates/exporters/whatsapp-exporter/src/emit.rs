@@ -44,7 +44,7 @@ pub(crate) struct ConvertRequest<'a> {
     /// When the backup was made, in Unix milliseconds, stamped on the export
     /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
@@ -61,7 +61,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
         media_search_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        run:
+        convert_run:
             ConvertRun {
                 transforms,
                 output_format,

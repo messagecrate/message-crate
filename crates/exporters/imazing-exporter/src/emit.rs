@@ -90,7 +90,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub timezone: Option<&'a str>,
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -109,7 +109,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         input,
         output,
         timezone,
-        run:
+        convert_run:
             ConvertRun {
                 transforms,
                 output_format,

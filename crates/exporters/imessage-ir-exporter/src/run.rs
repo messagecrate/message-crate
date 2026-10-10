@@ -91,7 +91,7 @@ pub(crate) struct ExportOptions<'a> {
     pub progress: Option<ProgressSink>,
     /// The run-wide settings ([`ConvertRun`]). This exporter checks the
     /// cancel flag between events and before every write.
-    pub run: ConvertRun<'a>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 impl ExportOptions<'_> {
@@ -119,12 +119,12 @@ impl ExportOptions<'_> {
     /// Send one row for the Import Run's record when an issue sink is
     /// configured.
     pub fn emit_issue(&self, issue: RunIssue) {
-        message_crate_core::emit_issue(self.run.issues, issue);
+        message_crate_core::emit_issue(self.convert_run.issues, issue);
     }
 
     /// The shared cancel check.
     pub fn check_cancel(&self) -> Result<()> {
-        message_crate_core::check_cancel(self.run.cancel).map_err(|e| anyhow!(e))
+        message_crate_core::check_cancel(self.convert_run.cancel).map_err(|e| anyhow!(e))
     }
 
     /// When the Messages data was backed up, in Unix milliseconds: an
@@ -263,7 +263,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions<'
         attachment_embed,
         log: config.log.clone(),
         progress: config.progress.clone(),
-        run: config.convert_run(),
+        convert_run: config.convert_run(),
     })
 }
 

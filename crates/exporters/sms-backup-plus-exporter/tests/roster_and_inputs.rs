@@ -40,7 +40,7 @@ fn convert_in(
         verbose: false,
         log: None,
         phone_country,
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },
@@ -571,7 +571,7 @@ Hello Dee\r\n",
         verbose: false,
         log: None,
         phone_country: phone::country("GB"),
-        run: ConvertRun {
+        convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
             ..ConvertRun::default()
         },

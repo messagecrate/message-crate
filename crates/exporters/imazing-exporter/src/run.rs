@@ -21,7 +21,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             input,
             output: &config.output,
             timezone: config.timezone.as_deref(),
-            run: convert_run,
+            convert_run,
         })
     })
 }
