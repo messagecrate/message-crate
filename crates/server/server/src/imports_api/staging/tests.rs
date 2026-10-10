@@ -760,8 +760,8 @@ async fn an_at_address_on_text_message_is_one_identity_over_sms_and_imessage() {
 /// sender. While the header's stated type won over the shape, an exporter
 /// that typed it `other` made the participant `other` and the reactor
 /// `phone`: two identities never linked, and the reactor on a new contact
-/// with no name (#1959). The header here still states `other`, as a file
-/// from before the type went does, and the server ignores it.
+/// with no name (#1959). The header here still states `identity_type`
+/// `other`, as a schema version 12 file does, and the server ignores it.
 #[tokio::test]
 async fn a_participant_who_reacts_is_one_identity_on_one_contact() {
     let (pool, _dir) = crate::db::engine::test_pool().await;

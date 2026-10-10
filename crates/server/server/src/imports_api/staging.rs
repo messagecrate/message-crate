@@ -1,6 +1,5 @@
 //! Stage message-ir JSONL rows into the temporary import tables.
 
-use crate::models::HandleValue;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -19,7 +18,8 @@ use crate::db::staging::{
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
 use crate::models::{
-    AttachmentRecord, ConversationRecord, ExportRecord, MessageRecord, TapbackRecord, clean_body,
+    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
+    clean_body,
 };
 use media::MediaMode;
 

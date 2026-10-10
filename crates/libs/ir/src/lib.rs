@@ -391,8 +391,8 @@ impl IdentityService {
 
     /// The type an address of shape `kind` takes on this service. WhatsApp
     /// carries no email address, so an `@` address on WhatsApp, such as
-    /// `123456@lid`, is `Other`; every other shape keeps its type (#1671).
-    pub fn holds(self, kind: IdentityType) -> IdentityType {
+    /// `123456@lid`, is `Other`. Every other shape keeps its type (#1671).
+    pub fn type_on(self, kind: IdentityType) -> IdentityType {
         match (self, kind) {
             (Self::Whatsapp, IdentityType::Email) => IdentityType::Other,
             (_, kind) => kind,

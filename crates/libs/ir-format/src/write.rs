@@ -196,7 +196,7 @@ fn sender_identity_type_cell(sender_identity: Option<&str>, service: IrService) 
         .and_then(phone::Handle::parse)
         .map_or("", |handle| {
             IdentityService::from_ir_service(service)
-                .holds(handle.kind())
+                .type_on(handle.kind())
                 .as_str()
         })
 }

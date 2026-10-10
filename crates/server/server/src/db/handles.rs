@@ -81,7 +81,7 @@ pub fn handle_type_of(address: &str) -> IdentityType {
 /// number is a phone number on every service (#1144). A name that is neither
 /// a number nor an address is `Other`.
 pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
-    service.holds(handle_type_of(address))
+    service.type_on(handle_type_of(address))
 }
 
 /// A new identity refused because its service cannot carry its type: an
