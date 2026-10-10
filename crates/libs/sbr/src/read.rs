@@ -11,7 +11,7 @@ use std::path::Path;
 
 use crate::addresses::{MmsAddr, addr, address_handle, mms_participants, mms_peers, mms_sender};
 use crate::conversations::{ConversationKind, MmsConversation, contact_name};
-use crate::mms_box;
+use crate::mms_box::MmsBox;
 use crate::parts::{
     AttachmentBlob, DecodedPartData, MmsPart, decode_part_data, mms_body, part, part_fields,
 };
@@ -228,10 +228,8 @@ fn parse_mms(
     stats.mms_seen += 1;
     let (date_ms, timestamp_secs) = timestamp_from_date(attrs, stats)?;
     let msg_box = get(attrs, "msg_box").trim().to_string();
-    if matches!(
-        msg_box.as_str(),
-        mms_box::DRAFT | mms_box::OUTBOX | mms_box::FAILED | mms_box::QUEUED
-    ) {
+    let mms_box = MmsBox::parse(&msg_box);
+    if mms_box.is_some_and(MmsBox::is_unsent) {
         stats.skipped_draft_or_outbox += 1;
         return None;
     }
@@ -245,7 +243,7 @@ fn parse_mms(
         stats.skipped_unknown_address += 1;
         return None;
     }
-    let is_from_me = msg_box == mms_box::SENT;
+    let is_from_me = mms_box.is_some_and(MmsBox::is_sent);
     let sender = if is_from_me {
         None
     } else {
