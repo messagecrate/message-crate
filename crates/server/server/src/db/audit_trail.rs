@@ -280,22 +280,22 @@ pub enum CredentialUsed {
 /// A run row's columns that record what started it, as
 /// [`CredentialUsed::run_columns`] fills them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct RunCredentialColumns<'a> {
+struct RunCredentialColumns<'a> {
     /// `credential`: `session` or `api_token`.
-    pub(crate) credential: &'static str,
+    credential: &'static str,
     /// `app_kind`: the app a Session's request named.
-    pub(crate) app_kind: Option<&'a str>,
+    app_kind: Option<&'a str>,
     /// `app_build`: that app's Build.
-    pub(crate) app_build: Option<&'a str>,
+    app_build: Option<&'a str>,
     /// `api_token_label`: the token's label as it is now.
-    pub(crate) api_token_label: Option<&'a str>,
+    api_token_label: Option<&'a str>,
     /// `api_token_hint`: the token's masked hint as it is now.
-    pub(crate) api_token_hint: Option<&'a str>,
+    api_token_hint: Option<&'a str>,
 }
 
 impl CredentialUsed {
     /// The run row's columns for this credential.
-    pub(crate) fn run_columns(&self) -> RunCredentialColumns<'_> {
+    fn run_columns(&self) -> RunCredentialColumns<'_> {
         match self {
             Self::Session(app) => RunCredentialColumns {
                 credential: "session",
@@ -313,6 +313,60 @@ impl CredentialUsed {
             },
         }
     }
+}
+
+/// The run table a run's row is in: `imports` for an Import Run, `exports`
+/// for an Export Run. Both carry the same columns for what started the run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunTable {
+    /// `imports`, one row per Import Run.
+    Imports,
+    /// `exports`, one row per Export Run.
+    Exports,
+}
+
+impl RunTable {
+    /// The table's name, as SQL names it.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Imports => "imports",
+            Self::Exports => "exports",
+        }
+    }
+}
+
+/// Record what started a run on its row: a Session and the app it named, or
+/// an API token's label and hint as they are now. The Audit Trail reads these
+/// columns from both run tables ([`page`]), so the one statement that writes
+/// them is here too. `POST /v1/imports` and `POST /v1/exports` call it with
+/// their own table.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn record_run_credential(
+    conn: &mut SqliteConnection,
+    table: RunTable,
+    run_id: i64,
+    credential: &CredentialUsed,
+) -> Result<()> {
+    let columns = credential.run_columns();
+    let table = table.name();
+    sqlx::query(&format!(
+        "UPDATE {table} SET credential = $1, app_kind = $2, app_build = $3,
+                api_token_label = $4, api_token_hint = $5
+         WHERE id = $6"
+    ))
+    .bind(columns.credential)
+    .bind(columns.app_kind)
+    .bind(columns.app_build)
+    .bind(columns.api_token_label)
+    .bind(columns.api_token_hint)
+    .bind(run_id)
+    .execute(&mut *conn)
+    .await
+    .with_context(|| format!("record what started run {run_id} in {table}"))?;
+    Ok(())
 }
 
 /// The counts and names an entry carries beyond who, what and when, stored as
