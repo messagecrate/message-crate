@@ -2244,3 +2244,97 @@ async fn the_copy_of_the_source_imported_first_is_shown_before_the_lower_id() {
     assert_eq!(duplicate_of(&mut conn, first_source).await, None);
     assert_eq!(duplicate_of(&mut conn, lower_id).await, Some(first_source));
 }
+
+/// Of copies alike in everything else, from one source and one Import
+/// Run, the one with the lower id is shown.
+#[tokio::test]
+async fn of_copies_alike_in_everything_the_lower_id_is_shown() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let sms_run = import_run(&mut conn, "sms").await;
+    let imessage_run = import_run(&mut conn, "imessage").await;
+    let sms = copy(
+        &mut conn,
+        "sms",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        sms_run,
+    )
+    .await;
+    // Both runs bring two messages, so the run size ties.
+    more_of_run(&mut conn, "sms", sms_run, 1).await;
+    let lower = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+    let higher = copy(
+        &mut conn,
+        "imessage",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        imessage_run,
+    )
+    .await;
+
+    // The source imported first, sms, gives the shown copy; imessage holds
+    // the message twice, so two stay shown, and its lower id takes the
+    // second place.
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, sms).await, None);
+    assert_eq!(duplicate_of(&mut conn, lower).await, None);
+    assert_eq!(duplicate_of(&mut conn, higher).await, Some(sms));
+}
+
+/// When one source holds a message more often than the others, the places
+/// beyond the first go to the copies `rank` puts first, not to the source
+/// imported first: two whole-second copies from the first source and one
+/// millisecond copy each from two later sources show a millisecond copy
+/// second.
+#[tokio::test]
+async fn the_second_shown_place_goes_to_the_copy_ranked_first() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    setup_db(&mut conn).await;
+    let a_run = import_run(&mut conn, "a").await;
+    let a1 = copy(&mut conn, "a", "2015-03-12T18:04:22.000Z", SECONDS, a_run).await;
+    let a2 = copy(&mut conn, "a", "2015-03-12T18:04:22.000Z", SECONDS, a_run).await;
+    let b_run = import_run(&mut conn, "b").await;
+    let b = copy(
+        &mut conn,
+        "b",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        b_run,
+    )
+    .await;
+    let c_run = import_run(&mut conn, "c").await;
+    let c = copy(
+        &mut conn,
+        "c",
+        "2015-03-12T18:04:22.250Z",
+        MILLISECONDS,
+        c_run,
+    )
+    .await;
+
+    dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2, Progress::Log)
+        .await
+        .unwrap();
+
+    assert_eq!(duplicate_of(&mut conn, b).await, None, "b is first by rank");
+    assert_eq!(
+        duplicate_of(&mut conn, c).await,
+        None,
+        "c takes the second place"
+    );
+    assert_eq!(duplicate_of(&mut conn, a1).await, Some(b));
+    assert_eq!(duplicate_of(&mut conn, a2).await, Some(b));
+}

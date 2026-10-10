@@ -614,13 +614,19 @@ first by these, in order (`rank` in `dedupe.rs`):
 1. the copy with more attachments;
 2. the copy timed to the millisecond over one timed to the second
    (`messages.time_precision`);
-3. the copy from the Import Run that brought more messages (counted from the
-   account's messages stamped with each run);
+3. the copy from the Import Run that brought more messages: the messages it
+   added, which are the ones stamped with it (`messages.import_id`), so a
+   run still going counts what it has added so far, and the next batch's
+   dedupe counts again;
 4. the copy of the source imported first, then the lower id.
 
-Why: the copy that carries the most is the one shown, and of two backups the
-larger import is the more complete one. The last rank only makes the result
-the same every time
+When one source holds a message more often than the others, the message
+stays shown that many times, and those places go to the copies first in this
+order. Why: the copy that carries the most is the one shown, and of two
+backups the larger import is the more complete one. The stamped count is the
+one every message carries; the count an Import Run records is written only
+when the run completes. The last rank only makes the result the same every
+time
 ([#1969](https://github.com/messagecrate/message-crate/issues/1969)).
 
 **Within one source, a whole-second message is the duplicate of its

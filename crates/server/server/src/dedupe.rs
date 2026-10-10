@@ -273,8 +273,9 @@ pub async fn dedupe_cross_source(
     Ok(stats)
 }
 
-/// The near-time window, in seconds, of a dedupe nobody chose one for: an
-/// import's, and the pass an import runs for the messages it changed.
+/// The near-time window, in seconds, of a dedupe nobody chose one for: the
+/// one after each import batch, and the pass a phone country change runs
+/// for the messages it changed.
 pub const NEAR_WINDOW_SECS: i64 = 2;
 
 /// What [`dedupe_changed_messages`] did.
@@ -288,17 +289,15 @@ pub struct ChangedDedupe {
 }
 
 /// Put right the duplicate flags of the messages `changed`, whose content
-/// an import changed in the transaction `conn` is in, and of every message
-/// whose flag depends on theirs (#1805).
+/// a change in the transaction `conn` is in made different, and of every
+/// message whose flag depends on theirs (#1805). A phone number given its
+/// country merges conversations and senders, which changes the content
+/// keys of the messages that moved (`crate::identity_country`); an import
+/// leaves this to the full dedupe after each batch instead.
 ///
-/// The import's dedupe setting governs the rows it brings, so this runs
-/// whatever the setting is. `changed` names only messages that had a
-/// content key before the import changed them: a message an import with
-/// dedupe off added has none, no dedupe has compared it, and it stays as it
-/// came. This computes the changed messages' content keys again, then runs
-/// both passes of [`dedupe_cross_source`] over the messages a dedupe has
-/// seen, those with a content key, so a message without one is neither
-/// hidden nor a winner here. Only the flags of the messages tied to a
+/// This computes the changed messages' content keys again, then runs both
+/// passes of [`dedupe_cross_source`] over the messages with a content key,
+/// so a message without one is neither hidden nor a winner here. Only the flags of the messages tied to a
 /// changed one are written: those it was hidden behind or hid, before or
 /// now, and the messages tied to those in turn. Every other flag stays as
 /// it is.
@@ -710,9 +709,9 @@ struct Cand {
     /// Whether its source recorded its time in whole seconds. The flag
     /// decides, never the time: a millisecond time can end in `.000`.
     whole_seconds: bool,
-    /// How many messages its Import Run brought, counted from the
-    /// account's messages stamped with the run; 0 for a message no run
-    /// stamped.
+    /// How many messages its Import Run brought: the account's messages
+    /// stamped with the run, which are the ones it added; 0 for a message
+    /// no run stamped.
     run_messages: i64,
 }
 
@@ -849,9 +848,9 @@ fn content_key_group_flags(cands: Vec<Cand>, prio: &HashMap<&str, usize>) -> Vec
 ///
 /// One source that holds a message twice holds two messages, so the group
 /// stays shown as many times as the source that holds it most often. The
-/// winner's source fills those places first, then the other sources in
-/// priority order. Within a source, the rows go in the order [`pick_winner`]
-/// ranks them. Every other row is hidden as a duplicate of the winner.
+/// winner's source fills those places first, then the other sources, each
+/// in the order of its best copy by [`rank`]. Within a source, the rows go
+/// in the order [`rank`] puts them. Every other row is hidden as a duplicate of the winner.
 fn exact_group_flags(cands: &[Cand], prio: &HashMap<&str, usize>) -> Vec<(i64, i64)> {
     let winner = pick_winner(cands, prio);
     let winner_source = cands
@@ -863,20 +862,23 @@ fn exact_group_flags(cands: &[Cand], prio: &HashMap<&str, usize>) -> Vec<(i64, i
         by_source.entry(c.source.as_str()).or_default().push(c);
     }
     let shown = by_source.values().map(Vec::len).max().unwrap_or(0);
-    let mut sources: Vec<(&str, Vec<&Cand>)> = by_source.into_iter().collect();
-    sources.sort_by_key(|&(source, _)| {
-        (
-            source != winner_source,
-            prio.get(source).copied().unwrap_or(usize::MAX),
-            source,
-        )
-    });
-    sources
-        .into_iter()
-        .flat_map(|(_, mut rows)| {
+    let mut sources: Vec<Vec<&Cand>> = by_source
+        .into_values()
+        .map(|mut rows| {
             rows.sort_by(|a, b| rank(a, b, prio));
             rows
         })
+        .collect();
+    // The winner's source first, then each source by its best copy, so the
+    // places go to the copies `rank` puts first.
+    sources.sort_by(|a, b| {
+        (a[0].source != winner_source)
+            .cmp(&(b[0].source != winner_source))
+            .then_with(|| rank(a[0], b[0], prio))
+    });
+    sources
+        .into_iter()
+        .flatten()
         .skip(shown)
         .map(|c| (c.id, winner))
         .collect()

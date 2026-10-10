@@ -1144,7 +1144,7 @@ async fn hidden_under(fixture: &TestFixture, guid: &str) -> Option<String> {
     .unwrap()
 }
 
-/// Run dedupe over `account_id` as an import with dedupe on does.
+/// Run dedupe over `account_id` as every import does.
 async fn dedupe(fixture: &TestFixture, account_id: i64) {
     let mut conn = fixture.conn().await;
     crate::dedupe::dedupe_cross_source(&mut conn, account_id, None, 2, Progress::Log)
