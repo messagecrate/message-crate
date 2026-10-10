@@ -32,7 +32,7 @@ import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
 import { toolUsable } from "../../lib/tauri";
-import type { AttachmentMediaMode } from "../../lib/types";
+import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import { accentLink } from "../../lib/uiStyles";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import {
@@ -50,7 +50,6 @@ import {
   whatsappShowsMedia,
   whatsappShowsPassword,
 } from "../../lib/whatsappImport";
-import type { AttachmentChoices } from "./attachmentChoices";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,

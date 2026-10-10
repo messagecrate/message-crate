@@ -6,6 +6,7 @@ import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
 import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
+import type { AttachmentChoices } from "../../lib/types";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_CRYPT_KEY,
@@ -17,7 +18,6 @@ import {
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
-import type { AttachmentChoices } from "./attachmentChoices";
 import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
