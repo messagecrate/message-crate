@@ -545,20 +545,9 @@ fn read_tail(mut source: impl Read, limit: usize) -> std::io::Result<Vec<u8>> {
     Ok(tail)
 }
 
-#[derive(Debug, Default, Clone)]
-pub(crate) struct Probe {
-    pub codec: String,
-    pub width: u32,
-    pub height: u32,
-    pub bitrate: u64,
-    /// Frames per second, `None` when ffprobe reported no rate.
-    pub fps: Option<f32>,
-}
-
 /// Build a `Command` for ffprobe, resolved the same way as every other tool
-/// lookup in this module. The one place that decides where ffprobe lives, so
-/// [`probe_video`] and the public [`crate::probe_media`] agree with each
-/// other and report the same error when the tool is missing.
+/// lookup in this module, for [`crate::probe_media`], the one function that
+/// runs ffprobe.
 ///
 /// # Errors
 ///
@@ -575,42 +564,6 @@ pub(crate) fn ffprobe_command() -> Result<Command> {
     let mut cmd = Command::new(ffprobe);
     cmd.stdin(Stdio::null());
     Ok(cmd)
-}
-
-/// Codec, width, height, frame rate, and bitrate of a video from ffprobe.
-pub(crate) fn probe_video(path: &std::path::Path) -> Result<Probe> {
-    let mut cmd = ffprobe_command()?;
-    cmd.args([
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=codec_name,width,height,avg_frame_rate,bit_rate",
-        "-of",
-        "csv=p=0",
-        path.to_str().unwrap_or(""),
-    ]);
-    let output = cmd
-        .output()
-        .with_context(|| format!("run ffprobe on {}", path.display()))?;
-    if !output.status.success() {
-        bail!("ffprobe failed for {}", path.display());
-    }
-    let line = String::from_utf8_lossy(&output.stdout);
-    let parts: Vec<&str> = line.trim().split(',').collect();
-    let codec = parts.first().copied().unwrap_or("").to_ascii_lowercase();
-    let width = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let height = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let fps = parts.get(3).and_then(|s| crate::probe::parse_frame_rate(s));
-    let bitrate = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
-    Ok(Probe {
-        codec,
-        width,
-        height,
-        bitrate,
-        fps,
-    })
 }
 
 #[cfg(test)]

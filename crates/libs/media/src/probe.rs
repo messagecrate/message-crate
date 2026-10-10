@@ -1,4 +1,7 @@
-//! Read one media file's shape with ffprobe, for the size forecast.
+//! Read one media file's shape with ffprobe: for the size forecast, the
+//! Media stage's compression, and the check whether a browser plays an MP4.
+//! [`probe_media`] is the only place ffprobe runs, so all three judge a file
+//! the same way.
 
 use std::path::Path;
 use std::process::Command;
@@ -10,7 +13,7 @@ use crate::tools::ffprobe_command;
 /// What ffprobe reports about one media file's first video stream.
 ///
 /// Stills have a stream too, with no frame rate.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct MediaProbe {
     /// Codec as ffprobe spells it, lowercased: `hevc`, `h264`, `mjpeg`, `png`.
     pub codec: String,
@@ -89,7 +92,7 @@ fn parse_probe_line(line: &str) -> Result<MediaProbe> {
 }
 
 /// ffprobe writes frame rates as a rational: `30000/1001`, or `0/0` for a still.
-pub(crate) fn parse_frame_rate(raw: &str) -> Option<f32> {
+fn parse_frame_rate(raw: &str) -> Option<f32> {
     let (num, den) = raw.split_once('/')?;
     let num: f32 = num.trim().parse().ok()?;
     let den: f32 = den.trim().parse().ok()?;
@@ -145,28 +148,14 @@ mod tests {
         assert_eq!(probe.bitrate, 9_000_000);
     }
 
-    /// The parsing tests above never touch ffprobe itself: they hand-craft
-    /// the CSV line. This exercises the real subprocess — the exact args,
-    /// column order, and codec string ffprobe actually emits — against a
-    /// generated fixture with a known codec, resolution, and frame rate.
-    #[test]
-    fn probes_a_real_video_file() {
-        use crate::tools::run_ffmpeg;
-
-        // Holds the tools lock: this test runs the real ffmpeg, and the tests
-        // in `tools` point the process-wide override at mock and empty
-        // directories while they run.
-        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-            return;
-        };
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("clip.mp4");
+    /// Write a short H.264 clip, `width` by `height` pixels at 25 fps, to `path`.
+    fn make_h264_clip(path: &Path, width: u32, height: u32) {
         let args: Vec<String> = [
             "-y",
             "-f",
             "lavfi",
             "-i",
-            "testsrc=size=64x48:rate=25",
+            &format!("testsrc=size={width}x{height}:rate=25"),
             "-frames:v",
             "5",
             "-pix_fmt",
@@ -178,7 +167,24 @@ mod tests {
         .map(String::from)
         .chain(std::iter::once(path.to_string_lossy().into_owned()))
         .collect();
-        run_ffmpeg(&args).expect("generate probe fixture");
+        crate::tools::run_ffmpeg(&args).expect("generate probe fixture");
+    }
+
+    /// The parsing tests above never touch ffprobe itself: they hand-craft
+    /// the CSV line. This exercises the real subprocess — the exact args,
+    /// column order, and codec string ffprobe actually emits — against a
+    /// generated fixture with a known codec, resolution, and frame rate.
+    #[test]
+    fn probes_a_real_video_file() {
+        // Holds the tools lock: this test runs the real ffmpeg, and the tests
+        // in `tools` point the process-wide override at mock and empty
+        // directories while they run.
+        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.mp4");
+        make_h264_clip(&path, 64, 48);
 
         let probe = probe_media(&path).expect("probe the generated fixture");
         assert_eq!(probe.codec, "h264");
@@ -186,5 +192,32 @@ mod tests {
         assert_eq!(probe.height, 48);
         let fps = probe.fps.expect("a real video reports a frame rate");
         assert!((fps - 25.0).abs() < 0.01, "fps was {fps}");
+    }
+
+    /// A file name that is not UTF-8 is passed to ffprobe as it is. A probe
+    /// that sent it as text once sent an empty name instead, so compression
+    /// and the browser-playable check read such a video as unknown.
+    ///
+    /// Linux only: macOS file systems refuse a name that is not UTF-8.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn probes_a_file_whose_name_is_not_utf8() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        // ffmpeg is handed its output name as text, so the clip is made
+        // under a UTF-8 name and then renamed.
+        let made = dir.path().join("clip.mp4");
+        make_h264_clip(&made, 32, 24);
+        let path = dir.path().join(OsStr::from_bytes(b"clip-\xff.mp4"));
+        std::fs::rename(&made, &path).unwrap();
+
+        let probe = probe_media(&path).expect("probe a file with a non-UTF-8 name");
+        assert_eq!(probe.codec, "h264");
+        assert_eq!((probe.width, probe.height), (32, 24));
     }
 }
