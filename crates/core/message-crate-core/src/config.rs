@@ -173,8 +173,9 @@ impl ExporterConfig {
 /// The run-wide settings every exporter's convert step takes beside its own
 /// inputs. [`ExporterConfig::convert_run`] builds them, so a new run-wide
 /// setting is added to this struct and to [`ExporterConfig::convert_run`],
-/// not to each exporter's arguments or to each `run` that fills them. A convert step that unpacks every field still
-/// names the new one, so each exporter decides what it does with it.
+/// not to each exporter's arguments or to each `run` that fills them. A
+/// convert step that unpacks every field still names the new one, so each
+/// exporter decides what it does with it.
 ///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
 /// cancelled, does not resume, and sends its rows nowhere.
