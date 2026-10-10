@@ -223,7 +223,7 @@ pub async fn get_api_token(
     schema::ensure_accounts_schema(&mut conn).await?;
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("API token not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("API token"))?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     Ok(Json(as_shown_to(reach, row, account_permissions)))
 }
@@ -327,7 +327,7 @@ pub async fn delete_api_token(
     let deleted = api_tokens::delete_api_token(&mut conn, account_id, id).await?;
 
     let Some(token) = token.filter(|_| deleted) else {
-        return Err(ApiError::NotFound("API token not found".into()));
+        return Err(ApiError::not_found("API token"));
     };
     audit_trail::record_about(
         &mut conn,
@@ -377,11 +377,11 @@ pub async fn update_api_token(
         .map_err(map_label_error)?;
 
     if !ok {
-        return Err(ApiError::NotFound("API token not found".into()));
+        return Err(ApiError::not_found("API token"));
     }
     let row = api_tokens::get_api_token(&mut conn, account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("API token not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("API token"))?;
     let account_permissions = holder_permissions(&mut conn, account_id).await?;
     Ok(Json(as_shown_to(reach, row, account_permissions)))
 }

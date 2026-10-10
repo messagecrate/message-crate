@@ -316,7 +316,7 @@ pub(crate) async fn get_contact(
     let detail = get_contact_detail(&mut conn, auth.account_id, contact_id).await?;
     detail
         .map(Json)
-        .ok_or_else(|| ApiError::NotFound("contact not found".into()))
+        .ok_or_else(|| ApiError::not_found("contact"))
 }
 
 /// Rename a contact or change its linked identities.
@@ -348,7 +348,7 @@ pub(crate) async fn update_contact(
     // a contact deleted meanwhile is `404`, never a half-applied edit.
     let mut tx = crate::db::begin_write(&mut conn).await?;
     if !mutate_contact(&mut tx, auth.account_id, contact_id, &body).await? {
-        return Err(ApiError::NotFound("contact not found".into()));
+        return Err(ApiError::not_found("contact"));
     }
     let contact = get_contact_detail(&mut tx, auth.account_id, contact_id)
         .await?
@@ -378,7 +378,7 @@ pub(crate) async fn trash_contact(
     if move_to_trash(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("contact not found".into()))
+        Err(ApiError::not_found("contact"))
     }
 }
 
@@ -403,7 +403,7 @@ pub(crate) async fn restore_contact(
     if restore(&mut conn, auth.account_id, Trashable::Contact(contact_id)).await? {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(ApiError::NotFound("contact not found".into()))
+        Err(ApiError::not_found("contact"))
     }
 }
 
@@ -439,7 +439,7 @@ pub(crate) async fn delete_contact(
     {
         // A contact owns no files, so there is nothing to remove from disk.
         DeleteOutcome::Deleted(_) => Ok(StatusCode::NO_CONTENT),
-        DeleteOutcome::NotOwned => Err(ApiError::NotFound("contact not found".into())),
+        DeleteOutcome::NotOwned => Err(ApiError::not_found("contact")),
         DeleteOutcome::NotTrashed => Err(ApiError::StateConflict(
             "the contact is not in the trash; move it to the trash first".into(),
         )),

@@ -126,7 +126,7 @@ pub(crate) async fn get_saved_search(
     let mut conn = state.db.acquire().await?;
     let row = saved_searches::get(&mut conn, auth.account_id, id)
         .await?
-        .ok_or_else(|| ApiError::NotFound("saved search not found".into()))?;
+        .ok_or_else(|| ApiError::not_found("saved search"))?;
     Ok(Json(row))
 }
 
