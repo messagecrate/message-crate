@@ -1,7 +1,7 @@
 import { Cell, Column, Row, Table, TableBody, TableHeader } from "react-aria-components";
 import Button from "../../components/Button";
 import { PencilIcon, TrashIcon } from "../../components/icons";
-import type { ApiTokenItem } from "./apiTokensUtils";
+import type { ApiToken } from "./apiTokensUtils";
 import {
   displayTokenHint,
   formatTokenDate,
@@ -23,11 +23,11 @@ export default function ApiTokensTable({
   onRename,
   onRevoke,
 }: {
-  items: ApiTokenItem[];
+  items: ApiToken[];
   busy: boolean;
   composing: boolean;
-  onRename?: (item: ApiTokenItem) => void;
-  onRevoke: (item: ApiTokenItem) => void;
+  onRename?: (item: ApiToken) => void;
+  onRevoke: (item: ApiToken) => void;
 }) {
   const holder = onRename !== undefined;
   return (

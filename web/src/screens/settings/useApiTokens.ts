@@ -5,7 +5,7 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
-import type { ApiTokenItem } from "./apiTokensUtils";
+import type { ApiToken } from "./apiTokensUtils";
 
 const fetchTokens = (signal: AbortSignal) => listApiTokens({ signal });
 
@@ -67,8 +67,8 @@ export function useApiTokens() {
   const [label, setLabel] = useState("");
   const [canImport, setCanImport] = useState(true);
   const [canExport, setCanExport] = useState(true);
-  const [revokeTarget, setRevokeTarget] = useState<ApiTokenItem | null>(null);
-  const [renameTarget, setRenameTarget] = useState<ApiTokenItem | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
+  const [renameTarget, setRenameTarget] = useState<ApiToken | null>(null);
   const [renameLabel, setRenameLabel] = useState("");
 
   const {
@@ -110,7 +110,7 @@ export function useApiTokens() {
   }, [clearError]);
 
   const openRename = useCallback(
-    (item: ApiTokenItem) => {
+    (item: ApiToken) => {
       setRenameTarget(item);
       setRenameLabel(item.label);
       clearError();
@@ -161,7 +161,7 @@ export function useApiTokens() {
   };
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiTokenItem) => {
+  const revoke = (item: ApiToken) => {
     revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
   };
 
@@ -199,7 +199,7 @@ export function useApiTokens() {
  * here, to end one that has leaked, and makes and renames none.
  */
 export function useManagedApiTokens(accountId: number) {
-  const [revokeTarget, setRevokeTarget] = useState<ApiTokenItem | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiToken | null>(null);
   const {
     data,
     isPending: loading,
@@ -210,7 +210,7 @@ export function useManagedApiTokens(accountId: number) {
   const revokeToken = useApiTokenWrite((id: number) => deleteApiToken(id, accountId));
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
-  const revoke = (item: ApiTokenItem) => {
+  const revoke = (item: ApiToken) => {
     revokeToken.mutate(item.id, { onSettled: () => setRevokeTarget(null) });
   };
 
