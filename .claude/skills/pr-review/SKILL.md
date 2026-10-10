@@ -37,9 +37,9 @@ in.
 Step 5 marks it ready after its push, and CI is watched on that head alone
 (AGENTS.md step 6).
 
-**Every push brings the base in** when it moved since the last one. A push
-made only to bring the base in is made only on `CONFLICTING` (AGENTS.md
-step 5).
+**Every push brings the base in** when it moved since the last one. After
+step 1, a push made only to bring the base in is made only on `CONFLICTING`
+(AGENTS.md step 5).
 
 **Every call that posts** (a review, a comment, a reply) goes one at a time,
 and a refusal is retried (AGENTS.md, "Posting pace").

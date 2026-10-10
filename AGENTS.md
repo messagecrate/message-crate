@@ -118,8 +118,8 @@ only the user resolves it.
    base has commits the pull request lacks, so the review and the pull
    request's checks see the code as it would land. Every later push the
    review makes, such as its last push or a fix for a failed job, brings the
-   base in too. A push made only to bring the base in is made only on
-   `CONFLICTING`: GitHub cannot merge a pull request that conflicts with the
+   base in too. After the review, a push made only to bring the base in is
+   made only on `CONFLICTING`: GitHub cannot merge a pull request that conflicts with the
    base, and merges one that is only behind as it is, untested on the new
    base (ADR 0007 says why that is accepted). Step 6 says what a conflict
    does to the CI watch.
@@ -216,8 +216,8 @@ only the user resolves it.
    stop_if_conflicting                  # fix the jobs listed above in the same push
    until conflicting || { s=$(gh run view "$run" --json status -q .status) && [ "$s" = completed ]; }
    do sleep 30; done                    # an outside failure: wait for the run to finish, or for a conflict
-   stop_if_conflicting                  # the push replaces the rerun
    gh run view "$run" --json jobs -q '.jobs[] | select(.conclusion == "failure") | .name'   # every failed job, to sort
+   stop_if_conflicting                  # the push replaces the rerun
    main_run=$(gh run list --branch main --workflow ci.yml --event push --status completed -L 1 \
                 --json databaseId -q '.[0].databaseId')   # the last finished run on main
    gh run view "$main_run" --json url,jobs -q '.url, (.jobs[] | select(.conclusion == "failure") | .name)'
