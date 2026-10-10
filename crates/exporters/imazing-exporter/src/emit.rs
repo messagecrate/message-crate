@@ -175,9 +175,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     for (
         _,
         Conversation {
-            key,
-            pending: mut conversation,
-            ..
+            key, mut pending, ..
         },
     ) in conversations
     {
@@ -187,9 +185,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             key: &key,
             sources: RefCell::new(Vec::new()),
         };
-        let chat_id = conversation.chat_id.clone();
-        let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
-        else {
+        let chat_id = pending.chat_id.clone();
+        let Some(doc) = project_conversation(&chat_id, &mut pending, &hooks, &mut report) else {
             continue;
         };
         sources.extend(hooks.sources.into_inner());
@@ -227,8 +224,11 @@ struct Conversation {
 
 /// Which pending conversation a session's rows go to.
 ///
-/// Built from the chat id a session's rows are read under, where
-/// [`ConversationKey`] is built from who the conversation is with.
+/// The [`ConversationKey`]'s chat id, with the transport family and, for a
+/// group, the CSV session it was read from. Two pending conversations can
+/// share one `ConversationKey`: a group session read from two exports stays
+/// two entries here until `separate_groups_with_one_earliest_row` merges
+/// them.
 ///
 /// A one-to-one conversation is one conversation across every CSV that
 /// names its address. A group session is a conversation of its own, even
@@ -545,18 +545,18 @@ impl Ingest {
             .entry(chat_id_key.clone())
             .or_insert_with(|| {
                 let is_group = session.key.is_group();
-                let mut conversation = PendingConversation::new(
+                let mut pending = PendingConversation::new(
                     chat_id,
                     is_group,
                     is_group.then(|| session_name.to_string()),
                     Vec::new(),
                 );
-                conversation
+                pending
                     .extra
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
                 Conversation {
                     key: session.key.clone(),
-                    pending: conversation,
+                    pending,
                     row_digests: session.row_digests.clone(),
                 }
             });
