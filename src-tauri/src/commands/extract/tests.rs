@@ -401,11 +401,13 @@ fn sms_backup_restore_requires_owner_phones() {
 
 #[test]
 fn sms_backup_restore_passes_owner_phones() {
-    let backup = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let backup = dir.path().join("sms.xml");
+    fs::write(&backup, "<smses count=\"0\"></smses>").unwrap();
     let config = build_exporter_config(
         Path::new("/scratch"),
         "sms-backup-restore",
-        backup.path().to_str().unwrap(),
+        backup.to_str().unwrap(),
         "/tmp/out",
         &test_options(vec!["+15550111".into(), "+15550122".into()]),
     )
@@ -416,6 +418,22 @@ fn sms_backup_restore_passes_owner_phones() {
         }
         other => panic!("expected SmsBackupRestore, got {other:?}"),
     }
+}
+
+/// The Import form's SMS Backup & Restore source takes one `.xml` file, so
+/// a directory reaching the command is refused before the run starts.
+#[test]
+fn sms_backup_restore_refuses_a_directory() {
+    let backup = tempfile::tempdir().unwrap();
+    let err = build_exporter_config(
+        Path::new("/scratch"),
+        "sms-backup-restore",
+        backup.path().to_str().unwrap(),
+        "/tmp/out",
+        &test_options(vec!["+15550111".into()]),
+    )
+    .unwrap_err();
+    assert!(err.contains("not a directory"), "{err}");
 }
 
 #[test]
