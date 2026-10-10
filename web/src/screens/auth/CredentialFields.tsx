@@ -4,7 +4,7 @@ import PasswordField from "../../components/PasswordField";
 import TextField from "../../components/TextField";
 
 /** One field's value, and the setter the form keeps it with. */
-type Field = { value: string; onChange: (value: string) => void };
+type FieldState = { value: string; onChange: (value: string) => void };
 
 /**
  * The username and password fields of the three sign-in forms: Login, Create
@@ -12,8 +12,7 @@ type Field = { value: string; onChange: (value: string) => void };
  *
  * `autoComplete` says which password this is. `current-password` is a login,
  * so a password manager offers to fill it. `new-password` is one being chosen,
- * so a password manager offers to generate and store it. The Confirm Password
- * field shows only when the form passes `confirmPassword`. Each password field
+ * so a password manager offers to generate and store it. Each password field
  * keeps its own show/hide state, so showing one does not show the other.
  */
 export default function CredentialFields({
@@ -23,10 +22,10 @@ export default function CredentialFields({
   autoComplete,
   disabled = false,
 }: {
-  username: Field;
-  password: Field;
+  username: FieldState;
+  password: FieldState;
   /** Without it, the form shows no Confirm Password field. */
-  confirmPassword?: Field;
+  confirmPassword?: FieldState;
   autoComplete: "current-password" | "new-password";
   disabled?: boolean;
 }) {
