@@ -326,3 +326,113 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         found.join("\n")
     );
 }
+
+/// Under `serve`, an Import Run's progress, its import, promote and dedupe
+/// lines, goes into the server's log, and nothing reaches standard output
+/// (#1945). The desktop app reads that output through a pipe a crashed app
+/// closes, and a print into it would panic the request part-way.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_standard_output() {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let root = tempfile::tempdir().unwrap();
+    let (data_dir, static_dir) = empty_message_crate(root.path());
+    let stdout_path = root.path().join("stdout.txt");
+    let stdout = std::fs::File::create(&stdout_path).unwrap();
+    let (server, address) = listen(
+        serve(&data_dir, &static_dir)
+            .env("RUST_LOG", "info")
+            .stdout(stdout),
+    );
+    let base = format!("http://{address}");
+    let base = base.as_str();
+
+    let (status, claimed) = call(
+        base,
+        Method::POST,
+        "/v1/server/claim",
+        None,
+        json_body(&json!({ "username": "keeper", "password": OWNER_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{claimed}");
+    let owner = claimed["token"].as_str().unwrap().to_string();
+    let (status, _) = call(
+        base,
+        Method::PATCH,
+        "/v1/server/settings",
+        Some(&owner),
+        json_body(&json!({ "public_registration": true })),
+    )
+    .await;
+    assert_eq!(status, S::OK);
+    let (status, registered) = call(
+        base,
+        Method::POST,
+        "/v1/accounts",
+        None,
+        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{registered}");
+    let (status, session) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": ALICE_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{session}");
+    let alice = session["token"].as_str().unwrap().to_string();
+
+    let (status, run) = call(
+        base,
+        Method::POST,
+        "/v1/imports",
+        Some(&alice),
+        json_body(&json!({ "source": "whatsapp", "dedupe": true })),
+    )
+    .await;
+    assert_eq!(status, S::CREATED, "{run}");
+    let run_id = run["id"].as_i64().unwrap();
+    let header = conversation_header("whatsapp", CONTACT_PHONE)
+        .owner("+15555550106", Some("Me"))
+        .participant(CONTACT_PHONE, Some(CONTACT_NAME));
+    let message = message_line("g-1", MESSAGE_TEXT)
+        .at(1_700_000_000_000)
+        .service(message_ir::IrService::Whatsapp)
+        .kind(message_ir::IrMessageKind::Sms)
+        .sender(CONTACT_PHONE);
+    let batch = format!("{}{}", header.line(), message.line()).into_bytes();
+    let (status, answer) = call(
+        base,
+        Method::POST,
+        &format!("/v1/imports/{run_id}/batches"),
+        Some(&alice),
+        Some(("application/jsonl", batch)),
+    )
+    .await;
+    assert_eq!(status, S::OK, "{answer}");
+    drop(server);
+
+    let printed = std::fs::read_to_string(&stdout_path).unwrap();
+    assert!(
+        printed.is_empty(),
+        "serve printed on standard output:\n{printed}"
+    );
+    let (log, _) = log_text(&data_dir);
+    for expected in [
+        "Importing 1 JSONL file",
+        "Writing the import's 1 message",
+        "The import finished in",
+        "Hiding exact duplicates",
+    ] {
+        assert!(
+            log.lines()
+                .any(|line| line.contains(" INFO ") && line.contains(expected)),
+            "the log has an info line with {expected:?}:\n{log}"
+        );
+    }
+}

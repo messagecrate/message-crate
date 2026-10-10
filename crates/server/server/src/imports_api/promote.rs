@@ -5,7 +5,6 @@
 //! order, logs each phase and keeps the counts.
 
 use std::collections::HashMap;
-use std::io::{self, Write};
 use std::time::Instant;
 
 use anyhow::{Result, bail};
@@ -14,6 +13,7 @@ use sqlx::SqliteConnection;
 use crate::counts::words;
 use crate::db::schema;
 use crate::db::staging;
+use crate::progress::Progress;
 
 use super::ImportMode;
 
@@ -58,6 +58,7 @@ pub(super) async fn promote_append(
     account_id: i64,
     fill_content_keys: bool,
     wipe_sources: &[String],
+    progress: Progress,
 ) -> Result<PromoteStats, PromoteError> {
     let mut promote = Promote {
         tx,
@@ -65,6 +66,7 @@ pub(super) async fn promote_append(
         mode,
         stats: PromoteStats::default(),
         started: Instant::now(),
+        progress,
     };
     promote
         .run(wipe_sources, fill_content_keys)
@@ -84,6 +86,8 @@ struct Promote<'a> {
     stats: PromoteStats,
     /// When the promotion began, for the total in every phase's log line.
     started: Instant,
+    /// Where each phase's line goes.
+    progress: Progress,
 }
 
 /// Messages are inserted in staging-id ranges this wide, so one statement never
@@ -151,29 +155,32 @@ impl Promote<'_> {
     }
 
     /// Log the start of a phase and return its clock.
-    fn begin(msg: impl std::fmt::Display) -> Instant {
-        promote_log(msg);
+    fn begin(&self, msg: impl std::fmt::Display) -> Instant {
+        self.progress.say(msg);
         Instant::now()
     }
 
     /// Log the end of a phase with its own and the total elapsed time.
     fn done(&self, phase: Instant, msg: impl std::fmt::Display) {
-        promote_phase_done(self.started, phase, msg);
+        self.progress.say(format_args!(
+            "{msg} ({:.1} s, {:.1} s in all)",
+            phase.elapsed().as_secs_f64(),
+            self.started.elapsed().as_secs_f64()
+        ));
     }
 
     /// Replace mode: delete the account's existing rows for each source before
     /// anything is promoted, inside the same transaction as the inserts.
     async fn wipe_sources(&mut self, sources: &[String]) -> Result<()> {
         for source in sources {
-            println!(
-                "  Deleting the account's messages from source {source}, which this import replaces…"
-            );
-            let _ = io::stdout().flush();
+            self.progress.say(format_args!(
+                "Deleting the account's messages from source {source}, which this import replaces…"
+            ));
             schema::delete_messages_for_source(self.tx, self.account_id, source).await?;
         }
         if !sources.is_empty() {
-            println!("  The replaced messages are deleted. The deletion commits with the import");
-            let _ = io::stdout().flush();
+            self.progress
+                .say("The replaced messages are deleted. The deletion commits with the import");
         }
         Ok(())
     }
@@ -182,7 +189,7 @@ impl Promote<'_> {
     /// staging-to-production id map every later phase joins through.
     async fn promote_conversations(&mut self) -> Result<()> {
         let staged = staging::count_staged_conversations(self.tx, self.account_id).await?;
-        let phase = Self::begin(format_args!(
+        let phase = self.begin(format_args!(
             "Writing the import's {}…",
             words(as_count(staged), "1 conversation", "{n} conversations")
         ));
@@ -206,7 +213,7 @@ impl Promote<'_> {
     /// Insert the staged participants under their production conversations.
     async fn promote_participants(&mut self) -> Result<()> {
         let staged = staging::count_staged_participants(self.tx, self.account_id).await?;
-        let phase = Self::begin(format_args!(
+        let phase = self.begin(format_args!(
             "Writing the import's {}…",
             words(as_count(staged), "1 participant", "{n} participants")
         ));
@@ -230,7 +237,7 @@ impl Promote<'_> {
     /// ones that the map also names.
     async fn promote_messages(&mut self) -> Result<i64> {
         let total = staging::count_staged_messages(self.tx, self.account_id).await?;
-        promote_log(format_args!(
+        self.progress.say(format_args!(
             "Writing the import's {}, in {} mode…",
             words(as_count(total), "1 message", "{n} messages"),
             self.mode.as_str()
@@ -240,14 +247,14 @@ impl Promote<'_> {
         let existing = staging::count_messages(self.tx).await?;
         let rebuild_indexes = should_drop_messages_secondary_indexes(total, existing);
         if rebuild_indexes {
-            let phase = Self::begin(format_args!(
+            let phase = self.begin(format_args!(
                 "Dropping the message indexes for the write, with {}…",
                 staging_and_existing(total, existing)
             ));
             schema::drop_messages_secondary_indexes(self.tx).await?;
             self.done(phase, "The message indexes are dropped");
         } else {
-            promote_log(format_args!(
+            self.progress.say(format_args!(
                 "The message indexes are kept, with {}",
                 staging_and_existing(total, existing)
             ));
@@ -257,7 +264,7 @@ impl Promote<'_> {
         let msg_map = self.insert_messages(total).await?;
 
         if rebuild_indexes {
-            let phase = Self::begin("Rebuilding the message indexes…");
+            let phase = self.begin("Rebuilding the message indexes…");
             schema::create_messages_secondary_indexes(self.tx).await?;
             self.done(
                 phase,
@@ -267,18 +274,18 @@ impl Promote<'_> {
                 ),
             );
         } else {
-            promote_log(format_args!(
+            self.progress.say(format_args!(
                 "{} ({:.1} s in all)",
                 inserted_and_skipped(self.stats.messages, self.stats.messages_deduped),
                 self.started.elapsed().as_secs_f64()
             ));
         }
 
-        let phase = Self::begin("Matching each message read to its stored message…");
+        let phase = self.begin("Matching each message read to its stored message…");
         staging::write_message_map(self.tx, self.account_id, &msg_map).await?;
         self.done(phase, "Each message read is matched to its stored message");
 
-        let phase = Self::begin("Marking the messages Deleted in the source app or Unsent…");
+        let phase = self.begin("Marking the messages Deleted in the source app or Unsent…");
         let marked = staging::promote_deletion_marks(self.tx).await?;
         self.done(
             phase,
@@ -289,7 +296,7 @@ impl Promote<'_> {
             ),
         );
 
-        let phase = Self::begin("Applying later edits to stored messages…");
+        let phase = self.begin("Applying later edits to stored messages…");
         let named = staging::write_edit_map(self.tx, messages_before).await?;
         let unindexed = schema::unindex_versions_of_edited_messages(self.tx).await?;
         let edits = staging::promote_later_edits(self.tx).await?;
@@ -314,7 +321,7 @@ impl Promote<'_> {
             ),
         );
 
-        let phase = Self::begin(
+        let phase = self.begin(
             "Recording which backup each changed message came from, and whether its time has milliseconds…",
         );
         let dated = staging::promote_backup_dates(self.tx).await?;
@@ -334,7 +341,7 @@ impl Promote<'_> {
     /// [`Self::index_fts`] indexes once after and reinstalls the sync
     /// triggers dropped here.
     async fn turn_off_fts_triggers(&mut self) -> Result<()> {
-        let phase = Self::begin("Turning off the search index triggers…");
+        let phase = self.begin("Turning off the search index triggers…");
         schema::drop_messages_fts_triggers(self.tx).await?;
         self.done(phase, "The search index triggers are off");
         Ok(())
@@ -369,7 +376,7 @@ impl Promote<'_> {
         let mut max_before = staging::max_message_id(self.tx).await?;
         let mut inserted_total = 0u64;
         for (chunk, lo, hi) in message_chunks(min_id, max_id) {
-            let phase = Self::begin(format_args!(
+            let phase = self.begin(format_args!(
                 "Writing message batch {chunk}, staging rows {} to {hi}…",
                 lo + 1
             ));
@@ -412,7 +419,7 @@ impl Promote<'_> {
     ) -> Result<HashMap<i64, i64>> {
         let mut inserted_total = 0u64;
         for (chunk, lo, hi) in message_chunks(min_id, max_id) {
-            let phase = Self::begin(format_args!(
+            let phase = self.begin(format_args!(
                 "Writing message batch {chunk}, staging rows {} to {hi}…",
                 lo + 1
             ));
@@ -457,7 +464,7 @@ impl Promote<'_> {
     /// the existing messages that gained an attachment. Returns too the
     /// stored messages whose attachment rows took their missing files.
     async fn promote_attachments(&mut self) -> Result<(i64, Vec<i64>)> {
-        let phase = Self::begin("Writing the import's attachments…");
+        let phase = self.begin("Writing the import's attachments…");
         let attachments_before = staging::max_attachment_id(self.tx).await?;
         let promoted = staging::promote_attachments(self.tx).await?;
         self.stats.attachments = promoted.inserted;
@@ -482,7 +489,7 @@ impl Promote<'_> {
 
     /// Insert the staged tapbacks under their production messages.
     async fn promote_tapbacks(&mut self) -> Result<()> {
-        let phase = Self::begin("Writing the import's tapbacks…");
+        let phase = self.begin("Writing the import's tapbacks…");
         self.stats.tapbacks = staging::promote_tapbacks(self.tx).await?;
         self.done(
             phase,
@@ -501,7 +508,7 @@ impl Promote<'_> {
     /// id that existed before the insert: every new row lands above it,
     /// which is how [`Self::index_fts`] finds them.
     async fn promote_earlier_versions(&mut self, messages_before: i64) -> Result<i64> {
-        let phase = Self::begin("Writing the earlier versions of edited messages…");
+        let phase = self.begin("Writing the earlier versions of edited messages…");
         let versions_before = staging::max_earlier_version_id(self.tx).await?;
         let inserted = staging::promote_earlier_versions(self.tx, messages_before).await?;
         self.done(
@@ -526,7 +533,7 @@ impl Promote<'_> {
         attachments_before: i64,
         versions_before: i64,
     ) -> Result<()> {
-        let phase = Self::begin("Indexing the new messages for search…");
+        let phase = self.begin("Indexing the new messages for search…");
         let indexed = schema::index_messages_fts_from_promote_map(
             self.tx,
             messages_before,
@@ -552,8 +559,10 @@ impl Promote<'_> {
 
     /// Fill the dedupe content keys the new rows are missing.
     async fn fill_content_keys(&mut self) -> Result<()> {
-        let phase = Self::begin("Filling the content keys the new messages lack…");
-        let keys = crate::dedupe::fill_missing_content_keys(self.tx, self.account_id).await?;
+        let phase = self.begin("Filling the content keys the new messages lack…");
+        let keys =
+            crate::dedupe::fill_missing_content_keys(self.tx, self.account_id, self.progress)
+                .await?;
         self.done(
             phase,
             words(
@@ -581,7 +590,7 @@ impl Promote<'_> {
         if changed.is_empty() {
             return Ok(());
         }
-        let phase = Self::begin(format_args!(
+        let phase = self.begin(format_args!(
             "Checking the duplicates of the {} whose content changed…",
             words(
                 as_count(changed.len()),
@@ -594,6 +603,7 @@ impl Promote<'_> {
             self.account_id,
             &changed,
             crate::dedupe::NEAR_WINDOW_SECS,
+            self.progress,
         )
         .await?;
         self.done(
@@ -609,8 +619,13 @@ impl Promote<'_> {
 
     /// Log the counts and return them. The caller commits.
     fn finish(self) -> PromoteStats {
-        let Promote { stats, started, .. } = self;
-        promote_log(format_args!(
+        let Promote {
+            stats,
+            started,
+            progress,
+            ..
+        } = self;
+        progress.say(format_args!(
             "{} ({:.1} s in all)",
             promoted_line(&stats),
             started.elapsed().as_secs_f64()
@@ -634,12 +649,6 @@ fn message_chunks(min_id: i64, max_id: i64) -> impl Iterator<Item = (u32, i64, i
         lo = hi;
         Some(range)
     })
-}
-
-/// One promote progress line, flushed so it shows while the next statement runs.
-fn promote_log(msg: impl std::fmt::Display) {
-    println!("  {msg}");
-    let _ = io::stdout().flush();
 }
 
 /// A count from the database or a collection as a `u64` for
@@ -697,15 +706,6 @@ fn promoted_line(stats: &PromoteStats) -> String {
         words(stats.attachments, "1 attachment", "{n} attachments"),
         words(stats.tapbacks, "1 tapback", "{n} tapbacks")
     )
-}
-
-/// Log the end of one promote phase with its own and the total elapsed time.
-fn promote_phase_done(total: Instant, phase: Instant, msg: impl std::fmt::Display) {
-    promote_log(format_args!(
-        "{msg} ({:.1} s, {:.1} s in all)",
-        phase.elapsed().as_secs_f64(),
-        total.elapsed().as_secs_f64()
-    ));
 }
 
 /// True when the staged batch is large relative to the table, so dropping and rebuilding
