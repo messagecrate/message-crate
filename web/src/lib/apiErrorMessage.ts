@@ -8,7 +8,7 @@
  * rejection is not an `Error`, or has no message, at all.
  */
 export function apiErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error ? err.message : fallback;
+  return err instanceof Error ? errorText(err) : fallback;
 }
 
 /**
