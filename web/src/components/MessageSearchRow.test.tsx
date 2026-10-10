@@ -88,7 +88,7 @@ describe("MessageSearchRow", () => {
         ),
       }),
     );
-    expect(screen.getByTitle("1,234 attachments")).toBeInTheDocument();
+    expect(screen.getByTitle("1,234 attachments")).toHaveTextContent("📎 1,234");
   });
 
   it("shows no sender for a received message that names none", () => {

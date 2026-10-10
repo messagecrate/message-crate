@@ -164,7 +164,7 @@ export default function MessageSearchRow({
             className="shrink-0 text-[0.75rem] text-muted"
             title={countOf(attachmentCount, "attachment")}
           >
-            📎 {attachmentCount}
+            📎 {attachmentCount.toLocaleString()}
           </span>
         ) : null}
       </span>

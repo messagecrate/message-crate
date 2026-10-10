@@ -112,6 +112,16 @@ describe("CheckedContactsPanel", () => {
     expect(cells.slice(2)).toEqual(["3", "314", "15"]);
   });
 
+  it("counts the picked contacts in its heading, with a separator", () => {
+    render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
+    expect(screen.getByRole("heading", { name: "1 contact selected" })).toBeInTheDocument();
+    cleanup();
+
+    const many = Array.from({ length: 1234 }, (_, i) => ({ id: String(i), name: `Contact ${i}` }));
+    render(<CheckedContactsPanel contacts={many} onClear={() => {}} />);
+    expect(screen.getByRole("heading", { name: "1,234 contacts selected" })).toBeInTheDocument();
+  });
+
   // The app's own :focus-visible outline loses to the outline-none utility, so
   // a sortable header draws the style guide's ring itself.
   it("draws the focus ring on every sortable column header", () => {
