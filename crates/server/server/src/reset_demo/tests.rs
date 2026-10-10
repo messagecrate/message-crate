@@ -2291,7 +2291,7 @@ async fn a_first_start_seed_that_fails_partway_leaves_no_demo_account() {
     })
     .await;
 
-    assert_eq!(seeded, None);
+    assert!(seeded.is_err(), "{seeded:?}");
     assert!(!seeding_path(&cfg.paths.db).exists());
     // `serve` then creates the database empty.
     OpenDb::create_or_open(cfg.clone())
@@ -2325,14 +2325,18 @@ async fn a_first_start_stopped_after_the_account_row_is_seeded_whole_by_the_next
         write_tiny_reset_bundle(bundle.path());
         let prepared = validate_prepared_bundle(bundle.path())?;
         seed_demo_account(db, DEMO_ACCOUNT_ID, &prepared.seed).await?;
-        let _ = written.send(());
+        let _ = written.send(db.clone());
         // The process is killed here: nothing after this line runs.
         std::future::pending::<Result<u64>>().await
     });
-    tokio::select! {
+    let stopped_pool = tokio::select! {
         _ = seeding => panic!("the stopped seed never finishes"),
-        _ = row_is_written => {}
-    }
+        pool = row_is_written => pool.expect("the stopped seed hands out its pool"),
+    };
+    // A killed process holds no connection to the seeding file. Dropping the
+    // seed above leaves its pool closing in the background, so it is closed
+    // here, before the next start removes and recreates the file (#1949).
+    stopped_pool.close().await;
 
     assert!(
         !cfg.paths.db.exists(),
