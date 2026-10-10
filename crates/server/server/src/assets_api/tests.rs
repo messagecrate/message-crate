@@ -1,6 +1,5 @@
 use super::*;
-use crate::test_support::http_client;
-use crate::test_support::stored_time;
+use crate::test_support::{http_client, stored_time};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;

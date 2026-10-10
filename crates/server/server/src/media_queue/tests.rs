@@ -2,7 +2,6 @@
 //! H.264 MP4 and a HEVC `.mov` ends, and the server makes their versions
 //! afterwards (`docs/architecture/media.md`, rule 4).
 
-use crate::test_support::http_client;
 use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
@@ -13,7 +12,7 @@ use super::*;
 use crate::server::AppState;
 use crate::test_support::{
     RegisteredAccount, TestFixture, attachment, conversation_header, fixture_with_account,
-    message_line,
+    http_client, message_line,
 };
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second

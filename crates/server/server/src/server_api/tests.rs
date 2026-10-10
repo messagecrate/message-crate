@@ -1,11 +1,11 @@
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 use std::sync::atomic::AtomicBool;
 
 use super::*;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, patch_status, post_status,
-    post_status_logged_out, register_via_api, seed_conversation, stored_time, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, get_json, get_status, http_client, patch_status,
+    post_status, post_status_logged_out, register_via_api, seed_conversation, stored_time,
+    test_fixture,
 };
 
 /// Turn public registration off, the way a real server ships.

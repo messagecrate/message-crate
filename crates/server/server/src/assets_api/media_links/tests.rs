@@ -1,4 +1,3 @@
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::Value;
 
@@ -7,7 +6,7 @@ use crate::assets_api::tests::{
     ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{RegisteredAccount, expect_problem};
+use crate::test_support::{RegisteredAccount, expect_problem, http_client};
 
 /// `POST /v1/assets/{sha256}/media-links` as `token`: the status, the
 /// `Location`, and the body.

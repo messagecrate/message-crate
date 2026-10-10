@@ -21,7 +21,6 @@
 //! server, so a delete, a password change or a logout cannot change what the
 //! next call sees.
 
-use crate::test_support::http_client;
 use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::OnceLock;
@@ -33,7 +32,7 @@ use crate::db::account_profile::{self, AccountFlags, OWNER_ACCOUNT_ID};
 use crate::db::api_tokens::create_api_token;
 use crate::db::permissions::Permissions;
 use crate::db::session_tokens::insert_account_session_token;
-use crate::test_support::{SeedConversation, SeedMessage, TestFixture, TestServer};
+use crate::test_support::{SeedConversation, SeedMessage, TestFixture, TestServer, http_client};
 
 /// The one password every account in the fixture has.
 const PASSWORD: &str = "matrix-password";

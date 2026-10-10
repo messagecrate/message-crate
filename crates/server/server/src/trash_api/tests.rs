@@ -1,11 +1,10 @@
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
     conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
-    message_line, register_via_api, seed_conversation, stored_time,
+    http_client, message_line, register_via_api, seed_conversation, stored_time,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.

@@ -3,15 +3,14 @@
 //! (`docs/architecture/server-log.md`). Who may call them is the credential
 //! matrix's to check.
 
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::Value;
 
 use crate::logging::log_dir;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, serve, small_log_files,
-    test_fixture, write_log_line as write,
+    PASSWORD, claim_as_owner, expect_problem, get_json, get_raw, http_client, serve,
+    small_log_files, test_fixture, write_log_line as write,
 };
 
 /// The owner lists the files newest first and downloads one whole, as a

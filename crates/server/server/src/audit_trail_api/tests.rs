@@ -1,15 +1,14 @@
 //! The Audit Trail through the router: what each act leaves in it, who reads
 //! it, and what survives the account (#619).
 
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
 use crate::problem::ProblemType;
 use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
-    PASSWORD, claim_as_owner, delete_status, expect_problem, get_json, get_raw, log_in,
-    login_status, patch_status, post_created_json, register_via_api, serve, test_fixture,
+    PASSWORD, claim_as_owner, delete_status, expect_problem, get_json, get_raw, http_client,
+    log_in, login_status, patch_status, post_created_json, register_via_api, serve, test_fixture,
 };
 
 /// The items of an Audit Trail page.

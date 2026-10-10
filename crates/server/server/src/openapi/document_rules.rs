@@ -27,7 +27,6 @@
 //! in-process document, so a new route is covered the moment it is
 //! registered.
 
-use crate::test_support::http_client;
 use std::collections::BTreeSet;
 
 use axum::http::StatusCode;
@@ -39,6 +38,7 @@ use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
+use crate::test_support::http_client;
 
 /// The one route nested three deep (`docs/architecture/http-api.md`,
 /// "Naming a route").

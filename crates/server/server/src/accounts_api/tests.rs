@@ -1,4 +1,3 @@
-use crate::test_support::http_client;
 use axum::http::StatusCode;
 
 use super::*;
@@ -8,10 +7,10 @@ use crate::problem::ProblemType;
 use crate::test_support::{
     SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, log_in, login_status, message_line,
-    patch_failure, patch_json, patch_raw, patch_status, post_created_json, post_logged_out,
-    post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status, register_via_api,
-    seed_conversation, seed_one_message, stored_time, test_fixture,
+    fixture_with_account, get_json, get_raw, get_status, http_client, log_in, login_status,
+    message_line, patch_failure, patch_json, patch_raw, patch_status, post_created_json,
+    post_logged_out, post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status,
+    register_via_api, seed_conversation, seed_one_message, stored_time, test_fixture,
 };
 use message_ir::IdentityType;
 
