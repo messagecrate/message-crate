@@ -98,8 +98,6 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     }
 }
 
-/// Every conversation file of a Mac `chat.db` export says the database's
-/// modification time as when the backup was made.
 /// A message whose `date` an older `chat.db` stored in seconds, and one
 /// whose date the library cannot read, so the Reader reads the raw stamp,
 /// were recorded in whole seconds and say `seconds`. Every other message
@@ -144,6 +142,8 @@ fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
     }
 }
 
+/// Every conversation file of a Mac `chat.db` export says the database's
+/// modification time as when the backup was made.
 #[test]
 fn every_conversation_file_says_when_the_chat_db_was_last_written() {
     use message_crate_core::testutil::{

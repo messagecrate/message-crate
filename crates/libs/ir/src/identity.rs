@@ -14,12 +14,7 @@
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-/// How finely a source recorded a message's time: a message's
-/// `time_precision` in the conversation file. Defined in
-/// `imessage-reader-protocol` beside `Reaction`, because the Apple Messages
-/// Reader sends each message's precision in the shape the conversation file
-/// carries.
-pub use imessage_reader_protocol::TimePrecision;
+use crate::TimePrecision;
 
 /// What a message's identity is made from.
 ///

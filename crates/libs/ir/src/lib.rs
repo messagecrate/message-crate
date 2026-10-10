@@ -32,8 +32,7 @@ pub use conversation_key::{
 };
 pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use identity::{
-    MessageCopy, MessageGuid, MessageIdentity, TimePrecision, collapse_whitespace,
-    one_copy_per_message,
+    MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
 pub use projection::{
     PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
@@ -68,6 +67,15 @@ pub use imessage_reader_protocol::{
 /// reason: the Apple Messages Reader writes it in the shape the conversation
 /// file carries.
 pub use imessage_reader_protocol::Deletion;
+
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file, `seconds` or `milliseconds`.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader sends each message's precision in the
+/// shape the conversation file carries
+/// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
+pub use imessage_reader_protocol::TimePrecision;
 
 /// One earlier version of one part of an edited message: its part, its text,
 /// and when it was written. A message's `text` is its final version, so
