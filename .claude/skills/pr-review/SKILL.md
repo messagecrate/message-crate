@@ -42,10 +42,10 @@ step 1, a push made only to bring the base in is made only on `CONFLICTING`
 (AGENTS.md step 5).
 
 **Every call that posts** (a review, a comment, a reply, a resolved thread, a
-deferred finding's issue) runs through `./scripts/gh-as-reviewer.sh` in place of
-`gh`, so it posts as the `message-crate-reviewer` app (AGENTS.md, "Review on
-the pull request"). Run it from the root of the review worktree. The calls go
-one at a time, and a refusal for the posting limit is retried (AGENTS.md,
+deferred finding's issue) runs through `main`'s copy of
+`scripts/gh-as-reviewer.sh` in place of `gh`, so it posts as the
+`message-crate-reviewer` app. AGENTS.md, "Review on the pull request", gives
+the command and why it is `main`'s copy. The calls go one at a time, and a refusal for the posting limit is retried (AGENTS.md,
 "Posting pace"). If the script cannot run, or fails for any other reason, stop
 and report it. Never post as the logged-in account instead.
 

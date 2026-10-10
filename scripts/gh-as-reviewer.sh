@@ -3,14 +3,19 @@
 # account, so pr-review's posts count against the app's posting limit and not
 # the user's.
 #
-#   ./scripts/gh-as-reviewer.sh api repos/messagecrate/message-crate/pulls/<N>/reviews ...
-#   ./scripts/gh-as-reviewer.sh pr comment <N> --body "..."
+#   bash <scratch>/gh-as-reviewer-<N>.sh api repos/messagecrate/message-crate/pulls/<N>/reviews ...
+#   bash <scratch>/gh-as-reviewer-<N>.sh pr comment <N> --body-file <file>
+#
+# Run main's copy, written out with git show, so a pull request under review
+# never supplies the code that handles the key (AGENTS.md, "Review on the pull
+# request").
 #
 # Each run signs a JWT with the app's private key
 # (~/.ssh/message-crate-reviewer.pem), exchanges it for an installation token
 # for messagecrate/message-crate (valid an hour, never written to disk), and
-# passes it to gh as GH_TOKEN. Needs openssl, curl, jq. When GitHub refuses a
-# request, it prints the HTTP status and GitHub's reply and exits 1.
+# passes it to gh as GH_TOKEN. Needs openssl, curl, jq. When GitHub refuses
+# either token call, it prints the step, the HTTP status and GitHub's reply and
+# exits 1. The gh call after them fails as gh does.
 #
 # Why: docs/adr/0007-ci-is-the-only-gate.md.
 set -euo pipefail
