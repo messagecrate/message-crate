@@ -438,7 +438,7 @@ fn run_from_an_sms_backup_logs_the_reader_counts() {
         "Skipped 1 message with an invalid date",
         "Skipped 1 message with no usable address",
         "Skipped 1 message of an unknown type",
-        "Skipped 1 draft or unsent message",
+        "Skipped 1 draft or message never sent",
         "Skipped 1 MMS with no participants",
         "Left out 1 message part that could not be read",
         "Left out 1 character reference that is not a character",

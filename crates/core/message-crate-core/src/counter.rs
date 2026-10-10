@@ -24,14 +24,14 @@ pub struct Counter {
 
 impl Counter {
     /// A counter named `key`. `one` is the whole line for a count of 1, such
-    /// as `Skipped 1 draft or unsent message`. `many` is the line for any
+    /// as `Skipped 1 draft or message never sent`. `many` is the line for any
     /// other count, with `{n}` where the count goes, such as
-    /// `Skipped {n} drafts or unsent messages`.
+    /// `Skipped {n} drafts or messages never sent`.
     pub const fn new(key: &'static str, one: &'static str, many: &'static str) -> Self {
         Self { key, one, many }
     }
 
-    /// The counter's key, such as `skipped_draft_or_outbox`.
+    /// The counter's key, such as `skipped_never_sent`.
     pub const fn key(self) -> &'static str {
         self.key
     }
