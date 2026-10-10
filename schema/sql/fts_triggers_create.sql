@@ -118,10 +118,13 @@ CREATE TRIGGER attachments_fts_au AFTER UPDATE OF original_name, transcription O
 END;
 
 -- Keep message_versions_fts in step with message_versions: one index row per
--- version, under the version's id. Deleting a message deletes its versions
--- through ON DELETE CASCADE, which fires the delete trigger for each.
+-- version that has text, under the version's id. A version with no text
+-- (one iMazing records) has nothing to find it by, so it gets no row.
+-- Deleting a message deletes its versions through ON DELETE CASCADE, which
+-- fires the delete trigger for each.
 CREATE TRIGGER message_versions_fts_ai AFTER INSERT ON message_versions BEGIN
-    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO message_versions_fts(rowid, text)
+    SELECT new.id, new.text WHERE new.text IS NOT NULL;
 END;
 
 CREATE TRIGGER message_versions_fts_ad AFTER DELETE ON message_versions BEGIN
@@ -130,5 +133,6 @@ END;
 
 CREATE TRIGGER message_versions_fts_au AFTER UPDATE OF text ON message_versions BEGIN
     DELETE FROM message_versions_fts WHERE rowid = old.id;
-    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+    INSERT INTO message_versions_fts(rowid, text)
+    SELECT new.id, new.text WHERE new.text IS NOT NULL;
 END;

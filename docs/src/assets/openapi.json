@@ -14834,9 +14834,9 @@
         "description": "One earlier version of one part of an edited message.",
         "required": [
           "part_index",
-          "text",
           "matched",
-          "edited_at"
+          "edited_at",
+          "text"
         ],
         "properties": {
           "edited_at": {
@@ -14856,8 +14856,11 @@
             "description": "The part of the message this version belongs to; 0 for the first\nor only part."
           },
           "text": {
-            "type": "string",
-            "description": "The part's text in this version."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The part's text in this version; `null` when the source recorded\nthe edit and not the text it replaced, as iMazing does. Search\nnever finds a message by such a version."
           }
         }
       },

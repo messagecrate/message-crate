@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 12 only** (breaking). Version 12 says whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 11 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 13 only** (breaking). Version 13 lets an earlier version of an edited message carry no `text` (see [Earlier versions](#earlier-versions)), for a source that records the edit and not the text it replaced, as iMazing does; version 12 required the text, so a version-13 file would fail to parse under its rules rather than be refused by name. Version 12 had said whether each message's time has milliseconds, in its required `time_precision` (see [Time precision](#time-precision)), which version 11 did not, so a time ending in `.000` could be a whole second or a millisecond time, and the import could not tell a whole-second copy of a message from a millisecond one. Version 11 had said when the backup was made, in `export.backup_taken_at_unix_ms` (see [When the backup was made](#when-the-backup-was-made)), which version 10 did not, so an import could not tell which of two backups of one phone is the later one. Version 10 had kept the message a reply quotes in the message's own `reply_to`, for every source (see [Replies](#replies)), where version 9 kept the Apple Messages reply link in `imessage.is_reply` and `imessage.in_reply_to_guid`, and a reply count in `imessage.num_replies`. Version 9 had given orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 12 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 12`)
+## Document schema (`schema_version: 13`)
 
 ```json
 {
-  "schema_version": 12,
+  "schema_version": 13,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -153,7 +153,7 @@ CSV carries it in the `backup_taken_at_unix_ms` column of every row, and EML and
 
 Each reaction names its own reactor, who is rarely the author of the message, and the server stores it under that person. Adds and removes are resolved before the list is written, so a reaction has no action and a removed one is not in the list. A message with no reactions leaves `reactions` out of the file.
 
-`Reaction` is defined once, in `imessage-reader-protocol`, and `message_ir::Reaction` is that type. It lives there because the Apple Messages Reader is GPL and runs as its own process, and the protocol crate (MIT OR Apache-2.0) is the one crate both it and the rest of Message Crate may link ([ADR 0014](https://github.com/messagecrate/message-crate/blob/main/docs/adr/0014-gpl-code-only-behind-a-process-boundary.md)). Apple Messages fills it. Every other source writes none yet.
+`Reaction` is defined once, in `imessage-reader-protocol`, and `message_ir::Reaction` is that type. It lives there because the Apple Messages Reader is GPL and runs as its own process, and the protocol crate (MIT OR Apache-2.0) is the one crate both it and the rest of Message Crate may link ([ADR 0014](https://github.com/messagecrate/message-crate/blob/main/docs/adr/0014-gpl-code-only-behind-a-process-boundary.md)). Apple Messages fills it. iMazing fills it from each line of a row's `Reactions` cell: part `0`, kind `emoji`, the emoji, and the reactor's display name as written, with no `reactor_identity`, because the cell names nobody by address; a line naming `Me` is the account holder's. Every other source writes none yet.
 
 Apple Messages also writes each reaction as a row of its own (`message_kind` `tapback` or `sticker_tapback`), with `imessage.associated_guid`, `tapback_kind` and `tapback_action`. The server reads reactions from `reactions` and skips those rows.
 
@@ -168,7 +168,7 @@ Apple Messages also writes each reaction as a row of its own (`message_kind` `ta
 
 A message with neither leaves `deletion` out of the file. A message only partly unsent, with text or an attachment left in another part, carries no mark. A marked message is imported, listed and searched like any other. The search words `deleted:` and `unsent:` each narrow to or away from one mark.
 
-`Deletion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::Deletion` is that type. Apple Messages fills it: a message in a chat's recently deleted list is `deleted_in_source_app`, and a message whose every part was unsent is `unsent` rather than an announcement that someone unsent it. Every other source writes none yet.
+`Deletion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::Deletion` is that type. Apple Messages fills it: a message in a chat's recently deleted list is `deleted_in_source_app`, and a message whose every part was unsent is `unsent` rather than an announcement that someone unsent it. iMazing fills it for a row with a `Deleted Date`, always `deleted_in_source_app`: its CSV never says a message was unsent. Every other source writes none yet.
 
 ### Earlier versions
 
@@ -177,12 +177,12 @@ A message with neither leaves `deletion` out of the file. A message only partly 
 | Field | Meaning |
 |-------|---------|
 | `part_index` | The part of the message the version belongs to; `0` for the first or only part |
-| `text` | The part's text in this version |
+| `text` | The part's text in this version. Left out when the source recorded the edit and not the text it replaced |
 | `edited_at_unix_ms` | When this version was written, in milliseconds since 1970: the send time for the original, the time of the edit that wrote it for a later one. Left out when the source does not record it |
 
-A message never edited leaves `edits` out of the file. The server stores each version and its time, and search finds the message by any of them as well as by its final text.
+A message never edited leaves `edits` out of the file. The server stores each version and its time, and search finds the message by any of them that has text as well as by its final text. A version with no text is shown as "Earlier version not in the backup" with its time, and search never finds a message by it.
 
-`EarlierVersion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::EarlierVersion` is that type. Apple Messages fills it from each part's edit history: every entry but the last, which is the text the message holds now. An unsent part has no history and so no earlier version; `deletion` says what was unsent. Every other source writes none yet.
+`EarlierVersion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::EarlierVersion` is that type. Apple Messages fills it from each part's edit history: every entry but the last, which is the text the message holds now. An unsent part has no history and so no earlier version; `deletion` says what was unsent. iMazing writes one version with no text for a row with an `Edited Date`, at that date: its CSV carries the final text only, so the earlier text cannot be recovered. Every other source writes none yet.
 
 ### Replies
 
@@ -195,7 +195,7 @@ A message never edited leaves `edits` out of the file. The server stores each ve
 
 A message that is not a reply leaves `reply_to` out of the file. No reply count is written: when the server reads a message, it counts the replies shown whose `reply_to.guid` names that message or a copy of it hidden as a duplicate, so the count always equals the replies shown.
 
-`ReplyTo` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::ReplyTo` is that type. Apple Messages fills it from a threaded reply's originator and part. WhatsApp fills it for a quoted reply: the reply's `reply_key_id` names the quoted message's `full_key_id`, the whole id the backup stores, and the exporter links the reply to the one message of the same chat with that id. A `key_id` is not used, because on an iPhone it is the first 17 characters of the id, which two messages can share. A reply whose quoted message is not in the chat, or one from a JSON with no `reply_key_id` (only Message Crate's fork of WhatsApp Chat Exporter, `messagecrate/WhatsApp-Chat-Exporter`, writes it), is a reply with no `guid`. Every other source writes none yet.
+`ReplyTo` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::ReplyTo` is that type. Apple Messages fills it from a threaded reply's originator and part. WhatsApp fills it for a quoted reply: the reply's `reply_key_id` names the quoted message's `full_key_id`, the whole id the backup stores, and the exporter links the reply to the one message of the same chat with that id. A `key_id` is not used, because on an iPhone it is the first 17 characters of the id, which two messages can share. A reply whose quoted message is not in the chat, or one from a JSON with no `reply_key_id` (only Message Crate's fork of WhatsApp Chat Exporter, `messagecrate/WhatsApp-Chat-Exporter`, writes it), is a reply with no `guid`. iMazing fills it for a row with a `Replying to` cell, which quotes the message by its sender and its date and never by an id: the exporter links the reply to the one message of the same chat whose `Message Date` is the quoted date, and does not compare the sender, which iMazing does not write as it writes `Sender Name`. A cell whose date no message of the chat has, or that two messages share, is a reply with no `guid`. Every other source writes none yet.
 
 ### Orphaned messages
 
@@ -226,7 +226,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":12,"export":{…},"conversation":{…}}
+{"schema_version":13,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

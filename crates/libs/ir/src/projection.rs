@@ -9,11 +9,11 @@
 //! mapping) are supplied through [`ProjectionHooks`].
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IdentityType,
-    IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, PendingAttachment,
-    PendingConversation, PendingMessage, ReplyTo, SCHEMA_VERSION, TimePrecision, format_local_ts,
-    one_copy_per_message, owner_sender,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
+    ExportMeta, IdentityType, IrAttachment, IrConversationType, IrDirection, IrMessage,
+    IrMessageKind, IrParticipant, IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity,
+    PendingAttachment, PendingConversation, PendingMessage, Reaction, ReplyTo, SCHEMA_VERSION,
+    TimePrecision, format_local_ts, one_copy_per_message, owner_sender,
 };
 use std::collections::{BTreeMap, HashMap};
 
@@ -128,6 +128,24 @@ pub trait ProjectionHooks {
     /// no link. The default records no replies.
     fn reply(&self, _msg: &PendingMessage) -> Option<PendingReply> {
         None
+    }
+
+    /// The reactions that stand on the message, each naming who reacted.
+    /// The default records none.
+    fn reactions(&self, _msg: &PendingMessage) -> Vec<Reaction> {
+        Vec::new()
+    }
+
+    /// Whether the message was deleted in the source app or unsent by its
+    /// sender. The default marks none.
+    fn deletion(&self, _msg: &PendingMessage) -> Option<Deletion> {
+        None
+    }
+
+    /// The earlier versions of an edited message, oldest first within each
+    /// part. The default records none.
+    fn edits(&self, _msg: &PendingMessage) -> Vec<EarlierVersion> {
+        Vec::new()
     }
 
     /// Map one queued attachment onto the shared [`IrAttachment`] shape.
@@ -336,12 +354,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             subject: hooks.subject(msg),
             text: msg.text.clone(),
             attachments,
-            // No source that stages its rows here records reactions yet.
-            reactions: Vec::new(),
-            // Nor a message deleted in the source app or unsent.
-            deletion: None,
-            // Nor an edited message's earlier versions.
-            edits: Vec::new(),
+            reactions: hooks.reactions(msg),
+            deletion: hooks.deletion(msg),
+            edits: hooks.edits(msg),
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,

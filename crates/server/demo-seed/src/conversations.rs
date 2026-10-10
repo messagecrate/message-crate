@@ -1027,10 +1027,10 @@ fn mark_edited(
         .take(count)
         .map(|&(offset, after_ms)| EarlierVersion {
             part_index: 0,
-            text: corpus.sentence(first.wrapping_add(offset)).to_string(),
+            text: Some(corpus.sentence(first.wrapping_add(offset)).to_string()),
             edited_at_unix_ms: Some(msg.timestamp_unix_ms + after_ms),
         })
-        .filter(|version| version.text != msg.text)
+        .filter(|version| version.text.as_deref() != Some(msg.text.as_str()))
         .collect();
 }
 

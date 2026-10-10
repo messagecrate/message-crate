@@ -460,8 +460,10 @@ api_shape! {
         /// The part of the message this version belongs to; 0 for the first
         /// or only part.
         pub part_index: i64,
-        /// The part's text in this version.
-        pub text: String,
+        /// The part's text in this version; `null` when the source recorded
+        /// the edit and not the text it replaced, as iMazing does. Search
+        /// never finds a message by such a version.
+        pub text: Option<String>,
         /// When this version was written, to the millisecond in the form
         /// `Message.timestamp` takes. The original's is when it was sent, a
         /// later version's is when the edit that wrote it was made. `None`
@@ -692,7 +694,7 @@ mod tests {
             deletion: Some(Deletion::DeletedInSourceApp),
             earlier_versions: vec![EarlierVersion {
                 part_index: 0,
-                text: "helo".into(),
+                text: Some("helo".into()),
                 edited_at: Some("2023-12-31T23:59:00Z".into()),
                 matched: false,
             }],
@@ -763,7 +765,7 @@ mod tests {
         assert_eq!(written["time_precision"], "seconds");
         assert_eq!(read.time_precision, TimePrecision::Seconds);
         assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
-        assert_eq!(read.earlier_versions[0].text, "helo");
+        assert_eq!(read.earlier_versions[0].text.as_deref(), Some("helo"));
         assert_eq!(
             read.earlier_versions[0].edited_at.as_deref(),
             Some("2023-12-31T23:59:00Z")

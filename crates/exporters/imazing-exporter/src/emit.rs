@@ -13,6 +13,7 @@ use crate::parse_emit::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
     parse_message_date, resolve_sender, session_key,
 };
+use crate::row_marks;
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
@@ -21,8 +22,9 @@ use message_crate_core::{
 };
 use message_csv::Zone;
 use message_ir::{
-    ConversationKey, ExportMeta, IrAttachment, IrParticipant, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectedRole, ProjectionHooks,
+    ConversationKey, Deletion, EarlierVersion, ExportMeta, IrAttachment, IrParticipant, IrService,
+    IrSource, PendingAttachment, PendingConversation, PendingMessage, PendingReply, ProjectedRole,
+    ProjectionHooks, Reaction,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use phone::Handle;
@@ -623,16 +625,13 @@ impl Ingest {
         extra.insert("service".into(), service);
         extra.insert("imazing_status".into(), row.status.clone());
         extra.insert("imazing_type".into(), row.msg_type.clone());
-        extra.insert("reactions".into(), row.reactions.clone());
-        extra.insert("replying_to".into(), row.replying_to.clone());
         extra.insert("forwarded".into(), row.forwarded.clone());
         extra.insert("attachment_info".into(), row.attachment_info.clone());
         extra.insert("delivered_date".into(), row.delivered_date.clone());
         extra.insert("read_date".into(), row.read_date.clone());
-        extra.insert("edited_date".into(), row.edited_date.clone());
-        extra.insert("deleted_date".into(), row.deleted_date.clone());
         extra.insert("sent_date".into(), row.sent_date.clone());
         extra.extend(attachment_extra);
+        extra.extend(self.row_marks(row));
 
         Some(PendingMessage {
             sort_key: secs,
@@ -643,6 +642,42 @@ impl Ingest {
             attachments,
             extra,
         })
+    }
+
+    /// The reactions, the reply, the deleted mark and the edit a row
+    /// records, as the extras [`ImazingProjection`] reads them from
+    /// ([`row_marks`]): `reactions_json`, the reactions as the conversation
+    /// file writes them; `is_reply` and `reply_to_second`, the quoted
+    /// message's Message Date as Unix seconds in the export's zone, the key
+    /// every message of the chat is quotable by; `deleted`; and `edited`
+    /// with `edited_at_ms`. Each is left out when the row has none.
+    fn row_marks(&self, row: &RawRow) -> BTreeMap<String, String> {
+        let mut extra = BTreeMap::new();
+        let reactions = row_marks::parse_reactions(&row.reactions);
+        if !reactions.is_empty() {
+            extra.insert(
+                "reactions_json".into(),
+                serde_json::to_string(&reactions).expect("reactions serialize"),
+            );
+        }
+        if !row.replying_to.trim().is_empty() {
+            extra.insert("is_reply".into(), "true".into());
+            if let Some(second) = row_marks::quoted_date(&row.replying_to)
+                .and_then(|date| parse_message_date(date, self.tz))
+            {
+                extra.insert("reply_to_second".into(), second.to_string());
+            }
+        }
+        if row_marks::deletion(&row.deleted_date).is_some() {
+            extra.insert("deleted".into(), "true".into());
+        }
+        if !row.edited_date.trim().is_empty() {
+            extra.insert("edited".into(), "true".into());
+            if let Some(secs) = parse_message_date(&row.edited_date, self.tz) {
+                extra.insert("edited_at_ms".into(), (secs * 1000).to_string());
+            }
+        }
+        extra
     }
 
     /// Deal with the files that no row names in each Messages chat directory:
@@ -935,6 +970,51 @@ impl ProjectionHooks for ImazingProjection<'_> {
         attachment_digests(msg)
     }
 
+    /// Every message is quotable by its second: a reply names the quoted
+    /// message by its Message Date, and iMazing writes whole seconds. Two
+    /// kept messages in one second name neither, as the projection rules.
+    fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
+        Some(msg.sort_key.to_string())
+    }
+
+    /// A row with a `Replying to` cell is a reply, linked to the message of
+    /// the same chat whose Message Date the cell quotes, whoever the cell
+    /// names as its sender: the name is not always the `Sender Name` as
+    /// written, so it is not compared. A cell with no date, or one that
+    /// names a second no row of the export has, is a reply with no link.
+    fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
+        msg.extra_flag("is_reply").then(|| PendingReply {
+            quoted_key: msg.extra_opt("reply_to_second"),
+        })
+    }
+
+    /// The reactions `row_marks` read from the row's `Reactions` cell, each
+    /// under its reactor's display name and no address.
+    fn reactions(&self, msg: &PendingMessage) -> Vec<Reaction> {
+        msg.extra_opt("reactions_json")
+            .map(|json| {
+                serde_json::from_str(&json).expect("reactions_json was written by row_marks")
+            })
+            .unwrap_or_default()
+    }
+
+    /// A row with a `Deleted Date` was deleted in Messages; never Unsent.
+    fn deletion(&self, msg: &PendingMessage) -> Option<Deletion> {
+        msg.extra_flag("deleted")
+            .then_some(Deletion::DeletedInSourceApp)
+    }
+
+    /// A row with an `Edited Date` has one earlier version, with no text:
+    /// iMazing writes the final text only.
+    fn edits(&self, msg: &PendingMessage) -> Vec<EarlierVersion> {
+        if !msg.extra_flag("edited") {
+            return Vec::new();
+        }
+        vec![row_marks::textless_edit(
+            msg.extra_str("edited_at_ms").parse().ok(),
+        )]
+    }
+
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
         // A message's attachments have different names: the row's file, and
         // a Live Photo video named as the picture with the video's extension.
@@ -985,17 +1065,15 @@ impl ProjectionHooks for ImazingProjection<'_> {
                 serde_json::Value::String(session_title.to_string()),
             );
         }
+        // The reactions, the reply, the deleted mark and the edit are the
+        // message's own fields, not vendor leftovers.
         for key in [
             "imazing_status",
             "imazing_type",
-            "reactions",
-            "replying_to",
             "forwarded",
             "attachment_info",
             "delivered_date",
             "read_date",
-            "edited_date",
-            "deleted_date",
             "sent_date",
         ] {
             let val = msg.extra_str(key);

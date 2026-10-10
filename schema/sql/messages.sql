@@ -249,9 +249,10 @@ CREATE TABLE IF NOT EXISTS tapbacks (
 CREATE INDEX IF NOT EXISTS ix_tapbacks_message_id ON tapbacks (message_id);
 
 -- One earlier version of one part of an edited message: the text that part
--- held before an edit replaced it. messages.body is the final version; these
--- are the versions before it. Search finds a message by any of them
--- (message_versions_fts in fts_virtual.sql).
+-- held before an edit replaced it, or only that an edit replaced it.
+-- messages.body is the final version; these are the versions before it.
+-- Search finds a message by any of them that has text (message_versions_fts
+-- in fts_virtual.sql).
 CREATE TABLE IF NOT EXISTS message_versions (
     -- Surrogate primary key; also the version's rowid in message_versions_fts.
     -- Ascending within a message in the order the source listed its versions,
@@ -261,8 +262,10 @@ CREATE TABLE IF NOT EXISTS message_versions (
     message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version. NULL when the source recorded the edit
+    -- and not the text it replaced, as iMazing does; such a version has no row
+    -- in message_versions_fts.
+    text TEXT,
     -- When this version was written, to the millisecond in the form
     -- messages.timestamp holds: the send time for the original, the edit's time for
     -- a later one. NULL when the source does not record it.

@@ -1,9 +1,9 @@
 ---
 title: Export structure
-description: The JSONL format Message Crate imports — schema version 12, one file per conversation.
+description: The JSONL format Message Crate imports — schema version 13, one file per conversation.
 ---
 
-Message Crate imports JSONL (JSON Lines) exports at schema version 12. Version 11 and older are refused, never upgraded. This page describes the format for CLI users and tool authors.
+Message Crate imports JSONL (JSON Lines) exports at schema version 13. Version 12 and older are refused, never upgraded. This page describes the format for CLI users and tool authors.
 
 ## Happy path
 

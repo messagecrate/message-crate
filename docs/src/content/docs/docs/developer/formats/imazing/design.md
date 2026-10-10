@@ -23,9 +23,10 @@ Discovery walks the selected path recursively without following directory symbol
 - WhatsApp for the same peer is a **separate** file (`…__whatsapp.csv` / matching stem suffix for other formats).
 - Notification rows keep `imazing_type=Notification` in `source_fields_json`; direction is emitted as `incoming`.
 - Vendor-lossy fields live in `source_fields_json` (not top-level CSV columns): `imazing_type`,
-  `imazing_status`, `replying_to`, `forwarded`, `attachment_info`, `reactions`, `delivered_date`,
-  `read_date`, `edited_date`, `deleted_date`, `sent_date`, plus `group_title` when the session
-  string is a display title.
+  `imazing_status`, `forwarded`, `attachment_info`, `delivered_date`, `read_date`, `sent_date`,
+  plus `group_title` when the session string is a display title. The `Reactions`,
+  `Replying to`, `Deleted Date` and `Edited Date` cells are the message's own fields instead
+  (see "Reactions, replies, deletions and edits").
 - `participants_json` is always written (unified header).
 - The shared dedupe step (`message_ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
   Rows of one conversation and one second that name one file, and that iMazing wrote different files for (`image0.jpg`, `image0 2.jpg`), are compared by the SHA-256 of each file instead, because their cell is the same.
@@ -133,6 +134,15 @@ A group message's sender comes only from its row. A received row with no `Sender
 WhatsApp `Chat Session` is a **title**, not a roster, so a WhatsApp group's members are the people who wrote.
 Non-senders are invisible in the CSV.
 
+## Reactions, replies, deletions and edits
+
+iMazing writes each of the four as text with no id, and the exporter reads what the text says and no more (`row_marks.rs`, [#2030](https://github.com/messagecrate/message-crate/issues/2030)). Measured on the maintainer's export of 83,079 rows on 2026-10-09.
+
+- **Reactions** (5,253 rows). The `Reactions` cell holds one reaction per line: the reactor's display name, the emoji, and the time they reacted, in the US `M/D/YYYY` form. No address. Each line becomes one reaction of the common message: part `0`, kind `emoji`, the emoji, and the name as written with no `reactor_identity`, so the server keeps it by name, as it keeps a WhatsApp reaction from an Android backup. The name is the text before the emoji, or after it when nothing comes before, or before the time when the line has no emoji. A line naming `Me`, what iMazing calls the account holder, is the holder's own (`is_from_me`). The time is read past, because a reaction carries none in the common message.
+- **Replies** (979 rows). The `Replying to` cell reads `↩ <sender>, <YYYY-MM-DD HH:MM:SS>: « <snippet> »`, and four rows have no sender before the date. The reply is linked to the message of the same chat session whose `Message Date` is the quoted date, which finds 975 of the 979; the sender is not compared, because the cell does not write it as `Sender Name` does. A cell whose date no row has, or that two kept rows share, is a reply with no link (`reply_to` with no `guid`). Both dates are read in the zone the Import form gives, so they compare as instants.
+- **Deletions** (90 rows). A row with a `Deleted Date` is Deleted in the source app. iMazing never says a message was unsent, so no row is Unsent.
+- **Edits** (539 rows). A row with an `Edited Date` carries the final text only. It gets one earlier version of part `0` with no text and the edit's time, which the web app shows as "Earlier version not in the backup" and search does not index.
+
 ## Validation matrix
 
 | Date | iMazing | Sample | Result |
@@ -145,7 +155,6 @@ Non-senders are invisible in the CSV.
 ## Future work (not yet implemented)
 
 - An optional owner phone number on the Import form to annotate the outgoing sender identity.
-- Structured parse of reactions / replies if a stable grammar is confirmed.
 
 ## Related docs
 

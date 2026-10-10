@@ -144,8 +144,9 @@ pub struct MessageRecord {
 pub struct EarlierVersionRecord {
     /// The part of the message this version belongs to.
     pub part_index: i64,
-    /// The part's text in this version.
-    pub text: String,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced, as iMazing does.
+    pub text: Option<String>,
     /// When this version was written, to the millisecond in the form
     /// `MessageRecord::timestamp` takes; `None` when the source does not
     /// record it.

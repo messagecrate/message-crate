@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the import client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-11
-//! file is not expected to match version 12 (version 11 did not say whether
-//! a message's time has milliseconds, so a time ending in `.000` could be
-//! either, and the import could not tell a whole-second copy of a message
-//! from a millisecond one), and the person should read "schema version 11",
-//! not a file that imports by other rules than its own.
+//! words, and refuses it before parsing the rest of the file: a version-12
+//! file is not expected to match version 13 (version 12 required the text of
+//! every earlier version, so a version-13 file whose earlier version has no
+//! text would fail to parse under version 12's rules rather than be refused
+//! by name), and the person should read "schema version 12", not a file that
+//! imports by other rules than its own.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -122,7 +122,21 @@ mod tests {
                 .to_string(),
             format!("This file is schema version 11; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 12);
+    }
+
+    /// Version 12 required the text of every earlier version; version 13
+    /// lets a source record an edit without the text it replaced, as iMazing
+    /// does. A version-12 file is refused by its version, never read by
+    /// rules that are not its own.
+    #[test]
+    fn refuses_a_version_12_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(r#"{"schema_version":12,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            format!("This file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
+        );
+        assert_eq!(SCHEMA_VERSION, 13);
     }
 
     #[test]

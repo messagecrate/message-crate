@@ -136,12 +136,12 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 edits: vec![
                     EarlierVersion {
                         part_index: 0,
-                        text: "helo imessage".into(),
+                        text: Some("helo imessage".into()),
                         edited_at_unix_ms: Some(1_400_773_261_000),
                     },
                     EarlierVersion {
                         part_index: 0,
-                        text: "hello imesage".into(),
+                        text: Some("hello imesage".into()),
                         edited_at_unix_ms: None,
                     },
                 ],

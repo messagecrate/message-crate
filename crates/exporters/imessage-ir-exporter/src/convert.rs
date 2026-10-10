@@ -1164,7 +1164,7 @@ mod tests {
         with_fields.reactions = vec![reaction.clone()];
         let earlier = message_ir::EarlierVersion {
             part_index: 0,
-            text: "hu".into(),
+            text: Some("hu".into()),
             edited_at_unix_ms: Some(1_609_459_200_000),
         };
         with_fields.edits = vec![earlier.clone()];
