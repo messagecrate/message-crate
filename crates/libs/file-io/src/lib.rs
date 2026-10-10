@@ -1,7 +1,8 @@
 //! File helpers that know nothing about conversations: the atomic, synced
-//! write every file Message Crate writes goes through ([`write_atomic`]), the
-//! synced rename for a file another program wrote ([`rename_into_place`]),
-//! and the streamed SHA-256 of a file ([`file_sha256`]).
+//! write that conversation files, staged attachments, exported Assets and
+//! journals go through ([`write_atomic`]), the synced rename for a file
+//! another program wrote ([`rename_into_place`]), and the streamed SHA-256
+//! of a file ([`file_sha256`]).
 //!
 //! They live in a leaf crate so attachment staging, media conversion, the
 //! journal, the export and import crates and the desktop app share one copy
