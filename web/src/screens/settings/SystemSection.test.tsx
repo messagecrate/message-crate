@@ -15,7 +15,7 @@ const toolsStatus = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
 const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
 const setStagingRoot = vi.hoisted(() => vi.fn());
-const openDataDirectory = vi.hoisted(() => vi.fn());
+const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
 const invokeSetOpenToNetwork = vi.hoisted(() => vi.fn());
@@ -38,7 +38,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   }),
   invokeSetStagingRoot: (root: string) => setStagingRoot(root),
   invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
-  invokeOpenDataDirectory: () => openDataDirectory(),
+  invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
   invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
 }));
 
@@ -101,15 +101,15 @@ describe("SystemSection", () => {
   });
 
   it("opens the data directory of the app's own Message Crate", async () => {
-    openDataDirectory.mockResolvedValue(undefined);
+    invokeOpenDataDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
     const user = setupUser();
     await user.click(await screen.findByRole("button", { name: "Open data directory" }));
-    expect(openDataDirectory).toHaveBeenCalledTimes(1);
+    expect(invokeOpenDataDirectory).toHaveBeenCalledTimes(1);
   });
 
   it("says why the data directory could not be opened", async () => {
-    openDataDirectory.mockRejectedValue(new Error("Could not open /data"));
+    invokeOpenDataDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
     const user = setupUser();
     await user.click(await screen.findByRole("button", { name: "Open data directory" }));
