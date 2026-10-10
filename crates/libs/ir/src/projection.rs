@@ -91,7 +91,7 @@ pub trait ProjectionHooks {
 
     /// Vendor leftovers for one message. The projection applies
     /// [`IrSource::into_option`], so an empty bag becomes `None`.
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource;
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource;
 
     /// Normalize a raw non-owner sender handle (e.g. guard phone digits).
     /// The default keeps the handle as-is.
@@ -196,18 +196,22 @@ pub trait ProjectionHooks {
     /// Roster written on the document. The default is
     /// [`default_participants`]: `participant_e164s` with display names
     /// gathered from the messages, plus the single-peer chat-id fallback.
-    fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
-        default_participants(chat_id, convo, &|raw| self.normalize_handle(raw))
+    fn participants(
+        &self,
+        chat_id: &str,
+        conversation: &PendingConversation,
+    ) -> Vec<IrParticipant> {
+        default_participants(chat_id, conversation, &|raw| self.normalize_handle(raw))
     }
 
     /// Group display title written on the document; the default writes none
     /// (Android group titles are stored as data, not used for filenames).
-    fn group_title(&self, _convo: &PendingConversation) -> Option<String> {
+    fn group_title(&self, _conversation: &PendingConversation) -> Option<String> {
         None
     }
 
     /// On-disk stem suffix (e.g. `__whatsapp`); the default has none.
-    fn packaging_stem_suffix(&self, _convo: &PendingConversation) -> Option<String> {
+    fn packaging_stem_suffix(&self, _conversation: &PendingConversation) -> Option<String> {
         None
     }
 }
@@ -250,14 +254,14 @@ struct Prepared {
 /// its report.
 pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     chat_id: &str,
-    convo: &PendingConversation,
+    conversation: &PendingConversation,
     hooks: &H,
 ) -> (ConversationDocument, ProjectionTally) {
     let export = hooks.export();
     let (owner_sender_identity, owner_sender_display) = owner_sender(&export);
     let unit = hooks.sort_key_unit();
 
-    let prepared: Vec<Prepared> = convo
+    let prepared: Vec<Prepared> = conversation
         .messages
         .iter()
         .map(|msg| {
@@ -272,7 +276,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             }
         })
         .collect();
-    let copies: Vec<MessageCopy<'_>> = convo
+    let copies: Vec<MessageCopy<'_>> = conversation
         .messages
         .iter()
         .zip(&prepared)
@@ -289,10 +293,10 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     let kept = one_copy_per_message(&copies);
 
     let mut tally = ProjectionTally::default();
-    let mut messages = Vec::with_capacity(convo.messages.len());
+    let mut messages = Vec::with_capacity(conversation.messages.len());
     let mut replies: Vec<(usize, PendingReply)> = Vec::new();
     let mut guid_by_reply_key: HashMap<String, Option<String>> = HashMap::new();
-    for ((msg, p), kept) in convo.messages.iter().zip(&prepared).zip(kept) {
+    for ((msg, p), kept) in conversation.messages.iter().zip(&prepared).zip(kept) {
         let Some((timestamp_unix_ms, time_precision)) = kept else {
             tally.duplicates += 1;
             continue;
@@ -361,7 +365,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             // Linked below, once every guid is known.
             reply_to: None,
             imessage: None,
-            source: hooks.source(convo, msg).into_option(),
+            source: hooks.source(conversation, msg).into_option(),
         });
     }
     for (index, reply) in replies {
@@ -386,17 +390,17 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         export,
         conversation: ConversationMeta {
             chat_identifier: chat_id.to_string(),
-            conversation_type: if convo.is_group {
+            conversation_type: if conversation.is_group {
                 IrConversationType::Group
             } else {
                 IrConversationType::Individual
             },
-            group_title: hooks.group_title(convo),
-            participants: hooks.participants(chat_id, convo),
+            group_title: hooks.group_title(conversation),
+            participants: hooks.participants(chat_id, conversation),
             stats: ConversationStats::default(),
         },
         messages,
-        packaging_stem_suffix: hooks.packaging_stem_suffix(convo),
+        packaging_stem_suffix: hooks.packaging_stem_suffix(conversation),
     };
     (doc, tally)
 }
@@ -406,21 +410,21 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 /// `normalize_handle` maps a raw sender handle onto the same form the
 /// participant roster uses (e.g. guarded phone normalization).
 pub fn display_names_for_handles(
-    convo: &PendingConversation,
+    conversation: &PendingConversation,
     normalize_handle: &dyn Fn(&str) -> String,
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
-    for msg in &convo.messages {
+    for msg in &conversation.messages {
         if !msg.sender_identity.is_empty() {
             let handle = normalize_handle(&msg.sender_identity);
             if let Some(name) = msg.sender_display_name.as_deref().and_then(crate::trimmed) {
                 names.entry(handle).or_insert_with(|| name.to_string());
             }
         }
-        if !convo.is_group {
+        if !conversation.is_group {
             let name = msg.extra_str("contact_name").trim();
             if !name.is_empty() {
-                for peer in &convo.participant_e164s {
+                for peer in &conversation.participant_e164s {
                     names
                         .entry(peer.clone())
                         .or_insert_with(|| name.to_string());
@@ -438,11 +442,11 @@ pub fn display_names_for_handles(
 /// participant made from its key would make it a person.
 pub fn default_participants(
     chat_id: &str,
-    convo: &PendingConversation,
+    conversation: &PendingConversation,
     normalize_handle: &dyn Fn(&str) -> String,
 ) -> Vec<IrParticipant> {
-    let name_by_handle = display_names_for_handles(convo, normalize_handle);
-    let mut participants: Vec<IrParticipant> = convo
+    let name_by_handle = display_names_for_handles(conversation, normalize_handle);
+    let mut participants: Vec<IrParticipant> = conversation
         .participant_e164s
         .iter()
         .filter(|h| !h.is_empty())
@@ -452,7 +456,7 @@ pub fn default_participants(
         })
         .collect();
     if participants.is_empty()
-        && !convo.is_group
+        && !conversation.is_group
         && !chat_id.is_empty()
         && chat_id != crate::NAMELESS_CHAT_ID
     {
@@ -462,7 +466,7 @@ pub fn default_participants(
             // as an identity.
             participants.push(IrParticipant {
                 identity: None,
-                display_name: convo.first_contact_name(),
+                display_name: conversation.first_contact_name(),
             });
         } else {
             participants.push(IrParticipant {
@@ -470,7 +474,7 @@ pub fn default_participants(
                 display_name: name_by_handle
                     .get(chat_id)
                     .cloned()
-                    .or_else(|| convo.first_contact_name()),
+                    .or_else(|| conversation.first_contact_name()),
             });
         }
     }
@@ -502,13 +506,13 @@ pub fn ensure_conversation<'a>(
 /// Returns `(any_messages_remain, skipped_invalid_date_count)`; the caller
 /// folds the skipped count into its report.
 pub fn prepare_conversation(
-    convo: &mut PendingConversation,
+    conversation: &mut PendingConversation,
     cmp: impl FnMut(&PendingMessage, &PendingMessage) -> std::cmp::Ordering,
     to_secs: impl Fn(i64) -> i64,
 ) -> (bool, u64) {
-    convo.messages.sort_by(cmp);
+    conversation.messages.sort_by(cmp);
     let mut skipped = 0u64;
-    convo.messages.retain(|m| {
+    conversation.messages.retain(|m| {
         if format_local_ts(to_secs(m.sort_key)).is_some() {
             true
         } else {
@@ -516,8 +520,11 @@ pub fn prepare_conversation(
             false
         }
     });
-    convo.has_attachments = convo.messages.iter().any(|m| !m.attachments.is_empty());
-    (!convo.messages.is_empty(), skipped)
+    conversation.has_attachments = conversation
+        .messages
+        .iter()
+        .any(|m| !m.attachments.is_empty());
+    (!conversation.messages.is_empty(), skipped)
 }
 
 #[cfg(test)]
@@ -542,7 +549,7 @@ mod tests {
             IrService::Sms
         }
 
-        fn source(&self, _convo: &PendingConversation, _msg: &PendingMessage) -> IrSource {
+        fn source(&self, _conversation: &PendingConversation, _msg: &PendingMessage) -> IrSource {
             IrSource::default()
         }
     }
@@ -577,7 +584,7 @@ mod tests {
             IrService::Whatsapp
         }
 
-        fn source(&self, _convo: &PendingConversation, _msg: &PendingMessage) -> IrSource {
+        fn source(&self, _conversation: &PendingConversation, _msg: &PendingMessage) -> IrSource {
             IrSource::default()
         }
 
@@ -607,9 +614,9 @@ mod tests {
     /// message that is not a reply has none.
     #[test]
     fn a_reply_links_only_to_the_one_message_with_its_key() {
-        let mut convo =
+        let mut conversation =
             PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
-        convo.messages = vec![
+        conversation.messages = vec![
             keyed(1_609_459_200, "quoted", "K1", None),
             keyed(1_609_459_201, "twin a", "K2", None),
             keyed(1_609_459_202, "twin b", "K2", None),
@@ -620,7 +627,7 @@ mod tests {
             keyed(1_609_459_207, "itself", "K7", Some("K7")),
         ];
 
-        let (doc, _) = pending_to_document("+15555550122", &convo, &KeyedHooks);
+        let (doc, _) = pending_to_document("+15555550122", &conversation, &KeyedHooks);
         let reply_of = |text: &str| {
             doc.messages
                 .iter()
@@ -646,14 +653,14 @@ mod tests {
 
     #[test]
     fn projects_owner_sender_and_tallies_directions() {
-        let mut convo =
+        let mut conversation =
             PendingConversation::new("+15555550122", false, None, vec!["+15555550122".into()]);
-        convo.messages = vec![
+        conversation.messages = vec![
             msg(1_609_459_200, false, "hi"),
             msg(1_609_459_260, true, "yo"),
         ];
 
-        let (doc, tally) = pending_to_document("+15555550122", &convo, &TestHooks);
+        let (doc, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
         assert_eq!(tally.messages, 2);
         assert_eq!(tally.sent, 1);
         assert_eq!(tally.received, 1);
@@ -682,14 +689,14 @@ mod tests {
 
     #[test]
     fn single_peer_fallback_uses_chat_id_and_contact_name() {
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
         let mut m = msg(1_609_459_200, false, "hi");
         m.sender_identity = String::new();
         m.sender_display_name = None;
         m.extra.insert("contact_name".into(), "Bob".into());
-        convo.messages = vec![m];
+        conversation.messages = vec![m];
 
-        let (doc, _) = pending_to_document("+15555550122", &convo, &TestHooks);
+        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
         assert_eq!(doc.conversation.participants.len(), 1);
         assert_eq!(
             doc.conversation.participants[0].identity.as_deref(),
@@ -705,12 +712,13 @@ mod tests {
     /// becomes a participant, whom the server would make a contact (#1591).
     #[test]
     fn the_conversation_that_names_nobody_has_no_fallback_participant() {
-        let mut convo = PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
+        let mut conversation =
+            PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
         let mut m = msg(1_609_459_200, true, "hi");
         m.sender_identity = String::new();
-        convo.messages = vec![m];
+        conversation.messages = vec![m];
 
-        let (doc, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &convo, &TestHooks);
+        let (doc, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &conversation, &TestHooks);
         assert!(
             doc.conversation.participants.is_empty(),
             "{:?}",
@@ -731,16 +739,16 @@ mod tests {
         let same = |raw: &str| raw.to_string();
         let peer = "+15555550122".to_string();
 
-        let mut convo = PendingConversation::new(&peer, false, None, vec![peer.clone()]);
-        convo.messages = vec![named(" Bob ")];
+        let mut conversation = PendingConversation::new(&peer, false, None, vec![peer.clone()]);
+        conversation.messages = vec![named(" Bob ")];
         assert_eq!(
-            display_names_for_handles(&convo, &same),
+            display_names_for_handles(&conversation, &same),
             HashMap::from([(peer.clone(), "Bob".to_string())])
         );
 
-        convo.messages = vec![named("  ")];
+        conversation.messages = vec![named("  ")];
         assert!(
-            display_names_for_handles(&convo, &same).is_empty(),
+            display_names_for_handles(&conversation, &same).is_empty(),
             "a blank name names nobody"
         );
 
@@ -759,18 +767,18 @@ mod tests {
 
     #[test]
     fn prepare_conversation_sorts_prunes_and_counts() {
-        let mut convo = PendingConversation::new("x", false, None, Vec::new());
-        convo.messages = vec![
+        let mut conversation = PendingConversation::new("x", false, None, Vec::new());
+        conversation.messages = vec![
             msg(1_609_459_260, true, "later"),
             msg(i64::MAX, false, "unrepresentable"),
             msg(1_609_459_200, false, "earlier"),
         ];
         let (keep, skipped) =
-            prepare_conversation(&mut convo, |a, b| a.sort_key.cmp(&b.sort_key), |k| k);
+            prepare_conversation(&mut conversation, |a, b| a.sort_key.cmp(&b.sort_key), |k| k);
         assert!(keep);
         assert_eq!(skipped, 1);
-        assert_eq!(convo.messages.len(), 2);
-        assert_eq!(convo.messages[0].text, "earlier");
+        assert_eq!(conversation.messages.len(), 2);
+        assert_eq!(conversation.messages[0].text, "earlier");
     }
 
     /// Hooks whose sort keys are milliseconds, as WhatsApp's are.
@@ -785,8 +793,8 @@ mod tests {
             TestHooks.service(msg)
         }
 
-        fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
-            TestHooks.source(convo, msg)
+        fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
+            TestHooks.source(conversation, msg)
         }
 
         fn sort_key_unit(&self) -> SortKeyUnit {
@@ -805,10 +813,10 @@ mod tests {
 
     #[test]
     fn millisecond_sort_keys_keep_their_milliseconds() {
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-        convo.messages = vec![msg(1_609_459_200_123, false, "hi")];
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
+        conversation.messages = vec![msg(1_609_459_200_123, false, "hi")];
 
-        let (doc, _) = pending_to_document("+15555550122", &convo, &MillisecondHooks);
+        let (doc, _) = pending_to_document("+15555550122", &conversation, &MillisecondHooks);
         assert_eq!(doc.messages[0].timestamp_unix_ms, 1_609_459_200_123);
         // The GUID is built from the message's millisecond.
         let guid = MessageGuid::new(&MessageIdentity {
@@ -839,9 +847,10 @@ mod tests {
             size_bytes: None,
         }];
         for order in [vec![xml.clone(), pdu.clone()], vec![pdu, xml]] {
-            let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-            convo.messages = order;
-            let (doc, tally) = pending_to_document("+15555550122", &convo, &TestHooks);
+            let mut conversation =
+                PendingConversation::new("+15555550122", false, None, Vec::new());
+            conversation.messages = order;
+            let (doc, tally) = pending_to_document("+15555550122", &conversation, &TestHooks);
             assert_eq!(doc.messages.len(), 1);
             assert_eq!(tally.duplicates, 1);
             assert_eq!(tally.messages, 1);
@@ -863,22 +872,22 @@ mod tests {
             }];
             m
         };
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-        convo.messages = vec![photo(&"a".repeat(64)), photo(&"b".repeat(64))];
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
+        conversation.messages = vec![photo(&"a".repeat(64)), photo(&"b".repeat(64))];
 
-        let (doc, _) = pending_to_document("+15555550122", &convo, &TestHooks);
+        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
         assert_ne!(doc.messages[0].guid, doc.messages[1].guid);
     }
 
     #[test]
     fn p1_1_two_senders_same_second_same_text_get_their_own_guids() {
-        let mut convo = PendingConversation::new("group-1", true, None, Vec::new());
+        let mut conversation = PendingConversation::new("group-1", true, None, Vec::new());
         let mut alice = msg(1_609_459_200, false, "lol");
         alice.sender_identity = "+15555550122".into();
         let mut bob = msg(1_609_459_200, false, "lol");
         bob.sender_identity = "+15555550133".into();
-        convo.messages = vec![alice, bob];
-        let (doc, _) = pending_to_document("group-1", &convo, &TestHooks);
+        conversation.messages = vec![alice, bob];
+        let (doc, _) = pending_to_document("group-1", &conversation, &TestHooks);
         assert_eq!(doc.messages.len(), 2);
         assert_ne!(
             doc.messages[0].guid, doc.messages[1].guid,
@@ -890,9 +899,9 @@ mod tests {
     #[test]
     #[ignore = "run by p1_2_guid_does_not_depend_on_the_computer_time_zone"]
     fn p1_2_child_print_guid() {
-        let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
-        convo.messages = vec![msg(1_609_459_200, false, "hi")];
-        let (doc, _) = pending_to_document("+15555550122", &convo, &TestHooks);
+        let mut conversation = PendingConversation::new("+15555550122", false, None, Vec::new());
+        conversation.messages = vec![msg(1_609_459_200, false, "hi")];
+        let (doc, _) = pending_to_document("+15555550122", &conversation, &TestHooks);
         println!("GUID={}", doc.messages[0].guid);
     }
 

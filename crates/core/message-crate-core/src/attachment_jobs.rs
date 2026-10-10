@@ -275,12 +275,12 @@ pub fn attachment_jobs<'a>(
 ) -> Vec<AttachmentJob<'a>> {
     let mut jobs = Vec::new();
     for msg in messages {
-        let ts = msg.timestamp_unix_ms;
+        let timestamp_unix_ms = msg.timestamp_unix_ms;
         for att in &mut msg.attachments {
             let hint = attachment_size_hint(att);
             jobs.push(AttachmentJob {
                 attachment: att,
-                timestamp_unix_ms: ts,
+                timestamp_unix_ms,
                 size_hint: hint,
             });
         }
