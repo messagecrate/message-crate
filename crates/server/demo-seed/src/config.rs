@@ -160,27 +160,28 @@ pub struct OneToOneConfig {
     pub one_to_one_fraction: f64,
 }
 
-/// The `[groups]` section: how many groups each contact joins, how many
-/// people each group holds, and how many messages a year it gets.
+/// The `[groups]` section: how many group conversations each contact joins,
+/// how many people each one holds, and how many messages a year it gets.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GroupsConfig {
-    /// Mean of the group budget drawn for each contact with messages that is
-    /// not one-to-one only. The draw is clamped to `per_contact_min` and
-    /// `per_contact_max`. A one-to-one-only contact gets a budget of 0, or of
-    /// at most 2 in 15% of cases, and a contact with no messages gets 0.
-    /// Filling a group that is still short can put a contact past its budget.
+    /// Mean of the budget of group conversations drawn for each contact with
+    /// messages that is not one-to-one only. The draw is clamped to
+    /// `per_contact_min` and `per_contact_max`. A one-to-one-only contact gets
+    /// a budget of 0, or of at most 2 in 15% of cases. A contact with no
+    /// messages gets 0. Filling a group conversation that is still short can
+    /// put a contact past its budget.
     pub per_contact_mean: f64,
-    /// Smallest group budget drawn; see `per_contact_mean`.
+    /// Smallest budget of group conversations drawn. See `per_contact_mean`.
     pub per_contact_min: u32,
-    /// Largest group budget drawn; see `per_contact_mean`.
+    /// Largest budget of group conversations drawn. See `per_contact_mean`.
     pub per_contact_max: u32,
-    /// Mean size aimed for in a group that is not large.
+    /// Mean size aimed for in a group conversation that is not large.
     pub participants_mean: f64,
-    /// Smallest size aimed for in a group that is not large. A group of
-    /// contacts that runs short of candidates can end with as few as 2.
+    /// Smallest size aimed for in a group conversation that is not large. One
+    /// of contacts that runs short of candidates can end with as few as 2.
     pub participants_min: u32,
-    /// Largest size aimed for in a group that is not large.
+    /// Largest size aimed for in a group conversation that is not large.
     pub participants_max: u32,
     /// At least this many groups must have a participant count between
     /// `large_participants_min` and `large_participants_max`.
@@ -205,8 +206,9 @@ pub struct GroupsConfig {
     pub span_mean_years: f64,
     /// As [`OneToOneConfig::span_max_years`], for a group.
     pub span_max_years: f64,
-    /// Chance that a group made after the large ones has phone numbers with no
-    /// contact behind them as its members. A large group is never phone-only.
+    /// Chance that a group conversation made after the large ones has phone
+    /// numbers with no contact behind them as its members. A large group
+    /// conversation is never phone-only.
     pub phone_only_fraction: f64,
 }
 

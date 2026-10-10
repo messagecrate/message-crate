@@ -19,8 +19,9 @@ pub const OWNER_EMAIL: &str = "demo.ingest@example.com";
 /// Which conversations a contact appears in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageScope {
-    /// A one-to-one conversation. The contact joins a group only rarely: up
-    /// to two groups, in 15% of cases.
+    /// A one-to-one conversation. The contact gets a budget of group
+    /// conversations only rarely: up to two, in 15% of cases. Filling a group
+    /// conversation that is still short can add the contact anyway.
     OneToOne,
     /// Group conversations only, with no one-to-one conversation.
     Group,

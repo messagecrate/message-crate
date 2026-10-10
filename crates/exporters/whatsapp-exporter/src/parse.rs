@@ -26,7 +26,7 @@ pub(crate) struct ChatJson {
     pub messages: BTreeMap<String, MessageJson>,
     /// On a group, one entry per person the backup has a member row for,
     /// the owner of the phone included where the backup has one. `null`
-    /// on any other chat, and on a group whose member table was absent or
+    /// on any other conversation, and on a group whose member table was absent or
     /// unreadable. An empty list means the table was read and holds no row
     /// for the group.
     #[serde(default)]
