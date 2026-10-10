@@ -148,14 +148,14 @@ mod tests {
         assert_eq!(probe.bitrate, 9_000_000);
     }
 
-    /// Write a short H.264 clip of `size` (`WxH`) at 25 fps to `path`.
-    fn make_h264_clip(path: &Path, size: &str) {
+    /// Write a short H.264 clip, `width` by `height` pixels at 25 fps, to `path`.
+    fn make_h264_clip(path: &Path, width: u32, height: u32) {
         let args: Vec<String> = [
             "-y",
             "-f",
             "lavfi",
             "-i",
-            &format!("testsrc={size}:rate=25"),
+            &format!("testsrc=size={width}x{height}:rate=25"),
             "-frames:v",
             "5",
             "-pix_fmt",
@@ -184,7 +184,7 @@ mod tests {
         };
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("clip.mp4");
-        make_h264_clip(&path, "size=64x48");
+        make_h264_clip(&path, 64, 48);
 
         let probe = probe_media(&path).expect("probe the generated fixture");
         assert_eq!(probe.codec, "h264");
@@ -212,7 +212,7 @@ mod tests {
         // ffmpeg is handed its output name as text, so the clip is made
         // under a UTF-8 name and then renamed.
         let made = dir.path().join("clip.mp4");
-        make_h264_clip(&made, "size=32x24");
+        make_h264_clip(&made, 32, 24);
         let path = dir.path().join(OsStr::from_bytes(b"clip-\xff.mp4"));
         std::fs::rename(&made, &path).unwrap();
 
