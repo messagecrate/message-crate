@@ -280,11 +280,7 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
         .write(tmp.path(), &[imessage, sms, whatsapp], &mut report)
         .unwrap();
 
-    let directories: Vec<String> = fs::read_dir(tmp.path())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(directories, ["+15555550101"]);
+    assert_eq!(entry_names(tmp.path()), ["+15555550101"]);
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 3);
 }
 
