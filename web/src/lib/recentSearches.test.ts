@@ -1,27 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installMemoryStorage } from "../test/localStorage.ts";
 import { setAccountId } from "./api.ts";
 import { clearRecentSearches, loadRecentSearches, pushRecentSearch } from "./recentSearches.ts";
 import { accountKey } from "./storage.ts";
 
-const mem = new Map<string, string>();
+let storage: Storage;
 
 beforeEach(() => {
-  mem.clear();
-  const store: Storage = {
-    getItem: (k) => mem.get(k) ?? null,
-    setItem: (k, v) => {
-      mem.set(k, String(v));
-    },
-    removeItem: (k) => {
-      mem.delete(k);
-    },
-    clear: () => mem.clear(),
-    key: () => null,
-    length: 0,
-  };
-  // The node environment has no window. lib/storage.ts reads window.localStorage.
-  vi.stubGlobal("localStorage", store);
-  vi.stubGlobal("window", { localStorage: store });
+  storage = installMemoryStorage();
   setAccountId(1);
 });
 
@@ -33,7 +19,7 @@ afterEach(() => {
 describe("recentSearches", () => {
   it("returns empty for missing or corrupt JSON", () => {
     expect(loadRecentSearches("contact")).toEqual([]);
-    mem.set(accountKey(1, "contact-recent-searches"), "{not-json");
+    storage.setItem(accountKey(1, "contact-recent-searches"), "{not-json");
     expect(loadRecentSearches("contact")).toEqual([]);
   });
 

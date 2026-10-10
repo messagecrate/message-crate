@@ -38,8 +38,3 @@ export function messageRowText(message: Message): string {
     .filter((name): name is string => Boolean(name))
     .join(", ");
 }
-
-/** The Messages list's total: "1 message", "12,408 messages". */
-export function messageCount(total: number): string {
-  return total === 1 ? "1 message" : `${total.toLocaleString()} messages`;
-}
