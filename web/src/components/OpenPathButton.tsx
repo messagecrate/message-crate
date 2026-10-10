@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import { errorText } from "../lib/apiErrorMessage";
 import { openPathInExplorer } from "../lib/openPath";
 import PlainButton from "./PlainButton";
 
@@ -19,7 +20,7 @@ export default function OpenPathButton({ path, children, className, title }: Ope
     try {
       await openPathInExplorer(path);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
+      const message = errorText(caught);
       setError(message || "Could not open path");
       console.error("Failed to open path", caught);
     }

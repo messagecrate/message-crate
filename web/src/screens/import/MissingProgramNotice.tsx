@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Button from "../../components/Button";
+import { errorText } from "../../lib/apiErrorMessage";
 import type { ToolName, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
 import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
@@ -100,8 +101,7 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
       ) : null}
       {retry.isError ? (
         <span role="alert" className="text-[0.813rem] text-danger">
-          The download didn't start.{" "}
-          {retry.error instanceof Error ? retry.error.message : String(retry.error)}
+          The download didn't start. {errorText(retry.error)}
         </span>
       ) : null}
     </div>
