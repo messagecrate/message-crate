@@ -105,6 +105,15 @@ pub(crate) struct SkippedEmptyPduDetail {
     pub pdu_filename: String,
 }
 
+impl SkippedCsv<1> for SkippedEmptyPduDetail {
+    const FILE_NAME: &str = "skipped_empty_pdu.csv";
+    const HEADER: [&str; 1] = ["pdu_filename"];
+
+    fn row(&self) -> [String; 1] {
+        [self.pdu_filename.clone()]
+    }
+}
+
 /// Diagnostic row for a PDU whose every address is the owner's.
 #[derive(Debug, Clone)]
 pub(crate) struct SkippedNoPartyDetail {
@@ -112,6 +121,52 @@ pub(crate) struct SkippedNoPartyDetail {
     pub sender: String,
     pub recipients: String,
     pub is_sent: bool,
+}
+
+impl SkippedCsv<4> for SkippedNoPartyDetail {
+    const FILE_NAME: &str = "skipped_no_party.csv";
+    const HEADER: [&str; 4] = ["pdu_filename", "sender", "recipients", "is_sent"];
+
+    fn row(&self) -> [String; 4] {
+        [
+            self.pdu_filename.clone(),
+            self.sender.clone(),
+            self.recipients.clone(),
+            if self.is_sent { "1" } else { "0" }.to_owned(),
+        ]
+    }
+}
+
+impl SkippedCsv<6> for SkippedBadAddrDetail {
+    const FILE_NAME: &str = "skipped_invalid_address.csv";
+    const HEADER: [&str; 6] = [
+        "xml_file",
+        "address",
+        "contact_name",
+        "android_type",
+        "date_ms",
+        "body",
+    ];
+
+    fn row(&self) -> [String; 6] {
+        [
+            self.xml_file.clone(),
+            self.address.clone(),
+            self.contact_name.clone(),
+            self.android_type.clone(),
+            self.date_ms.clone(),
+            self.body.clone(),
+        ]
+    }
+}
+
+/// A skipped-row type and the CSV file that lists it: its name, its header, and one row per
+/// item. `N` is the column count, so the header and the row cannot differ in width.
+trait SkippedCsv<const N: usize> {
+    const FILE_NAME: &str;
+    const HEADER: [&str; N];
+
+    fn row(&self) -> [String; N];
 }
 
 /// Append parsed XML SMS rows to pending conversations.
@@ -490,13 +545,13 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         &mut report,
     )?;
 
-    write_skipped_invalid_address_csv(
+    write_skipped_csv(
         &output_dir,
         &skips.invalid_address,
         skips.invalid_address_more,
     )?;
-    write_skipped_empty_pdu_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
-    write_skipped_no_party_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
+    write_skipped_csv(&output_dir, &skips.empty_pdu, skips.empty_pdu_more)?;
+    write_skipped_csv(&output_dir, &skips.no_party, skips.no_party_more)?;
 
     Ok(report)
 }
@@ -614,99 +669,31 @@ fn remove_if_exists(path: &Path) {
     }
 }
 
-/// Write `skipped_invalid_address.csv` (or remove a stale one) listing rows dropped for an unusable address.
-fn write_skipped_invalid_address_csv(
+/// Write `T`'s file in `output_dir` (or remove a stale one) with its header and one row per item
+/// of `details`. When `more` entries were left out, a last row says so in its final column,
+/// padded with empty columns to the header's width.
+fn write_skipped_csv<const N: usize, T: SkippedCsv<N>>(
     output_dir: &Path,
-    details: &[SkippedBadAddrDetail],
+    details: &[T],
     more: u64,
 ) -> Result<()> {
-    let path = output_dir.join("skipped_invalid_address.csv");
+    let path = output_dir.join(T::FILE_NAME);
     if details.is_empty() && more == 0 {
         remove_if_exists(&path);
         return Ok(());
     }
     let mut wtr =
         csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record([
-        "xml_file",
-        "address",
-        "contact_name",
-        "android_type",
-        "date_ms",
-        "body",
-    ])?;
+    wtr.write_record(T::HEADER)?;
     for d in details {
-        wtr.write_record([
-            d.xml_file.as_str(),
-            d.address.as_str(),
-            d.contact_name.as_str(),
-            d.android_type.as_str(),
-            d.date_ms.as_str(),
-            d.body.as_str(),
-        ])?;
+        wtr.write_record(d.row())?;
     }
     if more > 0 {
-        wtr.write_record([
-            "",
-            "",
-            "",
-            "",
-            "",
-            &format!("...and {more} more entries not shown"),
-        ])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_empty_pdu.csv` (or remove a stale one) listing stub PDU files.
-fn write_skipped_empty_pdu_csv(
-    output_dir: &Path,
-    details: &[SkippedEmptyPduDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_empty_pdu.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename"])?;
-    for d in details {
-        wtr.write_record([d.pdu_filename.as_str()])?;
-    }
-    if more > 0 {
-        wtr.write_record([&format!("...and {more} more entries not shown")])?;
-    }
-    wtr.flush()?;
-    Ok(())
-}
-
-/// Write `skipped_no_party.csv` (or remove a stale one) listing MMS with no non-owner participant.
-fn write_skipped_no_party_csv(
-    output_dir: &Path,
-    details: &[SkippedNoPartyDetail],
-    more: u64,
-) -> Result<()> {
-    let path = output_dir.join("skipped_no_party.csv");
-    if details.is_empty() && more == 0 {
-        remove_if_exists(&path);
-        return Ok(());
-    }
-    let mut wtr =
-        csv::Writer::from_path(&path).with_context(|| format!("create {}", path.display()))?;
-    wtr.write_record(["pdu_filename", "sender", "recipients", "is_sent"])?;
-    for d in details {
-        wtr.write_record([
-            d.pdu_filename.as_str(),
-            d.sender.as_str(),
-            d.recipients.as_str(),
-            if d.is_sent { "1" } else { "0" },
-        ])?;
-    }
-    if more > 0 {
-        wtr.write_record(["", "", "", &format!("...and {more} more entries not shown")])?;
+        let mut row: [String; N] = std::array::from_fn(|_| String::new());
+        if let Some(last) = row.last_mut() {
+            *last = format!("...and {more} more entries not shown");
+        }
+        wtr.write_record(&row)?;
     }
     wtr.flush()?;
     Ok(())
