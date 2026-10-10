@@ -6,6 +6,7 @@ import ContactLabel from "../components/ContactLabel";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { contactLabelText } from "../lib/contactLabel";
 import { isNearEnd } from "../lib/listPaging";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList, useRouteQuery } from "../lib/routeQuery";
 import { unsupportedFieldWords, useSearchFields } from "../lib/searchFields";
@@ -91,10 +92,6 @@ function notSearchWords(words: readonly string[]): string {
 function appliesOnlyTo(words: readonly string[], list: "contacts" | "conversations"): string {
   const verb = words.length === 1 ? "applies" : "apply";
   return `${words.map((w) => `${w}:`).join(", ")} ${verb} to ${list} only`;
-}
-
-function plural(count: number, noun: string, many = `${noun}s`): string {
-  return `${count} ${count === 1 ? noun : many}`;
 }
 
 export default function TrashScreen() {
@@ -336,7 +333,7 @@ export default function TrashScreen() {
               </div>
             ) : (
               <div className="text-[0.875rem] text-muted">
-                {plural(total, "conversation")}
+                {countOf(total, "conversation")}
                 {searching ? " matching this search" : ""} in Trash. Select one on the left to view
                 it.
               </div>
@@ -366,7 +363,7 @@ export default function TrashScreen() {
             ) : (
               <>
                 <div className="mb-2 text-[0.875rem] text-muted">
-                  {plural(contactTotal, "contact")}
+                  {countOf(contactTotal, "contact")}
                   {searching ? " matching this search" : ""} in Trash
                   {moreContacts ? `, ${contacts.length} shown` : ""}.
                 </div>
@@ -393,7 +390,7 @@ export default function TrashScreen() {
                             <ContactLabel name={contact.name} addresses={contact.addresses} />
                           </div>
                           <div className="text-[0.75rem] text-muted">
-                            {plural(contact.identity_count, "identity", "identities")}
+                            {countOf(contact.identity_count, "identity", "identities")}
                           </div>
                         </div>
                         <div className="flex items-center gap-2">
@@ -445,7 +442,7 @@ export default function TrashScreen() {
         title="Delete this conversation?"
         body={
           pending?.kind === "conversation"
-            ? `Deletes ${pending.name} and its ${plural(pending.messageCount, "message")} from your Message Crate. Attachments only these messages use go with them.`
+            ? `Deletes ${pending.name} and its ${countOf(pending.messageCount, "message")} from your Message Crate. Attachments only these messages use go with them.`
             : ""
         }
         confirmLabel="Delete"
@@ -504,7 +501,7 @@ function SelectedConversation({
     <div className="rounded border border-border bg-elevated p-4">
       <div className="mb-1 text-[0.938rem] font-semibold text-text">{name}</div>
       <div className="mb-3 text-[0.75rem] text-muted">
-        {plural(conversation.message_count, "message")}
+        {countOf(conversation.message_count, "message")}
       </div>
       {restoreConversation.error && (
         <div className={errorBox}>
