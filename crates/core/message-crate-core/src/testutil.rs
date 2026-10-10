@@ -444,22 +444,18 @@ pub fn with_directory_mode<T>(
 
     fs::set_permissions(directory, fs::Permissions::from_mode(mode))
         .expect("set the directory's mode");
-    let got_past = match probe {
-        DirectoryProbe::List => fs::read_dir(directory).is_ok(),
+    let (got_past, verb) = match probe {
+        DirectoryProbe::List => (fs::read_dir(directory).is_ok(), "listed"),
         DirectoryProbe::Write => {
             let file = directory.join("probe");
             let written = fs::write(&file, b"").is_ok();
             if written {
                 let _ = fs::remove_file(&file);
             }
-            written
+            (written, "written")
         }
     };
     let result = if got_past {
-        let verb = match probe {
-            DirectoryProbe::List => "listed",
-            DirectoryProbe::Write => "written",
-        };
         eprintln!(
             "skipped: {} can still be {verb} with mode {mode:o}",
             directory.display()
