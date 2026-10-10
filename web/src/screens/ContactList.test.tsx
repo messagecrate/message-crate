@@ -108,15 +108,7 @@ describe("ContactList", () => {
       return { added: 0, removed: 1 };
     });
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList groupFilter="Family" onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList({ groupFilter: "Family" });
 
     const rowCheckbox = await screen.findByRole("checkbox", { name: "Select Alice" });
     act(() => {
@@ -151,15 +143,7 @@ describe("ContactList", () => {
     createGroupMock.mockRejectedValue(new ApiError(422, refusal));
     const user = setupUser();
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList();
 
     await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
@@ -175,15 +159,7 @@ describe("ContactList", () => {
   it("refuses a reserved Contact Group name from the Groups menu without asking the server to create it", async () => {
     const user = setupUser();
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList();
 
     await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
@@ -197,15 +173,7 @@ describe("ContactList", () => {
 
   it("exports the group the list shows, or the checked rows when there are any", async () => {
     exportMock.mockResolvedValue("contact_id,display_name,groups,service,identity_type,identity\n");
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList groupFilter="Family" onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList({ groupFilter: "Family" });
     const rowCheckbox = await screen.findByRole("checkbox", { name: "Select Alice" });
 
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
@@ -242,15 +210,7 @@ describe("ContactList", () => {
     updateMembersMock.mockReturnValueOnce(new Promise(() => {}));
     updateMembersMock.mockResolvedValue({ added: 0, removed: 2 });
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList();
     const user = setupUser();
     await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
     await user.click(screen.getByRole("checkbox", { name: "Select Bob" }));
@@ -282,15 +242,7 @@ describe("ContactList", () => {
       offset: 0,
     } as unknown as Awaited<ReturnType<typeof listContacts>>);
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList();
 
     const box = (name: string) => screen.getByRole("checkbox", { name: `Select ${name}` });
     const checkedNames = () => names.filter((name) => (box(name) as HTMLInputElement).checked);
@@ -375,15 +327,7 @@ describe("ContactList", () => {
     const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
     try {
       const onSelect = vi.fn();
-      render(
-        <Providers>
-          <RightToolbarProvider>
-            <RightPane>
-              <ContactList onSelect={onSelect} />
-            </RightPane>
-          </RightToolbarProvider>
-        </Providers>,
-      );
+      renderList({ onSelect });
       const box = await screen.findByRole("checkbox", { name: "Select Alice" });
       const avatar = box.closest("label");
       expect(avatar).not.toBeNull();
@@ -414,15 +358,7 @@ describe("ContactList", () => {
       offset: 0,
     } as unknown as Awaited<ReturnType<typeof listContacts>>);
 
-    render(
-      <Providers>
-        <RightToolbarProvider>
-          <RightPane>
-            <ContactList selectedId="1" onSelect={() => {}} />
-          </RightPane>
-        </RightToolbarProvider>
-      </Providers>,
-    );
+    renderList({ selectedId: "1" });
 
     const current = () =>
       screen
@@ -464,15 +400,7 @@ describe("ContactList", () => {
     });
 
     function renderAll() {
-      render(
-        <Providers>
-          <RightToolbarProvider>
-            <RightPane>
-              <ContactList groupFilter="Family" onSelect={() => {}} />
-            </RightPane>
-          </RightToolbarProvider>
-        </Providers>,
-      );
+      renderList({ groupFilter: "Family" });
     }
 
     it("does not read as all while contacts past the loaded ones are unticked", async () => {
