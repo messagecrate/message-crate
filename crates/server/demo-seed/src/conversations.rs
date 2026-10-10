@@ -191,24 +191,22 @@ impl<R: Rng> Seeder<'_, R> {
         self.orphaned(staging.imessage)?;
 
         if self.cfg.edge_cases.empty_individual {
-            write_header_only(
+            self.write_header_only(
                 staging.imessage,
                 EMPTY_THREAD_HANDLE,
                 IrConversationType::Individual,
                 &[],
                 IMESSAGE_SOURCE,
-                self.cfg.reference_time.timestamp_millis(),
             )?;
             self.stats.conversation_files += 1;
         }
         if self.cfg.edge_cases.empty_group {
-            write_header_only(
+            self.write_header_only(
                 staging.imessage,
                 EMPTY_GROUP_HANDLE,
                 IrConversationType::Group,
                 &EMPTY_GROUP_MEMBERS,
                 IMESSAGE_SOURCE,
-                self.cfg.reference_time.timestamp_millis(),
             )?;
             self.stats.conversation_files += 1;
         }
@@ -419,19 +417,27 @@ impl<R: Rng> Seeder<'_, R> {
         header: ConversationFileHeader<'_>,
     ) -> Result<BufWriter<File>> {
         let mut file = open_jsonl(path)?;
-        write_conversation_header(
-            &mut file,
-            header.chat_id,
-            header.conversation_type,
-            header.group_title,
-            header.participants,
-            header.message_count,
-            export_meta(
+        let line = ConversationHeader {
+            schema_version: SCHEMA_VERSION,
+            export: export_meta(
                 header.source,
                 header.owner_identity,
                 self.cfg.reference_time.timestamp_millis(),
             ),
-        )?;
+            conversation: ConversationMeta {
+                chat_identifier: header.chat_id.into(),
+                conversation_type: header.conversation_type,
+                group_title: header.group_title,
+                participants: header.participants,
+                stats: ConversationStats {
+                    message_count: header.message_count as u64,
+                    attachment_count: 0,
+                    first_timestamp_unix_ms: None,
+                    last_timestamp_unix_ms: None,
+                },
+            },
+        };
+        writeln!(file, "{}", serde_json::to_string(&line)?)?;
         Ok(file)
     }
 
@@ -920,41 +926,42 @@ impl<R: Rng> Seeder<'_, R> {
     }
 }
 
-/// Write a conversation header with no messages (empty individual or empty group).
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be written.
-fn write_header_only(
-    staging: &Path,
-    chat_id: &str,
-    conv_type: IrConversationType,
-    member_phones: &[&str],
-    source: &str,
-    backup_taken_at_unix_ms: i64,
-) -> Result<()> {
-    let path = staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id)));
-    let mut file = open_jsonl(&path)?;
-    let mut participants = Vec::with_capacity(member_phones.len());
-    for handle in member_phones {
-        participants.push(IrParticipant {
-            identity: Some((*handle).into()),
-            display_name: None,
-        });
-    }
-    write_conversation_header(
-        &mut file,
-        chat_id,
-        conv_type,
-        None,
-        participants,
-        0,
-        export_meta(source, OWNER_PHONE, backup_taken_at_unix_ms),
-    )?;
-    Ok(())
-}
-
 impl<R: Rng> Seeder<'_, R> {
+    /// Write a conversation header with no messages (empty individual or empty group).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file cannot be written.
+    fn write_header_only(
+        &self,
+        staging: &Path,
+        chat_id: &str,
+        conv_type: IrConversationType,
+        member_phones: &[&str],
+        source: &str,
+    ) -> Result<()> {
+        let participants = member_phones
+            .iter()
+            .map(|handle| IrParticipant {
+                identity: Some((*handle).into()),
+                display_name: None,
+            })
+            .collect();
+        self.create_conversation_file(
+            &staging.join(format!("empty-{}.jsonl", sanitize_filename(chat_id))),
+            ConversationFileHeader {
+                chat_id,
+                conversation_type: conv_type,
+                group_title: None,
+                participants,
+                message_count: 0,
+                source,
+                owner_identity: OWNER_PHONE,
+            },
+        )?;
+        Ok(())
+    }
+
     /// Add photos, other files, tapbacks, replies, and occasional SMS/RCS
     /// labels to an iMessage. `origin_guid` is the thread every few messages
     /// reply to; this call may replace it.
@@ -1099,40 +1106,6 @@ fn maybe_mark_as_sms_or_rcs(msg: &mut IrMessage, fraction: f64, rng: &mut impl R
 fn open_jsonl(path: &Path) -> Result<BufWriter<File>> {
     let f = File::create(path).with_context(|| format!("create {}", path.display()))?;
     Ok(BufWriter::new(f))
-}
-
-/// Write the first line of a conversation file: schema, export info, and participants.
-///
-/// # Errors
-///
-/// Returns an error if the header cannot be serialized or written.
-fn write_conversation_header(
-    file: &mut BufWriter<File>,
-    chat_id: &str,
-    conv_type: IrConversationType,
-    group_title: Option<String>,
-    participants: Vec<IrParticipant>,
-    message_count: usize,
-    export: ExportMeta,
-) -> Result<()> {
-    let header = ConversationHeader {
-        schema_version: SCHEMA_VERSION,
-        export,
-        conversation: ConversationMeta {
-            chat_identifier: chat_id.into(),
-            conversation_type: conv_type,
-            group_title,
-            participants,
-            stats: ConversationStats {
-                message_count: message_count as u64,
-                attachment_count: 0,
-                first_timestamp_unix_ms: None,
-                last_timestamp_unix_ms: None,
-            },
-        },
-    };
-    writeln!(file, "{}", serde_json::to_string(&header)?)?;
-    Ok(())
 }
 
 /// Write one message as a JSON line. Empty iMessage extras are dropped first.
