@@ -840,7 +840,6 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
         outcome.part_size, 40,
         "a part is never larger than the limit"
     );
-    assert_eq!(outcome.completed_status, StatusCode::CREATED);
     assert_eq!(outcome.served, bytes);
 
     // One byte over the limit is refused when the upload is opened.
@@ -885,7 +884,6 @@ async fn a_multipart_upload_keeps_its_part_size_when_the_limit_is_lowered() {
     .await;
 
     let outcome = upload.send_parts_and_complete().await;
-    assert_eq!(outcome.completed_status, StatusCode::CREATED);
     assert_eq!(outcome.served, bytes);
 }
 
@@ -923,7 +921,6 @@ async fn a_multipart_upload_completes_end_to_end_over_http() {
 
     // Completing the upload stores the asset: a creation, answered like the
     // single PUT that stores one.
-    assert_eq!(outcome.completed_status, StatusCode::CREATED);
     assert_eq!(
         outcome.completed_location.as_deref(),
         Some(format!("/v1/assets/{sha}").as_str())
@@ -936,11 +933,10 @@ async fn a_multipart_upload_completes_end_to_end_over_http() {
 }
 
 /// What a multipart upload sent by [`upload_in_parts`] got back: the part
-/// size the server handed out, the answer to `complete`, and the asset as the
-/// server then serves it.
+/// size the server handed out, the `201 Created` answer to `complete`, and the
+/// asset as the server then serves it.
 struct UploadOutcome {
     part_size: usize,
-    completed_status: StatusCode,
     completed_location: Option<String>,
     completed: serde_json::Value,
     served_type: String,
@@ -986,8 +982,8 @@ impl<'a> StartedUpload<'a> {
     }
 
     /// `PUT` each part at the part size the upload opened with, each of which
-    /// must answer `200 OK`, then `complete` the upload and read the asset
-    /// back, which must answer `200 OK`.
+    /// must answer `200 OK`, then `complete` the upload, which must answer
+    /// `201 Created`, and read the asset back, which must answer `200 OK`.
     async fn send_parts_and_complete(self) -> UploadOutcome {
         let client = http_client();
         let url = |rest: &str| format!("{}/v1/assets/{}{rest}", self.server.base(), self.sha);
@@ -1009,7 +1005,13 @@ impl<'a> StartedUpload<'a> {
             .send()
             .await
             .unwrap();
-        let completed_status = response.status();
+        let status = response.status();
+        if status != StatusCode::CREATED {
+            panic!(
+                "complete answered {status}, not 201 Created: {}",
+                response.text().await.unwrap()
+            );
+        }
         let completed_location = response
             .headers()
             .get(reqwest::header::LOCATION)
@@ -1032,7 +1034,6 @@ impl<'a> StartedUpload<'a> {
             .to_string();
         UploadOutcome {
             part_size: self.part_size,
-            completed_status,
             completed_location,
             completed,
             served_type,
