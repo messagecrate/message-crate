@@ -182,7 +182,7 @@ export function IdentitiesSection({
           rows={tableRows}
           loading={listed === undefined}
           busy={busy}
-          emptyText="No identities yet."
+          emptyText="No identities yet"
           onRemove={fixed ? undefined : requestRemove}
           onPickCountry={
             fixed
