@@ -650,6 +650,20 @@ mod tests {
         path.to_str().unwrap().to_string()
     }
 
+    /// The arguments every iPhone command starts with, before the paths the
+    /// backup forwards.
+    fn base_args(out: &Path, json: &Path) -> Vec<String> {
+        vec![
+            "-i".to_string(),
+            "--no-html".to_string(),
+            "--no-banner".to_string(),
+            "-o".to_string(),
+            text(out),
+            "-j".to_string(),
+            text(json),
+        ]
+    }
+
     /// An Android backup with every option found: an encrypted database,
     /// a hex key (passed as a key file, never on the command line),
     /// contacts, media, and the business app. The whole command line is
@@ -786,20 +800,17 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-d".to_string(),
-                text(&db),
-                "-w".to_string(),
-                text(&contacts),
-                "-m".to_string(),
-                text(&domain),
+                base_args(&out, &json),
+                vec![
+                    "-d".to_string(),
+                    text(&db),
+                    "-w".to_string(),
+                    text(&contacts),
+                    "-m".to_string(),
+                    text(&domain),
+                ],
             ]
+            .concat()
         );
     }
 
@@ -829,16 +840,10 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-b".to_string(),
-                text(backup.path()),
+                base_args(&out, &json),
+                vec!["-b".to_string(), text(backup.path())],
             ]
+            .concat()
         );
     }
 
@@ -867,20 +872,17 @@ mod tests {
         assert_eq!(
             command_args(&args, &out, &json),
             [
-                "-i".to_string(),
-                "--no-html".to_string(),
-                "--no-banner".to_string(),
-                "-o".to_string(),
-                text(&out),
-                "-j".to_string(),
-                text(&json),
-                "-d".to_string(),
-                text(&db),
-                "-w".to_string(),
-                text(&contacts),
-                "-m".to_string(),
-                text(&shared),
+                base_args(&out, &json),
+                vec![
+                    "-d".to_string(),
+                    text(&db),
+                    "-w".to_string(),
+                    text(&contacts),
+                    "-m".to_string(),
+                    text(&shared),
+                ],
             ]
+            .concat()
         );
     }
 
