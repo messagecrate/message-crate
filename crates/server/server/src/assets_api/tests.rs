@@ -1042,9 +1042,8 @@ impl<'a> StartedUpload<'a> {
     }
 }
 
-/// Send `bytes` to `server` as a multipart upload, the way
-/// `message-crate-import` sends a large file: open it, `PUT` each part,
-/// `complete` it, and read the asset back.
+/// Send `bytes` to `server` as a multipart upload (open it, `PUT` each part,
+/// `complete` it), then read the asset back.
 async fn upload_in_parts(
     server: &crate::test_support::TestServer,
     token: &str,
