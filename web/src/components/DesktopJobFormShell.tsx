@@ -24,7 +24,7 @@ export type DesktopJobFormShellProps = {
   log: string[];
   error?: string | null;
   success?: ReactNode;
-  requireTauri?: boolean;
+  requireDesktop?: boolean;
   intro?: ReactNode;
 };
 
@@ -42,11 +42,11 @@ export default function DesktopJobFormShell({
   log,
   error,
   success,
-  requireTauri,
+  requireDesktop,
   intro,
 }: DesktopJobFormShellProps) {
   const otherJob = useDesktopJob();
-  if (requireTauri && !isTauri()) {
+  if (requireDesktop && !isTauri()) {
     return <div className="max-w-[700px] p-6 text-muted">Export requires the desktop app.</div>;
   }
 

@@ -201,7 +201,7 @@ export default function ExportScreen() {
     <DesktopJobFormShell
       title="Export"
       job="Export"
-      requireTauri
+      requireDesktop
       startLabel="Export"
       runningLabel="Exporting…"
       running={running || busy}
