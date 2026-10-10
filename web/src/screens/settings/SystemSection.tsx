@@ -5,6 +5,7 @@ import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
+import { errorText } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
 import {
   getOpenToNetwork,
@@ -307,7 +308,7 @@ function DataDirectory() {
     // next start of its own.
     if (!isOwnAddress(getBaseUrl())) return;
     setLocalServerOpenToNetwork(on).then(setServer, (caught: unknown) => {
-      setNetworkError(caught instanceof Error ? caught.message : String(caught));
+      setNetworkError(errorText(caught));
     });
   };
   // A Message Crate the app only found (Docker on this computer) listens
@@ -325,7 +326,7 @@ function DataDirectory() {
         onPress={() => {
           setError(null);
           openDataDirectory().catch((caught: unknown) => {
-            setError(caught instanceof Error ? caught.message : String(caught));
+            setError(errorText(caught));
           });
         }}
       >
@@ -383,7 +384,7 @@ function ExportDirectory() {
         if (live) setPath(dir);
       },
       (caught: unknown) => {
-        if (live) setError(caught instanceof Error ? caught.message : String(caught));
+        if (live) setError(errorText(caught));
       },
     );
     return () => {
@@ -425,7 +426,7 @@ export function SystemSection() {
   const toolsQuery = useToolsStatus();
   const tools: ToolsStatus | null = toolsQuery.data ?? null;
   const toolsError = toolsQuery.error
-    ? `Could not look for the media tools. ${toolsQuery.error instanceof Error ? toolsQuery.error.message : String(toolsQuery.error)}`
+    ? `Could not look for the media tools. ${errorText(toolsQuery.error)}`
     : null;
 
   useEffect(() => {
@@ -439,7 +440,7 @@ export function SystemSection() {
         setDefaultStagingPath(staging.defaultRoot);
         setStagingPath(staging.root);
       } catch (caught: unknown) {
-        setStagingError(caught instanceof Error ? caught.message : String(caught));
+        setStagingError(errorText(caught));
       }
     })();
   }, []);
@@ -463,7 +464,7 @@ export function SystemSection() {
       },
       (caught: unknown) => {
         if (gen !== stagingSaveGen.current) return;
-        setStagingError(`Not saved. ${caught instanceof Error ? caught.message : String(caught)}`);
+        setStagingError(`Not saved. ${errorText(caught)}`);
       },
     );
   };
@@ -486,7 +487,7 @@ export function SystemSection() {
         },
         (caught: unknown) => {
           if (gen !== stagingSaveGen.current) return;
-          setStagingError(caught instanceof Error ? caught.message : String(caught));
+          setStagingError(errorText(caught));
         },
       );
   };

@@ -4,6 +4,7 @@ import ExportFormatSelect from "../../components/ExportFormatSelect";
 import FormRow from "../../components/FormRow";
 import PathPicker from "../../components/PathPicker";
 import { useRunDesktopJob } from "../../hooks/useRunDesktopJob";
+import { errorText } from "../../lib/apiErrorMessage";
 import { writeInExportDir } from "../../lib/exportDir";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
@@ -86,7 +87,7 @@ export function ConvertSection() {
             appendLog,
           );
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorText(err);
         appendLog(`Error: ${message}`);
         setError(message);
       }

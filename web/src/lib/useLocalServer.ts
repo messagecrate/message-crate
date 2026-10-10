@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { errorText } from "./apiErrorMessage";
 import { type LocalServerStatus, localServerStatus, startLocalServer } from "./localServer";
 
 /** How often a starting server is asked how it is getting on. */
@@ -17,7 +18,7 @@ function failed(error: unknown): LocalServerStatus {
     status: "failed",
     reason: "start_failed",
     message: "Message Crate could not be started.",
-    details: error instanceof Error ? error.message : String(error),
+    details: errorText(error),
   };
 }
 
