@@ -9,11 +9,11 @@ use anyhow::{Context, Result, bail};
 use crate::config::validate_source_id;
 use crate::db::account_profile;
 use crate::dedupe::{self, DedupeStats};
+use crate::imports_api::records::ExportRecord;
 use crate::imports_api::{
     self, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
 };
 use crate::jsonl;
-use crate::models::ExportRecord;
 use crate::open_db::OpenDb;
 use crate::progress::Progress;
 use media::MediaMode;

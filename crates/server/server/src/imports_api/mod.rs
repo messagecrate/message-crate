@@ -37,6 +37,7 @@ use message_crate_api_types::RunIssueKind;
 pub mod contact_name;
 pub mod failure;
 pub mod promote;
+pub mod records;
 pub mod staging;
 pub mod with_yourself;
 

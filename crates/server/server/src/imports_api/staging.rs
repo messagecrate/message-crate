@@ -7,6 +7,10 @@ use anyhow::{Context, Result, anyhow};
 use message_ir::{IdentityService, IdentityType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
+use super::records::{
+    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
+    clean_body,
+};
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::db::handles::{
     HandleIdCache, handle_type_on, upsert_handle_row_cached, upsert_handle_row_in,
@@ -17,10 +21,6 @@ use crate::db::staging::{
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
-use crate::models::{
-    AttachmentRecord, ConversationRecord, ExportRecord, HandleValue, MessageRecord, TapbackRecord,
-    clean_body,
-};
 use media::MediaMode;
 
 use super::contact_name::{

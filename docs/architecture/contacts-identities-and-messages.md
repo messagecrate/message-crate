@@ -191,7 +191,7 @@ An import types each address it meets by the rule above (`db/handles.rs`,
 `handle_type_on`): a one-to-one chat handle, a participant, a message's
 sender, a reaction's sender and the holder's own address. A participant, a
 message's sender and a reaction's sender go through one function,
-`HandleValue::handle_type_on` (`models.rs`), which also keeps a name the
+`HandleValue::handle_type_on` (`imports_api/records.rs`), which also keeps a name the
 source gave in place of an address as `other`. The server knows it is a
 name because the file gave it in the name's place. A participant is typed
 by the conversation's service, and a sender or a reaction's sender by its
@@ -999,7 +999,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
-| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs`, `HandleValue::handle_type_on` in `crates/server/server/src/models.rs`, and `IdentityService::type_on` in `crates/libs/ir/src/lib.rs` |
+| Which type an identity takes on its service | `handle_type_on` in `crates/server/server/src/db/handles.rs`, `HandleValue::handle_type_on` in `crates/server/server/src/imports_api/records.rs`, and `IdentityService::type_on` in `crates/libs/ir/src/lib.rs` |
 | A phone number's key and its country | `key_typed_handle` and `COUNTRIES` in `crates/libs/phone` |
 | Picking a number's country, and merging it into the `+` form | `crates/server/server/src/identity_country.rs`, `crates/server/server/src/db/identity_country.rs` |
 | Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
