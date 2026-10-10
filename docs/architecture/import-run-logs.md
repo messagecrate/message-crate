@@ -116,15 +116,17 @@ the server keeps one account's Import Runs from another.
 
 Like a line of the server's log (`server-log.md`, "What a line never holds"),
 a run log's line never holds a password, a Session token or an API token,
-message text, or attachment bytes.
+message text, or attachment bytes. Unlike a line of the server's log, it may
+carry a conversation's identities in the file names it gives (below).
 
 A run log does name the conversation files and attachments the run read, such
 as `+15555550101.jsonl` and `attachments/IMG_1234.jpg`, because that is what
 explains a failure. A conversation file is named for the people in it, so its
 name can carry a phone number, an email address or a group's title. The owner
 reads those names with the rest of the log, as ADR 0008 says for run logs.
-Why: the log is a plain file in the Logs Directory, which anyone using the
-computer can open with or without Message Crate ("A filter, not a guard",
-above). While the run lasts, its directory in the Staging Directory holds the
+Why: the log is a plain file in the Logs Directory. The operating-system user
+who ran the import can open it with or without Message Crate ("A filter, not
+a guard", above), and the owner reads it in the desktop app running as that
+user. While the run lasts, its directory in the Staging Directory holds the
 same names. A neutral name on the owner's screen would protect nothing
 ([#1990](https://github.com/messagecrate/message-crate/issues/1990)).

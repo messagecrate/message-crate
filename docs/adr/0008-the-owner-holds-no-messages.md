@@ -112,8 +112,9 @@ conversation file is named for the people in it, so its name can carry a
 phone number, an email address or a group's title. The owner reads those
 names in the log. Why: the file name is part of what explains a failure. The
 log is a plain file in the Logs Directory of the computer the account
-imported from, and anyone using that computer can open it with or without
-Message Crate. While the run lasts, the Staging Directory holds the same
+imported from. The operating-system user who ran the import can open it with
+or without Message Crate, and the owner reads it in the desktop app running
+as that user. While the run lasts, the Staging Directory holds the same
 names. Keeping them off the owner's screen would protect nothing.
 
 Nothing in the owner's routes reads `messages.body`,
