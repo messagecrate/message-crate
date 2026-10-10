@@ -217,7 +217,6 @@ fn a_group_lists_every_peer_and_names_the_sender() {
     doc.conversation.participants.push(IrParticipant {
         identity: Some("+15555550102".into()),
         display_name: Some("Bo".into()),
-        identity_type: None,
     });
     doc.messages[0].sender_identity = Some("+15555550102".into());
     doc.messages[0].sender_display_name = Some("Bo".into());
@@ -297,7 +296,6 @@ fn the_owner_under_another_spelling_is_not_a_peer() {
     doc.conversation.participants.push(IrParticipant {
         identity: Some("+1 (555) 555-0100".into()),
         display_name: Some("Me".into()),
-        identity_type: None,
     });
     let tmp = tempfile::tempdir().unwrap();
     archive()
@@ -341,7 +339,6 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
             .map(|handle| IrParticipant {
                 identity: Some((*handle).into()),
                 display_name: Some("Carol".into()),
-                identity_type: None,
             })
             .collect();
         doc.messages[0].direction = IrDirection::Outgoing;
@@ -372,7 +369,6 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
     doc.conversation.participants = vec![IrParticipant {
         identity: None,
         display_name: Some("Alice".into()),
-        identity_type: None,
     }];
     doc.messages[0].sender_identity = None;
     doc.messages[0].sender_display_name = Some("Alice".into());

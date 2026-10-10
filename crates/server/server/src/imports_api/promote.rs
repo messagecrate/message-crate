@@ -56,7 +56,6 @@ pub(super) async fn promote_append(
     tx: &mut SqliteConnection,
     mode: ImportMode,
     account_id: i64,
-    fill_content_keys: bool,
     wipe_sources: &[String],
     progress: Progress,
 ) -> Result<PromoteStats, PromoteError> {
@@ -69,7 +68,7 @@ pub(super) async fn promote_append(
         progress,
     };
     promote
-        .run(wipe_sources, fill_content_keys)
+        .run(wipe_sources)
         .await
         .map_err(PromoteError::Internal)?;
     Ok(promote.finish())
@@ -96,61 +95,25 @@ const PROMOTE_MESSAGE_BATCH: i64 = 50_000;
 /// Below this many staged messages the secondary indexes are cheaper to keep than to rebuild.
 const PROMOTE_INDEX_DROP_MIN_STAGING: i64 = 5_000;
 
-/// What the promotion did to the content of the messages production held
-/// before it, as [`PromotedContent::changed_messages`] reads it.
-struct PromotedContent {
-    /// The highest message id before the promotion: every message at or
-    /// below it was stored already.
-    messages_before: i64,
-    /// The highest attachment id before the promotion: every attachment
-    /// above it is new.
-    attachments_before: i64,
-    /// The stored messages whose stored attachments took their files.
-    filled_messages: Vec<i64>,
-}
-
-impl PromotedContent {
-    /// The stored messages whose content key the promotion changed and that
-    /// had one before, sorted ([`staging::stored_messages_with_new_content`]).
-    async fn changed_messages(&self, conn: &mut SqliteConnection) -> Result<Vec<i64>> {
-        staging::stored_messages_with_new_content(
-            conn,
-            self.messages_before,
-            self.attachments_before,
-            &self.filled_messages,
-        )
-        .await
-    }
-}
-
 impl Promote<'_> {
     /// Every phase, in order: the source wipe in replace mode, then each
-    /// table, the search index, and the content keys when asked for.
-    /// Without the content keys, the duplicate flags of the stored messages
-    /// whose content changed are put right; with them, the caller runs the
-    /// full dedupe after the commit, which puts every flag right.
-    async fn run(&mut self, wipe_sources: &[String], fill_content_keys: bool) -> Result<()> {
+    /// table, the search index, and the content keys the new messages lack.
+    /// The caller runs the full dedupe after the commit, which puts every
+    /// duplicate flag right, those of the stored messages whose content this
+    /// promotion changed included (#1805, #1969).
+    async fn run(&mut self, wipe_sources: &[String]) -> Result<()> {
         if self.mode == ImportMode::Replace {
             self.wipe_sources(wipe_sources).await?;
         }
         self.promote_conversations().await?;
         self.promote_participants().await?;
         let messages_before = self.promote_messages().await?;
-        let (attachments_before, filled_messages) = self.promote_attachments().await?;
+        let attachments_before = self.promote_attachments().await?;
         self.promote_tapbacks().await?;
         let versions_before = self.promote_earlier_versions(messages_before).await?;
         self.index_fts(messages_before, attachments_before, versions_before)
             .await?;
-        if fill_content_keys {
-            self.fill_content_keys().await?;
-        } else {
-            self.dedupe_changed_messages(&PromotedContent {
-                messages_before,
-                attachments_before,
-                filled_messages,
-            })
-            .await?;
-        }
+        self.fill_content_keys().await?;
         Ok(())
     }
 
@@ -461,11 +424,9 @@ impl Promote<'_> {
     /// Insert the staged attachments under their production messages.
     /// Returns the highest attachment id that existed before the insert:
     /// every new row lands above it, which is how [`Self::index_fts`] finds
-    /// the existing messages that gained an attachment. Returns too the
-    /// stored messages whose attachment rows took their missing files.
-    async fn promote_attachments(&mut self) -> Result<(i64, Vec<i64>)> {
+    /// the existing messages that gained an attachment.
+    async fn promote_attachments(&mut self) -> Result<i64> {
         let phase = self.begin("Writing the import's attachments…");
-        let attachments_before = staging::max_attachment_id(self.tx).await?;
         let promoted = staging::promote_attachments(self.tx).await?;
         self.stats.attachments = promoted.inserted;
         self.done(
@@ -484,7 +445,7 @@ impl Promote<'_> {
                 ),
             ),
         );
-        Ok((attachments_before, promoted.filled_messages))
+        Ok(promoted.attachments_before)
     }
 
     /// Insert the staged tapbacks under their production messages.
@@ -569,49 +530,6 @@ impl Promote<'_> {
                 as_count(keys),
                 "1 content key was filled",
                 "{n} content keys were filled",
-            ),
-        );
-        Ok(())
-    }
-
-    /// Put right the duplicate flags of the stored messages whose content
-    /// this promotion changed, and of the messages tied to them
-    /// ([`crate::dedupe::dedupe_changed_messages`]), whatever the import's
-    /// dedupe setting: the setting governs the rows the import brings, and
-    /// a flag the import itself made wrong is put right (#1805). A
-    /// promotion that changed no stored message's content runs nothing.
-    ///
-    /// Only an import that fills no content keys runs this: one that fills
-    /// them is followed by the full dedupe once the caller commits
-    /// ([`crate::dedupe::dedupe_cross_source`]), which would write every
-    /// flag this writes again.
-    async fn dedupe_changed_messages(&mut self, promoted: &PromotedContent) -> Result<()> {
-        let changed = promoted.changed_messages(self.tx).await?;
-        if changed.is_empty() {
-            return Ok(());
-        }
-        let phase = self.begin(format_args!(
-            "Checking the duplicates of the {} whose content changed…",
-            words(
-                as_count(changed.len()),
-                "1 stored message",
-                "{n} stored messages"
-            )
-        ));
-        let result = crate::dedupe::dedupe_changed_messages(
-            self.tx,
-            self.account_id,
-            &changed,
-            crate::dedupe::NEAR_WINDOW_SECS,
-            self.progress,
-        )
-        .await?;
-        self.done(
-            phase,
-            format!(
-                "{} shown again, and {} hidden",
-                words(result.shown, "1 message is", "{n} messages are"),
-                words(result.hidden, "1 is", "{n} are"),
             ),
         );
         Ok(())

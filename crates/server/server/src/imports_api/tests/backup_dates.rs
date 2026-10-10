@@ -104,7 +104,7 @@ async fn fts_hits(db: &Path, table: &str, word: &str) -> i64 {
 
 /// Import `files` into `db` in one import, appending to what it holds.
 async fn import(db: &Path, assets: &Path, root: &Path, files: &[PathBuf]) {
-    import_jsonl_files(db, files, &edit_options(assets, root, false))
+    import_jsonl_files(db, files, &edit_options(assets, root))
         .await
         .unwrap();
 }
@@ -124,6 +124,19 @@ struct Imported {
 /// must agree, so each is returned to compare, with its database to look
 /// into further.
 async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Imported; 4] {
+    every_order_between(tmp, label, None, files, None).await
+}
+
+/// [`every_order`] with `before`, when given, imported on its own first,
+/// and `after`, when given, imported on its own last, in each of the four
+/// ways.
+async fn every_order_between(
+    tmp: &Path,
+    label: &str,
+    before: Option<&PathBuf>,
+    files: [&PathBuf; 2],
+    after: Option<&PathBuf>,
+) -> [Imported; 4] {
     let assets = tmp.join("assets");
     let [a, b] = files;
     let mut out = Vec::new();
@@ -134,6 +147,11 @@ async fn every_order(tmp: &Path, label: &str, files: [&PathBuf; 2]) -> [Imported
         ("apart-reversed", vec![vec![b.clone()], vec![a.clone()]]),
     ] {
         let db = tmp.join(format!("{label}-{order}.db"));
+        let batches = before
+            .map(|file| vec![file.clone()])
+            .into_iter()
+            .chain(batches)
+            .chain(after.map(|file| vec![file.clone()]));
         for batch in batches {
             import(&db, &assets, tmp, &batch).await;
         }
@@ -382,8 +400,7 @@ async fn an_append_of_the_older_backup_after_the_newer_changes_nothing() {
 /// Where either file has no backup date, the rules for files without one
 /// hold. In one import, a second file's mark is added and its edit is
 /// taken when its versions are newer; across imports, a file without the
-/// mark leaves it, and a stored message from an undated file keeps no date
-/// when a dated file later gives it nothing.
+/// mark leaves it. Two files without a date leave the message without one.
 #[tokio::test]
 async fn without_a_backup_date_marks_add_and_edits_compare_their_times() {
     let tmp = TempDir::new().unwrap();
@@ -490,7 +507,7 @@ async fn the_later_backup_decides_the_duplicate_flag() {
         ("later-first.db", [later.clone(), earlier.clone()]),
     ] {
         let db = tmp.path().join(name);
-        let options = edit_options(&assets, tmp.path(), true);
+        let options = edit_options(&assets, tmp.path());
         import_jsonl_files(&db, &files, &options).await.unwrap();
         let sms_options = ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
@@ -498,7 +515,6 @@ async fn the_later_backup_decides_the_duplicate_flag() {
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: true,
             import_id: None,
             phone_country: None,
         });
@@ -614,5 +630,325 @@ async fn a_message_read_back_carries_its_backup_date() {
     assert_eq!(
         page["items"][0]["backup_taken_at"],
         serde_json::json!(LATER_BACKUP_AT)
+    );
+}
+
+/// The first case of #1989. One import holds backup A, dated, without a
+/// mark, and a file without a backup date that marks the message Unsent;
+/// a later import brings backup C, dated after A, without a mark. The
+/// undated file's mark adds, and a copy without a mark never clears one a
+/// file without a date gave, so the message stays Unsent in every order,
+/// with C's date, the newest backup that gave it anything.
+#[tokio::test]
+async fn an_undated_mark_beside_a_dated_backup_outlasts_a_later_backup() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let dated = file("a-earlier.jsonl", Some(EARLIER_BACKUP), None);
+    let undated = file("b-undated.jsonl", None, Some(Deletion::Unsent));
+    let later = file("c-later.jsonl", Some(LATER_BACKUP), None);
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "undated-mark",
+        None,
+        [&dated, &undated],
+        Some(&later),
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "taken back".into(),
+                deletion: Some("unsent".into()),
+                versions: vec![],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
+}
+
+/// The second case of #1989. The server holds the message from backup E,
+/// dated, without a mark; one import then brings a file without a backup
+/// date that marks it Unsent and backup D, dated before E, without a mark.
+/// The undated mark adds and D changes nothing, as when the two files are
+/// imported apart: the message is Unsent with E's date in every order.
+#[tokio::test]
+async fn an_undated_mark_beside_an_earlier_backup_adds_to_a_stored_message() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let stored = file("e-later.jsonl", Some(LATER_BACKUP), None);
+    let undated = file("u-undated.jsonl", None, Some(Deletion::Unsent));
+    let earlier = file("d-earlier.jsonl", Some(EARLIER_BACKUP), None);
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "stored-mark",
+        Some(&stored),
+        [&undated, &earlier],
+        None,
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "taken back".into(),
+                deletion: Some("unsent".into()),
+                versions: vec![],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
+}
+
+/// The text case of #1989. The server holds the message from backup E,
+/// dated; one import then brings a file without a backup date whose copy
+/// records a later edit, and backup D, dated before E. The undated copy's
+/// text is taken because its edit is later, and D changes nothing, as when
+/// the two files are imported apart, in every order.
+#[tokio::test]
+async fn an_undated_later_edit_beside_an_earlier_backup_gives_its_text() {
+    let tmp = TempDir::new().unwrap();
+    let t0 = 1_426_183_462_000;
+    let stored = backup_file(
+        tmp.path(),
+        "e-later.jsonl",
+        &Copy {
+            backup: Some(LATER_BACKUP),
+            text: "see you at seven",
+            versions: &[edit_version(0, "see you at six", t0)],
+            deletion: None,
+        },
+    );
+    let undated = backup_file(
+        tmp.path(),
+        "u-undated.jsonl",
+        &Copy {
+            backup: None,
+            text: "see you at eight",
+            versions: &[
+                edit_version(0, "see you at six", t0),
+                edit_version(0, "see you at seven", t0 + 60_000),
+            ],
+            deletion: None,
+        },
+    );
+    let earlier = backup_file(
+        tmp.path(),
+        "d-earlier.jsonl",
+        &Copy {
+            backup: Some(EARLIER_BACKUP),
+            text: "see you at six",
+            versions: &[],
+            deletion: None,
+        },
+    );
+    for Imported { order, held, .. } in every_order_between(
+        tmp.path(),
+        "stored-edit",
+        Some(&stored),
+        [&undated, &earlier],
+        None,
+    )
+    .await
+    {
+        assert_eq!(
+            held,
+            Held {
+                text: "see you at eight".into(),
+                deletion: None,
+                versions: vec![(0, "see you at six".into()), (0, "see you at seven".into())],
+                backup_taken_at: Some(LATER_BACKUP_AT.into()),
+            },
+            "{order}"
+        );
+    }
+}
+
+/// A message imported from a file without a backup date takes the date of
+/// a dated file that then meets it, and a newer dated backup's date after
+/// that; a file without a date leaves the date as it is. A dated backup with
+/// the same text backs the text, so from then on the dates decide it: a
+/// later backup's different text replaces it, though it records no later
+/// edit.
+#[tokio::test]
+async fn a_dated_backup_with_the_same_text_backs_an_undated_text() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let db = tmp.path().join("messagecrate.db");
+    let file = |name: &str, backup: Option<i64>, text: &str| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text,
+                versions: &[],
+                deletion: None,
+            },
+        )
+    };
+    let undated = file("undated.jsonl", None, "same text");
+    let dated = file("dated.jsonl", Some(EARLIER_BACKUP), "same text");
+    let later = file("later.jsonl", Some(LATER_BACKUP), "other text");
+    for (label, batches) in [
+        ("apart", vec![vec![undated.clone()], vec![dated.clone()]]),
+        ("together", vec![vec![undated.clone(), dated.clone()]]),
+    ] {
+        let db = tmp.path().join(format!("backed-{label}.db"));
+        for batch in batches {
+            import(&db, &assets, tmp.path(), &batch).await;
+        }
+        assert_eq!(
+            held(&db).await.backup_taken_at.as_deref(),
+            Some(EARLIER_BACKUP_AT),
+            "{label}"
+        );
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&undated)).await;
+        assert_eq!(
+            held(&db).await.backup_taken_at.as_deref(),
+            Some(EARLIER_BACKUP_AT),
+            "{label}"
+        );
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&later)).await;
+        let held = held(&db).await;
+        assert_eq!(held.text, "other text", "{label}");
+        assert_eq!(
+            held.backup_taken_at.as_deref(),
+            Some(LATER_BACKUP_AT),
+            "{label}"
+        );
+    }
+    import(&db, &assets, tmp.path(), &[undated]).await;
+    assert_eq!(held(&db).await.backup_taken_at, None);
+}
+
+/// A dated backup at least as new as the message's date that carries the
+/// Unsent mark a file without a date gave it backs the mark, so a later
+/// backup without the mark clears it, as it would a mark only dated
+/// backups gave.
+#[tokio::test]
+async fn a_dated_backup_with_the_same_mark_backs_an_undated_mark() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let undated = file("undated-unsent.jsonl", None, Some(Deletion::Unsent));
+    let dated = file(
+        "dated-unsent.jsonl",
+        Some(EARLIER_BACKUP),
+        Some(Deletion::Unsent),
+    );
+    let later = file("later-shown.jsonl", Some(LATER_BACKUP), None);
+    for (label, batches) in [
+        ("apart", vec![vec![undated.clone()], vec![dated.clone()]]),
+        (
+            "apart-reversed",
+            vec![vec![dated.clone()], vec![undated.clone()]],
+        ),
+        ("together", vec![vec![undated.clone(), dated.clone()]]),
+        (
+            "together-reversed",
+            vec![vec![dated.clone(), undated.clone()]],
+        ),
+    ] {
+        let db = tmp.path().join(format!("mark-{label}.db"));
+        for batch in batches {
+            import(&db, &assets, tmp.path(), &batch).await;
+        }
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&later)).await;
+        assert_eq!(held(&db).await.deletion, None, "{label}");
+    }
+}
+
+/// A message a file without a backup date gave its mark is read back with
+/// no backup date, though a dated backup gave it one, so an Export Run
+/// writes no date for it and a later import of that file keeps the rules
+/// for files without one. A message only dated backups gave anything keeps
+/// its date.
+#[tokio::test]
+async fn a_message_an_undated_file_marked_is_read_back_without_a_date() {
+    let (state, _fixture, token) = importer().await;
+    let batch = |backup: Option<i64>, deletion: Option<Deletion>| {
+        let header =
+            conversation_header("imessage", "+15555550123").participant("+15555550123", None);
+        let header = match backup {
+            Some(ms) => header.backup_taken_at(ms),
+            None => header,
+        };
+        let marked = message_line("g-marked", "taken back").sender("+15555550123");
+        let marked = match deletion {
+            Some(deletion) => marked.deletion(deletion),
+            None => marked,
+        };
+        let plain = message_line("g-plain", "hello").sender("+15555550123");
+        format!("{header}\n{marked}\n{plain}\n")
+    };
+    import_one_batch(
+        &state,
+        &token,
+        "imessage",
+        "append",
+        batch(Some(LATER_BACKUP), None),
+    )
+    .await;
+    import_one_batch(
+        &state,
+        &token,
+        "imessage",
+        "append",
+        batch(None, Some(Deletion::Unsent)),
+    )
+    .await;
+    let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
+    let dates: std::collections::BTreeMap<String, serde_json::Value> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| {
+            (
+                item["guid"].as_str().unwrap().to_owned(),
+                item["backup_taken_at"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(dates["g-marked"], serde_json::Value::Null, "{dates:?}");
+    assert_eq!(
+        dates["g-plain"],
+        serde_json::json!(LATER_BACKUP_AT),
+        "{dates:?}"
     );
 }

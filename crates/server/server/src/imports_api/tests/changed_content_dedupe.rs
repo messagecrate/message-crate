@@ -1,5 +1,5 @@
 //! An import that changes a stored message's content puts its duplicate
-//! flag right, whatever the import's dedupe setting (#1805).
+//! flag right (#1805), through the dedupe every batch runs (#1969).
 
 use super::*;
 
@@ -10,15 +10,9 @@ const SECOND: i64 = 1_426_183_462_000;
 /// sends every message.
 const CHAT: &str = "+15555550123";
 
-/// Create an Import Run for `source` with `dedupe` on or off, post `lines`
-/// under one conversation header as its one batch, and complete it.
-async fn import(
-    state: &crate::server::AppState,
-    token: &str,
-    source: &str,
-    dedupe: bool,
-    lines: &[MessageLine],
-) {
+/// Create an Import Run for `source`, post `lines` under one conversation
+/// header as its one batch, and complete it.
+async fn import(state: &crate::server::AppState, token: &str, source: &str, lines: &[MessageLine]) {
     let header = conversation_header(source, CHAT).participant(CHAT, None);
     let mut body = format!("{header}\n");
     for line in lines {
@@ -28,7 +22,7 @@ async fn import(
         state,
         "/v1/imports",
         token,
-        serde_json::json!({ "source": source, "mode": "append", "dedupe": dedupe }),
+        serde_json::json!({ "source": source, "mode": "append" }),
     )
     .await;
     let id = created["id"].as_i64().unwrap();
@@ -89,18 +83,16 @@ async fn found(state: &crate::server::AppState, token: &str, word: &str) -> Vec<
 }
 
 /// The issue's scenario: a message hidden behind another source's copy of
-/// its text takes a later edit from an append with dedupe off. It no longer
-/// matches that copy, so it is shown, and a search for its new text finds
-/// it. A new message the same import brings stays shown beside the copy
-/// it duplicates, because the import's dedupe is off.
+/// its text takes a later edit from an append. It no longer matches that
+/// copy, so it is shown, and a search for its new text finds it. A new
+/// message the same import brings is hidden behind the copy it duplicates.
 #[tokio::test]
-async fn an_edit_with_dedupe_off_shows_a_message_hidden_behind_a_copy_of_its_old_text() {
+async fn an_edit_shows_a_message_hidden_behind_a_copy_of_its_old_text() {
     let (state, _fixture, token) = importer().await;
     import(
         &state,
         &token,
         "sms",
-        true,
         &[
             message_line("n-six", "see you at six"),
             message_line("n-lunch", "lunch?"),
@@ -111,7 +103,6 @@ async fn an_edit_with_dedupe_off_shows_a_message_hidden_behind_a_copy_of_its_old
         &state,
         &token,
         "imessage",
-        true,
         &[message_line("m-six", "see you at six")],
     )
     .await;
@@ -124,7 +115,6 @@ async fn an_edit_with_dedupe_off_shows_a_message_hidden_behind_a_copy_of_its_old
         &state,
         &token,
         "imessage",
-        false,
         &[
             edited("m-six", "see you at seven"),
             message_line("m-lunch", "lunch?"),
@@ -135,23 +125,22 @@ async fn an_edit_with_dedupe_off_shows_a_message_hidden_behind_a_copy_of_its_old
     assert_eq!(hidden_behind(&state, "m-six").await, None);
     assert_eq!(found(&state, &token, "seven").await, ["see you at seven"]);
     assert_eq!(
-        hidden_behind(&state, "m-lunch").await,
-        None,
-        "dedupe off leaves the import's new messages as they came"
+        hidden_behind(&state, "m-lunch").await.as_deref(),
+        Some("n-lunch"),
+        "the import's new message is hidden behind the copy imported first"
     );
 }
 
 /// A message other copies are hidden behind takes a later edit from an
-/// append with dedupe off. The copy of its old text is shown again, and a
+/// append. The copy of its old text is shown again, and a
 /// copy of its new text from a third source is hidden behind it.
 #[tokio::test]
-async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again() {
+async fn an_edit_evaluates_the_copies_around_the_message_again() {
     let (state, _fixture, token) = importer().await;
     import(
         &state,
         &token,
         "imessage",
-        true,
         &[message_line("m-six", "see you at six")],
     )
     .await;
@@ -159,7 +148,6 @@ async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again()
         &state,
         &token,
         "sms",
-        true,
         &[message_line("r-six", "see you at six")],
     )
     .await;
@@ -167,7 +155,6 @@ async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again()
         &state,
         &token,
         "whatsapp",
-        true,
         &[message_line("q-seven", "see you at seven")],
     )
     .await;
@@ -181,7 +168,6 @@ async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again()
         &state,
         &token,
         "imessage",
-        false,
         &[edited("m-six", "see you at seven")],
     )
     .await;
@@ -205,15 +191,11 @@ async fn an_edit_with_dedupe_off_evaluates_the_copies_around_the_message_again()
 }
 
 /// A message another copy is hidden behind gains its attachment's file from
-/// an append with dedupe off. The copy, with the same text and no
+/// an append. The copy, with the same text and no
 /// attachment, still matches it within the near-time window and stays
 /// hidden, and the message's content key hashes the file it now has.
-///
-/// The duplicate-flag assertions hold without the fix too, because no flag
-/// changes here: only the content key computed again, the last assertion,
-/// fails without it.
 #[tokio::test]
-async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() {
+async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let (state, _fixture, token) = importer().await;
     let missing = IrAttachment {
         size_bytes: Some(12),
@@ -228,7 +210,6 @@ async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() 
         &state,
         &token,
         "imessage",
-        true,
         &[message_line("m-photo", "see attached").attachment(missing)],
     )
     .await;
@@ -236,7 +217,6 @@ async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() 
         &state,
         &token,
         "sms",
-        true,
         &[message_line("r-photo", "see attached")],
     )
     .await;
@@ -279,7 +259,6 @@ async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() 
         &state,
         &token,
         "imessage",
-        false,
         &[message_line("m-photo", "see attached").attachment(found_file)],
     )
     .await;
@@ -304,99 +283,4 @@ async fn an_attachment_with_dedupe_off_keeps_a_copy_that_still_matches_hidden() 
         before,
         "the content key hashes the attachment's file"
     );
-}
-
-/// An append with dedupe off that changes no stored message's content runs
-/// no dedupe: a flag the full pass would set stays unset.
-///
-/// A guard, not a test of the fix: it passes without the fix, and fails
-/// when the fix runs a dedupe over the whole account.
-#[tokio::test]
-async fn an_append_with_dedupe_off_that_changes_nothing_stored_runs_no_dedupe() {
-    let (state, _fixture, token) = importer().await;
-    import(
-        &state,
-        &token,
-        "sms",
-        true,
-        &[message_line("n-six", "see you at six")],
-    )
-    .await;
-    import(
-        &state,
-        &token,
-        "imessage",
-        true,
-        &[message_line("m-six", "see you at six")],
-    )
-    .await;
-    {
-        let mut conn = state.db.acquire().await.unwrap();
-        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-        sqlx::query("UPDATE messages SET duplicate_of = NULL WHERE guid = 'm-six'")
-            .execute(&mut *tx)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-    }
-
-    import(
-        &state,
-        &token,
-        "imessage",
-        false,
-        &[message_line("m-six", "see you at six")],
-    )
-    .await;
-
-    assert_eq!(hidden_behind(&state, "m-six").await, None);
-}
-
-/// A message an import with dedupe off brought, with no content key, takes
-/// a later edit from another append with dedupe off. Its new text matches
-/// a copy from a source imported with dedupe on, but no dedupe was asked
-/// for its own source, so it stays as it came: shown, without a content
-/// key, and the copy stays shown beside it.
-#[tokio::test]
-async fn an_edit_with_dedupe_off_leaves_a_message_no_dedupe_has_seen_as_it_came() {
-    let (state, _fixture, token) = importer().await;
-    import(
-        &state,
-        &token,
-        "sms",
-        true,
-        &[
-            message_line("n-six", "see you at six"),
-            message_line("n-seven", "see you at seven"),
-        ],
-    )
-    .await;
-    import(
-        &state,
-        &token,
-        "imessage",
-        false,
-        &[message_line("m-six", "see you at six")],
-    )
-    .await;
-    assert_eq!(hidden_behind(&state, "m-six").await, None);
-
-    import(
-        &state,
-        &token,
-        "imessage",
-        false,
-        &[edited("m-six", "see you at seven")],
-    )
-    .await;
-
-    assert_eq!(hidden_behind(&state, "m-six").await, None);
-    assert_eq!(hidden_behind(&state, "n-seven").await, None);
-    let mut conn = state.db.acquire().await.unwrap();
-    let key: Option<String> =
-        sqlx::query_scalar("SELECT content_key FROM messages WHERE guid = 'm-six'")
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-    assert_eq!(key, None, "no dedupe has seen the message");
 }

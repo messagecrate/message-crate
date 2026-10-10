@@ -421,7 +421,6 @@ fn an_email_sender_is_an_email_identity() {
         participant.identity.as_deref(),
         Some("john1985@example.com")
     );
-    assert_eq!(participant.identity_type, Some(IdentityType::Email));
     assert_eq!(
         docs[0].messages[0].sender_identity.as_deref(),
         Some("john1985@example.com")
@@ -429,13 +428,12 @@ fn an_email_sender_is_an_email_identity() {
 }
 
 #[test]
-fn a_sender_name_is_an_identity_of_type_other() {
+fn a_sender_name_is_kept_as_its_identity() {
     let docs = read_xml(
         r#"<sms protocol="0" address="AMAZON" date="1400773261000" type="1" body="Your parcel"/>"#,
     );
     let participant = &docs[0].conversation.participants[0];
     assert_eq!(participant.identity.as_deref(), Some("AMAZON"));
-    assert_eq!(participant.identity_type, Some(IdentityType::Other));
 }
 
 /// With no owner on the form, the owner comes from the sent MMS, and a

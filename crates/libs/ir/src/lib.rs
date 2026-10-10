@@ -139,7 +139,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -299,9 +299,6 @@ pub struct IrParticipant {
     pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
-    /// Known kind of `identity`; `None` when the source did not record one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub identity_type: Option<IdentityType>,
 }
 
 /// Transport a message arrived on.
@@ -390,6 +387,16 @@ impl IdentityService {
             // `sms`, `mms`, `imessage`, `ios`, `rcs`, `text message`), is the
             // phone platform: SMS/iMessage/RCS are transports, not platforms.
             _ => Self::Phone,
+        }
+    }
+
+    /// The type an address of shape `kind` takes on this service. WhatsApp
+    /// carries no email address, so an `@` address on WhatsApp, such as
+    /// `123456@lid`, is `Other`. Every other shape keeps its type (#1671).
+    pub fn type_on(self, kind: IdentityType) -> IdentityType {
+        match (self, kind) {
+            (Self::Whatsapp, IdentityType::Email) => IdentityType::Other,
+            (_, kind) => kind,
         }
     }
 

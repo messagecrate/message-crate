@@ -184,9 +184,6 @@ CREATE TABLE IF NOT EXISTS imports (
     tool TEXT,
     -- Import mode string recorded by the importer.
     mode TEXT NOT NULL,
-    -- 1 when cross-source dedupe runs after each batch of this run. Stated
-    -- once, when the run is created, so two batches cannot disagree.
-    dedupe INTEGER NOT NULL DEFAULT 0,
     -- The country the run states for every phone number its files write
     -- without a + code, as an ISO 3166-1 alpha-2 code ('GB'). NULL when the
     -- import form named none: such a number keeps its digits and no + form

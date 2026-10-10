@@ -1,6 +1,6 @@
 use super::*;
 use media::CompressOptions;
-use message_ir::{IdentityType, IrAttachment, IrParticipant};
+use message_ir::{IrAttachment, IrParticipant};
 use message_ir_format::write_conversation_jsonl_to;
 
 fn summary_options() -> TranscodeOptions {
@@ -31,7 +31,6 @@ fn staged_fixture() -> tempfile::TempDir {
     doc_a.conversation.participants = vec![IrParticipant {
         identity: Some("+15550101".into()),
         display_name: Some("A".into()),
-        identity_type: Some(IdentityType::Phone),
     }];
     let mut second = doc_a.messages[0].clone();
     second.guid = "guid-a2".into();
@@ -65,12 +64,10 @@ fn staged_fixture() -> tempfile::TempDir {
         IrParticipant {
             identity: Some("+15550101".into()),
             display_name: None,
-            identity_type: Some(IdentityType::Phone),
         },
         IrParticipant {
             identity: Some("+15550100".into()),
             display_name: Some("B".into()),
-            identity_type: Some(IdentityType::Phone),
         },
     ];
     let mut second_b = doc_b.messages[0].clone();

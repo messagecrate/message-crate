@@ -142,6 +142,17 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-09: **Every import hides duplicates.** An import from the desktop
+  app never hid duplicates, so a message two backup apps both held, or one
+  SMS Backup+ held to the second and to the millisecond, was shown twice.
+  Every import now hides them, within one backup app and across apps, and
+  nothing turns that off: the server's `import` command loses
+  `--skip-dedupe`, and an Import Run made through the HTTP API takes no
+  `dedupe` setting. Of the copies of one message, the one shown is the copy
+  with more attachments, then the one timed to the millisecond, then the one
+  from the import that brought more messages, then the one from the backup
+  app imported first (#1969).
+
 - 2026-10-09: **An SMS Backup & Restore import reads one `.xml` file.**
   The Import form's **Backup File** field takes the backup's one `.xml`
   file, where **Backup Directory** took a directory of them, because an
@@ -160,8 +171,7 @@ released versions carry their date on the heading.
   the Message Crate it starts convert with the same ffmpeg. **Settings →
   System → Media** has nothing to type any more. It shows the Tools Directory and, for ffmpeg, ffprobe and
   wtsexporter, where each was found, that it is missing and where to put
-  it, or why it is not used. The app does not download the programs yet
-  (#1053).
+  it, or why it is not used (#1053).
 - 2026-10-07: **Internal names were tidied.** Nothing changes on screen,
   on disk or in the HTTP API (#1715).
 - 2026-10-05: **A run's log lists its Import Errors and notes under
@@ -258,6 +268,27 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
+  backup was imported again and now held a photo or video that was missing
+  the first time, the import gave the stored message its file but never
+  queued it, so it got no Thumbnail or Preview, and the viewer did not open
+  it, until `process-assets` was run by hand. The server now makes the
+  Thumbnails and Previews of every attachment an import adds or fills in,
+  whichever import first brought the message (#1946).
+- 2026-10-09: **A file without a backup date imported beside a dated one
+  gives the same result in any order.** When one import held a dated backup
+  and a message file that says nothing about when its backup was made, such
+  as Message Crate's own export of a conversation whose messages came from
+  two backups, the order the files were read in decided what a later import
+  could change. An Unsent mark from the undated file could be cleared by a
+  later backup, or kept, and a later edit it recorded could be dropped
+  against a newer backup already stored. Message Crate now keeps what a file
+  without a date gave a message apart from the dated backups' date: its mark
+  stays, and its text stays until a copy records a later edit, whichever
+  file is read first and whether the files arrive in one import or several,
+  until a dated backup says the same. A conversation exported while one of
+  its messages holds such a mark or text carries no backup date, so
+  importing the export again keeps those rules (#1989).
 - 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
   wtsexporter's output named a full disk, the import asked to free space on
   the Scratch Directory's disk. The output itself was lost. So a full disk
@@ -417,6 +448,16 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-09: **A person who reacts to a message is the same contact as when
+  they write.** An import could take a person in a conversation's list and
+  the same person reacting to a message for two identities, and put the
+  reaction on a second contact with no name. That happened when the backup
+  said the person's address was a name while it reads as a phone number, such
+  as `5550123`. Message Crate now works out what every address is itself,
+  from the service and the address, for the people in a conversation, the
+  senders of its messages and the people who react alike, and no longer reads
+  it from the exported file (#1933, #1959).
+
 - 2026-10-08: **Adding or removing an identity updates the conversations with
   yourself already imported.** Notes imported before your number was added as an
   identity still listed you among the conversation's people. They also kept you
@@ -437,16 +478,20 @@ released versions carry their date on the heading.
   `MESSAGE_CRATE_BIN` and `WTSEXPORTER` environment variables are no longer
   read. ffmpeg and ffprobe beside the app, in a `lib/` directory beside it,
   or in the directory the field or `MESSAGE_CRATE_BIN` named are no longer
-  found: install ffmpeg on `PATH` or put both programs in
-  `~/message-crate/tools`. Put wtsexporter in
-  `~/message-crate/tools` too, because a WhatsApp import no longer finds it
-  on `PATH`. If you start the server with a script, it takes `serve
-  --tools-dir <directory>` for the same purpose (#1053).
+  found, and a WhatsApp import no longer finds wtsexporter on `PATH`. The
+  desktop app downloads all three into its Tools Directory when it starts,
+  ffmpeg and ffprobe only when they aren't installed on `PATH`, so nothing
+  needs doing. Without a connection, Troubleshooting in the user
+  guide says which files to put there by hand. If you start the server with
+  a script, it takes `serve --tools-dir <directory>` for the same purpose
+  (#1053).
 - A WhatsApp `result.json` that a `wtsexporter` from before this release
   wrote is refused, because it records no group members and no sender's
   name beside their number. The desktop app replaces an older `wtsexporter`
   in its Tools Directory with Message Crate's own on its next start with an
-  internet connection. Run the WhatsApp import again from the backup rather
+  internet connection, except on Linux on ARM, where it has no download of
+  its own and Troubleshooting in the user guide says how to install
+  wtsexporter by hand. Run the WhatsApp import again from the backup rather
   than from an old `result.json` (#1092).
 - A phone number written without its country code is no longer read as a
   US number. Import a US phone's backup with **Phone's country** set to the
@@ -483,6 +528,9 @@ released versions carry their date on the heading.
   milliseconds are refused when you import or convert them. Export the
   backup again with this build. A program that reads the HTTP API finds it
   in a message's `time_precision`, `seconds` or `milliseconds`.
+- Message files exported before Message Crate worked out each address's kind
+  itself are refused when you import or convert them. Export the backup
+  again with this build.
 
 ## [0.10.1] - 2026-10-05
 

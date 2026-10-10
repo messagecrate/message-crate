@@ -28,7 +28,7 @@ CSV output contains one row per message. Conversation and export identity are re
 | `direction` | `incoming` or `outgoing`. |
 | `service` | `sms`, `imessage`, `whatsapp`, `rcs`, `discord`, `signal`, `telegram`, `slack`, or `unknown`. |
 | `sender_identity` | Sender phone number, email, or other identity. Outgoing rows use the export owner when known. |
-| `identity_type` | The sender identity's type: `phone`, `email`, `username`, or `other`, inferred from `sender_identity`. Empty when the message has no sender identity. |
+| `identity_type` | The sender identity's type: `phone`, `email`, or `other`, worked out from `sender_identity` and `service` as the server does on import, so a WhatsApp `…@lid` id is `other`. Empty when the message has no sender identity. |
 | `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner identity is known. |
 | `subject` | Message subject when present. |
 | `text` | Message body. |

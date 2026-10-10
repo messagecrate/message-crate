@@ -82,6 +82,8 @@ mkdir -p ~/message-crate/tools
 ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/tools/
 ```
 
+The desktop app replaces that link with its own download of the same release the next time it starts with a connection, because a link isn't the pinned file. The link serves until then, and wherever the app has no download, such as Linux on ARM.
+
 ### Fork and clone
 
 Fork the [Message Crate repo](https://github.com/messagecrate/message-crate) on GitHub and clone your fork. If you have never forked a repo before, GitHub has [a guide](https://docs.github.com/en/pull-requests/how-tos/work-with-forks/fork-a-repo).

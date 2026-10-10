@@ -65,7 +65,6 @@ fn import_args(config: &Path, input: &Path) -> ImportArgs {
         assets_dir: None,
         media: "copy".into(),
         mode: ImportMode::Replace,
-        skip_dedupe: false,
         window_secs: 2,
         account: "alice".into(),
     }
@@ -412,7 +411,6 @@ fn imports_discard_prints_the_import_run_or_that_there_was_none() {
         source: "imessage".into(),
         tool: Some("message-crate-server".into()),
         mode: "replace".into(),
-        dedupe: false,
         phone_country: None,
         status: crate::db::imports::ImportStatus::Running,
         started_at: "2026-09-21T10:00:00+00:00".into(),

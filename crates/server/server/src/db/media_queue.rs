@@ -1,6 +1,6 @@
 //! `media_queue`: the Assets whose Thumbnail and Preview the server still has
 //! to make, one row per account and fingerprint. An Import Run that ends adds
-//! the Assets its messages name, and the background pass
+//! the Assets of the attachment rows it wrote, and the background pass
 //! ([`crate::media_queue`]) takes them oldest first and removes each when it
 //! is done with it.
 
@@ -17,8 +17,10 @@ pub struct QueuedAsset {
     pub rowid: i64,
 }
 
-/// Queue every Asset the messages of Import Run `import_id` of `account_id`
-/// name, and answer how many. An Asset already queued is queued again, at
+/// Queue the Asset of every attachment row Import Run `import_id` of
+/// `account_id` wrote (`attachments.import_id`): the rows it added and the
+/// stored rows it gave their file, whichever run created their message
+/// (#1946). Answers how many. An Asset already queued is queued again, at
 /// the back: the pass may be working on it, and the run's new rows must not
 /// be left out when that work is done.
 ///
@@ -35,7 +37,7 @@ pub async fn queue_import_run(
          SELECT DISTINCT m.account_id, a.sha256, $3
          FROM attachments a
          JOIN messages m ON m.id = a.message_id
-         WHERE m.account_id = $1 AND m.import_id = $2
+         WHERE m.account_id = $1 AND a.import_id = $2
            AND a.sha256 IS NOT NULL AND a.sha256 != ''
            AND a.assets_path IS NOT NULL AND a.assets_path != ''",
     )

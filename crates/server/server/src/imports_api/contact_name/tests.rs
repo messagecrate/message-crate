@@ -449,7 +449,6 @@ async fn import_files(conn: &mut sqlx::SqliteConnection, files: &[(&str, String)
         mode: crate::imports_api::ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });

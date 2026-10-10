@@ -36,7 +36,7 @@ Setting `[server] openapi_ui = true` in `config/config.toml` turns on a local ex
 
 Every import is an Import Run, and there is no import without one. A run takes four steps.
 
-1. `POST /v1/imports` creates the run and answers `201 Created` with its id. The body names the `source`, the `mode` (`replace` or `append`, default `append`), and whether to `dedupe` across sources after each batch (default false). These settings belong to the run and are stated once, so no batch repeats them. An account has at most one running Import Run, so a second `POST` answers `409 Conflict` while the first is live. `GET /v1/imports?status=running` finds the live run.
+1. `POST /v1/imports` creates the run and answers `201 Created` with its id. The body names the `source` and the `mode` (`replace` or `append`, default `append`). These settings belong to the run and are stated once, so no batch repeats them. An account has at most one running Import Run, so a second `POST` answers `409 Conflict` while the first is live. `GET /v1/imports?status=running` finds the live run.
 2. Each attachment goes up first, by its SHA-256, through `/v1/assets`. A message points at its attachment by that fingerprint, so the server must already hold the file when the message arrives.
 3. Each `POST /v1/imports/{id}/batches` adds one JSONL body to the run. The run's row says how the batch is imported, so the request carries nothing but the body. A `replace` run wipes the source once, on its first batch, and appends every batch after that. Every message needs a non-empty `guid`: a batch with a message without one is refused with `422 Unprocessable Entity`, naming its lines, and nothing in it is stored. An append skips a message whose `guid` the source already holds, so a batch sent again after its answer was lost stores nothing twice.
 4. `POST /v1/imports/{id}/complete` records how the run ended: `completed`, `completed_with_issues`, or `failed`, with its counts and issues. `POST /v1/imports/{id}/discard` gives a live run up instead and records it as `cancelled`, with the issues it carries. A run that has finished answers `409 Conflict` to a batch, a second close, or a change of stage, because its record is the history the person reads and is never rewritten.
@@ -55,7 +55,7 @@ A file the server cannot read answers `400 Bad Request` with a `malformed-body` 
 
 A batch holds one pooled database connection for the whole of its work: parsing the JSONL, placing attachments, and promoting messages. At most two batches run at once across the whole server, so the rest of the pool stays free for logins, browsing, and export while an import runs. Batches for the same account run one at a time.
 
-`message-crate-server import` reads a directory of JSONL without the HTTP interface. It defaults to `replace` and runs dedupe unless given `--skip-dedupe`.
+`message-crate-server import` reads a directory of JSONL without the HTTP interface. It defaults to `replace`. Every batch and every `import` is followed by the dedupe, which hides duplicates within one source and across sources.
 
 ## Export Run
 

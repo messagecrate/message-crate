@@ -2030,6 +2030,7 @@ dependencies = [
  "libsqlite3-sys",
  "media",
  "message-crate-api-types",
+ "message-crate-import",
  "message-crate-log-lines",
  "message-crate-serve-protocol",
  "message-ir",

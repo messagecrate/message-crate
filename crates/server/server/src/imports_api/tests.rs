@@ -309,7 +309,6 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: true,
             import_id: None,
             phone_country: None,
         }),
@@ -346,7 +345,6 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -402,7 +400,6 @@ fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> Import
         mode: ImportMode::Replace,
         source,
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     })
@@ -734,7 +731,6 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -810,18 +806,13 @@ fn edit_file(dir: &Path, name: &str, text: &str, versions: &[EarlierVersion]) ->
 }
 
 /// Append-mode options for the `g-edit` tests.
-fn edit_options<'a>(
-    assets: &'a Path,
-    root: &'a Path,
-    fill_content_keys: bool,
-) -> ImportOptions<'a> {
+fn edit_options<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
         asset_root: root,
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys,
         import_id: None,
         phone_country: None,
     })
@@ -836,7 +827,7 @@ fn edit_options<'a>(
 async fn append_gives_a_later_edit_to_a_stored_message_with_a_new_content_key() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = edit_options(&assets, tmp.path(), true);
+    let options = edit_options(&assets, tmp.path());
     let before = edit_file(tmp.path(), "before.jsonl", "see you at six", &[]);
     let after = edit_file(
         tmp.path(),
@@ -883,7 +874,7 @@ async fn append_keeps_a_later_edit_against_an_earlier_backup_listing_more_versio
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
-    let options = edit_options(&assets, tmp.path(), false);
+    let options = edit_options(&assets, tmp.path());
     let later = edit_file(
         tmp.path(),
         "later.jsonl",
@@ -974,7 +965,7 @@ async fn edit_snapshot(conn: &mut sqlx::SqliteConnection) -> EditSnapshot {
 async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_order() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = edit_options(&assets, tmp.path(), true);
+    let options = edit_options(&assets, tmp.path());
     let earlier = edit_file(
         tmp.path(),
         "earlier.jsonl",
@@ -1021,7 +1012,7 @@ async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_
 async fn a_version_without_text_is_stored_with_its_time_and_not_indexed() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = edit_options(&assets, tmp.path(), true);
+    let options = edit_options(&assets, tmp.path());
     let file = edit_file(
         tmp.path(),
         "imazing.jsonl",
@@ -1150,7 +1141,7 @@ async fn children_snapshot(conn: &mut sqlx::SqliteConnection) -> ChildrenSnapsho
 async fn one_import_of_two_backups_keeps_the_attachments_and_reactions_of_both() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let options = edit_options(&assets, tmp.path(), false);
+    let options = edit_options(&assets, tmp.path());
     // `late.bin` is found in the later backup by the bytes of `blob.bin`,
     // which a message staged before it stores: both backups read their
     // files from one directory, so only a claimed digest tells them apart.
@@ -1238,7 +1229,6 @@ async fn append_existing_guid_adds_missing_children() {
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -1326,7 +1316,6 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -1404,7 +1393,6 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -1456,7 +1444,6 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -1570,7 +1557,6 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -1630,7 +1616,6 @@ async fn promote_stamps_messages_with_import_id() {
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: Some(import_id),
             phone_country: None,
         }),
@@ -1728,7 +1713,6 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -1795,7 +1779,6 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
             mode: ImportMode::Replace,
             source: "",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: true,
             import_id: None,
             source_from_jsonl: true,
             media: MediaMode::Clone,
@@ -1859,7 +1842,6 @@ async fn media_none_skips_attachment_copy() {
             mode: ImportMode::Replace,
             source: "",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             source_from_jsonl: true,
             media: MediaMode::Disabled,
@@ -1916,7 +1898,6 @@ fn media_convert_stores_the_converted_file_not_the_original() {
                 mode: ImportMode::Replace,
                 source: "",
                 account_id: TEST_ACCOUNT,
-                fill_content_keys: false,
                 import_id: None,
                 source_from_jsonl: true,
                 media: MediaMode::Convert,
@@ -1974,7 +1955,6 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
         mode: ImportMode::Append,
         source: "openextract",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -2064,11 +2044,7 @@ async fn a_name_keyed_chat_is_not_the_chat_of_the_address_it_spells() {
         "AMAZON.jsonl",
         &format!(
             "{}\n{}",
-            conversation_header("sms_backup_plus", "AMAZON").typed_participant(
-                "AMAZON",
-                None,
-                message_ir::IdentityType::Other
-            ),
+            conversation_header("sms_backup_plus", "AMAZON").participant("AMAZON", None),
             message_line("g-sender", "from a sender")
                 .at(1_426_183_463_000)
                 .sms()
@@ -2203,7 +2179,6 @@ async fn a_participant_with_no_address_and_no_name_is_never_created() {
         mode: ImportMode::Append,
         source: "openextract",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -2261,7 +2236,6 @@ async fn persists_missing_reason_with_null_sha256() {
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -2403,7 +2377,6 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -2453,7 +2426,6 @@ async fn rejects_attachment_path_traversal() {
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -2497,7 +2469,6 @@ async fn failed_replace_keeps_existing_messages() {
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -2526,7 +2497,6 @@ async fn failed_replace_keeps_existing_messages() {
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -2587,7 +2557,6 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
         mode: ImportMode::Append,
         source: "sms-backup-restore",
         account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
         import_id: None,
         phone_country: None,
     });
@@ -3963,7 +3932,6 @@ async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, s
             mode: ImportMode::Append,
             source,
             account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
             import_id: None,
             phone_country: None,
         }),
@@ -5606,14 +5574,21 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     // Apple Messages lists nobody in the chat with the owner's own number;
     // WhatsApp lists the holder's number as the peer of "Message yourself".
     // Each source also carries one ordinary chat, which `with:me` must leave out.
-    for (source, self_participant, service) in [
-        ("imessage", None, IrService::IMessage),
-        ("whatsapp", Some("+15555550199"), IrService::Whatsapp),
+    // The two sources' notes are an hour apart, so the dedupe every batch
+    // runs keeps both.
+    for (source, self_participant, service, sent_at) in [
+        ("imessage", None, IrService::IMessage, 1_400_773_261_000),
+        (
+            "whatsapp",
+            Some("+15555550199"),
+            IrService::Whatsapp,
+            1_400_776_861_000,
+        ),
     ] {
         let path = batches_path(&state, &token, source).await;
         let message = |guid: &str, sender: Option<&str>, text: &str, reaction: Option<Reaction>| {
             let mut message = message_line(guid, text)
-                .at(1_400_773_261_000)
+                .at(sent_at)
                 .service(service)
                 .kind(IrMessageKind::Unknown);
             message = match sender {

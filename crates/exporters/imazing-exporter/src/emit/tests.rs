@@ -799,20 +799,11 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
     let participants: Vec<_> = conversation
         .participants
         .iter()
-        .map(|p| {
-            (
-                p.identity.as_deref(),
-                p.display_name.as_deref(),
-                p.identity_type,
-            )
-        })
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect();
     assert_eq!(
         participants,
-        vec![
-            (None, Some("Alice Example"), None),
-            (None, Some("Bob Example"), None),
-        ]
+        vec![(None, Some("Alice Example")), (None, Some("Bob Example")),]
     );
 }
 
@@ -1184,28 +1175,14 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
         .conversation
         .participants
         .iter()
-        .map(|p| {
-            (
-                p.identity.as_deref(),
-                p.display_name.as_deref(),
-                p.identity_type,
-            )
-        })
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect();
     assert_eq!(
         members,
         vec![
-            (
-                Some("+15555550111"),
-                Some("Alice Example"),
-                Some(message_ir::IdentityType::Phone)
-            ),
-            (
-                Some("+15555550122"),
-                Some("Bob Example"),
-                Some(message_ir::IdentityType::Phone)
-            ),
-            (None, Some("Carol Silent"), None),
+            (Some("+15555550111"), Some("Alice Example")),
+            (Some("+15555550122"), Some("Bob Example")),
+            (None, Some("Carol Silent")),
         ]
     );
 }
@@ -1704,12 +1681,9 @@ fn a_tel_number_and_a_tab_padded_number_are_one_address() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.identity.as_deref(), p.identity_type))
+        .map(|p| p.identity.as_deref())
         .collect();
-    assert_eq!(
-        participants,
-        vec![(Some("5555550101"), Some(message_ir::IdentityType::Phone))]
-    );
+    assert_eq!(participants, vec![Some("5555550101")]);
 }
 
 /// #1540: a roster label written as `tel:` and a number is that number, so
@@ -1723,27 +1697,13 @@ fn a_tel_label_in_a_roster_is_one_member() {
         .conversation
         .participants
         .iter()
-        .map(|p| {
-            (
-                p.identity.as_deref(),
-                p.display_name.as_deref(),
-                p.identity_type,
-            )
-        })
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect();
     assert_eq!(
         members,
         vec![
-            (
-                Some("+15555550111"),
-                Some("Alice Example"),
-                Some(message_ir::IdentityType::Phone)
-            ),
-            (
-                Some("+15555550122"),
-                None,
-                Some(message_ir::IdentityType::Phone)
-            ),
+            (Some("+15555550111"), Some("Alice Example")),
+            (Some("+15555550122"), None),
         ]
     );
 }

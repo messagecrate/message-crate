@@ -2,9 +2,9 @@ use super::*;
 use media::MediaMode;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
-    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IdentityType,
-    IrConversationType, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    MessageGuid, MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
+    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, IrConversationType,
+    IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid,
+    MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -27,7 +27,6 @@ fn doc_with_image_attachment() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                identity_type: None,
             }],
             stats: ConversationStats::default(),
         },
@@ -229,7 +228,6 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             participants: vec![IrParticipant {
                 identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
-                identity_type: Some(IdentityType::Phone),
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -314,7 +312,6 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
         "names the backup tool, not the person",
     ),
     ("conversation.conversation_type", "enum value"),
-    ("conversation.participants[].identity_type", "enum value"),
     ("messages[].time_precision", "enum value"),
     ("messages[].direction", "enum value"),
     ("messages[].service", "enum value"),

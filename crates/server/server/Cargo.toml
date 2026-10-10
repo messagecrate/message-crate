@@ -62,6 +62,9 @@ demo-seed = { path = "../demo-seed", features = ["testutil"] }
 # way every other crate's does.
 media = { path = "../../libs/media", features = ["testutil"] }
 reqwest = { workspace = true }
+# The desktop app's import library, so a test can run an Upload as the app
+# sends one against the server binary.
+message-crate-import = { path = "../../libs/import" }
 
 [lints]
 workspace = true

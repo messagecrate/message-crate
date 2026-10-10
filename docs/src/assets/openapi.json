@@ -14457,15 +14457,8 @@
                 "description": "Id of the account the batch imported into."
               },
               "dedupe": {
-                "oneOf": [
-                  {
-                    "$ref": "#/components/schemas/DedupeCounts"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "What the cross-source dedupe pass after this batch did, counted over\nthe whole account rather than the batch alone. Null when the Import\nRun was created with `dedupe` off, because then no pass runs."
+                "$ref": "#/components/schemas/DedupeCounts",
+                "description": "What the dedupe after this batch did, counted over the whole account\nrather than the batch alone. Every batch runs it."
               },
               "source": {
                 "type": "string",
@@ -14474,19 +14467,15 @@
             }
           }
         ],
-        "description": "Import result: the import counts plus optional dedupe counts."
+        "description": "Import result: the import counts and the dedupe counts."
       },
       "CreateImportRequest": {
         "type": "object",
-        "description": "Source, mode, dedupe and tool for a new Import Run. The bearer token\nnames the account.",
+        "description": "Source, mode and tool for a new Import Run. The bearer token\nnames the account.",
         "required": [
           "source"
         ],
         "properties": {
-          "dedupe": {
-            "type": "boolean",
-            "description": "Run cross-source soft-dedupe after each batch."
-          },
           "device_id": {
             "type": [
               "string",
@@ -14633,7 +14622,7 @@
       },
       "DedupeCounts": {
         "type": "object",
-        "description": "Cross-source dedupe outcome.",
+        "description": "What one dedupe did.",
         "required": [
           "keys_filled",
           "exact_groups",
@@ -15552,7 +15541,6 @@
           "id",
           "source",
           "mode",
-          "dedupe",
           "status",
           "started_at",
           "message_count",
@@ -15616,10 +15604,6 @@
             "format": "int64",
             "description": "Contacts this run created.",
             "minimum": 0
-          },
-          "dedupe": {
-            "type": "boolean",
-            "description": "Whether cross-source dedupe runs after each batch."
           },
           "device_id": {
             "type": [
@@ -16050,7 +16034,7 @@
               "string",
               "null"
             ],
-            "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
+            "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say, or when a file that did not say gave the\nmessage its mark or text, so a file exported from it claims no\ndate that nothing backs. Between two copies of one message from\none source, the copy from the later backup decides."
           },
           "conversation": {
             "$ref": "#/components/schemas/MessageConversation",
@@ -17819,7 +17803,6 @@
                 "id",
                 "source",
                 "mode",
-                "dedupe",
                 "status",
                 "started_at",
                 "message_count",
@@ -17883,10 +17866,6 @@
                   "format": "int64",
                   "description": "Contacts this run created.",
                   "minimum": 0
-                },
-                "dedupe": {
-                  "type": "boolean",
-                  "description": "Whether cross-source dedupe runs after each batch."
                 },
                 "device_id": {
                   "type": [
@@ -18153,7 +18132,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say. Between two copies of one message from one\nsource, the copy from the later backup decides."
+                  "description": "When the backup that gave the message its mark and text was made,\nRFC 3339 in UTC with a `Z` suffix; `null` when the conversation\nfile did not say, or when a file that did not say gave the\nmessage its mark or text, so a file exported from it claims no\ndate that nothing backs. Between two copies of one message from\none source, the copy from the later backup decides."
                 },
                 "conversation": {
                   "$ref": "#/components/schemas/MessageConversation",

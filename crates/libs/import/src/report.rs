@@ -160,8 +160,8 @@ pub struct ImportReport {
     /// Attachments whose bytes went up this run.
     pub assets_uploaded: u64,
     /// Attachments whose bytes did not go up this run: the server or another
-    /// conversation already had the fingerprint, the file was left out (no
-    /// path, missing, too large), or the Upload was text-only.
+    /// conversation already had the fingerprint, or the file was left out (no
+    /// path, missing, too large).
     pub assets_skipped: u64,
     /// Bytes uploaded.
     pub assets_bytes: u64,

@@ -95,17 +95,6 @@ pub fn message_line(
     serialize_message(&msg)
 }
 
-/// One JSON Lines message row with attachments removed (text-only import).
-///
-/// # Errors
-///
-/// Returns an error when the message cannot be serialized.
-pub fn message_line_without_attachments(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
-    let mut msg = msg.clone();
-    msg.attachments.clear();
-    serialize_message(&msg)
-}
-
 /// Serialize one message and return `(line_bytes, guid)`.
 ///
 /// The guid is the message's own. The server refuses a message without one,
@@ -147,7 +136,6 @@ mod tests {
                 participants: vec![IrParticipant {
                     identity: Some("+15555550101".into()),
                     display_name: Some("Sam".into()),
-                    identity_type: None,
                 }],
                 stats: ConversationStats::default(),
             },
@@ -155,7 +143,7 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":13"#));
+        assert!(header.contains(r#""schema_version":14"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 

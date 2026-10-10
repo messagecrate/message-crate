@@ -4,11 +4,11 @@
 //! its JSON Lines header — the format reader, the import client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
 //! words, and refuses it before parsing the rest of the file. The refusal is
-//! the one rule for every bump, whichever way the shapes differ. A version-12
-//! file would parse under version 13's rules, because version 13 only made
+//! the one rule for every bump, whichever way the shapes differ. A version-13
+//! file would parse under version 14's rules, because version 14 only made
 //! the text of an earlier version optional. It is refused all the same: a
 //! file is imported by its own version's rules or not at all, and the person
-//! should read "schema version 12", not an import that quietly read an older
+//! should read "schema version 13", not an import that quietly read an older
 //! shape.
 
 use crate::SCHEMA_VERSION;
@@ -125,10 +125,13 @@ mod tests {
         );
     }
 
-    /// Version 12 required the text of every earlier version; version 13
+    /// Version 13 required the text of every earlier version; version 14
     /// lets a source record an edit without the text it replaced, as iMazing
-    /// does. A version-12 file is refused by its version, never read by
-    /// rules that are not its own.
+    /// does. Version 12 gave each participant an `identity_type`, which the
+    /// import took over the address's shape; version 13 has none, and the
+    /// server types every address from its service and shape. A file at
+    /// either version is refused by its version, never read by rules that
+    /// are not its own.
     #[test]
     fn refuses_a_version_12_file_by_name() {
         assert_eq!(
@@ -137,7 +140,7 @@ mod tests {
                 .to_string(),
             format!("This file is schema version 12; Message Crate reads version {SCHEMA_VERSION}")
         );
-        assert_eq!(SCHEMA_VERSION, 13);
+        assert_eq!(SCHEMA_VERSION, 14);
     }
 
     #[test]
