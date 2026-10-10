@@ -2,7 +2,6 @@
 //! name its contact name gives.
 
 use phone::Handle;
-use sha2::{Digest, Sha256};
 
 /// Individual or group conversation classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -59,44 +58,19 @@ impl MmsConversation {
                 participants: vec![(peer, name)],
             };
         }
-        let keys: Vec<&str> = peers.iter().map(Handle::key).collect();
+        // Group chats are keyed by the participant set because the format
+        // has no stable thread ID. When the roster changes (someone is added
+        // or removed), messages before and after the change land in
+        // different conversations, an inherent limitation of the source,
+        // documented at
+        // https://messagecrate.app/docs/developer/formats/sms-backup-restore/mapping/.
+        let keys: Vec<String> = peers.iter().map(|p| p.key().to_string()).collect();
+        let (chat_key, title) = phone::group_chat_id("group-", &keys);
         Self {
-            chat_key: group_chat_key(&keys),
+            chat_key,
             kind: ConversationKind::Group,
-            group_title: Some(group_title(&keys)),
+            group_title: Some(title),
             participants: peers.into_iter().map(|p| (p, None)).collect(),
         }
-    }
-}
-
-/// `Group: <up to four peers>`, with a count for the rest.
-fn group_title(peers: &[&str]) -> String {
-    let shown = &peers[..peers.len().min(4)];
-    if peers.len() <= 4 {
-        format!("Group: {}", shown.join(", "))
-    } else {
-        format!(
-            "Group: {}, and {} others",
-            shown.join(", "),
-            peers.len() - 4
-        )
-    }
-}
-
-/// Group chats are keyed by the sorted participant set because the format
-/// has no stable thread ID. When the roster changes (someone is added or
-/// removed), messages before and after the change land in different
-/// conversations, an inherent limitation of the source, documented at
-/// https://messagecrate.app/docs/developer/formats/sms-backup-restore/mapping/.
-/// A very long roster is keyed by a hash so the key stays a usable file stem.
-fn group_chat_key(peers: &[&str]) -> String {
-    let raw_key = format!("group-{}", peers.join("_"));
-    if raw_key.len() > 180 {
-        format!(
-            "group-{}",
-            &hex::encode(Sha256::digest(raw_key.as_bytes()))[..16]
-        )
-    } else {
-        raw_key
     }
 }
