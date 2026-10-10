@@ -104,6 +104,16 @@ cannot be acted on. Contacts sit on the other side. How many contacts an
 account has is a measure of the database; who they are is the account holder's
 address book.
 
+An Import Run's log is the one place the owner reads a conversation's
+identities. (Revised 2026-10-09.) A run log may name the conversation files
+and attachments the run read. A conversation file is named for the people in
+it, so its name can carry a phone number, an email address or a group's
+title. The owner reads those names in the log. Why: the file name is part of
+what explains a failure. The log sits on the computer the account imported
+from, and anyone at that computer can open the Staging Directory and see the
+same names, so a log that hid them would protect nothing
+([#1990](https://github.com/messagecrate/message-crate/issues/1990)).
+
 Nothing in the owner's routes reads `messages.body`,
 `attachments.transcription`, or any other content column. A new owner route
 is judged by the two lists above, and a column that fits neither is content

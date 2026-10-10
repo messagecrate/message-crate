@@ -21,7 +21,8 @@ A browser reads the server's log only, because a run log never leaves the
 computer that ran the import.
 
 Why the owner reads every run log: a run log holds the import's metadata,
-what went wrong, what succeeded, and counts. The owner already sees each
+what went wrong, what succeeded, counts, and the names of the files the run
+read ("What a line holds", below). The owner already sees each
 account's Import Runs and what each account holds
 (`docs/adr/0008-the-owner-holds-no-messages.md`), so the run's log is the same
 information at finer grain. Decided on #1665, which changed decision 5 on
@@ -119,5 +120,9 @@ password, a Session token or an API token, message text, or attachment bytes.
 A run log does name the conversation files and attachments the run read, such
 as `+15555550101.jsonl` and `attachments/IMG_1234.jpg`, because that is what
 explains a failure. A conversation file is named for the people in it, so its
-name can carry a phone number, an email address or a group's title. Whether
-the owner may read such a name is open in #1990.
+name can carry a phone number, an email address or a group's title. The owner
+reads those names with the rest of the log, as ADR 0008 says for run logs.
+Why: the log sits on the computer the account imported from, and anyone at
+that computer can open the Staging Directory and see the same names, so a
+neutral name in the log would protect nothing
+([#1990](https://github.com/messagecrate/message-crate/issues/1990)).
