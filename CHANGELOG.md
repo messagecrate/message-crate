@@ -21,6 +21,22 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
+  and edits.** Each reaction in an iMazing export is kept with its emoji and
+  whether the account holder gave it. The export names the person who
+  reacted by display name alone, with no phone number or address, so a
+  reaction is not matched to a contact. The server does not yet keep the
+  name, so another person's reaction reads as from "Someone". A reply is linked
+  to the message it quotes when that message is in the same conversation of
+  the export, and stays a reply without a link otherwise. A message deleted
+  on the phone before the export is marked **Deleted in the source app**. An
+  edited message is marked **Edited**, and because iMazing keeps only the
+  final text, **Edited** opens one line, **Earlier version not in the
+  backup**, with the time of the edit; a search never finds the message by
+  the text it lost. The database format changed: an existing Message Crate
+  is rebuilt empty on first start and its messages must be imported again
+  (#2030).
+
 - 2026-10-09: **A WhatsApp import brings each reaction in under the person
   who reacted.** A WhatsApp conversation from an Android phone or an iPhone
   now shows its reactions, each stored under the reactor's phone number, or
@@ -223,6 +239,10 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **A downloaded ffmpeg is not reported as broken by
+  mistake.** On Linux, the check that a just-downloaded ffmpeg or ffprobe
+  runs could wrongly report it as not running. The check now tries again,
+  and a file still being written is still reported as not running (#2031).
 - 2026-10-07: **The desktop app remembers the server address.** An address
   entered under **Change server address** was saved only with the login.
   Logging out, or a login the server no longer accepted, forgot it. The next
@@ -252,6 +272,17 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-09: **Apple Messages from an older Mac or iPhone keep their times
+  in whole seconds.** A Messages database from before macOS 10.13 and iOS 11
+  stores each message's time in whole seconds, and the import said those
+  times had milliseconds. It now says they are whole seconds, as it does for
+  a message whose date the database holds in a form that could only be read
+  to the second. A message also held with milliseconds by another backup of
+  the same phone is then shown once (#1970).
+- 2026-10-09: **Apple Messages from a newer Mac or iPhone keep their
+  milliseconds.** Every Apple Messages time was cut to the second, though
+  the Messages database holds it to the nanosecond. A message now shows
+  its time with its milliseconds, as WhatsApp messages do (#1970).
 - 2026-10-09: **A photo a later import fills in gets its Thumbnail.** When a
   backup was imported again and now held a photo or video that was missing
   the first time, the import gave the stored message its file but never

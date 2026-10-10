@@ -484,6 +484,54 @@ fn a_number_in_the_chat_name_is_the_roster() {
     }
 }
 
+/// A reply names its quoted message by the date it quotes, within the same
+/// chat: the sender the cell names is not compared, because iMazing does
+/// not write it as `Sender Name` does, and a second two kept messages share
+/// names neither of them, so that reply keeps no link (#2030).
+#[test]
+fn a_reply_links_by_the_quoted_date_alone() {
+    let documents = convert_rows(
+        "Bob,2020-01-01 12:00:00,SMS,Incoming,+13215550100,Bob,Read,,,First,,,\n\
+Bob,2020-01-01 12:00:00,SMS,Incoming,+13215550100,Bob,Read,,,Second in the same second,,,\n\
+Bob,2020-01-01 12:01:00,SMS,Incoming,+13215550100,Bob,Read,,,Third,,,\n\
+Bob,2020-01-01 12:02:00,SMS,Outgoing,,,Sent,\"\u{21a9} Robert, 2020-01-01 12:01:00: \u{ab} Third \u{bb}\",,To the third,,,\n\
+Bob,2020-01-01 12:03:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00: \u{ab} First \u{bb}\",,To one of two,,,\n",
+    );
+    let messages = &documents[0].messages;
+    let by_text = |text: &str| messages.iter().find(|m| m.text == text).unwrap();
+    assert_eq!(
+        by_text("To the third").reply_to,
+        Some(message_ir::ReplyTo {
+            guid: Some(by_text("Third").guid.clone()),
+            part_index: None,
+        })
+    );
+    assert_eq!(
+        by_text("To one of two").reply_to,
+        Some(message_ir::ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
+    assert!(by_text("Third").reply_to.is_none());
+}
+
+/// A reply whose quoted date is its own second, when the quoted message is
+/// not in the export, does not link to itself: it is a reply with no link.
+#[test]
+fn a_reply_never_quotes_itself() {
+    let documents = convert_rows(
+        "Bob,2020-01-01 12:00:00,SMS,Outgoing,,,Sent,\"\u{21a9} Bob, 2020-01-01 12:00:00: \u{ab} Gone \u{bb}\",,Same second as the reply,,,\n",
+    );
+    assert_eq!(
+        documents[0].messages[0].reply_to,
+        Some(message_ir::ReplyTo {
+            guid: None,
+            part_index: None,
+        })
+    );
+}
+
 /// A Subject column value is the message's subject; an empty one is none.
 #[test]
 fn a_subject_reaches_the_message() {

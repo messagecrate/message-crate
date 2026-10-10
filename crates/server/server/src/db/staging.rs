@@ -284,8 +284,9 @@ pub struct StagingEarlierVersion<'a> {
     pub message_id: i64,
     /// The part of the message the version belongs to.
     pub part_index: i64,
-    /// The part's text in this version.
-    pub text: &'a str,
+    /// The part's text in this version; `None` when the source recorded the
+    /// edit and not the text it replaced.
+    pub text: Option<&'a str>,
     /// When the version was written, in the form a message's timestamp
     /// takes; `None` when the source does not record it.
     pub edited_at: Option<&'a crate::models::StoredTime>,
@@ -298,7 +299,7 @@ impl<'a> StagingEarlierVersion<'a> {
         Self {
             message_id,
             part_index: version.part_index,
-            text: &version.text,
+            text: version.text.as_deref(),
             edited_at: version.edited_at.as_ref(),
         }
     }

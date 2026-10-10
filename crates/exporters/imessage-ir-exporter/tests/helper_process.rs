@@ -18,7 +18,7 @@ use std::{
 use chat_db_fixture::{
     DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER,
     OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI,
-    UNSENT_GUID, write_chat_db,
+    UNSENT_GUID, set_message_date, write_chat_db,
 };
 use common::{config, helper_binary};
 use message_crate_core::{ExporterConfig, OutputFormat};
@@ -95,6 +95,50 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
                 msg.guid
             );
         }
+    }
+}
+
+/// A message whose `date` an older `chat.db` stored in seconds, and one
+/// whose date the library cannot read, so the Reader reads the raw stamp,
+/// were recorded in whole seconds and say `seconds`. Every other message
+/// says `milliseconds` (#1970).
+#[test]
+fn a_seconds_stamp_and_an_unreadable_date_are_whole_seconds() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    // guid-3 is at 600_000_120 seconds since 2001, stored in nanoseconds.
+    set_message_date(&db_path, "guid-3", 600_000_120);
+    // Ten trillion seconds before 2001 is outside the range the library
+    // reads a date in.
+    set_message_date(&db_path, "guid-8", -10_000_000_000_000);
+    let output = dir.path().join("out");
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+
+    let group = document_for(&output, GROUP_CHAT_IDENTIFIER);
+    let seconds = message(&group, "guid-3");
+    assert_eq!(seconds.time_precision, TimePrecision::Seconds);
+    assert_eq!(
+        seconds.timestamp_unix_ms,
+        (978_307_200 + 600_000_120) * 1000,
+        "a seconds stamp reads the same instant as a nanoseconds one"
+    );
+    let shrunk = document_for(&output, "chat200");
+    let unreadable = message(&shrunk, "guid-8");
+    assert_eq!(unreadable.time_precision, TimePrecision::Seconds);
+    let others = jsonl_files(&output)
+        .iter()
+        .flat_map(|path| read_conversation_jsonl(path).unwrap().messages)
+        .filter(|msg| msg.guid != "guid-3" && msg.guid != "guid-8")
+        .collect::<Vec<_>>();
+    assert!(!others.is_empty());
+    for msg in others {
+        assert_eq!(
+            msg.time_precision,
+            TimePrecision::Milliseconds,
+            "{}",
+            msg.guid
+        );
     }
 }
 

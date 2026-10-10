@@ -355,6 +355,87 @@ fn ffmpeg_and_ffprobe_in_two_places_is_an_error_naming_both() {
     }
 }
 
+/// Start `program` with `-version`, as the lookup does.
+fn start_version(program: &Path) -> io::Result<ExitStatus> {
+    Command::new(program)
+        .arg("-version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+}
+
+/// Linux refuses to run a file some process holds open for writing, and a
+/// child started on another thread holds every open descriptor between
+/// its fork and its exec. A mock written and run at once met that in CI and
+/// was read as broken (#2031). The lookup starts the program again, and
+/// finds it once the writer closes. Here the test is the writer, and
+/// closes the file after the first refused start, so the retry is proven
+/// with the kernel's own refusal and no race. How many starts it takes is
+/// not fixed: children the other tests start at the same time hold their
+/// inherited copy of the descriptor until they exec, which is the race
+/// itself, so only the first refusal and the eventual answer are asserted.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_program_held_open_for_writing_is_found_once_the_writer_closes() {
+    let tools = mock_tools();
+    let ffmpeg = tools.path().join("ffmpeg");
+    let mut writer = Some(fs::File::options().write(true).open(&ffmpeg).unwrap());
+    let mut starts = 0;
+
+    let runs = runs_once_the_file_is_free(|| {
+        starts += 1;
+        let started = start_version(&ffmpeg);
+        if starts == 1 {
+            assert_eq!(
+                started.as_ref().err().map(io::Error::kind),
+                Some(io::ErrorKind::ExecutableFileBusy),
+                "the first start, with the file open for writing, is refused as busy"
+            );
+            writer.take();
+        }
+        started
+    });
+
+    assert!(runs, "found once the writer closed");
+    assert!(starts > 1, "started again after the refusal");
+}
+
+/// A file open for writing for the whole lookup, as one still being
+/// written is, does not run, and the lookup gives up on it rather than
+/// starting it for ever.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_program_held_open_for_writing_throughout_is_not_found() {
+    let tools = mock_tools();
+    let _writer = fs::File::options()
+        .write(true)
+        .open(tools.path().join("ffmpeg"))
+        .unwrap();
+    assert_eq!(tool_in_dir(tools.path(), "ffmpeg"), None);
+    assert_eq!(
+        tool_in_dir(tools.path(), "ffprobe"),
+        Some(tools.path().join("ffprobe"))
+    );
+}
+
+/// Only a busy file is started again. A start refused for another reason,
+/// as one a missing shared library gives, is refused once. Making all
+/// [`BUSY_STARTS`] starts on every lookup would make every lookup of a
+/// broken program slow.
+#[test]
+fn a_start_refused_for_another_reason_is_not_made_again() {
+    let mut starts = 0;
+
+    let runs = runs_once_the_file_is_free(|| {
+        starts += 1;
+        Err(io::Error::from(io::ErrorKind::NotFound))
+    });
+
+    assert!(!runs);
+    assert_eq!(starts, 1);
+}
+
 /// A program that appends a line to `log` each time it runs.
 fn counting_tool(path: &Path, log: &Path) {
     fs::write(

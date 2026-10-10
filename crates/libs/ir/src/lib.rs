@@ -32,8 +32,7 @@ pub use conversation_key::{
 };
 pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use identity::{
-    MessageCopy, MessageGuid, MessageIdentity, TimePrecision, collapse_whitespace,
-    one_copy_per_message,
+    MessageCopy, MessageGuid, MessageIdentity, collapse_whitespace, one_copy_per_message,
 };
 pub use projection::{
     PendingReply, ProjectedRole, ProjectionHooks, ProjectionTally, SortKeyUnit,
@@ -69,9 +68,19 @@ pub use imessage_reader_protocol::{
 /// file carries.
 pub use imessage_reader_protocol::Deletion;
 
-/// One earlier version of one part of an edited message: its part, its text,
-/// and when it was written. A message's `text` is its final version, so
-/// [`IrMessage::edits`] holds only the versions before it.
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file, `seconds` or `milliseconds`.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader sends each message's precision in the
+/// shape the conversation file carries
+/// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
+pub use imessage_reader_protocol::TimePrecision;
+
+/// One earlier version of one part of an edited message: its part, its text
+/// when the source kept it, and when it was written. A message's `text` is
+/// its final version, so [`IrMessage::edits`] holds only the versions before
+/// it.
 ///
 /// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
 /// reason: the Apple Messages Reader writes it in the shape the conversation
@@ -138,7 +147,7 @@ impl std::fmt::Display for UnknownDeletion {
 impl std::error::Error for UnknownDeletion {}
 
 /// Schema version written into every [`ConversationDocument`].
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///

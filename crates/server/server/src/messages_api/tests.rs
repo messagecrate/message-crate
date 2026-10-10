@@ -934,7 +934,7 @@ fn later_apple_messages_edits() -> String {
         assert_eq!(message.text, was, "{} before the later edit", message.guid);
         message.edits.push(message_ir::EarlierVersion {
             part_index: 0,
-            text: std::mem::replace(&mut message.text, now.to_string()),
+            text: Some(std::mem::replace(&mut message.text, now.to_string())),
             edited_at_unix_ms: Some(edited_at),
         });
         edited.push(message.guid.clone());

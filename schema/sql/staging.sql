@@ -164,8 +164,9 @@ CREATE TABLE IF NOT EXISTS staging_message_versions (
     message_id INTEGER NOT NULL REFERENCES staging_messages(id) ON DELETE CASCADE,
     -- Which part of a multi-part message this version belongs to (0 = first/only).
     part_index INTEGER NOT NULL DEFAULT 0,
-    -- The part's text in this version.
-    text TEXT NOT NULL,
+    -- The part's text in this version; NULL when the source recorded the edit
+    -- and not the text it replaced.
+    text TEXT,
     -- When this version was written, in the form staging_messages.timestamp
     -- holds; NULL when the source does not record it.
     edited_at TEXT

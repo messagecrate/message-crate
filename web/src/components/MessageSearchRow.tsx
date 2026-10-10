@@ -52,9 +52,13 @@ function matchedNewestFirst(message: Message): EarlierVersion[] {
     .map(({ version }) => version);
 }
 
-/** Whether `version` holds `term`, the way the full-text index matches it. */
+/**
+ * Whether `version` holds `term`, the way the full-text index matches it. A
+ * version with no text, as iMazing records an edit, is in no index and holds
+ * nothing.
+ */
 function holds(version: EarlierVersion, term: FreeTextTerm): boolean {
-  return matchRanges(version.text, [term]).length > 0;
+  return version.text !== null && matchRanges(version.text, [term]).length > 0;
 }
 
 /**
@@ -121,7 +125,7 @@ export default function MessageSearchRow({
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
   const versionCuts = versionsToQuote(message, terms, cut.text).map(([version, words]) => {
-    const text = snippet(version.text, words).text;
+    const text = snippet(version.text ?? "", words).text;
     return {
       key: message.earlier_versions.indexOf(version),
       text,

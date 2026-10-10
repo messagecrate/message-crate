@@ -77,7 +77,12 @@ use serde_json::Value;
 /// 13: a reply carries [`Message::reply_to`], a [`ReplyTo`] naming the
 /// message it quotes and the part, and `Imessage::is_reply`,
 /// `in_reply_to_guid`, `thread_originator_part` and `num_replies` are gone.
-pub const PROTOCOL_VERSION: u32 = 13;
+/// 14: an [`EarlierVersion`] may carry no text ([`EarlierVersion::text`] is
+/// optional), for a source that records an edit and not the text it
+/// replaced.
+/// 15: a message carries [`Message::time_precision`], whether `chat.db`
+/// recorded its time below the second.
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -372,6 +377,11 @@ pub struct Message {
     pub guid: String,
     /// Sent time as milliseconds since 1970-01-01 UTC.
     pub timestamp_unix_ms: i64,
+    /// How finely `chat.db` recorded the time: `milliseconds` for a
+    /// nanosecond stamp (macOS 10.13 and iOS 11 on), `seconds` for a stamp
+    /// in seconds from an older database, or for a time read from the raw
+    /// stamp because the library could not read the date.
+    pub time_precision: TimePrecision,
     /// `true` for a message the owner sent.
     pub outgoing: bool,
     /// `iMessage`, `SMS`, `RCS`, or empty when unknown.
@@ -469,6 +479,39 @@ pub struct Reaction {
     pub reactor_display_name: Option<String>,
 }
 
+/// How finely a source recorded a message's time: a message's
+/// `time_precision` in the conversation file.
+///
+/// The flag, never the value, says whether a time has milliseconds: a
+/// millisecond time can end in `.000`, and a whole-second one always does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimePrecision {
+    /// Whole seconds: the milliseconds are zero because the source has none.
+    Seconds,
+    /// Milliseconds, as the phone stored them.
+    Milliseconds,
+}
+
+impl TimePrecision {
+    /// Both precisions.
+    pub const ALL: [Self; 2] = [Self::Seconds, Self::Milliseconds];
+
+    /// The name the conversation file, the database and the HTTP API use:
+    /// `seconds` or `milliseconds`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Milliseconds => "milliseconds",
+        }
+    }
+
+    /// The precision [`Self::as_str`] names, or `None` for any other text.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|p| p.as_str() == value)
+    }
+}
+
 /// Why a message's content is gone, or marked as going, in the app it came
 /// from.
 ///
@@ -503,19 +546,24 @@ impl Deletion {
 }
 
 /// One earlier version of one part of an edited message: the text that part
-/// held before an edit replaced it.
+/// held before an edit replaced it, or only that an edit replaced it.
 ///
 /// A message's own text is its final version, so a list of these holds only
 /// the versions before it, oldest first within each part. Every source that
 /// records edits writes the same shape, so the type is defined here beside
-/// [`Reaction`] and `message-ir` re-exports it.
+/// [`Reaction`] and `message-ir` re-exports it. Apple Messages keeps each
+/// version's text. iMazing records only that a message was edited, and when,
+/// so its version has no text.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EarlierVersion {
     /// The part of the message this version belongs to; 0 for the first or
     /// only part.
     pub part_index: u32,
-    /// The part's text in this version.
-    pub text: String,
+    /// The part's text in this version; `None` when the source records the
+    /// edit and not the text it replaced. A version with no text is not
+    /// searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
     /// When this version was written, as milliseconds since 1970-01-01 UTC:
     /// the send time for the original, the time of the edit that wrote it for
     /// a later one. `None` when the source does not record it.

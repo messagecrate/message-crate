@@ -118,7 +118,7 @@ Each mark has its own search word ([Search](/docs/user/features/messages/search/
 `deleted:yes` narrows a search to messages deleted in the source app, and `deleted:no` leaves them out.
 `unsent:yes` narrows it to unsent messages, and `unsent:no` leaves them out.
 A search for both marks writes both words, as `deleted:yes or unsent:yes`.
-Apple Messages is the source that records the marks today.
+Apple Messages records both marks. An iMazing export records only that a message was deleted, so a message from it is Deleted in the source app and never Unsent.
 Moving a Conversation to the Trash is a separate thing, done inside Message Crate ([Trash](/docs/user/features/messages/trash/)).
 
 ### Edited messages
@@ -131,8 +131,9 @@ A message opened from the Messages list, when the search found it only by a word
 The line **Matched an earlier version** sits above them, and the version holding the word is highlighted.
 **Find** opens a match the same way when only an earlier version holds the word.
 Every other edited message stays closed, including one the search found by its final text.
-Apple Messages is the source that records edits today.
-When the same phone is imported through Apple Messages and through a backup that records no edits, such as iMazing, the Message Crate shows one copy of each message, and that copy lists the earlier versions whichever backup it came from.
+Apple Messages records each earlier version's text.
+An iMazing export records only that a message was edited, and when: **Edited** then opens one line, like `4:58 PM · Earlier version not in the backup`, and no search finds the message by the text it lost.
+When the same phone is imported through Apple Messages and through iMazing, the Message Crate shows one copy of each message, and that copy lists the earlier versions whichever backup it came from.
 
 ### Photos, videos, and recordings
 

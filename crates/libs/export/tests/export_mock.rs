@@ -1424,12 +1424,12 @@ fn an_exported_message_keeps_its_earlier_versions() {
         [
             EarlierVersion {
                 part_index: 0,
-                text: "See you at 11".into(),
+                text: Some("See you at 11".into()),
                 edited_at_unix_ms: Some(1_578_312_840_000),
             },
             EarlierVersion {
                 part_index: 0,
-                text: "See you at 11:30".into(),
+                text: Some("See you at 11:30".into()),
                 edited_at_unix_ms: Some(1_578_312_900_000),
             },
         ]

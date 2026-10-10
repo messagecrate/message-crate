@@ -511,7 +511,9 @@ pub(crate) async fn unindex_versions_of_edited_messages(
 
 /// Index the earlier versions above `versions_before`, the highest
 /// `message_versions.id` that existed before this promotion inserted any:
-/// the ones the promotion added while the sync triggers were paused.
+/// the ones the promotion added while the sync triggers were paused. A
+/// version with no text has nothing to find it by, so it is not indexed, as
+/// the sync trigger (`fts_triggers_create.sql`) leaves it out.
 ///
 /// # Errors
 ///
@@ -522,7 +524,7 @@ pub(crate) async fn index_message_versions_fts(
 ) -> Result<u64> {
     let n = sqlx::query(
         "INSERT INTO message_versions_fts(rowid, text)
-         SELECT id, text FROM message_versions WHERE id > $1",
+         SELECT id, text FROM message_versions WHERE id > $1 AND text IS NOT NULL",
     )
     .bind(versions_before)
     .execute(&mut *conn)
