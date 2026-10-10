@@ -1238,6 +1238,7 @@ mod conversation_stem_tests {
             conversation_stem("individual", "", None, &[], None),
             "unknown"
         );
+        assert_eq!(conversation_stem("individual", "  ", None, &[], None), "__");
         assert_eq!(
             conversation_stem("individual", "", None, &[], Some("__whatsapp")),
             "unknown__whatsapp"
