@@ -1714,7 +1714,7 @@ async fn load_gen_rows(conn: &mut SqliteConnection) -> HashMap<i64, GenRow> {
     }
     raw.into_iter()
         .map(
-            |(id, conversation_id, source, is_from_me, sender, ts, body, key, dup)| {
+            |(id, conversation_id, source, is_from_me, sender, rfc3339, body, key, dup)| {
                 let row = GenRow {
                     conversation_id,
                     source,
@@ -1724,7 +1724,7 @@ async fn load_gen_rows(conn: &mut SqliteConnection) -> HashMap<i64, GenRow> {
                     } else {
                         sender
                     },
-                    secs: parse_rfc3339_utc_secs(&ts).unwrap(),
+                    secs: parse_rfc3339_utc_secs(&rfc3339).unwrap(),
                     body: normalize_body(body.as_deref()),
                     attachments: shas.remove(&id).unwrap_or_default().join(","),
                     content_key: key,

@@ -5,8 +5,8 @@ use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
     RegisteredAccount, delete_raw, delete_status, expect_problem, expect_problem_for, get_json,
-    get_raw, get_status, patch_failure, patch_json, patch_raw, post_created_json, post_json_raw,
-    register_via_api, test_fixture,
+    get_raw, get_status, patch_failure, patch_json, patch_json_raw, post_created_json,
+    post_json_raw, register_via_api, test_fixture,
 };
 
 /// Which collection a case runs against. Every case runs for both, except
@@ -170,7 +170,7 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
         let (status, text) =
             post_json_raw(state, kind.base(), &user.token, json!({ "name": "  " })).await;
         expect_problem_for(kind.base(), status, &text, ProblemType::ValidationFailed);
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{}/{work}", kind.base()),
             &user.token,
@@ -178,7 +178,7 @@ async fn create_and_update_refuse_duplicate_empty_and_reserved_names() {
         )
         .await;
         expect_problem_for(kind.base(), status, &text, ProblemType::NameTaken);
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{}/{work}", kind.base()),
             &user.token,
@@ -233,7 +233,7 @@ async fn an_unknown_id_answers_404_on_every_route() {
         let state = &fixture.state;
         let user = alice(state).await;
         let base = kind.base();
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{base}/999"),
             &user.token,
@@ -245,7 +245,7 @@ async fn an_unknown_id_answers_404_on_every_route() {
         expect_problem(status, &text, ProblemType::NotFound);
         let (status, text) = get_raw(state, &format!("{base}/999/members"), &user.token).await;
         expect_problem(status, &text, ProblemType::NotFound);
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{base}/999/members"),
             &user.token,
@@ -282,7 +282,7 @@ async fn members_patch_adds_and_removes_in_one_call() {
         assert_eq!(changed, json!({ "added": 0, "removed": 1 }));
         assert_eq!(member_ids(state, kind, &user.token, id).await, vec![a]);
 
-        let (status, text) = patch_raw(state, &members, &user.token, json!({})).await;
+        let (status, text) = patch_json_raw(state, &members, &user.token, json!({})).await;
         expect_problem(status, &text, ProblemType::ValidationFailed);
     }
 }
@@ -303,7 +303,7 @@ async fn members_patch_with_a_foreign_member_writes_nothing() {
         let members = format!("{}/{id}/members", kind.base());
         // An id to add that names another account's row is a body that broke a rule.
         let (status, text) =
-            patch_raw(state, &members, &user.token, json!({ "add": [a, bobs] })).await;
+            patch_json_raw(state, &members, &user.token, json!({ "add": [a, bobs] })).await;
         expect_problem(status, &text, ProblemType::ValidationFailed);
         assert!(member_ids(state, kind, &user.token, id).await.is_empty());
         assert!(
@@ -358,7 +358,7 @@ async fn another_accounts_set_is_not_visible() {
         let base = kind.base();
 
         assert!(names(state, kind, &user.token).await.is_empty());
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{base}/{id}"),
             &user.token,
@@ -370,7 +370,7 @@ async fn another_accounts_set_is_not_visible() {
         expect_problem(status, &text, ProblemType::NotFound);
         let (status, text) = get_raw(state, &format!("{base}/{id}/members"), &user.token).await;
         expect_problem(status, &text, ProblemType::NotFound);
-        let (status, text) = patch_raw(
+        let (status, text) = patch_json_raw(
             state,
             &format!("{base}/{id}/members"),
             &user.token,

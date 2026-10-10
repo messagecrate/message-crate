@@ -159,8 +159,8 @@ pub async fn messages_bytes(conn: &mut SqliteConnection) -> Result<i64> {
 /// Every account with its message count and text bytes, the owner first and
 /// then by username: the order the User Accounts table uses. An account with
 /// no messages is listed with zeros. Text is counted in bytes, not
-/// characters: `LENGTH` of text counts characters, so the text is read as a
-/// blob.
+/// characters: `LENGTH` of text counts characters, so the text is cast to
+/// SQLite's `BLOB` type first.
 pub async fn text_by_account(conn: &mut SqliteConnection) -> Result<Vec<AccountText>> {
     let bytes_of = |column: &str| format!("COALESCE(LENGTH(CAST({column} AS BLOB)), 0)");
     let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(&format!(

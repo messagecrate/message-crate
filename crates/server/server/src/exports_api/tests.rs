@@ -5,9 +5,8 @@ use crate::paging::SortKey;
 use crate::problem::ProblemType;
 use crate::test_support::{
     MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status,
-    expect_problem, fixture_with_account, get_json, get_raw, get_status, post_created_json,
-    post_json, post_raw, post_status, register_via_api, seed_conversation, stored_time,
-    test_fixture,
+    expect_problem, fixture_with_account, get_json, get_raw, post_created_json, post_json,
+    post_json_raw, post_status, register_via_api, seed_conversation, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 use message_crate_api_types::ExportQueryList;
@@ -874,13 +873,11 @@ async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
             .await
             .unwrap();
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "selection", "conversation_ids": [bobs_conversation, 4242] } })
-            .to_string(),
+        json!({ "scope": { "kind": "selection", "conversation_ids": [bobs_conversation, 4242] } }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -891,44 +888,40 @@ async fn a_scope_the_server_cannot_honour_is_refused_and_no_run_is_recorded() {
         )]
     );
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "selection" } }).to_string(),
+        json!({ "scope": { "kind": "selection" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "query", "list": "messages", "q": " " } }).to_string(),
+        json!({ "scope": { "kind": "query", "list": "messages", "q": " " } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
 
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "query", "list": "messages", "q": "wibble:yes" } }).to_string(),
+        json!({ "scope": { "kind": "query", "list": "messages", "q": "wibble:yes" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::SearchQueryInvalid);
 
     // A body that parsed as JSON and then named a kind the server does not
     // have broke a rule, which is 422 like every other field.
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &alice.token,
-        "application/json",
-        json!({ "scope": { "kind": "backup" } }).to_string(),
+        json!({ "scope": { "kind": "backup" } }),
     )
     .await;
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -1007,12 +1000,11 @@ async fn a_run_belongs_to_its_account() {
         expect_problem(status, &text, ProblemType::NotFound);
     }
     for action in ["complete", "cancel"] {
-        let (status, text) = post_raw(
+        let (status, text) = post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &bob.token,
-            "application/json",
-            "{}",
+            json!({}),
         )
         .await;
         expect_problem(status, &text, ProblemType::NotFound);
@@ -1132,12 +1124,11 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
         Some(format!("export {id} is not running (status=completed)").as_str())
     );
     for action in ["complete", "cancel"] {
-        let (status, text) = post_raw(
+        let (status, text) = post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/{action}"),
             &alice.token,
-            "application/json",
-            "{}",
+            json!({}),
         )
         .await;
         expect_problem(status, &text, ProblemType::StateConflict);
@@ -1154,12 +1145,11 @@ async fn a_finished_run_refuses_pages_and_a_second_close() {
     .await;
     assert_eq!(cancelled["status"], "cancelled");
     assert!(cancelled["finished_at"].is_string());
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         &format!("/v1/exports/{other_id}/complete"),
         &alice.token,
-        "application/json",
-        "{}",
+        json!({}),
     )
     .await;
     expect_problem(status, &text, ProblemType::StateConflict);
@@ -1197,12 +1187,11 @@ async fn a_close_that_loses_a_race_names_how_the_run_ended() {
     complete_elsewhere(&mut other, id).await;
     let (status, text) = crate::db::write_tx::commit_during(
         other,
-        post_raw(
+        post_json_raw(
             &fixture.state,
             &format!("/v1/exports/{id}/cancel"),
             &alice.token,
-            "application/json",
-            "{}",
+            json!({}),
         ),
     )
     .await;
@@ -1288,19 +1277,16 @@ async fn an_export_token_reads_messages_only_through_a_run() {
     }
 
     let without_export = api_token(&fixture, &alice, false).await;
-    let (status, text) = post_raw(
+    let (status, text) = post_json_raw(
         &fixture.state,
         "/v1/exports",
         &without_export,
-        "application/json",
-        json!({ "scope": { "kind": "everything" } }).to_string(),
+        json!({ "scope": { "kind": "everything" } }),
     )
     .await;
     expect_problem(status, &text, ProblemType::InsufficientScope);
-    assert_eq!(
-        get_status(&fixture.state, "/v1/exports", &without_export).await,
-        StatusCode::FORBIDDEN
-    );
+    let (status, text) = get_raw(&fixture.state, "/v1/exports", &without_export).await;
+    expect_problem(status, &text, ProblemType::InsufficientScope);
 }
 
 // ── A run is a snapshot ──────────────────────────────────────────────────────

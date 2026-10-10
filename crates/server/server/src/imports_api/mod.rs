@@ -1553,7 +1553,7 @@ fn import_date_ymd(row: &crate::db::imports::ImportRow) -> String {
     row.finished_at
         .as_deref()
         .or(Some(row.started_at.as_str()))
-        .and_then(|ts| ts.get(..10))
+        .and_then(|rfc3339| rfc3339.get(..10))
         .filter(|d| d.len() == 10)
         .map_or_else(
             || chrono::Utc::now().format("%Y-%m-%d").to_string(),

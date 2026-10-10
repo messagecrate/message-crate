@@ -13707,7 +13707,7 @@
               "string",
               "null"
             ],
-            "description": "The username of the account the entry is about, as it was; for a\nrefused login, the username as typed. Kept after the account is deleted."
+            "description": "The username of the account the entry is about, as it was; for a\nrefused login as a username no account holds, the username as typed,\nor `null` when the text typed could not be a username. Kept after the\naccount is deleted."
           }
         }
       },
@@ -17005,7 +17005,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The username of the account the entry is about, as it was; for a\nrefused login, the username as typed. Kept after the account is deleted."
+                  "description": "The username of the account the entry is about, as it was; for a\nrefused login as a username no account holds, the username as typed,\nor `null` when the text typed could not be a username. Kept after the\naccount is deleted."
                 }
               }
             },

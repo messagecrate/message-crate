@@ -97,7 +97,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
             report.bump(counter, chat.messages.len() as u64);
             continue;
         }
-        if let Some((chat_id, convo, roster)) = ingest_chat(
+        if let Some((chat_id, conversation, roster)) = ingest_chat(
             &jid,
             &chat,
             owner_identity.as_deref(),
@@ -106,7 +106,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
             &mut report,
         ) {
             rosters.insert(chat_id.clone(), roster);
-            conversations.insert(chat_id, convo);
+            conversations.insert(chat_id, conversation);
         }
     }
 
@@ -123,12 +123,13 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     };
     let mut documents = Vec::new();
     let mut media_sources: Vec<Option<PathBuf>> = Vec::new();
-    for (chat_id, mut convo) in conversations {
+    for (chat_id, mut conversation) in conversations {
         message_crate_core::check_cancel(cancel)?;
-        let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) else {
+        let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
+        else {
             continue;
         };
-        collect_media_sources(&convo, &mut media_sources);
+        collect_media_sources(&conversation, &mut media_sources);
         documents.push(doc);
     }
 
@@ -498,8 +499,8 @@ fn queue_media(
 }
 
 /// Collect source paths in the same order attachments will appear on documents.
-fn collect_media_sources(convo: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
-    for msg in &convo.messages {
+fn collect_media_sources(conversation: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
+    for msg in &conversation.messages {
         if msg.attachments.is_empty() {
             continue;
         }
@@ -705,15 +706,19 @@ impl ProjectionHooks for WhatsappProjection {
     }
 
     /// The participants [`ingest_chat`] gathered for the chat ([`Roster`]).
-    fn participants(&self, chat_id: &str, _convo: &PendingConversation) -> Vec<IrParticipant> {
+    fn participants(
+        &self,
+        chat_id: &str,
+        _conversation: &PendingConversation,
+    ) -> Vec<IrParticipant> {
         self.rosters.get(chat_id).cloned().unwrap_or_default()
     }
 
-    fn group_title(&self, convo: &PendingConversation) -> Option<String> {
-        convo.display_name.clone()
+    fn group_title(&self, conversation: &PendingConversation) -> Option<String> {
+        conversation.display_name.clone()
     }
 
-    fn packaging_stem_suffix(&self, _convo: &PendingConversation) -> Option<String> {
+    fn packaging_stem_suffix(&self, _conversation: &PendingConversation) -> Option<String> {
         Some("__whatsapp".into())
     }
 
@@ -725,9 +730,9 @@ impl ProjectionHooks for WhatsappProjection {
     /// nor `reply_key_id` is stored beside it. Nor is a reaction copied
     /// here: `reactions` records each on the message, and the fork's
     /// name-to-emoji `reactions` map is not read at all.
-    fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
+    fn source(&self, conversation: &PendingConversation, msg: &PendingMessage) -> IrSource {
         let mut fields = Map::new();
-        let whatsapp_jid = convo.extra_str("whatsapp_jid");
+        let whatsapp_jid = conversation.extra_str("whatsapp_jid");
         if !whatsapp_jid.is_empty() {
             fields.insert(
                 "jid".into(),
