@@ -63,10 +63,8 @@ export default function CreateAccountForm({
   return (
     <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
       <CredentialFields
-        username={username}
-        onUsernameChange={setUsername}
-        password={password}
-        onPasswordChange={setPassword}
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="new-password"
         confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
         disabled={disabled}

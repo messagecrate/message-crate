@@ -13,10 +13,8 @@ function renderFields(autoComplete: "current-password" | "new-password", withCon
   render(
     <form>
       <CredentialFields
-        username=""
-        onUsernameChange={noop}
-        password=""
-        onPasswordChange={noop}
+        username={{ value: "", onChange: noop }}
+        password={{ value: "", onChange: noop }}
         autoComplete={autoComplete}
         confirmPassword={withConfirm ? { value: "", onChange: noop } : undefined}
       />

@@ -56,10 +56,8 @@ export default function ClaimForm({
       </p>
 
       <CredentialFields
-        username={username}
-        onUsernameChange={setUsername}
-        password={password}
-        onPasswordChange={setPassword}
+        username={{ value: username, onChange: setUsername }}
+        password={{ value: password, onChange: setPassword }}
         autoComplete="new-password"
         confirmPassword={{ value: confirmPassword, onChange: setConfirmPassword }}
         disabled={disabled}

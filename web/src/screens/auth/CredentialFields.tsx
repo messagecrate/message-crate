@@ -3,32 +3,31 @@ import { LockIcon, PersonIcon } from "../../components/icons";
 import PasswordField from "../../components/PasswordField";
 import TextField from "../../components/TextField";
 
+/** One field's value, and the setter the form keeps it with. */
+type Field = { value: string; onChange: (value: string) => void };
+
 /**
  * The username and password fields of the three sign-in forms: Login, Create
  * Account, and Create Owner.
  *
  * `autoComplete` says which password this is. `current-password` is a login,
- * so a password manager offers to fill it; `new-password` is one being chosen,
+ * so a password manager offers to fill it. `new-password` is one being chosen,
  * so a password manager offers to generate and store it. The Confirm Password
  * field shows only when the form passes `confirmPassword`. Each password field
  * keeps its own show/hide state, so showing one does not show the other.
  */
 export default function CredentialFields({
   username,
-  onUsernameChange,
   password,
-  onPasswordChange,
-  autoComplete,
   confirmPassword,
+  autoComplete,
   disabled = false,
 }: {
-  username: string;
-  onUsernameChange: (value: string) => void;
-  password: string;
-  onPasswordChange: (value: string) => void;
+  username: Field;
+  password: Field;
+  /** Without it, the form shows no Confirm Password field. */
+  confirmPassword?: Field;
   autoComplete: "current-password" | "new-password";
-  /** The Confirm Password field's value and setter; leave out for no field. */
-  confirmPassword?: { value: string; onChange: (value: string) => void };
   disabled?: boolean;
 }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -39,8 +38,8 @@ export default function CredentialFields({
       <TextField
         label="Username"
         leadingIcon={<PersonIcon size={16} />}
-        value={username}
-        onChange={onUsernameChange}
+        value={username.value}
+        onChange={username.onChange}
         name="username"
         autoComplete="username"
         isDisabled={disabled}
@@ -52,8 +51,8 @@ export default function CredentialFields({
         label="Password"
         className="mt-3.5"
         leadingIcon={<LockIcon size={16} />}
-        value={password}
-        onChange={onPasswordChange}
+        value={password.value}
+        onChange={password.onChange}
         name={autoComplete === "current-password" ? "password" : "new-password"}
         autoComplete={autoComplete}
         showPassword={showPassword}
