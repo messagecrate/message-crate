@@ -788,45 +788,109 @@ async fn an_undated_later_edit_beside_an_earlier_backup_gives_its_text() {
 }
 
 /// A message imported from a file without a backup date takes the date of
-/// the first dated file that meets it, even one that gives it nothing new,
-/// so the next import compares with that backup. A file without a date
-/// leaves the message's date as it is.
+/// a dated file that then meets it, and a newer dated backup's date after
+/// that; a file without a date leaves the date as it is. A dated backup with
+/// the same text backs the text, so from then on the dates decide it: a
+/// later backup's different text replaces it, though it records no later
+/// edit.
 #[tokio::test]
-async fn a_dated_file_gives_an_undated_message_its_date() {
+async fn a_dated_backup_with_the_same_text_backs_an_undated_text() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
     let db = tmp.path().join("messagecrate.db");
-    let file = |name: &str, backup: Option<i64>| {
+    let file = |name: &str, backup: Option<i64>, text: &str| {
         backup_file(
             tmp.path(),
             name,
             &Copy {
                 backup,
-                text: "same text",
+                text,
                 versions: &[],
                 deletion: None,
             },
         )
     };
-    let undated = file("undated.jsonl", None);
-    import(&db, &assets, tmp.path(), std::slice::from_ref(&undated)).await;
-    assert_eq!(held(&db).await.backup_taken_at, None);
-    import(
-        &db,
-        &assets,
-        tmp.path(),
-        &[file("dated.jsonl", Some(EARLIER_BACKUP))],
-    )
-    .await;
-    assert_eq!(
-        held(&db).await.backup_taken_at.as_deref(),
-        Some(EARLIER_BACKUP_AT)
-    );
+    let undated = file("undated.jsonl", None, "same text");
+    let dated = file("dated.jsonl", Some(EARLIER_BACKUP), "same text");
+    let later = file("later.jsonl", Some(LATER_BACKUP), "other text");
+    for (label, batches) in [
+        ("apart", vec![vec![undated.clone()], vec![dated.clone()]]),
+        ("together", vec![vec![undated.clone(), dated.clone()]]),
+    ] {
+        let db = tmp.path().join(format!("backed-{label}.db"));
+        for batch in batches {
+            import(&db, &assets, tmp.path(), &batch).await;
+        }
+        assert_eq!(
+            held(&db).await.backup_taken_at.as_deref(),
+            Some(EARLIER_BACKUP_AT),
+            "{label}"
+        );
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&undated)).await;
+        assert_eq!(
+            held(&db).await.backup_taken_at.as_deref(),
+            Some(EARLIER_BACKUP_AT),
+            "{label}"
+        );
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&later)).await;
+        let held = held(&db).await;
+        assert_eq!(held.text, "other text", "{label}");
+        assert_eq!(
+            held.backup_taken_at.as_deref(),
+            Some(LATER_BACKUP_AT),
+            "{label}"
+        );
+    }
     import(&db, &assets, tmp.path(), &[undated]).await;
-    assert_eq!(
-        held(&db).await.backup_taken_at.as_deref(),
-        Some(EARLIER_BACKUP_AT)
+    assert_eq!(held(&db).await.backup_taken_at, None);
+}
+
+/// A dated backup at least as new as the message's date that carries the
+/// Unsent mark a file without a date gave it backs the mark, so a later
+/// backup without the mark clears it, as it would a mark only dated
+/// backups gave.
+#[tokio::test]
+async fn a_dated_backup_with_the_same_mark_backs_an_undated_mark() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let file = |name: &str, backup: Option<i64>, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup,
+                text: "taken back",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let undated = file("undated-unsent.jsonl", None, Some(Deletion::Unsent));
+    let dated = file(
+        "dated-unsent.jsonl",
+        Some(EARLIER_BACKUP),
+        Some(Deletion::Unsent),
     );
+    let later = file("later-shown.jsonl", Some(LATER_BACKUP), None);
+    for (label, batches) in [
+        ("apart", vec![vec![undated.clone()], vec![dated.clone()]]),
+        (
+            "apart-reversed",
+            vec![vec![dated.clone()], vec![undated.clone()]],
+        ),
+        ("together", vec![vec![undated.clone(), dated.clone()]]),
+        (
+            "together-reversed",
+            vec![vec![dated.clone(), undated.clone()]],
+        ),
+    ] {
+        let db = tmp.path().join(format!("mark-{label}.db"));
+        for batch in batches {
+            import(&db, &assets, tmp.path(), &batch).await;
+        }
+        import(&db, &assets, tmp.path(), std::slice::from_ref(&later)).await;
+        assert_eq!(held(&db).await.deletion, None, "{label}");
+    }
 }
 
 /// A message a file without a backup date gave its mark is read back with

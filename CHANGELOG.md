@@ -233,8 +233,10 @@ released versions carry their date on the heading.
   against a newer backup already stored. Message Crate now keeps what a file
   without a date gave a message apart from the dated backups' date: its mark
   stays, and its text stays until a copy records a later edit, whichever
-  file is read first and whether the files arrive in one import or several
-  (#1989).
+  file is read first and whether the files arrive in one import or several,
+  until a dated backup says the same. A conversation exported while one of
+  its messages holds such a mark or text carries no backup date, so
+  importing the export again keeps those rules (#1989).
 - 2026-10-08: **A number written without its country code is no longer read
   as a US number.** A UK backup's `07700900123` and `+447700900123` were two
   identities for one person, so their one-to-one conversation split in two,

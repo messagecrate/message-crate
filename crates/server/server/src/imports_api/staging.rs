@@ -988,8 +988,10 @@ async fn add_staged_copy(
         }
         BackupOrder::Earlier => {}
         BackupOrder::Undecided => {
-            if !row.msg.earlier_versions.is_empty() {
-                db_staging::take_later_staged_copy(tx, staged, &copy).await?;
+            let taken = !row.msg.earlier_versions.is_empty()
+                && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
+            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+                db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }

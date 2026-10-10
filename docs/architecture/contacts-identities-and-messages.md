@@ -573,33 +573,36 @@ backup decides its mark and text.** One message from one source is one row
 already there, in the same import or a later one. The conversation file says
 when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
 that date on each staged row, and `messages.backup_taken_at` keeps the date of
-the newest backup with a date that gave the stored copy anything. When both
-copies have a date, the
-copy from the later backup gives the message its deletion mark, mark or no
-mark, and its text and earlier versions, whatever the versions' times say; a
-copy from an earlier backup changes neither. The duplicate flag follows the
-text, because the dedupe compares the text. The date is kept to the
-millisecond, the form every stored time takes. When either copy has no date,
-or the two dates are equal, nothing says which backup is newer, so the rules
-for files without one hold: a copy with a mark adds it and one without leaves
-the mark held, and a copy takes the text when its newest earlier version is
-newer
-(`later_edit_sql` in `db/staging.rs`). What a file without a date gave a
-message is kept apart from the date, on the staged row and the stored
-message alike: the mark it gave (`undated_deletion`), which outlasts every
-copy without a mark, dated or not, and whether the text came from it
-(`undated_body`), which leaves the text to the later edit whatever the
-other copy's date. The date rules then decide only between dated copies, and
-the newest dated copy a message meets gives it its date. Why: a row that kept
-one date for both could hold an undated mark or edit under a dated
-backup's date, and a later import would then judge it by that date, so the
-order the files were read in decided the result
+the newest backup with a date that the message has met. When both copies
+have a date, the copy from the later backup gives the message its deletion
+mark, mark or no mark, and its text and earlier versions, whatever the
+versions' times say; a copy from an earlier backup changes neither. The
+duplicate flag follows the text, because the dedupe compares the text. The
+date is kept to the millisecond, the form every stored time takes. When
+either copy has no date, or the two dates are equal, nothing says which
+backup is newer, so the rules for files without one hold: a copy with a mark
+adds it and one without leaves the mark held, and a copy takes the text when
+its newest earlier version is newer (`later_edit_sql` in `db/staging.rs`).
+What a file without a date gave a message is kept apart from the date, on
+the staged row and the stored message alike: the mark it gave
+(`undated_deletion`), which outlasts every copy without a mark, dated or
+not, and whether the text came from it (`undated_body`), which leaves the
+text to the later edit whatever the other copy's date. The date rules then
+decide only between dated copies, and the newest dated copy a message meets
+gives it its date. A dated backup at least as new as that date which says
+the same, the same mark or the same text and earlier versions, backs the
+undated part, and it is the dates' to decide from then on
+(`kept_undated_mark_sql`, `backs_undated_sql`). The message API reports no
+backup date for a message that still holds an undated part, so an Export
+Run writes none for its conversation. Why: a row that kept one date for
+both could hold an undated mark or edit under a dated backup's date, and a
+later import, or a re-import of an export, would then judge it by that date,
+so the order the files were read in decided the result
 ([#1989](https://github.com/messagecrate/message-crate/issues/1989)).
-Attachments and reactions add from
-either copy, because a backup that lacks one does not say it is gone. The
-rule is the same in one import as across several, in any file order
-(`copy_mark_sql` for the mark and `later_backup_sql` for the text in
-`db/staging.rs`, `add_staged_copy` in
+Attachments and reactions add from either copy, because a backup that lacks
+one does not say it is gone. The rule is the same in one import as across
+several, in any file order (`copy_mark_sql` for the mark and
+`later_backup_sql` for the text in `db/staging.rs`, `add_staged_copy` in
 `imports_api/staging.rs`). Why: a person recovers a deleted message and
 unsends or edits a sent one between two backups, and only the backup's own
 date says which state is the newer; the message's own times record when it
