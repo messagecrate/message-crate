@@ -129,19 +129,19 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
 
 /// Message time as milliseconds since 1970-01-01 UTC, and how finely
 /// `chat.db` recorded it. A stamp of at least 10^12 is in nanoseconds (macOS
-/// 10.13 and iOS 11 on), which has milliseconds; a smaller one is in seconds,
-/// from an older database. A time read from the raw stamp, because the
-/// library could not read the date, is whole seconds either way.
+/// 10.13 and iOS 11 on), and its milliseconds are read from the stamp itself,
+/// because `Message::date` cuts the time to the second. A smaller stamp is in
+/// seconds, from an older database. A time read from the raw stamp, because
+/// the library could not read the date, is whole seconds either way.
 fn timestamp_unix_ms(message: &Message, offset: i64) -> (i64, TimePrecision) {
     let stamp = message.date;
     let nanoseconds = stamp >= 1_000_000_000_000;
     if let Ok(dt) = message.date(offset) {
-        let precision = if nanoseconds {
-            TimePrecision::Milliseconds
-        } else {
-            TimePrecision::Seconds
-        };
-        return (dt.timestamp_millis(), precision);
+        if nanoseconds {
+            let millis = (stamp / 1_000_000).saturating_add(offset.saturating_mul(1000));
+            return (millis, TimePrecision::Milliseconds);
+        }
+        return (dt.timestamp_millis(), TimePrecision::Seconds);
     }
     let seconds_since_2001 = if nanoseconds {
         stamp / TIMESTAMP_FACTOR
@@ -1669,6 +1669,21 @@ mod tests {
             timestamp_unix_ms(&message, session.offset),
             (1_578_307_260_000, TimePrecision::Seconds),
             "a seconds stamp from an older database reads the same, in whole seconds"
+        );
+    }
+
+    /// A nanosecond stamp keeps its milliseconds. `Message::date` cuts the
+    /// time to the second, so read through it every Apple Messages time
+    /// ended in `.000` while it said `milliseconds`.
+    #[test]
+    fn a_nanoseconds_stamp_keeps_its_milliseconds() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        let mut message = FixtureDb::messages(&session).remove(1);
+        message.date = chat_db_fixture::apple_nanos(600_000_060) + 123_456_789;
+        assert_eq!(
+            timestamp_unix_ms(&message, session.offset),
+            (1_578_307_260_123, TimePrecision::Milliseconds)
         );
     }
 
