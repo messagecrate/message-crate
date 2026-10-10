@@ -16,7 +16,7 @@ import {
   saveConversationSort,
 } from "../lib/conversationSort";
 import { formatVisibleRange } from "../lib/listPaging";
-import { checksFromMembers } from "../lib/membershipChecks";
+import { checksFromMembers, clearAllMembers } from "../lib/membership";
 import { useMessageTagActions, useSetMessageTagMembers } from "../lib/messageTags";
 import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
@@ -129,6 +129,15 @@ export default function ConversationList({
     [targetConversations, setTagMembers.mutateAsync],
   );
 
+  const clearAllMembership = useCallback(
+    () =>
+      clearAllMembers(
+        targetConversations.map((c) => c.tags ?? []),
+        (name) => applyMembership(name, false),
+      ),
+    [targetConversations, applyMembership],
+  );
+
   useEffect(() => {
     setRightToolbar(
       <TagsMenu
@@ -143,15 +152,7 @@ export default function ConversationList({
           await applyMembership(await tagActions.ensure(name), true);
         }}
         onClearAll={() => {
-          const names = new Set<string>();
-          for (const c of targetConversations) {
-            for (const t of c.tags ?? []) names.add(t);
-          }
-          void (async () => {
-            for (const name of names) {
-              await applyMembership(name, false);
-            }
-          })();
+          void clearAllMembership();
         }}
       />,
     );
@@ -159,6 +160,7 @@ export default function ConversationList({
   }, [
     allTags,
     applyMembership,
+    clearAllMembership,
     setRightToolbar,
     tagChecks,
     targetConversations,

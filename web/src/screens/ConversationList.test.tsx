@@ -144,9 +144,9 @@ describe("ConversationList", () => {
       };
     }
 
-    /** The server's paging over `count` conversations. */
-    function serveConversations(count: number) {
-      const all = Array.from({ length: count }, (_, i) => chat(i + 1));
+    /** The server's paging over `count` conversations, each carrying `tags`. */
+    function serveConversations(count: number, tags: string[] = []) {
+      const all = Array.from({ length: count }, (_, i) => ({ ...chat(i + 1), tags }));
       vi.mocked(listConversations).mockImplementation(async ({ limit = 40, offset = 0 }) => ({
         items: all.slice(offset, offset + limit),
         total: all.length,
@@ -208,6 +208,32 @@ describe("ConversationList", () => {
       expect([...(body?.add ?? [])].sort((a, b) => a - b)).toEqual(
         Array.from({ length: 120 }, (_, i) => i + 1),
       );
+    });
+
+    it("clears every Message Tag on the selected conversations at once", async () => {
+      serveConversations(2, ["Holiday", "Receipts"]);
+      const members = vi.mocked(updateMessageTagMembers);
+      members.mockReset();
+      // The first write never answers, so Clear all reaches the second tag
+      // only if it does not wait for the first.
+      members.mockReturnValueOnce(new Promise(() => {}));
+      members.mockResolvedValue({ added: 0, removed: 2 });
+      renderList();
+      const user = setupUser();
+      await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
+      await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
+
+      await user.click(screen.getByRole("button", { name: "Message Tags" }));
+      await user.click(await screen.findByRole("button", { name: "Clear all" }));
+
+      await waitFor(() => expect(members).toHaveBeenCalledTimes(2));
+      const writes = members.mock.calls
+        .map(([id, body]) => ({ id, remove: [...(body?.remove ?? [])].sort((a, b) => a - b) }))
+        .sort((a, b) => a.id - b.id);
+      expect(writes).toEqual([
+        { id: 1, remove: [1, 2] },
+        { id: 2, remove: [1, 2] },
+      ]);
     });
 
     it("shows the server's refusal of a Message Tag created from the Message Tags menu", async () => {
