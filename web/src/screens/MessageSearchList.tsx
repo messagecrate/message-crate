@@ -5,7 +5,6 @@ import SortMenu, { type SortField } from "../components/SortMenu";
 import VirtualList from "../components/VirtualList";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { MAX_LIST_OFFSET } from "../lib/listPaging";
-import { messageCount } from "../lib/messageRowText";
 import {
   type MessageSearchSort,
   type MessageSearchSortKey,
@@ -13,6 +12,7 @@ import {
   messageSortFromParam,
   messageSortParam,
 } from "../lib/messageSearchSort";
+import { countOf } from "../lib/plural";
 import { keys } from "../lib/queryKeys";
 import { type PagedFetchPage, useRoutePagedList } from "../lib/routeQuery";
 import { listMessages } from "../lib/serverApi";
@@ -149,7 +149,7 @@ function MessageResults({
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <ListRangeHeader
-        rangeLabel={loading && items.length === 0 ? "Loading…" : messageCount(total)}
+        rangeLabel={loading && items.length === 0 ? "Loading…" : countOf(total, "message")}
         refreshing={refreshing}
         filling={filling}
         actions={sortMenu}

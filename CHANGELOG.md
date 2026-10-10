@@ -218,6 +218,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The contacts picked on Contacts and a message's attachments
+  in search results are counted with a separator.** The heading over the
+  picked contacts said "1234 contacts selected", and a search result's
+  attachment count read "📎 1234" with the tooltip "1234 attachments"; each
+  now writes "1,234", with the separator of the language the browser or
+  desktop app is set to (#2417).
 - 2026-10-10: **Trash writes an empty list the way Contacts does.** Trash
   said "No contacts match this search." with a full stop where Contacts said
   "No contacts match this search" without one. Every message Trash shows for
