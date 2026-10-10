@@ -170,6 +170,24 @@ function rangeFromDrawnRows(root: HTMLElement, bottomInset: number): VisibleRang
   return { start, end };
 }
 
+/** The props both virtual lists take, one for the desktop app and one for the browser. */
+type VirtualListProps<T> = {
+  items: T[];
+  estimateSize: number;
+  dynamicSize: boolean;
+  selectedId: string | null;
+  onSelect: (item: T) => void;
+  isRowHighlighted?: (item: T) => boolean;
+  getId: (item: T) => string;
+  getTextValue?: (item: T) => string;
+  renderRow: (item: T) => ReactNode;
+  renderRowLead?: (item: T) => ReactNode;
+  requestMore: () => void;
+  hasMore: boolean;
+  onVisibleRangeChange: (range: VisibleRange) => void;
+  empty?: ReactNode;
+};
+
 function RacVirtualList<T extends object>({
   items,
   estimateSize,
@@ -186,23 +204,7 @@ function RacVirtualList<T extends object>({
   onVisibleRangeChange,
   empty,
   ariaLabel,
-}: {
-  items: T[];
-  estimateSize: number;
-  dynamicSize: boolean;
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
-  getId: (item: T) => string;
-  getTextValue?: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
-  ariaLabel: string;
-}) {
+}: VirtualListProps<T> & { ariaLabel: string }) {
   const listRef = useRef<HTMLDivElement>(null);
   const publishedRef = useRef<VisibleRange | null>(null);
   const onRangeRef = useRef(onVisibleRangeChange);
@@ -340,22 +342,7 @@ function TanStackVirtualList<T>({
   hasMore,
   onVisibleRangeChange,
   empty,
-}: {
-  items: T[];
-  estimateSize: number;
-  dynamicSize: boolean;
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
-  getId: (item: T) => string;
-  getTextValue?: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
-}) {
+}: VirtualListProps<T>) {
   return (
     <VirtualList
       count={items.length}
@@ -410,21 +397,10 @@ function SectionedLetterList<T>({
   currentLetter,
   onVisibleRangeChange,
   empty,
-}: {
-  items: T[];
-  selectedId: string | null;
-  onSelect: (item: T) => void;
-  isRowHighlighted?: (item: T) => boolean;
+}: Omit<VirtualListProps<T>, "estimateSize" | "dynamicSize" | "getTextValue"> & {
   sectionLead?: ReactNode;
-  getId: (item: T) => string;
-  renderRow: (item: T) => ReactNode;
-  renderRowLead?: (item: T) => ReactNode;
-  requestMore: () => void;
-  hasMore: boolean;
   getSectionLetter: (item: T) => string;
   currentLetter: string | null;
-  onVisibleRangeChange: (range: VisibleRange) => void;
-  empty?: ReactNode;
 }) {
   // This list is not virtualized, so both of these walk every contact. Rebuilding
   // them on each render is what made scrolling a large catalog expensive.
@@ -603,7 +579,7 @@ export default function InfiniteOffsetList<T extends object>({
     );
   }
 
-  const listProps = {
+  const listProps: VirtualListProps<T> = {
     items,
     estimateSize,
     dynamicSize,
@@ -642,20 +618,10 @@ export default function InfiniteOffsetList<T extends object>({
       ) : null}
       {getSectionLetter ? (
         <SectionedLetterList
-          items={items}
-          selectedId={selectedId}
-          onSelect={onSelect}
-          isRowHighlighted={isRowHighlighted}
+          {...listProps}
           sectionLead={sectionLead}
-          getId={getId}
-          renderRow={renderRow}
-          renderRowLead={renderRowLead}
-          requestMore={requestMore}
-          hasMore={hasMore}
           getSectionLetter={getSectionLetter}
           currentLetter={headerLetter}
-          onVisibleRangeChange={setVisibleRange}
-          empty={empty}
         />
       ) : isTauri() ? (
         <RacVirtualList {...listProps} ariaLabel={ariaLabel} />
