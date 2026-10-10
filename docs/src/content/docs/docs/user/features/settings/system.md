@@ -74,7 +74,7 @@ One line per program reports the result:
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
 - A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, or a program in the Tools Directory that doesn't run on this computer.
-  A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form.
+  A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
   The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.
   For ffmpeg and ffprobe, the reason says to install them with a package manager, because the app uses the copy on `PATH`.

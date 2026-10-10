@@ -104,10 +104,10 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// `Ok(None)` when there is no Tools Directory or no file in it.
 ///
 /// On Unix the file must have an executable bit. It is not run here: a
-/// `pipx` shim, which is what a computer with no download of its own links
-/// there, is slow to start. So a link to a `pipx` shim whose Python has gone
-/// is found, and fails only when it is run, with the hint
-/// [`run_wtsexporter`] gives (`docs/adr/0019`).
+/// `pipx` shim is slow to start. A shim is what is linked there on a
+/// computer the app has no download for, such as Linux on ARM. So a link
+/// to a `pipx` shim whose Python has gone is found, and fails only when it
+/// is run, with the hint [`run_wtsexporter`] gives (`docs/adr/0019`).
 ///
 /// # Errors
 ///
