@@ -3434,8 +3434,10 @@ export interface components {
             /**
              * @description When the backup that gave the message its mark and text was made,
              *     RFC 3339 in UTC with a `Z` suffix; `null` when the conversation
-             *     file did not say. Between two copies of one message from one
-             *     source, the copy from the later backup decides.
+             *     file did not say, or when a file that did not say gave the
+             *     message its mark or text, so a file exported from it claims no
+             *     date that nothing backs. Between two copies of one message from
+             *     one source, the copy from the later backup decides.
              */
             backup_taken_at: string | null;
             /** @description The conversation this message belongs to. */
@@ -4553,8 +4555,10 @@ export interface components {
                 /**
                  * @description When the backup that gave the message its mark and text was made,
                  *     RFC 3339 in UTC with a `Z` suffix; `null` when the conversation
-                 *     file did not say. Between two copies of one message from one
-                 *     source, the copy from the later backup decides.
+                 *     file did not say, or when a file that did not say gave the
+                 *     message its mark or text, so a file exported from it claims no
+                 *     date that nothing backs. Between two copies of one message from
+                 *     one source, the copy from the later backup decides.
                  */
                 backup_taken_at: string | null;
                 /** @description The conversation this message belongs to. */

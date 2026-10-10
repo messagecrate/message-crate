@@ -260,6 +260,20 @@ released versions carry their date on the heading.
   a message whose date the database holds in a form that could only be read
   to the second. A message also held with milliseconds by another backup of
   the same phone is then shown once (#1970).
+- 2026-10-09: **A file without a backup date imported beside a dated one
+  gives the same result in any order.** When one import held a dated backup
+  and a message file that says nothing about when its backup was made, such
+  as Message Crate's own export of a conversation whose messages came from
+  two backups, the order the files were read in decided what a later import
+  could change. An Unsent mark from the undated file could be cleared by a
+  later backup, or kept, and a later edit it recorded could be dropped
+  against a newer backup already stored. Message Crate now keeps what a file
+  without a date gave a message apart from the dated backups' date: its mark
+  stays, and its text stays until a copy records a later edit, whichever
+  file is read first and whether the files arrive in one import or several,
+  until a dated backup says the same. A conversation exported while one of
+  its messages holds such a mark or text carries no backup date, so
+  importing the export again keeps those rules (#1989).
 - 2026-10-09: **A failed WhatsApp import keeps what wtsexporter said.** When
   wtsexporter's output named a full disk, the import asked to free space on
   the Scratch Directory's disk. The output itself was lost. So a full disk

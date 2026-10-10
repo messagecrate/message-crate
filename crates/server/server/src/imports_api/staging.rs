@@ -885,16 +885,26 @@ async fn flush_staging_message_chunk(
 /// from the same import, adds, by the rules a later import of the copy would
 /// follow (`db::staging::promote_deletion_marks`,
 /// `db::staging::write_edit_map`): the attachments and reactions the staged
-/// message does not hold yet, and its mark and text as follows. When both
-/// backups have a date, a copy from a later backup gives its text, earlier
-/// versions and mark, mark or no mark, and one from an earlier backup gives
-/// neither (#1741, #1804). When either has no date, or the two dates are
-/// equal ([`db_staging::later_backup`]), the copy gives its text and earlier
-/// versions when it records a later edit, and its mark when it carries one.
-/// A copy at the staged message's time that has milliseconds marks it
-/// `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]). One import
-/// of two backups then stores what two separate imports of them store, in
-/// either file order (#1806, #1837).
+/// message does not hold yet, and its mark and text as follows.
+///
+/// The staged row keeps what a file without a backup date gave it apart
+/// from the date of the dated backups it met: the mark such a file gave
+/// (`undated_deletion`) and whether its text came from one
+/// (`undated_body`). So the date rules decide only between dated copies,
+/// and the rules for files without one decide an undated copy's part,
+/// whichever file is read first (#1989).
+///
+/// The mark follows [`db_staging::add_staged_copy_mark`]: a mark from a file
+/// without a date stands, a later dated backup gives its mark or none, and
+/// an earlier one gives nothing (#1741). The text: when both copies' texts
+/// come from dated backups with different dates, a copy from the later
+/// backup gives its text and earlier versions, and one from an earlier
+/// backup gives neither (#1804); otherwise
+/// ([`db_staging::later_backup`]) the copy gives them when it records a
+/// later edit. A copy at the staged message's time that has milliseconds
+/// marks it `milliseconds` ([`db_staging::add_staged_copy_milliseconds`]).
+/// One import of two backups then stores what two separate imports of them
+/// store, in either file order (#1806, #1837).
 async fn add_staged_copy(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -923,37 +933,36 @@ async fn add_staged_copy(
     if row.msg.time_precision == message_ir::TimePrecision::Milliseconds {
         db_staging::add_staged_copy_milliseconds(tx, staged, &row.msg.timestamp).await?;
     }
-    let held_backup = db_staging::staged_backup_taken_at(tx, staged).await?;
-    match db_staging::later_backup(staged_source.backup_taken_at, held_backup.as_deref()) {
-        BackupOrder::Later(copy_backup) => {
-            db_staging::take_staged_copy_from_later_backup(
-                tx,
-                staged,
-                &StagedCopy {
-                    body: row.body.as_deref(),
-                    deletion: row.msg.deletion,
-                    versions: &row.msg.earlier_versions,
-                    backup_taken_at: copy_backup,
-                },
-            )
-            .await?;
+    let held = db_staging::staged_text(tx, staged).await?;
+    let copy = StagedCopy {
+        body: row.body.as_deref(),
+        versions: &row.msg.earlier_versions,
+        undated: staged_source.backup_taken_at.is_none(),
+    };
+    let order = if held.undated {
+        BackupOrder::Undecided
+    } else {
+        db_staging::later_backup(
+            staged_source.backup_taken_at,
+            held.backup_taken_at.as_deref(),
+        )
+    };
+    match order {
+        BackupOrder::Later => {
+            db_staging::replace_staged_text(tx, staged, &copy).await?;
         }
         BackupOrder::Earlier => {}
         BackupOrder::Undecided => {
-            if !row.msg.earlier_versions.is_empty() {
-                db_staging::take_later_staged_copy(
-                    tx,
-                    staged,
-                    row.body.as_deref(),
-                    &row.msg.earlier_versions,
-                )
-                .await?;
-            }
-            if let Some(deletion) = row.msg.deletion {
-                db_staging::add_staged_copy_mark(tx, staged, deletion).await?;
+            let taken = !row.msg.earlier_versions.is_empty()
+                && db_staging::take_later_staged_copy(tx, staged, &copy).await?;
+            if let (false, Some(backup)) = (taken, staged_source.backup_taken_at) {
+                db_staging::note_backed_staged_text(tx, staged, &copy, backup).await?;
             }
         }
     }
+    db_staging::add_staged_copy_mark(tx, staged, row.msg.deletion, staged_source.backup_taken_at)
+        .await?;
+
     let att_rows: Vec<StagingAttachment> = row
         .attachments
         .iter()
