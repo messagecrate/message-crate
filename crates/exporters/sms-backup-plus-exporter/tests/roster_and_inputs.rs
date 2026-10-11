@@ -38,7 +38,7 @@ fn convert_in(
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country,
         convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,
@@ -569,7 +569,7 @@ Hello Dee\r\n",
         owner_phones: &["07700900123".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country: phone::country("GB"),
         convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,

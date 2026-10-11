@@ -293,7 +293,7 @@ mod tests {
         write_documents_through_sink(
             vec![message_ir::testutil::sample_document("hello")],
             sink,
-            &LogSink::silent(),
+            &LogSink::none(),
             &progress,
             &CancelFlag::default(),
             &mut report,

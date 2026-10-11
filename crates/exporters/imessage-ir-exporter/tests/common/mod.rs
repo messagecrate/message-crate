@@ -26,7 +26,7 @@ pub fn config(db_path: &Path, output: &Path, cancel: CancelFlag) -> ExporterConf
         obfuscate: Default::default(),
         media: MediaConfig::default(),
         cancel,
-        log: LogSink::silent(),
+        log: LogSink::none(),
         progress: ProgressSink::none(),
         issues: IssueSink::none(),
         output_format: OutputFormat::Jsonl,

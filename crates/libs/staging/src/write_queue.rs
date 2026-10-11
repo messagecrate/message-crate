@@ -35,7 +35,7 @@ use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
     IssueSink, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
-    WriteStatus, attachment_size_hint, run_attachment_jobs,
+    WriteStatus, attachment_size_hint, check_cancel, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::{filename_stem, give_each_document_its_own_file};
@@ -299,7 +299,7 @@ pub type AttachmentLoader<'a> =
 
 /// Where a drain reports and what stops it: the log, the progress events,
 /// and the cancel flag. A caller with no log, no progress bar or no cancel
-/// passes [`LogSink::silent`], [`ProgressSink::none`] or a
+/// passes [`LogSink::none`], [`ProgressSink::none`] or a
 /// `CancelFlag::default()`.
 #[derive(Clone, Copy)]
 pub struct Sinks<'a> {
@@ -328,11 +328,7 @@ pub fn drain_write_queue_with_loader(
     load: &mut AttachmentLoader<'_>,
     sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
-    let Sinks {
-        log,
-        progress,
-        cancel,
-    } = sinks;
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     check_units_headroom(output_dir, &units, options.media)?;
     let mut report = WriteQueueReport::default();
@@ -347,15 +343,7 @@ pub fn drain_write_queue_with_loader(
     };
 
     for unit in units {
-        let outcome = write_one_unit(
-            output_dir,
-            unit,
-            options,
-            load,
-            &report_progress,
-            log,
-            cancel,
-        )?;
+        let outcome = write_one_unit(output_dir, unit, options, load, &report_progress, sinks)?;
         report.attachments_saved += outcome.attachments_saved;
         if outcome.written {
             report.conversations_written += 1;
@@ -509,11 +497,7 @@ pub fn drain_write_queue(
     options: &WriteQueueOptions,
     sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
-    let Sinks {
-        log,
-        progress,
-        cancel,
-    } = sinks;
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     if options.media != MediaMode::Disabled {
         leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
@@ -586,8 +570,7 @@ pub fn drain_write_queue(
                         options,
                         &mut load,
                         &report_progress,
-                        log,
-                        cancel,
+                        sinks,
                     ) {
                         Ok(outcome) => {
                             attachments_saved
@@ -771,12 +754,9 @@ fn write_one_unit(
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
     on_progress: &dyn Fn(UnitProgress),
-    log: &LogSink,
-    cancel: &CancelFlag,
+    sinks: Sinks<'_>,
 ) -> Result<UnitOutcome> {
-    if cancel.load(Ordering::Relaxed) {
-        anyhow::bail!("cancelled");
-    }
+    check_cancel(sinks.cancel)?;
 
     let ConversationUnit {
         mut doc,
@@ -863,8 +843,8 @@ fn write_one_unit(
                 unit_bytes_done = p.bytes_done;
                 unit_total_change = total_change;
             },
-            log,
-            cancel,
+            sinks.log,
+            sinks.cancel,
         )
         .map_err(anyhow::Error::msg)?;
     }

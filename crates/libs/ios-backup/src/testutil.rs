@@ -38,7 +38,7 @@ pub fn fake_helper(dir: &Path, body: &str) -> PathBuf {
 /// Panics when the fake cannot be started.
 pub fn spawn_fake(path: &Path, request: &Request) -> Helper {
     for _ in 0..50 {
-        match Helper::spawn_at(path, request, LogSink::silent(), ProgressSink::none()) {
+        match Helper::spawn_at(path, request, LogSink::none(), ProgressSink::none()) {
             Ok(helper) => return helper,
             Err(e)
                 if e.downcast_ref::<std::io::Error>()

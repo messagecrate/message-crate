@@ -209,6 +209,12 @@ impl ProgressSink {
     }
 }
 
+impl Default for ProgressSink {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 impl fmt::Debug for ProgressSink {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str("ProgressSink")

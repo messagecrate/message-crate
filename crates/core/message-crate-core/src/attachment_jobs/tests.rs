@@ -39,7 +39,7 @@ fn clone_writes_file_and_fills_hash() {
             &media_cfg(MediaMode::Clone),
             |_| Ok(Some(bytes.to_vec())),
             |p| progress.lock().unwrap().push(p),
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -84,7 +84,7 @@ fn the_byte_total_ends_at_the_bytes_actually_copied() {
             &media_cfg(MediaMode::Clone),
             |i| Ok((i == 0).then(|| b"ten bytes!".to_vec())),
             |p| progress.lock().unwrap().push(p),
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -115,7 +115,7 @@ fn disabled_skips_without_loading() {
                 Ok(Some(b"x".to_vec()))
             },
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -159,7 +159,7 @@ fn missing_source_is_file_missing_and_continues() {
                 }
             },
             |p| done.push(p.done),
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -201,7 +201,7 @@ fn read_error_marks_file_missing_and_continues() {
                 }
             },
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -247,7 +247,7 @@ fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
                 }
             },
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap_err()
@@ -293,7 +293,7 @@ fn cancel_stops_before_next_job() {
                 Ok(Some(b"x".to_vec()))
             },
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &cancel,
         )
         .unwrap_err()
@@ -314,7 +314,7 @@ fn empty_jobs_emits_zero_of_zero() {
         &media_cfg(MediaMode::Clone),
         |_| Ok(None),
         |p| progress.lock().unwrap().push(p),
-        &LogSink::silent(),
+        &LogSink::none(),
         &CancelFlag::default(),
     )
     .unwrap();
@@ -497,7 +497,7 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         &attachments_dir,
         &media_cfg(MediaMode::Clone),
         load,
-        &LogSink::silent(),
+        &LogSink::none(),
         &ProgressSink::none(),
         &CancelFlag::default(),
     )
@@ -573,7 +573,7 @@ fn staging_the_same_bytes_twice_writes_one_file() {
         &media_cfg(MediaMode::Clone),
         |_| Ok(Some(b"identical bytes".to_vec())),
         |_| {},
-        &LogSink::silent(),
+        &LogSink::none(),
         &CancelFlag::default(),
     )
     .expect("run");
@@ -659,7 +659,7 @@ fn an_empty_file_is_recorded_as_missing_rather_than_staged() {
             &media_cfg(MediaMode::Clone),
             |_| Ok(Some(Vec::new())),
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -746,7 +746,7 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         &attachments_dir,
         &media_cfg(MediaMode::Clone),
         |_| Ok(Some(b"bytes held on the document".to_vec())),
-        &LogSink::silent(),
+        &LogSink::none(),
         &ProgressSink::none(),
         &CancelFlag::default(),
     )
@@ -801,7 +801,7 @@ fn convert_points_each_attachment_at_its_converted_file() {
                 }))
             },
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();
@@ -896,7 +896,7 @@ fn an_attachment_name_the_file_system_cannot_take_does_not_stop_the_run() {
             &media_cfg(MediaMode::Clone),
             |i| Ok(Some(format!("bytes-{i}").into_bytes())),
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
     };
@@ -927,7 +927,7 @@ fn a_name_with_no_plain_extension_is_staged_without_one() {
             &media_cfg(MediaMode::Clone),
             |_| Ok(Some(b"draft".to_vec())),
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();

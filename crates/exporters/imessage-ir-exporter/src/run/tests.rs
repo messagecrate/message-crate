@@ -14,7 +14,7 @@ fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
         obfuscate: Default::default(),
         media: MediaConfig::default(),
         cancel: CancelFlag::default(),
-        log: LogSink::silent(),
+        log: LogSink::none(),
         progress: ProgressSink::none(),
         issues: IssueSink::none(),
         output_format: OutputFormat::Jsonl,

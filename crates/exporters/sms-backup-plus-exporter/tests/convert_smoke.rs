@@ -20,7 +20,7 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
             output_format: OutputFormat::Csv,
@@ -239,7 +239,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
-            log: &LogSink::silent(),
+            log: &LogSink::none(),
             phone_country: phone::country("US"),
             convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,
@@ -362,7 +362,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
             transforms: ExportTransforms {
@@ -424,7 +424,7 @@ fn the_backup_date_is_the_newest_mail_files_modification_time() {
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,

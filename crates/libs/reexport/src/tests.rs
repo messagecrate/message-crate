@@ -28,7 +28,7 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),
         cancel: CancelFlag::default(),
-        log: LogSink::silent(),
+        log: LogSink::none(),
         progress: ProgressSink::none(),
         issues: IssueSink::none(),
         output_format,

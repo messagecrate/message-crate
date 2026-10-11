@@ -15,7 +15,7 @@ type LineCallback = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// Callback for mid-run progress / warning lines. The desktop app sets one and
 /// streams the lines to its log panel. A caller with nowhere to show the
-/// lines passes [`LogSink::silent`]: a library never decides on its own to
+/// lines passes [`LogSink::none`]: a library never decides on its own to
 /// print a run's lines.
 ///
 /// A line is something the run did. A warning is the output of a step that
@@ -41,7 +41,7 @@ impl LogSink {
     }
 
     /// A sink that drops every line and warning.
-    pub fn silent() -> Self {
+    pub fn none() -> Self {
         Self::new(|_| {})
     }
 
@@ -68,6 +68,12 @@ impl LogSink {
             Some(warning) => warning(text),
             None => (self.line)(text),
         }
+    }
+}
+
+impl Default for LogSink {
+    fn default() -> Self {
+        Self::none()
     }
 }
 

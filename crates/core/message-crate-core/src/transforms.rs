@@ -30,7 +30,7 @@ impl Default for ExportTransforms {
             compress: CompressOptions::default(),
             obfuscate: false,
             obfuscate_seed: None,
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
         }
     }
@@ -93,7 +93,7 @@ mod tests {
             obfuscate,
             media,
             cancel: CancelFlag::default(),
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
             issues: IssueSink::none(),
             output_format: OutputFormat::Json,

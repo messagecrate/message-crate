@@ -154,8 +154,8 @@ pub(crate) fn export(
     output: ExportWriterParts,
 ) -> Result<ExportReport> {
     let format = options.convert_run.output_format;
-    options.emit_log("");
-    options.emit_log(format!(
+    options.log.emit("");
+    options.log.emit(format!(
         "Preparing {} messages in {}",
         format.as_str(),
         options.export_path.display(),
@@ -561,8 +561,8 @@ impl NotDecrypted {
     ) {
         let item = path.display().to_string();
         let line = item_line(ItemKind::Attachment, &item, &what_happened);
-        options.emit_log(line.clone());
-        options.emit_issue(RunIssue {
+        options.log.emit(line.clone());
+        options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
             step: "attachments".into(),
             item,
@@ -617,7 +617,7 @@ fn read_attachment(
         };
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
-            options.emit_log(format!(
+            options.log.emit(format!(
                 "The decrypted copy of attachment {} at {} could not be removed: {why}",
                 path.display(),
                 temp.display()
@@ -642,7 +642,9 @@ fn read_attachment(
     match fs::read(path) {
         Ok(bytes) => Ok(bytes),
         Err(e) => {
-            options.emit_log(message_staging::unreadable_attachment_line(path, e));
+            options
+                .log
+                .emit(message_staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -690,9 +692,13 @@ fn write_conversations(
 ) -> Result<u64> {
     let format = options.convert_run.output_format;
     let total = conversations.len();
-    options.emit_log("");
-    options.emit_log(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
-    options.emit_progress(ProgressEvent::Prepare { done: 0, total });
+    options.log.emit("");
+    options
+        .log
+        .emit(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
+    options
+        .progress
+        .emit(ProgressEvent::Prepare { done: 0, total });
     let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
     let mut written = 0usize;
     let mut kept = 0u64;
@@ -713,8 +719,8 @@ fn write_conversations(
         sink.write_document(doc)
             .map_err(|e| anyhow!("write {} for {}: {e:#}", format.as_str(), document_id))?;
         if written.is_multiple_of(CONVERSATION_PROGRESS_EVERY) || written == total {
-            options.emit_log(format!("  preparing {written}/{total}"));
-            options.emit_progress(ProgressEvent::Prepare {
+            options.log.emit(format!("  preparing {written}/{total}"));
+            options.progress.emit(ProgressEvent::Prepare {
                 done: written,
                 total,
             });
@@ -984,7 +990,7 @@ mod tests {
             export_path: PathBuf::from("/nowhere/out"),
             scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
             convert_run: message_crate_core::ConvertRun {
                 transforms: message_crate_core::ExportTransforms {
@@ -1300,7 +1306,7 @@ mod tests {
             encrypted,
             failures: 0,
         };
-        count_loads(&mut collected, &LogSink::silent());
+        count_loads(&mut collected, &LogSink::none());
         embedded_bytes(&collected)
     }
 

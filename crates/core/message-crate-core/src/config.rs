@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use media::{CompressOptions, MediaMode};
 
 use crate::exporters::{ApplePlatform, WhatsappPlatform};
-use crate::pipeline::{IssueSink, RunIssue};
+use crate::pipeline::IssueSink;
 use crate::process::{CancelFlag, LogSink};
-use crate::progress::{ProgressEvent, ProgressSink};
+use crate::progress::ProgressSink;
 use crate::transforms::ExportTransforms;
 
 /// Output packaging projected from the common message.
@@ -119,21 +119,6 @@ pub struct ExporterConfig {
 }
 
 impl ExporterConfig {
-    /// Send a progress or warning line to the log sink.
-    pub fn emit_log(&self, line: impl AsRef<str>) {
-        self.log.emit(line.as_ref());
-    }
-
-    /// Send a typed progress event to the progress sink.
-    pub fn emit_progress(&self, event: ProgressEvent) {
-        self.progress.emit(event);
-    }
-
-    /// Send a row for the Import Run's record to the issue sink.
-    pub fn emit_issue(&self, issue: RunIssue) {
-        self.issues.emit(issue);
-    }
-
     /// The run-wide settings an exporter's convert step takes beside its own
     /// inputs, with the transforms [`ExportTransforms::from_config`] builds.
     pub fn convert_run(&self) -> ConvertRun {
@@ -355,7 +340,6 @@ pub struct WhatsappConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Arc, Mutex};
 
     fn config_with_inputs(inputs: Vec<PathBuf>) -> ExporterConfig {
         ExporterConfig {
@@ -366,74 +350,13 @@ mod tests {
             obfuscate: ObfuscateConfig::default(),
             media: MediaConfig::default(),
             cancel: CancelFlag::default(),
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
             issues: IssueSink::none(),
             output_format: OutputFormat::Json,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),
         }
-    }
-
-    #[test]
-    fn emit_log_hands_each_line_to_the_log_sink() {
-        let seen = Arc::new(Mutex::new(Vec::<String>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.log = LogSink::new(move |line| {
-            sink_seen.lock().unwrap().push(line.to_string());
-        });
-
-        config.emit_log("first");
-        config.emit_log(String::from("second"));
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec!["first".to_string(), "second".to_string()]
-        );
-    }
-
-    #[test]
-    fn emit_progress_hands_each_event_to_the_progress_sink() {
-        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.progress = ProgressSink::new(move |event| {
-            sink_seen.lock().unwrap().push(event);
-        });
-
-        config.emit_progress(ProgressEvent::Parse { done: 1, total: 4 });
-        config.emit_progress(ProgressEvent::Prepare { done: 2, total: 2 });
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec![
-                ProgressEvent::Parse { done: 1, total: 4 },
-                ProgressEvent::Prepare { done: 2, total: 2 },
-            ]
-        );
-    }
-
-    /// The same for progress events, and for the same reason: a progress bar
-    /// that has gone away must not be written to.
-    #[test]
-    fn clearing_the_progress_sink_stops_the_events() {
-        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let mut config = config_with_inputs(Vec::new());
-        config.progress = ProgressSink::new(move |event| {
-            sink_seen.lock().unwrap().push(event);
-        });
-
-        config.emit_progress(ProgressEvent::Parse { done: 1, total: 2 });
-        config.progress = ProgressSink::none();
-        config.emit_progress(ProgressEvent::Parse { done: 2, total: 2 });
-
-        assert_eq!(
-            *seen.lock().unwrap(),
-            vec![ProgressEvent::Parse { done: 1, total: 2 }],
-            "an event emitted with no sink must not reach the old one"
-        );
     }
 
     #[test]

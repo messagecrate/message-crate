@@ -354,7 +354,7 @@ pub fn jsonl_run_config(
             compress: media::CompressOptions::default(),
         },
         cancel: crate::CancelFlag::default(),
-        log: crate::LogSink::silent(),
+        log: crate::LogSink::none(),
         progress: ProgressSink::none(),
         issues: IssueSink::none(),
         output_format: crate::OutputFormat::Jsonl,

@@ -28,7 +28,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: &LogSink::silent(),
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,

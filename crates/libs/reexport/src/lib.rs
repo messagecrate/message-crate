@@ -142,7 +142,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // staged again under the same names, and the convert pass replaces each
     // one in place, so the check counts one copy (#1759).
     let mut from_input = None;
-    let silent = LogSink::silent();
+    let silent = LogSink::none();
     if copy_attachments {
         let counted = match &sms_backup {
             Some(backup) => backup.counted(&mut documents, config),
@@ -406,7 +406,7 @@ impl SmsBackupRead {
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
         }
     }
@@ -439,7 +439,7 @@ impl SmsBackupRead {
     fn read(&self, config: &ExporterConfig) -> Result<Vec<ConversationDocument>> {
         let (documents, report) = read_backup(&self.input, self.options(config))?;
         for line in report.log_lines() {
-            config.emit_log(line);
+            config.log.emit(line);
         }
         Ok(documents)
     }

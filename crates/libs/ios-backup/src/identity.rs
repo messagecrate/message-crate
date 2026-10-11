@@ -55,7 +55,7 @@ pub fn backup_identities(
     scratch_root: &Path,
 ) -> anyhow::Result<Vec<String>> {
     identities_with(db_path, ios, backup_password, scratch_root, |request| {
-        Helper::spawn(request, LogSink::silent(), ProgressSink::none())
+        Helper::spawn(request, LogSink::none(), ProgressSink::none())
     })
 }
 

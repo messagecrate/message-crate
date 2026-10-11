@@ -489,7 +489,7 @@ mod tests {
             &MediaConfig::default(),
             |_| fs::read(source).map(Some).or(Ok(None)),
             |_| {},
-            &LogSink::silent(),
+            &LogSink::none(),
             &CancelFlag::default(),
         )
         .unwrap();

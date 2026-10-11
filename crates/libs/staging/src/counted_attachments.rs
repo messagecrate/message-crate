@@ -184,14 +184,14 @@ mod tests {
             MediaConfig::default(),
             paths,
             |att| (sources.next().unwrap(), att.size_bytes),
-            &LogSink::silent(),
+            &LogSink::none(),
         );
         let needed = counted.bytes_to_write(OutputFormat::Csv);
         counted
             .stage(
                 &out.path().join("attachments"),
                 load_attachment_source,
-                &LogSink::silent(),
+                &LogSink::none(),
                 &progress,
                 &CancelFlag::default(),
             )

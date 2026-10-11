@@ -10,7 +10,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 /// Sinks that drop what they get, with a cancel flag nobody sets, for a
 /// drain whose test reads only what it wrote.
 fn no_sinks() -> Sinks<'static> {
-    static LOG: LazyLock<LogSink> = LazyLock::new(LogSink::silent);
+    static LOG: LazyLock<LogSink> = LazyLock::new(LogSink::none);
     static PROGRESS: LazyLock<ProgressSink> = LazyLock::new(ProgressSink::none);
     static CANCEL: LazyLock<CancelFlag> = LazyLock::new(CancelFlag::default);
     Sinks {

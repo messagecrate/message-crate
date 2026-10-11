@@ -157,7 +157,7 @@ fn an_identities_request_decrypts_into_its_scratch_directory_while_it_runs() {
 
     let mut helper = Helper::spawn(
         &identities_request(backup.path(), Some(BACKUP_PASSWORD), scratch.path()),
-        LogSink::silent(),
+        LogSink::none(),
         ProgressSink::none(),
     )
     .unwrap();
@@ -275,7 +275,7 @@ fn the_reader_says_which_backup_is_encrypted() {
         let scratch = tempfile::tempdir().unwrap();
         let mut helper = Helper::spawn(
             &identities_request(backup.path(), password, scratch.path()),
-            LogSink::silent(),
+            LogSink::none(),
             ProgressSink::none(),
         )
         .unwrap();
@@ -309,7 +309,7 @@ fn the_reader_decrypts_into_the_scratch_directory_the_request_names() {
 
     let mut helper = Helper::spawn(
         &identities_request(backup.path(), Some(BACKUP_PASSWORD), scratch.path()),
-        LogSink::silent(),
+        LogSink::none(),
         ProgressSink::none(),
     )
     .unwrap();
@@ -341,7 +341,7 @@ fn an_export_decrypts_into_its_scratch_directory_and_the_photo_comes_out_whole()
             use_caller_id: true,
             scratch_dir: scratch.path().to_path_buf(),
         }),
-        LogSink::silent(),
+        LogSink::none(),
         ProgressSink::none(),
     )
     .unwrap();
@@ -406,7 +406,7 @@ fn a_backup_domain_request_decrypts_into_the_directory_it_names() {
             seen_before_the_go = file_names(work.path());
             Ok(())
         },
-        LogSink::silent(),
+        LogSink::none(),
         ProgressSink::none(),
     )
     .unwrap();

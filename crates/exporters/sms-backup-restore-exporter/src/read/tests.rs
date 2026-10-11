@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 /// Sinks that drop what they get, and a cancel flag nobody sets, for
 /// reader options a helper returns.
-static NO_LOG: LazyLock<LogSink> = LazyLock::new(LogSink::silent);
+static NO_LOG: LazyLock<LogSink> = LazyLock::new(LogSink::none);
 static NO_PROGRESS: LazyLock<ProgressSink> = LazyLock::new(ProgressSink::none);
 static NO_CANCEL: LazyLock<CancelFlag> = LazyLock::new(CancelFlag::default);
 

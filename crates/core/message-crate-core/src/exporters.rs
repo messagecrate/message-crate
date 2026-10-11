@@ -342,7 +342,7 @@ impl Form {
             obfuscate,
             media,
             cancel: CancelFlag::default(),
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
             issues: IssueSink::none(),
             output_format: self.output_format,

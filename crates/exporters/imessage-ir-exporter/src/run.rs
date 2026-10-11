@@ -14,7 +14,7 @@ use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
     AppleConfig, ApplePlatform, ConvertRun, ExporterConfig, IMESSAGE_READER_DIRECTORY, LogSink,
-    ProgressEvent, ProgressSink, RunIssue, RunResult, ScratchDir, SourceConfig, prepare_outputs,
+    ProgressSink, RunResult, ScratchDir, SourceConfig, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
@@ -103,21 +103,6 @@ impl ExportOptions {
             use_caller_id: self.use_caller_id,
             scratch_dir: scratch_dir.to_path_buf(),
         })
-    }
-
-    /// Write one log line.
-    pub fn emit_log(&self, line: impl AsRef<str>) {
-        self.log.emit(line);
-    }
-
-    /// Send one typed progress event.
-    pub fn emit_progress(&self, event: ProgressEvent) {
-        self.progress.emit(event);
-    }
-
-    /// Send one row for the Import Run's record.
-    pub fn emit_issue(&self, issue: RunIssue) {
-        self.convert_run.issues.emit(issue);
     }
 
     /// The shared cancel check.
@@ -334,7 +319,7 @@ fn check_macos_only_path(
         bail!("{missing}");
     }
     if platform == Platform::Ios {
-        config.emit_log(ignored_on_ios);
+        config.log.emit(ignored_on_ios);
     }
     Ok(())
 }

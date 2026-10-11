@@ -854,12 +854,12 @@ mod tests {
                     .source(att)
                     .unwrap_or((AttachmentSource::Missing, None))
             },
-            &LogSink::silent(),
+            &LogSink::none(),
         )
         .stage(
             &att_dir,
             message_staging::load_attachment_source,
-            &LogSink::silent(),
+            &LogSink::none(),
             &ProgressSink::none(),
             &CancelFlag::default(),
         )

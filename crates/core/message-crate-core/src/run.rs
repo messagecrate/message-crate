@@ -69,7 +69,7 @@ mod tests {
                 compress: CompressOptions::default(),
             },
             cancel: CancelFlag::default(),
-            log: LogSink::silent(),
+            log: LogSink::none(),
             progress: ProgressSink::none(),
             issues: IssueSink::none(),
             output_format: OutputFormat::Jsonl,
