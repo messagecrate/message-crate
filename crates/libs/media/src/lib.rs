@@ -30,7 +30,7 @@ pub use process::{
 };
 pub use tools::{
     FfmpegFailed, FfmpegTools, ffmpeg_available, ffmpeg_on_path, ffmpeg_path, ffmpeg_tools,
-    ffprobe_path, require_ffmpeg, set_tools_dir, tool_in_dir, tools_dir,
+    ffprobe_path, is_executable, require_ffmpeg, set_tools_dir, tool_in_dir, tools_dir,
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,
