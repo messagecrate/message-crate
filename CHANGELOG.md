@@ -348,6 +348,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **A new username can no longer hold letters from other
+  scripts.** A username could hold letters from any script,
+  so `аdmin` written with a Cyrillic `а` made a second account that read
+  the same as `admin` in User Accounts, in the Audit Trail and on the login
+  card. A username now holds only the letters A to Z, digits, `_`, `-` and
+  `.`, and the message for a refused name says so. A preferred name still
+  takes a name in any script. An account made before this change keeps its
+  username and still logs in with it (#2229).
+
 - 2026-10-11: **Every letter and digit is equally likely in the secret of a
   Session or an API Token.** Each secret favoured the letters A to H, which
   came up a quarter more often than the other letters and digits. Each now
@@ -582,6 +591,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **A server told to stop during an Upload stops sooner.** A
+  batch of messages that was still waiting for its turn used to start once
+  an earlier batch ended and run in full before the server stopped. The
+  server now turns it away at once, without storing any of it, and the
+  Upload tries it again. If the server is not back in time, the Upload
+  pauses, and resuming it sends the batch. The server's log no longer reports the turned-away
+  batch as an internal error either (#2203).
 - 2026-10-11: **Messages about the backup password read as plain
   sentences.** An encrypted iPhone backup with no password is now refused
   with "The backup is encrypted. Fill in the Encryption password.", and a
