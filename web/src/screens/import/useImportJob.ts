@@ -1432,10 +1432,10 @@ async function runImport(
   let form = withShownAttachmentMode(submitted);
   beginRun(form, "staging");
   store.set({
+    ...CLEARED_RUN,
     running: true,
     phase: "running",
     form,
-    ...CLEARED_RUN,
     resumeError: null,
   });
 
