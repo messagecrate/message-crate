@@ -524,8 +524,11 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     await act(() =>
       result.current.startImport(importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }), {
-        runId: 9,
-        runDir: "/home/sam/message-crate/staging-iphone",
+        at: "upload",
+        run: {
+          runId: 9,
+          runDir: "/home/sam/message-crate/staging-iphone",
+        },
       }),
     );
 
@@ -538,11 +541,10 @@ describe("useImportJob wiring", () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     const { result } = renderJob();
     await act(() =>
-      result.current.startImport(
-        importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }),
-        undefined,
-        { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
-      ),
+      result.current.startImport(importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }), {
+        at: "staging",
+        run: { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
+      }),
     );
 
     expect(getServerStateMock).not.toHaveBeenCalled();
@@ -1649,10 +1651,13 @@ describe("useImportJob wiring", () => {
       );
       const { result } = renderJob();
       await act(() =>
-        result.current.startImport(importForm({ attachmentMedia: "copy" }), undefined, {
-          runId: 1,
-          runDir: "/staging/run-1",
-          identities: null,
+        result.current.startImport(importForm({ attachmentMedia: "copy" }), {
+          at: "staging",
+          run: {
+            runId: 1,
+            runDir: "/staging/run-1",
+            identities: null,
+          },
         }),
       );
       await act(() => result.current.approve());
@@ -2696,10 +2701,13 @@ describe("useImportJob wiring", () => {
     it("resume_write reaches the Staging Review with the run's stored identities, without re-probing", async () => {
       const { result } = renderJob();
       await act(async () => {
-        await result.current.startImport(imessageForm(), undefined, {
-          runId: 42,
-          runDir: "/home/u/message-crate/staging-260830",
-          identities: ["+15555550110"],
+        await result.current.startImport(imessageForm(), {
+          at: "staging",
+          run: {
+            runId: 42,
+            runDir: "/home/u/message-crate/staging-260830",
+            identities: ["+15555550110"],
+          },
         });
       });
       expect(invokeImessageBackupIdentitiesMock).not.toHaveBeenCalled();
@@ -2713,11 +2721,13 @@ describe("useImportJob wiring", () => {
       await act(async () => {
         await result.current.startImport(
           { ...imessageForm(), backupPassword: "hunter2" },
-          undefined,
           {
-            runId: 42,
-            runDir: "/home/u/message-crate/staging-260830",
-            identities: null,
+            at: "staging",
+            run: {
+              runId: 42,
+              runDir: "/home/u/message-crate/staging-260830",
+              identities: null,
+            },
           },
         );
       });
@@ -2768,8 +2778,11 @@ describe("useImportJob resume path", () => {
     const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2789,8 +2802,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2813,8 +2829,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2836,9 +2855,12 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
-        approved: stagingSummary({ mediaMode: "compress" }),
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+          approved: stagingSummary({ mediaMode: "compress" }),
+        },
       });
     });
 
@@ -2873,9 +2895,12 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
-        approved,
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+          approved,
+        },
       });
     });
 
@@ -2896,8 +2921,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2941,8 +2969,11 @@ describe("useImportJob resume path", () => {
     const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -3030,7 +3061,10 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderJob();
     await act(async () => {
-      await result.current.startImport(importForm(), { runId: 7, runDir: "/staging/paused" });
+      await result.current.startImport(importForm(), {
+        at: "upload",
+        run: { runId: 7, runDir: "/staging/paused" },
+      });
     });
 
     expect(seen.record?.issues).toEqual([
@@ -3066,7 +3100,10 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderJob();
     await act(async () => {
-      await result.current.startImport(importForm(), { runId: 7, runDir: "/staging/paused" });
+      await result.current.startImport(importForm(), {
+        at: "upload",
+        run: { runId: 7, runDir: "/staging/paused" },
+      });
     });
     expect(seen.record).toBeDefined();
     readRunRecordMock.mockResolvedValue(seen.record);
@@ -3082,8 +3119,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 

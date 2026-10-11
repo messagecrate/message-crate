@@ -139,8 +139,11 @@ async function startUpload(): Promise<{ current: Screen }> {
   const result = await logIn();
   act(() => {
     void result.current.job.startImport(form, {
-      runId: 42,
-      runDir: "/home/sam/staging-iphone",
+      at: "upload",
+      run: {
+        runId: 42,
+        runDir: "/home/sam/staging-iphone",
+      },
     });
   });
   await waitFor(() => expect(calls).toContain("upload started"));
@@ -474,8 +477,11 @@ async function resumeUpload(): Promise<{ current: Screen }> {
   const result = await logIn();
   act(() => {
     void result.current.job.startImport(form, {
-      runId: 42,
-      runDir: "/home/sam/staging-iphone",
+      at: "upload",
+      run: {
+        runId: 42,
+        runDir: "/home/sam/staging-iphone",
+      },
     });
   });
   return result;

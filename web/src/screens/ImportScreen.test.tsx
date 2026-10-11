@@ -486,7 +486,10 @@ describe("ImportScreen entering Import", () => {
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
-    expect(resume).toEqual({ runId: 7, runDir: "/home/u/message-crate/staging-260830" });
+    expect(resume).toEqual({
+      at: "upload",
+      run: { runId: 7, runDir: "/home/u/message-crate/staging-260830" },
+    });
     expect(discardImportRunMock).not.toHaveBeenCalled();
   });
 
@@ -589,7 +592,7 @@ describe("ImportScreen entering Import", () => {
     expect(resume).toBeUndefined();
   });
 
-  it("picks up an interrupted copy in the directory it was already writing into", async () => {
+  it("resumes an interrupted copy in the directory it was already writing into", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
@@ -623,12 +626,10 @@ describe("ImportScreen entering Import", () => {
     expect(discardImportRunMock).not.toHaveBeenCalled();
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     expect(startImportMock).toHaveBeenCalledTimes(1);
-    const [, resume, resumeWrite] = startImportMock.mock.calls[0] as [unknown, unknown, unknown];
-    expect(resume).toBeUndefined();
-    expect(resumeWrite).toEqual({
-      runId: 7,
-      runDir: "/home/u/message-crate/staging-260830",
-      identities: null,
+    const [, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
+    expect(resume).toEqual({
+      at: "staging",
+      run: { runId: 7, runDir: "/home/u/message-crate/staging-260830", identities: null },
     });
   });
 
@@ -812,14 +813,9 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
 
     expect(startImportMock).toHaveBeenCalledTimes(1);
-    const [form, resume, resumeWrite] = startImportMock.mock.calls[0] as [
-      unknown,
-      unknown,
-      unknown,
-    ];
+    const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ backupPassword: "typed-secret", whatsappKey: "" });
-    expect(resume).toBeUndefined();
-    expect(resumeWrite).toMatchObject({ runId: 7 });
+    expect(resume).toMatchObject({ at: "staging", run: { runId: 7 } });
   });
 
   it("asks for the backup password again when a restart will read an encrypted backup", async () => {
@@ -837,14 +833,9 @@ describe("ImportScreen entering Import", () => {
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(startImportMock).toHaveBeenCalledTimes(1);
-    const [form, resume, resumeWrite] = startImportMock.mock.calls[0] as [
-      unknown,
-      unknown,
-      unknown,
-    ];
+    const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ backupPassword: "typed-secret", whatsappKey: "" });
     expect(resume).toBeUndefined();
-    expect(resumeWrite).toBeUndefined();
   });
 
   it.each([
@@ -912,7 +903,7 @@ describe("ImportScreen entering Import", () => {
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ backupPassword: "", whatsappKey: "" });
-    expect(resume).toMatchObject({ runId: 7 });
+    expect(resume).toMatchObject({ at: "upload", run: { runId: 7 } });
   });
 });
 
