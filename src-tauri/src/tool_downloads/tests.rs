@@ -726,35 +726,40 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
     );
 }
 
-/// An adopted program that could not be made executable, and so does not
-/// run, fails with the reason it could not be, not the generic text, so
-/// Settings says what to fix.
+/// An adopted program whose executable bit could not be set fails with
+/// the reason it could not, not the generic "does not run" text, so
+/// Settings says what to fix, and ffmpeg keeps the advice to use the copy
+/// on `PATH`.
 #[test]
 fn an_adopted_program_that_could_not_be_made_executable_says_why() {
     let denied = io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
 
-    let state = adopted_state(Program::Wtsexporter, Err(denied), false);
+    let Adopted::NotExecutable(err) = adopted(Err(denied), false, false) else {
+        panic!("a program left with no executable bit is not executable");
+    };
 
     assert_eq!(
-        state,
-        Some(DownloadState::Failed {
-            reason: DownloadError::CouldNotWrite("Operation not permitted".to_string()).to_string(),
-        })
+        DownloadError::CouldNotMakeExecutable(Program::Ffmpeg, err.to_string()).to_string(),
+        "ffmpeg in the Tools Directory could not be marked as a program that runs: \
+         Operation not permitted. Install it with your package manager instead; \
+         the app uses the copy on PATH."
     );
 }
 
-/// An adopted program that runs is in place, whether or not its bits could
-/// be set, and one made executable that does not run says it does not run.
+/// An adopted program that runs is in place whether or not its bits could
+/// be set, and one that has its executable bit and does not run fails as
+/// not running, since setting the bits is not what stopped it.
 #[test]
-fn an_adopted_program_is_failed_only_when_it_does_not_run() {
+fn an_adopted_program_blames_its_bits_only_when_it_has_none() {
     let denied = || io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
 
-    assert_eq!(adopted_state(Program::Ffmpeg, Ok(()), true), None);
-    assert_eq!(adopted_state(Program::Ffmpeg, Err(denied()), true), None);
-    assert_eq!(
-        adopted_state(Program::Ffmpeg, Ok(()), false),
-        Some(does_not_run(Program::Ffmpeg))
-    );
+    assert!(matches!(adopted(Ok(()), true, true), Adopted::Runs));
+    assert!(matches!(adopted(Err(denied()), true, true), Adopted::Runs));
+    assert!(matches!(adopted(Ok(()), true, false), Adopted::DoesNotRun));
+    assert!(matches!(
+        adopted(Err(denied()), true, false),
+        Adopted::DoesNotRun
+    ));
 }
 
 /// The app's own file whose stamp stopped matching, as after a sync or a

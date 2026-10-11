@@ -359,8 +359,11 @@ released versions carry their date on the heading.
   Directory could not be made to run.** When the desktop app finds ffmpeg,
   ffprobe or wtsexporter already in its Tools Directory, it marks the file
   as a program it can run. When the computer refused that, Settings said
-  only that the tool doesn't run there. It now says what the computer
-  refused, such as a permission error, so you know what to fix (#2255).
+  only that the tool doesn't run there, and from the next start on it no
+  longer tried. It now says the tool could not be marked as a program that
+  runs and what the computer refused, such as a permission error, and it
+  tries again each time the app starts, so fixing the permission is enough
+  (#2255).
 
 - 2026-10-11: **No account is created after the owner closes registration.**
   A stranger's registration that arrived just as the owner closed

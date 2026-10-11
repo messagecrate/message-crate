@@ -349,6 +349,9 @@ pub enum DownloadError {
     CouldNotUnpack(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
+    /// The program found in place has no executable bit, and setting it
+    /// failed, for the reason given.
+    CouldNotMakeExecutable(Program, String),
     /// The check's thread could not be started, or the client the downloads
     /// go through could not be built, so nothing was downloaded.
     CouldNotStart(String),
@@ -393,6 +396,19 @@ impl fmt::Display for DownloadError {
             Self::DoesNotRun(Program::Wtsexporter) => {
                 f.write_str("wtsexporter in the Tools Directory doesn't run on this computer.")
             }
+            Self::CouldNotMakeExecutable(program @ (Program::Ffmpeg | Program::Ffprobe), why) => {
+                write!(
+                    f,
+                    "{program} in the Tools Directory could not be marked as a program that runs: {why}. \
+                 Install it with your package manager instead; the app uses the copy on PATH.",
+                    program = program.name()
+                )
+            }
+            // The run's error and Settings add the troubleshooting section.
+            Self::CouldNotMakeExecutable(Program::Wtsexporter, why) => write!(
+                f,
+                "wtsexporter in the Tools Directory could not be marked as a program that runs: {why}."
+            ),
             Self::CouldNotStart(why) => write!(f, "The download could not be started: {why}."),
             Self::Interrupted => f.write_str("The download was interrupted."),
         }
@@ -652,24 +668,39 @@ fn does_not_run(program: Program) -> DownloadState {
     }
 }
 
-/// The state of `program` adopted in place, given whether it could be made
-/// executable and whether it `runs` after that: none when it runs, failed
-/// with the reason it could not be made executable when that failed, and
-/// failed as not running otherwise.
-fn adopted_state(
-    program: Program,
-    made_executable: io::Result<()>,
-    runs: bool,
-) -> Option<DownloadState> {
-    if runs {
-        return None;
+/// What became of a program the start-up check adopts.
+#[derive(Debug)]
+enum Adopted {
+    /// It runs.
+    Runs,
+    /// It has an executable bit and does not run.
+    DoesNotRun,
+    /// It has no executable bit, and setting one failed for this reason.
+    NotExecutable(io::Error),
+}
+
+/// What became of an adopted program, given the result of setting its
+/// executable bits, whether it has one afterwards, and whether it `runs`.
+/// A failure to set the bits is the reason only when the file has none,
+/// since a file that has them and does not run fails for another reason.
+fn adopted(made_executable: io::Result<()>, executable: bool, runs: bool) -> Adopted {
+    match made_executable {
+        _ if runs => Adopted::Runs,
+        Err(err) if !executable => Adopted::NotExecutable(err),
+        _ => Adopted::DoesNotRun,
     }
-    Some(match made_executable {
-        Ok(()) => does_not_run(program),
-        Err(err) => DownloadState::Failed {
-            reason: DownloadError::CouldNotWrite(err.to_string()).to_string(),
-        },
-    })
+}
+
+/// Write the record in `dir`. A failure goes to the process log and fails
+/// nothing: `program` is in place either way, and without its entry the
+/// next start reads the file again and adopts it.
+fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
+    if let Err(err) = write_manifest(dir, manifest) {
+        eprintln!(
+            "{} is in place in the Tools Directory, and {MANIFEST_FILE} could not be written: {err}",
+            program.name()
+        );
+    }
 }
 
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
@@ -844,23 +875,38 @@ fn check(
         match need(pin, dir, &manifest) {
             Need::Keep => downloads.clear(pin.program),
             Need::Adopt => {
-                let path = dir.join(pin.program.file_name());
+                let program = pin.program;
+                let path = dir.join(program.file_name());
                 let made_executable = make_executable(&path);
-                if let Ok(stamp) = Stamp::at(&path) {
-                    manifest.insert(pin.program, Written::of(pin, stamp));
-                    if let Err(err) = write_manifest(dir, &manifest) {
-                        // The program stays in place either way. Without
-                        // the record the next start reads the file again
-                        // and adopts it again.
-                        eprintln!(
-                            "{} in the Tools Directory is kept, and {MANIFEST_FILE} could not be written: {err}",
-                            pin.program.name()
+                let runs = runs(program, dir);
+                if let (true, Err(err)) = (runs, &made_executable) {
+                    eprintln!(
+                        "{} in the Tools Directory runs, and its executable bits could not be set: {err}",
+                        program.name()
+                    );
+                }
+                match adopted(made_executable, media::is_executable(&path), runs) {
+                    Adopted::Runs => downloads.clear(program),
+                    Adopted::DoesNotRun => downloads.set(program, does_not_run(program)),
+                    // Left out of the record, so the next start sets the
+                    // bits again and, if that fails again, says why again.
+                    Adopted::NotExecutable(err) => {
+                        downloads.set(
+                            program,
+                            DownloadState::Failed {
+                                reason: DownloadError::CouldNotMakeExecutable(
+                                    program,
+                                    err.to_string(),
+                                )
+                                .to_string(),
+                            },
                         );
+                        continue;
                     }
                 }
-                match adopted_state(pin.program, made_executable, runs(pin.program, dir)) {
-                    None => downloads.clear(pin.program),
-                    Some(state) => downloads.set(pin.program, state),
+                if let Ok(stamp) = Stamp::at(&path) {
+                    manifest.insert(program, Written::of(pin, stamp));
+                    write_manifest_or_log(dir, &manifest, program);
                 }
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
@@ -955,15 +1001,9 @@ fn check(
                 } else {
                     downloads.set(program, does_not_run(program));
                 }
-                if let Err(err) = write_manifest(dir, &manifest) {
-                    // The program is in place and the lookup finds it, so
-                    // its download did not fail. Without the record the
-                    // next start reads the file again and adopts it.
-                    eprintln!(
-                        "The {} download is in place, and {MANIFEST_FILE} could not be written: {err}",
-                        program.name()
-                    );
-                }
+                // The program is in place and the lookup finds it, so its
+                // download did not fail when the record can't be written.
+                write_manifest_or_log(dir, &manifest, program);
             }
             Err(err) => downloads.set(
                 program,
