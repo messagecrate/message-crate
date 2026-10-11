@@ -210,7 +210,7 @@ async fn another_writer_is_not_blocked_while_removed_files_are_deleted() {
     let original = stored_original(&paths);
     let (delete, deletion_started, finish) = paused_deletion();
 
-    let removal = tokio::spawn({
+    let removal = crate::request_id::spawn_in_current_span({
         let (pool, paths, original) = (pool.clone(), paths.clone(), original.clone());
         async move {
             unless_import_running_then(
@@ -248,7 +248,7 @@ async fn another_writer_is_not_blocked_while_swept_files_are_deleted() {
     let original = stored_original(&paths);
     let (delete, deletion_started, finish) = paused_deletion();
 
-    let sweep = tokio::spawn({
+    let sweep = crate::request_id::spawn_in_current_span({
         let (pool, paths) = (pool.clone(), paths.clone());
         async move { sweep_unreferenced_then(&pool, &paths, ACCOUNT, delete).await }
     });

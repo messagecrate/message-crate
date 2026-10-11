@@ -1817,9 +1817,10 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let mut server = tokio::spawn(serve_until_shutdown(listener, app, None, || {}));
+    let mut server =
+        crate::request_id::spawn_in_current_span(serve_until_shutdown(listener, app, None, || {}));
 
-    let request = tokio::spawn(async move {
+    let request = crate::request_id::spawn_in_current_span(async move {
         http_client()
             .get(format!("http://{addr}/slow"))
             .send()

@@ -551,9 +551,9 @@ impl DemoBuild {
     ) {
         let build = self.clone();
         let stopping = self.0.stopping.clone();
-        let task = crate::request_id::spawn(async move {
+        let task = crate::request_id::spawn_in_current_span(async move {
             let started = std::time::Instant::now();
-            let mut building = crate::request_id::spawn(building);
+            let mut building = crate::request_id::spawn_in_current_span(building);
             let ended = tokio::select! {
                 ended = &mut building => ended,
                 () = stopping.cancelled() => {

@@ -9,7 +9,11 @@
 //! The id also joins the request's tracing span, so every log line written
 //! under the request carries it. A span does not cross `tokio::spawn` or
 //! `spawn_blocking` on its own, so work a request starts in a task of its
-//! own goes through [`spawn`] and [`spawn_blocking`], which carry it (#2186).
+//! own goes through [`spawn_in_current_span`] and
+//! [`spawn_blocking_in_current_span`], which carry it (#2186).
+//! Every spawn in the crate does, request or not, and `clippy.toml` refuses
+//! tokio's own calls. Outside a request there is no span, and the two do
+//! what tokio's calls do.
 //!
 //! An `x-request-id` a client sends is dropped, never kept: none of the
 //! server's own clients send one, and an operator grepping the log needs ids
@@ -49,7 +53,8 @@ pub async fn layer(mut request: Request, next: Next) -> Response {
 
 /// `tokio::spawn`, with `future` run under the current span and subscriber,
 /// so a line it writes carries the id of the request that started it.
-pub(crate) fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+#[allow(clippy::disallowed_methods)] // the one place tokio's own call is made
+pub(crate) fn spawn_in_current_span<F>(future: F) -> tokio::task::JoinHandle<F::Output>
 where
     F: Future + Send + 'static,
     F::Output: Send + 'static,
@@ -60,7 +65,8 @@ where
 /// `tokio::task::spawn_blocking`, with `f` run under the current span and
 /// subscriber, so a line it writes carries the id of the request that
 /// started it.
-pub(crate) fn spawn_blocking<F, R>(f: F) -> tokio::task::JoinHandle<R>
+#[allow(clippy::disallowed_methods)] // the one place tokio's own call is made
+pub(crate) fn spawn_blocking_in_current_span<F, R>(f: F) -> tokio::task::JoinHandle<R>
 where
     F: FnOnce() -> R + Send + 'static,
     R: Send + 'static,

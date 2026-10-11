@@ -728,7 +728,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let opened = OpenDb::open(cfg).await?;
     let stop = Arc::new(AtomicBool::new(false));
-    let stopper = tokio::spawn({
+    let stopper = crate::request_id::spawn_in_current_span({
         let stop = Arc::clone(&stop);
         async move {
             crate::server::stop_requested().await;
