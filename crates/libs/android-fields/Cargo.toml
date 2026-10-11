@@ -2,10 +2,12 @@
 name = "android-fields"
 version = "0.1.0"
 edition = "2024"
-description = "Fields of Android's message store, read one way by the SMS Backup & Restore and GO SMS Pro readers"
+description = "Fields of Android's message store, read one way by the SMS Backup & Restore, GO SMS Pro, and SMS Backup+ readers"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
+message-ir = { path = "../ir" }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true
