@@ -7,6 +7,7 @@
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
@@ -84,13 +85,18 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       continueAfterIdentityStop: continueAfterIdentityStopMock,
       cancelIdentityStop: cancelIdentityStopMock,
       runDirDeleteFailure: hookState.runDirDeleteFailure,
-      // The real one never throws: a failed close or delete is kept for the
-      // notice, and its reading of the run record is the hook's own test.
+      // The real one never throws: a failed delete is kept for the notice,
+      // a refused close is its outcome, and its reading of the run record
+      // is the hook's own test. The directory goes only once the close went
+      // through.
       discardRun: async (runId: number, runDir: string | null) => {
-        await Promise.allSettled([
-          discardImportRunMock(runId),
-          runDir != null ? invokeDeleteRunDirMock({ run_dir: runDir }) : undefined,
-        ]);
+        try {
+          await discardImportRunMock(runId);
+        } catch (e: unknown) {
+          return { kind: "not_closed", message: errorText(e) };
+        }
+        if (runDir != null) await invokeDeleteRunDirMock({ run_dir: runDir })?.catch(() => {});
+        return { kind: "discarded" };
       },
       dismissRunDirDeleteFailure: dismissRunDirDeleteFailureMock,
     }),
@@ -750,9 +756,15 @@ describe("ImportScreen entering Import", () => {
     expect(await screen.findByTestId("resume-kind")).toHaveTextContent("settings_unreadable");
   });
 
-  it("still drops to the form when discarding from the panel fails server-side", async () => {
+  it("keeps the panel, and the run's directory, when the server refuses a discard from it (#2669)", async () => {
     const user = setupUser();
-    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(
+      activeImportRun({
+        stage: "upload",
+        device_id: "this-device",
+        run_dir: "/home/u/message-crate/staging-260830",
+      }),
+    );
     discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
@@ -760,10 +772,13 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(await screen.findByTestId("import-form")).toBeInTheDocument();
+    expect(await screen.findByTestId("resume-error")).toHaveTextContent("network down");
+    expect(screen.getByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("still restarts when discarding the old run before a restart fails server-side", async () => {
+  it("keeps the panel, with the message, and starts nothing when the old run's discard before a restart is not taken (#2669)", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
@@ -778,10 +793,9 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(startImportMock).toHaveBeenCalledTimes(1);
-    const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
-    expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
-    expect(resume).toBeUndefined();
+    expect(await screen.findByTestId("resume-error")).toHaveTextContent("network down");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
+    expect(startImportMock).not.toHaveBeenCalled();
   });
 
   it("asks for the backup password again when a resumed Staging will read an encrypted backup", async () => {
