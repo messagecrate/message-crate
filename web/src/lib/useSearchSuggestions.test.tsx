@@ -24,6 +24,7 @@ vi.mock("./serverApi", async (importOriginal) => ({
 
 const fields: SearchField[] = [
   { word: "with", value_type: "person", values: [], help: "", example: "" },
+  { word: "from", value_type: "person", values: [], help: "", example: "" },
   { word: "tag", value_type: "name", values: ["none"], help: "", example: "" },
   { word: "kind", value_type: "choice", values: ["direct", "group"], help: "", example: "" },
 ];
@@ -209,5 +210,60 @@ describe("useSearchSuggestions", () => {
     await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
 
     expect(contacts.mock.calls.map(([params]) => params.q)).toEqual([""]);
+  });
+
+  /** Hold the answer for `q` back until the returned function is called. */
+  function holdAnswerFor(q: string): () => void {
+    let release = () => {};
+    const answer = contacts.getMockImplementation();
+    contacts.mockImplementation(async (params, opts) => {
+      if (params.q === q) await new Promise<void>((resolve) => (release = resolve));
+      return answer?.(params, opts) as ReturnType<typeof listContacts>;
+    });
+    return () => release();
+  }
+
+  it("does not offer the names typed for another person word", async () => {
+    const hook = typing("from:jo");
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    expect(hook.result.current.map((s) => s.label)).toEqual(["Jo Park"]);
+
+    const release = holdAnswerFor("");
+    hook.rerender({ value: "from:jo with:" });
+    expect(hook.result.current).toEqual([]);
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    // Asked for, and not answered yet: Jo is not offered while it waits.
+    expect(contacts.mock.calls.map(([params]) => params.q)).toEqual(["jo", ""]);
+    expect(hook.result.current).toEqual([]);
+
+    release();
+    await wait(0);
+    expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe", "Jo Park"]);
+  });
+
+  it("starts a person word typed after a picked contact from no names", async () => {
+    const hook = typing("with:jo");
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    hook.rerender({ value: "with:#2 " });
+
+    const release = holdAnswerFor("");
+    hook.rerender({ value: "with:#2 with:" });
+    expect(hook.result.current).toEqual([]);
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    expect(hook.result.current).toEqual([]);
+    release();
+  });
+
+  it("starts the same word typed again in a cleared box from no names", async () => {
+    const hook = typing("with:jo");
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    hook.rerender({ value: "" });
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+
+    const release = holdAnswerFor("");
+    hook.rerender({ value: "with:" });
+    await wait(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    expect(hook.result.current).toEqual([]);
+    release();
   });
 });

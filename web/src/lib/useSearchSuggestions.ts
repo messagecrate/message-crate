@@ -1,5 +1,4 @@
-import { keepPreviousData } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { keys } from "./queryKeys";
 import { useRouteQuery } from "./routeQuery";
 import { type SearchField, type SearchList, useSearchFields } from "./searchFields";
@@ -73,6 +72,21 @@ export function buildSearchSuggestions(args: {
     .map((f) => ({ id: f.word, label: `${f.word}:`, insert: `${minus}${f.word}:` }));
 }
 
+/**
+ * A typed token read as a search term: whether a value is being typed after a
+ * colon, the word before it (lower-cased, without a minus), and the value
+ * without its quotes.
+ */
+function readToken(token: string): { completingValue: boolean; word: string; valuePart: string } {
+  const colon = token.indexOf(":");
+  if (colon === -1) return { completingValue: false, word: "", valuePart: "" };
+  return {
+    completingValue: true,
+    word: token.slice(0, colon).replace(/^-/, "").toLowerCase(),
+    valuePart: token.slice(colon + 1).replace(/^"|"$/g, ""),
+  };
+}
+
 /** Replace the token being typed with a suggestion's text, and leave the rest as typed. */
 export function applySuggestionToQuery(value: string, suggestion: Suggestion): string {
   return replaceLastToken(value, suggestion.insert);
@@ -86,26 +100,48 @@ export function applySuggestionToQuery(value: string, suggestion: Suggestion): s
 export function useSearchSuggestions(value: string, list: SearchList | null): Suggestion[] {
   const { fields } = useSearchFields(list);
 
-  const typedToken = lastToken(value).text;
-  const colonIdx = typedToken.indexOf(":");
-  const completingValue = colonIdx !== -1;
-  const word = completingValue ? typedToken.slice(0, colonIdx).replace(/^-/, "").toLowerCase() : "";
-  const valuePart = completingValue ? typedToken.slice(colonIdx + 1).replace(/^"|"$/g, "") : "";
+  const typed = lastToken(value);
+  const typedToken = typed.text;
+  const { completingValue, word, valuePart } = readToken(typedToken);
   const personOp = completingValue && isPersonWord(fields.find((f) => f.word === word));
+  // Which term is being typed: where it starts, and its word.
+  const term = `${typed.start}:${word}`;
 
-  // Null while no person word is typed, so the value of a word typed before
-  // one is never asked for as a name.
-  const prefix = useDebouncedValue(personOp ? valuePart : null, CONTACT_SUGGESTION_DEBOUNCE_MS);
-  const { data } = useRouteQuery(
-    keys.contacts.suggest(prefix ?? ""),
-    (signal) => listContacts({ q: prefix ?? "", limit: 20, offset: 0 }, { signal }),
-    // The last prefix's contacts stay offered while the next one is asked
-    // for, so the list does not blank between keystrokes.
-    { enabled: personOp && prefix !== null, placeholderData: keepPreviousData },
+  // The query as it stood once typing paused, or null while no person word
+  // is typed. Contacts are asked for only once the term typed then is the
+  // term typed now, so a value typed for another term, a person word's
+  // included, is never offered under this one.
+  const settledValue = useDebouncedValue(personOp ? value : null, CONTACT_SUGGESTION_DEBOUNCE_MS);
+  const settled = settledValue === null ? null : lastToken(settledValue);
+  const settledToken = settled === null ? null : readToken(settled.text);
+  const prefix = settledToken?.valuePart ?? "";
+  const forThisTerm =
+    personOp && settled !== null && `${settled.start}:${settledToken?.word}` === term;
+
+  // The term the last answer on screen was for.
+  const answeredTerm = useRef<string | null>(null);
+  const { data, isPlaceholderData } = useRouteQuery(
+    keys.contacts.suggest(prefix),
+    (signal) => listContacts({ q: prefix, limit: 20, offset: 0 }, { signal }),
+    {
+      enabled: forThisTerm,
+      // The last prefix's contacts stay offered while the next one is asked
+      // for, so the list does not blank between keystrokes. Only within one
+      // term: the next term starts from no contacts, not the last term's.
+      placeholderData: (previous) => (answeredTerm.current === term ? previous : undefined),
+    },
   );
+  useEffect(() => {
+    if (forThisTerm && data !== undefined && !isPlaceholderData) answeredTerm.current = term;
+    // A term typed again at the same place after the person word went away,
+    // such as after clearing the box, is a new term.
+    else if (!personOp) answeredTerm.current = null;
+  }, [forThisTerm, personOp, data, isPlaceholderData, term]);
+
   const contacts = useMemo<ContactName[]>(
-    () => (data?.items ?? []).map((c) => ({ id: String(c.id), name: c.name })),
-    [data],
+    () =>
+      forThisTerm ? (data?.items ?? []).map((c) => ({ id: String(c.id), name: c.name })) : [],
+    [forThisTerm, data],
   );
 
   return buildSearchSuggestions({
