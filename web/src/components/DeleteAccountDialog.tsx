@@ -158,17 +158,17 @@ function DeleteAccountForm({
 
 /** Names the Import Runs' directories deleted with the account, or says why it cannot. */
 function RunDirectoriesNote({ check }: { check: RunDirectoriesCheck }) {
-  const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
+  const textClass = "mt-3 text-[0.875rem] leading-relaxed text-muted";
   if (check.checking) {
     return (
-      <p className={text}>
+      <p className={textClass}>
         Looking for the directories of this account&apos;s Import Runs on this computer…
       </p>
     );
   }
   if (check.error) {
     return (
-      <p className={text}>
+      <p className={textClass}>
         {`Message Crate could not look for the directories of this account's Import Runs on this computer, so it deletes none: ${check.error}`}
       </p>
     );
@@ -176,7 +176,7 @@ function RunDirectoriesNote({ check }: { check: RunDirectoriesCheck }) {
   if (check.paths.length === 0) return null;
   return (
     <>
-      <p className={text}>
+      <p className={textClass}>
         Deleting the account also deletes the directories of its Import Runs on this computer:
       </p>
       <PathList paths={check.paths.map((path) => ({ path }))} />

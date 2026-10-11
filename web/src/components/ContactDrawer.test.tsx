@@ -8,7 +8,7 @@ import { ApiError } from "../lib/api";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { inTimeZone } from "../test/timeZone";
 import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
@@ -310,12 +310,12 @@ describe("ContactDrawer", () => {
   });
 
   // Each close button sets `outline-none`, which removes the app's own
-  // :focus-visible outline, so it sets the outline back with `focusRing`.
+  // :focus-visible outline, so it sets the outline back with `focusRingClass`.
   it("draws the focus ring on the close button and sortable headers of a loaded contact", async () => {
     seed(detail(6, { name: "Grace", groups: [] }));
     render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);
     await screen.findByRole("heading", { name: "Grace" });
-    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRing);
+    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRingClass);
     const sortable = screen
       .getAllByRole("columnheader")
       .filter((header) => header.hasAttribute("aria-sort"));
@@ -329,7 +329,7 @@ describe("ContactDrawer", () => {
     get.mockRejectedValue(new ApiError(404, "No contact with id 26."));
     render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
     await screen.findByRole("alert");
-    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRing);
+    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRingClass);
   });
 
   it("stubs one handle row when preview lists raw and normalized forms of the same identity", async () => {

@@ -1,13 +1,13 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useIsOwner } from "../lib/useIsOwner";
 import { GearIcon, LogOutIcon, PersonIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import PopupMenu from "./PopupMenu";
 
-const itemRow = "flex items-center gap-2";
+const itemRowClass = "flex items-center gap-2";
 
 /**
  * The logged-in account's username and the circle user button at the far right
@@ -46,7 +46,7 @@ export default function AppAccountMenu() {
           <PlainButton
             aria-label="Account menu"
             title={username || undefined}
-            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-transparent p-0 text-text hover:bg-hover aria-expanded:bg-hover ${focusRing}`}
+            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-transparent p-0 text-text hover:bg-hover aria-expanded:bg-hover ${focusRingClass}`}
           >
             <PersonIcon size={18} />
           </PlainButton>
@@ -72,7 +72,7 @@ export default function AppAccountMenu() {
             label: "Settings",
             onSelect: () => navigate(settingsPath),
             children: (
-              <span className={`${itemRow} ${settingsActive ? "font-semibold" : ""}`}>
+              <span className={`${itemRowClass} ${settingsActive ? "font-semibold" : ""}`}>
                 <GearIcon size={15} />
                 Settings
               </span>
@@ -83,7 +83,7 @@ export default function AppAccountMenu() {
             danger: true,
             onSelect: () => logout(),
             children: (
-              <span className={itemRow}>
+              <span className={itemRowClass}>
                 <LogOutIcon size={15} />
                 Log out
               </span>

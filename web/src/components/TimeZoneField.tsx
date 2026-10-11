@@ -12,7 +12,7 @@ import {
 } from "react-aria-components";
 import { browserTimeZone } from "../lib/timeZone";
 import { choiceForZone, searchTimeZones } from "../lib/timeZoneChoices";
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
 import { SelectChevronIcon } from "./icons";
 import { selectItemClassName, selectSectionHeaderClassName } from "./Select";
@@ -102,7 +102,7 @@ export default function TimeZoneField({
       </div>
       <Popover
         data-mc-overlay=""
-        className={`box-border w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadow}`}
+        className={`box-border w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadowClass}`}
       >
         <ListBox
           className="max-h-72 overflow-auto outline-none"
