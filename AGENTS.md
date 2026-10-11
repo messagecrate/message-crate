@@ -461,6 +461,12 @@ Work from the repository root. The server process must be running before the web
 
 API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--owner`, log in as `admin` / `admin`. Otherwise create the owner in the UI.
 
+The server is up when `GET http://127.0.0.1:8080/health` answers `200` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404`. The server seeds the Demo Account before it listens, so `/health` answers only once seeding is done. To wait for it from a script, ask once a second for at most 10 minutes (the first compile takes several minutes), then ask once more so the command fails if the server never came up:
+
+```bash
+for _ in $(seq 600); do curl -fs --max-time 2 -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; curl -fs --max-time 2 http://127.0.0.1:8080/health
+```
+
 Restart terminal 1 after edits under `crates/server/server/` (debug `cargo run`; no hot reload).
 
 **Terminal 2 — UI** (pick one)
