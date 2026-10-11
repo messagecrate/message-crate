@@ -121,16 +121,19 @@ resolves it.
    ```bash
    bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/reviews \
      -f commit_id=<headRefOid> -f event=COMMENT \
-     -f body=$'<!-- pr-review -->\n<summary>' \
-     -f 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
-     -f comments[][body]=$'<!-- pr-review -->\n<the finding and why it matters>'
+     -F body=@<summary-file> \
+     -F 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
+     -F 'comments[][body]=@<finding-file>'
    ```
 
-   Repeat the three `comments[]` fields for each finding. The marker goes in
-   each `comments[][body]`, because that comment opens the thread. A finding
-   with no line in the diff goes in a top-level comment instead, with the
-   marker on its first line. It has no thread, so it is answered by a new
-   marked top-level comment that quotes it:
+   Repeat the three `comments[]` fields for each finding, every one with
+   `-F`. `gh` adds every `-f` field before every `-F` field, so with mixed
+   flags a second finding's line lands in the wrong `comments[]` object and
+   GitHub answers `422 Unprocessable Entity`. The marker starts the summary
+   file and each finding file, because the finding's comment opens the
+   thread. A finding with no line in the diff goes in a top-level comment
+   instead, with the marker on its first line. It has no thread, so it is
+   answered by a new marked top-level comment that quotes it:
 
    ```bash
    bash <gh-as-reviewer> pr comment <N> --body-file <file>
@@ -158,7 +161,7 @@ resolves it.
 
    ```bash
    bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
-       -f body=$'<!-- pr-review -->\nFixed in <sha>: <what changed>.'
+       -F body=@<reply-file>   # first line <!-- pr-review -->, then a line: Fixed in <sha>: <what changed>.
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
@@ -284,9 +287,10 @@ replies, pull requests), apart from its hourly limit: about 80 a minute and
 500 an hour. Every session shares one account: the user's, or the app's for
 `pr-review` ("Review on the pull request"). So make those calls one at a time,
 at least a second apart. When GitHub refuses one for this limit ("submitted
-too quickly", or a 403, 422 or 429 whose reply names a secondary rate limit),
-check that it did not land, wait a minute (or the `retry-after` it gives), and
-send the same call again.
+too quickly", or a `403 Forbidden`, `422 Unprocessable Entity` or
+`429 Too Many Requests` whose reply names a secondary rate limit), check that
+it did not land, wait a minute (or the `retry-after` it gives), and send the
+same call again.
 
 #### Merging
 
