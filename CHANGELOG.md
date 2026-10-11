@@ -453,6 +453,17 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **The desktop app keeps trying to download ffmpeg and
+  wtsexporter when the computer is not online yet.** At start the app
+  downloads the programs missing from its Tools Directory. When it had no
+  network, such as on a laptop opened before its Wi-Fi connected, each
+  download was tried once and failed, and nothing tried again until the
+  next start or **Try again**. The app now tries again after 5, 15, 30 and
+  60 seconds, about two minutes in all, and **Settings → System** shows the
+  download as still in progress while it waits. A copy put in the Tools
+  Directory by hand during those waits ends them, and is used. A download
+  that fails for any other reason, such as a checksum that does not match,
+  is still tried once (#2200).
 - 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
   call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation

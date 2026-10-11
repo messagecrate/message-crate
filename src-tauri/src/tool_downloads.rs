@@ -3,10 +3,12 @@
 //!
 //! At every start the app checks the Tools Directory in the background and
 //! downloads what is missing or older than the release pinned here. Login
-//! and browsing don't wait for it, and a failed download is tried again at
-//! the next start, or when **Try again** on the Import form asks
-//! ([`retry`]). An import that needs a program still downloading waits for
-//! it ([`ToolDownloads::wait_for`]).
+//! and browsing don't wait for it. A download that finds no network is
+//! tried again a few times by the check itself, after a growing wait
+//! ([`NO_NETWORK_WAITS`]); a download that failed is tried again at the next
+//! start, or when **Try again** on the Import form asks ([`retry`]). An
+//! import that needs a program still downloading waits for it
+//! ([`ToolDownloads::wait_for`]).
 //!
 //! - **ffmpeg and ffprobe** are not downloaded when both are on `PATH`,
 //!   because a person who installed ffmpeg chose it.
@@ -613,6 +615,20 @@ impl Drop for CheckRun {
     }
 }
 
+/// The waits before a download that found no network is tried again, one
+/// before each new try (#2200): about two minutes in all, long enough for a
+/// laptop opened before its Wi-Fi connects to come online. The programs of
+/// one check share one round, which starts over only after a download
+/// reaches its server, so when the network never comes the check ends
+/// after one round, and an import waiting for a program hears it failed
+/// within about two minutes.
+const NO_NETWORK_WAITS: [Duration; 4] = [
+    Duration::from_secs(5),
+    Duration::from_secs(15),
+    Duration::from_secs(30),
+    Duration::from_secs(60),
+];
+
 /// How often an import waiting for a download looks at its cancel flag when
 /// no state changes.
 const WAIT_TICK: Duration = Duration::from_millis(250);
@@ -793,13 +809,22 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// Another app's check running on `dir` already does the work, so this one
 /// returns at once. When the lock can't be taken because the Tools Directory
 /// can't be written, the check goes on and its downloads say why.
-fn download_missing(dir: &Path, base: &str, pinned: &[Pinned], mut run: CheckRun) {
+///
+/// `wait` pauses the check before it tries a download again that found no
+/// network: [`std::thread::sleep`] in the app.
+fn download_missing(
+    dir: &Path,
+    base: &str,
+    pinned: &[Pinned],
+    mut run: CheckRun,
+    wait: &dyn Fn(Duration),
+) {
     let lock = match lock_check(dir) {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => return,
         Err(_) => None,
     };
-    check(dir, base, pinned, &mut run, lock);
+    check(dir, base, pinned, &mut run, lock, wait);
 }
 
 /// What [`retry`] did.
@@ -873,7 +898,7 @@ fn retry_with(
     let (hand_over, handed) = std::sync::mpsc::sync_channel::<CheckRun>(1);
     let spawned = spawn(Box::new(move || {
         if let Ok(mut run) = handed.recv() {
-            check(&dir, &base, &pinned, &mut run, lock);
+            check(&dir, &base, &pinned, &mut run, lock, &std::thread::sleep);
         }
     }));
     match spawned {
@@ -903,8 +928,16 @@ fn retry_with(
 /// The check [`download_missing`] and [`retry`] run as `run`, holding
 /// `_lock`, or no lock when the Tools Directory can't be written. Every
 /// pinned program ends with its state decided: none when it is in place and
-/// runs, failed with the reason otherwise.
-fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: Option<File>) {
+/// runs, failed with the reason otherwise. `wait` is the pause before a
+/// download that found no network is tried again.
+fn check(
+    dir: &Path,
+    base: &str,
+    pinned: &[Pinned],
+    run: &mut CheckRun,
+    _lock: Option<File>,
+    wait: &dyn Fn(Duration),
+) {
     // A clone of the handle (one `Arc`), because `run` is borrowed mutably
     // below to mark the programs wanted as downloading.
     let downloads = &run.downloads.clone();
@@ -945,6 +978,16 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
     for pin in &wanted {
         run.mark_downloading(pin.program);
     }
+    // Each program's file as the check found it. One that appears or
+    // changes later, while an earlier program's tries wait included, was
+    // put there by someone else, such as a copy put in by hand.
+    let found: HashMap<Program, Option<Stamp>> = wanted
+        .iter()
+        .map(|pin| {
+            let path = dir.join(pin.program.file_name());
+            (pin.program, Stamp::at(&path).ok())
+        })
+        .collect();
     let fail_all = |err: DownloadError| {
         for pin in &wanted {
             downloads.set(
@@ -962,12 +1005,55 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
     if let Err(err) = std::fs::create_dir_all(dir) {
         return fail_all(DownloadError::CouldNotWrite(err.to_string()));
     }
+    let mut no_network_waits = NO_NETWORK_WAITS.iter();
     for pin in wanted {
         let program = pin.program;
         let progress = |received, total| {
             downloads.set(program, DownloadState::Downloading { received, total });
         };
-        match download(&client, &pin.url(base), pin, dir, &progress) {
+        let mut attempt = || download(&client, &pin.url(base), pin, dir, &progress);
+        let show_downloading = || {
+            downloads.set(
+                program,
+                DownloadState::Downloading {
+                    received: 0,
+                    total: None,
+                },
+            );
+        };
+        let path = dir.join(program.file_name());
+        let was_put_in_place = || {
+            Stamp::at(&path)
+                .ok()
+                .is_some_and(|now| found.get(&program) != Some(&Some(now)))
+                && runs(program, dir)
+        };
+        // Put in place while an earlier program's tries waited.
+        if was_put_in_place() {
+            downloads.clear(program);
+            continue;
+        }
+        let tried = try_until_answered(
+            &mut no_network_waits,
+            wait,
+            show_downloading,
+            was_put_in_place,
+            &mut attempt,
+        );
+        let result = match tried {
+            Tried::Done(result) => result,
+            // The lookup finds it, so nothing waits for the download.
+            Tried::PutInPlace => {
+                downloads.clear(program);
+                continue;
+            }
+        };
+        if !matches!(result, Err(DownloadError::NoNetwork(_))) {
+            // The download reached its server, so the network is there:
+            // the next program that finds none gets the whole round again.
+            no_network_waits = NO_NETWORK_WAITS.iter();
+        }
+        match result {
             Ok(written) => {
                 manifest.insert(program, written);
                 if runs(program, dir) {
@@ -995,6 +1081,45 @@ fn check(dir: &Path, base: &str, pinned: &[Pinned], run: &mut CheckRun, _lock: O
     }
 }
 
+/// What [`try_until_answered`] came to.
+enum Tried<T> {
+    /// The last try's result: one that reached the server, a failure for
+    /// any other reason included, or [`DownloadError::NoNetwork`] once the
+    /// waits were spent.
+    Done(Result<T, DownloadError>),
+    /// During a wait the program was put in place by someone else, and it
+    /// runs, so no try is needed.
+    PutInPlace,
+}
+
+/// Run `attempt` until it gets past [`DownloadError::NoNetwork`], waiting
+/// the next of `waits` before each new try. `show_downloading` runs before
+/// each wait. After each wait `was_put_in_place` is asked whether the program
+/// is now there without the download, and when it is the tries end.
+fn try_until_answered<T>(
+    waits: &mut std::slice::Iter<'static, Duration>,
+    wait: &dyn Fn(Duration),
+    show_downloading: impl Fn(),
+    was_put_in_place: impl Fn() -> bool,
+    attempt: &mut dyn FnMut() -> Result<T, DownloadError>,
+) -> Tried<T> {
+    loop {
+        match attempt() {
+            Err(DownloadError::NoNetwork(why)) => match waits.next() {
+                Some(&pause) => {
+                    show_downloading();
+                    wait(pause);
+                    if was_put_in_place() {
+                        return Tried::PutInPlace;
+                    }
+                }
+                None => return Tried::Done(Err(DownloadError::NoNetwork(why))),
+            },
+            answered => return Tried::Done(answered),
+        }
+    }
+}
+
 /// Start the check of the Tools Directory `dir` on a thread of its own, for
 /// this computer's platform, so login and browsing don't wait for it.
 ///
@@ -1005,7 +1130,7 @@ pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
     let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
         .name("tool-downloads".into())
-        .spawn(move || download_missing(&dir, GITHUB, &pinned, run));
+        .spawn(move || download_missing(&dir, GITHUB, &pinned, run, &std::thread::sleep));
 }
 
 #[cfg(test)]
