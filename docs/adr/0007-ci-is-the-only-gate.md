@@ -5,7 +5,8 @@ A ruleset on `main` requires those checks to pass and requires a pull request to
 carry them. The two scripts under `scripts/` decide nothing: `check-pr.sh` is a
 fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
-pushing.
+pushing, except the Docker image build and, off Windows, the Windows-only
+cases of the server config tests.
 
 `ci.yml` holds twelve jobs on a ready pull request. On a draft, all of them
 skip. A `changes` job diffs the branch against its base and publishes five
@@ -46,15 +47,15 @@ fix is a new tag. The job runs on pull requests only: the tag job builds and
 pushes the same image, and `nightly.yml` builds it from `main`.
 `crates/server/server/src/config.rs` and everything under
 `crates/server/server/src/config/` set `server_config` as well as `rust`, and
-so does any change to a workflow. The `windows-config` job reads it: the check
-that keeps the website directory and the Data Directory apart
-(`Config::require_static_dir_apart`) has cases only Windows has, a junction's
-target that comes back verbatim (`\\?\C:\...`) and a short name
-(`WEBSIT~1`) that stands for a long one, and every other job that runs on a
-pull request runs on Linux. A
-Windows build is not worth its time on a pull request that cannot change these
-paths. On a push, a tag or a manual run it runs like every other job, and the
-`docker` and `release` jobs need it, so a release waits for it (#2683).
+so does any change to a workflow. The `windows-config` job reads it. The
+check that keeps the website directory and the Data Directory apart
+(`Config::require_static_dir_apart`) has cases only Windows has: a junction's
+target that comes back verbatim (`\\?\C:\...`), and a short name
+(`WEBSIT~1`) that stands for a long one. Every other job that runs on a pull
+request runs on Linux. A Windows build is not worth its time on a pull request
+that cannot change these paths. On a push, a tag or a manual run it runs like
+every other job, and the `docker` and `release` jobs need it, so a release
+waits for it (#2683).
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
 because its build needs the webkit and gtk system packages that job already
