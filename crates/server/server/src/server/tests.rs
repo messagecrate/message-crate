@@ -2091,7 +2091,12 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
 
     let (status, text) = put_chunked(server.base(), &path, &user.token, &[b'x'; 17]).await;
 
-    expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    let problem = expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("the request body is too large"),
+        "a chunked part reads as a sized one does: {text}"
+    );
 }
 
 /// The server's log names every request, and a media link in a URL is a

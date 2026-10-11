@@ -615,6 +615,14 @@ impl ApiError {
         Self::ValidationFailed(vec![sentence.into()])
     }
 
+    /// `413` for a request body over its cap, with the detail "the request
+    /// body is too large". Every cap answers through it, so a client sees one
+    /// sentence for one condition whichever cap refused the body and however
+    /// the body declared its size. The problem type's page names each cap.
+    pub(crate) fn body_too_large() -> Self {
+        Self::PayloadTooLarge("the request body is too large".to_string())
+    }
+
     /// `404` for a `kind` of row this account does not hold, with the detail
     /// "{kind} not found", so the routes that use it word a miss the same way.
     pub(crate) fn not_found(kind: &str) -> Self {
@@ -1042,12 +1050,8 @@ async fn json_body_limit_response(response: Response) -> Response {
     if already_problem {
         return response;
     }
-    ApiError::PayloadTooLarge(REQUEST_BODY_TOO_LARGE.to_string()).into_response()
+    ApiError::body_too_large().into_response()
 }
-
-/// The `detail` of every `413` the server writes itself, whichever cap
-/// refused the body, so a client sees one sentence for one condition.
-const REQUEST_BODY_TOO_LARGE: &str = "the request body is too large";
 
 /// The body cap of the routes a stranger may call ([`limited_auth_router`]):
 /// 32 KiB, so password hashing cannot be fed a large body.
@@ -1105,7 +1109,7 @@ async fn limit_request_body(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok());
     if declared.is_some_and(|bytes| bytes > limit as u64) {
-        return ApiError::PayloadTooLarge(REQUEST_BODY_TOO_LARGE.to_string()).into_response();
+        return ApiError::body_too_large().into_response();
     }
     let request =
         request.map(|body| axum::body::Body::new(http_body_util::Limited::new(body, limit)));
@@ -1800,7 +1804,7 @@ fn body_read_error(error: axum::Error) -> ApiError {
     let mut source: Option<&(dyn std::error::Error + 'static)> = Some(&error);
     while let Some(cause) = source {
         if cause.is::<http_body_util::LengthLimitError>() {
-            return ApiError::PayloadTooLarge(REQUEST_BODY_TOO_LARGE.to_string());
+            return ApiError::body_too_large();
         }
         source = cause.source();
     }
@@ -1817,9 +1821,7 @@ pub(crate) async fn read_body_limited(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(body_read_error)?;
         if out.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(ApiError::PayloadTooLarge(
-                REQUEST_BODY_TOO_LARGE.to_string(),
-            ));
+            return Err(ApiError::body_too_large());
         }
         out.extend_from_slice(&chunk);
     }
@@ -1837,9 +1839,7 @@ pub(crate) async fn discard_body(
         let chunk = chunk.map_err(body_read_error)?;
         seen = seen.saturating_add(chunk.len());
         if seen > max_body_bytes {
-            return Err(ApiError::PayloadTooLarge(
-                REQUEST_BODY_TOO_LARGE.to_string(),
-            ));
+            return Err(ApiError::body_too_large());
         }
     }
     Ok(())
@@ -1870,9 +1870,7 @@ pub(crate) async fn stream_body_to_file(
         let chunk = chunk.map_err(body_read_error)?;
         written = written.saturating_add(chunk.len() as u64);
         if written > max_body_bytes as u64 {
-            return Err(ApiError::PayloadTooLarge(
-                REQUEST_BODY_TOO_LARGE.to_string(),
-            ));
+            return Err(ApiError::body_too_large());
         }
         file.write_all(&chunk)
             .await

@@ -676,11 +676,14 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-10: **An attachment upload or address book load that is too
-  large reads like any other.** When the server refused one of these for
-  being over its size limit, the message read "request body too large",
-  where every other route refusing a body over the limit said "the request
-  body is too large". Both now say "the request body is too large" (#2283).
+- 2026-10-10: **A request too large for the server reads the same
+  everywhere.** When the server refuses a request for being over its size
+  limit, the message now always reads "the request body is too large". It
+  used to read three ways depending on what was sent: "request body too
+  large" for an attachment, an import or an address book sent without a
+  stated size, "a part of this upload is at most" a number of bytes for a
+  part of a large attachment, and a technical sentence from the web
+  framework for some other requests (#2283).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front
