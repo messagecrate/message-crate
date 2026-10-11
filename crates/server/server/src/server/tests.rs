@@ -1312,10 +1312,7 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             ApiError::UnsupportedMediaType("x".into()),
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         ),
-        (
-            ApiError::PayloadTooLarge("x".into()),
-            StatusCode::PAYLOAD_TOO_LARGE,
-        ),
+        (ApiError::PayloadTooLarge, StatusCode::PAYLOAD_TOO_LARGE),
         (
             ApiError::InvalidCredentials("x".into()),
             StatusCode::UNAUTHORIZED,
@@ -1428,7 +1425,6 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
     let variants: Vec<fn(String) -> ApiError> = vec![
         ApiError::MalformedBody,
         ApiError::UnsupportedMediaType,
-        ApiError::PayloadTooLarge,
         ApiError::InvalidCredentials,
         ApiError::AuthenticationRequired,
         ApiError::UsernameTaken,
