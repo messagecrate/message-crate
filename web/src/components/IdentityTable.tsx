@@ -275,7 +275,7 @@ export default function IdentityTable({
                   title="Remove identity"
                   onPress={() => onRemove(row)}
                 >
-                  <TrashIcon />
+                  <TrashIcon className="shrink-0" />
                 </Button>
               ) : null}
             </Cell>

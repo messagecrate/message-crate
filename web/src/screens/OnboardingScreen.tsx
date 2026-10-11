@@ -114,7 +114,11 @@ function rowErrors(rows: HandleInput[]): Map<string, string> {
  * decorate a label.
  */
 function serviceIcon(service: OfferedService) {
-  return service === "email" ? <PersonIcon size={18} /> : <PhoneIcon size={18} />;
+  return service === "email" ? (
+    <PersonIcon size={18} className="shrink-0" />
+  ) : (
+    <PhoneIcon size={18} className="shrink-0" />
+  );
 }
 
 export default function OnboardingScreen() {

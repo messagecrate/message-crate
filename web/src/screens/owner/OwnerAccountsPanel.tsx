@@ -95,7 +95,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                       onClick={() => navigate(`/owner/accounts/${account.account_id}`)}
                       className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                     >
-                      <GearIcon size={15} />
+                      <GearIcon size={15} className="shrink-0" />
                     </NavGlyphButton>
                   </td>
                   <td className={`${tdClass} whitespace-nowrap`}>

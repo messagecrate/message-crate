@@ -24,7 +24,7 @@ export default function AudioPlayer({ attachment }: { attachment: MessageAttachm
             aria-label={`Play ${name}`}
             className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-sent-text disabled:cursor-wait ${focusRingClass}`}
           >
-            <PlayIcon size={14} />
+            <PlayIcon size={14} className="shrink-0" />
           </PlainButton>
         ) : null}
         <span className="min-w-0 truncate text-text">{name}</span>
