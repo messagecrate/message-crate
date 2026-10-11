@@ -11,7 +11,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Report process liveness. */
+        /**
+         * Report whether the server can answer.
+         * @description Answers `ok` when the server can take a database connection and run a
+         *     statement on it within 1.5 seconds. A server whose connections are all
+         *     taken, or whose database cannot be opened, fails the way a `/v1` call it
+         *     cannot answer fails, with `500 Internal Server Error`, so a health check
+         *     agrees with those calls.
+         */
         get: operations["get_health"];
         put?: never;
         post?: never;
@@ -5655,7 +5662,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Process is up */
+            /** @description The server is up and can reach its database */
             200: {
                 headers: {
                     [name: string]: unknown;

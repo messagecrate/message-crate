@@ -307,7 +307,10 @@ pub struct Sinks<'a> {
     pub log: &'a LogSink,
     /// Where the drain sends its progress events.
     pub progress: &'a ProgressSink,
-    /// Set to stop the drain. The drain then fails with `"cancelled"`.
+    /// Set to stop the drain. The drain then fails with
+    /// [`message_crate_core::Cancelled`], or with the text `cancelled` when
+    /// the cancel is seen while a conversation's attachments are staged
+    /// (#2077).
     pub cancel: &'a CancelFlag,
 }
 
@@ -320,7 +323,7 @@ pub struct Sinks<'a> {
 /// # Errors
 ///
 /// Returns the first unit error, which stops the drain. A cancel surfaces as
-/// `"cancelled"`.
+/// [`Sinks::cancel`] says.
 pub fn drain_write_queue_with_loader(
     output_dir: &Path,
     mut units: Vec<ConversationUnit>,
@@ -490,7 +493,8 @@ pub fn drain_units(
 /// # Errors
 ///
 /// Returns the first unit error, or the headroom error when the staging disk
-/// cannot hold what the backup needs. A cancel surfaces as `"cancelled"`.
+/// cannot hold what the backup needs. A cancel surfaces as [`Sinks::cancel`]
+/// says.
 pub fn drain_write_queue(
     output_dir: &Path,
     mut units: Vec<ConversationUnit>,
