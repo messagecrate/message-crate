@@ -1697,7 +1697,15 @@ pub(crate) async fn discard_import(
     let issues = import_issue_inputs(&body.issues)?;
     let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
+    crate::db::imports::discard_import(
+        &mut conn,
+        account,
+        import_id,
+        &issues,
+        &notes,
+        chrono::Utc::now(),
+    )
+    .await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
