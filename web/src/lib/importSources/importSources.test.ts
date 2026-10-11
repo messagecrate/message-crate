@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { ImportJobFormValues } from "../../screens/import/useImportJob";
 import { EXPORT_SOURCES, IMAZING_SOURCE_ID } from "../exportSources";
 import { IMESSAGE_METHODS } from "../imessageImport";
 import { WHATSAPP_METHODS } from "../whatsappImport";
@@ -10,6 +9,7 @@ import {
 } from "./androidSms";
 import { findImportSource, IMPORT_SOURCES, importSourceFor, isImportMethod } from "./index";
 import { OPENEXTRACT_SOURCE_ID } from "./pathOnlySources";
+import type { ImportJobFormValues } from "./types";
 
 const form: ImportJobFormValues = {
   source: "",

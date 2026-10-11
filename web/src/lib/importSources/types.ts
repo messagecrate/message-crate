@@ -1,8 +1,8 @@
-import type { ImportFormFieldsProps } from "../../screens/import/ImportFormFields";
-import type { ImportJobFormValues } from "../../screens/import/useImportJob";
 import type { ImportSourceId } from "../exportSources";
+import type { ImessagePathStats } from "../imessageImport";
 import type { ImporterExtraField } from "../system-settings";
-import type { ExtractConfig } from "../types";
+import type { AttachmentChoices, ExtractConfig } from "../types";
+import type { WhatsappPathStats } from "../whatsappImport";
 
 /**
  * One way Import reads a source's backup, by the id the form and the
@@ -40,6 +40,46 @@ export type ProcessingOption = "obfuscate" | "timeZone" | "whatsappFallbackPhone
  */
 export type AppleIdentityRead = { ios: boolean };
 
+/** The Import form's values, as an Import Run is started and resumed with them. */
+export type ImportJobFormValues = AttachmentChoices & {
+  source: string;
+  backupPath: string;
+  backupPassword: string;
+  ownerPhones: string[];
+  /** Owner email addresses; only SMS Backup+ reads them. */
+  ownerEmails: string[];
+  obfuscate: boolean;
+  /** The IANA zone iMazing dates are read in: the account's, or the one picked
+   * under Processing Options. Only the iMazing extract reads it, because its
+   * dates carry no zone of their own. */
+  timeZone: string;
+  /**
+   * The country of the phone the backup came from, as an ISO code (`GB`), or
+   * empty for none. The Import Run states it, and the server reads every
+   * number the run's files write without its `+` code as a number there
+   * (#1676).
+   */
+  phoneCountry: string;
+  attachmentRoot: string;
+  appleContacts: string;
+  whatsappKey: string;
+  whatsappWa: string;
+  whatsappMedia: string;
+  whatsappDb: string;
+  /** Whether an iPhone WhatsApp backup is from WhatsApp Business. */
+  isBusinessApp: boolean;
+  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
+  whatsappOwnerPhone: string;
+  /**
+   * The server's attachment size limit, in bytes, as this Import Run works
+   * to it. Not a field the person fills in: a new run reads it from
+   * `GET /v1/server` before Staging, and it is stored with the run in the
+   * form snapshot, so a resume uses the number the run was staged and
+   * reviewed against even when the owner has changed the limit since.
+   */
+  assetMaxBytes?: number;
+};
+
 /** The fields `extract` reads for one source, beside the ones every run sends. */
 export type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "output_dir">>;
 
@@ -58,8 +98,33 @@ export type OwnerPhoneState = {
   mismatchAck: boolean;
 };
 
-/** What the Import form reads to decide whether Import can start. */
-export type ReadinessInput = ImportFormFieldsProps & { ownerPhoneEntry: OwnerPhoneState };
+/**
+ * What a source's readiness reads from the Import form to decide whether
+ * Import can start. The form's props are built on these fields, so the form
+ * passes its props as they are, with the owner phone entry it builds.
+ */
+export type ReadinessInput = {
+  /** The selected method's id. */
+  source: string;
+  backupPath: string;
+  backupPassword: string;
+  attachmentRoot: string;
+  appleContacts: string;
+  pathStats: ImessagePathStats;
+  whatsappKey: string;
+  whatsappWa: string;
+  whatsappMedia: string;
+  whatsappDb: string;
+  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
+  whatsappOwnerPhone: string;
+  whatsappStats: WhatsappPathStats;
+  ownerPhones: string[];
+  /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
+  ownerEmails: string;
+  /** True once the account's phones have been read. */
+  profilePhonesReady: boolean;
+  ownerPhoneEntry: OwnerPhoneState;
+};
 
 /** Whether the source's fields are ready for Import, and the problem with each field that is not. */
 export type Readiness = {

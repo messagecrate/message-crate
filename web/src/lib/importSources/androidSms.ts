@@ -1,4 +1,4 @@
-import { attachmentChoicesOf } from "../../screens/import/attachmentChoices";
+import { attachmentChoicesOf } from "../attachmentChoices";
 import { type ImportSourceId, sourceLabel } from "../exportSources";
 import { sbrExtractFields } from "../sbrExtractFields";
 import type { BackupField, ImportSourceDescriptor, ReadinessInput } from "./types";

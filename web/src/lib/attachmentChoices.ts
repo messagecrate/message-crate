@@ -1,4 +1,4 @@
-import type { AttachmentChoices } from "../../lib/types";
+import type { AttachmentChoices } from "./types";
 
 /** The choices a new Import form starts with. */
 export const DEFAULT_ATTACHMENT_CHOICES: AttachmentChoices = {

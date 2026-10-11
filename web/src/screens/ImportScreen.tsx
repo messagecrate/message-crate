@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { phoneNumbers, profileAddresses } from "../lib/account";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
+import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "../lib/attachmentChoices";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
 import {
@@ -42,7 +43,6 @@ import {
   isWhatsappMethod,
   WHATSAPP_CRYPT_NAMES,
 } from "../lib/whatsappImport";
-import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "./import/attachmentChoices";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
