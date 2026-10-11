@@ -129,13 +129,10 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
     return { enabled: false, errors: {} };
   }
 
-  checkRequiredPath(
-    args.stats.backup,
-    errors,
-    "backupPath",
-    WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
-    "directory",
-  );
+  checkRequiredPath(args.stats.backup, errors, "backupPath", {
+    expected: "directory",
+    kindError: WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
+  });
 
   if (
     args.method === "whatsapp-android" &&
@@ -158,29 +155,24 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
   }
 
   if (whatsappShowsContactsDb(args.method)) {
-    checkOptionalPath(
-      args.contactsDb,
-      args.stats.contactsDb,
-      errors,
-      "contactsDb",
-      WHATSAPP_ERR_MUST_BE_FILE,
-      "file",
-    );
+    checkOptionalPath(args.contactsDb, args.stats.contactsDb, errors, "contactsDb", {
+      expected: "file",
+      kindError: WHATSAPP_ERR_MUST_BE_FILE,
+    });
   }
 
   if (whatsappShowsMedia(args.method)) {
-    checkOptionalPath(
-      args.media,
-      args.stats.media,
-      errors,
-      "media",
-      WHATSAPP_ERR_MUST_BE_DIRECTORY,
-      "directory",
-    );
+    checkOptionalPath(args.media, args.stats.media, errors, "media", {
+      expected: "directory",
+      kindError: WHATSAPP_ERR_MUST_BE_DIRECTORY,
+    });
   }
 
   if (whatsappShowsDb(args.method)) {
-    checkOptionalPath(args.db, args.stats.db, errors, "db", WHATSAPP_ERR_MUST_BE_FILE, "file");
+    checkOptionalPath(args.db, args.stats.db, errors, "db", {
+      expected: "file",
+      kindError: WHATSAPP_ERR_MUST_BE_FILE,
+    });
   }
 
   const contactsCheckPending =

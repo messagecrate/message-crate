@@ -6,7 +6,7 @@ type Key = "field";
 
 function check(path: string, stat: ImportPathStat | null, expected: PathKind) {
   const errors: Partial<Record<Key, string>> = {};
-  checkOptionalPath(path, stat, errors, "field", "Wrong kind.", expected);
+  checkOptionalPath(path, stat, errors, "field", { expected, kindError: "Wrong kind." });
   return errors;
 }
 

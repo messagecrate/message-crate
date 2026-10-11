@@ -2,7 +2,7 @@ import {
   checkOptionalPath,
   checkRequiredPath,
   type ImportPathStat,
-  type PathKind,
+  type PathRequirement,
 } from "./pathChecks";
 
 export const IMESSAGE_SOURCE_ID = "imessage";
@@ -90,7 +90,7 @@ export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
   "The backup is encrypted — fill Encryption password.";
 
 /** The kind of path each method's backup path field takes, and its message for any other. */
-const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, { expected: PathKind; kindError: string }> = {
+const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, PathRequirement> = {
   "imessage-ios": { expected: "directory", kindError: IMESSAGE_ERR_IPHONE_NOT_DIRECTORY },
   "imessage-macos": { expected: "file", kindError: IMESSAGE_ERR_MAC_NOT_FILE },
   "imessage-jailbreak": { expected: "file", kindError: IMESSAGE_ERR_JAILBREAK_NOT_FILE },
@@ -122,31 +122,22 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
     return { enabled: false, errors: {} };
   }
 
-  const backup = IMESSAGE_BACKUP_PATH[args.method];
-  checkRequiredPath(args.stats.backup, errors, "backupPath", backup.kindError, backup.expected);
+  checkRequiredPath(args.stats.backup, errors, "backupPath", IMESSAGE_BACKUP_PATH[args.method]);
 
   const attachmentRoot = args.attachmentRoot.trim();
 
   if (imessageShowsAttachmentRoot(args.method)) {
-    checkOptionalPath(
-      attachmentRoot,
-      args.stats.attachmentRoot,
-      errors,
-      "attachmentRoot",
-      IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
-      "directory",
-    );
+    checkOptionalPath(attachmentRoot, args.stats.attachmentRoot, errors, "attachmentRoot", {
+      expected: "directory",
+      kindError: IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
+    });
   }
 
   if (imessageShowsAppleContacts(args.method)) {
-    checkOptionalPath(
-      args.appleContacts,
-      args.stats.appleContacts,
-      errors,
-      "appleContacts",
-      IMESSAGE_ERR_CONTACTS_NOT_FILE,
-      "file",
-    );
+    checkOptionalPath(args.appleContacts, args.stats.appleContacts, errors, "appleContacts", {
+      expected: "file",
+      kindError: IMESSAGE_ERR_CONTACTS_NOT_FILE,
+    });
   }
 
   if (

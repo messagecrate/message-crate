@@ -6,6 +6,9 @@ export type ImportPathStat = Pick<DesktopPathStat, "exists" | "isFile" | "isDire
 /** Whether a path field takes a file or a directory. */
 export type PathKind = "file" | "directory";
 
+/** The kind of path a field takes, and the field's own message for a path of any other kind. */
+export type PathRequirement = { expected: PathKind; kindError: string };
+
 export const PATH_MISSING = "This path does not exist.";
 
 /**
@@ -18,13 +21,12 @@ export function checkOptionalPath<K extends string>(
   stat: ImportPathStat | null,
   errors: Partial<Record<K, string>>,
   key: K,
-  kindError: string,
-  expected: PathKind,
+  requirement: PathRequirement,
 ): void {
   if (path.trim() === "" || stat === null) {
     return;
   }
-  checkRequiredPath(stat, errors, key, kindError, expected);
+  checkRequiredPath(stat, errors, key, requirement);
 }
 
 /**
@@ -38,8 +40,7 @@ export function checkRequiredPath<K extends string>(
   stat: ImportPathStat,
   errors: Partial<Record<K, string>>,
   key: K,
-  kindError: string,
-  expected: PathKind,
+  { expected, kindError }: PathRequirement,
 ): void {
   if (!stat.exists) {
     errors[key] = PATH_MISSING;
