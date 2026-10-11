@@ -71,7 +71,6 @@ import {
   HEALTH_RECHECK_AFTER_FAILURE_MS,
 } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
-import { advanceTimers } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
@@ -326,11 +325,15 @@ describe("LoginScreen", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderScreen();
 
-    await advanceTimers(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("status")).toHaveTextContent(/^Connecting to /);
 
-    await advanceTimers(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("status")).toHaveTextContent(/^Connected to /);
   });
@@ -343,7 +346,9 @@ describe("LoginScreen", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderScreen();
 
-    await advanceTimers(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByRole("status")).toHaveTextContent(/^Disconnected from /);
   });
