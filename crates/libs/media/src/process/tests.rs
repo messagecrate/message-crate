@@ -1042,11 +1042,12 @@ fn the_attachment_walks_never_follow_a_symlink() {
     symlink(&elsewhere, att.join("linked")).unwrap();
     symlink(elsewhere.join("clip.mp4"), att.join("linked-clip.mp4")).unwrap();
     symlink(&att, att.join("loop")).unwrap();
+    let _socket = std::os::unix::net::UnixListener::bind(att.join("socket.mp4")).unwrap();
 
     assert_eq!(
         collect_media_files(&att).unwrap(),
         vec![att.join("photo.png")],
-        "only the real file is listed; nothing through a link"
+        "only the regular file is listed; nothing through a link, and no socket"
     );
 
     remove_msgmedia_temps(&att).unwrap();

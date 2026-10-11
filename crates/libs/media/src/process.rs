@@ -181,9 +181,10 @@ fn attachments_dir_bytes(attachments: &Path) -> Result<u64> {
     Ok(total)
 }
 
-/// Every file under `root`, recursively, reading each entry's type without
-/// following a symlink: only real directories are descended into, and a
-/// symlink is skipped whatever it points at. A link under `root` therefore
+/// Every regular file under `root`, recursively, reading each entry's type
+/// without following a symlink: only real directories are descended into, a
+/// symlink is skipped whatever it points at, and so is a socket, pipe or
+/// device file, which a conversion could block on. A link under `root` therefore
 /// never brings files from elsewhere into a media pass, and a link to a
 /// parent directory cannot make the walk loop (#2262).
 ///
@@ -201,7 +202,7 @@ fn files_under(root: &Path) -> Result<Vec<fs::DirEntry>> {
                 .with_context(|| format!("stat {}", entry.path().display()))?;
             if file_type.is_dir() {
                 stack.push(entry.path());
-            } else if !file_type.is_symlink() {
+            } else if file_type.is_file() {
                 out.push(entry);
             }
         }
