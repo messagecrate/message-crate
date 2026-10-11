@@ -1,5 +1,5 @@
-//! Attachments: copying, converting and counting their files, and the
-//! files an import refuses or cannot find.
+//! Attachments: copying and converting their Assets, counting the Assets
+//! an import stores, and the files an import refuses or cannot find.
 
 use super::*;
 

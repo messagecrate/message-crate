@@ -1,5 +1,5 @@
-//! #1105: an identity is always on a contact, and every participant is a
-//! contact through an identity.
+//! An identity is always on a contact, and every participant is a contact
+//! through an identity (#1105).
 
 use super::*;
 

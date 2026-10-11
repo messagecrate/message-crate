@@ -1,5 +1,5 @@
-//! Conversations with yourself, and linking or removing an identity of
-//! the account holder after an import.
+//! Conversations the account holder has with themselves, and linking or
+//! removing an identity of the account holder after an import.
 
 use super::*;
 
