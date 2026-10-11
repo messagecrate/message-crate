@@ -38,7 +38,8 @@ import type {
   ImportProgressEvent,
 } from "../../lib/types";
 import { account } from "../../test/apiShapes";
-import { importForm, MIB } from "../../test/importForm";
+import { importForm } from "../../test/importForm";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "../settings/ConvertSection";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
@@ -275,7 +276,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };

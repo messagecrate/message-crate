@@ -18,6 +18,7 @@ import {
 } from "../../lib/whatsappImport";
 import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
 import type { ImportFormFieldsProps } from "./formSections/types";
@@ -952,7 +953,7 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
       status({
-        wtsexporter: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+        wtsexporter: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       }),
     );
     renderForm(readyWhatsapp);
@@ -993,7 +994,7 @@ describe("ImportFormFields programs the import needs", () => {
     desktop.isTauri = true;
     desktop.toolsStatus.mockResolvedValue(
       status({
-        ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+        ffmpeg: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       }),
     );
     renderForm({
