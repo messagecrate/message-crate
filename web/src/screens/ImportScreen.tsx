@@ -73,23 +73,11 @@ const NO_IDENTIFIERS: readonly string[] = [];
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
-function mapPathStat(raw: {
-  exists: boolean;
-  isFile: boolean;
-  isDirectory: boolean;
-}): ImportPathStat {
-  return {
-    exists: raw.exists,
-    isFile: raw.isFile,
-    isDirectory: raw.isDirectory,
-  };
-}
-
 async function probePath(path: string): Promise<ImportPathStat | null> {
   const trimmed = path.trim();
   if (trimmed === "") return null;
   try {
-    return mapPathStat(await invokePathStat(trimmed));
+    return await invokePathStat(trimmed);
   } catch {
     return { exists: false, isFile: false, isDirectory: false };
   }
@@ -276,9 +264,9 @@ export default function ImportScreen() {
         const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
         const directory = run?.run_dir ? await runDirectoryCheck(run.run_dir) : "missing";
         // Only a resume of the copy consults this; every later stage works
-        // from the staged directory rather than the backup. The full stat, not
-        // `probePath`'s narrowed one: the comparison needs the size and
-        // modified time.
+        // from the staged directory rather than the backup. The desktop
+        // `PathStat`, not `probePath`'s `ImportPathStat`: the comparison needs
+        // the size and modified time, which `ImportPathStat` leaves out.
         const sourceStat = run?.source_fingerprint?.path
           ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
           : null;
@@ -642,7 +630,7 @@ export default function ImportScreen() {
         if (home.os !== "macos") return;
         const chatDb = macMessagesDbPath(home.path);
         if (chatDb === "") return;
-        const stat = mapPathStat(await invokePathStat(chatDb));
+        const stat = await invokePathStat(chatDb);
         if (gen !== sourceChangeGenRef.current) return;
         const prefill = shouldPrefillMacMessagesDb({
           os: home.os,

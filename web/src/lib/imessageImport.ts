@@ -134,7 +134,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
 
   const attachmentRoot = args.attachmentRoot.trim();
 
-  if (imessageShowsAttachmentRoot(args.method) && attachmentRoot !== "") {
+  if (imessageShowsAttachmentRoot(args.method)) {
     checkOptionalPath(
       attachmentRoot,
       args.stats.attachmentRoot,
