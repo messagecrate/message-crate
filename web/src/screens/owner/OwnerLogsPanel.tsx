@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Header, ListBoxSection } from "react-aria-components";
 import LogViewer from "../../components/logs/LogViewer";
 import {
-  logErrorMessage,
   runLogDownload,
   runLogSource,
   SERVER_LOG,
@@ -16,6 +15,7 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClassName,
 } from "../../components/Select";
+import { rejectionMessage } from "../../lib/apiErrorMessage";
 import { formatDateTime } from "../../lib/formatDate";
 import type { RunLogEntry } from "../../lib/tauri";
 import { sectionHintClass } from "../settings/storage/storageUtils";
@@ -113,7 +113,7 @@ export function OwnerLogsPanel() {
       </p>
       {runs.error ? (
         <p role="alert" className="mt-2 text-[0.813rem] text-danger">
-          {logErrorMessage(runs.error, "Could not list the Import Run logs on this computer.")}
+          {rejectionMessage(runs.error, "Could not list the Import Run logs on this computer.")}
         </p>
       ) : null}
       <div className="mt-3">
