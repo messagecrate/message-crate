@@ -3,7 +3,7 @@
 //! Each `#[tauri::command]` function runs in this desktop process, not in the
 //! WebView. That is how the UI starts exporters, finds ffmpeg, and reads the
 //! user's home directory. Native file dialogs come from the dialog plugin
-//! registered in `main.rs`.
+//! registered in `run` (`lib.rs`).
 //!
 //! Long jobs return as soon as the background thread starts. Progress, log
 //! lines, issues, each conversation file Staging wrote or an Upload finished,
