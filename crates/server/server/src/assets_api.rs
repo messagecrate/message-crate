@@ -466,6 +466,9 @@ pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
 
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.
 ///
+/// Not `file_io::file_sha256`: this opens the file without following a
+/// symlink, so a symlink at `path` is refused rather than followed.
+///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or read.

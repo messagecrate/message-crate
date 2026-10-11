@@ -2,8 +2,8 @@
 //!
 //! `file_sha256` is behind every digest check and asset key in import, staging
 //! and transcode, and `sha256_hex` gives the same fingerprint for bytes already
-//! in memory. A change to it silently re-keys everything already in a
-//! database, so it is pinned to values computed outside Rust (Python's
+//! in memory. A change to either silently re-keys everything already in a
+//! database, so both are pinned to values computed outside Rust (Python's
 //! `hashlib`). The message id's known answers are in `message-ir`'s
 //! `identity.rs`.
 

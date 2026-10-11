@@ -6,6 +6,10 @@
 //! streamed SHA-256 of a file ([`file_sha256`]), and the same fingerprint of
 //! bytes already in memory ([`sha256_hex`]).
 //!
+//! [`sha256_hex`] lives here, not with its callers, so it stays beside
+//! [`file_sha256`] and the tests pin the two to one fingerprint format,
+//! whether the bytes are a file, an attachment in memory or a sign-in token.
+//!
 //! They live in a leaf crate so attachment staging, media conversion, the
 //! journal, the export and import crates and the desktop app share one copy
 //! without depending on the conversation model in `message-ir`.
