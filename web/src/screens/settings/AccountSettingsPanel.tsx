@@ -64,7 +64,14 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
         />
       )}
 
-      {!managed && !isOwner ? (
+      {!managed && fixed.apiTokens ? (
+        <>
+          <h3 className={sectionTitleClass}>API Tokens</h3>
+          <p className="mb-6 mt-0 text-[0.813rem] text-muted">
+            The Demo Account makes no API Tokens.
+          </p>
+        </>
+      ) : !managed && !isOwner ? (
         <ApiTokensSection
           accountCanImport={profile.can_import ?? true}
           accountCanExport={profile.can_export ?? true}

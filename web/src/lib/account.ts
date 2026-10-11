@@ -51,6 +51,8 @@ export type FixedSettings = {
   deleteMessages: boolean;
   /** The account deleting itself. The owner may still delete it. */
   deleteOwnAccount: boolean;
+  /** Making an API token, which would outlive a visit to the Demo Account. */
+  apiTokens: boolean;
 };
 
 /** What nobody may change on the account `profile` describes ({@link FixedSettings}). */
@@ -65,5 +67,6 @@ export function fixedSettings(profile: Pick<AccountProfile, "is_demo">): FixedSe
     password: demo,
     deleteMessages: demo,
     deleteOwnAccount: demo,
+    apiTokens: demo,
   };
 }

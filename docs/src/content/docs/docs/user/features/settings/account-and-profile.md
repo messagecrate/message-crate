@@ -102,6 +102,9 @@ The Owner can't add or rename a token.
 
 The Owner's own Settings have no **API Tokens** section, because a token reaches one account's messages and the Owner holds none.
 
+The Demo Account can't make an API Token, and the server refuses one.
+Every visitor shares the Demo Account, so a token would outlive the visit, and every later visitor could see it and revoke it.
+
 ### Danger zone
 
 **Danger zone** is collapsed until its heading is selected.
