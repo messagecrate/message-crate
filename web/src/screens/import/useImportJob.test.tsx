@@ -306,6 +306,26 @@ function form(overrides: { attachmentMedia?: AttachmentMediaMode } = {}) {
   return { ...baseForm, ...overrides };
 }
 
+/** A value for every field a finished run leaves, none of them the cleared one. */
+const LEFT_BEHIND = {
+  summaryView: { status: "completed", durationMs: 1200, issues: [] },
+  runDir: "/home/sam/message-crate/staging-earlier",
+  importRunId: 99,
+  stagingSummary: stagingSummary(),
+  mediaSummary: stagingSummary(),
+  mediaFailedCount: 3,
+  mediaToolsMissing: ["ffmpeg"],
+  mediaPartiallyRan: true,
+  computingSummary: true,
+  reviewError: "The server did not record the review.",
+} satisfies { [K in keyof typeof CLEARED_RUN]: ImportRunState[K] };
+
+function clearedFields(state: ImportRunState) {
+  return Object.fromEntries(
+    Object.keys(CLEARED_RUN).map((key) => [key, state[key as keyof ImportRunState]]),
+  );
+}
+
 describe("useImportJob wiring", () => {
   beforeEach(() => {
     resetImportRun();
@@ -357,26 +377,6 @@ describe("useImportJob wiring", () => {
     completeImportMock.mockResolvedValue({});
   });
 
-  /** A value for every field a finished run leaves, none of them the cleared one. */
-  const LEFT_BEHIND = {
-    summaryView: { status: "completed", durationMs: 1200, issues: [] },
-    runDir: "/home/sam/message-crate/staging-earlier",
-    importRunId: 99,
-    stagingSummary: stagingSummary(),
-    mediaSummary: stagingSummary(),
-    mediaFailedCount: 3,
-    mediaToolsMissing: ["ffmpeg"],
-    mediaPartiallyRan: true,
-    computingSummary: true,
-    reviewError: "The server did not record the review.",
-  } satisfies { [K in keyof typeof CLEARED_RUN]: ImportRunState[K] };
-
-  function clearedFields(state: ImportRunState) {
-    return Object.fromEntries(
-      Object.keys(CLEARED_RUN).map((key) => [key, state[key as keyof ImportRunState]]),
-    );
-  }
-
   it("clears every field a finished run leaves when the form comes back, and keeps the resume error and the delete failure", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form()));
@@ -399,7 +399,12 @@ describe("useImportJob wiring", () => {
   });
 
   it("starts a new run with none of the fields an earlier run left", async () => {
-    importRunStore.set({ ...LEFT_BEHIND, resumeError: "The directory could not be read." });
+    // The logged-in account's own store, so taking the run over does not reset it first.
+    importRunStore.set({
+      ...LEFT_BEHIND,
+      accountId: auth.accountId,
+      resumeError: "The directory could not be read.",
+    });
     const seen: ImportRunState[] = [];
     getServerStateMock.mockImplementation(async () => {
       seen.push(importRunStore.get());
@@ -3038,6 +3043,34 @@ describe("useImportJob resumeAtReview", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+  });
+
+  it("starts a resume with none of the fields an earlier run left, and the resumed run's directory and id", async () => {
+    // The logged-in account's own store, so taking the run over does not reset it first.
+    importRunStore.set({
+      ...LEFT_BEHIND,
+      accountId: auth.accountId,
+      resumeError: "The directory could not be read.",
+    });
+    const seen: ImportRunState[] = [];
+    const unsubscribe = importRunStore.subscribe(() => seen.push(importRunStore.get()));
+    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary());
+    const { result } = renderHook(() => useImportJob());
+
+    await act(async () => {
+      await result.current.resumeAtReview(activeRun({ stage: "staging_review" }), form());
+    });
+    unsubscribe();
+
+    // The resume's first write that names the run, before it computes the summary again.
+    const atStart = seen.find((state) => state.importRunId === 1);
+    if (!atStart) throw new Error("the resume never wrote the run's id");
+    expect(clearedFields(atStart)).toEqual({
+      ...CLEARED_RUN,
+      runDir: "/home/u/message-crate/staging-260830",
+      importRunId: 1,
+    });
+    expect(atStart.resumeError).toBeNull();
   });
 
   it("recomputes the summary fresh from the directory and lands on the Staging Review for a run waiting there", async () => {

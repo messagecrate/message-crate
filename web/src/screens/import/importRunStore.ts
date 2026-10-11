@@ -88,10 +88,10 @@ export type ImportRunState = {
 };
 
 /**
- * What a finished run leaves on screen, cleared when the form comes back, a
- * new run starts, or a run resumes. `resumeError` and `runDirDeleteFailure`
- * are not in it: each outlives a return to the form, so the sites that do
- * clear them write them.
+ * What a finished run leaves on screen, at its empty values: every site that
+ * clears a run spreads it. `resumeError` and `runDirDeleteFailure` are not
+ * in it: each outlives a return to the form, so the sites that do clear them
+ * write them.
  */
 export const CLEARED_RUN = {
   summaryView: null,
