@@ -6,8 +6,7 @@ import type {
   StagingSummary,
 } from "../../../lib/tauri";
 import { isAttachmentMediaMode, isStringArray } from "../formSnapshot";
-import { importRunStore as store } from "../importRunStore";
-import { runScratch } from "./scratch";
+import type { RunContext } from "./context";
 
 const SIZE_VERDICTS: readonly SizeVerdict[] = [
   "fits_as_is",
@@ -102,13 +101,13 @@ export function withRecordedMode(
  * progress rows and the review screens read the directory's mode from here.
  */
 export function adoptRecordedMode(
+  ctx: RunContext,
   form: ImportJobFormValues,
   summary: StagingSummary | null | undefined,
 ): ImportJobFormValues {
   const recorded = withRecordedMode(form, summary);
-  const scratch = runScratch();
-  scratch.form = recorded;
-  scratch.attachmentMode = recorded.attachmentMedia;
-  store.set({ form: recorded });
+  ctx.scratch.form = recorded;
+  ctx.scratch.attachmentMode = recorded.attachmentMedia;
+  ctx.store.set({ form: recorded });
   return recorded;
 }

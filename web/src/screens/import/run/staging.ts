@@ -1,4 +1,3 @@
-import { getAccountId, getBaseUrl } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
 import { getDeviceId } from "../../../lib/deviceId";
 import { buildSourceFingerprint } from "../../../lib/importRun";
@@ -6,15 +5,7 @@ import { importRunCreateBody } from "../../../lib/importSource";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
-import { createImport, getServerState } from "../../../lib/serverApi";
-import {
-  invokeCreateRunDir,
-  invokeExtract,
-  invokePathStat,
-  invokeStartImportRunLog,
-  type StagingSummary,
-} from "../../../lib/tauri";
-import { isTauri } from "../../../lib/tauri-check";
+import type { StagingSummary } from "../../../lib/tauri";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
@@ -23,12 +14,13 @@ import {
   stepsFor,
   UPLOAD_LABEL,
 } from "../importProgressState";
-import { CLEARED_RUN, importRunStore as store } from "../importRunStore";
+import { CLEARED_RUN } from "../importRunStore";
+import type { RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport } from "./finish";
 import { mediaToolsMissingFor } from "./media";
 import { saveCarriedRecord } from "./runRecordWrites";
-import { beginRun, loadCarriedRecord, runScratch } from "./scratch";
+import { beginRun, loadCarriedRecord } from "./scratch";
 import {
   failActiveStep,
   initialSteps,
@@ -106,20 +98,21 @@ function assetLimitOf(form: Pick<ImportJobFormValues, "assetMaxBytes">): number 
  * owner's alone.
  */
 async function startRunLog(
+  ctx: RunContext,
   runDir: string,
   importRunId: number,
   messageCrateId: string,
 ): Promise<void> {
-  const accountId = getAccountId();
+  const accountId = ctx.server.accountId();
   if (accountId === null) {
     console.warn("The Import Run's log names no account: no account is signed in.");
     return;
   }
   try {
-    await invokeStartImportRunLog(runDir, {
+    await ctx.desktop.invokeStartImportRunLog(runDir, {
       importRunId,
       accountId,
-      server: getBaseUrl(),
+      server: ctx.server.baseUrl(),
       messageCrateId,
     });
   } catch (e) {
@@ -128,15 +121,17 @@ async function startRunLog(
 }
 
 export async function runImport(
+  ctx: RunContext,
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
   resume?: ResumeUpload,
   resumeWrite?: ResumeWrite,
 ): Promise<void> {
-  if (!isTauri()) return;
+  if (!ctx.desktop.isTauri()) return;
+  const { store } = ctx;
   let form = withShownAttachmentMode(submitted);
-  beginRun(form, "staging");
+  beginRun(ctx, form, "staging");
   store.set({
     ...CLEARED_RUN,
     running: true,
@@ -157,10 +152,10 @@ export async function runImport(
       // A new Import Run works to the server's attachment size limit as it is
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
-      const server = await endSessionIfRefused(() => getServerState());
+      const server = await endSessionIfRefused(ctx, () => ctx.server.getServerState());
       messageCrateId = server.id;
       form = { ...form, assetMaxBytes: server.asset_max_bytes };
-      runScratch().form = form;
+      ctx.scratch.form = form;
       store.set({ form });
     }
 
@@ -173,10 +168,10 @@ export async function runImport(
       // parses. Straight to Upload.
       const outputDir = resume.runDir;
       runId = resume.runId;
-      await loadCarriedRecord(outputDir);
+      await loadCarriedRecord(ctx, outputDir);
       // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
-      form = adoptRecordedMode(form, resume.approved);
+      form = adoptRecordedMode(ctx, form, resume.approved);
       store.set({
         runDir: outputDir,
         importRunId: runId,
@@ -186,7 +181,7 @@ export async function runImport(
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runUpload(token, runId, outputDir, resume.approved);
+      await runUpload(ctx, token, runId, outputDir, resume.approved);
       return;
     }
 
@@ -201,19 +196,19 @@ export async function runImport(
       // the conversations already written.
       outputDir = resumeWrite.runDir;
       runId = resumeWrite.runId;
-      await loadCarriedRecord(outputDir);
+      await loadCarriedRecord(ctx, outputDir);
       store.set({ runDir: outputDir, importRunId: runId });
-      setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
-      await moveStage(runId, "write");
+      setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
+      await moveStage(ctx, runId, "write");
     } else {
-      outputDir = await invokeCreateRunDir(form.source);
+      outputDir = await ctx.desktop.invokeCreateRunDir(form.source);
       store.set({ runDir: outputDir });
 
-      const backupStat = await invokePathStat(form.backupPath).catch(() => null);
+      const backupStat = await ctx.desktop.invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
-      stopIfAccountLeft();
-      const importRun = await endSessionIfRefused(() =>
-        createImport({
+      stopIfAccountLeft(ctx);
+      const importRun = await endSessionIfRefused(ctx, () =>
+        ctx.server.createImport({
           ...importRunCreateBody(form.source),
           phone_country: form.phoneCountry || null,
           stage: "parse",
@@ -228,14 +223,14 @@ export async function runImport(
       );
       runId = importRun.id;
       store.set({ importRunId: runId });
-      await startRunLog(outputDir, runId, messageCrateId);
-      setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
-      await moveStage(runId, "write");
+      await startRunLog(ctx, outputDir, runId, messageCrateId);
+      setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
+      await moveStage(ctx, runId, "write");
     }
 
-    runScratch().timing.extractStartedAt = performance.now();
-    const extractResult = await runJob(() =>
-      invokeExtract({
+    ctx.scratch.timing.extractStartedAt = ctx.now();
+    const extractResult = await runJob(ctx, () =>
+      ctx.desktop.invokeExtract({
         source: form.source,
         path: form.backupPath,
         output_dir: outputDir,
@@ -248,13 +243,13 @@ export async function runImport(
         ...(form.phoneCountry ? { phone_country: form.phoneCountry } : {}),
       }),
     );
-    const scratch = runScratch();
+    const { scratch } = ctx;
     if (extractResult.extraction) {
       scratch.counts.filesParsed = extractResult.extraction.files_parsed;
       scratch.counts.messagesParsed = extractResult.extraction.messages_parsed;
     }
 
-    const extractFinishedAt = performance.now();
+    const extractFinishedAt = ctx.now();
     const { parseMs, attachmentsMs, prepareMs } = stageDurations(scratch.timing, extractFinishedAt);
     scratch.durations = { parseMs, attachmentsMs, prepareMs };
     // What extract did, as the Staging row's done line.
@@ -277,10 +272,10 @@ export async function runImport(
       computingSummary: true,
     });
 
-    if ((await moveStageAtReview(runId, "staging_review")) === "refused") return;
+    if ((await moveStageAtReview(ctx, runId, "staging_review")) === "refused") return;
     // Staging's issues and times are only in memory until now, and the run
     // may be resumed from this Review after the app closes.
-    await saveCarriedRecord();
+    await saveCarriedRecord(ctx);
     // The extract itself is done and staged: an error from here on is a
     // failed read of a directory that already holds the staged work, not a run
     // that failed. Routing it through the outer catch (below) would post
@@ -290,22 +285,22 @@ export async function runImport(
     // written above (`staging_review`) stays as it is: the next visit's
     // resume check finds the same run and offers this recompute again.
     try {
-      const summary = await summarizeStagingWithProgress({ run_dir: outputDir });
+      const summary = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
       // Staging has finished, so the directory decides the stages from here.
-      const recorded = adoptRecordedMode(form, summary);
-      updateSteps((steps) =>
+      const recorded = adoptRecordedMode(ctx, form, summary);
+      updateSteps(ctx, (steps) =>
         stepsFor(recorded.attachmentMedia).map(
           (step) => steps.find((row) => row.label === step.label) ?? step,
         ),
       );
-      const toolsMissing = await mediaToolsMissingFor(recorded.attachmentMedia);
+      const toolsMissing = await mediaToolsMissingFor(ctx, recorded.attachmentMedia);
       store.set({ stagingSummary: summary, mediaToolsMissing: toolsMissing });
-      waitAtReview("staging_review");
+      waitAtReview(ctx, "staging_review");
     } catch (e: unknown) {
-      returnToFormWithError(e);
+      returnToFormWithError(ctx, e);
     }
   } catch (e: unknown) {
-    if (await leaveIfRefused(e, runId)) return;
+    if (await leaveIfRefused(ctx, e, runId)) return;
     const msg = errorText(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
@@ -315,10 +310,10 @@ export async function runImport(
     // completes: a broken backup must not lock the account out of importing.
     const cancelled = msg === CANCELLED_MESSAGE;
     const stageNotRecorded = e instanceof StageNotRecordedError;
-    if (!cancelled) recordError(runScratch().activeStage, msg);
-    failActiveStep();
+    if (!cancelled) recordError(ctx, ctx.scratch.activeStage, msg);
+    failActiveStep(ctx);
     store.set({ computingSummary: false });
-    await finishImport({
+    await finishImport(ctx, {
       runId,
       status: cancelled ? "cancelled" : "failed",
       uploadReport: null,
