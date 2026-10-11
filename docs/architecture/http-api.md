@@ -885,8 +885,9 @@ unknown query parameter, `415` for a body without an accepted `Content-Type`,
 `400` for a JSON body that is not JSON, `406` exactly where the document lists
 it, a successful `GET` in a media type its document declares, every property of
 a success answer required and every one of them in what the route answers
-([Fields](#fields)), no body on a `HEAD` answer, kebab-case paths and the
-nesting depth. Why: a rule checked one
+([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store`
+on every answer but those of an operation that lists its own
+([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule checked one
 route at a time is checked on the routes someone remembered.
 
 The shared failures are checked by calling each operation into them, and the

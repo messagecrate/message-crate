@@ -424,6 +424,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
                     method: "get".to_string(),
                     path: location.clone(),
                     security: None,
+                    declares_cache_control: false,
                 };
                 let followed = call(world, &read, location, token, None).await;
                 if followed.status != StatusCode::OK {
