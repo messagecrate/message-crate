@@ -232,6 +232,56 @@ pub fn require_ffmpeg() -> Result<()> {
     )
 }
 
+/// ffmpeg and ffprobe, as the code that decides what to do with a file uses
+/// them: the Media stage's convert and compress passes ([`crate::process`])
+/// and the Thumbnail and Preview the server makes ([`crate::versions`]).
+///
+/// That code only decides which file to re-encode, with which arguments,
+/// and what to keep. Running the programs is behind this trait, so a test of
+/// a decision passes a fake that answers fixed probes and writes fixed
+/// output, and needs neither ffmpeg installed nor the lock over the tool
+/// location (`testutil::real_ffmpeg_test_guard`). [`InstalledTools`] is
+/// the one implementation outside tests.
+pub(crate) trait MediaTools {
+    /// Fail, naming what is missing and where it was looked for, when
+    /// ffmpeg or ffprobe cannot be used ([`require_ffmpeg`]).
+    fn require(&self) -> Result<()>;
+
+    /// True when ffprobe can be used, so [`MediaTools::probe`] can answer.
+    fn can_probe(&self) -> bool;
+
+    /// What ffprobe reports about `path` ([`crate::probe_media`]).
+    fn probe(&self, path: &Path) -> Result<crate::MediaProbe>;
+
+    /// Run ffmpeg with `args`, which end with the file it writes. With
+    /// `stop`, setting it kills ffmpeg and fails the run
+    /// ([`run_ffmpeg_with`]).
+    fn transcode(&self, args: &[String], stop: Option<&AtomicBool>) -> Result<()>;
+}
+
+/// The ffmpeg and ffprobe this process finds on `PATH` or in the Tools
+/// Directory ([`ffmpeg_tools`]), looked up again on every call, so a
+/// program that arrives, moves or leaves is seen at once.
+pub(crate) struct InstalledTools;
+
+impl MediaTools for InstalledTools {
+    fn require(&self) -> Result<()> {
+        require_ffmpeg()
+    }
+
+    fn can_probe(&self) -> bool {
+        ffprobe_available()
+    }
+
+    fn probe(&self, path: &Path) -> Result<crate::MediaProbe> {
+        crate::probe_media(path)
+    }
+
+    fn transcode(&self, args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
+        run_ffmpeg_with(args, stop)
+    }
+}
+
 /// How many times a program whose file is busy is started before it is
 /// given up on.
 ///
@@ -414,21 +464,15 @@ const STDERR_TAIL_BYTES: usize = 8 * 1024;
 /// carries the lines that say why it failed, not kilobytes of preamble.
 const QUIET_FFMPEG: [&str; 4] = ["-hide_banner", "-nostats", "-loglevel", "error"];
 
-/// Run ffmpeg with [`QUIET_FFMPEG`] and `args`, failing with the end of its
-/// stderr when it exits non-zero.
-///
-/// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the stats
-/// line off, but nothing limits how much else ffmpeg writes: a failure can
-/// repeat an error for every frame, and an encoder such as libx265 writes to
-/// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
-/// Linux, after which ffmpeg blocks on the write and never exits (#1178).
+/// [`run_ffmpeg_with`] with no stop, for a test that makes its fixtures with
+/// the real ffmpeg or runs it on purpose.
+#[cfg(test)]
 pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
     run_ffmpeg_with(args, None)
 }
 
-/// [`run_ffmpeg`], stopped when `stop` is set: ffmpeg is killed and waited
-/// for, and the run fails. A run asked for after `stop` is set never starts
-/// ffmpeg. What ffmpeg wrote before it was killed is the caller's to remove.
+/// [`run_ffmpeg_with`] with `stop`, for a test of stopping the real ffmpeg.
+#[cfg(test)]
 pub(crate) fn run_ffmpeg_until(args: &[String], stop: &AtomicBool) -> Result<()> {
     run_ffmpeg_with(args, Some(stop))
 }
@@ -458,6 +502,18 @@ fn stop_follows(stopped: impl Fn() -> bool) -> bool {
     }
 }
 
+/// Run ffmpeg with [`QUIET_FFMPEG`] and `args`, failing with the end of its
+/// stderr when it exits non-zero.
+///
+/// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the stats
+/// line off, but nothing limits how much else ffmpeg writes: a failure can
+/// repeat an error for every frame, and an encoder such as libx265 writes to
+/// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
+/// Linux, after which ffmpeg blocks on the write and never exits (#1178).
+///
+/// With `stop`, setting it kills ffmpeg, waits for it, and fails the run. A
+/// run asked for after `stop` is set never starts ffmpeg. What ffmpeg wrote
+/// before it was killed is the caller's to remove.
 fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
     let stopped = || stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
     if stopped() {

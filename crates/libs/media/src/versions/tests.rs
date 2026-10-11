@@ -2,7 +2,9 @@ use std::fs;
 use std::path::Path;
 
 use super::*;
+use crate::fake_tools::FakeTools;
 use crate::tools::run_ffmpeg;
+use crate::{MediaProbe, probe_media};
 
 /// A stop that is never set, for a conversion that runs to its end.
 static NOT_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -101,23 +103,28 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
 
 #[test]
 fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
+    let clip = Path::new("clip.mp4");
+    let video = |codec: &str| MediaProbe {
+        codec: codec.to_string(),
+        width: 320,
+        height: 240,
+        fps: Some(10.0),
+        bitrate: 100_000,
     };
-    let dir = tempfile::tempdir().unwrap();
-    let h264 = dir.path().join("h264.mp4");
-    video(&h264, &["-c:v", "libx264"]);
-    let hevc = dir.path().join("hevc.mp4");
-    video(&hevc, &["-c:v", "libx265", "-tag:v", "hvc1"]);
 
-    assert_eq!(browser_shows(&h264, Some("video/mp4")), Some(true));
+    let h264 = FakeTools::new().probing(video("h264"));
     assert_eq!(
-        browser_shows(&hevc, Some("video/mp4")),
+        browser_shows_with(&h264, clip, Some("video/mp4")),
+        Some(true)
+    );
+    let hevc = FakeTools::new().probing(video("hevc"));
+    assert_eq!(
+        browser_shows_with(&hevc, clip, Some("video/mp4")),
         Some(false),
         "HEVC in an MP4 needs a Preview"
     );
     assert_eq!(
-        browser_shows(Path::new("no/such/file"), Some("video/mp4")),
+        browser_shows_with(&FakeTools::new(), clip, Some("video/mp4")),
         Some(false),
         "an MP4 ffprobe cannot read gets a Preview"
     );
@@ -128,12 +135,18 @@ fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
 /// is still answered by its type alone.
 #[test]
 fn without_ffprobe_an_mp4_is_not_known() {
-    let _hidden = crate::testutil::hide_ffmpeg();
+    let tools = FakeTools::missing();
     let nowhere = Path::new("no/such/file");
 
-    assert_eq!(browser_shows(nowhere, Some("video/mp4")), None);
-    assert_eq!(browser_shows(nowhere, Some("image/jpeg")), Some(true));
-    assert_eq!(browser_shows(nowhere, Some("image/heic")), Some(false));
+    assert_eq!(browser_shows_with(&tools, nowhere, Some("video/mp4")), None);
+    assert_eq!(
+        browser_shows_with(&tools, nowhere, Some("image/jpeg")),
+        Some(true)
+    );
+    assert_eq!(
+        browser_shows_with(&tools, nowhere, Some("image/heic")),
+        Some(false)
+    );
 }
 
 #[test]
@@ -217,16 +230,16 @@ fn an_image_preview_is_a_jpeg_and_an_audio_preview_an_mp3() {
 #[test]
 fn a_preview_is_written_only_under_its_own_extension() {
     let dir = tempfile::tempdir().unwrap();
-    let err = make_preview(
+    let tools = FakeTools::new();
+    let err = make_preview_with(
+        &tools,
         &dir.path().join("clip.mov"),
         Kind::Video,
         &dir.path().join("preview.mov"),
         &NOT_STOPPED,
-    );
-    let Err(err) = err else {
-        panic!("a video Preview written as .mov");
-    };
-    // Without ffmpeg the refusal is that ffmpeg is missing, which is as good.
-    let said = format!("{err:#}");
-    assert!(said.contains(".mp4") || said.contains("ffmpeg"), "{said}");
+    )
+    .expect_err("a video Preview written as .mov");
+
+    assert!(format!("{err:#}").contains(".mp4"), "{err:#}");
+    assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
 }

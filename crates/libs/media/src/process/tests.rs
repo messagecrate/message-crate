@@ -1,79 +1,60 @@
 use super::*;
+use crate::fake_tools::FakeTools;
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
+use crate::tools::run_ffmpeg;
+use crate::{MediaProbe, probe_media};
 
-/// Write a coarsely-quantized JPEG through ffmpeg at `-q:v 20` that grows
-/// when re-encoded at compress mode's finer `-q:v 5`.
-///
-/// Calibrated empirically against this repo's ffmpeg build: random noise
-/// written to independent Y/Cb/Cr planes (`nullsrc`'s default `yuv420p`,
-/// fed by `geq`) runs about 0.44 bytes/pixel at `-q:v 20`, and
-/// re-encoding it at `-q:v 5` (much less quantization) comes out roughly
-/// 50% *larger* — noise has no redundancy for the finer quantization
-/// step to exploit, so asking for more detail just spends more bits
-/// recording the same randomness. That is the opposite of the usual
-/// "worse quality = smaller file" case a typical photo re-encode hits,
-/// which is exactly why it exercises the keep-smaller guard. (An earlier
-/// version of this helper tried the reverse — a `-q:v 2` source
-/// re-encoded at `-q:v 5` — expecting noise's incompressibility to make
-/// it a wash; it consistently shrank by ~25% instead, at every
-/// resolution tried. Coarser quantization shrinks even incompressible
-/// content, so don't retry that direction.)
-fn write_jpeg_that_grows_on_finer_reencode(path: &Path, target_size: u64) {
-    let pixels = (target_size as f64 / 0.44).max(4.0);
-    let mut width = ((pixels * 4.0 / 3.0).sqrt() as u32).max(2);
-    width -= width % 2;
-    let mut height = width * 3 / 4;
-    height -= height % 2;
-    let args = vec![
-        "-y".into(),
-        "-f".into(),
-        "lavfi".into(),
-        "-i".into(),
-        format!("nullsrc=size={width}x{height},geq=random(1)*255:random(1)*255:random(1)*255"),
-        "-frames:v".into(),
-        "1".into(),
-        "-update".into(),
-        "1".into(),
-        "-q:v".into(),
-        "20".into(),
-        path_str(path),
-    ];
-    run_ffmpeg(&args).expect("generate incompressible jpeg fixture");
+/// The one ffmpeg run `tools` made, failing the test when there were more
+/// or none.
+fn only_run(tools: &FakeTools) -> Vec<String> {
+    let runs = tools.runs();
+    assert_eq!(runs.len(), 1, "ffmpeg runs: {runs:?}");
+    runs.into_iter().next().unwrap()
+}
+
+/// True when `args` hold `arg`.
+fn has(args: &[String], arg: &str) -> bool {
+    args.iter().any(|a| a == arg)
+}
+
+/// The `-vf` filter graph in `args`.
+fn filter(args: &[String]) -> &str {
+    let at = args
+        .iter()
+        .position(|a| a == "-vf")
+        .expect("a -vf argument");
+    &args[at + 1]
 }
 
 #[test]
 fn compress_keeps_the_original_jpeg_when_the_re_encode_is_not_smaller() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
-
-    // A JPEG that is already tight for its pixel count: re-encoding at -q:v 5
-    // produces a file no smaller than the source. Over 500 KB so the size gate
-    // in process_one does not skip it outright.
+    // Over the floor, so the size gate does not skip it before ffmpeg runs.
     let jpeg = attachments.join("already-tight.jpg");
-    write_jpeg_that_grows_on_finer_reencode(&jpeg, 900 * 1024);
-    let before = fs::read(&jpeg).unwrap();
-    assert!(
-        fs::metadata(&jpeg).unwrap().len() > JPEG_COMPRESS_FLOOR,
-        "fixture must clear the floor gate: otherwise run_one skips at the \
-         floor and every assertion below holds whether or not the \
-         keep-smaller guard exists"
-    );
+    let before = vec![0xa5; JPEG_COMPRESS_FLOOR as usize + 1];
+    fs::write(&jpeg, &before).unwrap();
+    // The re-encode comes out the same size: not smaller, so not kept.
+    let tools = FakeTools::new().writing(vec![0; before.len()]);
 
-    let files = collect_media_files(&attachments).unwrap();
-    let (report, remap) = process_attachment_files(
+    let (report, remap) = process_attachment_files_with(
+        &tools,
         dir.path(),
-        &files,
+        std::slice::from_ref(&jpeg),
         MediaMode::Compress,
         &CompressOptions::default(),
         None,
     )
     .unwrap();
 
+    assert_eq!(
+        tools.runs().len(),
+        1,
+        "the JPEG must reach ffmpeg: otherwise every assertion below holds \
+         whether or not the keep-smaller guard exists"
+    );
     assert_eq!(fs::read(&jpeg).unwrap(), before, "original bytes replaced");
     assert!(
         !remap.contains_key("attachments/already-tight.jpg"),
@@ -82,13 +63,15 @@ fn compress_keeps_the_original_jpeg_when_the_re_encode_is_not_smaller() {
     );
     assert_eq!(report.processed, 0);
     assert_eq!(report.skipped, 1);
+    assert_eq!(
+        collect_media_files(&attachments).unwrap(),
+        vec![jpeg],
+        "the discarded re-encode was left behind"
+    );
 }
 
 #[test]
 fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("photo.png");
     fs::write(&src, PNG_1X1_RGB).unwrap();
@@ -97,12 +80,23 @@ fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
     let name = derivative_name(&src, MediaMode::Convert).expect("png is converted");
     assert_eq!(name, "photo.jpg");
     let dest = dir.path().join(format!("{name}.in_progress"));
+    let tools = FakeTools::new().writing("the jpeg");
 
-    let outcome =
-        transcode_file(&src, &dest, MediaMode::Convert, &CompressOptions::default()).unwrap();
+    let outcome = transcode_file_with(
+        &tools,
+        &src,
+        &dest,
+        MediaMode::Convert,
+        &CompressOptions::default(),
+    )
+    .unwrap();
 
     assert_eq!(outcome, TranscodeOutcome::Produced);
-    assert!(dest.exists(), "derivative written where the caller asked");
+    assert_eq!(
+        fs::read(&dest).unwrap(),
+        b"the jpeg",
+        "derivative written where the caller asked"
+    );
     assert!(
         !dir.path().join("photo.jpg").exists(),
         "the final name must not exist until the caller renames it: a file \
@@ -112,6 +106,10 @@ fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
         fs::read(&src).unwrap(),
         before,
         "the original is the caller's to delete, after it commits"
+    );
+    assert!(
+        !dir.path().join("photo.msgmedia.tmp.jpg").exists(),
+        "the scratch file was moved to the destination, not copied"
     );
 }
 
@@ -378,15 +376,17 @@ fn write_test_video_at(path: &Path, codec: &[&str], rate: u32) {
     run_ffmpeg(&args).expect("generate test video");
 }
 
-/// One file through media conversion: its remap target, or `None` when skipped.
+/// One file through media conversion with `tools`: its remap target, or
+/// `None` when skipped.
 fn process_single(
+    tools: &dyn MediaTools,
     dir: &Path,
     file: &Path,
     mode: MediaMode,
     opts: &CompressOptions,
 ) -> Option<String> {
     let (report, mut remap) =
-        process_attachment_files(dir, &[file.to_path_buf()], mode, opts, None).unwrap();
+        process_attachment_files_with(tools, dir, &[file.to_path_buf()], mode, opts, None).unwrap();
     assert_eq!(report.errors, Vec::<String>::new());
     let old_rel = rel_path(dir, file).unwrap();
     let new_rel = remap.remove(&old_rel);
@@ -407,6 +407,7 @@ fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
     write_test_video(&mov, &["-c:v", "libx264"]);
 
     let new_rel = process_single(
+        &InstalledTools,
         dir.path(),
         &mov,
         MediaMode::Convert,
@@ -421,90 +422,178 @@ fn convert_turns_a_mov_into_an_mp4_and_removes_the_original() {
 
 #[test]
 fn compress_only_remuxes_a_video_under_the_minimum_size() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     let mov = attachments.join("small.mov");
-    write_test_video(&mov, &["-c:v", "libx264"]);
+    fs::write(&mov, b"a small mov").unwrap();
     let mp4 = attachments.join("other.mp4");
-    write_test_video(&mp4, &["-c:v", "libx264"]);
-    let mp4_before = fs::read(&mp4).unwrap();
+    fs::write(&mp4, b"a small mp4").unwrap();
     let opts = CompressOptions {
         min_size_bytes: 100 * 1024 * 1024,
         ..CompressOptions::default()
     };
+    let tools = FakeTools::new().writing("the remuxed mp4");
 
-    let new_rel = process_single(dir.path(), &mov, MediaMode::Compress, &opts);
+    let new_rel = process_single(&tools, dir.path(), &mov, MediaMode::Compress, &opts);
     assert_eq!(new_rel.as_deref(), Some("attachments/small.mp4"));
     assert!(!mov.exists());
-    let probe = probe_media(&attachments.join("small.mp4")).unwrap();
     assert_eq!(
-        probe.codec, "h264",
-        "a small video is remuxed, not re-encoded"
+        fs::read(attachments.join("small.mp4")).unwrap(),
+        b"the remuxed mp4"
+    );
+    let remux = only_run(&tools);
+    assert!(
+        has(&remux, "copy") && !has(&remux, "libx265") && !has(&remux, "libx264"),
+        "a small video is remuxed, not re-encoded: {remux:?}"
     );
 
     // A small MP4 is already in the target container: nothing to do.
     assert_eq!(
-        process_single(dir.path(), &mp4, MediaMode::Compress, &opts),
+        process_single(&tools, dir.path(), &mp4, MediaMode::Compress, &opts),
         None
     );
-    assert_eq!(fs::read(&mp4).unwrap(), mp4_before);
+    assert_eq!(tools.runs().len(), 1, "ffmpeg ran for the small mp4");
+    assert_eq!(fs::read(&mp4).unwrap(), b"a small mp4");
 }
 
 #[test]
-fn compress_re_encodes_a_large_video_and_skips_an_efficient_one() {
+fn compress_re_encodes_a_large_h264_video_to_hevc_at_the_capped_frame_rate() {
     let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
-    let opts = CompressOptions {
-        min_size_bytes: 0,
-        ..CompressOptions::default()
-    };
-
     let avc = attachments.join("avc.mp4");
     write_test_video(&avc, &["-c:v", "libx264"]);
-    // Exactly the minimum size is large enough.
-    let at_minimum = CompressOptions {
-        min_size_bytes: fs::metadata(&avc).unwrap().len(),
+    let opts = CompressOptions {
+        min_size_bytes: 0,
         max_fps: 5.0,
         ..CompressOptions::default()
     };
-    let new_rel = process_single(dir.path(), &avc, MediaMode::Compress, &at_minimum);
+
+    let new_rel = process_single(
+        &InstalledTools,
+        dir.path(),
+        &avc,
+        MediaMode::Compress,
+        &opts,
+    );
+
     assert_eq!(new_rel.as_deref(), Some("attachments/avc.mp4"));
     let probe = crate::probe_media(&avc).unwrap();
     assert_eq!(probe.codec, "hevc", "a large H.264 video is re-encoded");
     assert_eq!(probe.fps, Some(5.0), "the frame rate is capped at max_fps");
+}
+
+/// What `compress_video` reads from the probe: an efficient HEVC video is
+/// left alone unless the skip is turned off, and a file of exactly the
+/// minimum size is large enough to re-encode.
+#[test]
+fn compress_skips_an_efficient_video_unless_told_not_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let attachments = dir.path().join("attachments");
+    fs::create_dir_all(&attachments).unwrap();
+    let hevc = attachments.join("hevc.mp4");
+    fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
+    let efficient = MediaProbe {
+        codec: "hevc".to_string(),
+        width: 320,
+        height: 240,
+        fps: Some(10.0),
+        bitrate: 100_000,
+    };
+    let opts = CompressOptions {
+        min_size_bytes: fs::metadata(&hevc).unwrap().len(),
+        ..CompressOptions::default()
+    };
+    let tools = FakeTools::new()
+        .probing(efficient.clone())
+        .writing("the re-encode");
 
     // Already HEVC, small and low bitrate: re-encoding would buy nothing.
-    let hevc = attachments.join("hevc.mp4");
-    write_test_video(&hevc, &["-c:v", "libx265", "-tag:v", "hvc1"]);
-    let before = fs::read(&hevc).unwrap();
     assert_eq!(
-        process_single(dir.path(), &hevc, MediaMode::Compress, &opts),
+        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts),
         None
     );
-    assert_eq!(fs::read(&hevc).unwrap(), before);
+    assert_eq!(tools.runs(), Vec::<Vec<String>>::new());
 
-    // With the skip turned off, the same file is re-encoded. A max fps of
-    // zero means no cap was given, and the pass uses 30, which this 10 fps
-    // video is already under.
+    // Over the resolution cap, the same codec is not efficient.
+    let tools = FakeTools::new()
+        .probing(MediaProbe {
+            width: 1920,
+            height: 1080,
+            ..efficient.clone()
+        })
+        .writing("the re-encode");
+    assert_eq!(
+        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts).as_deref(),
+        Some("attachments/hevc.mp4")
+    );
+    fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
+
+    // With the skip turned off, the efficient file is re-encoded too. A max
+    // fps of zero means no cap was given, and the pass uses 30, which this
+    // 10 fps video is already under, so the filter adds no fps step.
+    let tools = FakeTools::new().probing(efficient).writing("the re-encode");
     let opts = CompressOptions {
         skip_efficient: false,
         max_fps: 0.0,
         ..opts
     };
     assert_eq!(
-        process_single(dir.path(), &hevc, MediaMode::Compress, &opts).as_deref(),
+        process_single(&tools, dir.path(), &hevc, MediaMode::Compress, &opts).as_deref(),
         Some("attachments/hevc.mp4")
     );
-    assert_ne!(fs::read(&hevc).unwrap(), before);
-    assert_eq!(crate::probe_media(&hevc).unwrap().fps, Some(10.0));
+    assert_eq!(fs::read(&hevc).unwrap(), b"the re-encode");
+    let run = only_run(&tools);
+    assert!(has(&run, "libx265"), "{run:?}");
+    assert!(!filter(&run).contains("fps="), "{run:?}");
+}
+
+/// A video over the maximum frame rate is brought down to it, and libx264
+/// stands in when libx265 fails.
+#[test]
+fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
+    let dir = tempfile::tempdir().unwrap();
+    let attachments = dir.path().join("attachments");
+    fs::create_dir_all(&attachments).unwrap();
+    let clip = attachments.join("clip.mov");
+    fs::write(&clip, b"a 60 fps h264 video").unwrap();
+    let tools = FakeTools::new()
+        .probing(MediaProbe {
+            codec: "h264".to_string(),
+            width: 320,
+            height: 240,
+            fps: Some(60.0),
+            bitrate: 100_000,
+        })
+        .failing_on("libx265")
+        .writing("the h264 re-encode");
+    let opts = CompressOptions {
+        min_size_bytes: 0,
+        max_fps: 30.0,
+        ..CompressOptions::default()
+    };
+
+    let new_rel = process_single(&tools, dir.path(), &clip, MediaMode::Compress, &opts);
+
+    assert_eq!(new_rel.as_deref(), Some("attachments/clip.mp4"));
+    assert!(!clip.exists());
+    assert_eq!(
+        fs::read(attachments.join("clip.mp4")).unwrap(),
+        b"the h264 re-encode"
+    );
+    let runs = tools.runs();
+    assert_eq!(runs.len(), 2, "{runs:?}");
+    assert!(
+        has(&runs[0], "libx265") && has(&runs[1], "libx264"),
+        "{runs:?}"
+    );
+    for run in &runs {
+        assert!(filter(run).ends_with(",fps=30"), "{run:?}");
+    }
 }
 
 /// Max FPS is a ceiling: it never adds frames to a slower video (#965).
@@ -524,7 +613,13 @@ fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
 
     let slow = attachments.join("slow.mp4");
     write_test_video_at(&slow, &["-c:v", "libx264"], 24);
-    let new_rel = process_single(dir.path(), &slow, MediaMode::Compress, &opts);
+    let new_rel = process_single(
+        &InstalledTools,
+        dir.path(),
+        &slow,
+        MediaMode::Compress,
+        &opts,
+    );
     assert_eq!(new_rel.as_deref(), Some("attachments/slow.mp4"));
     let probe = crate::probe_media(&slow).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
@@ -532,7 +627,13 @@ fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
 
     let fast = attachments.join("fast.mp4");
     write_test_video_at(&fast, &["-c:v", "libx264"], 60);
-    let new_rel = process_single(dir.path(), &fast, MediaMode::Compress, &opts);
+    let new_rel = process_single(
+        &InstalledTools,
+        dir.path(),
+        &fast,
+        MediaMode::Compress,
+        &opts,
+    );
     assert_eq!(new_rel.as_deref(), Some("attachments/fast.mp4"));
     let probe = crate::probe_media(&fast).unwrap();
     assert_eq!(probe.codec, "hevc", "the video was re-encoded");
@@ -565,6 +666,7 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
     assert!(before > MP3_COMPRESS_FLOOR, "fixture must clear the floor");
 
     let new_rel = process_single(
+        &InstalledTools,
         dir.path(),
         &mp3,
         MediaMode::Compress,
@@ -578,6 +680,7 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
     let bytes = fs::read(&mp3).unwrap();
     assert_eq!(
         process_single(
+            &InstalledTools,
             dir.path(),
             &mp3,
             MediaMode::Convert,
@@ -590,9 +693,6 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
 
 #[test]
 fn process_attachment_files_touches_only_the_listed_files() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
@@ -601,8 +701,10 @@ fn process_attachment_files_touches_only_the_listed_files() {
     fs::write(&listed, PNG_1X1_RGB).unwrap();
     fs::write(&unlisted, PNG_1X1_RGB).unwrap();
     let unlisted_before = fs::read(&unlisted).unwrap();
+    let tools = FakeTools::new();
 
-    let (_report, remap) = process_attachment_files(
+    let (_report, remap) = process_attachment_files_with(
+        &tools,
         dir.path(),
         std::slice::from_ref(&listed),
         MediaMode::Convert,
@@ -620,6 +722,10 @@ fn process_attachment_files_touches_only_the_listed_files() {
         "a file the caller did not list must be left alone: scoping the pass \
          to an explicit list is the whole point of taking one"
     );
+    assert!(
+        !only_run(&tools).contains(&path_str(&unlisted)),
+        "ffmpeg read the unlisted file"
+    );
     assert!(unlisted.is_file(), "unlisted file must survive the pass");
     assert_eq!(
         fs::read(&unlisted).unwrap(),
@@ -630,17 +736,16 @@ fn process_attachment_files_touches_only_the_listed_files() {
 
 #[test]
 fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     // The server stores originals under their fingerprint alone.
     let src = dir.path().join("3b1f");
     fs::write(&src, PNG_1X1_RGB).unwrap();
     assert_eq!(classify(&src), None, "no extension, so no kind to read");
     let dest = dir.path().join("3b1f.jpg.in_progress");
+    let tools = FakeTools::new().writing("the jpeg");
 
-    let outcome = transcode_file_as(
+    let outcome = transcode_file_as_with(
+        &tools,
         &src,
         Kind::Image,
         &dest,
@@ -650,10 +755,11 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
     .unwrap();
 
     assert_eq!(outcome, TranscodeOutcome::Produced);
-    assert!(dest.exists());
+    assert_eq!(fs::read(&dest).unwrap(), b"the jpeg");
     assert!(src.exists(), "the original is never touched");
     assert_eq!(
-        transcode_file_as(
+        transcode_file_as_with(
+            &tools,
             &src,
             Kind::Image,
             &dest,
@@ -664,6 +770,7 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
         TranscodeOutcome::Skipped,
         "clone mode never converts"
     );
+    assert_eq!(tools.runs().len(), 1, "clone mode ran ffmpeg");
 }
 
 #[test]
@@ -760,32 +867,8 @@ fn kind_of_never_lets_a_name_hint_override_the_declared_media_type() {
     );
 }
 
-/// Write a noise JPEG through ffmpeg at `-q:v 2`. Noise at that fine a
-/// quantization shrinks when compress mode re-encodes it at `-q:v 5` (see
-/// `write_jpeg_that_grows_on_finer_reencode` for the measurements).
-fn write_jpeg_that_shrinks_on_compress(path: &Path) {
-    let args = vec![
-        "-y".into(),
-        "-f".into(),
-        "lavfi".into(),
-        "-i".into(),
-        "nullsrc=size=800x600,geq=random(1)*255:random(1)*255:random(1)*255".into(),
-        "-frames:v".into(),
-        "1".into(),
-        "-update".into(),
-        "1".into(),
-        "-q:v".into(),
-        "2".into(),
-        path_str(path),
-    ];
-    run_ffmpeg(&args).expect("generate noise jpeg fixture");
-}
-
 #[test]
 fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
@@ -800,8 +883,10 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
         .iter()
         .map(|name| attachments.join(name))
         .collect();
+    let tools = FakeTools::new().writing("a converted jpeg");
 
-    let (report, remap) = process_attachment_files(
+    let (report, remap) = process_attachment_files_with(
+        &tools,
         dir.path(),
         &files,
         MediaMode::Convert,
@@ -830,8 +915,11 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
         );
     }
     for name in ["a_1.jpg", "b.jpg", "c_2.jpg"] {
-        let bytes = fs::read(attachments.join(name)).unwrap();
-        assert!(bytes.starts_with(&[0xff, 0xd8]), "{name} is not a JPEG");
+        assert_eq!(
+            fs::read_to_string(attachments.join(name)).unwrap(),
+            "a converted jpeg",
+            "{name} is not the conversion"
+        );
     }
     for name in ["a.png", "b.png", "c.png"] {
         assert!(!attachments.join(name).exists(), "{name} was left behind");
@@ -840,29 +928,23 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
 
 #[test]
 fn compress_shrinks_large_jpegs_converts_pngs_and_leaves_gifs_and_small_jpegs() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let dir = tempfile::tempdir().unwrap();
     let attachments = dir.path().join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     let large = attachments.join("large.jpg");
-    write_jpeg_that_shrinks_on_compress(&large);
-    let large_before = fs::metadata(&large).unwrap().len();
-    assert!(
-        large_before > JPEG_COMPRESS_FLOOR,
-        "fixture must clear the floor, or the size gate skips it"
-    );
+    fs::write(&large, vec![0xa5; JPEG_COMPRESS_FLOOR as usize + 1]).unwrap();
     let png = attachments.join("still.png");
     fs::write(&png, PNG_1X1_RGB).unwrap();
-    // Neither of these reaches ffmpeg, so their bytes need not decode.
+    // Neither of these reaches ffmpeg.
     let gif = attachments.join("loop.gif");
     fs::write(&gif, b"GIF89a animated").unwrap();
     let small = attachments.join("small.jpg");
     fs::write(&small, b"\xff\xd8\xff small jpeg").unwrap();
     let files = vec![large.clone(), png, gif.clone(), small.clone()];
+    let tools = FakeTools::new().writing("a smaller jpeg");
 
-    let (report, remap) = process_attachment_files(
+    let (report, remap) = process_attachment_files_with(
+        &tools,
         dir.path(),
         &files,
         MediaMode::Compress,
@@ -873,8 +955,14 @@ fn compress_shrinks_large_jpegs_converts_pngs_and_leaves_gifs_and_small_jpegs() 
 
     assert_eq!(report.errors, Vec::<String>::new());
     assert_eq!((report.processed, report.skipped), (2, 2));
-    assert!(
-        fs::metadata(&large).unwrap().len() < large_before,
+    assert_eq!(
+        tools.runs().len(),
+        2,
+        "ffmpeg ran for a GIF or a small JPEG"
+    );
+    assert_eq!(
+        fs::read(&large).unwrap(),
+        b"a smaller jpeg",
         "the large JPEG was not replaced by the smaller re-encode"
     );
     assert_eq!(
@@ -956,30 +1044,19 @@ fn derivative_name_for_missing_ignores_the_size_floors() {
 
 #[test]
 fn audio_becomes_mp3_and_a_small_mp3_is_left_alone() {
-    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     for mode in [MediaMode::Convert, MediaMode::Compress] {
         let dir = tempfile::tempdir().unwrap();
         let attachments = dir.path().join("attachments");
         fs::create_dir_all(&attachments).unwrap();
         let m4a = attachments.join("voice.m4a");
-        run_ffmpeg(&[
-            "-y".into(),
-            "-f".into(),
-            "lavfi".into(),
-            "-i".into(),
-            "sine=frequency=440:duration=1".into(),
-            "-c:a".into(),
-            "aac".into(),
-            path_str(&m4a),
-        ])
-        .expect("generate m4a fixture");
-        // Under the MP3 floor, and not decodable: ffmpeg must never see it.
+        fs::write(&m4a, b"an m4a voice note").unwrap();
+        // Under the MP3 floor: ffmpeg must never see it.
         let mp3 = attachments.join("small.mp3");
         fs::write(&mp3, b"ID3 small mp3").unwrap();
+        let tools = FakeTools::new().writing("the mp3");
 
-        let (report, remap) = process_attachment_files(
+        let (report, remap) = process_attachment_files_with(
+            &tools,
             dir.path(),
             &[m4a.clone(), mp3.clone()],
             mode,
@@ -995,9 +1072,44 @@ fn audio_becomes_mp3_and_a_small_mp3_is_left_alone() {
             Some("attachments/voice.mp3"),
             "{mode:?}"
         );
+        assert!(has(&only_run(&tools), "libmp3lame"), "{mode:?}");
         assert!(!m4a.exists(), "{mode:?}");
         assert_eq!(fs::read(&mp3).unwrap(), b"ID3 small mp3", "{mode:?}");
     }
+}
+
+#[test]
+fn convert_turns_an_m4a_into_an_mp3() {
+    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let attachments = dir.path().join("attachments");
+    fs::create_dir_all(&attachments).unwrap();
+    let m4a = attachments.join("voice.m4a");
+    run_ffmpeg(&[
+        "-y".into(),
+        "-f".into(),
+        "lavfi".into(),
+        "-i".into(),
+        "sine=frequency=440:duration=1".into(),
+        "-c:a".into(),
+        "aac".into(),
+        path_str(&m4a),
+    ])
+    .expect("generate m4a fixture");
+
+    let new_rel = process_single(
+        &InstalledTools,
+        dir.path(),
+        &m4a,
+        MediaMode::Convert,
+        &CompressOptions::default(),
+    );
+
+    assert_eq!(new_rel.as_deref(), Some("attachments/voice.mp3"));
+    assert!(!m4a.exists());
+    assert!(fs::metadata(attachments.join("voice.mp3")).unwrap().len() > 0);
 }
 
 #[test]

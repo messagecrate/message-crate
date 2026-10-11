@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{require_ffmpeg, run_ffmpeg};
-use crate::{CompressOptions, MediaMode, probe_media};
+use crate::tools::{InstalledTools, MediaTools};
+use crate::{CompressOptions, MediaMode};
 
 /// Aggregate counts and errors from one media convert/compress pass.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -57,12 +57,24 @@ pub fn process_attachment_files(
     files: &[PathBuf],
     mode: MediaMode,
     compress: &CompressOptions,
+    log: Option<&mut dyn FnMut(&str)>,
+) -> Result<(MediaReport, HashMap<String, String>)> {
+    process_attachment_files_with(&InstalledTools, output_dir, files, mode, compress, log)
+}
+
+/// [`process_attachment_files`] with the programs `tools` runs.
+pub(crate) fn process_attachment_files_with(
+    tools: &dyn MediaTools,
+    output_dir: &Path,
+    files: &[PathBuf],
+    mode: MediaMode,
+    compress: &CompressOptions,
     mut log: Option<&mut dyn FnMut(&str)>,
 ) -> Result<(MediaReport, HashMap<String, String>)> {
     if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
         return Ok((MediaReport::default(), HashMap::new()));
     }
-    require_ffmpeg()?;
+    tools.require()?;
 
     let attachments = output_dir.join("attachments");
     if !attachments.is_dir() {
@@ -89,7 +101,7 @@ pub fn process_attachment_files(
 
     let mut done = 0usize;
     for path in files {
-        match process_one(output_dir, path, mode, compress) {
+        match process_one(tools, output_dir, path, mode, compress) {
             Ok(Outcome::Changed { old_rel, new_rel }) => {
                 report.processed += 1;
                 remap.insert(old_rel, new_rel);
@@ -316,9 +328,13 @@ fn with_temp_output<T>(tmp: &Path, f: impl FnOnce() -> Result<T>) -> Result<T> {
 }
 
 /// Remux into MP4 without re-encoding and commit it; `None` when ffmpeg cannot remux the container.
-fn try_remux_replace(path: &Path, commit: Commit<'_>) -> Result<Option<PathBuf>> {
+fn try_remux_replace(
+    tools: &dyn MediaTools,
+    path: &Path,
+    commit: Commit<'_>,
+) -> Result<Option<PathBuf>> {
     let tmp = temp_sibling(path, "mp4");
-    if remux_mp4(path, &tmp).is_err() {
+    if remux_mp4(tools, path, &tmp).is_err() {
         let _ = fs::remove_file(&tmp);
         return Ok(None);
     }
@@ -387,6 +403,7 @@ fn has_gif_ext(path: &Path) -> bool {
 /// re-encode came out no smaller. A format change keeps the derivative even
 /// when it is larger, because the person chose the target format.
 fn run_one(
+    tools: &dyn MediaTools,
     path: &Path,
     kind: Kind,
     mode: MediaMode,
@@ -405,7 +422,7 @@ fn run_one(
             if matches!(ext.as_str(), "jpg" | "jpeg" | "gif") {
                 return Ok(None);
             }
-            convert_image(path, false, false, commit)
+            convert_image(tools, path, false, false, commit)
         }
         (Kind::Image, MediaMode::Compress) => {
             if ext == "gif" {
@@ -415,29 +432,30 @@ fn run_one(
             if same_format && fs::metadata(path)?.len() <= JPEG_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_image(path, true, same_format, commit)
+            convert_image(tools, path, true, same_format, commit)
         }
         (Kind::Audio, MediaMode::Convert) => {
             if ext == "mp3" {
                 return Ok(None);
             }
-            convert_audio(path, false, false, commit)
+            convert_audio(tools, path, false, false, commit)
         }
         (Kind::Audio, MediaMode::Compress) => {
             let same_format = ext == "mp3";
             if same_format && fs::metadata(path)?.len() <= MP3_COMPRESS_FLOOR {
                 return Ok(None);
             }
-            convert_audio(path, true, same_format, commit)
+            convert_audio(tools, path, true, same_format, commit)
         }
-        (Kind::Video, MediaMode::Convert) => convert_video(path, commit).map(Some),
-        (Kind::Video, MediaMode::Compress) => compress_video(path, compress, commit),
+        (Kind::Video, MediaMode::Convert) => convert_video(tools, path, commit).map(Some),
+        (Kind::Video, MediaMode::Compress) => compress_video(tools, path, compress, commit),
         (_, MediaMode::Clone | MediaMode::Disabled) => Ok(None),
     }
 }
 
 /// Convert or compress one file by its media kind and report what changed.
 fn process_one(
+    tools: &dyn MediaTools,
     output_dir: &Path,
     path: &Path,
     mode: MediaMode,
@@ -445,7 +463,7 @@ fn process_one(
 ) -> Result<Outcome> {
     let old_rel = rel_path(output_dir, path)?;
     let kind = classify(path).context("unknown media kind")?;
-    match run_one(path, kind, mode, compress, Commit::InPlace)? {
+    match run_one(tools, path, kind, mode, compress, Commit::InPlace)? {
         Some(new_path) => changed(output_dir, &old_rel, &new_path),
         None => Ok(Outcome::Skipped),
     }
@@ -566,6 +584,17 @@ pub fn transcode_file(
     mode: MediaMode,
     compress: &CompressOptions,
 ) -> Result<TranscodeOutcome> {
+    transcode_file_with(&InstalledTools, src, dest, mode, compress)
+}
+
+/// [`transcode_file`] with the programs `tools` runs.
+pub(crate) fn transcode_file_with(
+    tools: &dyn MediaTools,
+    src: &Path,
+    dest: &Path,
+    mode: MediaMode,
+    compress: &CompressOptions,
+) -> Result<TranscodeOutcome> {
     let kind = classify(src);
     // Clear this file's own scratch before checking the mode: an interrupted
     // run can leave scratch beside a file regardless of what mode retries it.
@@ -576,7 +605,7 @@ pub fn transcode_file(
         return Ok(TranscodeOutcome::Skipped);
     }
     let kind = kind.context("unknown media kind")?;
-    transcode_as(src, kind, dest, mode, compress)
+    transcode_as(tools, src, kind, dest, mode, compress)
 }
 
 /// [`transcode_file`] for a source whose kind the caller already knows,
@@ -599,23 +628,36 @@ pub fn transcode_file_as(
     mode: MediaMode,
     compress: &CompressOptions,
 ) -> Result<TranscodeOutcome> {
-    remove_temps_beside(src, kind);
-    if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
-        return Ok(TranscodeOutcome::Skipped);
-    }
-    transcode_as(src, kind, dest, mode, compress)
+    transcode_file_as_with(&InstalledTools, src, kind, dest, mode, compress)
 }
 
-/// The shared tail of the two `transcode_file` entry points.
-fn transcode_as(
+/// [`transcode_file_as`] with the programs `tools` runs.
+pub(crate) fn transcode_file_as_with(
+    tools: &dyn MediaTools,
     src: &Path,
     kind: Kind,
     dest: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
 ) -> Result<TranscodeOutcome> {
-    require_ffmpeg()?;
-    match run_one(src, kind, mode, compress, Commit::To(dest))? {
+    remove_temps_beside(src, kind);
+    if matches!(mode, MediaMode::Clone | MediaMode::Disabled) {
+        return Ok(TranscodeOutcome::Skipped);
+    }
+    transcode_as(tools, src, kind, dest, mode, compress)
+}
+
+/// The shared tail of the two `transcode_file` entry points.
+fn transcode_as(
+    tools: &dyn MediaTools,
+    src: &Path,
+    kind: Kind,
+    dest: &Path,
+    mode: MediaMode,
+    compress: &CompressOptions,
+) -> Result<TranscodeOutcome> {
+    tools.require()?;
+    match run_one(tools, src, kind, mode, compress, Commit::To(dest))? {
         Some(_) => Ok(TranscodeOutcome::Produced),
         None => Ok(TranscodeOutcome::Skipped),
     }
@@ -764,6 +806,7 @@ fn replace_original(original: &Path, produced: &Path) -> Result<PathBuf> {
 /// Convert an image to JPEG (compressing when asked), keeping the original when the result
 /// is not smaller and `keep_smaller` is set.
 fn convert_image(
+    tools: &dyn MediaTools,
     path: &Path,
     compress: bool,
     keep_smaller: bool,
@@ -786,7 +829,9 @@ fn convert_image(
         path_str(&tmp),
     ];
     with_temp_output(&tmp, || {
-        run_ffmpeg(&args).with_context(|| format!("convert image {}", path.display()))?;
+        tools
+            .transcode(&args, None)
+            .with_context(|| format!("convert image {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
             return Ok(None);
@@ -798,6 +843,7 @@ fn convert_image(
 /// Convert audio to MP3 (compressing when asked), keeping the original when the result
 /// is not smaller and `keep_smaller` is set.
 fn convert_audio(
+    tools: &dyn MediaTools,
     path: &Path,
     compress: bool,
     keep_smaller: bool,
@@ -819,7 +865,9 @@ fn convert_audio(
     }
     args.push(path_str(&tmp));
     with_temp_output(&tmp, || {
-        run_ffmpeg(&args).with_context(|| format!("convert audio {}", path.display()))?;
+        tools
+            .transcode(&args, None)
+            .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
             return Ok(None);
@@ -829,12 +877,12 @@ fn convert_audio(
 }
 
 /// Convert a video to MP4: remux when the codecs allow, else re-encode.
-fn convert_video(path: &Path, commit: Commit<'_>) -> Result<PathBuf> {
+fn convert_video(tools: &dyn MediaTools, path: &Path, commit: Commit<'_>) -> Result<PathBuf> {
     let tmp = temp_sibling(path, "mp4");
 
     with_temp_output(&tmp, || {
         // Prefer remux into mp4 when already a video file.
-        if remux_mp4(path, &tmp).is_ok() {
+        if remux_mp4(tools, path, &tmp).is_ok() {
             return commit_produced(commit, path, &tmp);
         }
         let _ = fs::remove_file(&tmp);
@@ -860,13 +908,15 @@ fn convert_video(path: &Path, commit: Commit<'_>) -> Result<PathBuf> {
             "+faststart".into(),
             path_str(&tmp),
         ];
-        run_ffmpeg(&args).with_context(|| format!("convert video {}", path.display()))?;
+        tools
+            .transcode(&args, None)
+            .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
 }
 
 /// Copy the streams into an MP4 container without re-encoding.
-fn remux_mp4(path: &Path, tmp: &Path) -> Result<()> {
+fn remux_mp4(tools: &dyn MediaTools, path: &Path, tmp: &Path) -> Result<()> {
     let args = vec![
         "-y".into(),
         "-i".into(),
@@ -877,12 +927,16 @@ fn remux_mp4(path: &Path, tmp: &Path) -> Result<()> {
         "+faststart".into(),
         path_str(tmp),
     ];
-    run_ffmpeg(&args)
+    tools.transcode(&args, None)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
 /// server keeps shares a container.
-fn keep_or_remux(path: &Path, commit: Commit<'_>) -> Result<Option<PathBuf>> {
+fn keep_or_remux(
+    tools: &dyn MediaTools,
+    path: &Path,
+    commit: Commit<'_>,
+) -> Result<Option<PathBuf>> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -891,11 +945,12 @@ fn keep_or_remux(path: &Path, commit: Commit<'_>) -> Result<Option<PathBuf>> {
     if ext == "mp4" {
         return Ok(None);
     }
-    try_remux_replace(path, commit)
+    try_remux_replace(tools, path, commit)
 }
 
 /// Re-encode a video under the resolution, frame-rate, and quality caps; `None` when it is already within them.
 fn compress_video(
+    tools: &dyn MediaTools,
     path: &Path,
     opts: &CompressOptions,
     commit: Commit<'_>,
@@ -903,16 +958,16 @@ fn compress_video(
     let meta = fs::metadata(path)?;
     if meta.len() < opts.min_size_bytes {
         // Still remux non-mp4 small files for container consistency.
-        return keep_or_remux(path, commit);
+        return keep_or_remux(tools, path, commit);
     }
 
     // A probe that fails yields empty codec and zero dimensions, which never
     // count as efficient, so the file goes through compression like any other.
-    let probe = probe_media(path).unwrap_or_default();
+    let probe = tools.probe(path).unwrap_or_default();
     if opts.skip_efficient
         && is_efficient(&probe.codec, probe.width, probe.height, probe.bitrate, opts)
     {
-        return keep_or_remux(path, commit);
+        return keep_or_remux(tools, path, commit);
     }
 
     let max_edge = opts.max_resolution.max_long_edge();
@@ -945,7 +1000,7 @@ fn compress_video(
             "+faststart".into(),
             path_str(&tmp),
         ]);
-        if run_ffmpeg(&hevc_args).is_err() {
+        if tools.transcode(&hevc_args, None).is_err() {
             let _ = fs::remove_file(&tmp);
             let mut avc_args = base_video_args(path, &tmp, &vf);
             avc_args.extend([
@@ -963,7 +1018,9 @@ fn compress_video(
                 "+faststart".into(),
                 path_str(&tmp),
             ]);
-            run_ffmpeg(&avc_args).with_context(|| format!("compress video {}", path.display()))?;
+            tools
+                .transcode(&avc_args, None)
+                .with_context(|| format!("compress video {}", path.display()))?;
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })

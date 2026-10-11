@@ -16,8 +16,8 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, bail};
 
-use crate::tools::{ffprobe_available, require_ffmpeg, run_ffmpeg_until};
-use crate::{Kind, probe_media};
+use crate::Kind;
+use crate::tools::{InstalledTools, MediaTools};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -87,6 +87,15 @@ pub fn media_type_of(
 /// caller keeps what it knew before.
 #[must_use]
 pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
+    browser_shows_with(&InstalledTools, src, media_type)
+}
+
+/// [`browser_shows`] with the ffprobe `tools` runs.
+pub(crate) fn browser_shows_with(
+    tools: &dyn MediaTools,
+    src: &Path,
+    media_type: Option<&str>,
+) -> Option<bool> {
     let Some(media_type) = media_type else {
         return Some(false);
     };
@@ -96,10 +105,10 @@ pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
     if media_type != "video/mp4" {
         return Some(false);
     }
-    if !ffprobe_available() {
+    if !tools.can_probe() {
         return None;
     }
-    Some(probe_media(src).is_ok_and(|probe| probe.codec == "h264"))
+    Some(tools.probe(src).is_ok_and(|probe| probe.codec == "h264"))
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the
@@ -113,7 +122,17 @@ pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
 /// Returns an error when ffmpeg is missing or cannot read `src`, or `stop`
 /// is set.
 pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    require_ffmpeg()?;
+    make_thumbnail_with(&InstalledTools, src, dest, stop)
+}
+
+/// [`make_thumbnail`] with the ffmpeg `tools` runs.
+pub(crate) fn make_thumbnail_with(
+    tools: &dyn MediaTools,
+    src: &Path,
+    dest: &Path,
+    stop: &AtomicBool,
+) -> Result<()> {
+    tools.require()?;
     let edge = THUMBNAIL_LONG_EDGE;
     let args = vec![
         "-y".into(),
@@ -135,7 +154,9 @@ pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> 
         "mjpeg".into(),
         path_str(dest),
     ];
-    run_ffmpeg_until(&args, stop).with_context(|| format!("thumbnail of {}", src.display()))
+    tools
+        .transcode(&args, Some(stop))
+        .with_context(|| format!("thumbnail of {}", src.display()))
 }
 
 /// The extension of the Preview of a `kind` file: what every browser shows.
@@ -159,7 +180,18 @@ pub fn preview_extension(kind: Kind) -> &'static str {
 /// Returns an error when ffmpeg is missing or cannot convert `src`, or
 /// `stop` is set.
 pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> Result<()> {
-    require_ffmpeg()?;
+    make_preview_with(&InstalledTools, src, kind, dest, stop)
+}
+
+/// [`make_preview`] with the ffmpeg `tools` runs.
+pub(crate) fn make_preview_with(
+    tools: &dyn MediaTools,
+    src: &Path,
+    kind: Kind,
+    dest: &Path,
+    stop: &AtomicBool,
+) -> Result<()> {
+    tools.require()?;
     let wanted = preview_extension(kind);
     if dest.extension().and_then(|e| e.to_str()) != Some(&wanted[1..]) {
         bail!(
@@ -217,7 +249,9 @@ pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> R
         }
     }
     args.push(path_str(dest));
-    run_ffmpeg_until(&args, stop).with_context(|| format!("preview of {}", src.display()))
+    tools
+        .transcode(&args, Some(stop))
+        .with_context(|| format!("preview of {}", src.display()))
 }
 
 fn path_str(path: &Path) -> String {
