@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiTokenRevealProvider } from "./components/ApiTokenRevealDialog";
 import AppLayout from "./components/AppLayout";
 import { AuthGuard } from "./components/AuthGuard";
+import AuthShell from "./components/AuthShell";
 import {
   ContactsRoute,
   ConversationsRoute,
@@ -11,9 +12,7 @@ import {
   TrashRoute,
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
-import LogoutDialog from "./components/LogoutDialog";
 import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
-import { AuthProvider } from "./lib/auth";
 import { useAuth } from "./lib/authContext";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
@@ -143,10 +142,9 @@ export function AppRoutes() {
 export default function App() {
   return (
     <ThemeProvider>
-      <AuthProvider>
+      <AuthShell>
         <AppRoutes />
-        <LogoutDialog />
-      </AuthProvider>
+      </AuthShell>
     </ThemeProvider>
   );
 }
