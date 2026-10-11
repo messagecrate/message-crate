@@ -160,10 +160,11 @@ pub(crate) fn decrypt_domain(
 /// Open the `Manifest.db` at `path` read-only: the reader only queries it, so
 /// a write through this handle fails rather than change the file.
 ///
-/// For the encrypted backups [`list_domain`] reads, `path` is the copy
-/// `crabapple` decrypted into the temporary directory, and `crabapple` holds
-/// its own read-write connection on that copy; the backup's own `Manifest.db`
-/// is only read by `crabapple` to decrypt it.
+/// For the encrypted backups [`list_domain`] reads, `path` is
+/// `crabapple-Manifest.db`, the copy `crabapple` decrypts into the temporary
+/// directory, which `main` points at `request.out_dir`. `crabapple` holds its
+/// own read-write connection on that copy. It only reads the backup's own
+/// `Manifest.db`, to decrypt it.
 fn open_manifest(path: &Path) -> Result<Connection, RuntimeError> {
     Ok(Connection::open_with_flags(
         path,
