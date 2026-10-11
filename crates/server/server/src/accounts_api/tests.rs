@@ -2867,7 +2867,7 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
         &fixture.state,
         "/v1/imports",
         &alice.token,
-        serde_json::json!({ "source": "imessage" }),
+        serde_json::json!({ "source": "imessage", "stage": "write" }),
     )
     .await;
     // What the desktop app sends at the Staging Review: its staging summary.
@@ -2995,4 +2995,22 @@ async fn guessing_the_current_password_to_delete_an_account_is_rate_limited() {
         StatusCode::OK,
         "the account is still there"
     );
+}
+
+/// The storage route's OpenAPI text gives the length of its largest
+/// attachments list, so it must change with [`TOP_ATTACHMENTS`].
+#[test]
+fn the_storage_reference_gives_the_listed_count() {
+    let spec: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).expect("OpenAPI JSON");
+    let count = format!(" {TOP_ATTACHMENTS} largest");
+    let field = spec["components"]["schemas"]["AccountStorage"]["properties"]["top_attachments"]
+        ["description"]
+        .as_str()
+        .expect("field description");
+    let summary = spec["paths"]["/v1/accounts/{id}/storage"]["get"]["summary"]
+        .as_str()
+        .expect("route summary");
+    assert!(field.contains(&count), "{field}");
+    assert!(summary.contains(&count), "{summary}");
 }

@@ -862,6 +862,9 @@ impl From<crate::db::imports::ImportLookupError> for ApiError {
             crate::db::imports::ImportLookupError::InvalidRun { message } => {
                 Self::StateConflict(message)
             }
+            err @ crate::db::imports::ImportLookupError::StageMove { .. } => {
+                Self::StateConflict(err.to_string())
+            }
             crate::db::imports::ImportLookupError::Db(err) => Self::Internal(err.into()),
         }
     }
@@ -1107,6 +1110,35 @@ async fn limit_request_body(
     let request =
         request.map(|body| axum::body::Body::new(http_body_util::Limited::new(body, limit)));
     next.run(request).await
+}
+
+/// Whether `path` belongs to the `/v1` interface: `/v1` itself or anything
+/// under it. A router's matched path and an OpenAPI path are both full paths,
+/// so the one test serves the layers and the tests that walk the document.
+pub(crate) fn is_api_path(path: &str) -> bool {
+    path == "/v1" || path.starts_with("/v1/")
+}
+
+/// Mark every `/v1` answer `Cache-Control: no-store` unless the route set its
+/// own (`docs/architecture/http-api.md`, "Caching"). The answers carry a
+/// Session token, message text, contacts or attachments, and no cache should
+/// keep them. An asset read sets `private` itself and keeps it. Only `/v1`
+/// is marked: the website served by the fallback, `/health` and the OpenAPI
+/// UI keep whatever caching they have.
+async fn no_store_unless_set(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = request.uri().path();
+    let is_api = is_api_path(path);
+    let mut response = next.run(request).await;
+    if is_api {
+        response
+            .headers_mut()
+            .entry(header::CACHE_CONTROL)
+            .or_insert(header::HeaderValue::from_static("no-store"));
+    }
+    response
 }
 
 /// Refuse a request whose `Accept` names nothing this route can produce
@@ -1359,6 +1391,11 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // layer answered itself, carries the CORS headers a browser needs to
         // show it.
         .layer(build_cors_layer(&cors_origins))
+        // Outside every layer that answers a `/v1` request itself (the body
+        // limits, the `Accept` and query checks, the 405 fallback, and CORS
+        // answering a preflight), so their answers are marked as well as the
+        // handlers'.
+        .layer(axum::middleware::from_fn(no_store_unless_set))
         // One `info` line per response (method, path, status, latency), and an
         // `error` line for a 5xx. Runs outside CORS so the status it logs is
         // the one the client receives. The span carries method and path; its

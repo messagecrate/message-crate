@@ -277,7 +277,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
 /// document and any reading of it come from the same code in `shared_parts`.
 async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Value) -> Vec<String> {
     let mut broken = Vec::new();
-    if !op.path.starts_with("/v1/") {
+    if !crate::server::is_api_path(&op.path) {
         return broken;
     }
     let path = world.path_for(op);
@@ -424,6 +424,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
                     method: "get".to_string(),
                     path: location.clone(),
                     security: None,
+                    declares_cache_control: false,
                 };
                 let followed = call(world, &read, location, token, None).await;
                 if followed.status != StatusCode::OK {
@@ -454,7 +455,8 @@ enum DemoAnswer {
 /// server answers `demo-account-protected`, the document must list it. A
 /// `HEAD` answer has no body to tell the problem type by, so it is skipped.
 async fn demo_account_rule(world: &World<'_>, op: &Operation, spec: &Value) -> DemoAnswer {
-    if !op.path.starts_with("/v1/") || op.method == "head" || !takes_a_credential_only(op) {
+    if !crate::server::is_api_path(&op.path) || op.method == "head" || !takes_a_credential_only(op)
+    {
         return DemoAnswer::Other;
     }
     let path = world.path_for(op);

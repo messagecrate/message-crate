@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Message Crate HTTP API",
-    "description": "HTTP API for a Message Crate server. Bearer session tokens come from login. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.",
+    "description": "HTTP API for a Message Crate server. Bearer Session tokens come from logging in. API tokens come from Settings → Account.\n\nA method a path does not take answers `405 Method Not Allowed` as a [`method-not-allowed`](https://messagecrate.app/docs/developer/reference/errors/method-not-allowed) problem document on every `/v1` path. No operation lists it, because it is the answer for an operation that does not exist.\n\nEvery `/v1` answer carries `Cache-Control: no-store` unless the operation lists a `Cache-Control` of its own, as the asset reads do.",
     "license": {
       "name": "Fair Core License 1.0 (ALv2 future)",
       "url": "https://github.com/messagecrate/message-crate/blob/main/LICENSE.md"
@@ -516,7 +516,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3850,7 +3850,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4001,7 +4001,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4163,7 +4163,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6158,7 +6158,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6857,7 +6857,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7840,7 +7840,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7964,7 +7964,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8118,7 +8118,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8376,7 +8376,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8558,7 +8558,7 @@
           "Import"
         ],
         "summary": "Move a running Import Run to another stage.",
-        "description": "The stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
+        "description": "A run moves to the next stage, from the Staging Review straight to\nUpload (the move made when the import has no Media Stage), or to the stage\nit is already at. Any other move is a state conflict naming both stages,\nand the run is left as it was.\n\nThe stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
         "operationId": "update_import",
         "parameters": [
           {
@@ -8661,7 +8661,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8833,7 +8833,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9008,7 +9008,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9316,7 +9316,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11646,7 +11646,7 @@
             ]
           },
           "409": {
-            "description": "[`username-taken`](https://messagecrate.app/docs/developer/reference/errors/username-taken): The username already belongs to an account on this server.\n\n[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`username-taken`](https://messagecrate.app/docs/developer/reference/errors/username-taken): The username already belongs to an account on this server.\n\n[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11879,7 +11879,7 @@
             ]
           },
           "409": {
-            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
+            "description": "[`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running, already has a live run, or cannot move from its stage to the one asked for, a Message Crate that already has an owner, a delete on something not yet trashed, an asset upload that another request to it is still writing, or a country picked on a contact for a number whose `+` form is one of the account's own identities, which is joined from the account's identities because the merge makes it the account's own.",
             "content": {
               "application/problem+json": {
                 "schema": {

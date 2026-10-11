@@ -169,6 +169,10 @@ pub(super) struct Operation {
     pub(super) path: String,
     /// `None` when the operation names no `security`: a public route.
     pub(super) security: Option<Vec<Value>>,
+    /// Whether the document lists a `Cache-Control` header on one of the
+    /// operation's answers, or, for a `HEAD`, on the `GET` of the same path,
+    /// whose headers a `HEAD` answers.
+    pub(super) declares_cache_control: bool,
 }
 
 impl Operation {
@@ -272,6 +276,28 @@ impl Operation {
         self.path.contains('{') && !own_store
     }
 
+    /// Whether an answer with `status` may carry `cache_control`
+    /// (`docs/architecture/http-api.md`, "Caching"): `no-store` on every `/v1`
+    /// answer, except that an operation whose document lists a
+    /// `Cache-Control` of its own, such as an asset read, may send `private`,
+    /// or `private, no-store` under a Media Link, once the credential is
+    /// accepted. A `401` or `403` refuses the credential, so it is always
+    /// `no-store`. A route outside `/v1`, such as `/health`, is left as it is.
+    fn allows_cache_control(&self, status: StatusCode, cache_control: Option<&str>) -> bool {
+        if !crate::server::is_api_path(&self.path) {
+            return cache_control.is_none();
+        }
+        let credential_accepted =
+            status != StatusCode::UNAUTHORIZED && status != StatusCode::FORBIDDEN;
+        match cache_control {
+            Some("no-store") => true,
+            Some("private" | "private, no-store") => {
+                self.declares_cache_control && credential_accepted
+            }
+            _ => false,
+        }
+    }
+
     fn is_an_upload(&self) -> bool {
         self.path.starts_with("/v1/assets/{sha256}/uploads")
     }
@@ -281,15 +307,25 @@ impl Operation {
 pub(super) fn operations() -> Vec<Operation> {
     let doc: Value = serde_json::from_str(&super::dump_openapi_json()).unwrap();
     let mut operations = Vec::new();
+    let lists_cache_control = |op: &Value| {
+        op["responses"].as_object().is_some_and(|answers| {
+            answers
+                .values()
+                .any(|answer| answer["headers"].get("Cache-Control").is_some())
+        })
+    };
     for (path, item) in doc["paths"].as_object().unwrap() {
         for (method, op) in item.as_object().unwrap() {
             if !["get", "put", "post", "delete", "patch", "head"].contains(&method.as_str()) {
                 continue;
             }
+            let declares_cache_control =
+                lists_cache_control(op) || (method == "head" && lists_cache_control(&item["get"]));
             operations.push(Operation {
                 method: method.clone(),
                 path: path.clone(),
                 security: op["security"].as_array().cloned(),
+                declares_cache_control,
             });
         }
     }
@@ -638,8 +674,9 @@ impl<'a> World<'a> {
         self.tokens.for_credential(credential)
     }
 
-    /// Call `op` with `credential` and return the status.
-    async fn call(&self, op: &Operation, credential: Credential) -> StatusCode {
+    /// Call `op` with `credential` and return the status and the
+    /// `Cache-Control` the answer carries.
+    async fn call(&self, op: &Operation, credential: Credential) -> (StatusCode, Option<String>) {
         let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
         let mut request = http_client()
             .request(method, self.url(&self.path_for(op)))
@@ -651,8 +688,12 @@ impl<'a> World<'a> {
         }
         let response = request.send().await.unwrap();
         let status = response.status();
+        let cache_control = response
+            .headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_string());
         let _ = response.bytes().await;
-        status
+        (status, cache_control)
     }
 
     /// Whether Alice can still send a part of her upload.
@@ -765,7 +806,7 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             .unwrap();
     }
     let expected = op.expected(credential);
-    let status = world.call(&op, credential).await;
+    let (status, cache_control) = world.call(&op, credential).await;
     let row = |outcome: String| {
         format!(
             "{:<60} {:<20} {outcome}",
@@ -778,6 +819,9 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             "expected {expected:<8} got {}",
             status.as_u16()
         )));
+    }
+    if !op.allows_cache_control(status, cache_control.as_deref()) {
+        return Some(row(format!("answered Cache-Control {cache_control:?}")));
     }
     if credential == Credential::OtherAccount && op.is_an_upload() && !world.upload_survives().await
     {
@@ -836,6 +880,7 @@ fn the_expected_outcome_follows_the_declared_security_and_the_owner_rule() {
         method: method.into(),
         path: path.into(),
         security: security.as_array().cloned(),
+        declares_cache_control: false,
     };
     let browse = op("get", "/v1/messages", json!([{ "session": [] }]));
     assert_eq!(browse.expected(Credential::Session), Expected::Accepted);

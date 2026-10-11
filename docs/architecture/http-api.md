@@ -475,6 +475,35 @@ asset is stored and answers JSON. Nothing outside `/v1` is checked.
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
 
+## Caching
+
+Every `/v1` answer carries `Cache-Control: no-store` unless its route sets a
+`Cache-Control` of its own. The rule covers every status and every answer a
+layer gives before the handler runs: a `401` or `403` from the credential
+check, a `405`, a `406`, a `413`, the `404` of a path no route matches, and
+the answer to a CORS preflight. The
+only routes that set their own are the three asset reads, which send
+`private`, or `private, no-store` under a Media Link, once the credential is
+accepted (see [Credentials and reach](#credentials-and-reach)). Their
+refusals before that point take `no-store` from this rule. Nothing outside
+`/v1` is marked: the website's built files and `/health` keep their own
+caching.
+Why: the answers carry a Session token (`POST /v1/session`), message text,
+contacts and attachments. RFC 9111 already keeps a compliant shared cache
+from storing an answer to a request that sent `Authorization`, and a browser
+does not cache a `POST` by default, but a browser's own cache may still write
+a `GET` answer to disk, and a proxy that does not follow the RFC may keep
+one. `no-store` says in the answer itself that nothing may keep it.
+How: one layer in `server.rs` wraps the whole router, so a route added later
+is covered without remembering to, and it sets the header only when the
+answer has none. The OpenAPI document states the rule once, in its
+description, as it does for `405`, and the walk over every operation checks
+it (see [The reference](#the-reference)).
+
+Rejected: `private` for every answer. It still lets the browser write message
+text and a Session token to its disk cache, and the web app fetches afresh
+through its own query cache rather than the browser's.
+
 ## Credentials and reach
 
 Three credentials exist, and the OpenAPI document declares each as a
@@ -760,6 +789,16 @@ Rejected: a repeatable `complete`, answering `200` when the run already ended
 the same way. It makes one call safe to retry at the cost of a second rule,
 and `GET` already answers the question a retry is asking.
 
+A running Import Run's stage moves only to the next stage in the order a run
+passes through (`parse`, `write`, `staging_review`, `media`, `media_review`,
+`upload`), from `staging_review` straight to `upload` (the move a client makes
+when the import has no Media Stage), or to the stage it is already at. Any
+other change of stage, backwards or skipping a stage, answers
+`409` `state-conflict` naming both stages, and the run keeps its stage and
+summary. Why: the next visit resumes a run at the stage the server holds, so a
+client that sent a wrong stage would have the run resumed at work it already
+did (#1227).
+
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
 and `message_ids`. The record holds what was asked for and how much matched,
@@ -856,8 +895,9 @@ unknown query parameter, `415` for a body without an accepted `Content-Type`,
 `400` for a JSON body that is not JSON, `406` exactly where the document lists
 it, a successful `GET` in a media type its document declares, every property of
 a success answer required and every one of them in what the route answers
-([Fields](#fields)), no body on a `HEAD` answer, kebab-case paths and the
-nesting depth. Why: a rule checked one
+([Fields](#fields)), no body on a `HEAD` answer, `Cache-Control: no-store`
+on every answer but those of an operation that lists its own
+([Caching](#caching)), kebab-case paths and the nesting depth. Why: a rule checked one
 route at a time is checked on the routes someone remembered.
 
 The shared failures are checked by calling each operation into them, and the
