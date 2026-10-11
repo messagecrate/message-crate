@@ -1111,13 +1111,7 @@ fn profiles_attachment_upload_phases() {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -1191,12 +1185,7 @@ fn ir_attachment(rel: &str, digest: String) -> IrAttachment {
         original_name: Some(rel.rsplit('/').next().unwrap_or(rel).into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }
 }
 
@@ -1525,12 +1514,7 @@ fn multipart_upload_when_over_proxy_threshold() {
         original_name: Some("large.bin".into()),
         mime_type: Some("video/mp4".into()),
         digest_sha256: Some(digest.clone()),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -1616,12 +1600,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
         original_name: Some("bad.bin".into()),
         mime_type: Some("application/octet-stream".into()),
         digest_sha256: Some(digest),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc);
 
@@ -1816,12 +1795,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest.clone()),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     });
     let mut doc_b = sample_doc_for("+15555550102", "guid-b");
     doc_b.messages[0].attachments.push(IrAttachment {
@@ -1829,12 +1803,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
         original_name: Some("shared.txt".into()),
         mime_type: Some("text/plain".into()),
         digest_sha256: Some(digest),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     });
     write_jsonl(dir.path(), &doc_a);
     write_jsonl(dir.path(), &doc_b);
@@ -2164,24 +2133,16 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             original_name: Some("big.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             digest_sha256: Some(big_digest),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(BIG.len() as u64),
-            missing_reason: None,
-            bytes: None,
+            ..message_ir::testutil::sample_attachment()
         },
         IrAttachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(SMALL.len() as u64),
-            missing_reason: None,
-            bytes: None,
+            ..message_ir::testutil::sample_attachment()
         },
     ];
     write_jsonl(dir.path(), &doc);
@@ -2296,25 +2257,16 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             path: Some("attachments/gone.bin".into()),
             original_name: Some("gone.bin".into()),
             mime_type: Some("application/octet-stream".into()),
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(1234),
-            missing_reason: None,
-            bytes: None,
+            ..message_ir::testutil::sample_attachment()
         },
         IrAttachment {
             path: Some("attachments/small.txt".into()),
             original_name: Some("small.txt".into()),
             mime_type: Some("text/plain".into()),
             digest_sha256: Some(small_digest),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(SMALL.len() as u64),
-            missing_reason: None,
-            bytes: None,
+            ..message_ir::testutil::sample_attachment()
         },
     ];
     write_jsonl(dir.path(), &doc);
@@ -2376,16 +2328,11 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![IrAttachment {
-        path: None,
         original_name: Some("IMG_0421.HEIC".into()),
         mime_type: Some("image/heic".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(2048),
         missing_reason: Some("not_copied".into()),
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     write_jsonl(dir.path(), &doc);
 
@@ -2445,16 +2392,9 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
     let dir = tempdir().unwrap();
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![IrAttachment {
-        path: None,
         original_name: Some("mystery.bin".into()),
         mime_type: Some("application/octet-stream".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     write_jsonl(dir.path(), &doc);
 

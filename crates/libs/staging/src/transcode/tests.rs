@@ -24,13 +24,8 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
         path: Some(rel),
         original_name: Some(name.to_string()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(bytes.len() as u64),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc.finalize_stats();
 
@@ -796,13 +791,8 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(PNG_1X1_RGB.len() as u64),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
@@ -946,13 +936,8 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
         path: Some("attachments/shared.jpg".into()),
         original_name: Some("shared.jpg".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(bytes.len() as u64),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
@@ -1038,13 +1023,8 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
         path: Some(rel.into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(size),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
     let jsonl_b = dir.join(format!("{}.jsonl", doc_b.filename_stem()));

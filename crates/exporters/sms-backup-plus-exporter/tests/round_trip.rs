@@ -202,16 +202,10 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
             }
             if message.text.starts_with("Hello from Alice") {
                 message.attachments.push(message_ir::IrAttachment {
-                    path: None,
                     original_name: Some("notes.txt".into()),
                     mime_type: Some("text/plain".into()),
-                    digest_sha256: None,
-                    is_sticker: false,
-                    transcription: None,
-                    sticker_effect: None,
-                    size_bytes: None,
-                    missing_reason: None,
                     bytes: Some(b"shopping list".to_vec()),
+                    ..message_ir::testutil::sample_attachment()
                 });
             }
         }

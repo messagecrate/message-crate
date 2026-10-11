@@ -9,16 +9,8 @@ use std::sync::{Arc, Mutex};
 
 fn att(name: &str) -> IrAttachment {
     IrAttachment {
-        path: None,
         original_name: Some(name.into()),
-        mime_type: Some("image/jpeg".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }
 }
 
