@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+
 - 2026-10-11: The way an Upload and an Export remember what they already
   did for each server and account was reworked inside, with nothing visible
   (#2253).

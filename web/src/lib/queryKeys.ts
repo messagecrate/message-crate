@@ -181,4 +181,23 @@ export const keys = {
    * so it is used as it is, without `routeQueryKey` in front (ADR 0002).
    */
   desktopToolsStatus: { all: ["desktop", "tools-status"] as const },
+  /** The Export Directory, from the desktop process; used as it is, like `desktopToolsStatus`. */
+  desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
+  /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
+  desktopImportRunLog: (runDir: string) => ["desktop", "import-run-log", runDir] as const,
+  /** What the Apple Messages fields of the Import form point at, for one method and its paths. */
+  desktopImessagePaths: (
+    method: string,
+    backupPath: string,
+    attachmentRoot: string,
+    appleContacts: string,
+  ) => ["desktop", "imessage-paths", method, backupPath, attachmentRoot, appleContacts] as const,
+  /** What the WhatsApp fields of the Import form point at, for one method and its paths. */
+  desktopWhatsappPaths: (
+    method: string,
+    backupPath: string,
+    contactsDb: string,
+    media: string,
+    db: string,
+  ) => ["desktop", "whatsapp-paths", method, backupPath, contactsDb, media, db] as const,
 };
