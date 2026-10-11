@@ -6,7 +6,7 @@
  * beside the provider, so `lib/` renders nothing of its own (#2214).
  */
 import { createContext, useContext } from "react";
-import type { UndeletedDirectory } from "./importRun";
+import type { DirectoryReason } from "./importRun";
 
 /**
  * Where logging out is: the question it asks while an Upload runs, the wait
@@ -18,8 +18,16 @@ export type LogoutPromptState =
   | { kind: "pausing"; accountDeleted: boolean }
   /** Logged out before the Upload had paused; it resumes from what it sent. */
   | { kind: "notPaused" }
-  /** Directories of a deleted account's Import Runs that could not be deleted. */
-  | { kind: "undeletedDirectories"; directories: readonly UndeletedDirectory[] };
+  /**
+   * Directories of a deleted account's Import Runs left in place: `undeleted`,
+   * the ones that could not be deleted, and `unreadable`, the ones Message
+   * Crate may not read, which may not be on this computer at all.
+   */
+  | {
+      kind: "leftDirectories";
+      undeleted: readonly DirectoryReason[];
+      unreadable: readonly DirectoryReason[];
+    };
 
 interface LogoutPrompt {
   /** What to show, or null when logging out has nothing to show. */
