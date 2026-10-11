@@ -4,6 +4,7 @@ import { rejectionMessage } from "../../lib/apiErrorMessage";
 import { useRouteInfiniteQuery } from "../../lib/routeQuery";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
+import { useDebouncedValue } from "../../lib/useDebouncedValue";
 import Button from "../Button";
 import Select, { ListBoxItem, selectItemClassName } from "../Select";
 import TextField from "../TextField";
@@ -13,7 +14,7 @@ import type { LevelFilter, LogDownload, LogSource } from "./logSource";
 export const LOG_PAGE_SIZE = 200;
 
 /** How long the search waits after the last key before it reads the log. */
-const SEARCH_DELAY_MS = 250;
+export const SEARCH_DELAY_MS = 250;
 
 const LEVEL_LABELS: Record<LevelFilter, string> = {
   error: "Errors",
@@ -63,11 +64,7 @@ export default function LogViewer({
 }) {
   const [level, setLevel] = useState<LevelFilter>("warn");
   const [typed, setTyped] = useState("");
-  const [text, setText] = useState("");
-  useEffect(() => {
-    const timer = setTimeout(() => setText(typed.trim()), SEARCH_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [typed]);
+  const text = useDebouncedValue(typed.trim(), SEARCH_DELAY_MS);
 
   const lines = useRouteInfiniteQuery<LogLinesPage, number | undefined>(
     [...source.key, "lines", level, text],

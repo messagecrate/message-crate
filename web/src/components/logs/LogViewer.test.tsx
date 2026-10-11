@@ -1,13 +1,13 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
 import { installIntersectionObserver, scrollNear } from "../../test/intersectionObserver";
 import { Providers } from "../../test/providers";
-import { fill, setupUser } from "../../test/user";
-import LogViewer, { LOG_PAGE_SIZE } from "./LogViewer";
+import { setupUser } from "../../test/user";
+import LogViewer, { LOG_PAGE_SIZE, SEARCH_DELAY_MS } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
 vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
@@ -112,18 +112,67 @@ describe("LogViewer", () => {
     await waitFor(() => expect(shownTexts()).toEqual(["line 20", "line 15", "line 10", "line 5"]));
   });
 
-  it("searches as the words are typed", async () => {
-    const user = setupUser();
-    const { source, readLines } = sourceOver(aLog(20));
-    renderViewer(source);
-    await screen.findByRole("list", { name: "Log lines" });
+  describe("search", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
 
-    await fill(user, screen.getByRole("textbox", { name: "Search the log" }), "line 1");
-    await waitFor(() => expect(shownTexts()).toEqual(["line 15", "line 10"]));
-    expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-    await fill(user, screen.getByRole("textbox", { name: "Search the log" }), "no such line");
-    expect(await screen.findByText("No line matches the search")).toBeInTheDocument();
+    /** Let timers up to `ms` fire, and every read they start land. */
+    async function wait(ms: number) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    function searchFor(text: string) {
+      fireEvent.change(screen.getByRole("textbox", { name: "Search the log" }), {
+        target: { value: text },
+      });
+    }
+
+    const textsRead = (readLines: ReturnType<typeof sourceOver>["readLines"]) =>
+      readLines.mock.calls.map(([request]) => request.text);
+
+    it("searches as the words are typed", async () => {
+      const { source, readLines } = sourceOver(aLog(20));
+      renderViewer(source);
+      await wait(0);
+
+      searchFor("line 1");
+      await wait(SEARCH_DELAY_MS);
+      expect(shownTexts()).toEqual(["line 15", "line 10"]);
+      expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
+
+      searchFor("no such line");
+      await wait(SEARCH_DELAY_MS);
+      expect(screen.getByText("No line matches the search")).toBeInTheDocument();
+    });
+
+    it("reads the log once, for the words as they stand when typing stops", async () => {
+      const { source, readLines } = sourceOver(aLog(20));
+      renderViewer(source);
+      await wait(0);
+      expect(textsRead(readLines)).toEqual([undefined]);
+
+      searchFor("l");
+      await wait(SEARCH_DELAY_MS - 1);
+      searchFor("li");
+      await wait(SEARCH_DELAY_MS - 1);
+      searchFor("  line 1 ");
+      await wait(SEARCH_DELAY_MS - 1);
+      expect(textsRead(readLines)).toEqual([undefined]);
+
+      await wait(1);
+      expect(textsRead(readLines)).toEqual([undefined, "line 1"]);
+      expect(shownTexts()).toEqual(["line 15", "line 10"]);
+    });
   });
 
   it("says when no line is at the level picked", async () => {
