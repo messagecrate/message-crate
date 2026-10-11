@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { desktopPathStat } from "../test/pathStats";
+import { desktopPathStat, PERMISSION_DENIED } from "../test/pathStats";
 import { accountRunDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
@@ -55,5 +55,20 @@ describe("buildSourceFingerprint", () => {
       size_bytes: 4096,
       modified_unix_ms: 1_756_512_000_000,
     });
+  });
+
+  it("records nothing for a backup the app may not read, so a later resume is not told it changed", () => {
+    expect(
+      buildSourceFingerprint(
+        "/Users/u/Library/Messages",
+        desktopPathStat({
+          exists: false,
+          isFile: false,
+          sizeBytes: 0,
+          modifiedUnixMs: null,
+          unreadable: PERMISSION_DENIED,
+        }),
+      ),
+    ).toBeNull();
   });
 });
