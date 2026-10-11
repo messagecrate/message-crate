@@ -9,7 +9,7 @@ use crate::server::{APP_HEADER, APP_VERSION_HEADER};
 use crate::test_support::{
     PASSWORD, claim_as_owner, delete_status, expect_problem, expect_problem_for, get_json, get_raw,
     http_client, log_in, log_in_raw, login_status, patch_status, post_created_json,
-    register_via_api, serve, test_fixture, with_audit_entries_editable,
+    register_via_api, serve, test_fixture, with_trigger_lifted,
 };
 
 /// The items of an Audit Trail page.
@@ -221,13 +221,17 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     // Ninety-one days on, the next login trims the stranger's refusal and
     // keeps alice's.
     let long_ago = (chrono::Utc::now() - chrono::Duration::days(91)).to_rfc3339();
-    with_audit_entries_editable(&mut *fixture.conn().await, async |conn| {
-        sqlx::query("UPDATE audit_entries SET at = $1 WHERE action = 'login_refused'")
-            .bind(&long_ago)
-            .execute(conn)
-            .await
-            .unwrap();
-    })
+    with_trigger_lifted(
+        &mut *fixture.conn().await,
+        "audit_entries_never_edited",
+        async |conn| {
+            sqlx::query("UPDATE audit_entries SET at = $1 WHERE action = 'login_refused'")
+                .bind(&long_ago)
+                .execute(conn)
+                .await
+                .unwrap();
+        },
+    )
     .await;
     log_in(state, "alice", PASSWORD).await;
     let items = trail(state, "/v1/audit-trail", &owner.token).await;
@@ -466,19 +470,23 @@ async fn a_session_that_ran_out_reads_as_expired() {
     // Registered thirty-one days ago, so the Session ran out a day ago.
     let registered = (chrono::Utc::now() - chrono::Duration::days(31)).to_rfc3339();
     let a_day_ago = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339();
-    with_audit_entries_editable(&mut *fixture.conn().await, async |conn| {
-        sqlx::query(
-            "UPDATE audit_entries SET at = $1,
+    with_trigger_lifted(
+        &mut *fixture.conn().await,
+        "audit_entries_never_edited",
+        async |conn| {
+            sqlx::query(
+                "UPDATE audit_entries SET at = $1,
                     session_expires_at = CASE WHEN action = 'logged_in' THEN $2 END
              WHERE account_id = $3",
-        )
-        .bind(&registered)
-        .bind(&a_day_ago)
-        .bind(alice.account_id)
-        .execute(conn)
-        .await
-        .unwrap();
-    })
+            )
+            .bind(&registered)
+            .bind(&a_day_ago)
+            .bind(alice.account_id)
+            .execute(conn)
+            .await
+            .unwrap();
+        },
+    )
     .await;
 
     let path = format!("/v1/accounts/{}/audit-trail", alice.account_id);

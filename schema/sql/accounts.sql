@@ -468,13 +468,17 @@ CREATE INDEX IF NOT EXISTS ix_audit_entries_deletion
     ON audit_entries(deletion_entry_id);
 
 -- An Audit Trail entry is never edited. The only changes allowed are the two
--- that deleting an account makes: `deletion_entry_id` set on every entry
--- about it, and `account_id` set NULL by the foreign key. Anything else, a
--- route, a mistaken query or a statement run by hand, fails here rather than
--- rewriting the record (docs/adr/0020-the-audit-trail-outlives-the-account.md).
+-- that deleting an account makes: `deletion_entry_id` set once, on every
+-- entry about it, and `account_id` set NULL by the foreign key. Anything
+-- else, a route, a mistaken query or a statement run by hand, fails here
+-- rather than rewriting the record
+-- (docs/adr/0020-the-audit-trail-outlives-the-account.md).
 CREATE TRIGGER IF NOT EXISTS audit_entries_never_edited
 BEFORE UPDATE ON audit_entries
 WHEN NEW.id IS NOT OLD.id
+  OR (NEW.account_id IS NOT OLD.account_id AND NEW.account_id IS NOT NULL)
+  OR (NEW.deletion_entry_id IS NOT OLD.deletion_entry_id
+      AND OLD.deletion_entry_id IS NOT NULL)
   OR NEW.at IS NOT OLD.at
   OR NEW.action IS NOT OLD.action
   OR NEW.actor IS NOT OLD.actor
@@ -490,7 +494,9 @@ BEGIN
 END;
 
 -- An Audit Trail entry is never deleted, except a refused login as a
--- username no account held, which the server trims after 90 days.
+-- username no account held. The server deletes those once they are 90 days
+-- old (`trim_refused_logins`); the age is the server's rule, not this
+-- trigger's, so the trigger holds no clock.
 CREATE TRIGGER IF NOT EXISTS audit_entries_never_deleted
 BEFORE DELETE ON audit_entries
 WHEN NOT (OLD.action = 'login_refused' AND OLD.reason IS 'unknown_username')
