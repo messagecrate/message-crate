@@ -9,7 +9,6 @@ import {
 import {
   IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
   IMESSAGE_ERR_CONTACTS_NOT_FILE,
-  IMESSAGE_ERR_ENCRYPTED_PASSWORD,
   IMESSAGE_ERR_IPHONE_NOT_DIRECTORY,
   IMESSAGE_ERR_JAILBREAK_NOT_FILE,
   IMESSAGE_ERR_MAC_NOT_FILE,
@@ -26,7 +25,7 @@ import {
   macMessagesDbPath,
   shouldPrefillMacMessagesDb,
 } from "./imessageImport";
-import { PATH_MISSING } from "./pathChecks";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED, PATH_MISSING } from "./pathChecks";
 
 describe("iMessage methods", () => {
   it("lists three methods", () => {
@@ -137,7 +136,7 @@ describe("imessageCanImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPassword).toBe(IMESSAGE_ERR_ENCRYPTED_PASSWORD);
+    expect(result.errors.backupPassword).toBe(ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
   });
 
   it("enables an encrypted backup when the password is filled", () => {

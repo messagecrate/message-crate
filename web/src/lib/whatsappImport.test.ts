@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
-import { PATH_MISSING } from "./pathChecks";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED, PATH_MISSING } from "./pathChecks";
 import {
   isWhatsappMethod,
   WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
   WHATSAPP_ERR_CRYPT_KEY,
-  WHATSAPP_ERR_ENCRYPTED_PASSWORD,
   WHATSAPP_ERR_MUST_BE_DIRECTORY,
   WHATSAPP_ERR_MUST_BE_FILE,
   WHATSAPP_ERR_OWNER_PHONE,
@@ -297,7 +296,7 @@ describe("whatsappImport", () => {
     };
     const empty = whatsappCanImport({ ...args, method: "whatsapp-ios", backupPassword: " " });
     expect(empty.enabled).toBe(false);
-    expect(empty.errors.backupPassword).toBe(WHATSAPP_ERR_ENCRYPTED_PASSWORD);
+    expect(empty.errors.backupPassword).toBe(ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
 
     const filled = whatsappCanImport({ ...args, method: "whatsapp-ios", backupPassword: "pw" });
     expect(filled.enabled).toBe(true);
