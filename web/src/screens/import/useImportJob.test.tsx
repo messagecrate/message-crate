@@ -38,7 +38,8 @@ import type {
   ImportProgressEvent,
 } from "../../lib/types";
 import { account } from "../../test/apiShapes";
-import { importForm, MIB } from "../../test/importForm";
+import { importForm } from "../../test/importForm";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "../settings/ConvertSection";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
@@ -275,7 +276,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };
@@ -2052,6 +2053,8 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.cancel());
     expect(result.current.summaryView?.status).toBe("cancelled");
 
+    // The form, where the next run starts, shows only once the person leaves the ended run.
+    act(() => result.current.returnToForm());
     invokeExtractMock.mockClear();
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));

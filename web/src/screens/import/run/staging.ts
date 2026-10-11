@@ -24,6 +24,7 @@ import { beginRun, loadCarriedRecord } from "./scratch";
 import {
   failActiveStep,
   initialSteps,
+  movePhase,
   returnToFormWithError,
   setRowByLabel,
   updateSteps,
@@ -132,10 +133,9 @@ export async function runImport(
   const { store } = ctx;
   let form = withShownAttachmentMode(submitted);
   beginRun(ctx, form, "staging");
-  store.set({
+  movePhase(ctx, "staging_start", {
     ...CLEARED_RUN,
     running: true,
-    phase: "running",
     form,
     resumeError: null,
   });

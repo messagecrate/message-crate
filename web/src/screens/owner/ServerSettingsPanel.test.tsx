@@ -3,8 +3,8 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
-import { MIB } from "../../test/importForm";
 import { Providers } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
 

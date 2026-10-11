@@ -7,8 +7,9 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
-import { importForm, MIB } from "../../test/importForm";
+import { importForm } from "../../test/importForm";
 import { Providers } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
 import { type ImportStep, stepsFor } from "./importProgressState";
@@ -112,15 +113,15 @@ function finished(overrides: Partial<ImportSummaryView> = {}): ImportSummaryView
 
 function file(
   name: string,
-  sizeMb: number,
+  sizeMib: number,
   verdict: AttachmentForecast["verdict"],
-  estimateMb = sizeMb,
+  estimateMib = sizeMib,
 ): AttachmentForecast {
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MIB,
-    estimateBytes: estimateMb * MIB,
+    sizeBytes: sizeMib * MIB,
+    estimateBytes: estimateMib * MIB,
     verdict,
   };
 }
