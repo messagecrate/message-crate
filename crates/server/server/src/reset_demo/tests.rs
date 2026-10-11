@@ -1890,9 +1890,12 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     .fetch_one(&mut *conn)
     .await
     .expect("insert previous handle");
-    let conversation_id = ConversationRow::new(DEMO_ACCOUNT_ID, handle_id)
-        .insert(&mut conn)
-        .await;
+    let conversation_id = ConversationRow {
+        source_file: "previous.jsonl",
+        ..ConversationRow::new(DEMO_ACCOUNT_ID, handle_id)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         source: "whatsapp",
         guid: Some("previous-demo-message".into()),
