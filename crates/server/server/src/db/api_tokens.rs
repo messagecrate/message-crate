@@ -105,8 +105,8 @@ type TokenAuthRow = (i64, i64, i64, Option<String>, i64, String, String);
 
 /// Look up which account owns this API token Bearer value.
 /// On a successful match, updates `last_accessed_at`; a failed update is
-/// logged and does not reject the token. Expired or disabled tokens are
-/// rejected.
+/// logged and does not reject the token. Expired or disabled tokens, and a
+/// token on the owner's account, are rejected.
 ///
 /// # Errors
 ///
@@ -125,7 +125,13 @@ pub async fn lookup_account_for_api_token(
     .await?;
     match row {
         Some((account_id, can_import, can_export, expires_at, disabled, label, token_hint)) => {
-            if disabled != 0 {
+            // No API token acts as the owner
+            // (`docs/adr/0008-the-owner-holds-no-messages.md`). The route
+            // that issues tokens refuses the owner, but a token row on the
+            // owner's account written by hand or restored with a database is
+            // refused here as well, before its use is recorded, so every
+            // caller treats it as a token the server never issued.
+            if disabled != 0 || super::account_profile::is_server_owner(account_id) {
                 return Ok(None);
             }
             if let Some(exp) = expires_at.as_deref() {
