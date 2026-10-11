@@ -1,7 +1,7 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import {
   deleteAccountById,
   deleteAccountMessages,
@@ -20,17 +20,6 @@ export type ManagedAccountChanges = Partial<
 
 const fetchAccounts = (signal: AbortSignal) => listAccounts({ signal });
 
-/** A deletion from one account changes the account list, the Dashboard and the Demo Account. */
-function useOwnerWrite<V>(
-  write: (vars: V) => Promise<unknown>,
-): UseMutationResult<unknown, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<unknown, Error, V>({
-    mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
-  });
-}
-
 /**
  * Change an account's status or permissions. The server answers with the
  * account as it now stands, which goes straight into the entry its Settings
@@ -42,21 +31,20 @@ export function useUpdateAccount(): UseMutationResult<
   { id: number; changes: ManagedAccountChanges }
 > {
   const cache = useRouteCache();
-  return useMutation<ManagedAccount, Error, { id: number; changes: ManagedAccountChanges }>({
+  return useRouteMutation<ManagedAccount, Error, { id: number; changes: ManagedAccountChanges }>({
     mutationFn: ({ id, changes }) => updateAccount(id, changes),
     onSuccess: (account) => {
       cache.set(keys.ownerAccounts.member(account.account_id), account);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 
 export function useDeleteAccount(): UseMutationResult<unknown, Error, number> {
-  return useOwnerWrite((id: number) => deleteAccountById(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteAccountById(id) });
 }
 
 export function useDeleteAccountMessages(): UseMutationResult<unknown, Error, number> {
-  return useOwnerWrite((id: number) => deleteAccountMessages(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteAccountMessages(id) });
 }
 
 /**

@@ -1,9 +1,9 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useRevealApiToken } from "../../components/apiTokenRevealState";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
 
@@ -13,19 +13,6 @@ type NewToken = Parameters<typeof createApiToken>[0];
 type CreatedToken = Awaited<ReturnType<typeof createApiToken>>;
 type ApiToken = components["schemas"]["ApiToken"];
 
-/** Every token write marks the account's cache stale, and the list refetches itself. */
-function useApiTokenWrite<T, V>(
-  write: (vars: V) => Promise<T>,
-  onSuccess?: (res: T) => void,
-): UseMutationResult<T, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<T, Error, V>({
-    mutationFn: write,
-    onSuccess,
-    onSettled: () => cache.invalidateAccount(),
-  });
-}
-
 /**
  * The secret is revealed from the mutation's own `onSuccess`, which runs even
  * when the screen that called `mutate` has unmounted. The `onSuccess` passed
@@ -34,10 +21,10 @@ function useApiTokenWrite<T, V>(
  */
 export function useCreateApiToken(): UseMutationResult<CreatedToken, Error, NewToken> {
   const reveal = useRevealApiToken();
-  return useApiTokenWrite(
-    (body: NewToken) => createApiToken(body),
-    (res) => reveal({ label: res.label, token: res.token }),
-  );
+  return useRouteMutation({
+    mutationFn: (body: NewToken) => createApiToken(body),
+    onSuccess: (res) => reveal({ label: res.label, token: res.token }),
+  });
 }
 
 export function useRenameApiToken(): UseMutationResult<
@@ -45,9 +32,9 @@ export function useRenameApiToken(): UseMutationResult<
   Error,
   { id: number; label: string }
 > {
-  return useApiTokenWrite(({ id, label }: { id: number; label: string }) =>
-    renameApiToken(id, { label }),
-  );
+  return useRouteMutation({
+    mutationFn: ({ id, label }: { id: number; label: string }) => renameApiToken(id, { label }),
+  });
 }
 
 export function useRevokeApiToken(): UseMutationResult<
@@ -55,7 +42,7 @@ export function useRevokeApiToken(): UseMutationResult<
   Error,
   number
 > {
-  return useApiTokenWrite((id: number) => deleteApiToken(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteApiToken(id) });
 }
 
 /**
@@ -208,7 +195,9 @@ export function useManagedApiTokens(accountId: number) {
   } = useRouteQuery(keys.ownerAccounts.apiTokens(accountId), (signal) =>
     listApiTokens({ signal }, accountId),
   );
-  const revokeToken = useApiTokenWrite((id: number) => deleteApiToken(id, accountId));
+  const revokeToken = useRouteMutation({
+    mutationFn: (id: number) => deleteApiToken(id, accountId),
+  });
 
   /** The dialog closes whether or not the server agreed; the refusal shows in `actionError`. */
   const revoke = (token: ApiToken) => {
