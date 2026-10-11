@@ -1,4 +1,5 @@
 use super::*;
+use crate::write_queue::conversation_file;
 use media::testutil::PNG_1X1_RGB;
 use std::sync::atomic::Ordering;
 
@@ -29,9 +30,7 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     }];
     doc.finalize_stats();
 
-    let jsonl = dir
-        .path()
-        .join(format!("{}.jsonl", message_ir_format::filename_stem(&doc)));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     (dir, jsonl, original)
 }
@@ -797,10 +796,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
         ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!(
-        "{}.jsonl",
-        message_ir_format::filename_stem(&doc_b)
-    ));
+    let jsonl_b = conversation_file(dir.path(), &doc_b);
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
 
     let report = transcode_staged(
@@ -945,10 +941,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
         ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!(
-        "{}.jsonl",
-        message_ir_format::filename_stem(&doc_b)
-    ));
+    let jsonl_b = conversation_file(dir.path(), &doc_b);
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
 
     let report = transcode_staged(
@@ -1035,10 +1028,7 @@ fn second_document_sharing(dir: &Path, rel: &str, size: u64) -> PathBuf {
         ..message_ir::testutil::sample_attachment()
     }];
     doc_b.finalize_stats();
-    let jsonl_b = dir.join(format!(
-        "{}.jsonl",
-        message_ir_format::filename_stem(&doc_b)
-    ));
+    let jsonl_b = conversation_file(dir, &doc_b);
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
     jsonl_b
 }

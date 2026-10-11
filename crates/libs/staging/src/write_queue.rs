@@ -452,7 +452,7 @@ pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> S
 }
 
 /// The conversation file a unit is written to.
-fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
+pub(crate) fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
     output_dir.join(conversation_file_name(doc))
 }
 

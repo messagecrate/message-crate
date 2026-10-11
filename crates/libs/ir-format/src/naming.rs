@@ -119,7 +119,7 @@ fn conversation_stem(
     conversation_type: &str,
     chat_id: &str,
     group_title: Option<&str>,
-    participant_e164s: &[String],
+    handles: &[String],
     suffix: Option<&str>,
 ) -> String {
     let is_group = conversation_type.eq_ignore_ascii_case("group");
@@ -138,7 +138,7 @@ fn conversation_stem(
         }
     }
 
-    let phones = unique_sorted_phone_handles(participant_e164s);
+    let phones = unique_sorted_phone_handles(handles);
 
     if phones.is_empty() {
         let stem = if chat_id.trim().is_empty() {
@@ -165,8 +165,8 @@ fn conversation_stem(
 }
 
 /// Trim, keep phone-looking handles, sort, and drop duplicates.
-fn unique_sorted_phone_handles(participant_e164s: &[String]) -> Vec<String> {
-    let mut phones: Vec<String> = participant_e164s
+fn unique_sorted_phone_handles(handles: &[String]) -> Vec<String> {
+    let mut phones: Vec<String> = handles
         .iter()
         .map(|p| p.trim().to_string())
         .filter(|p| is_phone_handle(p))

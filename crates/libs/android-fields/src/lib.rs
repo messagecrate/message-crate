@@ -46,11 +46,7 @@ pub fn valid_filename(value: &str) -> Option<String> {
 /// Android's message `type` (1 received, 2 sent, and so on) as a number, or
 /// `None` when the field is blank or not a whole number.
 fn parse_android_type(s: &str) -> Option<i32> {
-    let t = s.trim();
-    if t.is_empty() {
-        return None;
-    }
-    t.parse::<i32>().ok()
+    s.trim().parse().ok()
 }
 
 /// The [`IrSource`] of one message from an Android backup: `fields`

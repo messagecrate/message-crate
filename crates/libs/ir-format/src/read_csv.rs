@@ -128,6 +128,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let reactions = parse_reactions(get("reactions_json"))?;
     let edits = parse_earlier_versions(get("earlier_versions_json"))?;
     let source = source_from_parts(
+        // The number `android_fields::android_source` stored, read the same way.
         get("android_type").trim().parse().ok(),
         get("source_fields_json"),
     );

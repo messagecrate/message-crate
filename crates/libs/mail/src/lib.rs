@@ -256,9 +256,8 @@ fn write_conversation_mbox(path: &Path, messages: &[MailMessage]) -> Result<Path
         bail!("write_conversation_mbox requires at least one message");
     }
 
-    let path = path.to_path_buf();
     if path.exists() {
-        fs::remove_file(&path)
+        fs::remove_file(path)
             .with_context(|| format!("replace existing mbox {}", path.display()))?;
     }
 
@@ -271,10 +270,10 @@ fn write_conversation_mbox(path: &Path, messages: &[MailMessage]) -> Result<Path
     });
 
     for msg in ordered {
-        append_message_mbox(&path, msg)?;
+        append_message_mbox(path, msg)?;
     }
 
-    Ok(path)
+    Ok(path.to_path_buf())
 }
 
 /// Escape a single line for mboxrd: lines matching `^>*From ` get a leading `>`.
