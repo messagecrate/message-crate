@@ -303,6 +303,37 @@ impl Form {
         }
     }
 
+    /// The [`ExporterConfig`] every source builder ends in. The caller gives
+    /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
+    /// Scratch Directory. The output directory and output format come from
+    /// the form. A run started from the form does not resume. It has no
+    /// sinks, no cancel flag, and no zone for timestamps that carry none.
+    /// The iMazing builder sets that zone on the result.
+    fn exporter_config(
+        &self,
+        inputs: Vec<PathBuf>,
+        obfuscate: ObfuscateConfig,
+        scratch_dir: &Path,
+        media: MediaConfig,
+        source: SourceConfig,
+    ) -> ExporterConfig {
+        ExporterConfig {
+            inputs,
+            output: PathBuf::from(self.output.trim()),
+            scratch_dir: scratch_dir.to_path_buf(),
+            timezone: None,
+            obfuscate,
+            media,
+            cancel: None,
+            log: None,
+            progress: None,
+            issues: None,
+            output_format: self.output_format,
+            resume: false,
+            source,
+        }
+    }
+
     /// Build an iMessage config, pushing path and ffmpeg problems onto `errors`.
     fn to_imessage_config(
         &self,
@@ -330,20 +361,12 @@ impl Form {
         let inputs = message_ir::trimmed(&self.db_path)
             .map(|p| vec![PathBuf::from(p)])
             .unwrap_or_default();
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Apple(AppleConfig {
+            SourceConfig::Apple(AppleConfig {
                 platform,
                 attachment_root: message_ir::nonempty(&self.attachment_root),
                 copy_method,
@@ -351,7 +374,7 @@ impl Form {
                 backup_password: message_ir::nonempty(&self.backup_password),
                 use_caller_id: true,
             }),
-        }
+        )
     }
 
     /// Build a WhatsApp config, pushing path and key problems onto `errors`.
@@ -386,20 +409,12 @@ impl Form {
             errors.push("Owner's WhatsApp number is required.".into());
         }
         let media = self.validate_media(errors);
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Whatsapp(WhatsappConfig {
+            SourceConfig::Whatsapp(WhatsappConfig {
                 platform: Some(self.whatsapp_platform),
                 json: None,
                 key: message_ir::nonempty(&self.whatsapp_key),
@@ -415,7 +430,7 @@ impl Form {
                 is_business_app: self.is_business_app,
                 owner_phone,
             }),
-        }
+        )
     }
 
     /// Build an iMazing config, pushing path and media problems onto `errors`.
@@ -428,22 +443,15 @@ impl Form {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
         let media = self.validate_media(errors);
-        let timezone = message_ir::nonempty(&self.timezone);
-        ExporterConfig {
-            inputs: input.into_iter().collect(),
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone,
+        let mut config = self.exporter_config(
+            input.into_iter().collect(),
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::Imazing(ImazingConfig {}),
-        }
+            SourceConfig::Imazing(ImazingConfig {}),
+        );
+        config.timezone = message_ir::nonempty(&self.timezone);
+        config
     }
 
     /// Build an OpenExtract config, pushing path problems onto `errors`.
@@ -456,21 +464,13 @@ impl Form {
         let input = require_single_existing_path(&self.input, "Input", errors);
         required_text(&self.output, "Output", errors);
         let media = self.validate_media(errors);
-        ExporterConfig {
-            inputs: input.into_iter().collect(),
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
+        self.exporter_config(
+            input.into_iter().collect(),
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::OpenExtract(OpenExtractConfig {}),
-        }
+            SourceConfig::OpenExtract(OpenExtractConfig {}),
+        )
     }
 
     /// Build a GO SMS Pro config from the shared Android fields.
@@ -481,21 +481,13 @@ impl Form {
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
-        }
+            SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
+        )
     }
 
     /// Build an SMS Backup & Restore config from the shared Android fields.
@@ -514,21 +506,13 @@ impl Form {
                 dir.display()
             ));
         }
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
-        }
+            SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
+        )
     }
 
     /// Build an SMS Backup+ config, including owner emails.
@@ -546,27 +530,19 @@ impl Form {
         if owner_emails.is_empty() {
             errors.push("At least one email address is required.".into());
         }
-        ExporterConfig {
+        self.exporter_config(
             inputs,
-            output: PathBuf::from(self.output.trim()),
-            scratch_dir: scratch_dir.to_path_buf(),
-            timezone: None,
             obfuscate,
+            scratch_dir,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
-            output_format: self.output_format,
-            resume: false,
-            source: SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
+            SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
                 owner_phones,
                 owner_emails,
                 phone_country: self.phone_country(),
                 verbose: true,
                 include_summary: true,
             }),
-        }
+        )
     }
 
     /// Shared Android backup fields: input path, owner phones, media.
