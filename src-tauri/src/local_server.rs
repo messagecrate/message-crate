@@ -297,7 +297,13 @@ enum Event {
         open: bool,
     },
     /// The address answered a [`Action::Probe`].
-    Probed(Probe),
+    Probed {
+        /// What is at the address.
+        answer: Probe,
+        /// What the app's server last wrote, for a failure report when the
+        /// answer ends it. Empty when the app runs no server.
+        output: String,
+    },
     /// The app's server wrote [`LISTENING_LINE`].
     Listening,
     /// The app's server exited, having written `output`.
@@ -343,9 +349,6 @@ enum Action {
     },
     /// Kill the server program the app started.
     Kill,
-    /// Put what the server program last wrote into the failure's details,
-    /// before a [`Action::Kill`] ends it.
-    KeepOutput,
 }
 
 /// Decide what follows `event`. The only place the state changes; it does no
@@ -375,7 +378,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             state.wanted_open = open;
             restart_if_wanted(&mut state, &mut actions);
         }
-        Event::Probed(answer) => match (&state.phase, answer) {
+        Event::Probed { answer, output } => match (&state.phase, answer) {
             (
                 Phase::Probing | Phase::Found { checking: true } | Phase::Lost { .. },
                 Probe::MessageCrate,
@@ -417,7 +420,8 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             ) => {
                 let unanswered = unanswered + 1;
                 // A desktop job may be an import into a server too busy to
-                // answer in time, so the kill waits until no job runs.
+                // answer in time, so the kill waits until no job runs, and
+                // the count starts again when the last job ends.
                 if unanswered < UNANSWERED_CHECKS || state.jobs > 0 {
                     state.phase = Phase::Own {
                         open: *open,
@@ -428,12 +432,8 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                     // The server still runs but does not answer. Killing it
                     // ends it, and no `ChildExited` follows a kill, so the
                     // phase becomes `Failed` here.
-                    own_server_ended(
-                        &mut state,
-                        "Message Crate stopped answering.",
-                        String::new(),
-                    );
-                    actions.extend([Action::KeepOutput, Action::Kill]);
+                    own_server_ended(&mut state, "Message Crate stopped answering.", output);
+                    actions.push(Action::Kill);
                 }
             }
             (
@@ -515,6 +515,13 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
         Event::JobStarted => state.jobs += 1,
         Event::JobEnded => {
             state.jobs = state.jobs.saturating_sub(1);
+            // The checks that went unanswered during the job may have been
+            // the job's doing: two more are needed after it.
+            if state.jobs == 0
+                && let Phase::Own { unanswered, .. } = &mut state.phase
+            {
+                *unanswered = 0;
+            }
             restart_if_wanted(&mut state, &mut actions);
         }
         Event::Stopped => match state.phase {
@@ -532,9 +539,10 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
     (state, actions)
 }
 
-/// The app's own server has ended: it exited once ready, it was killed
-/// because it stopped answering, or the app is closing. `message` says
-/// which, and `details` holds what it last wrote.
+/// The app's own server has ended, whether it was starting or ready: it
+/// exited, it was killed because it stopped answering, or the app is
+/// closing. `message` says which. `details` holds what it last wrote, and
+/// is empty when the app is closing.
 fn own_server_ended(state: &mut State, message: &str, details: String) {
     state.phase = Phase::Failed {
         reason: FailureReason::StartFailed,
@@ -846,12 +854,6 @@ impl LocalServer {
                     Action::Probe => self.probe_in_background(inner, Duration::ZERO),
                     Action::ProbeLater => self.probe_in_background(inner, POLL_INTERVAL),
                     Action::Kill => inner.kill(),
-                    Action::KeepOutput => {
-                        let output = joined(&inner.output);
-                        if let Phase::Failed { details, .. } = &mut inner.state.phase {
-                            *details = output;
-                        }
-                    }
                     Action::Spawn { open } => {
                         if let Err(error) = self.spawn(inner, open) {
                             events.push_back(Event::SpawnFailed { error });
@@ -883,7 +885,8 @@ impl LocalServer {
     fn probed(&self, asked: u64, answer: Probe) {
         let mut inner = self.lock();
         if inner.generation == asked {
-            self.apply(&mut inner, Event::Probed(answer));
+            let output = joined(&inner.output);
+            self.apply(&mut inner, Event::Probed { answer, output });
         }
     }
 

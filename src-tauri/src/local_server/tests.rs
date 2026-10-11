@@ -222,6 +222,14 @@ fn at(phase: Phase, wanted_open: bool) -> State {
     }
 }
 
+/// The address answered `answer`, with nothing written by the app's server.
+fn probed(answer: Probe) -> Event {
+    Event::Probed {
+        answer,
+        output: String::new(),
+    }
+}
+
 /// The app's own server, ready, started open to the network when `open`,
 /// with no check of it under way and none failed.
 fn own(open: bool) -> Phase {
@@ -297,7 +305,7 @@ fn a_found_message_crate_is_asked_again_and_replaced_when_it_stops() {
     // A second look while the first is under way asks nothing more.
     let (state, actions) = step(state, Event::Check);
     assert_eq!(actions, []);
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    let (state, actions) = step(state, probed(Probe::Free));
     assert_eq!(actions, [Action::Spawn { open: false }]);
     assert_eq!(state.phase, Phase::Starting { open: false });
 
@@ -320,49 +328,60 @@ fn the_apps_own_server_is_killed_once_it_stops_answering() {
 
     // One check that finds nothing answering is not enough: the server may
     // have been slow once.
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    let (state, actions) = step(state, probed(Probe::Free));
     assert_eq!(actions, []);
     assert!(matches!(state.phase, Phase::Own { .. }), "{state:?}");
     // An answer in between starts the count again.
     let (state, _) = step(state, Event::Check);
-    let (state, _) = step(state, Event::Probed(Probe::MessageCrate));
+    let (state, _) = step(state, probed(Probe::MessageCrate));
     let (state, _) = step(state, Event::Check);
-    let (state, actions) = step(state, Event::Probed(Probe::Other));
+    let (state, actions) = step(state, probed(Probe::Other));
     assert_eq!(actions, []);
     assert!(matches!(state.phase, Phase::Own { .. }), "{state:?}");
 
     // The next check that finds nothing answering ends it.
     let (state, actions) = step(state, Event::Check);
     assert_eq!(actions, [Action::Probe]);
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
-    assert_eq!(actions, [Action::KeepOutput, Action::Kill]);
-    assert!(
-        matches!(
-            &state.phase,
-            Phase::Failed { reason: FailureReason::StartFailed, message, .. }
-                if message == "Message Crate stopped answering."
-        ),
-        "{state:?}"
+    let (state, actions) = step(
+        state,
+        Event::Probed {
+            answer: Probe::Free,
+            output: "stuck here".into(),
+        },
+    );
+    assert_eq!(actions, [Action::Kill]);
+    // What it last wrote is kept for a bug report.
+    assert_eq!(
+        state.phase,
+        Phase::Failed {
+            reason: FailureReason::StartFailed,
+            message: "Message Crate stopped answering.".into(),
+            details: "stuck here".into(),
+        }
     );
 }
 
 /// An import can keep the server from answering in time, so the app's own
-/// server is not killed while a desktop job runs, and is once none does.
+/// server is not killed while a desktop job runs. Once none does, two more
+/// checks in a row must find nothing answering.
 #[test]
 fn the_apps_own_server_is_not_killed_for_not_answering_while_a_job_runs() {
     let (mut state, _) = step(at(own(false), false), Event::JobStarted);
     for _ in 0..UNANSWERED_CHECKS + 1 {
         let actions;
         (state, _) = step(state, Event::Check);
-        (state, actions) = step(state, Event::Probed(Probe::Other));
+        (state, actions) = step(state, probed(Probe::Other));
         assert_eq!(actions, [], "the import would be cut off");
         assert!(matches!(state.phase, Phase::Own { .. }), "{state:?}");
     }
 
     let (state, _) = step(state, Event::JobEnded);
     let (state, _) = step(state, Event::Check);
-    let (state, actions) = step(state, Event::Probed(Probe::Other));
-    assert_eq!(actions, [Action::KeepOutput, Action::Kill]);
+    let (state, actions) = step(state, probed(Probe::Other));
+    assert_eq!(actions, [], "the misses during the job do not count");
+    let (state, _) = step(state, Event::Check);
+    let (state, actions) = step(state, probed(Probe::Other));
+    assert_eq!(actions, [Action::Kill]);
     assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
 }
 
@@ -370,7 +389,7 @@ fn the_apps_own_server_is_not_killed_for_not_answering_while_a_job_runs() {
 /// counted.
 #[test]
 fn an_answer_nobody_asked_the_apps_own_server_for_is_not_counted() {
-    let (state, actions) = step(at(own(false), false), Event::Probed(Probe::Free));
+    let (state, actions) = step(at(own(false), false), probed(Probe::Free));
     assert_eq!(actions, []);
     assert_eq!(state.phase, own(false));
 }
@@ -410,7 +429,7 @@ fn an_answer_asked_of_a_replaced_server_is_dropped() {
 fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
     let starting = at(Phase::Starting { open: false }, false);
     // Another Message Crate answering the port is not the app's server.
-    let (state, actions) = step(starting.clone(), Event::Probed(Probe::MessageCrate));
+    let (state, actions) = step(starting.clone(), probed(Probe::MessageCrate));
     assert_eq!(state.phase, Phase::Starting { open: false });
     assert_eq!(actions, []);
 
@@ -426,7 +445,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         },
     );
     assert_eq!(actions, [Action::Probe]);
-    let (state, _) = step(state, Event::Probed(Probe::MessageCrate));
+    let (state, _) = step(state, probed(Probe::MessageCrate));
     assert_eq!(state.phase, Phase::Found { checking: false });
 
     // Locked out by the server of a second window, still being set up: the
@@ -439,9 +458,9 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
             code: Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
         },
     );
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    let (state, actions) = step(state, probed(Probe::Free));
     assert_eq!(actions, [Action::ProbeLater]);
-    let (state, _) = step(state, Event::Probed(Probe::MessageCrate));
+    let (state, _) = step(state, probed(Probe::MessageCrate));
     assert_eq!(state.phase, Phase::Found { checking: false });
 
     // Any other exit with nothing answering is a failure, even one whose
@@ -453,7 +472,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
             code: Some(1),
         },
     );
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    let (state, actions) = step(state, probed(Probe::Free));
     assert_eq!(actions, []);
     assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
     let (state, _) = step(
@@ -463,7 +482,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
             code: None,
         },
     );
-    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    let (state, actions) = step(state, probed(Probe::Free));
     assert_eq!(actions, []);
     assert!(
         matches!(&state.phase, Phase::Failed { details, .. } if details == "database is locked"),

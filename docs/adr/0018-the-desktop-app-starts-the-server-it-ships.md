@@ -121,6 +121,6 @@ When two checks in a row find none, the app kills its server the way it
 does on close. The login card then says the server stopped answering. One
 check is not enough, because a server can miss one answer. A server busy
 with a long write usually answers with a problem document, which counts as
-answering. An import can still keep it from answering in time, so while a
-desktop job runs the app does not kill it, and the next check that finds
-nothing once no job runs does.
+answering. An import can still keep the server from answering in time. The
+app therefore does not kill it while a desktop job runs. Once no job runs,
+two more checks in a row that find nothing are needed to kill it.

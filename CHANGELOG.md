@@ -447,9 +447,9 @@ released versions carry their date on the heading.
   without answering, and the login card still called it ready. The app now
   checks it while the login card is open. When two checks in a row find
   nothing answering, the app stops it, and the login card says **Message
-  Crate stopped answering.** with **Try again**. The app does not stop it
-  while it is importing, since a large import can keep it from answering in
-  time (#2204).
+  Crate stopped answering.** with **Try again**. The app does not stop the
+  server during an import, since a large import can keep the server from
+  answering in time (#2204).
 - 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
   call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
