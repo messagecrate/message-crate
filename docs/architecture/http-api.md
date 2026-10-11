@@ -445,7 +445,10 @@ caller who is not the owner.
 Every response, success or failure, carries an `x-request-id` header, a UUID v4
 the server makes; a request id a client sends is ignored. Problem bodies repeat
 it as `request_id`. The id joins the request's tracing span so every log line
-under a request carries it. RFC 7807's `instance` stays unused, because it is
+under a request carries it, including a line written by work the request runs
+in a task of its own or on the blocking pool: that work is started with
+`request_id::spawn` or `request_id::spawn_blocking`, which carry the span
+across, and never with `tokio::spawn` or `spawn_blocking` directly. RFC 7807's `instance` stays unused, because it is
 defined as a URI reference and a bare id is not one.
 
 Rejected: a flat `{error}` body. It gives a client nothing to branch on except

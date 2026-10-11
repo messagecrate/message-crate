@@ -292,6 +292,50 @@ async fn a_removal_with_nothing_to_move_leaves_nothing_on_disk() {
     );
 }
 
+/// #2186: a warning written while a request's removal runs in a task of its
+/// own, and on the blocking pool, carries the request's id, so the log line
+/// can be tied to the request that caused it.
+#[tokio::test]
+async fn a_warning_from_a_removal_carries_the_request_id() {
+    use crate::logging::{LogFiles, LogLevel, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+    use tracing::Instrument;
+
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let log_dir = tempfile::tempdir().unwrap();
+    let files = LogFiles::open(log_dir.path(), SERVER_LOG_LIMITS).unwrap();
+    // At `info`, as the server logs by default: the request's span is an
+    // `info` span, and a filter that drops it drops the id with it.
+    let _subscriber =
+        tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+
+    // The account has no directory on disk, so `.removing/` cannot be made
+    // and the removal warns.
+    unless_import_running(&fixture.state.db, &paths, ACCOUNT, |removal| {
+        assert!(removal.make_or_reuse().is_none());
+    })
+    .instrument(tracing::info_span!("request", request_id = "the-request"))
+    .await;
+
+    let (lines, _) = read_lines(
+        log_dir.path(),
+        &LogLinesQuery {
+            limit: 10,
+            level: Some(LogLevel::Warn),
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0]
+            .text
+            .contains(r#"request{request_id="the-request"}"#),
+        "{}",
+        lines[0].text
+    );
+}
+
 /// Deleting an account removes its directory with no lock held, after the
 /// row's delete commits. A removal that gets the lock meanwhile moves
 /// nothing, so it cannot put a `.removing/` directory where that removal

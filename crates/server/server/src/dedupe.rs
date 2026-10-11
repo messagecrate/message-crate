@@ -379,7 +379,7 @@ async fn recompute_content_keys(
         "Hashing the content keys of {}…",
         words(inputs.rows.len() as u64, "1 message", "{n} messages")
     ));
-    let keys = tokio::task::spawn_blocking(move || hash_content_keys(&inputs))
+    let keys = crate::request_id::spawn_blocking(move || hash_content_keys(&inputs))
         .await
         .context("content-key hash task panicked")?;
     let keys = if scope != KeyScope::All {

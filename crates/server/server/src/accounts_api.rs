@@ -990,9 +990,10 @@ pub async fn delete_account(
     // answered as a failure. No later account takes this id, so the directory
     // stays out of every account's reach until someone removes it.
     let paths = state.cfg.paths.clone();
-    let removed =
-        tokio::task::spawn_blocking(move || crate::asset_store::remove_account_dir(&paths, target))
-            .await;
+    let removed = crate::request_id::spawn_blocking(move || {
+        crate::asset_store::remove_account_dir(&paths, target)
+    })
+    .await;
     let failure = match removed {
         Ok(Ok(())) => None,
         Ok(Err(e)) => Some(e.to_string()),

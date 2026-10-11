@@ -1366,7 +1366,7 @@ pub(crate) async fn complete_asset_upload(
         let assets_dir = state.cfg.paths.assets_dir_for_account(account);
         let sha = sha256.clone();
         let uid = upload_id.clone();
-        let dropped = tokio::task::spawn_blocking(move || {
+        let dropped = crate::request_id::spawn_blocking(move || {
             asset_uploads::abort_upload(&assets_dir, &sha, &uid)
         })
         .await

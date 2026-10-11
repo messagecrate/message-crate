@@ -744,6 +744,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **Every line the server's log writes for a request names
+  that request.** A warning written while the server removed files, hashed
+  an import's messages, or did other work it runs apart from the request
+  that asked for it, left out the request's id, so it could not be matched
+  to the request or to the error a person was shown. It now carries the id
+  like every other line of the request (#2186).
 - 2026-10-11: **The server's log says why it refused a request.** A wrong
   password, a request that did not log in or whose Session ended, a request
   without the right to what it asked for, and a client that asked too often
