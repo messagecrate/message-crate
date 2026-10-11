@@ -248,9 +248,11 @@ jobs:
   # (Config::require_static_dir_apart) has cases only Windows has: a
   # junction's target comes back verbatim (\\?\C:\...) and a short name
   # (WEBSIT~1) stands for a long one. Every other job runs on Linux, so
-  # this runs the config tests on Windows, only when the config code or a
-  # workflow changes: a whole Windows test run is not worth its time on a
-  # pull request that cannot change these paths (#2683).
+  # this runs the config tests on Windows. On a pull request it runs only
+  # when the config code or a workflow changes: a Windows build is not worth
+  # its time on one that cannot change these paths. A push to main, a tag
+  # and a manual run have no base to diff, so there it runs like every other
+  # job, and a release waits for it (#2683).
   windows-config:
     name: Server config tests (Windows)
     needs: changes
