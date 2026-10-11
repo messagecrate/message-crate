@@ -481,9 +481,20 @@ one, until its next probe, a second or more later, finds the server and it
 reconnects. That is accepted: while every connection is taken, the card's
 own login would wait as well.
 
-Rejected: `503 Service Unavailable`. Every registered problem type is a `4xx`
-whose remedy a client can act on, and a server that cannot reach its own
-database is the `500 Internal Server Error` no page could help with.
+Rejected: `503 Service Unavailable` for `/health`. A server that cannot reach
+its own database is the `500 Internal Server Error` no page could help with.
+
+Every registered problem type is a `4xx` but one: `server-stopping`, a
+`503 Service Unavailable`. A server told to stop closes its import slots
+(`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
+import batch still waiting for a slot is refused with it, stores nothing, and
+the Upload sends it again. A batch that already holds a slot finishes while
+the server drains. Why: a waiting batch used to take a slot once an earlier
+batch ended and import in full, so the stop waited for a whole batch more
+([#2203](https://github.com/messagecrate/message-crate/issues/2203)). It is
+its own type because the remedy, sending the same request again, is not the
+remedy for a `500`, and the request was not the client's mistake, so it is
+not a `4xx`.
 
 ## Content negotiation
 

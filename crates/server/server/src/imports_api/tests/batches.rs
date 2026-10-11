@@ -4,34 +4,91 @@
 use super::*;
 
 /// Each server counts its own import slots. With every slot of one server
-/// taken, a second server in the same process still imports, and an import
-/// waits on its own server's slots: closing them refuses it.
+/// taken, a second server in the same process still imports.
 #[tokio::test]
 async fn import_slots_belong_to_one_server() {
-    let (busy, _busy_fixture, busy_token) = importer().await;
+    let (busy, _busy_fixture, _busy_token) = importer().await;
     let (idle, _idle_fixture, idle_token) = importer().await;
-    let every_slot = busy
+    let _every_slot = busy
         .import_slots
         .try_acquire_many(MAX_CONCURRENT_IMPORTS as u32)
         .expect("a new server has every import slot free");
-    let body = format!(
+
+    let path = batches_path(&idle, &idle_token, "imessage").await;
+    let (status, text) = crate::test_support::post_raw(
+        &idle,
+        &path,
+        &idle_token,
+        "application/jsonl",
+        one_message_batch(),
+    )
+    .await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+}
+
+/// A batch still waiting for an import slot when the server is told to stop
+/// is refused with `server-stopping`, which the Upload sends again, and
+/// stores nothing. Before #2203 nothing closed the slots, so the batch took
+/// one when an earlier batch ended and imported in full while the server
+/// drained, making the stop wait for it.
+#[tokio::test]
+async fn a_batch_waiting_for_a_slot_when_the_server_stops_is_refused_and_stores_nothing() {
+    let (state, _fixture, token) = importer().await;
+    let every_slot = state
+        .import_slots
+        .try_acquire_many(MAX_CONCURRENT_IMPORTS as u32)
+        .expect("a new server has every import slot free");
+    let path = batches_path(&state, &token, "imessage").await;
+
+    // Every slot is taken, so the batch cannot start until one is freed.
+    // Whether it is already waiting on the slots or not yet there when they
+    // close, it meets them closed: the outcome does not depend on timing.
+    let waiting = crate::request_id::spawn_in_current_span({
+        let state = state.clone();
+        let token = token.clone();
+        async move {
+            crate::test_support::post_raw(
+                &state,
+                &path,
+                &token,
+                "application/jsonl",
+                one_message_batch(),
+            )
+            .await
+        }
+    });
+    state.on_stop_signal()();
+    // The earlier batches end, which is what let the waiting one in.
+    drop(every_slot);
+
+    let (status, text) = waiting.await.unwrap();
+    let problem = crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ServerStopping,
+    );
+    assert!(
+        problem
+            .detail
+            .as_deref()
+            .unwrap_or_default()
+            .contains("send it again"),
+        "{text}"
+    );
+    let stored: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages")
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    assert_eq!(stored, 0, "the refused batch stored a message");
+}
+
+/// One iMessage conversation with one message.
+fn one_message_batch() -> String {
+    format!(
         "{}\n{}\n",
         conversation_header("imessage", "+15555550123").participant("+15555550123", None),
         message_line("g-slots", "hi").sender("+15555550123"),
-    );
-
-    let path = batches_path(&idle, &idle_token, "imessage").await;
-    let (status, text) =
-        crate::test_support::post_raw(&idle, &path, &idle_token, "application/jsonl", body.clone())
-            .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-
-    busy.import_slots.close();
-    drop(every_slot);
-    let path = batches_path(&busy, &busy_token, "imessage").await;
-    let (status, text) =
-        crate::test_support::post_raw(&busy, &path, &busy_token, "application/jsonl", body).await;
-    crate::test_support::expect_internal_problem(status, &text);
+    )
 }
 
 /// A schema-4 header was read: version 4 named every identity a `handle`,
