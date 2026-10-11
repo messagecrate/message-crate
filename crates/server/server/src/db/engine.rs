@@ -4,30 +4,38 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{SqliteConnection, SqlitePool};
 
 /// The statement that begins a write transaction. IMMEDIATE takes the write
 /// lock at once, so overlapping writers wait on the busy timeout instead of
 /// failing at their first write.
 pub const BEGIN_IMMEDIATE_SQL: &str = "BEGIN IMMEDIATE TRANSACTION";
 
-/// The server's pragma set, applied to each new connection: `trusted_schema`
-/// OFF first, then the busy timeout (overlapping auth and UI writes wait),
-/// foreign keys on, synchronous NORMAL, `temp_store` MEMORY, `cache_size`
-/// -200000.
+/// Turn `trusted_schema` OFF on `conn`, before it reads the file.
 ///
-/// With `trusted_schema` OFF, a view, trigger, `CHECK` constraint or index
-/// expression in the file may call only a function registered innocuous, so
-/// a crafted file that carries the right `application_id` cannot make the
-/// server call any other function by being read. Every function the server
-/// registers is innocuous ([`crate::db::sqlite_functions`]).
+/// With it OFF, a view, trigger, `CHECK` constraint or index expression in
+/// the file may call only a function registered innocuous, so a crafted file
+/// that carries the right `application_id` cannot make the server call any
+/// other function by being read. Every function the server registers is
+/// innocuous ([`crate::db::sqlite_functions`]). Every connection the server
+/// opens on its database runs this: the pool's ([`with_pragmas`]) and the
+/// one that inspects a file ([`crate::open_db`]).
+pub(crate) async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+    sqlx::query("PRAGMA trusted_schema = OFF")
+        .execute(conn)
+        .await
+        .map(drop)
+}
+
+/// The server's pragma set, applied to each new connection: `trusted_schema`
+/// OFF first ([`distrust_schema`]), then the busy timeout (overlapping auth
+/// and UI writes wait), foreign keys on, synchronous NORMAL, `temp_store`
+/// MEMORY, `cache_size` -200000.
 fn with_pragmas(pool: SqlitePoolOptions) -> SqlitePoolOptions {
     pool.after_connect(|conn, _meta| {
         Box::pin(async move {
-            sqlx::query("PRAGMA trusted_schema = OFF")
-                .execute(&mut *conn)
-                .await?;
+            distrust_schema(conn).await?;
             sqlx::query("PRAGMA busy_timeout = 15000")
                 .execute(&mut *conn)
                 .await?;
@@ -232,8 +240,8 @@ mod tests {
     #[tokio::test]
     async fn opens_sqlite_pool_and_applies_pragmas() {
         let (pool, _dir) = test_pool().await;
-        // Every pragma, read back through their pragma table
-        // functions (values must match with_pragmas).
+        // Every pragma with_pragmas sets, read back through its pragma
+        // table function (values must match with_pragmas).
         let busy_timeout: i64 = sqlx::query_scalar("SELECT timeout FROM pragma_busy_timeout")
             .fetch_one(&pool)
             .await
@@ -267,19 +275,6 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(trusted_schema, 0, "trusted_schema must be OFF");
-        // Defensive mode ignores a request to make the schema writable, so a
-        // statement cannot rewrite sqlite_schema by hand (#2249).
-        let mut conn = pool.acquire().await.unwrap();
-        sqlx::query("PRAGMA writable_schema = ON")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
-        let writable_schema: i64 = sqlx::query_scalar("PRAGMA writable_schema")
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-        assert_eq!(writable_schema, 0, "defensive mode must be on");
-        drop(conn);
         // The tests run in the journal mode the server runs in, so a test can
         // show what WAL does to a write that lands between a read and a write.
         let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")

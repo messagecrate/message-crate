@@ -210,13 +210,16 @@ async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
     sqlx::query("PRAGMA foreign_keys = OFF")
         .execute(&mut *conn)
         .await?;
+    // A full-text search table's shadow tables are left out: dropping the
+    // table drops them, and defensive mode (`crate::db::sqlite_functions`)
+    // refuses to drop one on its own. `VACUUM` lists them before their
+    // table, so they would come first.
     let tables: Vec<String> = sqlx::query_scalar(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        "SELECT name FROM pragma_table_list \
+         WHERE schema = 'main' AND type IN ('table', 'virtual') AND name NOT LIKE 'sqlite_%'",
     )
     .fetch_all(&mut *conn)
     .await?;
-    // `IF EXISTS` keeps this safe when an FTS table's shadow tables were
-    // already removed with their parent.
     for table in &tables {
         sqlx::query(&format!("DROP TABLE IF EXISTS {}", quote_ident(table)))
             .execute(&mut *conn)

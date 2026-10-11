@@ -33,8 +33,9 @@ pub struct OpenDb {
 /// The file is read through a read-only connection, so a file that is not a
 /// Message Crate database is refused before any statement changes it: the
 /// server's own pool would switch it to write-ahead logging on open. The
-/// connection runs with `trusted_schema` OFF, as the pool's do
-/// ([`engine`]), because the file is not yet known to be one the server made.
+/// file is not yet known to be one the server made, so the connection runs
+/// in defensive mode with `trusted_schema` OFF, as the pool's do
+/// ([`engine::distrust_schema`], [`crate::db::sqlite_functions`]).
 ///
 /// # Errors
 ///
@@ -43,16 +44,19 @@ pub(crate) async fn inspect(path: &Path) -> Result<Option<DatabaseKind>> {
     if !path.exists() {
         return Ok(None);
     }
+    crate::db::sqlite_functions::register();
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .read_only(true)
-        .pragma("trusted_schema", "OFF")
         .connect()
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
-    let kind = schema::database_kind(&mut conn)
-        .await
-        .with_context(|| format!("failed to read database {}", path.display()));
+    let kind = async {
+        engine::distrust_schema(&mut conn).await?;
+        schema::database_kind(&mut conn).await
+    }
+    .await
+    .with_context(|| format!("failed to read database {}", path.display()));
     conn.close().await?;
     Ok(Some(kind?))
 }

@@ -43,7 +43,8 @@ use std::sync::Once;
 use libsqlite3_sys as ffi;
 
 /// Register the Unicode `lower()`, and turn on defensive mode, for every
-/// SQLite connection opened after this call. Safe to call any number of times; only the first does work.
+/// SQLite connection opened after this call. Safe to call any number of
+/// times; only the first does work.
 pub fn register() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
@@ -183,6 +184,23 @@ mod tests {
             lower_of(&other_pool, "ÉQUIPE").await.as_deref(),
             Some("équipe")
         );
+    }
+
+    /// Defensive mode ignores a request to make the schema writable, so no
+    /// statement can rewrite `sqlite_schema` by hand (#2249).
+    #[tokio::test]
+    async fn every_connection_runs_in_defensive_mode() {
+        let (pool, _dir) = test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("PRAGMA writable_schema = ON")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let writable_schema: i64 = sqlx::query_scalar("PRAGMA writable_schema")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(writable_schema, 0, "defensive mode must be on");
     }
 
     /// The pool reads the schema with `trusted_schema` OFF, so a view can
