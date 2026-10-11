@@ -303,16 +303,17 @@ impl Form {
         }
     }
 
-    /// The [`ExporterConfig`] every source builder ends in: the source's
-    /// `inputs`, `obfuscate`, `media`, and `source`, with the output
-    /// directory and output format read from the form. A run started from
-    /// the form has no time zone, sinks, or cancel flag yet, and does not
-    /// resume; the iMazing builder sets its time zone on the result.
+    /// The [`ExporterConfig`] every source builder ends in. The caller gives
+    /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
+    /// Scratch Directory; the output directory and output format are read
+    /// from the form. A run started from the form has no zone for
+    /// timestamps that carry none, no sinks, and no cancel flag yet, and does
+    /// not resume; the iMazing builder sets that zone on the result.
     fn exporter_config(
         &self,
         inputs: Vec<PathBuf>,
-        scratch_dir: &Path,
         obfuscate: ObfuscateConfig,
+        scratch_dir: &Path,
         media: MediaConfig,
         source: SourceConfig,
     ) -> ExporterConfig {
@@ -362,8 +363,8 @@ impl Form {
             .unwrap_or_default();
         self.exporter_config(
             inputs,
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::Apple(AppleConfig {
                 platform,
@@ -410,8 +411,8 @@ impl Form {
         let media = self.validate_media(errors);
         self.exporter_config(
             inputs,
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::Whatsapp(WhatsappConfig {
                 platform: Some(self.whatsapp_platform),
@@ -444,8 +445,8 @@ impl Form {
         let media = self.validate_media(errors);
         let mut config = self.exporter_config(
             input.into_iter().collect(),
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::Imazing(ImazingConfig {}),
         );
@@ -465,8 +466,8 @@ impl Form {
         let media = self.validate_media(errors);
         self.exporter_config(
             input.into_iter().collect(),
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::OpenExtract(OpenExtractConfig {}),
         )
@@ -482,8 +483,8 @@ impl Form {
         let (inputs, media, owner_phones) = self.android_common(errors);
         self.exporter_config(
             inputs,
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::GoSmsPro(GoSmsProConfig { owner_phones }),
         )
@@ -507,8 +508,8 @@ impl Form {
         }
         self.exporter_config(
             inputs,
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig { owner_phones }),
         )
@@ -531,8 +532,8 @@ impl Form {
         }
         self.exporter_config(
             inputs,
-            scratch_dir,
             obfuscate,
+            scratch_dir,
             media,
             SourceConfig::SmsBackupPlus(SmsBackupPlusConfig {
                 owner_phones,
