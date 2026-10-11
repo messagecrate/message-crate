@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MIB } from "../test/units";
 import { formatAttachmentProgress } from "./attachmentProgressCopy";
 
 describe("formatAttachmentProgress", () => {
@@ -7,8 +8,8 @@ describe("formatAttachmentProgress", () => {
       mode: "copy",
       done: 120,
       total: 840,
-      bytesDone: 1.2 * 1024 * 1024 * 1024,
-      bytesTotal: 4 * 1024 * 1024 * 1024,
+      bytesDone: 1.2 * 1024 * MIB,
+      bytesTotal: 4 * 1024 * MIB,
     });
     expect(line).toContain("attachments");
     expect(line).toContain("120/840");

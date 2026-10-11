@@ -276,7 +276,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };

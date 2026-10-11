@@ -9,6 +9,7 @@ import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { account } from "../test/apiShapes";
 import { Providers } from "../test/providers";
+import { MIB } from "../test/units";
 import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
 
@@ -157,10 +158,10 @@ beforeEach(() => {
     conversation_count: 90,
     contact_count: 120,
     attachment_count: 21,
-    total_bytes: 3 * 1024 * 1024,
-    database_bytes: 581 * 1024 * 1024,
-    messages_bytes: 400 * 1024 * 1024,
-    fts_bytes: 149 * 1024 * 1024,
+    total_bytes: 3 * MIB,
+    database_bytes: 581 * MIB,
+    messages_bytes: 400 * MIB,
+    fts_bytes: 149 * MIB,
     accounts: [
       {
         account_id: 1,
@@ -173,15 +174,15 @@ beforeEach(() => {
         account_id: 101,
         username: "alice",
         message_count: 5000,
-        text_bytes: 6 * 1024 * 1024,
-        estimated_message_bytes: 300 * 1024 * 1024,
+        text_bytes: 6 * MIB,
+        estimated_message_bytes: 300 * MIB,
       },
       {
         account_id: 102,
         username: "bob",
         message_count: 678,
-        text_bytes: 2 * 1024 * 1024,
-        estimated_message_bytes: 100 * 1024 * 1024,
+        text_bytes: 2 * MIB,
+        estimated_message_bytes: 100 * MIB,
       },
     ],
   });
