@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-10: **Docker reports whether the server answers.** The Docker image
+  asks the server every 30 seconds whether it is up. `docker ps` adds
+  `(healthy)` after `Up` while the server answers and `(unhealthy)` after
+  three missed answers in a row, where it used to show only `Up`, even for a
+  server that had stopped answering. A proxy or orchestrator in front of the
+  container can read the same state. The first five minutes after a start
+  are not counted as unhealthy, so the first start, which builds the Demo
+  Account before the server answers, does not read as a fault (#2132).
+
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
   and edits.** Each reaction in an iMazing export is kept with its emoji and
   whether the account holder gave it. The export names the person who

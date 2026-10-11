@@ -1,3 +1,8 @@
+# syntax=docker/dockerfile:1
+# The line above makes BuildKit parse this file with the current Dockerfile
+# frontend rather than the one bundled with the engine, because the frontend
+# bundled with Docker Engine 24 and older refuses HEALTHCHECK --start-interval.
+#
 # Multi-stage release image built from the current checkout.
 # Usage (from the repository root):
 #   docker build -f docker/Dockerfile -t message-crate-server .
@@ -82,5 +87,19 @@ USER node
 
 EXPOSE 8080
 VOLUME ["/app/data"]
+
+# Docker marks the container unhealthy when the server stops answering, so
+# `docker ps` and anything in front of the container can tell a server that
+# hangs from one that runs. The probe asks /health with the node this base
+# image already carries, so the image needs no curl. It assumes port 8080,
+# the port config/config.docker.toml binds: a `serve --bind` with another
+# port reads unhealthy while the server answers. The first start seeds the
+# Demo Account before the server listens. A failed probe inside
+# --start-period does not count against --retries, so a seed shorter than
+# five minutes never marks the container unhealthy. --start-interval probes
+# every 2 seconds during the start period (Docker Engine 25 and later), so a
+# fresh container reads healthy as soon as the server answers.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8080/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint-release.sh"]

@@ -5,18 +5,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    ignore:
-      # quick-xml cannot move. It is held at 0.39.4 by
-      # imessage-database =4.2.0 -> plist =1.9.0, so a bump here only produces
-      # a pull request that fails to build — #350 did exactly that, failing
-      # all three Rust jobs. The two advisories on that chain are ignored
-      # deliberately in deny.toml, with the same reasoning and the same exit
-      # condition.
-      #
-      # Remove this entry when imessage-database releases a version that
-      # allows a newer plist, and drop the matching deny.toml ignores at the
-      # same time.
-      - dependency-name: quick-xml
 
   # Tauri desktop app — excluded from the workspace, has its own Cargo.lock
   - package-ecosystem: cargo

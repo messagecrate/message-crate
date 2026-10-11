@@ -4,7 +4,7 @@
 
 - Repository: https://github.com/ReagentX/imessage-exporter
 - Path: `imessage-database/test_data/handwritten_message/hello.bin` and `hello.svg`
-- Tag: `4.2.0` (commit `f4021a1113bd47400ceaedfb79907ef2c63624a9`), the version in `Cargo.lock`
+- Tag: `4.3.0` (commit `4d90fc8d20a745c0a8acc1e01c0631c4bab89cb4`), the version in `Cargo.lock`; both files are unchanged since `4.2.0`
 - Licence: GPL-3.0-or-later
 
 `hello.bin` is the `payload_data` of a handwritten message that says "hello".
