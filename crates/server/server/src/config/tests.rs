@@ -356,10 +356,8 @@ fn example_cors_origins_uncomments_to_a_complete_array() {
     }
 }
 
-/// The Docker image names no origin of its own: the server allows the
-/// packaged desktop app's origins whatever the config says, and the website
-/// it serves is same-origin. A Vite origin here would let any page on port
-/// 5173 of the viewer's computer call a Message Crate in Docker (#2144).
+/// The Docker image's config names no CORS origin. The comment in
+/// `config/config.docker.toml` says why (#2144).
 #[test]
 fn docker_config_names_no_cors_origins() {
     let docker = include_str!(concat!(
