@@ -631,6 +631,13 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **A caching proxy no longer keeps a photo or video after its
+  link has run out.** When a page shows an attachment, the server hands it a
+  link that works for an hour, or until you log out. A caching proxy in front
+  of the server could keep the attachment and hand it out again under that
+  link after the hour or the logout. The server now tells every cache and
+  browser not to store an attachment read through such a link, and tells
+  shared caches not to keep any attachment at all (#2149).
 - 2026-10-10: **The Docker image no longer lets pages on port 5173 call its
   server.** The image's settings allowed web pages from port 5173 on the
   viewer's computer, the port a Message Crate developer's tools use, to call

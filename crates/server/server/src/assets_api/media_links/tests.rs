@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use super::*;
 use crate::assets_api::tests::{
-    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, seed_attachment_with_preview,
+    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, give_thumbnail_the_preview_file,
+    seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
 use crate::test_support::{RegisteredAccount, expect_problem, http_client};
@@ -86,6 +87,70 @@ async fn a_media_link_opens_its_asset_and_preview_with_no_header() {
     let part = fetch(state, url, None, &[("range", "bytes=-3")]).await;
     assert_eq!(part.status, StatusCode::PARTIAL_CONTENT, "{}", part.text());
     assert_eq!(part.body, &ORIGINAL_BYTES[ORIGINAL_BYTES.len() - 3..]);
+}
+
+/// A request made with a media link sends no `Authorization` header, so a
+/// shared cache in front of the server may store the answer under its URL
+/// and serve it again after the link has expired or its Session has ended.
+/// Every asset answer is `private`, and one read with a media link is
+/// `no-store` as well: whole or in part, and a `404 Not Found` or
+/// `416 Range Not Satisfiable` too, since a shared cache may keep a `404`
+/// and hide a Preview made later.
+#[tokio::test]
+async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    give_thumbnail_the_preview_file(state, sha).await;
+    let link = minted(state, sha, &user).await;
+
+    for url in ["url", "preview_url", "thumbnail_url"].map(|key| link[key].as_str().unwrap()) {
+        let whole = fetch(state, url, None, &[]).await;
+        assert_eq!(whole.status, StatusCode::OK, "{url}: {}", whole.text());
+        let part = fetch(state, url, None, &[("range", "bytes=0-2")]).await;
+        assert_eq!(
+            part.status,
+            StatusCode::PARTIAL_CONTENT,
+            "{url}: {}",
+            part.text()
+        );
+        let past_end = fetch(state, url, None, &[("range", "bytes=999999-")]).await;
+        expect_problem(
+            past_end.status,
+            &past_end.text(),
+            ProblemType::RangeNotSatisfiable,
+        );
+        for answer in [&whole, &part, &past_end] {
+            assert_eq!(
+                answer.header("cache-control"),
+                Some("private, no-store"),
+                "{url} {}",
+                answer.status
+            );
+        }
+    }
+    let no_preview = minted(state, &seeded.without_preview, &user).await;
+    let answer = fetch(
+        state,
+        no_preview["preview_url"].as_str().unwrap(),
+        None,
+        &[],
+    )
+    .await;
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
+    assert_eq!(answer.header("cache-control"), Some("private, no-store"));
+
+    for version in ["", "/preview", "/thumbnail"] {
+        let path = format!("/v1/assets/{sha}{version}");
+        let answer = fetch(state, &path, Some(&user.token), &[]).await;
+        assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
+        assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
+    }
+    let path = format!("/v1/assets/{}/preview", seeded.without_preview);
+    let answer = fetch(state, &path, Some(&user.token), &[]).await;
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
+    assert_eq!(answer.header("cache-control"), Some("private"));
 }
 
 /// A media link names one asset. Put on another asset's address, even one

@@ -7240,6 +7240,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description The fingerprint, quoted */
                     ETag?: string;
                     [name: string]: unknown;
@@ -7253,6 +7255,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     /** @description The fingerprint, quoted */
@@ -7605,6 +7609,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7616,6 +7622,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;
@@ -7701,6 +7709,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7712,6 +7722,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;

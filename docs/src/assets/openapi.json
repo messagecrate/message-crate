@@ -2591,6 +2591,12 @@
                 },
                 "description": "`bytes`"
               },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
+              },
               "ETag": {
                 "schema": {
                   "type": "string"
@@ -2610,6 +2616,12 @@
                   "type": "string"
                 },
                 "description": "`bytes`"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
               },
               "Content-Range": {
                 "schema": {
@@ -3161,6 +3173,12 @@
                   "type": "string"
                 },
                 "description": "`bytes`"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
               }
             },
             "content": {
@@ -3175,6 +3193,12 @@
                   "type": "string"
                 },
                 "description": "`bytes`"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
               },
               "Content-Range": {
                 "schema": {
@@ -3322,6 +3346,12 @@
                   "type": "string"
                 },
                 "description": "`bytes`"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
               }
             },
             "content": {
@@ -3336,6 +3366,12 @@
                   "type": "string"
                 },
                 "description": "`bytes`"
+              },
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`private`, and `private, no-store` when a media link admitted the read"
               },
               "Content-Range": {
                 "schema": {
