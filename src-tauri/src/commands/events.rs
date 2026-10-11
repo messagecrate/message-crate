@@ -84,7 +84,8 @@ pub enum WindowEvent {
 }
 
 /// Which part of an Import Run a progress event counts: a step inside
-/// Staging, or the Media or Upload Stage. Sent as its lowercase word.
+/// Staging, the staging summary for the Staging Review, or the Media or
+/// Upload Stage. Sent as its lowercase word.
 /// The words are the `step` union of `ImportProgressEvent` in
 /// `web/src/lib/types.ts`; the window drops an event on any other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
