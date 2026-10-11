@@ -44,4 +44,16 @@ describe("TopAttachmentsTable", () => {
     );
     expect(screen.getByText("Top 3 attachments by file size.")).toBeInTheDocument();
   });
+
+  it("names one attachment in the singular", () => {
+    render(
+      <TopAttachmentsTable
+        topAttachments={[attachment(1)]}
+        page={0}
+        onPageChange={() => {}}
+        showConversation={false}
+      />,
+    );
+    expect(screen.getByText("Top 1 attachment by file size.")).toBeInTheDocument();
+  });
 });

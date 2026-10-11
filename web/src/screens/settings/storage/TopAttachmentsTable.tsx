@@ -36,7 +36,8 @@ export default function TopAttachmentsTable({
       ) : (
         <>
           <p className={sectionHintClass}>
-            Top {topAttachments.length} attachments by file size
+            Top {topAttachments.length} {topAttachments.length === 1 ? "attachment" : "attachments"}{" "}
+            by file size
             {topAttachments.length > ATTACHMENT_PAGE_SIZE
               ? ` · ${ATTACHMENT_PAGE_SIZE} per page`
               : ""}
