@@ -16,7 +16,7 @@ const getServerState = vi.hoisted(() => vi.fn());
 const invokeListImportRunLogs = vi.hoisted(() => vi.fn());
 const invokeReadImportRunLogLines = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
 vi.mock("../../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

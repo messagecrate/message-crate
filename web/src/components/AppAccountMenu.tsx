@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import { focusRingClass } from "../lib/uiStyles";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useIsOwner } from "../lib/useIsOwner";

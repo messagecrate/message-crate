@@ -8,7 +8,7 @@ import { fill, setupUser } from "../test/user";
 const logout = vi.fn();
 const apiPost = vi.fn(async () => ({}));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({
     login: vi.fn(),
     logout,

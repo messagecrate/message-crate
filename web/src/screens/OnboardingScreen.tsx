@@ -7,7 +7,7 @@ import { PersonIcon, PhoneIcon } from "../components/icons";
 import Select, { ListBoxItem, selectItemClassName } from "../components/Select";
 import TextField from "../components/TextField";
 import TimeZoneField from "../components/TimeZoneField";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import { newId } from "../lib/newId";
 import {
   DUPLICATE_IDENTITY_MESSAGE,

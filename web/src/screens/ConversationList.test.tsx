@@ -26,7 +26,7 @@ import { setupUser } from "../test/user";
 import { SLOW_STATE_WAIT } from "../test/waits";
 import ConversationList from "./ConversationList";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/serverApi", () => ({
   // messageTags.ts pulls slug helpers from contactGroups.ts, whose module-level

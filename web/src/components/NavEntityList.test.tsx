@@ -16,7 +16,7 @@ import { fill, setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 import MessageTagsNav from "./MessageTagsNav";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 const routes = vi.hoisted(() => ({
   listContactGroups: vi.fn(),

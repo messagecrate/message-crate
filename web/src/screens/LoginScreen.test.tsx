@@ -10,7 +10,7 @@ const retrySavedLogin = vi.fn();
 
 const authState = vi.hoisted(() => ({ serverUrl: "" }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({ login, setServer, retrySavedLogin, serverUrl: authState.serverUrl }),
 }));
 

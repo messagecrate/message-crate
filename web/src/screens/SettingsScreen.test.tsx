@@ -33,7 +33,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({ ...mockedAuth, updateToken: vi.fn() }),
 }));
 
