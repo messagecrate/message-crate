@@ -83,12 +83,34 @@ pub enum WindowEvent {
     FileWritten(ImportFileWrittenEvent),
 }
 
+/// The pipeline stage a progress event counts, sent as its lowercase word.
+/// The words are the `step` union of `ImportProgressEvent` in
+/// `web/src/lib/types.ts`; the window drops an event on any other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Step {
+    /// A numbered step before any message is read, such as decrypting an
+    /// iPhone backup.
+    Setup,
+    /// Reading the messages.
+    Parse,
+    /// Copying the attachments.
+    Attachments,
+    /// Preparing the conversation files.
+    Prepare,
+    /// The staging summary's count of a staged directory.
+    Check,
+    /// The Media Stage.
+    Media,
+    /// The Upload.
+    Upload,
+}
+
 /// Progress numbers the UI uses to update the progress bar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportProgressEvent {
-    /// Current pipeline stage: `setup`, `parse`, `attachments`, `prepare`,
-    /// `check`, `media`, or `upload`.
-    pub step: String,
+    /// Current pipeline stage.
+    pub step: Step,
     /// Number of items finished so far.
     pub done: usize,
     /// Total items, or 0 when the total is unknown.
@@ -112,9 +134,9 @@ pub struct ImportProgressEvent {
 
 impl ImportProgressEvent {
     /// A count-only event for `step`, with no bytes and no status.
-    fn counts(step: &str, done: usize, total: usize) -> Self {
+    fn counts(step: Step, done: usize, total: usize) -> Self {
         Self {
-            step: step.into(),
+            step,
             done,
             total,
             bytes_done: None,
@@ -122,6 +144,37 @@ impl ImportProgressEvent {
             status: None,
             waiting: None,
         }
+    }
+
+    /// The Upload's count: `done` of `total` conversation files sent.
+    pub(crate) fn upload_file(done: usize, total: usize) -> Self {
+        Self::counts(Step::Upload, done, total)
+    }
+
+    /// A run on `step` waiting for `program`'s download, `received` bytes in
+    /// of `total` (#1053): marked by `waiting`, with no counts and the bytes
+    /// in `bytes_done` and `bytes_total`.
+    pub(crate) fn waiting(step: Step, program: Program, received: u64, total: Option<u64>) -> Self {
+        Self {
+            bytes_done: Some(received),
+            bytes_total: total,
+            waiting: Some(program),
+            ..Self::counts(step, 0, 0)
+        }
+    }
+}
+
+/// The staging summary's count of attachments, on `check`.
+impl From<message_staging::SummaryProgress> for ImportProgressEvent {
+    fn from(progress: message_staging::SummaryProgress) -> Self {
+        Self::counts(Step::Check, progress.done, progress.total)
+    }
+}
+
+/// The Media Stage's count of files, on `media`.
+impl From<message_staging::TranscodeProgress> for ImportProgressEvent {
+    fn from(progress: message_staging::TranscodeProgress) -> Self {
+        Self::counts(Step::Media, progress.done, progress.total)
     }
 }
 
@@ -135,9 +188,9 @@ impl From<ProgressEvent> for WindowEvent {
         Self::Progress(match event {
             ProgressEvent::Setup { label, step, total } => ImportProgressEvent {
                 status: Some(label),
-                ..counts("setup", step, total)
+                ..counts(Step::Setup, step, total)
             },
-            ProgressEvent::Parse { done, total } => counts("parse", done, total),
+            ProgressEvent::Parse { done, total } => counts(Step::Parse, done, total),
             ProgressEvent::Attachments {
                 done,
                 total,
@@ -146,10 +199,10 @@ impl From<ProgressEvent> for WindowEvent {
             } => ImportProgressEvent {
                 bytes_done: Some(bytes_done),
                 bytes_total: Some(bytes_total),
-                ..counts("attachments", done, total)
+                ..counts(Step::Attachments, done, total)
             },
-            ProgressEvent::Prepare { done, total } => counts("prepare", done, total),
-            ProgressEvent::Media { done, total } => counts("media", done, total),
+            ProgressEvent::Prepare { done, total } => counts(Step::Prepare, done, total),
+            ProgressEvent::Media { done, total } => counts(Step::Media, done, total),
             ProgressEvent::FileWritten { file, status } => {
                 return Self::FileWritten(ImportFileWrittenEvent { file, status });
             }
@@ -330,7 +383,7 @@ mod tests {
             step: 1,
             total: 5,
         });
-        assert_eq!(setup.step, "setup");
+        assert_eq!(setup.step, Step::Setup);
         assert_eq!((setup.done, setup.total), (1, 5));
         assert_eq!(setup.status.as_deref(), Some("Deriving backup keys"));
         assert_eq!(setup.bytes_done, None);
@@ -339,7 +392,7 @@ mod tests {
             done: 500,
             total: 12_345,
         });
-        assert_eq!(parse.step, "parse");
+        assert_eq!(parse.step, Step::Parse);
         assert_eq!((parse.done, parse.total), (500, 12_345));
         assert_eq!(parse.status, None);
 
@@ -349,18 +402,114 @@ mod tests {
             bytes_done: 100,
             bytes_total: 500,
         });
-        assert_eq!(attachments.step, "attachments");
+        assert_eq!(attachments.step, Step::Attachments);
         assert_eq!((attachments.done, attachments.total), (2, 3));
         assert_eq!(attachments.bytes_done, Some(100));
         assert_eq!(attachments.bytes_total, Some(500));
 
         let prepare = progress(ProgressEvent::Prepare { done: 2, total: 3 });
-        assert_eq!(prepare.step, "prepare");
+        assert_eq!(prepare.step, Step::Prepare);
         assert_eq!((prepare.done, prepare.total), (2, 3));
 
         let media = progress(ProgressEvent::Media { done: 1, total: 4 });
-        assert_eq!(media.step, "media");
+        assert_eq!(media.step, Step::Media);
         assert_eq!((media.done, media.total), (1, 4));
+    }
+
+    /// Every step is sent as the lowercase word the window's `step` union in
+    /// `web/src/lib/types.ts` lists, so no source can send one the window
+    /// drops.
+    #[test]
+    fn every_step_is_sent_as_its_lowercase_word() {
+        let words: Vec<_> = [
+            Step::Setup,
+            Step::Parse,
+            Step::Attachments,
+            Step::Prepare,
+            Step::Check,
+            Step::Media,
+            Step::Upload,
+        ]
+        .into_iter()
+        .map(|step| serde_json::to_value(step).unwrap())
+        .collect();
+        assert_eq!(
+            words,
+            [
+                "setup",
+                "parse",
+                "attachments",
+                "prepare",
+                "check",
+                "media",
+                "upload"
+            ]
+        );
+    }
+
+    /// The staging summary counts on `check`, the Media stage on `media`,
+    /// and the Upload on `upload`, each with counts alone.
+    #[test]
+    fn the_staging_summary_media_stage_and_upload_count_on_their_steps() {
+        assert_eq!(
+            serde_json::to_value(ImportProgressEvent::from(
+                message_staging::SummaryProgress { done: 2, total: 9 }
+            ))
+            .unwrap(),
+            serde_json::json!({ "step": "check", "done": 2, "total": 9 })
+        );
+        assert_eq!(
+            serde_json::to_value(ImportProgressEvent::from(
+                message_staging::TranscodeProgress { done: 1, total: 4 }
+            ))
+            .unwrap(),
+            serde_json::json!({ "step": "media", "done": 1, "total": 4 })
+        );
+        assert_eq!(
+            serde_json::to_value(ImportProgressEvent::upload_file(3, 7)).unwrap(),
+            serde_json::json!({ "step": "upload", "done": 3, "total": 7 })
+        );
+    }
+
+    /// A run waiting for a download is sent marked by the program, with its
+    /// bytes and no counts: the shape `progressDetail` in
+    /// `web/src/screens/import/useImportJob.ts` reads, whose tests feed the
+    /// same JSON.
+    #[test]
+    fn a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes() {
+        assert_eq!(
+            serde_json::to_value(ImportProgressEvent::waiting(
+                Step::Setup,
+                Program::Wtsexporter,
+                12 * 1024 * 1024,
+                Some(30 * 1024 * 1024)
+            ))
+            .unwrap(),
+            serde_json::json!({
+                "step": "setup",
+                "done": 0,
+                "total": 0,
+                "bytes_done": 12_582_912,
+                "bytes_total": 31_457_280,
+                "waiting": "wtsexporter",
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(ImportProgressEvent::waiting(
+                Step::Media,
+                Program::Ffmpeg,
+                0,
+                None
+            ))
+            .unwrap(),
+            serde_json::json!({
+                "step": "media",
+                "done": 0,
+                "total": 0,
+                "bytes_done": 0,
+                "waiting": "ffmpeg",
+            })
+        );
     }
 
     #[test]
