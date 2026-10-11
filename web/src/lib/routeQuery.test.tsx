@@ -13,8 +13,15 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { freshEntries, seedEntries } from "../test/staleEntries";
+import { ApiError } from "./api";
 import type { OffsetPage } from "./routeQuery";
-import { useRouteCache, useRouteMutation, useRoutePagedList, useRouteQuery } from "./routeQuery";
+import {
+  createQueryClient,
+  useRouteCache,
+  useRouteMutation,
+  useRoutePagedList,
+  useRouteQuery,
+} from "./routeQuery";
 
 const account = { current: 7 };
 vi.mock("./authContext", () => ({
@@ -83,6 +90,43 @@ describe("useRouteQuery", () => {
     );
     await waitFor(() => expect(result.current.error?.message).toBe("nope"));
     expect(result.current.data).toBeUndefined();
+  });
+});
+
+describe("createQueryClient", () => {
+  /**
+   * How many times a query that always fails with `error` asks the server,
+   * under the app's own client. The retry delay is zero so a retry, when
+   * there is one, happens before the error is reported.
+   */
+  async function callsUntilError(error: Error): Promise<number> {
+    client = createQueryClient();
+    const fetchGroups = vi.fn(async () => {
+      throw error;
+    });
+    const { result } = renderHook(
+      () => useRouteQuery(["contact-groups"], fetchGroups, { retryDelay: 0 }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    return fetchGroups.mock.calls.length;
+  }
+
+  it.each([
+    [403, "Forbidden"],
+    [404, "Not Found"],
+    [422, "Unprocessable Entity"],
+    [429, "Too Many Requests"],
+  ])("asks once when the server answers %i %s", async (status, reason) => {
+    expect(await callsUntilError(new ApiError(status, reason))).toBe(1);
+  });
+
+  it("asks again once when the server answers 500 Internal Server Error", async () => {
+    expect(await callsUntilError(new ApiError(500, "Internal Server Error"))).toBe(2);
+  });
+
+  it("asks again once when the request never reached the server", async () => {
+    expect(await callsUntilError(new TypeError("Failed to fetch"))).toBe(2);
   });
 });
 

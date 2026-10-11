@@ -282,6 +282,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **A screen the server refuses shows its error at once.**
+  When the server refused to show something, because it was not found, not
+  allowed, or asked too often, the website and the desktop app asked a second
+  time before showing the error, which held the error back a second or more
+  and, when the server had said it was being asked too often, asked once
+  more. They now show the error after the first answer, and ask again only
+  when the server could not be reached or failed on its own side (#2169).
 - 2026-10-10: **The website and the desktop app no longer follow a
   redirect with your Session.** If a misconfigured proxy in front of the
   server answered with a redirect to another address, the website or the
