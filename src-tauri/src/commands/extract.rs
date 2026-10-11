@@ -226,7 +226,7 @@ pub fn extract(
             &downloads,
             programs_run_by(&config.source),
             &cancel,
-            "setup",
+            events::Step::Setup,
         )
         .inspect_err(|error| run_log.error(error))?;
         let run_result = run_staging(&config, &output_dir, &media_settings)
