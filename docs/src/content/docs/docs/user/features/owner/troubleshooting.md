@@ -40,9 +40,15 @@ The new release changed the database layout, and the server rebuilt the database
 
 ## Logging in
 
+### "invalid username or password" with the right password
+
+The Owner may have set the account's **Status** to **Disabled**.
+A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
+The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
+
 ### "this account is disabled"
 
-The Owner has set the account's **Status** to **Disabled**.
+The Owner set the account's **Status** to **Disabled** while the account was logged in.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten
