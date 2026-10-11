@@ -4,20 +4,59 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use sqlx::{ConnectOptions, SqliteConnection, SqlitePool};
 
 /// The statement that begins a write transaction. IMMEDIATE takes the write
 /// lock at once, so overlapping writers wait on the busy timeout instead of
 /// failing at their first write.
 pub const BEGIN_IMMEDIATE_SQL: &str = "BEGIN IMMEDIATE TRANSACTION";
 
-/// The server's historical pragma set, applied to each new connection:
-/// busy timeout first (overlapping auth and UI writes wait), foreign keys on,
-/// synchronous NORMAL, `temp_store` MEMORY, `cache_size` -200000.
+/// Turn `trusted_schema` OFF on `conn`, before it reads the file.
+///
+/// With it OFF, a view, trigger, `CHECK` constraint or index expression in
+/// the file may call only a function registered innocuous, so a crafted file
+/// that carries the right `application_id` cannot make the server call any
+/// other function by being read. Every function the server registers is
+/// innocuous ([`crate::db::sqlite_functions`]). Every connection the server
+/// opens on its database runs this: the pool's ([`with_pragmas`]) and the
+/// read-only one ([`connect_read_only`]).
+async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+    sqlx::query("PRAGMA trusted_schema = OFF")
+        .execute(conn)
+        .await
+        .map(drop)
+}
+
+/// A read-only connection to the SQLite file at `path`, set up for a file
+/// that may have been tampered with as the pool's connections are: in
+/// defensive mode with the server's SQL functions
+/// ([`crate::db::sqlite_functions`]), and with `trusted_schema` OFF
+/// ([`distrust_schema`]). It runs none of the pool's other pragmas, and
+/// never asks for write-ahead logging, so it changes nothing in the file.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened, or the pragma fails.
+pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnection> {
+    crate::db::sqlite_functions::register();
+    let mut conn = SqliteConnectOptions::new()
+        .filename(path)
+        .read_only(true)
+        .connect()
+        .await?;
+    distrust_schema(&mut conn).await?;
+    Ok(conn)
+}
+
+/// The server's pragma set, applied to each new connection: `trusted_schema`
+/// OFF first ([`distrust_schema`]), then the busy timeout (overlapping auth
+/// and UI writes wait), foreign keys on, synchronous NORMAL, `temp_store`
+/// MEMORY, `cache_size` -200000.
 fn with_pragmas(pool: SqlitePoolOptions) -> SqlitePoolOptions {
     pool.after_connect(|conn, _meta| {
         Box::pin(async move {
+            distrust_schema(conn).await?;
             sqlx::query("PRAGMA busy_timeout = 15000")
                 .execute(&mut *conn)
                 .await?;
@@ -222,8 +261,8 @@ mod tests {
     #[tokio::test]
     async fn opens_sqlite_pool_and_applies_pragmas() {
         let (pool, _dir) = test_pool().await;
-        // All five pragmas, read back through their pragma table
-        // functions (values must match with_pragmas).
+        // Every pragma with_pragmas sets, read back through its pragma
+        // table function (values must match with_pragmas).
         let busy_timeout: i64 = sqlx::query_scalar("SELECT timeout FROM pragma_busy_timeout")
             .fetch_one(&pool)
             .await
@@ -249,6 +288,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(cache_size, -200000, "cache_size");
+        // A view, trigger, CHECK constraint or index expression in the file
+        // may call only a function registered innocuous (#2249).
+        let trusted_schema: i64 =
+            sqlx::query_scalar("SELECT trusted_schema FROM pragma_trusted_schema")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(trusted_schema, 0, "trusted_schema must be OFF");
         // The tests run in the journal mode the server runs in, so a test can
         // show what WAL does to a write that lands between a read and a write.
         let journal_mode: String = sqlx::query_scalar("PRAGMA journal_mode")
