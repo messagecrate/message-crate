@@ -285,7 +285,7 @@ export function createImportRunService(deps: ImportRunDeps) {
       runDir: importRun.run_dir,
       approved: parseStoredStagingSummary(importRun.summary),
     };
-    const { runDir, approved } = run;
+    const { runId, runDir, approved } = run;
     // Staging has finished for every stage resumed here, so the mode comes
     // from the directory: through the plan approved at the Staging Review until
     // the summary below is recomputed from the directory itself.
@@ -298,7 +298,7 @@ export function createImportRunService(deps: ImportRunDeps) {
       resumeError: null,
       form: known,
       runDir,
-      importRunId: run.runId,
+      importRunId: runId,
       sourceIdentities: parseSourceIdentities(importRun.source_identities),
     });
 

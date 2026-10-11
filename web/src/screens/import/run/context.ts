@@ -19,7 +19,7 @@ import type { RunScratch } from "./scratch";
  * On a resume, `approved` is parsed from the run's stored `summary`
  * (`parseStoredStagingSummary`), and is undefined when the run recorded
  * nothing usable. The stages tolerate that absence, so a resume is not
- * blocked on a plan that can no longer be read; `importOutcome` just cannot
+ * blocked on a plan that can no longer be read. `importOutcome` then cannot
  * diff a resumed Upload's expected omissions against it, which demotes an
  * honest `completed` outcome to `completed_with_issues`.
  */

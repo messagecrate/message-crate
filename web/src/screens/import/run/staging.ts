@@ -40,10 +40,11 @@ import {
 import { adoptRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
-/** An Import Run whose copy was interrupted, and the directory it was writing into. */
-export type ResumeWrite = {
-  runId: number;
-  runDir: string;
+/**
+ * An Import Run whose copy was interrupted, and the directory it was writing
+ * into. It has passed no Review, so it has no approved plan.
+ */
+export type ResumeWrite = Omit<OpenRun, "approved"> & {
   /** The list recorded on the run at creation (`source_identities`,
    * parsed by the caller). A resumed write lands back on the Staging Review
    * without re-probing the backup, so this is the only way that Review's identity
@@ -107,6 +108,11 @@ async function startRunLog(
   }
 }
 
+/**
+ * Run an Import Run from the start, or pick one up. `resume` is a run whose
+ * run directory is already complete: it goes straight to Upload. `resumeWrite`
+ * is a run whose copy was interrupted: it copies again into the same directory.
+ */
 export async function runImport(
   ctx: RunContext,
   token: string | null,
@@ -174,20 +180,20 @@ export async function runImport(
     // built its own, so setting this first would be overwritten.
     store.set({ steps: initialSteps("active", form.attachmentMedia) });
 
-    let outputDir: string;
+    let runDir: string;
     if (resumeWrite) {
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
-      outputDir = resumeWrite.runDir;
+      runDir = resumeWrite.runDir;
       runId = resumeWrite.runId;
-      await loadCarriedRecord(ctx, outputDir);
-      store.set({ runDir: outputDir, importRunId: runId });
+      await loadCarriedRecord(ctx, runDir);
+      store.set({ runDir, importRunId: runId });
       setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(ctx, runId, "write");
     } else {
-      outputDir = await ctx.desktop.invokeCreateRunDir(form.source);
-      store.set({ runDir: outputDir });
+      runDir = await ctx.desktop.invokeCreateRunDir(form.source);
+      store.set({ runDir });
 
       const backupStat = await ctx.desktop.invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
@@ -197,7 +203,7 @@ export async function runImport(
           ...importRunCreateBody(form.source),
           phone_country: form.phoneCountry || null,
           stage: "parse",
-          run_dir: outputDir,
+          run_dir: runDir,
           device_id: getDeviceId(),
           form: formSnapshot(form),
           source_fingerprint: backupStat
@@ -208,7 +214,7 @@ export async function runImport(
       );
       runId = importRun.id;
       store.set({ importRunId: runId });
-      await startRunLog(ctx, outputDir, runId, messageCrateId);
+      await startRunLog(ctx, runDir, runId, messageCrateId);
       setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(ctx, runId, "write");
     }
@@ -218,7 +224,7 @@ export async function runImport(
       ctx.desktop.invokeExtract({
         source: form.source,
         path: form.backupPath,
-        output_dir: outputDir,
+        output_dir: runDir,
         ...(resumeWrite ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
         // The media fields go only to a source whose form shows them, as the
@@ -270,7 +276,7 @@ export async function runImport(
     // written above (`staging_review`) stays as it is: the next visit's
     // resume check finds the same run and offers this recompute again.
     try {
-      const summary = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
+      const summary = await summarizeStagingWithProgress(ctx, { run_dir: runDir });
       // Staging has finished, so the directory decides the stages from here.
       const recorded = adoptRecordedMode(ctx, form, summary);
       updateSteps(ctx, (steps) =>
