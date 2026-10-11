@@ -226,7 +226,12 @@ current one, because that account reaches every other.
   another request between the two could change the answer.
 - A failed credential answers `401 Unauthorized`. A refused one, including a
   token without the needed scope and a disabled account, answers
-  `403 Forbidden`.
+  `403 Forbidden`. A login is the exception: every refused login, a
+  disabled account's included, answers the same `401` (`invalid-credentials`).
+  Why: a disabled account's own answer would come only after the right
+  password, so a guesser would learn which guess was right, and the password
+  works again once the owner enables the account. The Audit Trail records the
+  real reason.
 - A `Content-Type` that is absent or unaccepted answers
   `415 Unsupported Media Type`, on every route that takes a body. On a route
   whose body is optional, a request with no body is read as no body, and a

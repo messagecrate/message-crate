@@ -35,7 +35,13 @@ released versions carry their date on the heading.
   server that had stopped answering. A proxy or orchestrator in front of the
   container can read the same state. The first five minutes after a start
   are not counted as unhealthy, so the first start, which builds the Demo
-  Account before the server answers, does not read as a fault (#2132).
+  Account before the server answers, does not read as a fault. The check asks
+  the server at the port it listens on, so a server that the config or
+  `serve --bind` puts on a port other than 8080 reads healthy too. A
+  container started for one command, such as
+  `docker compose run --rm server reset-demo`, reads healthy while the
+  command runs, rather than unhealthy after five minutes. So does a container
+  that runs no server at all, such as a shell (#2132, #2541, #2542).
 
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
   and edits.** Each reaction in an iMazing export is kept with its emoji and
@@ -256,6 +262,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Logging in to a disabled account no longer tells a guesser
+  the password was right.** A disabled account's login used to say the
+  account was disabled only when the password was right. A wrong password got
+  the usual "invalid username or password". So someone guessing learned which
+  guess worked. That password works again once the owner enables the
+  account. Every refused login now gets the same answer. The
+  Audit Trail still records that the login was refused because the account
+  is disabled (#2145).
 - 2026-10-10: **A password typed into the username field no longer reaches
   the Audit Trail.** A refused login for a username that matches no account
   kept the text exactly as typed for 90 days, so a password typed into the wrong
@@ -368,6 +382,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-10: **The Import form refuses a socket, a device file or a pipe
+  in the fields beside the backup.** An Apple Messages attachments
+  directory, an Apple Contacts database, or a WhatsApp database, contacts
+  database or media directory that named a path that is neither a file nor
+  a directory passed the form's check, and the import failed only after it
+  had started. The form now gives the field's own message for such a path,
+  the same one it gives for a file where a directory is needed or the
+  reverse. The backup path itself is not checked for this yet, which
+  #2562 tracks (#2539).
 - 2026-10-10: **A large attachment no longer fails to import because the
   server said another request held its upload.** The desktop app sends a
   large attachment to the server in parts, and the server could refuse a
