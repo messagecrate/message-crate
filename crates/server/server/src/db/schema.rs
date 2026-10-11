@@ -221,7 +221,7 @@ async fn rebuild_schema(conn: &mut SqliteConnection) -> Result<()> {
     .fetch_all(&mut *conn)
     .await?;
     for table in &tables {
-        sqlx::query(&format!("DROP TABLE IF EXISTS {}", quote_ident(table)))
+        sqlx::query(&format!("DROP TABLE {}", quote_ident(table)))
             .execute(&mut *conn)
             .await?;
     }

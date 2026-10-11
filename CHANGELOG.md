@@ -922,10 +922,9 @@ released versions carry their date on the heading.
   which anyone can copy. A tampered file that carries that number, such as
   a restored backup someone else handled, could hold views or triggers that
   call any function the database engine has while the server reads it. Such
-  views and triggers can now call only the functions that read and compare
-  values, and the server's database refuses to have its list of tables and
-  indexes edited directly, which is how a file is corrupted on purpose
-  (#2249).
+  views and triggers can now call only functions that change nothing
+  outside the query, and the server refuses to edit the database's list of
+  tables and indexes directly (#2249).
 
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can

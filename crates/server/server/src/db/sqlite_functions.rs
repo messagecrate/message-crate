@@ -44,7 +44,7 @@ use libsqlite3_sys as ffi;
 
 /// Register the Unicode `lower()`, and turn on defensive mode, for every
 /// SQLite connection opened after this call. Safe to call any number of
-/// times; only the first does work.
+/// times. Only the first call does work.
 pub fn register() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {

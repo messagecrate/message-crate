@@ -12,8 +12,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use sqlx::pool::PoolConnection;
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{ConnectOptions, Connection, SqlitePool};
+use sqlx::{Connection, SqlitePool};
 
 use crate::config::Config;
 use crate::db::schema::DatabaseKind;
@@ -33,9 +32,8 @@ pub struct OpenDb {
 /// The file is read through a read-only connection, so a file that is not a
 /// Message Crate database is refused before any statement changes it: the
 /// server's own pool would switch it to write-ahead logging on open. The
-/// file is not yet known to be one the server made, so the connection runs
-/// in defensive mode with `trusted_schema` OFF, as the pool's do
-/// ([`engine::distrust_schema`], [`crate::db::sqlite_functions`]).
+/// file is not yet known to be one the server made, so the connection is
+/// set up as the pool's are ([`engine::connect_read_only`]).
 ///
 /// # Errors
 ///
@@ -44,19 +42,12 @@ pub(crate) async fn inspect(path: &Path) -> Result<Option<DatabaseKind>> {
     if !path.exists() {
         return Ok(None);
     }
-    crate::db::sqlite_functions::register();
-    let mut conn = SqliteConnectOptions::new()
-        .filename(path)
-        .read_only(true)
-        .connect()
+    let mut conn = engine::connect_read_only(path)
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
-    let kind = async {
-        engine::distrust_schema(&mut conn).await?;
-        schema::database_kind(&mut conn).await
-    }
-    .await
-    .with_context(|| format!("failed to read database {}", path.display()));
+    let kind = schema::database_kind(&mut conn)
+        .await
+        .with_context(|| format!("failed to read database {}", path.display()));
     conn.close().await?;
     Ok(Some(kind?))
 }
@@ -171,6 +162,8 @@ pub(crate) fn fresh_config(dir: &Path) -> Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::ConnectOptions;
+    use sqlx::sqlite::SqliteConnectOptions;
 
     #[tokio::test]
     async fn opening_a_new_database_creates_it_with_its_schema() {

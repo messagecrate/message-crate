@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
-use sqlx::{SqliteConnection, SqlitePool};
+use sqlx::{ConnectOptions, SqliteConnection, SqlitePool};
 
 /// The statement that begins a write transaction. IMMEDIATE takes the write
 /// lock at once, so overlapping writers wait on the busy timeout instead of
@@ -20,12 +20,33 @@ pub const BEGIN_IMMEDIATE_SQL: &str = "BEGIN IMMEDIATE TRANSACTION";
 /// other function by being read. Every function the server registers is
 /// innocuous ([`crate::db::sqlite_functions`]). Every connection the server
 /// opens on its database runs this: the pool's ([`with_pragmas`]) and the
-/// one that inspects a file ([`crate::open_db`]).
-pub(crate) async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
+/// read-only one ([`connect_read_only`]).
+async fn distrust_schema(conn: &mut SqliteConnection) -> sqlx::Result<()> {
     sqlx::query("PRAGMA trusted_schema = OFF")
         .execute(conn)
         .await
         .map(drop)
+}
+
+/// A read-only connection to the SQLite file at `path`, set up for a file
+/// that may have been tampered with as the pool's connections are: in
+/// defensive mode with the server's SQL functions
+/// ([`crate::db::sqlite_functions`]), and with `trusted_schema` OFF
+/// ([`distrust_schema`]). It runs none of the pool's other pragmas, and
+/// never asks for write-ahead logging, so it changes nothing in the file.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened, or the pragma fails.
+pub(crate) async fn connect_read_only(path: &Path) -> sqlx::Result<SqliteConnection> {
+    crate::db::sqlite_functions::register();
+    let mut conn = SqliteConnectOptions::new()
+        .filename(path)
+        .read_only(true)
+        .connect()
+        .await?;
+    distrust_schema(&mut conn).await?;
+    Ok(conn)
 }
 
 /// The server's pragma set, applied to each new connection: `trusted_schema`
