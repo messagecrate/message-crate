@@ -2,7 +2,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import type { MembershipCheckState } from "../lib/membership";
 import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import { Z_POPOVER } from "../lib/zLayers";
 import Checkbox from "./Checkbox";
@@ -102,7 +102,7 @@ export default function GroupsMenu({
   );
   const listEmptyText = query.trim() ? copy.noMatchText : copy.emptyText;
   const toneClass = open ? "text-accent" : "text-muted";
-  const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadow}`;
+  const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadowClass}`;
 
   const saveNew = async () => {
     if (disabled || creating || !onCreate) return;

@@ -13,7 +13,7 @@ import {
 import Select, {
   ListBoxItem,
   selectItemClassName,
-  selectSectionHeaderClassName,
+  selectSectionHeaderClass,
 } from "../../components/Select";
 import { rejectionMessage } from "../../lib/apiErrorMessage";
 import { formatDateTime } from "../../lib/formatDate";
@@ -85,9 +85,7 @@ export function OwnerLogsPanel() {
             </ListBoxItem>
             {reader && runs.logs.length > 0 ? (
               <ListBoxSection>
-                <Header className={selectSectionHeaderClassName}>
-                  Import Runs on this computer
-                </Header>
+                <Header className={selectSectionHeaderClass}>Import Runs on this computer</Header>
                 {runs.logs.map((log) => {
                   const label = runLogLabel(log, usernames);
                   return (

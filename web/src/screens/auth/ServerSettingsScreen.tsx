@@ -2,7 +2,7 @@ import Button from "../../components/Button";
 import PlainButton from "../../components/PlainButton";
 import TextField from "../../components/TextField";
 import { DEFAULT_TAURI_SERVER_URL } from "../../lib/authGuards";
-import { accentLink, authLabel, authScreenTitle } from "../../lib/uiStyles";
+import { accentLinkClass, authLabelClass, authScreenTitleClass } from "../../lib/uiStyles";
 import ServerStatus, { type ServerConnection } from "./ServerStatus";
 
 export interface ServerSettingsScreenProps {
@@ -54,7 +54,7 @@ export default function ServerSettingsScreen({
 }: ServerSettingsScreenProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <h1 className={`${authScreenTitle} mb-6`}>Server Address</h1>
+      <h1 className={`${authScreenTitleClass} mb-6`}>Server Address</h1>
 
       <div className="flex items-end gap-2">
         <TextField
@@ -71,7 +71,7 @@ export default function ServerSettingsScreen({
         </Button>
       </div>
 
-      <div className={`mt-3.5 ${authLabel}`}>Connection Status</div>
+      <div className={`mt-3.5 ${authLabelClass}`}>Connection Status</div>
       {/* 13px lines the status up with the first character inside the field. */}
       <ServerStatus state={status} address={draft} className="pl-[13px]" />
 
@@ -86,7 +86,7 @@ export default function ServerSettingsScreen({
 
       {backToOwn ? (
         <div className="mt-4 text-center">
-          <PlainButton className={accentLink} onPress={backToOwn.onPress}>
+          <PlainButton className={accentLinkClass} onPress={backToOwn.onPress}>
             {backToOwn.label}
           </PlainButton>
         </div>

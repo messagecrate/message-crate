@@ -40,10 +40,10 @@ import ResultsColumn from "./ResultsColumn";
 import RightPane from "./RightPane";
 
 /** Scrollable content column that hosts the routed screen. */
-const mainPane = "min-w-0 flex-1 overflow-auto bg-bg text-text";
+const mainPaneClass = "min-w-0 flex-1 overflow-auto bg-bg text-text";
 
 /** Centered placeholder when a column has nothing selected yet. */
-const emptyMain = "flex h-full items-center justify-center text-[0.875rem] text-muted";
+const emptyMainClass = "flex h-full items-center justify-center text-[0.875rem] text-muted";
 
 /**
  * Write `updates` into the address's query, deleting a key whose value is
@@ -206,8 +206,8 @@ export function ConversationsRoute({ tag }: { tag?: "none" }) {
         )}
       </ListColumn>
       <RightPane>
-        <main className={mainPane}>
-          <div className={emptyMain}>Select a conversation to view messages</div>
+        <main className={mainPaneClass}>
+          <div className={emptyMainClass}>Select a conversation to view messages</div>
         </main>
       </RightPane>
     </>
@@ -311,8 +311,8 @@ export function ContactsRoute({ group }: { group?: "none" | "unknown" }) {
             onBrowseConversations={browseContactConversations}
           />
         ) : (
-          <main className={mainPane}>
-            <div className={emptyMain}>Select a contact to view details</div>
+          <main className={mainPaneClass}>
+            <div className={emptyMainClass}>Select a contact to view details</div>
           </main>
         )}
       </RightPane>
@@ -357,7 +357,7 @@ export function TrashRoute({ children }: { children: ReactNode }) {
         />
       </ListColumn>
       <RightPane>
-        <main className={mainPane}>{children}</main>
+        <main className={mainPaneClass}>{children}</main>
       </RightPane>
     </>
   );
@@ -370,5 +370,5 @@ export function TrashRoute({ children }: { children: ReactNode }) {
  * header must never change (#1568).
  */
 export function NoListRoute({ children }: { children: ReactNode }) {
-  return <main className={mainPane}>{children}</main>;
+  return <main className={mainPaneClass}>{children}</main>;
 }

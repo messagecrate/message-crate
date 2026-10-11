@@ -52,7 +52,7 @@ const APPROVE_LABEL: Record<AttachmentMediaMode, string> = {
   skip: "Upload to Message Crate",
 };
 
-const PATH_LINK =
+const PATH_LINK_CLASS =
   "max-w-full border-0 bg-transparent p-0 text-right text-[0.813rem] text-accent underline-offset-2 [overflow-wrap:anywhere] hover:underline";
 
 function count(value: number | undefined | null): string {
@@ -367,7 +367,7 @@ export default function ImportRunView({
           <FactGroup
             title="This Import Run's directory"
             value={
-              <OpenPathButton path={trimmedRunDir} className={PATH_LINK}>
+              <OpenPathButton path={trimmedRunDir} className={PATH_LINK_CLASS}>
                 {trimmedRunDir}
               </OpenPathButton>
             }
@@ -543,7 +543,7 @@ export default function ImportRunView({
           <FactGroup
             title="Import log"
             value={
-              <OpenPathButton path={logPath} title={logPath} className={PATH_LINK}>
+              <OpenPathButton path={logPath} title={logPath} className={PATH_LINK_CLASS}>
                 {fileName(logPath)}
               </OpenPathButton>
             }

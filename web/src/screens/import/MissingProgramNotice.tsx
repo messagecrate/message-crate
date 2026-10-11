@@ -4,7 +4,7 @@ import { errorText } from "../../lib/apiErrorMessage";
 import type { ToolName, ToolsStatus } from "../../lib/tauri";
 import { toolUsable } from "../../lib/tauri";
 import { toolStatusLine, troubleshootingSection } from "../../lib/toolStatusCopy";
-import { accentLink } from "../../lib/uiStyles";
+import { accentLinkClass } from "../../lib/uiStyles";
 import {
   OTHER_CHECK_POLL_FOR_MS,
   useRetryToolDownloads,
@@ -90,7 +90,7 @@ export function TryAgain({ need, offerRetry = true }: { need: ProgramNeed; offer
           Try again
         </Button>
       ) : null}
-      <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLink}>
+      <a href={troubleshootingUrl(need)} target="_blank" rel="noopener" className={accentLinkClass}>
         Troubleshooting
       </a>
       {showAlreadyRunning ? (

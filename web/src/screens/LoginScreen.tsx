@@ -9,7 +9,13 @@ import { isOwnAddress } from "../lib/localServer";
 import { checkServerHealth, type ServerHealthStatus } from "../lib/serverHealth";
 import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
-import { accentLink, authCard, authCardBody, authScreenTitle, pageCenter } from "../lib/uiStyles";
+import {
+  accentLinkClass,
+  authCardBodyClass,
+  authCardClass,
+  authScreenTitleClass,
+  pageCenterClass,
+} from "../lib/uiStyles";
 import { useLocalServer } from "../lib/useLocalServer";
 import { useServerHealth } from "../lib/useServerHealth";
 import { useServerState } from "../lib/useServerState";
@@ -351,9 +357,9 @@ export default function LoginScreen() {
       };
 
   return (
-    <div className={pageCenter}>
-      <div className={authCard}>
-        <div className={authCardBody}>
+    <div className={pageCenterClass}>
+      <div className={authCardClass}>
+        <div className={authCardBodyClass}>
           {settingsOpen ? (
             <ServerSettingsScreen
               draft={draft}
@@ -378,7 +384,7 @@ export default function LoginScreen() {
             />
           ) : (
             <>
-              <h1 className={`${authScreenTitle} mb-2`}>Message Crate</h1>
+              <h1 className={`${authScreenTitleClass} mb-2`}>Message Crate</h1>
               {/* A failed start says so in the card itself; the status above it
                   would only repeat "Disconnected". */}
               {localFailed && state !== "connected" ? null : (
@@ -428,7 +434,7 @@ export default function LoginScreen() {
               ) : null}
               <div className="mt-4 text-center">
                 <PlainButton
-                  className={accentLink}
+                  className={accentLinkClass}
                   onPress={() => {
                     setDraft(address);
                     setTested(null);
