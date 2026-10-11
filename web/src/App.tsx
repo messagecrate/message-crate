@@ -12,7 +12,8 @@ import {
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
 import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
-import { AuthProvider, useAuth } from "./lib/auth";
+import { AuthProvider } from "./lib/auth";
+import { useAuth } from "./lib/authContext";
 import { ThemeProvider } from "./lib/ThemeProvider";
 import { TimeZoneProvider } from "./lib/TimeZoneProvider";
 import { useIsOwner } from "./lib/useIsOwner";

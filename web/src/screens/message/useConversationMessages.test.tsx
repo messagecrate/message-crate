@@ -8,7 +8,7 @@ import { message as baseMessage } from "../../test/apiShapes";
 import { mockedAuth, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

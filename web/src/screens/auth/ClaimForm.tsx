@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import AuthErrorFooter from "../../components/AuthErrorFooter";
 import AuthSubmitButton from "../../components/AuthSubmitButton";
 import { setBaseUrl } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { claimServer } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 import CredentialFields from "./CredentialFields";

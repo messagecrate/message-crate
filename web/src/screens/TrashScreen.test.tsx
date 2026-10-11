@@ -22,7 +22,7 @@ import { setupUser } from "../test/user";
 import { SLOW_STATE_WAIT } from "../test/waits";
 import TrashScreen from "./TrashScreen";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

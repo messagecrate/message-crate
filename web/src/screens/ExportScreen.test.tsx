@@ -40,7 +40,7 @@ vi.mock("../lib/api", () => ({
   getBaseUrl: () => "http://127.0.0.1:8080",
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({ token: "test-token" }),
 }));
 

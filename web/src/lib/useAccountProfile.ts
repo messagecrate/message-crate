@@ -1,7 +1,7 @@
 import { type UseMutationResult, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import type { AccountProfile } from "./account";
-import { useAuth } from "./auth";
+import { useAuth } from "./authContext";
 import { keys } from "./queryKeys";
 import { useRouteCache, useRouteQuery } from "./routeQuery";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "./routeQueryKey";

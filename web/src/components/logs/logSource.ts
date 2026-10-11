@@ -1,4 +1,4 @@
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { canReadImportRunLogs } from "../../lib/desktopFeatures";
 import { useRouteQuery } from "../../lib/routeQuery";
 import {
