@@ -15,6 +15,7 @@ members = [
     "crates/libs/media",
     "crates/libs/go-sms-mms",
     "crates/libs/mms-parts",
+    "crates/libs/android-fields",
     "crates/libs/journal",
     "crates/libs/build-version",
     "crates/libs/http",

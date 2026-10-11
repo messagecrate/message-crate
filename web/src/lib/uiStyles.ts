@@ -61,9 +61,6 @@ export const authTitleClass = "m-0 text-[1.25rem] font-bold text-text mb-6 text-
 export const authScreenTitleClass =
   "m-0 text-center text-[1.375rem] font-semibold tracking-[-0.015em] text-text";
 export const authLabelClass = "block text-[0.875rem] font-medium text-text mb-1";
-export const authInputClass =
-  "w-full box-border px-3 py-2 text-[0.875rem] rounded border border-border bg-elevated text-text focus:outline-none focus:border-accent";
-export const mutedTextClass = "text-[0.813rem] text-muted";
 export const accentLinkClass =
   "text-[0.813rem] text-accent cursor-pointer bg-transparent border-none p-0 hover:underline";
 

@@ -1,9 +1,8 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
+import type { SortOrder } from "../lib/sortOrder";
 import { focusRingClass, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
 import { MenuCheckIcon, SortIcon } from "./icons";
 import PlainButton from "./PlainButton";
-
-export type SortOrder = "asc" | "desc";
 
 export type SortField<Id extends string> = {
   id: Id;
@@ -55,7 +54,7 @@ export default function SortMenu<Id extends string>({
         title={`Sorted by ${sortedBy}`}
         className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated text-muted hover:text-text aria-expanded:text-text ${focusRingClass}`}
       >
-        <SortIcon size={16} className="" />
+        <SortIcon size={16} />
       </PlainButton>
       <Popover
         placement="bottom end"
@@ -107,7 +106,7 @@ function SortOption({ id, label }: { id: string; label: string }) {
       {({ isSelected }) => (
         <>
           <span className="flex w-4 justify-center text-accent">
-            {isSelected ? <MenuCheckIcon size={14} className="" /> : null}
+            {isSelected ? <MenuCheckIcon size={14} /> : null}
           </span>
           {label}
         </>

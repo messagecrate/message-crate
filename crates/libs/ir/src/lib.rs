@@ -12,7 +12,7 @@
 //! maps) before building a [`ConversationDocument`].
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
@@ -39,6 +39,10 @@ pub use projection::{
 pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
 };
+
+/// Kind of a participant identity. Defined in `phone`, which classifies an
+/// address, so that crate does not depend on the conversation model.
+pub use phone::IdentityType;
 
 /// One reaction on a message, the same shape for every source.
 ///
@@ -228,42 +232,6 @@ impl IrConversationType {
             "group" => Self::Group,
             ORPHANED_CONVERSATION_TYPE => Self::Orphaned,
             _ => Self::Individual,
-        }
-    }
-}
-
-/// Kind of a participant identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IdentityType {
-    /// Telephone number.
-    Phone,
-    /// Email address.
-    Email,
-    /// App username (e.g. Telegram `@user`).
-    Username,
-    /// Any identity that is not phone, email, or username.
-    Other,
-}
-
-impl IdentityType {
-    /// Lowercase storage id (`phone` / `email` / `username` / `other`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Phone => "phone",
-            Self::Email => "email",
-            Self::Username => "username",
-            Self::Other => "other",
-        }
-    }
-
-    /// Parse a storage id; unknown values map to `Other`.
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "phone" => Self::Phone,
-            "email" => Self::Email,
-            "username" => Self::Username,
-            _ => Self::Other,
         }
     }
 }
@@ -1012,11 +980,6 @@ pub fn android_source(
         android_type: parse_android_type(msg.extra_str("android_type")),
         fields,
     }
-}
-
-/// Parse a JSON string into a [`Value`], or return the string as a JSON string value.
-pub fn parse_json_value(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or_else(|_| json!(s))
 }
 
 /// Export and conversation metadata without messages (JSONL header line

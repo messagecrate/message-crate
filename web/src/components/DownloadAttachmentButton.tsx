@@ -54,7 +54,7 @@ export default function DownloadAttachmentButton({
       title={download.isError ? "Download failed" : "Download"}
       className={`${round.className} flex cursor-pointer items-center justify-center rounded-full border-none text-lightbox-text disabled:cursor-not-allowed disabled:opacity-50 ${focusRingClass}`}
     >
-      <DownloadIcon size={round.icon} />
+      <DownloadIcon size={round.icon} className="shrink-0" />
     </PlainButton>
   );
 }

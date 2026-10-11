@@ -62,7 +62,19 @@ describe("checkServerHealth", () => {
       method: "GET",
       signal: expect.any(AbortSignal),
       cache: "no-store",
+      redirect: "error",
     });
+  });
+
+  it("reads a redirect as an unreachable server, as every /v1 call does", async () => {
+    // A browser's fetch rejects with a TypeError when `redirect: "error"` meets a redirect.
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.redirect === "error") throw new TypeError("Failed to fetch");
+      return { ok: true };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkServerHealth("http://mc.example")).resolves.toBe(false);
   });
 
   it("probes this origin when the URL is blank", async () => {
@@ -73,6 +85,7 @@ describe("checkServerHealth", () => {
       method: "GET",
       signal: expect.any(AbortSignal),
       cache: "no-store",
+      redirect: "error",
     });
   });
 

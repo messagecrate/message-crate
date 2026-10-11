@@ -9,8 +9,8 @@ export default function MessageTagsNav({ tags }: { tags: string[] }) {
       names={tags}
       collection={messageTags}
       slug={tagSlug}
-      icon={<TagIcon size={15} />}
-      emptyIcon={<TagIcon size={15} />}
+      icon={<TagIcon size={15} className="shrink-0" />}
+      emptyIcon={<TagIcon size={15} className="shrink-0" />}
       copy={MESSAGE_TAG_COPY}
     />
   );

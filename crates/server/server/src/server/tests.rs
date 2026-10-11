@@ -1402,55 +1402,11 @@ fn every_api_error_displays_its_detail_sentence() {
         "name is required; name is too long"
     );
     assert_eq!(
-        ApiError::MalformedBody("body is not JSON".into()).to_string(),
-        "body is not JSON"
-    );
-    assert_eq!(
-        ApiError::UnsupportedMediaType("send application/json".into()).to_string(),
-        "send application/json"
-    );
-    assert_eq!(
-        ApiError::PayloadTooLarge("request body too large".into()).to_string(),
-        "request body too large"
-    );
-    assert_eq!(
-        ApiError::InvalidCredentials("wrong password".into()).to_string(),
-        "wrong password"
-    );
-    assert_eq!(
-        ApiError::AuthenticationRequired("no bearer token".into()).to_string(),
-        "no bearer token"
-    );
-    assert_eq!(
         ApiError::RateLimited {
             retry_after_secs: 30
         }
         .to_string(),
         "too many authentication attempts; try again in 30 seconds"
-    );
-    assert_eq!(
-        ApiError::UsernameTaken("alice is taken".into()).to_string(),
-        "alice is taken"
-    );
-    assert_eq!(
-        ApiError::NameTaken("Book Club is taken".into()).to_string(),
-        "Book Club is taken"
-    );
-    assert_eq!(
-        ApiError::DemoAccountProtected("the demo account stays".into()).to_string(),
-        "the demo account stays"
-    );
-    assert_eq!(
-        ApiError::NotTheOwner("owner only".into()).to_string(),
-        "owner only"
-    );
-    assert_eq!(
-        ApiError::InsufficientScope("needs import".into()).to_string(),
-        "needs import"
-    );
-    assert_eq!(
-        ApiError::AccountDisabled("account disabled".into()).to_string(),
-        "account disabled"
     );
     assert_eq!(
         ApiError::SearchQueryInvalid {
@@ -1462,33 +1418,48 @@ fn every_api_error_displays_its_detail_sentence() {
         "unknown word: frm"
     );
     assert_eq!(
-        ApiError::StateConflict("import already active".into()).to_string(),
-        "import already active"
-    );
-    assert_eq!(
-        ApiError::AssetUploadInvalid("part 3 is missing".into()).to_string(),
-        "part 3 is missing"
-    );
-    assert_eq!(
-        ApiError::NotFound("no such conversation".into()).to_string(),
-        "no such conversation"
-    );
-    assert_eq!(
         ApiError::not_found("API token").to_string(),
         "API token not found"
-    );
-    assert_eq!(
-        ApiError::MethodNotAllowed("no PUT here".into()).to_string(),
-        "no PUT here"
-    );
-    assert_eq!(
-        ApiError::NotAcceptable("only JSON".into()).to_string(),
-        "only JSON"
     );
     assert_eq!(
         ApiError::Internal(anyhow::anyhow!("disk full").context("stage conversation")).to_string(),
         "stage conversation: disk full"
     );
+}
+
+/// A variant that carries only a sentence answers with that sentence as the
+/// `detail`, and displays the same sentence.
+#[test]
+fn every_message_variant_answers_its_sentence_as_the_detail() {
+    let variants: Vec<fn(String) -> ApiError> = vec![
+        ApiError::MalformedBody,
+        ApiError::UnsupportedMediaType,
+        ApiError::PayloadTooLarge,
+        ApiError::InvalidCredentials,
+        ApiError::AuthenticationRequired,
+        ApiError::UsernameTaken,
+        ApiError::NameTaken,
+        ApiError::DemoAccountProtected,
+        ApiError::NotTheOwner,
+        ApiError::RegistrationClosed,
+        ApiError::InsufficientScope,
+        ApiError::AccountDisabled,
+        ApiError::StateConflict,
+        ApiError::AssetUploadInvalid,
+        ApiError::NotFound,
+        ApiError::MethodNotAllowed,
+        ApiError::NotAcceptable,
+        ApiError::MediaLinkInvalid,
+    ];
+    for variant in variants {
+        let error = variant("the sentence".into());
+        assert_eq!(
+            error.to_problem().detail.as_deref(),
+            Some("the sentence"),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "the sentence", "{error:?}");
+    }
 }
 
 #[test]

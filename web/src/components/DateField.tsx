@@ -73,7 +73,7 @@ export default function DateField({
             aria-label={`Pick ${pickLabel}`}
             className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRingClass}`}
           >
-            <CalendarIcon size={15} className="" />
+            <CalendarIcon size={15} />
           </Button>
         </Group>
         <Popover
