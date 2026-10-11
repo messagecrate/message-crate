@@ -11,9 +11,8 @@ use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, LogSink,
-    OutputFormat, RunIssue, RunIssueKind, count_of, emit_issue, emit_log, prepare_outputs,
-    project_conversation,
+    CancelFlag, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink, RunIssue,
+    RunIssueKind, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
@@ -414,15 +413,8 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     /// states it: a number written without its `+` code is keyed in it.
     pub phone_country: Option<&'static phone::Country>,
     pub verbose: bool,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
     pub log: Option<&'a LogSink>,
-    /// Where each row for the Import Run's record goes as it is recorded.
-    pub issues: Option<&'a IssueSink>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert SMS Backup+ EML trees into the shared conversation structure, then
@@ -449,12 +441,15 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         owner_emails,
         phone_country,
         verbose,
-        transforms,
-        output_format,
-        cancel,
         log,
-        issues,
-        resume,
+        convert_run:
+            ConvertRun {
+                transforms,
+                output_format,
+                cancel,
+                resume,
+                issues,
+            },
     } = args;
     // Checked before the output directory is cleaned, so a refused run leaves it.
     if inputs.is_empty() {

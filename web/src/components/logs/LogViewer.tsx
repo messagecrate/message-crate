@@ -1,12 +1,13 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { rejectionMessage } from "../../lib/apiErrorMessage";
 import { useRouteInfiniteQuery } from "../../lib/routeQuery";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
 import Button from "../Button";
 import Select, { ListBoxItem, selectItemClassName } from "../Select";
 import TextField from "../TextField";
-import { type LevelFilter, type LogDownload, type LogSource, logErrorMessage } from "./logSource";
+import type { LevelFilter, LogDownload, LogSource } from "./logSource";
 
 /** Lines read per page. */
 export const LOG_PAGE_SIZE = 200;
@@ -142,7 +143,7 @@ export default function LogViewer({
         <p className="m-0 text-[0.813rem] text-muted">Reading the log…</p>
       ) : lines.error && items.length === 0 ? (
         <p role="alert" className="m-0 text-[0.813rem] text-danger">
-          {logErrorMessage(lines.error, "Could not read the log.")}
+          {rejectionMessage(lines.error, "Could not read the log.")}
         </p>
       ) : items.length === 0 ? (
         <p className="m-0 text-[0.813rem] text-muted">
@@ -190,7 +191,7 @@ function LogDownloads({ downloads }: { downloads: LogDownload[] }) {
       const contents = await download.read();
       await saveFile(download.name, new Blob([contents], { type: "text/plain" }));
     } catch (err) {
-      setError(logErrorMessage(err, `Could not download ${download.name}.`));
+      setError(rejectionMessage(err, `Could not download ${download.name}.`));
     } finally {
       setBusy("");
     }

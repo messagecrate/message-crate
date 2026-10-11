@@ -2,7 +2,7 @@
 
 use crate::emit::{ConvertExportArgs, convert_export};
 use anyhow::{Result, bail};
-use message_crate_core::{ExportTransforms, ExporterConfig, RunResult, SourceConfig};
+use message_crate_core::{ExporterConfig, RunResult, SourceConfig};
 
 /// Check the required inputs, then convert.
 ///
@@ -28,7 +28,6 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         bail!("SMS Backup+ needs the backup device's email address");
     }
 
-    let transforms = ExportTransforms::from_config(config);
     let report = convert_export(ConvertExportArgs {
         inputs: &config.inputs,
         output_dir: &config.output,
@@ -37,12 +36,8 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         owner_emails: &source.owner_emails,
         phone_country: source.phone_country,
         verbose: source.verbose,
-        transforms,
-        output_format: config.output_format,
-        cancel: config.cancel.as_ref(),
         log: config.log.as_ref(),
-        issues: config.issues.as_ref(),
-        resume: config.resume,
+        convert_run: config.convert_run(),
     })?;
     if source.include_summary {
         return message_crate_core::finish_run(config, &report, config.media.mode.needs_tools());
@@ -58,7 +53,7 @@ mod tests {
     use super::run;
     use crate::emit::{ConvertExportArgs, convert_export};
     use message_crate_core::testutil::jsonl_run_config;
-    use message_crate_core::{ExportTransforms, OutputFormat, SmsBackupPlusConfig, SourceConfig};
+    use message_crate_core::{ConvertRun, OutputFormat, SmsBackupPlusConfig, SourceConfig};
     use std::path::Path;
 
     fn source(phones: &[&str], emails: &[&str]) -> SourceConfig {
@@ -104,13 +99,12 @@ mod tests {
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
             log: None,
-            issues: None,
-            resume: false,
             phone_country: phone::country("US"),
+            convert_run: ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                ..ConvertRun::default()
+            },
         })
         .unwrap_err()
         .to_string();
