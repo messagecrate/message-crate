@@ -173,8 +173,8 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-11: The settings the Demo Account is built from were reworked
-  inside, with nothing visible (#2197).
+- 2026-10-11: The way the Demo Account is built was reworked inside, with
+  nothing visible (#2197).
 
 - 2026-10-11: The way the server finds and hides duplicate messages was
   reworked inside, with nothing visible (#2182).
