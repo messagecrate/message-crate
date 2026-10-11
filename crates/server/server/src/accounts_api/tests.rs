@@ -656,7 +656,7 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
                 "time_zone": "Europe/Paris",
                 "identities": [{ "address": long_address, "service": "phone" }]
             }),
-            "identities.address",
+            "identities[0].address",
         ),
     ] {
         let sentence = patch_failure(
@@ -669,6 +669,31 @@ async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
         .await;
         assert!(sentence.starts_with(&format!("{field}: ")), "{sentence}");
     }
+    // A body over both caps names both.
+    let (status, text) = patch_json_raw(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "preferred_name": "n".repeat(201),
+            "identities": [
+                { "address": "+15555550100", "service": "phone" },
+                { "address": long_address, "service": "phone" }
+            ]
+        }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+    let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        errors["errors"],
+        serde_json::json!([
+            "preferred_name: must be at most 200 characters",
+            "identities[1].address: must be at most 320 characters"
+        ]),
+        "{text}"
+    );
+
     let after: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
     assert_eq!(
         after["time_zone"], "UTC",

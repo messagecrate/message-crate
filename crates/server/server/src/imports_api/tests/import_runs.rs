@@ -507,10 +507,41 @@ async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running(
             crate::problem::ProblemType::ValidationFailed,
         );
         assert!(
-            problem.sentence().starts_with(&format!("issues.{field}: ")),
+            problem
+                .sentence()
+                .starts_with(&format!("issues[0].{field}: ")),
             "{route}: {text}"
         );
     }
+    // Every breach is named, not only the first.
+    let (status, text) = crate::test_support::post_json_raw(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        serde_json::json!({
+            "issues": [
+                { "kind": "skip", "stage": "media", "item": "a", "reason": "r" },
+                { "kind": "note", "stage": "media", "item": long, "reason": long }
+            ],
+            "notes": []
+        }),
+    )
+    .await;
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    let errors: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        errors["errors"],
+        serde_json::json!([
+            "issues[1].kind: invalid import issue kind 'note'; expected 'error' or 'skip'",
+            "issues[1].item: must be at most 2000 characters",
+            "issues[1].reason: must be at most 2000 characters"
+        ]),
+        "{text}"
+    );
     let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
     assert_eq!(run["status"], "running", "{run}");
 }

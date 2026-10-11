@@ -546,20 +546,31 @@ where
 
 impl UpdateAccountRequest {
     /// Refuse a display name or an identity to link that is over its cap
-    /// (`text_caps`), before anything in the body is applied. An identity to
-    /// unlink is not held to it: it names a row already stored.
+    /// (`text_caps`), before anything in the body is applied, naming every
+    /// one that is. An identity to unlink is not held to it: it names a row
+    /// already stored.
     fn check_caps(&self) -> Result<(), ApiError> {
-        if let Some(Some(name)) = &self.preferred_name {
-            capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS)?;
-        }
-        for entry in &self.identities {
+        let name = self
+            .preferred_name
+            .iter()
+            .flatten()
+            .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS));
+        let addresses = self.identities.iter().enumerate().map(|(at, entry)| {
             capped_text(
-                "identities.address",
+                &format!("identities[{at}].address"),
                 &entry.address,
                 MAX_IDENTITY_ADDRESS_CHARS,
-            )?;
+            )
+        });
+        let errors: Vec<String> = name
+            .chain(addresses)
+            .filter_map(|checked| checked.err().map(|e| e.to_string()))
+            .collect();
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ApiError::ValidationFailed(errors))
         }
-        Ok(())
     }
 
     /// True when the body names the display name, the time zone or an identity.

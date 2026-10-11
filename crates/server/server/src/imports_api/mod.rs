@@ -770,35 +770,49 @@ pub(crate) struct ImportIssueRequest {
     pub(crate) reason: String,
 }
 
-/// Refuse an issue that is not an Import Error, or whose `item` or `reason`
-/// is over its cap (`text_caps`): the run stores only `error` and `skip` rows
-/// as its issues. Checked before a connection is opened, so a refused request
-/// writes nothing.
-fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
-    for issue in issues {
-        capped_text("issues.item", &issue.item, MAX_IMPORT_ERROR_TEXT_CHARS)?;
-        capped_text("issues.reason", &issue.reason, MAX_IMPORT_ERROR_TEXT_CHARS)?;
-        match issue.kind {
-            RunIssueKind::Error | RunIssueKind::Skip => {}
-            RunIssueKind::Note | RunIssueKind::Resolved => {
-                return Err(ApiError::validation(format!(
-                    "invalid import issue kind '{}'; expected 'error' or 'skip'",
-                    issue.kind
-                )));
-            }
+/// The requested issues as the database records them, their text trimmed.
+/// Refuses an issue that is not an Import Error, since the run stores only
+/// `error` and `skip` rows as its issues, and an `item` or `reason` over its
+/// cap (`text_caps`), naming every one. Checked before a connection is
+/// opened, so a refused request writes nothing.
+fn import_issue_inputs(
+    issues: &[ImportIssueRequest],
+) -> Result<Vec<crate::db::imports::ImportIssueInput>, ApiError> {
+    let mut inputs = Vec::with_capacity(issues.len());
+    let mut errors = Vec::new();
+    for (at, issue) in issues.iter().enumerate() {
+        if matches!(issue.kind, RunIssueKind::Note | RunIssueKind::Resolved) {
+            errors.push(format!(
+                "issues[{at}].kind: invalid import issue kind '{}'; expected 'error' or 'skip'",
+                issue.kind
+            ));
+        }
+        let cap = |field: &str, text| {
+            capped_text(
+                &format!("issues[{at}].{field}"),
+                text,
+                MAX_IMPORT_ERROR_TEXT_CHARS,
+            )
+        };
+        match (cap("item", &issue.item), cap("reason", &issue.reason)) {
+            (Ok(item), Ok(reason)) => inputs.push(crate::db::imports::ImportIssueInput {
+                kind: issue.kind,
+                stage: issue.stage,
+                item: item.to_string(),
+                reason: reason.to_string(),
+            }),
+            (item, reason) => errors.extend(
+                [item.err(), reason.err()]
+                    .into_iter()
+                    .flatten()
+                    .map(|e| e.to_string()),
+            ),
         }
     }
-    Ok(())
-}
-
-/// One requested issue, as the database records it: its text trimmed, as
-/// [`validate_import_issues`] measured it.
-fn issue_input(issue: ImportIssueRequest) -> crate::db::imports::ImportIssueInput {
-    crate::db::imports::ImportIssueInput {
-        kind: issue.kind,
-        stage: issue.stage,
-        item: issue.item.trim().to_string(),
-        reason: issue.reason.trim().to_string(),
+    if errors.is_empty() {
+        Ok(inputs)
+    } else {
+        Err(ApiError::ValidationFailed(errors))
     }
 }
 
@@ -1344,7 +1358,7 @@ pub(crate) async fn complete_import(
     Json(body): Json<CompleteImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    validate_import_issues(&body.issues)?;
+    let issues = import_issue_inputs(&body.issues)?;
     validate_import_status(&body.status)?;
     let summary_json =
         match body.summary {
@@ -1364,7 +1378,7 @@ pub(crate) async fn complete_import(
         prepare_ms: body.prepare_ms,
         upload_ms: body.upload_ms,
         summary_json,
-        issues: body.issues.into_iter().map(issue_input).collect(),
+        issues,
         notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
@@ -1666,8 +1680,7 @@ pub(crate) async fn discard_import(
     Json(body): Json<DiscardImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    validate_import_issues(&body.issues)?;
-    let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
+    let issues = import_issue_inputs(&body.issues)?;
     let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
