@@ -15,11 +15,12 @@
         "tags": [
           "Health"
         ],
-        "summary": "Report process liveness.",
+        "summary": "Report whether the server can answer.",
+        "description": "Answers `ok` when the server can take a database connection and run a\nstatement on it within 1.5 seconds. A server whose connections are all\ntaken, or whose database cannot be opened, fails the way a `/v1` call it\ncannot answer fails, with `500 Internal Server Error`, so a health check\nagrees with those calls.",
         "operationId": "get_health",
         "responses": {
           "200": {
-            "description": "Process is up",
+            "description": "The server is up and can reach its database",
             "content": {
               "text/plain": {
                 "schema": {
@@ -19907,7 +19908,7 @@
   "tags": [
     {
       "name": "Health",
-      "description": "Process liveness"
+      "description": "Whether the server is up and can reach its database"
     },
     {
       "name": "Session",
