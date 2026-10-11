@@ -44,7 +44,8 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run was cancelled and must stop.
+    /// The run must stop: the caller cancelled it, or the server refused the
+    /// session.
     Abort,
 }
 
