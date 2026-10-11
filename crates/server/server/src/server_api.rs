@@ -794,9 +794,10 @@ pub async fn replace_demo_account(
 
 /// Record the owner's build of the Demo Account in the Audit Trail, then end
 /// every Session of the Demo Account, so nobody is inside it while it is
-/// removed and built again. The entry is about the Demo Account the build
-/// replaces, so it stays in that account's record once the build deletes it;
-/// with no Demo Account to replace it carries the username alone.
+/// removed and built again. A reset is about the Demo Account it replaces, so
+/// it stays in that account's record once the build deletes it. An add is
+/// about no account, since none exists yet: an entry with a username and no
+/// account reads as one whose account was deleted.
 async fn record_build_and_end_demo_sessions(
     state: &AppState,
     size: DemoDataSize,
@@ -804,13 +805,15 @@ async fn record_build_and_end_demo_sessions(
     use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
     let mut conn = state.db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    let exists = account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID)
-        .await?
-        .is_some();
-    let entry = NewEntry {
-        account_id: exists.then_some(account_profile::DEMO_ACCOUNT_ID),
-        username: Some(account_profile::DEMO_USERNAME),
-        ..NewEntry::about_no_account(AuditAction::DemoAccountRebuilt, AuditActor::Owner)
+    let demo =
+        account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID).await?;
+    let entry = match &demo {
+        Some(username) => NewEntry::about(
+            AuditAction::DemoAccountReset,
+            AuditActor::Owner,
+            (account_profile::DEMO_ACCOUNT_ID, username),
+        ),
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, AuditActor::Owner),
     }
     .with_details(Details {
         demo_data_size: Some(size),
@@ -820,7 +823,7 @@ async fn record_build_and_end_demo_sessions(
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,
-        crate::db::audit_trail::AuditActor::Owner,
+        AuditActor::Owner,
     )
     .await
     .map_err(ApiError::Internal)?;

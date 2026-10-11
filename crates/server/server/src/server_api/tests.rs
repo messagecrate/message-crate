@@ -1077,12 +1077,13 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
     );
 }
 
-/// Adding the Demo Account and rebuilding it are each recorded as the owner's
+/// Adding the Demo Account and resetting it are each recorded as the owner's
 /// act, with the size of Demo Data asked for, when the build starts (#2187).
-/// The rebuild's entry is about the Demo Account it replaced, so it comes
-/// before that account's deletion and stays in its record.
+/// The add is about no account, since none exists yet. The reset is about
+/// the Demo Account it replaced, so it comes before that account's deletion
+/// and stays in its record.
 #[tokio::test(flavor = "multi_thread")]
-async fn adding_and_rebuilding_the_demo_account_are_recorded() {
+async fn adding_and_resetting_the_demo_account_are_recorded() {
     let fixture = test_fixture().await;
     let mut state = fixture.state.clone();
     state.demo_bundle_generator = tiny_bundle;
@@ -1095,26 +1096,36 @@ async fn adding_and_rebuilding_the_demo_account_are_recorded() {
         assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
     }
 
-    let rebuilt = owner_entries(&state, &owner.token, "demo_account_rebuilt").await;
-    assert_eq!(rebuilt.len(), 2, "{rebuilt:?}");
-    for entry in &rebuilt {
-        assert_eq!(entry["actor"], "owner");
-        assert_eq!(entry["username"], account_profile::DEMO_USERNAME);
-        assert_eq!(entry["demo_data_size"], "medium");
-    }
-    let deleted: Vec<_> = owner_entries(&state, &owner.token, "account_deleted").await;
+    let added = owner_entries(&state, &owner.token, "demo_account_added").await;
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["actor"], "owner");
+    assert_eq!(added[0]["demo_data_size"], "medium");
+    assert!(added[0]["account_id"].is_null());
+    assert!(
+        added[0]["username"].is_null(),
+        "a username with no account would read as a deleted account"
+    );
+
+    let reset = owner_entries(&state, &owner.token, "demo_account_reset").await;
+    assert_eq!(reset.len(), 1, "{reset:?}");
+    assert_eq!(reset[0]["actor"], "owner");
+    assert_eq!(reset[0]["username"], account_profile::DEMO_USERNAME);
+    assert_eq!(reset[0]["demo_data_size"], "medium");
+    let deleted = owner_entries(&state, &owner.token, "account_deleted").await;
     let replaced = deleted
         .iter()
         .find(|entry| entry["username"] == account_profile::DEMO_USERNAME)
-        .expect("the rebuild deleted the Demo Account it replaced");
+        .expect("the reset deleted the Demo Account it replaced");
+    let reset_id = reset[0]["id"].as_i64().expect("an entry has an id");
+    let replaced_id = replaced["id"].as_i64().expect("an entry has an id");
     assert!(
-        rebuilt[0]["id"].as_i64() < replaced["id"].as_i64(),
-        "the rebuild is recorded before the Demo Account it replaced is deleted"
+        reset_id < replaced_id,
+        "the reset is recorded before the Demo Account it replaced is deleted"
     );
 
     let old_record: serde_json::Value = get_json(
         &state,
-        &format!("/v1/audit-trail?deleted_account_id={}", replaced["id"]),
+        &format!("/v1/audit-trail?deleted_account_id={replaced_id}"),
         &owner.token,
     )
     .await;
@@ -1123,7 +1134,7 @@ async fn adding_and_rebuilding_the_demo_account_are_recorded() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|item| item["action"] == "demo_account_rebuilt"),
+            .any(|item| item["action"] == "demo_account_reset"),
         "{old_record}"
     );
 }

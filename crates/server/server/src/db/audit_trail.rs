@@ -79,9 +79,13 @@ pub enum AuditAction {
     /// The owner changed the attachment size limit; `asset_max_bytes` is the
     /// new limit.
     AssetLimitChanged,
-    /// The owner started a build of the Demo Account, which removes the one
-    /// there is with all it holds; `demo_data_size` is the size asked for.
-    DemoAccountRebuilt,
+    /// The owner added the Demo Account where there was none: a build
+    /// started; `demo_data_size` is the size asked for.
+    DemoAccountAdded,
+    /// The owner reset the Demo Account: a build started that removes it,
+    /// with all it holds, and builds it again; `demo_data_size` is the size
+    /// asked for.
+    DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
     /// The holder deleted an API token.
@@ -116,7 +120,8 @@ impl AuditAction {
             Self::RegistrationOpened => "registration_opened",
             Self::RegistrationClosed => "registration_closed",
             Self::AssetLimitChanged => "asset_limit_changed",
-            Self::DemoAccountRebuilt => "demo_account_rebuilt",
+            Self::DemoAccountAdded => "demo_account_added",
+            Self::DemoAccountReset => "demo_account_reset",
             Self::ApiTokenCreated => "api_token_created",
             Self::ApiTokenDeleted => "api_token_deleted",
             Self::AddressBookLoaded => "address_book_loaded",
@@ -427,7 +432,8 @@ pub struct Details {
     /// `asset_limit_changed`: the new attachment size limit, in bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_max_bytes: Option<u64>,
-    /// `demo_account_rebuilt`: how much Demo Data the build was asked for.
+    /// `demo_account_added` and `demo_account_reset`: how much Demo Data the
+    /// build was asked for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub demo_data_size: Option<DemoDataSize>,
 }
@@ -507,7 +513,8 @@ pub struct AuditEntry {
     pub contacts_deleted: Option<i64>,
     /// `asset_limit_changed`: the new attachment size limit, in bytes.
     pub asset_max_bytes: Option<u64>,
-    /// `demo_account_rebuilt`: how much Demo Data the build was asked for.
+    /// `demo_account_added` and `demo_account_reset`: how much Demo Data the
+    /// build was asked for.
     pub demo_data_size: Option<DemoDataSize>,
 }
 

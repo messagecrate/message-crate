@@ -13481,7 +13481,8 @@
           "registration_opened",
           "registration_closed",
           "asset_limit_changed",
-          "demo_account_rebuilt",
+          "demo_account_added",
+          "demo_account_reset",
           "api_token_created",
           "api_token_deleted",
           "address_book_loaded",
@@ -13674,7 +13675,7 @@
                 "type": "null"
               }
             ],
-            "description": "`demo_account_rebuilt`: how much Demo Data the build was asked for."
+            "description": "`demo_account_added` and `demo_account_reset`: how much Demo Data the\nbuild was asked for."
           },
           "id": {
             "type": "integer",
@@ -16996,7 +16997,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "`demo_account_rebuilt`: how much Demo Data the build was asked for."
+                  "description": "`demo_account_added` and `demo_account_reset`: how much Demo Data the\nbuild was asked for."
                 },
                 "id": {
                   "type": "integer",

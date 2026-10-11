@@ -318,11 +318,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-11: **The Audit Trail records the attachment size limit and the
-  Demo Account's builds.** When the owner changes the attachment size limit
-  in Server Settings, the Audit Trail now says so and names the new limit;
-  saving the limit it already had records nothing. Adding or resetting the
-  Demo Account is recorded too, with the size of Demo Data asked for. Before,
+- 2026-10-11: **The Audit Trail records the attachment size limit and adding
+  or resetting the Demo Account.** When the owner changes the attachment size
+  limit in Server Settings, the Audit Trail now says so and names the new
+  limit; saving the limit it already had records nothing. Adding or resetting
+  the Demo Account is recorded too, with the set of Demo Data asked for. Before,
   neither left an entry, though opening or closing Message Crate to new
   accounts did (#2187).
 

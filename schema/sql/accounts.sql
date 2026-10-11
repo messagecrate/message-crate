@@ -413,9 +413,9 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- account_created, account_disabled, account_enabled, password_set,
     -- permissions_changed, messages_deleted, conversation_deleted,
     -- trash_emptied, account_deleted, registration_opened,
-    -- registration_closed, asset_limit_changed, demo_account_rebuilt,
-    -- api_token_created, api_token_deleted, address_book_loaded or
-    -- address_book_exported.
+    -- registration_closed, asset_limit_changed, demo_account_added,
+    -- demo_account_reset, api_token_created, api_token_deleted,
+    -- address_book_loaded or address_book_exported.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
     -- (a server command), server (the server on its own), or anonymous
@@ -424,11 +424,10 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- The account the entry is about (`accounts.id`). NULL when it is about
     -- no account (a refused login for an unknown username, opening or closing
     -- registration, changing the attachment size limit, adding the Demo
-    -- Account when there is none) or once the account is deleted.
+    -- Account) or once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
-    -- login, the username as typed, trimmed and cut to 128 characters;
-    -- demo_account_rebuilt: always demo.
+    -- login, the username as typed, trimmed and cut to 128 characters.
     username TEXT,
     -- The `account_deleted` entry of the account the entry is about, written
     -- on every entry about it when it is deleted, that entry included. A

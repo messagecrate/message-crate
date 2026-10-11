@@ -84,18 +84,24 @@ describe("describeAuditEntry", () => {
         auditEntry({ action: "asset_limit_changed", actor: "owner", asset_max_bytes: 104857600 }),
       ),
     ).toBe("Attachment size limit set to 100 MB");
+    expect(describeAuditEntry(auditEntry({ action: "asset_limit_changed", actor: "owner" }))).toBe(
+      "Attachment size limit changed",
+    );
   });
 
-  it("names the size of Demo Data the owner built the Demo Account with", () => {
+  it("names the set of Demo Data the owner added or reset the Demo Account with", () => {
     expect(
       describeAuditEntry(
-        auditEntry({
-          action: "demo_account_rebuilt",
-          actor: "owner",
-          username: "demo",
-          demo_data_size: "large",
-        }),
+        auditEntry({ action: "demo_account_added", actor: "owner", demo_data_size: "medium" }),
       ),
-    ).toBe("Demo Account built with large Demo Data");
+    ).toBe("Demo Account added with the medium set");
+    expect(
+      describeAuditEntry(
+        entry({ action: "demo_account_reset", actor: "owner", demo_data_size: "large" }),
+      ),
+    ).toBe("Demo Account reset with the large set");
+    expect(describeAuditEntry(entry({ action: "demo_account_reset", actor: "owner" }))).toBe(
+      "Demo Account reset",
+    );
   });
 });

@@ -1911,7 +1911,7 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_rebuilt" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
@@ -1994,7 +1994,10 @@ export interface components {
             conversations: number | null;
             /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
-            /** @description `demo_account_rebuilt`: how much Demo Data the build was asked for. */
+            /**
+             * @description `demo_account_added` and `demo_account_reset`: how much Demo Data the
+             *     build was asked for.
+             */
             demo_data_size: components["schemas"]["DemoDataSize"] | null;
             /**
              * Format: int64
@@ -4006,7 +4009,10 @@ export interface components {
                 conversations: number | null;
                 /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
-                /** @description `demo_account_rebuilt`: how much Demo Data the build was asked for. */
+                /**
+                 * @description `demo_account_added` and `demo_account_reset`: how much Demo Data the
+                 *     build was asked for.
+                 */
                 demo_data_size: components["schemas"]["DemoDataSize"] | null;
                 /**
                  * Format: int64
