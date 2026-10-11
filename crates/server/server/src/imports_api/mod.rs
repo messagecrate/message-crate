@@ -764,9 +764,13 @@ pub(crate) struct ImportIssueRequest {
     /// What the issue is about, such as a conversation file or an
     /// attachment's path. Stored trimmed; over 2,000 characters is refused
     /// with `422 Unprocessable Entity`.
+    // `max_length` takes only a literal; a test holds it to
+    // `MAX_IMPORT_ERROR_TEXT_CHARS`.
+    #[schema(max_length = 2000)]
     pub(crate) item: String,
     /// Why the item failed or was skipped, in one sentence. Stored trimmed;
     /// over 2,000 characters is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 2000)]
     pub(crate) reason: String,
 }
 
@@ -809,11 +813,8 @@ fn import_issue_inputs(
             ),
         }
     }
-    if errors.is_empty() {
-        Ok(inputs)
-    } else {
-        Err(ApiError::ValidationFailed(errors))
-    }
+    ApiError::unless_broken(errors)?;
+    Ok(inputs)
 }
 
 fn validate_import_status(status: &str) -> Result<(), ApiError> {

@@ -562,15 +562,11 @@ impl UpdateAccountRequest {
                 MAX_IDENTITY_ADDRESS_CHARS,
             )
         });
-        let errors: Vec<String> = name
-            .chain(addresses)
-            .filter_map(|checked| checked.err().map(|e| e.to_string()))
-            .collect();
-        if errors.is_empty() {
-            Ok(())
-        } else {
-            Err(ApiError::ValidationFailed(errors))
-        }
+        ApiError::unless_broken(
+            name.chain(addresses)
+                .filter_map(|checked| checked.err().map(|e| e.to_string()))
+                .collect(),
+        )
     }
 
     /// True when the body names the display name, the time zone or an identity.

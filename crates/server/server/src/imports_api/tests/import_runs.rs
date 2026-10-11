@@ -546,6 +546,22 @@ async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running(
     assert_eq!(run["status"], "running", "{run}");
 }
 
+/// The reference states the cap on an Import Error's text, so the desktop
+/// app, which cuts its text to it, reads the same number the server holds.
+#[test]
+fn the_reference_states_the_import_error_text_cap() {
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let fields = &doc["components"]["schemas"]["ImportIssueRequest"]["properties"];
+    for field in ["item", "reason"] {
+        assert_eq!(
+            fields[field]["maxLength"],
+            crate::text_caps::MAX_IMPORT_ERROR_TEXT_CHARS,
+            "{field}: {fields}"
+        );
+    }
+}
+
 /// A discarded run keeps the Import Errors the desktop app sends with the
 /// discard: a run paused and then given up still has the record of what went
 /// wrong before it stopped (#1479).

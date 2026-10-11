@@ -470,8 +470,8 @@ export function notesToDiscard(record: RunRecord): ImportNote[] {
 }
 
 /**
- * Most characters the server takes in an Import Error's `item` or `reason`
- * (`MAX_IMPORT_ERROR_TEXT_CHARS` in the server's `text_caps.rs`).
+ * Most characters the server takes in an Import Error's `item` or `reason`:
+ * the `maxLength` its reference states, which a test holds this to.
  */
 export const IMPORT_ERROR_TEXT_MAX_CHARS = 2000;
 

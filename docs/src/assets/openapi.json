@@ -15476,7 +15476,8 @@
         "properties": {
           "item": {
             "type": "string",
-            "description": "What the issue is about, such as a conversation file or an\nattachment's path. Stored trimmed; over 2,000 characters is refused\nwith `422 Unprocessable Entity`."
+            "description": "What the issue is about, such as a conversation file or an\nattachment's path. Stored trimmed; over 2,000 characters is refused\nwith `422 Unprocessable Entity`.",
+            "maxLength": 2000
           },
           "kind": {
             "$ref": "#/components/schemas/RunIssueKind",
@@ -15484,7 +15485,8 @@
           },
           "reason": {
             "type": "string",
-            "description": "Why the item failed or was skipped, in one sentence. Stored trimmed;\nover 2,000 characters is refused with `422 Unprocessable Entity`."
+            "description": "Why the item failed or was skipped, in one sentence. Stored trimmed;\nover 2,000 characters is refused with `422 Unprocessable Entity`.",
+            "maxLength": 2000
           },
           "stage": {
             "$ref": "#/components/schemas/ImportIssueStage",

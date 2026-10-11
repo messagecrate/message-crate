@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type { UploadFinishedReport } from "../../lib/tauri";
@@ -496,6 +498,16 @@ describe("issueRequests (#2183)", () => {
       expect(text.endsWith("…")).toBe(true);
     }
     expect(sent.item.startsWith("v")).toBe(true);
+  });
+
+  it("cuts to the cap the server's reference states", () => {
+    const path = fileURLToPath(
+      new URL("../../../../docs/src/assets/openapi.json", import.meta.url),
+    );
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    const fields = doc.components.schemas.ImportIssueRequest.properties;
+    expect(fields.item.maxLength).toBe(IMPORT_ERROR_TEXT_MAX_CHARS);
+    expect(fields.reason.maxLength).toBe(IMPORT_ERROR_TEXT_MAX_CHARS);
   });
 
   it("sends text at or under the cap as it is, trimmed, without the conversation", () => {

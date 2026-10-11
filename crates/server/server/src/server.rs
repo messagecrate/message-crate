@@ -619,6 +619,21 @@ impl ApiError {
         Self::ValidationFailed(vec![sentence.into()])
     }
 
+    /// `Ok` when a check that gathers every broken rule found none, else
+    /// `validation-failed` listing them all (`docs/architecture/http-api.md`,
+    /// "Failures").
+    ///
+    /// # Errors
+    ///
+    /// `validation-failed` carrying `errors` when it is not empty.
+    pub(crate) fn unless_broken(errors: Vec<String>) -> Result<(), Self> {
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(Self::ValidationFailed(errors))
+        }
+    }
+
     /// `404` for a `kind` of row this account does not hold, with the detail
     /// "{kind} not found", so the routes that use it word a miss the same way.
     pub(crate) fn not_found(kind: &str) -> Self {
