@@ -14,7 +14,7 @@ fn archive() -> SmsBackupPlusArchive {
 fn photo(bytes: &[u8]) -> IrAttachment {
     IrAttachment {
         bytes: Some(bytes.to_vec()),
-        ..message_ir::testutil::attachment()
+        ..message_ir::testutil::sample_attachment()
     }
 }
 

@@ -105,7 +105,7 @@ mod tests {
     fn att_with_path(rel: &str) -> IrAttachment {
         IrAttachment {
             path: Some(rel.into()),
-            ..message_ir::testutil::attachment()
+            ..message_ir::testutil::sample_attachment()
         }
     }
 

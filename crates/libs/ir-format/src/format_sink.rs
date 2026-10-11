@@ -432,7 +432,7 @@ mod tests {
             let mut doc = message_ir::testutil::sample_document("with media");
             doc.messages[0].attachments = vec![IrAttachment {
                 path: Some(rel.into()),
-                ..message_ir::testutil::attachment()
+                ..message_ir::testutil::sample_attachment()
             }];
 
             let transforms = ExportTransforms {

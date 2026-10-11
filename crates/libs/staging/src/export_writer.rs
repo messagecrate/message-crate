@@ -347,7 +347,7 @@ mod tests {
         let mut doc = message_ir::testutil::sample_document("with a photo");
         doc.messages[0].attachments = vec![IrAttachment {
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
-            ..message_ir::testutil::attachment()
+            ..message_ir::testutil::sample_attachment()
         }];
         doc
     }

@@ -160,7 +160,7 @@ mod tests {
     fn attachment(size: u64) -> IrAttachment {
         IrAttachment {
             size_bytes: Some(size),
-            ..message_ir::testutil::attachment()
+            ..message_ir::testutil::sample_attachment()
         }
     }
 
