@@ -184,7 +184,7 @@ pub(crate) fn export(
     // `attachments/`.
     let embeds = format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed;
     if !use_queue && embeds {
-        count_loads(&mut collected, options.log.as_ref());
+        count_loads(&mut collected, &options.log);
         check_headroom(
             &options.export_path,
             embedded_bytes(&collected),
@@ -234,7 +234,7 @@ pub(crate) fn export(
 /// for nothing (#1744) and is embedded as `file_missing`. A path in an
 /// encrypted backup names a file only the Apple Messages Reader can read,
 /// so it keeps its hint.
-fn count_loads(collected: &mut Collected, log: Option<&LogSink>) {
+fn count_loads(collected: &mut Collected, log: &LogSink) {
     let paths = if collected.encrypted {
         PathSources::ReadByLoader
     } else {
@@ -831,9 +831,9 @@ fn drain_conversations(
         writer_count: 0,
     };
     let sinks = message_staging::Sinks {
-        log: options.log.as_ref(),
-        progress: options.progress.as_ref(),
-        cancel: options.convert_run.cancel,
+        log: &options.log,
+        progress: &options.progress,
+        cancel: &options.convert_run.cancel,
     };
 
     let queue_report = if collected.encrypted {
@@ -907,7 +907,7 @@ fn stage_attachments(
             PathSources::OnDisk
         },
         |att| attachment_source(loads.next(), att),
-        options.log.as_ref(),
+        &options.log,
     );
     if stages_attachment_files(options) {
         check_headroom(
@@ -937,9 +937,9 @@ fn stage_attachments(
                 }
                 other => load_attachment_source(other),
             },
-            options.log.as_ref(),
-            options.progress.as_ref(),
-            options.convert_run.cancel,
+            &options.log,
+            &options.progress,
+            &options.convert_run.cancel,
         )
         .map_err(|e| anyhow!(e))
         .context("stage attachments")?;
@@ -949,6 +949,7 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::ProgressSink;
     use message_ir::TimePrecision;
     use message_ir::testutil::sample_attachment;
 
@@ -970,7 +971,7 @@ mod tests {
         }
     }
 
-    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions<'static> {
+    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions {
         ExportOptions {
             source: imessage_reader_protocol::Source {
                 db_path: PathBuf::from("/nowhere/chat.db"),
@@ -983,8 +984,8 @@ mod tests {
             export_path: PathBuf::from("/nowhere/out"),
             scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
-            log: None,
-            progress: None,
+            log: LogSink::silent(),
+            progress: ProgressSink::none(),
             convert_run: message_crate_core::ConvertRun {
                 transforms: message_crate_core::ExportTransforms {
                     obfuscate,
@@ -1003,9 +1004,9 @@ mod tests {
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let sink_lines = std::sync::Arc::clone(&lines);
         let mut options = options(OutputFormat::Jsonl, false);
-        options.log = Some(LogSink::new(move |l: &str| {
+        options.log = LogSink::new(move |l: &str| {
             sink_lines.lock().unwrap().push(l.to_string());
-        }));
+        });
 
         let mut not_decrypted = NotDecrypted::default();
         not_decrypted.record(
@@ -1299,7 +1300,7 @@ mod tests {
             encrypted,
             failures: 0,
         };
-        count_loads(&mut collected, None);
+        count_loads(&mut collected, &LogSink::silent());
         embedded_bytes(&collected)
     }
 

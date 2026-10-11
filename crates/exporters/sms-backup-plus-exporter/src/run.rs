@@ -16,7 +16,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let SourceConfig::SmsBackupPlus(source) = &config.source else {
         bail!("sms-backup-plus-exporter requires SourceConfig::SmsBackupPlus");
     };
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+    message_crate_core::check_cancel(&config.cancel)?;
 
     if source.owner_phones.is_empty() {
         bail!("SMS Backup+ needs the backup device's phone number");
@@ -34,7 +34,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             owner_emails: &source.owner_emails,
             phone_country: source.phone_country,
             verbose: source.verbose,
-            log: config.log.as_ref(),
+            log: &config.log,
             convert_run,
         })
     })
@@ -44,8 +44,10 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 mod tests {
     use super::run;
     use crate::emit::{ConvertExportArgs, convert_export};
-    use message_crate_core::testutil::jsonl_run_config;
-    use message_crate_core::{ConvertRun, OutputFormat, SmsBackupPlusConfig, SourceConfig};
+    use message_crate_core::{
+        ConvertRun, LogSink, OutputFormat, SmsBackupPlusConfig, SourceConfig,
+        testutil::jsonl_run_config,
+    };
     use std::path::Path;
 
     fn source(phones: &[&str], emails: &[&str]) -> SourceConfig {
@@ -90,7 +92,7 @@ mod tests {
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,
-            log: None,
+            log: &LogSink::silent(),
             phone_country: phone::country("US"),
             convert_run: ConvertRun {
                 output_format: OutputFormat::Jsonl,

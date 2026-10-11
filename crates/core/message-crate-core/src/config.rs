@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use media::{CompressOptions, MediaMode};
 
 use crate::exporters::{ApplePlatform, WhatsappPlatform};
-use crate::pipeline::{IssueSink, RunIssue, emit_issue};
-use crate::process::{CancelFlag, LogSink, emit_log};
-use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
+use crate::pipeline::{IssueSink, RunIssue};
+use crate::process::{CancelFlag, LogSink};
+use crate::progress::{ProgressEvent, ProgressSink};
 use crate::transforms::ExportTransforms;
 
 /// Output packaging projected from the common message.
@@ -92,21 +92,21 @@ pub struct ExporterConfig {
     pub obfuscate: ObfuscateConfig,
     /// Attachment handling for `FormatSink` (none / copy / convert / compress).
     pub media: MediaConfig,
-    /// Shared cancel flag for in-process jobs; `None` means the run cannot be
-    /// cancelled.
-    pub cancel: Option<CancelFlag>,
-    /// Human-readable mid-run notes and warnings. `None` → stderr; the
-    /// desktop app sets a sink and shows the lines in its log panel.
-    pub log: Option<LogSink>,
-    /// Typed progress events (stage, done, total, bytes). `None` reports
-    /// nothing; the desktop app sets a sink and drives its progress bar
-    /// from the events. Log lines are never read for counts.
-    pub progress: Option<ProgressSink>,
+    /// Shared cancel flag for in-process jobs. A run that cannot be
+    /// cancelled holds `CancelFlag::default()`, which nobody sets.
+    pub cancel: CancelFlag,
+    /// Human-readable mid-run notes and warnings. The desktop app sets a sink
+    /// and shows the lines in its log panel.
+    pub log: LogSink,
+    /// Typed progress events (stage, done, total, bytes). The desktop app
+    /// sets a sink and drives its progress bar from the events; a run with no
+    /// bar holds [`ProgressSink::none`]. Log lines are never read for counts.
+    pub progress: ProgressSink,
     /// Each row for the Import Run's record (an item skipped or failed), sent
-    /// the moment the run records it. `None` sends the rows nowhere; the
-    /// desktop app sets a sink and passes each row to its window, so an app
-    /// that closes mid-run keeps the rows that had arrived.
-    pub issues: Option<IssueSink>,
+    /// the moment the run records it. The desktop app sets a sink and passes
+    /// each row to its window, so an app that closes mid-run keeps the rows
+    /// that had arrived; a run that keeps no record holds [`IssueSink::none`].
+    pub issues: IssueSink,
     /// Packaging format (`csv` / `eml` / `mbox` / `json` / `jsonl` / `xml` /
     /// `sms-backup-plus`).
     pub output_format: OutputFormat,
@@ -119,30 +119,30 @@ pub struct ExporterConfig {
 }
 
 impl ExporterConfig {
-    /// Send a progress or warning line to the log sink, or to stderr if none is set.
+    /// Send a progress or warning line to the log sink.
     pub fn emit_log(&self, line: impl AsRef<str>) {
-        emit_log(self.log.as_ref(), line);
+        self.log.emit(line.as_ref());
     }
 
-    /// Send a typed progress event to the progress sink, if one is set.
+    /// Send a typed progress event to the progress sink.
     pub fn emit_progress(&self, event: ProgressEvent) {
-        emit_progress(self.progress.as_ref(), event);
+        self.progress.emit(event);
     }
 
-    /// Send a row for the Import Run's record to the issue sink, if one is set.
+    /// Send a row for the Import Run's record to the issue sink.
     pub fn emit_issue(&self, issue: RunIssue) {
-        emit_issue(self.issues.as_ref(), issue);
+        self.issues.emit(issue);
     }
 
     /// The run-wide settings an exporter's convert step takes beside its own
     /// inputs, with the transforms [`ExportTransforms::from_config`] builds.
-    pub fn convert_run(&self) -> ConvertRun<'_> {
+    pub fn convert_run(&self) -> ConvertRun {
         ConvertRun {
             transforms: ExportTransforms::from_config(self),
             output_format: self.output_format,
-            cancel: self.cancel.as_ref(),
+            cancel: self.cancel.clone(),
             resume: self.resume,
-            issues: self.issues.as_ref(),
+            issues: self.issues.clone(),
         }
     }
 
@@ -177,22 +177,24 @@ impl ExporterConfig {
 /// convert step that unpacks every field still names the new one, so each
 /// exporter decides what it does with it.
 ///
+/// It holds the config's cancel flag and issue sink themselves: a clone of
+/// either shares it, so a cancel set on the config reaches the run.
+///
 /// The default writes [`OutputFormat::Json`] with no transforms, cannot be
 /// cancelled, does not resume, and sends its rows nowhere.
 #[derive(Debug, Clone, Default)]
-pub struct ConvertRun<'a> {
+pub struct ConvertRun {
     /// Media and obfuscation applied as conversations are written.
     pub transforms: ExportTransforms,
     /// The packaging the run writes.
     pub output_format: OutputFormat,
-    /// Checked between files and before writing; `None` means the run cannot
-    /// be cancelled.
-    pub cancel: Option<&'a CancelFlag>,
+    /// Checked between files and before writing.
+    pub cancel: CancelFlag,
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
     /// Where each row for the Import Run's record goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub issues: IssueSink,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -363,10 +365,10 @@ mod tests {
             timezone: None,
             obfuscate: ObfuscateConfig::default(),
             media: MediaConfig::default(),
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
+            cancel: CancelFlag::default(),
+            log: LogSink::silent(),
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
             output_format: OutputFormat::Json,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),
@@ -378,9 +380,9 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::<String>::new()));
         let sink_seen = Arc::clone(&seen);
         let mut config = config_with_inputs(Vec::new());
-        config.log = Some(LogSink::new(move |line| {
+        config.log = LogSink::new(move |line| {
             sink_seen.lock().unwrap().push(line.to_string());
-        }));
+        });
 
         config.emit_log("first");
         config.emit_log(String::from("second"));
@@ -396,9 +398,9 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
         let sink_seen = Arc::clone(&seen);
         let mut config = config_with_inputs(Vec::new());
-        config.progress = Some(ProgressSink::new(move |event| {
+        config.progress = ProgressSink::new(move |event| {
             sink_seen.lock().unwrap().push(event);
-        }));
+        });
 
         config.emit_progress(ProgressEvent::Parse { done: 1, total: 4 });
         config.emit_progress(ProgressEvent::Prepare { done: 2, total: 2 });
@@ -419,12 +421,12 @@ mod tests {
         let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
         let sink_seen = Arc::clone(&seen);
         let mut config = config_with_inputs(Vec::new());
-        config.progress = Some(ProgressSink::new(move |event| {
+        config.progress = ProgressSink::new(move |event| {
             sink_seen.lock().unwrap().push(event);
-        }));
+        });
 
         config.emit_progress(ProgressEvent::Parse { done: 1, total: 2 });
-        config.progress = None;
+        config.progress = ProgressSink::none();
         config.emit_progress(ProgressEvent::Parse { done: 2, total: 2 });
 
         assert_eq!(

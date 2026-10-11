@@ -2,13 +2,11 @@
 //! of the program (`ios_backup::reader_build`) and the exporter's config
 //! for the `chat.db` fixture.
 
-use std::{
-    path::Path,
-    sync::{Arc, atomic::AtomicBool},
-};
+use std::path::Path;
 
 use message_crate_core::{
-    AppleConfig, ApplePlatform, ExporterConfig, MediaConfig, OutputFormat, SourceConfig,
+    AppleConfig, ApplePlatform, CancelFlag, ExporterConfig, IssueSink, LogSink, MediaConfig,
+    OutputFormat, ProgressSink, SourceConfig,
 };
 
 /// Build `imessage-reader` once per test binary, name it in
@@ -19,7 +17,7 @@ pub fn helper_binary() -> &'static Path {
 }
 
 /// A JSON Lines export of the Mac `chat.db` at `db_path` into `output`.
-pub fn config(db_path: &Path, output: &Path, cancel: Option<Arc<AtomicBool>>) -> ExporterConfig {
+pub fn config(db_path: &Path, output: &Path, cancel: CancelFlag) -> ExporterConfig {
     ExporterConfig {
         inputs: vec![db_path.to_path_buf()],
         output: output.to_path_buf(),
@@ -28,9 +26,9 @@ pub fn config(db_path: &Path, output: &Path, cancel: Option<Arc<AtomicBool>>) ->
         obfuscate: Default::default(),
         media: MediaConfig::default(),
         cancel,
-        log: None,
-        progress: None,
-        issues: None,
+        log: LogSink::silent(),
+        progress: ProgressSink::none(),
+        issues: IssueSink::none(),
         output_format: OutputFormat::Jsonl,
         resume: false,
         source: SourceConfig::Apple(AppleConfig {

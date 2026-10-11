@@ -389,7 +389,9 @@ pub(crate) fn mime_hint(attachment_type: &str, filename: &str) -> Option<String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_crate_core::{AttachmentJob, MediaConfig, run_attachment_jobs};
+    use message_crate_core::{
+        AttachmentJob, CancelFlag, LogSink, MediaConfig, run_attachment_jobs,
+    };
     use message_ir::IrAttachment;
     use std::fs;
 
@@ -487,8 +489,8 @@ mod tests {
             &MediaConfig::default(),
             |_| fs::read(source).map(Some).or(Ok(None)),
             |_| {},
-            None,
-            None,
+            &LogSink::silent(),
+            &CancelFlag::default(),
         )
         .unwrap();
         let digest = att.digest_sha256.expect("digest set after runner");

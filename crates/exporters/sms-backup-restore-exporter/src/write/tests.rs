@@ -1,7 +1,9 @@
 use super::*;
+use message_crate_core::{CancelFlag, LogSink, ProgressSink};
 use message_staging::AttachmentSpool;
 use serde_json::{Map, json};
 use std::fs;
+use std::sync::LazyLock;
 
 const OWNER: &str = "+15555550100";
 
@@ -42,6 +44,12 @@ fn read_with_bytes(
     (docs, report)
 }
 
+/// Sinks that drop what they get, and a cancel flag nobody sets, for
+/// reader options a helper returns.
+static NO_LOG: LazyLock<LogSink> = LazyLock::new(LogSink::silent);
+static NO_PROGRESS: LazyLock<ProgressSink> = LazyLock::new(ProgressSink::none);
+static NO_CANCEL: LazyLock<CancelFlag> = LazyLock::new(CancelFlag::default);
+
 /// Reader options that spool attachment payloads and stage nothing.
 fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::ReadOptions<'a> {
     crate::ReadOptions {
@@ -50,9 +58,9 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         spool: Some(spool),
         media: media::MediaMode::Disabled,
         compress: media::CompressOptions::default(),
-        log: None,
-        progress: None,
-        cancel: None,
+        log: &NO_LOG,
+        progress: &NO_PROGRESS,
+        cancel: &NO_CANCEL,
     }
 }
 

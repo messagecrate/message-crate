@@ -224,11 +224,11 @@ pub struct ReadOptions<'a> {
     /// Image/video compress settings used when `media` converts or compresses.
     pub compress: CompressOptions,
     /// Human-readable notes and warnings while reading.
-    pub log: Option<&'a LogSink>,
+    pub log: &'a LogSink,
     /// Typed progress events while staging attachments.
-    pub progress: Option<&'a ProgressSink>,
+    pub progress: &'a ProgressSink,
     /// Cancellation flag checked between records.
-    pub cancel: Option<&'a CancelFlag>,
+    pub cancel: &'a CancelFlag,
 }
 
 #[derive(Debug, Clone)]

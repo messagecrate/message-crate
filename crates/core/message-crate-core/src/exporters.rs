@@ -14,6 +14,9 @@ use crate::config::{
     OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig, SourceConfig,
     WhatsappConfig,
 };
+use crate::pipeline::IssueSink;
+use crate::process::{CancelFlag, LogSink};
+use crate::progress::ProgressSink;
 
 /// Validation message when Convert or Compress is selected and ffmpeg is missing.
 pub const CONVERT_COMPRESS_FFMPEG_REQUIRED: &str = "Convert and Compress need ffmpeg and ffprobe, both on PATH or both in the Tools Directory. Settings → System shows which can't be used and where the Tools Directory is.";
@@ -306,8 +309,9 @@ impl Form {
     /// The [`ExporterConfig`] every source builder ends in. The caller gives
     /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
     /// Scratch Directory. The output directory and output format come from
-    /// the form. A run started from the form does not resume. It has no
-    /// sinks, no cancel flag, and no zone for timestamps that carry none.
+    /// the form. A run started from the form does not resume. Its sinks drop
+    /// what they get until the caller sets its own, nothing sets its cancel
+    /// flag, and it has no zone for timestamps that carry none.
     /// The iMazing builder sets that zone on the result.
     fn exporter_config(
         &self,
@@ -324,10 +328,10 @@ impl Form {
             timezone: None,
             obfuscate,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
+            cancel: CancelFlag::default(),
+            log: LogSink::silent(),
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
             output_format: self.output_format,
             resume: false,
             source,

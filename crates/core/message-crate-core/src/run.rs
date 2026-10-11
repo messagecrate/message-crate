@@ -19,9 +19,9 @@ use crate::process::check_cancel;
 /// processing fails for every candidate file.
 pub fn run_pipeline(
     config: &ExporterConfig,
-    convert: impl FnOnce(ConvertRun<'_>) -> anyhow::Result<ExportReport>,
+    convert: impl FnOnce(ConvertRun) -> anyhow::Result<ExportReport>,
 ) -> anyhow::Result<RunResult> {
-    check_cancel(config.cancel.as_ref())?;
+    check_cancel(&config.cancel)?;
     let report = convert(config.convert_run())?;
     finish_run(config, &report, config.media.mode.needs_tools())
 }
@@ -47,10 +47,12 @@ pub fn finish_run(
 mod tests {
     use super::*;
     use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
-    use crate::pipeline::IssueSink;
-    use crate::process::CancelFlag;
+    use crate::pipeline::{IssueSink, RunIssue, RunIssueKind};
+    use crate::process::{CancelFlag, LogSink};
+    use crate::progress::ProgressSink;
     use media::{CompressOptions, MediaMode};
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
     fn config(mode: MediaMode, obfuscate: bool) -> ExporterConfig {
         ExporterConfig {
@@ -66,10 +68,10 @@ mod tests {
                 mode,
                 compress: CompressOptions::default(),
             },
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
+            cancel: CancelFlag::default(),
+            log: LogSink::silent(),
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
             output_format: OutputFormat::Jsonl,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),
@@ -82,25 +84,27 @@ mod tests {
     #[test]
     fn run_pipeline_hands_convert_every_run_wide_setting_of_the_config() {
         let mut config = config(MediaMode::Clone, false);
-        config.cancel = Some(CancelFlag::default());
-        config.issues = Some(IssueSink::new(|_| {}));
+        let rows = Arc::new(Mutex::new(Vec::new()));
+        let rows_seen = Arc::clone(&rows);
+        config.issues = IssueSink::new(move |issue| rows_seen.lock().unwrap().push(issue));
         config.output_format = OutputFormat::Csv;
         config.resume = true;
 
         run_pipeline(&config, |run| {
-            assert!(std::ptr::eq(
-                run.cancel.unwrap(),
-                config.cancel.as_ref().unwrap()
-            ));
-            assert!(std::ptr::eq(
-                run.issues.unwrap(),
-                config.issues.as_ref().unwrap()
-            ));
+            assert!(Arc::ptr_eq(&run.cancel, &config.cancel));
+            run.issues.emit(RunIssue {
+                kind: RunIssueKind::Error,
+                step: "parse".into(),
+                item: "a.txt".into(),
+                reason: "unreadable".into(),
+                conversation: None,
+            });
             assert_eq!(run.output_format, OutputFormat::Csv);
             assert!(run.resume);
             Ok(ExportReport::default())
         })
         .unwrap();
+        assert_eq!(rows.lock().unwrap().len(), 1);
     }
 
     #[test]

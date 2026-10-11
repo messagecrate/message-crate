@@ -67,7 +67,11 @@ impl Run {
         password: Option<&str>,
         cancel_when: Option<Arc<AtomicBool>>,
     ) -> ExporterConfig {
-        let base = config(&self.backup(), &self.output(), cancel_when.clone());
+        let base = config(
+            &self.backup(),
+            &self.output(),
+            cancel_when.clone().unwrap_or_default(),
+        );
         let scratch = base.scratch_dir.clone();
         let seen = Arc::clone(&self.seen_in_scratch);
         let look = move || {
@@ -81,8 +85,8 @@ impl Run {
         };
         let on_log = look.clone();
         ExporterConfig {
-            log: Some(LogSink::new(move |_| on_log())),
-            progress: Some(ProgressSink::unpaced(move |_| look())),
+            log: LogSink::new(move |_| on_log()),
+            progress: ProgressSink::unpaced(move |_| look()),
             source: SourceConfig::Apple(AppleConfig {
                 platform: Some(ApplePlatform::Ios),
                 backup_password: password.map(str::to_string),

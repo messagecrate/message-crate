@@ -36,8 +36,8 @@ pub struct ExportWriter {
     attachments_dir: PathBuf,
     media_mode: MediaMode,
     compress: CompressOptions,
-    log: Option<LogSink>,
-    progress: Option<ProgressSink>,
+    log: LogSink,
+    progress: ProgressSink,
     resume: bool,
     use_queue: bool,
     copy_attachments: bool,
@@ -64,9 +64,9 @@ pub struct ExportWriterParts {
     /// Compression options from the transforms.
     pub compress: CompressOptions,
     /// Log sink captured from the transforms.
-    pub log: Option<LogSink>,
+    pub log: LogSink,
     /// Progress sink captured from the transforms.
-    pub progress: Option<ProgressSink>,
+    pub progress: ProgressSink,
 }
 
 impl ExportWriter {
@@ -177,13 +177,13 @@ impl ExportWriter {
     }
 
     /// Log sink captured from the transforms.
-    pub fn log(&self) -> Option<&LogSink> {
-        self.log.as_ref()
+    pub fn log(&self) -> &LogSink {
+        &self.log
     }
 
     /// Progress sink captured from the transforms.
-    pub fn progress(&self) -> Option<&ProgressSink> {
-        self.progress.as_ref()
+    pub fn progress(&self) -> &ProgressSink {
+        &self.progress
     }
 
     /// Give up the writer and take the opened sink plus the decisions
@@ -227,7 +227,7 @@ impl ExportWriter {
         self,
         documents: Vec<ConversationDocument>,
         source_for: &mut dyn FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
-        cancel: Option<&CancelFlag>,
+        cancel: &CancelFlag,
         report: &mut ExportReport,
     ) -> Result<()> {
         let spool = self.spool.as_ref();
@@ -251,8 +251,8 @@ impl ExportWriter {
                 units,
                 &options,
                 Sinks {
-                    log: self.log.as_ref(),
-                    progress: self.progress.as_ref(),
+                    log: &self.log,
+                    progress: &self.progress,
                     cancel,
                 },
                 report,
@@ -272,7 +272,7 @@ impl ExportWriter {
             },
             PathSources::OnDisk,
             &mut source_for,
-            self.log.as_ref(),
+            &self.log,
         );
         // The same check the queue arm makes, before anything is written:
         // the staged copies, and for a mail or merged archive every
@@ -289,8 +289,8 @@ impl ExportWriter {
             .stage(
                 &self.attachments_dir,
                 load_attachment_source,
-                self.log.as_ref(),
-                self.progress.as_ref(),
+                &self.log,
+                &self.progress,
                 cancel,
             )
             .map_err(anyhow::Error::msg)?;
@@ -298,8 +298,8 @@ impl ExportWriter {
         write_documents_through_sink(
             documents,
             self.sink,
-            self.log.as_ref(),
-            self.progress.as_ref(),
+            &self.log,
+            &self.progress,
             cancel,
             report,
         )
@@ -309,8 +309,7 @@ impl ExportWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_crate_core::ProgressEvent;
-    use message_crate_core::testutil::names_in;
+    use message_crate_core::{ProgressEvent, testutil::names_in};
     use std::fs;
     use std::sync::{Arc, Mutex};
 
@@ -365,7 +364,7 @@ mod tests {
                 .finish(
                     vec![document_with_bytes()],
                     &mut AttachmentSource::take_bytes,
-                    None,
+                    &CancelFlag::default(),
                     &mut report,
                 )
                 .unwrap();
@@ -407,7 +406,7 @@ mod tests {
             &tmp.path().join("out"),
             OutputFormat::Csv,
             ExportTransforms {
-                progress: Some(progress),
+                progress,
                 ..transforms(false)
             },
             false,
@@ -435,7 +434,7 @@ mod tests {
             .finish(
                 vec![doc],
                 &mut |att: &mut IrAttachment| (sources.next().unwrap(), att.size_bytes),
-                None,
+                &CancelFlag::default(),
                 &mut ExportReport::default(),
             )
             .unwrap();
@@ -488,7 +487,7 @@ mod tests {
                 .finish(
                     vec![doc],
                     &mut AttachmentSource::take_bytes,
-                    None,
+                    &CancelFlag::default(),
                     &mut ExportReport::default(),
                 )
                 .unwrap_err();
@@ -542,7 +541,7 @@ mod tests {
             .finish(
                 vec![doc],
                 &mut AttachmentSource::take_bytes,
-                None,
+                &CancelFlag::default(),
                 &mut report,
             )
             .unwrap();

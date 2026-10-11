@@ -400,7 +400,7 @@ fn build_import_chunks(
         MAX_IMPORT_BODY_BYTES,
     );
     for (i, msg) in doc.messages.iter().enumerate() {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
+        check_cancel(&ctx.cfg.cancel)?;
         // Rewrite attachment fields to uploaded digests or missing placeholders.
         let (line, guid) = project::message_line(msg, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
@@ -664,12 +664,9 @@ fn upload_claimed(
     preflight_existing_asset(ctx, &first.digest)?;
 
     // Work-stealing style: workers pull the next job index from a shared counter.
-    let results = parallel_for_each(
-        jobs,
-        ctx.cfg.asset_upload_workers,
-        ctx.cfg.cancel.as_ref(),
-        |job| upload_one_asset(ctx, job).map_err(|error| format!("{error:#}")),
-    );
+    let results = parallel_for_each(jobs, ctx.cfg.asset_upload_workers, &ctx.cfg.cancel, |job| {
+        upload_one_asset(ctx, job).map_err(|error| format!("{error:#}"))
+    });
 
     // Apply journal updates in a stable order after all workers finish.
     for (job, result) in jobs.iter().zip(results) {
@@ -712,7 +709,7 @@ fn claim_upload_jobs<'u>(
     let mut jobs = Vec::with_capacity(pending.len());
     let mut busy = Vec::new();
     for &digest in pending {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
+        check_cancel(&ctx.cfg.cancel)?;
         match claims.claim(digest) {
             AssetClaim::Claimed => {}
             AssetClaim::OnServer => {
@@ -746,7 +743,7 @@ fn claim_upload_jobs<'u>(
 fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> {
     let mut journal = ctx.lock_journal();
     while digests.iter().any(|digest| journal.asset_in_flight(digest)) {
-        check_cancel(ctx.cfg.cancel.as_ref())?;
+        check_cancel(&ctx.cfg.cancel)?;
         journal = ctx
             .claim_ended
             .wait_timeout(journal, CLAIM_WAIT_POLL)
@@ -957,9 +954,7 @@ impl PrepareQueue {
                     };
                     let outcome = match prepare_file(ctx, &job.path, &job.name) {
                         Ok(prepared) => PrepareOutcome::Prepared(prepared),
-                        Err(_) if check_cancel(ctx.cfg.cancel.as_ref()).is_err() => {
-                            PrepareOutcome::Stopped
-                        }
+                        Err(_) if check_cancel(&ctx.cfg.cancel).is_err() => PrepareOutcome::Stopped,
                         Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
                     };
                     let _ = result_tx.send(PrepareResult {

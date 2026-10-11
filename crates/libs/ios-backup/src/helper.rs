@@ -24,7 +24,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use imessage_reader_protocol::{
     AttachmentFile, Event, HELPER_NAME, PROTOCOL_VERSION, Progress, Request,
 };
-use message_crate_core::{LogSink, ProgressEvent, ProgressSink, emit_log, emit_progress};
+use message_crate_core::{LogSink, ProgressEvent, ProgressSink};
 
 /// Names the helper executable outright, bypassing the search.
 pub(crate) const HELPER_PATH_ENV: &str = "MESSAGE_CRATE_IMESSAGE_READER";
@@ -99,8 +99,8 @@ pub struct Helper {
     stdin: Option<ChildStdin>,
     stdout: Lines<BufReader<ChildStdout>>,
     stderr: Option<JoinHandle<String>>,
-    log: Option<LogSink>,
-    progress: Option<ProgressSink>,
+    log: LogSink,
+    progress: ProgressSink,
     /// The request was an export or an identities read, and the program has
     /// not yet sent the [`Event::Source`] that says which protocol version it
     /// speaks.
@@ -114,11 +114,7 @@ impl Helper {
     ///
     /// Returns an error when the program cannot be found or started, or the
     /// request cannot be written.
-    pub fn spawn(
-        request: &Request,
-        log: Option<LogSink>,
-        progress: Option<ProgressSink>,
-    ) -> Result<Self> {
+    pub fn spawn(request: &Request, log: LogSink, progress: ProgressSink) -> Result<Self> {
         let path = locate()?;
         Self::spawn_at(&path, request, log, progress)
     }
@@ -132,8 +128,8 @@ impl Helper {
     pub fn spawn_at(
         path: &Path,
         request: &Request,
-        log: Option<LogSink>,
-        progress: Option<ProgressSink>,
+        log: LogSink,
+        progress: ProgressSink,
     ) -> Result<Self> {
         let mut child = Command::new(path)
             .stdin(Stdio::piped())
@@ -186,9 +182,9 @@ impl Helper {
             let event: Event = serde_json::from_str(&line)
                 .with_context(|| format!("imessage-reader sent something unexpected: {line}"))?;
             match event {
-                Event::Log { line } => emit_log(self.log.as_ref(), line),
+                Event::Log { line } => self.log.emit(line),
                 Event::Progress(progress) => {
-                    emit_progress(self.progress.as_ref(), progress_event(progress));
+                    self.progress.emit(progress_event(progress));
                 }
                 Event::Error { message } => return Err(anyhow!(message)),
                 Event::Source {
@@ -278,9 +274,9 @@ impl Helper {
         let mut reason = None;
         for line in self.stdout.by_ref().map_while(Result::ok) {
             match serde_json::from_str::<Event>(&line) {
-                Ok(Event::Log { line }) => emit_log(self.log.as_ref(), line),
+                Ok(Event::Log { line }) => self.log.emit(line),
                 Ok(Event::Progress(progress)) => {
-                    emit_progress(self.progress.as_ref(), progress_event(progress));
+                    self.progress.emit(progress_event(progress));
                 }
                 Ok(Event::Error { message }) => {
                     reason = Some(message);

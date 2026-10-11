@@ -436,7 +436,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub convert_run: ConvertRun<'a>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
@@ -481,17 +481,17 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         owners: &owners,
         spool: writer.spool(),
         conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.cloned()),
+        report: ExportReport::with_issues(issues.clone()),
         skips: SkipDetails::default(),
     };
     let xml_paths = sorted_files(input_dir, &is_xml_file)?;
     let pdu_paths = sorted_files(input_dir, &is_pdu_file)?;
     for xml_path in &xml_paths {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         ingest.ingest_xml(xml_path);
     }
     for pdu_path in &pdu_paths {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         ingest.ingest_pdu(pdu_path)?;
     }
     // GO SMS Pro writes no date of its own, so the backup is as new as the
@@ -499,7 +499,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
         xml_paths.iter().chain(&pdu_paths).map(PathBuf::as_path),
     );
-    message_crate_core::check_cancel(cancel)?;
+    message_crate_core::check_cancel(&cancel)?;
     let Ingest {
         conversations,
         mut report,
@@ -527,7 +527,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     writer.finish(
         documents,
         &mut AttachmentSource::take_bytes,
-        cancel,
+        &cancel,
         &mut report,
     )?;
 

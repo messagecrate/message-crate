@@ -284,13 +284,13 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     let arrived = Arc::new(Mutex::new(Vec::new()));
     let sink_arrived = Arc::clone(&arrived);
     let sink_output = output.clone();
-    config.issues = Some(IssueSink::new(move |issue| {
+    config.issues = IssueSink::new(move |issue| {
         let staging_ended = message_staging::read_media_settings(&sink_output).is_ok();
         sink_arrived
             .lock()
             .unwrap()
             .push((issue.item, staging_ended));
-    }));
+    });
     let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
 
     run_staging(&config, &output, &settings).unwrap();

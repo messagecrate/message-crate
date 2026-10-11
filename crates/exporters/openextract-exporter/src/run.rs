@@ -14,7 +14,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let SourceConfig::OpenExtract(_) = &config.source else {
         bail!("openextract-exporter requires SourceConfig::OpenExtract");
     };
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+    message_crate_core::check_cancel(&config.cancel)?;
     let input = config.require_input().map_err(anyhow::Error::msg)?;
     message_crate_core::run_pipeline(config, |convert_run| {
         convert_export(ConvertExportArgs {

@@ -42,14 +42,11 @@ pub use exporters::{
 };
 pub use pipeline::{
     CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT_NOTE, RunIssue, RunIssueKind, RunResult,
-    discover_files, emit_issue, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
+    discover_files, export_meta, file_modified_unix_ms, newest_file_modified_unix_ms,
     prepare_outputs, project_conversation, unreadable_parts_note,
 };
-pub use process::{
-    CancelFlag, Cancelled, LogSink, check_cancel, emit_log, emit_warning, is_cancelled,
-    parallel_for_each,
-};
-pub use progress::{ProgressEvent, ProgressSink, WriteStatus, emit_progress};
+pub use process::{CancelFlag, Cancelled, LogSink, check_cancel, is_cancelled, parallel_for_each};
+pub use progress::{ProgressEvent, ProgressSink, WriteStatus};
 pub use run::{finish_run, run_pipeline};
 pub use run_log::{RunLogAccount, RunLogLevel, RunLogLine, format_run_log, parse_run_log_line};
 pub use scratch::{

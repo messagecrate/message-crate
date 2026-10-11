@@ -5,8 +5,8 @@ use media::{CompressOptions, MediaMode};
 pub use message_crate_core::RunResult;
 use message_crate_core::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, ExportReport, ExportTransforms, ExporterConfig,
-    LogSink, MediaConfig, OutputFormat, SourceConfig, attachment_size_hint, document_messages,
-    prepare_outputs,
+    LogSink, MediaConfig, OutputFormat, ProgressSink, SourceConfig, attachment_size_hint,
+    document_messages, prepare_outputs,
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
@@ -142,6 +142,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // staged again under the same names, and the convert pass replaces each
     // one in place, so the check counts one copy (#1759).
     let mut from_input = None;
+    let silent = LogSink::silent();
     if copy_attachments {
         let counted = match &sms_backup {
             Some(backup) => backup.counted(&mut documents, config),
@@ -151,7 +152,11 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
                 staging_media(&transforms),
                 // A file found missing is logged only by a run that then
                 // stages: a cloned copy of `attachments/` reads no file.
-                config.log.as_ref().filter(|_| stages_from_input),
+                if stages_from_input {
+                    &config.log
+                } else {
+                    &silent
+                },
             ),
         };
         let needed = counted.bytes_to_write(config.output_format);
@@ -232,7 +237,7 @@ fn attachments_in<'a>(
     documents: &'a mut [ConversationDocument],
     dir: &Path,
     media: MediaConfig,
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) -> CountedAttachments<'a> {
     CountedAttachments::new(
         document_messages(documents),
@@ -271,7 +276,7 @@ fn apply_reexport_convert(
         documents,
         &config.output,
         staging_media(transforms),
-        config.log.as_ref(),
+        &config.log,
     );
     stage_again(counted, config, report)?;
     keep_missing_reasons(documents, reasons, report);
@@ -297,9 +302,9 @@ fn stage_again(
         .stage(
             &config.output.join("attachments"),
             load_attachment_source,
-            config.log.as_ref(),
-            config.progress.as_ref(),
-            config.cancel.as_ref(),
+            &config.log,
+            &config.progress,
+            &config.cancel,
         )
         .map_err(anyhow::Error::msg)?;
     report.attachments_saved += saved;
@@ -381,6 +386,10 @@ struct SmsBackupRead {
     /// The payloads the read spooled; `None` when the run does not copy
     /// attachments. The spool is removed when this is dropped.
     spool: Option<AttachmentSpool>,
+    /// Where the read and the staging send their lines and counts: nowhere,
+    /// so the run's log says what the read found once, in [`Self::read`].
+    log: LogSink,
+    progress: ProgressSink,
 }
 
 impl SmsBackupRead {
@@ -397,6 +406,8 @@ impl SmsBackupRead {
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
+            log: LogSink::silent(),
+            progress: ProgressSink::none(),
         }
     }
 
@@ -413,9 +424,9 @@ impl SmsBackupRead {
                 MediaMode::Disabled
             },
             compress: CompressOptions::default(),
-            log: None,
-            progress: None,
-            cancel: config.cancel.as_ref(),
+            log: &self.log,
+            progress: &self.progress,
+            cancel: &config.cancel,
         }
     }
 

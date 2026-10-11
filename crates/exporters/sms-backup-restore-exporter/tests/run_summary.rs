@@ -5,7 +5,10 @@
 
 use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{ConvertRun, OutputFormat, SmsBackupRestoreConfig, SourceConfig};
+use message_crate_core::{
+    CancelFlag, ConvertRun, LogSink, OutputFormat, ProgressSink, SmsBackupRestoreConfig,
+    SourceConfig,
+};
 use std::fs;
 use std::path::Path;
 
@@ -166,9 +169,9 @@ fn convert_and_import_word_every_count_and_error_alike() {
             spool: None,
             media: media::MediaMode::Disabled,
             compress: media::CompressOptions::default(),
-            log: None,
-            progress: None,
-            cancel: None,
+            log: &LogSink::silent(),
+            progress: &ProgressSink::none(),
+            cancel: &CancelFlag::default(),
         },
     )
     .expect("read");

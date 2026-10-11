@@ -1,9 +1,9 @@
+use message_crate_core::{
+    CancelFlag, ExportReport, ExportTransforms, ExporterConfig, FormatConfig, IssueSink, LogSink,
+    MediaConfig, ObfuscateConfig, OutputFormat, ProgressSink, SourceConfig,
+};
 use std::path::{Path, PathBuf};
 
-use message_crate_core::{
-    ExportReport, ExportTransforms, ExporterConfig, FormatConfig, MediaConfig, ObfuscateConfig,
-    OutputFormat, SourceConfig,
-};
 use message_ir_format::{EXPORT_SENTINEL, FormatSink};
 
 use super::{CONVERTING, EXPORT_DIRECTORY_NAME, EXPORTED, ExportDirectories, ExportKind, sweep};
@@ -45,10 +45,10 @@ fn convert(input: &Path, output: &Path, cache: &Path) {
         timezone: None,
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
+        cancel: CancelFlag::default(),
+        log: LogSink::silent(),
+        progress: ProgressSink::none(),
+        issues: IssueSink::none(),
         output_format: OutputFormat::Csv,
         resume: false,
         source: SourceConfig::Format(FormatConfig::default()),

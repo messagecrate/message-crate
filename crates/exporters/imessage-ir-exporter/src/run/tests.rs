@@ -1,6 +1,7 @@
 use super::*;
-use message_crate_core::testutil::names_in;
-use message_crate_core::{AppleConfig, MediaConfig, OutputFormat};
+use message_crate_core::{
+    AppleConfig, CancelFlag, IssueSink, MediaConfig, OutputFormat, testutil::names_in,
+};
 use message_ir::TimePrecision;
 use std::{fs, path::Path};
 
@@ -12,10 +13,10 @@ fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
         timezone: None,
         obfuscate: Default::default(),
         media: MediaConfig::default(),
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
+        cancel: CancelFlag::default(),
+        log: LogSink::silent(),
+        progress: ProgressSink::none(),
+        issues: IssueSink::none(),
         output_format: OutputFormat::Jsonl,
         resume: false,
         source: SourceConfig::Apple(apple),
@@ -394,7 +395,7 @@ fn svg_attachment(
 fn run_one_message(
     dir: &Path,
     attachments: Vec<imessage_reader_protocol::Attachment>,
-    progress: Option<message_crate_core::ProgressSink>,
+    progress: ProgressSink,
 ) -> (ExporterConfig, message_crate_core::RunResult) {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
@@ -433,7 +434,7 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
             svg_attachment(AttachmentSource::Inline { text: SVG.into() }),
             svg_attachment(AttachmentSource::Missing),
         ],
-        None,
+        ProgressSink::none(),
     );
     assert!(
         result.messages.iter().any(|l| l == "  Saved 1 attachment"),
@@ -476,7 +477,7 @@ fn an_unencrypted_path_with_no_file_stays_out_of_the_byte_total() {
                 size_hint: Some(700),
             }),
         ],
-        Some(progress),
+        progress,
     );
 
     let totals = totals.lock().unwrap().clone();

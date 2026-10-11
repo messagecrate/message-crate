@@ -206,7 +206,7 @@ pub fn extract(
 
     let app_handle = app.clone();
     let cancel = job.cancel_flag();
-    config.cancel = Some(cancel.clone());
+    config.cancel = cancel.clone();
     let downloads = downloads.inner().clone();
     // Two channels, two jobs: log lines are for the person reading the log
     // panel, progress events are for the bar. Nothing reads counts out of
@@ -214,9 +214,9 @@ pub fn extract(
     // The same lines go into the run's log in the Logs Directory, which
     // outlives the run's directory.
     let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
-    config.log = Some(events::run_log_sink(&app_handle, &run_log));
-    config.progress = Some(events::progress_sink(&app_handle));
-    config.issues = Some(events::run_issue_sink(&app_handle, &run_log));
+    config.log = events::run_log_sink(&app_handle, &run_log);
+    config.progress = events::progress_sink(&app_handle);
+    config.issues = events::run_issue_sink(&app_handle, &run_log);
 
     spawn_job(app, job, move || {
         // A program still downloading is waited for, and the wait is the
