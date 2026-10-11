@@ -11,12 +11,14 @@ csv = { workspace = true }
 message-csv = { path = "../csv" }
 message-crate-core = { path = "../../core/message-crate-core" }
 file-io = { workspace = true }
+hex = { workspace = true }
 message-ir = { path = "../ir" }
 mail = { path = "../mail" }
 media = { path = "../media" }
 obfuscate = { path = "../obfuscate" }
 phone = { path = "../phone" }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }

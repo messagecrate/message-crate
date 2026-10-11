@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::LazyLock;
 
-use message_ir::valid_filename;
+use android_fields::valid_filename;
 
 static SAFE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^\w.\-]+").expect("safe"));
 

@@ -163,7 +163,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         export_tool,
         export_tool_version,
         backup_taken_at_unix_ms,
-        filename_suffix: None,
         message: IrMessage {
             guid,
             timestamp_unix_ms,
@@ -786,7 +785,8 @@ mod tests {
     fn mbox_roundtrip_keeps_the_bytes_of_text_attachments() {
         let msg = message_with_text_and_binary_attachments();
         let tmp = tempfile::tempdir().unwrap();
-        let path = write_conversation_mbox(tmp.path(), std::slice::from_ref(&msg)).unwrap();
+        let path = write_conversation_mbox(&tmp.path().join("c.mbox"), std::slice::from_ref(&msg))
+            .unwrap();
         let parsed = mail_messages_from_mbox(&path).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_text_and_binary_attachments(&parsed[0]);
