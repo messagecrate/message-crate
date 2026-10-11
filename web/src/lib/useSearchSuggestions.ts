@@ -42,10 +42,9 @@ export function buildSearchSuggestions(args: {
   // A negated token keeps its minus in the text a suggestion inserts.
   const minus = args.lastToken.startsWith("-") ? "-" : "";
   const token = args.lastToken.slice(minus.length);
-  const colon = token.indexOf(":");
   if (args.completingValue) {
-    const word = token.slice(0, colon).toLowerCase();
-    const typed = token.slice(colon + 1).toLowerCase();
+    const { word, valuePart } = readToken(token);
+    const typed = valuePart.toLowerCase();
     if (args.personOp) {
       return args.contacts.slice(0, 6).map((c) => ({
         id: c.id,
@@ -87,6 +86,14 @@ function readToken(token: string): { completingValue: boolean; word: string; val
   };
 }
 
+/**
+ * Which term a token is: where it starts in the query, and its word. A value
+ * typed for one term is never offered under another.
+ */
+function termOf(token: { start: number; text: string }): string {
+  return `${token.start}:${readToken(token.text).word}`;
+}
+
 /** Replace the token being typed with a suggestion's text, and leave the rest as typed. */
 export function applySuggestionToQuery(value: string, suggestion: Suggestion): string {
   return replaceLastToken(value, suggestion.insert);
@@ -104,21 +111,23 @@ export function useSearchSuggestions(value: string, list: SearchList | null): Su
   const typedToken = typed.text;
   const { completingValue, word } = readToken(typedToken);
   const personOp = completingValue && isPersonWord(fields.find((f) => f.word === word));
-  // Which term is being typed: where it starts, and its word.
-  const term = `${typed.start}:${word}`;
+  const term = termOf(typed);
 
   // The query as it stood once typing paused, or null while no person word
-  // is typed. Contacts are asked for only once the term typed then is the
-  // term typed now, so a value typed for another term, a person word's
-  // included, is never offered under this one.
+  // is typed. Contacts are asked for only when the term typed then is the
+  // term typed now. A value typed for another term is never offered under
+  // this one, even another person word's.
   const settledValue = useDebouncedValue(personOp ? value : null, CONTACT_SUGGESTION_DEBOUNCE_MS);
   const settled = settledValue === null ? null : lastToken(settledValue);
-  const settledToken = settled === null ? null : readToken(settled.text);
-  const prefix = settledToken?.valuePart ?? "";
-  const forThisTerm =
-    personOp && settled !== null && `${settled.start}:${settledToken?.word}` === term;
+  const prefix = settled === null ? "" : readToken(settled.text).valuePart;
+  const forThisTerm = personOp && settled !== null && termOf(settled) === term;
 
-  // The term the last answer on screen was for.
+  // The term the last answer on screen was for, so `placeholderData` keeps
+  // an answer only while the same term is typed. It is not in the key: the
+  // contacts for a prefix are the same whatever term asked for them, and one
+  // entry per prefix lets any term reuse them. The cache does not say which
+  // term an entry last served, so this ref does. It is written after a
+  // render that showed a real answer, and read by the next render.
   const answeredTerm = useRef<string | null>(null);
   const { data, isPlaceholderData } = useRouteQuery(
     keys.contacts.suggest(prefix),
