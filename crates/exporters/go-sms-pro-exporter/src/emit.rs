@@ -445,8 +445,7 @@ pub(crate) struct ConvertExportArgs<'a> {
 ///
 /// When `cancel` is set, cooperative cancellation is checked between XML files
 /// and between PDU files. A cancelled run returns
-/// [`message_crate_core::Cancelled`], or the text `cancelled` when the cancel
-/// is seen while attachments are staged (#2077).
+/// what [`message_staging::Sinks::cancel`] says.
 ///
 /// # Errors
 ///
