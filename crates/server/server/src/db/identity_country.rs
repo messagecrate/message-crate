@@ -18,8 +18,8 @@ use sqlx::SqliteConnection;
 use message_crate_api_types::IdentityHolder;
 
 use crate::db::contacts::{self, IdentityGoes, Origin};
+use crate::db::dedupe::HAS_CONTENT_KEY_SQL;
 use crate::db::{account_profile, handles};
-use crate::dedupe::HAS_CONTENT_KEY_SQL;
 
 /// Why a country cannot be picked for an identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,8 +108,8 @@ pub async fn holder(
 /// The messages whose content keys name the identity `handle_id`, among
 /// those a dedupe has keyed: every message of a conversation it is the chat
 /// handle of, a member of, or a sender in. A content key is made from the
-/// chat handle's key, the sender's and a group's members' (`dedupe.rs`,
-/// `ContentKeyInputs::load`), so when the identity's key or the identity
+/// chat handle's key, the sender's and a group's members' (`db/dedupe.rs`,
+/// `content_key_inputs`), so when the identity's key or the identity
 /// itself changes, every one of these needs its key again.
 async fn messages_keyed_by(
     conn: &mut SqliteConnection,

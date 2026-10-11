@@ -1,7 +1,10 @@
 //! Cross-source content fingerprint and soft-hide dedupe.
+//!
+//! This module sequences the dedupe, hashes the content keys, picks the copy
+//! shown, says how far it is and keeps the counts. Its statements are in
+//! `crate::db::dedupe` (`docs/architecture/http-api.md`, "Code").
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::fmt::Write as _;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -10,28 +13,11 @@ use sqlx::SqliteConnection;
 
 use crate::counts::words;
 use crate::db::conversations::is_group_type;
-use crate::db::schema;
-use crate::db::sql::SQLITE_IN_CHUNK;
+use crate::db::dedupe::{self as db, ContentKeyInputs, ContentKeyRow, KeyScope, NearRows};
 use crate::db::{WriteTx, begin_write};
 use crate::progress::Progress;
 
 const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
-
-/// One production message that still needs a content fingerprint, as
-/// [`ContentKeyInputs::load`] selects it.
-#[derive(Debug, Clone, sqlx::FromRow)]
-struct ContentKeyRow {
-    id: i64,
-    conversation_id: i64,
-    /// The chat handle's normalized address.
-    chat_id: String,
-    conversation_type: String,
-    is_from_me: i64,
-    timestamp: String,
-    body: Option<String>,
-    /// The sender the message is matched by ([`sender_for_key_sql`]).
-    sender_normalized: Option<String>,
-}
 
 /// Collapse whitespace so minor text differences do not split the same SMS.
 pub fn normalize_body(body: Option<&str>) -> String {
@@ -125,14 +111,12 @@ fn content_key_for_row(
     Some((row.id, key))
 }
 
-/// Fingerprint every row in parallel.
-fn hash_content_keys(
-    rows: &[ContentKeyRow],
-    group_handles: &HashMap<i64, Vec<String>>,
-    shas_by_msg: &HashMap<i64, Vec<String>>,
-) -> Vec<(i64, String)> {
-    rows.par_iter()
-        .filter_map(|row| content_key_for_row(row, group_handles, shas_by_msg))
+/// `(message id, content key)` for every row of `inputs`, hashed in parallel.
+fn hash_content_keys(inputs: &ContentKeyInputs) -> Vec<(i64, String)> {
+    inputs
+        .rows
+        .par_iter()
+        .filter_map(|row| content_key_for_row(row, &inputs.group_handles, &inputs.shas_by_msg))
         .collect()
 }
 
@@ -151,29 +135,6 @@ pub struct DedupeStats {
     pub exact_flagged: u64,
     /// Messages flagged as near duplicates.
     pub near_flagged: u64,
-}
-
-/// Source preference for survivors: first imported source (min message id), then name.
-pub async fn source_priority_from_db(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-) -> Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        r"
-        SELECT m.source, MIN(m.id) AS first_id
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1
-          AND m.source IS NOT NULL
-          AND TRIM(m.source) != ''
-        GROUP BY m.source
-        ORDER BY first_id ASC, m.source ASC
-        ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok(rows.into_iter().map(|(source,)| source).collect())
 }
 
 /// Refresh the content keys, clear prior flags, then soft-hide cross-source
@@ -199,7 +160,7 @@ pub async fn dedupe_cross_source(
     let priority = if let Some(p) = source_priority {
         p
     } else {
-        owned_priority = source_priority_from_db(&mut tx, account_id).await?;
+        owned_priority = db::sources_in_import_order(&mut tx, account_id).await?;
         owned_priority.as_slice()
     };
     let mut stats = DedupeStats::default();
@@ -214,18 +175,7 @@ pub async fn dedupe_cross_source(
     {
         progress.say("Refreshing the content keys that match the same message across sources…");
         stats.keys_filled = refresh_content_keys(&mut tx, account_id, progress).await?;
-        sqlx::query(
-            r"
-            UPDATE messages
-            SET duplicate_of = NULL
-            WHERE conversation_id IN (
-                SELECT id FROM conversations WHERE account_id = $1
-            )
-            ",
-        )
-        .bind(account_id)
-        .execute(&mut *tx)
-        .await?;
+        db::clear_account_duplicate_flags(&mut tx, account_id).await?;
         progress.say(format_args!(
             "Wrote {} in {:.1} s",
             words(stats.keys_filled, "1 content key", "{n} content keys"),
@@ -315,16 +265,10 @@ pub async fn dedupe_changed_messages(
     if changed.is_empty() {
         return Ok(ChangedDedupe::default());
     }
-    let changed_json = serde_json::to_string(changed)?;
-    sqlx::query(
-        "UPDATE messages SET content_key = NULL WHERE id IN (SELECT value FROM json_each($1))",
-    )
-    .bind(&changed_json)
-    .execute(&mut *conn)
-    .await?;
-    recompute_content_keys(conn, KeyScope::Changed(&changed_json), account_id, progress).await?;
+    db::clear_content_keys(conn, changed).await?;
+    recompute_content_keys(conn, KeyScope::Changed(changed), account_id, progress).await?;
 
-    let priority = source_priority_from_db(conn, account_id).await?;
+    let priority = db::sources_in_import_order(conn, account_id).await?;
     let prio: HashMap<&str, usize> = priority
         .iter()
         .enumerate()
@@ -336,19 +280,7 @@ pub async fn dedupe_changed_messages(
     flags.extend(cluster_near_dupes(by_conversation, &prio, near_window_secs));
     let now: HashMap<i64, i64> = flags.into_iter().collect();
 
-    let stored: HashMap<i64, i64> = sqlx::query_as(
-        r"
-        SELECT m.id, m.duplicate_of
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1 AND m.duplicate_of IS NOT NULL
-        ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?
-    .into_iter()
-    .collect();
+    let stored = db::duplicate_flags(conn, account_id).await?;
 
     let tied = tied_messages(changed, &stored, &now);
     let mut result = ChangedDedupe::default();
@@ -366,14 +298,9 @@ pub async fn dedupe_changed_messages(
         }
     }
     let tied: Vec<i64> = tied.into_iter().collect();
-    sqlx::query(
-        "UPDATE messages SET duplicate_of = NULL WHERE id IN (SELECT value FROM json_each($1))",
-    )
-    .bind(serde_json::to_string(&tied)?)
-    .execute(&mut *conn)
-    .await?;
+    db::clear_duplicate_flags(conn, &tied).await?;
     if !flags.is_empty() {
-        apply_duplicate_flags(conn, "_changed_flags", &flags).await?;
+        db::write_duplicate_flags(conn, "_changed_flags", &flags).await?;
     }
     Ok(result)
 }
@@ -433,50 +360,6 @@ async fn refresh_content_keys(
     recompute_content_keys(conn, KeyScope::All, account_id, progress).await
 }
 
-/// Bulk-insert fingerprints into the `_content_keys` temp table in chunks that fit the bind limit.
-async fn insert_content_key_rows(
-    conn: &mut SqliteConnection,
-    keys: &[(i64, String)],
-    progress: Progress,
-) -> Result<()> {
-    let total = keys.len();
-    let mut written = 0usize;
-    for chunk in keys.chunks(SQLITE_IN_CHUNK) {
-        let mut sql = "INSERT INTO _content_keys (id, content_key) VALUES ".to_string();
-        for (i, _) in chunk.iter().enumerate() {
-            if i > 0 {
-                sql.push(',');
-            }
-            let _ = write!(sql, "(${}, ${})", i * 2 + 1, i * 2 + 2);
-        }
-        let mut q = sqlx::query(&sql);
-        for (id, key) in chunk {
-            q = q.bind(*id).bind(key);
-        }
-        q.execute(&mut *conn).await?;
-        let previous = written;
-        written += chunk.len();
-        let crossed_log_mark =
-            written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY;
-        if written == total || crossed_log_mark {
-            progress.say(format_args!("Wrote {written} of {total} content keys"));
-        }
-    }
-    Ok(())
-}
-
-/// Which of the account's messages [`recompute_content_keys`] computes a key
-/// for.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyScope<'a> {
-    /// Every message, writing only the keys that changed.
-    All,
-    /// The messages without a key.
-    Missing,
-    /// The messages whose ids the JSON array names, writing every key.
-    Changed(&'a str),
-}
-
 /// Compute and store content keys for the account's messages in `scope`.
 /// Returns how many were written.
 ///
@@ -489,32 +372,20 @@ async fn recompute_content_keys(
     account_id: i64,
     progress: Progress,
 ) -> Result<u64> {
-    let Some(inputs) = ContentKeyInputs::load(conn, account_id, scope).await? else {
+    let Some(inputs) = db::content_key_inputs(conn, account_id, scope).await? else {
         return Ok(0);
     };
     progress.say(format_args!(
         "Hashing the content keys of {}…",
         words(inputs.rows.len() as u64, "1 message", "{n} messages")
     ));
-    let keys = tokio::task::spawn_blocking(move || inputs.hash())
+    let keys = tokio::task::spawn_blocking(move || hash_content_keys(&inputs))
         .await
         .context("content-key hash task panicked")?;
     let keys = if scope != KeyScope::All {
         keys
     } else {
-        let stored: HashMap<i64, String> = sqlx::query_as(
-            r"
-            SELECT m.id, m.content_key
-            FROM messages m
-            JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.account_id = $1 AND m.content_key IS NOT NULL
-            ",
-        )
-        .bind(account_id)
-        .fetch_all(&mut *conn)
-        .await?
-        .into_iter()
-        .collect();
+        let stored = db::stored_content_keys(conn, account_id).await?;
         keys.into_iter()
             .filter(|(id, key)| stored.get(id) != Some(key))
             .collect()
@@ -522,181 +393,20 @@ async fn recompute_content_keys(
     if keys.is_empty() {
         return Ok(0);
     }
-    apply_content_keys(conn, &keys, progress).await?;
-    Ok(keys.len() as u64)
-}
-
-/// The sender a message is matched by, as a SQL expression over the message's
-/// conversation `c` and its sender's handle `hs`: the sender's normalized
-/// address, or NULL in a conversation with yourself.
-///
-/// The holder is nobody's sender in a conversation with yourself, so an
-/// import drops the sender of each received note there (#1094). A copy
-/// imported before the chat's address was linked still names the holder, and
-/// one imported after does not; matching both with no sender lets the two
-/// copies of a received note pair (#1661). The question is asked of the
-/// identities the account has now, as every read of a conversation with
-/// yourself asks it.
-fn sender_for_key_sql() -> String {
-    format!(
-        "CASE WHEN {with_yourself} THEN NULL ELSE hs.normalized END",
-        with_yourself = crate::db::conversations::is_with_yourself_sql("c"),
-    )
-}
-
-/// Whether the message `m` has a content key, as a SQL condition: whether a
-/// dedupe, or an import that filled the keys, has seen it.
-pub(crate) const HAS_CONTENT_KEY_SQL: &str = "m.content_key IS NOT NULL AND m.content_key != ''";
-
-/// Everything the content-key hash reads, loaded in three queries so the
-/// hashing runs off the database thread with no lookups of its own.
-struct ContentKeyInputs {
-    rows: Vec<ContentKeyRow>,
-    /// Sorted participant handles per group conversation: one shared identity
-    /// across import sources.
-    group_handles: HashMap<i64, Vec<String>>,
-    /// Attachment digests per message.
-    shas_by_msg: HashMap<i64, Vec<String>>,
-}
-
-impl ContentKeyInputs {
-    /// `None` when no message needs a key.
-    async fn load(
-        conn: &mut SqliteConnection,
-        account_id: i64,
-        scope: KeyScope<'_>,
-    ) -> Result<Option<Self>> {
-        let filter = match scope {
-            KeyScope::All => "WHERE c.account_id = $1",
-            KeyScope::Missing => {
-                "WHERE (m.content_key IS NULL OR m.content_key = '') AND c.account_id = $1"
-            }
-            KeyScope::Changed(_) => {
-                "WHERE m.id IN (SELECT value FROM json_each($2)) AND c.account_id = $1"
-            }
-        };
-        let sql = format!(
-            r"
-            SELECT m.id, m.conversation_id, h.normalized AS chat_id, c.conversation_type,
-                   m.is_from_me, m.timestamp, m.body,
-                   {sender} AS sender_normalized
-            FROM messages m
-            JOIN conversations c ON c.id = m.conversation_id
-            JOIN handles h ON h.id = c.chat_handle_id
-            LEFT JOIN handles hs ON hs.id = m.sender_handle_id
-            {filter}
-            ORDER BY m.id
-            ",
-            sender = sender_for_key_sql(),
-        );
-        let mut query = sqlx::query_as(&sql).bind(account_id);
-        if let KeyScope::Changed(ids) = scope {
-            query = query.bind(ids);
+    let total = keys.len();
+    let mut previous = 0usize;
+    db::write_content_keys(conn, &keys, |written| {
+        // Say how far the write is at each multiple of the log interval it
+        // passes, and when it is done.
+        if written == total
+            || written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY
+        {
+            progress.say(format_args!("Wrote {written} of {total} content keys"));
         }
-        let rows: Vec<ContentKeyRow> = query.fetch_all(&mut *conn).await?;
-        if rows.is_empty() {
-            return Ok(None);
-        }
-
-        // The holder is never a participant: a group imported before one of
-        // these identities was linked still lists it, and one imported after
-        // does not, so it is left out of the key on both (#1093).
-        let participant_sql = format!(
-            r"
-            SELECT p.conversation_id, h.normalized
-            FROM participants p
-            JOIN conversations c ON c.id = p.conversation_id
-            JOIN handles h ON h.id = p.handle_id
-            WHERE c.account_id = $1
-              AND h.normalized IS NOT NULL AND h.normalized != ''
-              AND NOT {holder}
-            ORDER BY p.conversation_id, h.normalized
-            ",
-            holder = crate::db::account_profile::is_account_identity_sql("h", "c.account_id"),
-        );
-        let participant_rows: Vec<(i64, String)> = sqlx::query_as(&participant_sql)
-            .bind(account_id)
-            .fetch_all(&mut *conn)
-            .await?;
-        let mut group_handles: HashMap<i64, Vec<String>> = HashMap::new();
-        for (conversation_id, handle) in participant_rows {
-            group_handles
-                .entry(conversation_id)
-                .or_default()
-                .push(handle);
-        }
-
-        // One scan for attachment hashes belonging to this account's message id range.
-        let min_id = rows.first().map_or(0, |r| r.id);
-        let max_id = rows.last().map_or(0, |r| r.id);
-        let att_rows: Vec<(i64, String)> = sqlx::query_as(
-            r"
-            SELECT a.message_id, a.sha256
-            FROM attachments a
-            JOIN messages m ON m.id = a.message_id
-            JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.account_id = $1
-              AND a.message_id BETWEEN $2 AND $3
-              AND a.sha256 IS NOT NULL AND a.sha256 != ''
-            ORDER BY a.message_id
-            ",
-        )
-        .bind(account_id)
-        .bind(min_id)
-        .bind(max_id)
-        .fetch_all(&mut *conn)
-        .await?;
-        let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-        for (message_id, sha) in att_rows {
-            shas_by_msg.entry(message_id).or_default().push(sha);
-        }
-
-        Ok(Some(Self {
-            rows,
-            group_handles,
-            shas_by_msg,
-        }))
-    }
-
-    /// `(message id, content key)` for every row, hashed in parallel.
-    fn hash(&self) -> Vec<(i64, String)> {
-        hash_content_keys(&self.rows, &self.group_handles, &self.shas_by_msg)
-    }
-}
-
-/// Write the keys onto `messages` through the `_content_keys` temp table,
-/// which is dropped again afterwards.
-async fn apply_content_keys(
-    conn: &mut SqliteConnection,
-    keys: &[(i64, String)],
-    progress: Progress,
-) -> Result<()> {
-    for stmt in schema::split_ddl(
-        r"
-        CREATE TEMP TABLE IF NOT EXISTS _content_keys (
-            id BIGINT PRIMARY KEY,
-            content_key TEXT NOT NULL
-        );
-        DELETE FROM _content_keys;
-        ",
-    ) {
-        sqlx::query(&stmt).execute(&mut *conn).await?;
-    }
-    insert_content_key_rows(conn, keys, progress).await?;
-    sqlx::query(
-        r"
-        UPDATE messages AS m
-        SET content_key = k.content_key
-        FROM _content_keys AS k
-        WHERE m.id = k.id
-        ",
-    )
-    .execute(&mut *conn)
+        previous = written;
+    })
     .await?;
-    sqlx::query("DROP TABLE IF EXISTS _content_keys")
-        .execute(&mut *conn)
-        .await?;
-    Ok(())
+    Ok(keys.len() as u64)
 }
 
 /// One copy of a message, with what decides whether it is the copy shown
@@ -714,14 +424,6 @@ struct Cand {
     /// no run stamped.
     run_messages: i64,
 }
-
-/// SQL for the Import Run size of each message: join it as `rc` on
-/// `rc.import_id = m.import_id` and read `COALESCE(rc.n, 0)`. The account is
-/// bound as `$1`.
-const RUN_MESSAGES_SQL: &str = "SELECT import_id, COUNT(*) AS n
-            FROM messages
-            WHERE account_id = $1 AND import_id IS NOT NULL
-            GROUP BY import_id";
 
 /// Whether `time_precision`, as `messages.time_precision` stores it, is
 /// whole seconds.
@@ -744,7 +446,7 @@ async fn flag_exact_content_key_dupes(
     let conn: &mut SqliteConnection = tx;
     let (groups, flags) = exact_flags(conn, account_id, prio).await?;
     if !flags.is_empty() {
-        apply_duplicate_flags(conn, "_pass_a_flags", &flags).await?;
+        db::write_duplicate_flags(conn, "_pass_a_flags", &flags).await?;
     }
     Ok((groups, flags))
 }
@@ -757,40 +459,14 @@ async fn exact_flags(
     account_id: i64,
     prio: &HashMap<&str, usize>,
 ) -> Result<(u64, Vec<(i64, i64)>)> {
-    // One scan of messages + one aggregated attachment pass, then group in Rust.
-    // Avoids N round-trips (one SELECT + several UPDATEs per duplicate key).
-    let rows: Vec<(i64, String, String, i64, String, i64)> = sqlx::query_as(&format!(
-        r"
-        SELECT m.id, m.source, m.content_key, COALESCE(ac.n, 0), m.time_precision,
-               COALESCE(rc.n, 0)
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        LEFT JOIN (
-            SELECT a.message_id, COUNT(*) AS n
-            FROM attachments a
-            JOIN messages m2 ON m2.id = a.message_id
-            JOIN conversations c2 ON c2.id = m2.conversation_id
-            WHERE c2.account_id = $1
-              AND a.sha256 IS NOT NULL AND a.sha256 != ''
-            GROUP BY a.message_id
-        ) ac ON ac.message_id = m.id
-        LEFT JOIN ({RUN_MESSAGES_SQL}) rc ON rc.import_id = m.import_id
-        WHERE c.account_id = $1
-          AND {HAS_CONTENT_KEY_SQL}
-        ",
-    ))
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
-
     let mut by_key: HashMap<String, Vec<Cand>> = HashMap::new();
-    for (id, source, content_key, att_count, time_precision, run_messages) in rows {
-        by_key.entry(content_key).or_default().push(Cand {
-            id,
-            source,
-            att_count,
-            whole_seconds: is_whole_seconds(id, &time_precision)?,
-            run_messages,
+    for row in db::exact_rows(conn, account_id).await? {
+        by_key.entry(row.content_key).or_default().push(Cand {
+            id: row.id,
+            whole_seconds: is_whole_seconds(row.id, &row.time_precision)?,
+            source: row.source,
+            att_count: row.att_count,
+            run_messages: row.run_messages,
         });
     }
 
@@ -966,18 +642,8 @@ async fn flag_near_time_dupes(
     if flags.is_empty() {
         return Ok(0);
     }
-    apply_duplicate_flags(conn, "_pass_b_flags", &flags).await?;
+    db::write_duplicate_flags(conn, "_pass_b_flags", &flags).await?;
     Ok(flags.len() as u64)
-}
-
-/// Which messages the near-time pass reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NearRows {
-    /// Every message of the account.
-    All,
-    /// The messages with a content key: those a dedupe has already seen,
-    /// and the changed ones [`dedupe_changed_messages`] gave one.
-    Keyed,
 }
 
 /// The messages of the account in `rows` that are not in `hidden`, with
@@ -989,100 +655,38 @@ async fn load_near_rows(
     rows: NearRows,
     hidden: &HashSet<i64>,
 ) -> Result<HashMap<i64, Vec<NearRow>>> {
-    type NearDedupeRow = (
-        i64,
-        i64,
-        String,
-        i64,
-        String,
-        Option<String>,
-        String,
-        String,
-        String,
-        i64,
-    );
-    let msg_sql = format!(
-        r"
-        SELECT m.id, m.conversation_id, m.source, m.is_from_me, m.timestamp, m.body,
-               COALESCE({sender}, ''), COALESCE(m.content_key, ''), m.time_precision,
-               COALESCE(rc.n, 0)
-        FROM messages m
-        JOIN conversations c ON c.id = m.conversation_id
-        LEFT JOIN handles hs ON hs.id = m.sender_handle_id
-        LEFT JOIN ({RUN_MESSAGES_SQL}) rc ON rc.import_id = m.import_id
-        WHERE c.account_id = $1 {keyed}
-        ",
-        sender = sender_for_key_sql(),
-        keyed = match rows {
-            NearRows::All => String::new(),
-            NearRows::Keyed => format!("AND {HAS_CONTENT_KEY_SQL}"),
-        },
-    );
-    let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(&msg_sql)
-        .bind(account_id)
-        .fetch_all(&mut *conn)
-        .await?;
-
-    let att_rows: Vec<(i64, String)> = sqlx::query_as(
-        r"
-        SELECT a.message_id, a.sha256
-        FROM attachments a
-        JOIN messages m ON m.id = a.message_id
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1
-          AND a.sha256 IS NOT NULL AND a.sha256 != ''
-        ORDER BY a.message_id, a.sha256
-        ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    let mut shas_by_msg: HashMap<i64, Vec<String>> = HashMap::new();
-    for (message_id, sha) in att_rows {
-        shas_by_msg.entry(message_id).or_default().push(sha);
-    }
+    let msg_rows = db::near_message_rows(conn, account_id, rows).await?;
+    let mut shas_by_msg = db::attachment_digests(conn, account_id).await?;
 
     let mut by_conversation: HashMap<i64, Vec<NearRow>> = HashMap::new();
-    for (
-        id,
-        conversation_id,
-        source,
-        is_from_me,
-        timestamp_rfc3339,
-        body,
-        sender_norm,
-        content_key,
-        time_precision,
-        run_messages,
-    ) in msg_rows
-    {
-        if hidden.contains(&id) {
+    for row in msg_rows {
+        if hidden.contains(&row.id) {
             continue;
         }
-        let Some(secs) = parse_rfc3339_utc_secs(&timestamp_rfc3339) else {
+        let Some(secs) = parse_rfc3339_utc_secs(&row.timestamp) else {
             continue;
         };
-        let shas = shas_by_msg.remove(&id).unwrap_or_default();
+        let shas = shas_by_msg.remove(&row.id).unwrap_or_default();
         by_conversation
-            .entry(conversation_id)
+            .entry(row.conversation_id)
             .or_default()
             .push(NearRow {
-                id,
-                source,
-                is_from_me,
+                id: row.id,
+                source: row.source,
+                is_from_me: row.is_from_me,
                 // Outgoing rows have no sender of their own.
-                sender_norm: if is_from_me != 0 {
+                sender_norm: if row.is_from_me != 0 {
                     String::new()
                 } else {
-                    sender_norm
+                    row.sender_normalized
                 },
                 secs,
-                body_norm: normalize_body(body.as_deref()),
+                body_norm: normalize_body(row.body.as_deref()),
                 att_count: shas.len() as i64,
                 att_fp: shas.join(","),
-                content_key,
-                whole_seconds: is_whole_seconds(id, &time_precision)?,
-                run_messages,
+                content_key: row.content_key,
+                whole_seconds: is_whole_seconds(row.id, &row.time_precision)?,
+                run_messages: row.run_messages,
             });
     }
     Ok(by_conversation)
@@ -1139,45 +743,6 @@ fn cluster_near_dupes(
         }
     }
     flags
-}
-
-/// Apply (message id, duplicate-of id) pairs through a temp table so one UPDATE covers them all.
-async fn apply_duplicate_flags(
-    conn: &mut SqliteConnection,
-    table: &str,
-    flags: &[(i64, i64)],
-) -> Result<()> {
-    for stmt in schema::split_ddl(&format!(
-        "CREATE TEMP TABLE IF NOT EXISTS {table} (
-            id BIGINT PRIMARY KEY,
-            winner BIGINT NOT NULL
-        );
-        DELETE FROM {table};"
-    )) {
-        sqlx::query(&stmt).execute(&mut *conn).await?;
-    }
-    {
-        let insert_sql = format!("INSERT INTO {table} (id, winner) VALUES ($1, $2)");
-        for (id, winner) in flags {
-            sqlx::query(&insert_sql)
-                .bind(id)
-                .bind(winner)
-                .execute(&mut *conn)
-                .await?;
-        }
-    }
-    sqlx::query(&format!(
-        "UPDATE messages AS m
-         SET duplicate_of = f.winner
-         FROM {table} AS f
-         WHERE m.id = f.id"
-    ))
-    .execute(&mut *conn)
-    .await?;
-    for stmt in schema::split_ddl(&format!("DROP TABLE IF EXISTS {table};")) {
-        sqlx::query(&stmt).execute(&mut *conn).await?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

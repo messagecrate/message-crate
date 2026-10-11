@@ -173,6 +173,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the server finds and hides duplicate messages was
+  reworked inside, with nothing visible (#2182).
+
 - 2026-10-11: **The search box remembers the contacts it offered.** After a
   word such as `with:` or `from:`, the search box keeps the names it
   suggested for each prefix. Typing the same prefix again within half a
