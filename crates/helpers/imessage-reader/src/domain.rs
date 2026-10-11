@@ -157,9 +157,13 @@ pub(crate) fn decrypt_domain(
     Ok(written)
 }
 
-/// Open the backup's `Manifest.db` read-only. The reader only reads it, and
-/// an iPhone backup is often a person's only copy of their phone, so a write
-/// through this handle fails rather than change it.
+/// Open the `Manifest.db` at `path` read-only: the reader only queries it, so
+/// a write through this handle fails rather than change the file.
+///
+/// For the encrypted backups [`list_domain`] reads, `path` is the copy
+/// `crabapple` decrypted into the temporary directory, and `crabapple` holds
+/// its own read-write connection on that copy; the backup's own `Manifest.db`
+/// is only read by `crabapple` to decrypt it.
 fn open_manifest(path: &Path) -> Result<Connection, RuntimeError> {
     Ok(Connection::open_with_flags(
         path,
@@ -236,6 +240,10 @@ mod tests {
 
     const DOMAIN: &str = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared";
 
+    /// The `Files` table of `Manifest.db`, with the columns the reader reads.
+    const FILES_TABLE: &str =
+        "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);";
+
     /// Only the asked domain's regular files are listed: another domain's
     /// file, and a directory row of the same domain, are left out.
     #[test]
@@ -243,7 +251,7 @@ mod tests {
         let manifest = Connection::open_in_memory().unwrap();
         manifest
             .execute_batch(&format!(
-                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);
+                "{FILES_TABLE}
                  INSERT INTO Files VALUES
                      ('aa', '{DOMAIN}', 'Message/Media/photo.jpg', 1),
                      ('bb', '{DOMAIN}', 'ChatStorage.sqlite', 1),
@@ -269,7 +277,7 @@ mod tests {
         Connection::open(&path)
             .unwrap()
             .execute_batch(&format!(
-                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);
+                "{FILES_TABLE}
                  INSERT INTO Files VALUES ('aa', '{DOMAIN}', 'ChatStorage.sqlite', 1);"
             ))
             .unwrap();
