@@ -5,7 +5,7 @@ so that a person can look at conversations before bringing their own (#971).
 Anyone who reaches the Message Crate can enter it. What it may and may not do
 is therefore fixed in the server, keyed on its account id, and is not a set of
 permissions the owner can change: it may export and use the trash; it may not
-import, delete for good, or make an API token; it never has a password; its
+import, delete for good, or make an API Token; it never has a password; its
 status, its permissions and its own identities cannot be changed. The owner
 can delete it or reset it and nothing else.
 
@@ -39,8 +39,8 @@ the account.
 The server checks for the Demo Account wherever one of these acts is
 requested: starting an import, both permanent deletes, setting a password,
 changing status or permissions, changing its own identities, and making an
-API token. Before this decision the only such check refused deleting the
+API Token. Before this decision the only such check refused deleting the
 account from inside it. A new act that could damage Demo Data, or open the
 account to real messages, needs the same check. So does making a credential:
-every visitor is the same account, so an API token would outlive the visit,
+every visitor is the same account, so an API Token would outlive the visit,
 and every later visitor would see its hint and could revoke it.
