@@ -136,8 +136,9 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
       baseUrl: () => "http://127.0.0.1:8080",
     },
     store,
-    // A clock that moves 1 ms per reading, so no timing depends on how fast the test runs.
-    now: () => ++clock,
+    // A clock that moves 1.25 ms per reading: no timing depends on how fast the
+    // test runs, and a duration carries a fraction, as `performance.now()`'s do.
+    now: () => (clock += 1.25),
   };
 }
 
