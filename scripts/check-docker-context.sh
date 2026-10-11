@@ -170,12 +170,13 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   [[ -n "${stage}" ]] && stages+=("${stage}")
 done <"${DOCKERFILE}"
 
-# Node.js. .nvmrc holds the one major that the web, docs, release and audit
-# jobs install (actions/setup-node's node-version-file) and that builds web/
+# Node.js. .nvmrc holds the one major that every workflow that installs
+# Node.js reads (actions/setup-node's node-version-file) and that builds web/
 # in the image, so CI tests the website on the Node.js that builds it there
-# (#2821). The file holds the major alone, because the stage's tag names a
-# major and a longer version could not be compared with it. The runtime
-# stage runs the server, not the build, and is not checked.
+# (#2821). The file holds the major alone, and only the major of the stage's
+# tag is compared with it, so a tag such as node:24.11.1-bookworm-slim
+# passes. The runtime stage runs the server, not the build, and is not
+# checked.
 nvmrc_major="$(tr -d '[:space:]' 2>/dev/null <.nvmrc || true)"
 if [[ ! "${nvmrc_major}" =~ ^[1-9][0-9]*$ ]]; then
   echo ".nvmrc: hold a Node.js major alone, such as 24; found '${nvmrc_major}'" >&2
@@ -183,7 +184,7 @@ if [[ ! "${nvmrc_major}" =~ ^[1-9][0-9]*$ ]]; then
 elif [[ -z "${image_frontend}" ]]; then
   echo "${DOCKERFILE}: could not read a FROM ... AS frontend-builder stage" >&2
   failures=$((failures + 1))
-elif [[ ! "${image_frontend}" =~ ^node:([0-9]+)[-@] ]]; then
+elif [[ ! "${image_frontend}" =~ ^node:([0-9]+)([.@-]|$) ]]; then
   echo "${DOCKERFILE}: the frontend-builder stage is not a node:<major>-<variant> image: ${image_frontend}" >&2
   failures=$((failures + 1))
 elif [[ "${BASH_REMATCH[1]}" != "${nvmrc_major}" ]]; then

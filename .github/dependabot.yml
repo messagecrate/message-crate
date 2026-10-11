@@ -75,14 +75,11 @@ updates:
       # moved to the next major by hand, before its Node.js reaches end of
       # life. The frontend build stage's node:24 reaches it on 30 April
       # 2028. Before that day, the stage moves to whichever Node.js release
-      # is LTS then, in one pull request with .nvmrc, which every workflow
-      # that installs Node.js reads; scripts/check-docker-context.sh fails
-      # the two on different majors. The same pull request changes the
-      # major the docs name: the Node row and First time setup in
-      # AGENTS.md, and contributing.md and docker.md in
-      # docs/src/content/docs/docs/developer/. A tag whose Node.js has
-      # ended gets no new image, so its digest stops moving. The runtime
-      # stage's node:20 is such a tag, and #2065 replaces it.
+      # is LTS then, with .nvmrc (scripts/check-docker-context.sh fails
+      # the two on different majors) and the docs that name the major. A
+      # tag whose Node.js has ended gets no new image, so its digest stops
+      # moving. The runtime stage's node:20 is such a tag, and #2065
+      # replaces it.
       - dependency-name: node
         update-types: ["version-update:semver-major"]
 
