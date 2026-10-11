@@ -444,7 +444,8 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// ([`ConversationDocument`]), then write the chosen output format.
 ///
 /// When `cancel` is set, cooperative cancellation is checked between XML files
-/// and between PDU files. Cancelled runs return an error with message `cancelled`.
+/// and between PDU files. A cancelled run returns
+/// what [`message_staging::Sinks::cancel`] says.
 ///
 /// # Errors
 ///

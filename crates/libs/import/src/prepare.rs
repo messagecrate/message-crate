@@ -665,7 +665,7 @@ fn upload_claimed(
 
     // Work-stealing style: workers pull the next job index from a shared counter.
     let results = parallel_for_each(jobs, ctx.cfg.asset_upload_workers, &ctx.cfg.cancel, |job| {
-        upload_one_asset(ctx, job).map_err(|error| format!("{error:#}"))
+        upload_one_asset(ctx, job)
     });
 
     // Apply journal updates in a stable order after all workers finish.
@@ -684,7 +684,7 @@ fn upload_claimed(
             }
             // The caller drops `claims`, which gives up the rest, so a retry
             // or a waiting conversation is not stuck forever.
-            Err(error) => bail!("{name}: {error}"),
+            Err(error) => return Err(error.context(name.to_owned())),
         }
     }
     Ok(())
