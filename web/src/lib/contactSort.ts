@@ -1,4 +1,5 @@
 import { contactLabelText } from "./contactLabel";
+import { isSortOrder, type SortOrder } from "./sortOrder";
 import { readPref, writePref } from "./storage";
 
 /** The two name fields the list can order by; each also gives the A–Z section letters. */
@@ -8,11 +9,10 @@ export type ContactNameSort = "first" | "last";
  * from the contact (`last_heard_at`, the server's `sort=last_heard`).
  */
 export type ContactSort = ContactNameSort | "lastHeard";
-export type ContactSortOrder = "asc" | "desc";
 
 export interface ContactSortState {
   sort: ContactSort;
-  order: ContactSortOrder;
+  order: SortOrder;
 }
 
 export const DEFAULT_CONTACT_SORT = {
@@ -91,7 +91,7 @@ export function compareContactsByName(
   a: string,
   b: string,
   sort: ContactNameSort,
-  order: ContactSortOrder,
+  order: SortOrder,
 ): number {
   const pa = splitContactName(a);
   const pb = splitContactName(b);
@@ -117,7 +117,7 @@ export function compareContactsByName(
 export function compareContactsByLastHeard(
   a: string | null | undefined,
   b: string | null | undefined,
-  order: ContactSortOrder,
+  order: SortOrder,
 ): number {
   if (!a && !b) return 0;
   if (!a) return 1;
@@ -141,10 +141,6 @@ export function compareContacts(a: SortableContact, b: SortableContact, state: C
 
 function isSort(value: unknown): value is ContactSort {
   return value === "first" || value === "last" || value === "lastHeard";
-}
-
-function isSortOrder(value: unknown): value is ContactSortOrder {
-  return value === "asc" || value === "desc";
 }
 
 export function loadContactSort(): ContactSortState {

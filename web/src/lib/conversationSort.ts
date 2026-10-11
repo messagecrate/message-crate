@@ -1,4 +1,4 @@
-import type { SortOrder } from "./sortOrder";
+import { isSortOrder, type SortOrder } from "./sortOrder";
 import { readPref, writePref } from "./storage";
 
 /**
@@ -28,10 +28,6 @@ function isSort(value: unknown): value is ConversationSort {
   return value === "date" || value === "messages";
 }
 
-function isOrder(value: unknown): value is SortOrder {
-  return value === "asc" || value === "desc";
-}
-
 export function loadConversationSort(): ConversationSortState {
   const raw = readPref(STORAGE_KEY);
   if (!raw) return { ...DEFAULT_CONVERSATION_SORT };
@@ -43,7 +39,7 @@ export function loadConversationSort(): ConversationSortState {
     const rec = parsed as Record<string, unknown>;
     return {
       sort: isSort(rec.sort) ? rec.sort : DEFAULT_CONVERSATION_SORT.sort,
-      order: isOrder(rec.order) ? rec.order : DEFAULT_CONVERSATION_SORT.order,
+      order: isSortOrder(rec.order) ? rec.order : DEFAULT_CONVERSATION_SORT.order,
     };
   } catch {
     return { ...DEFAULT_CONVERSATION_SORT };
