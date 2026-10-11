@@ -1,8 +1,8 @@
 //! Cross-source content fingerprint and soft-hide dedupe.
 //!
 //! This module sequences the dedupe, hashes the content keys, picks the copy
-//! shown and keeps the counts. Its statements are in `crate::db::dedupe`
-//! (`docs/architecture/http-api.md`, "Code").
+//! shown, says how far it is and keeps the counts. Its statements are in
+//! `crate::db::dedupe` (`docs/architecture/http-api.md`, "Code").
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Instant;
@@ -394,16 +394,16 @@ async fn recompute_content_keys(
         return Ok(0);
     }
     let total = keys.len();
-    let mut logged = 0usize;
+    let mut previous = 0usize;
     db::write_content_keys(conn, &keys, |written| {
         // Say how far the write is at each multiple of the log interval it
         // passes, and when it is done.
         if written == total
-            || written / CONTENT_KEY_WRITE_LOG_EVERY != logged / CONTENT_KEY_WRITE_LOG_EVERY
+            || written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY
         {
             progress.say(format_args!("Wrote {written} of {total} content keys"));
         }
-        logged = written;
+        previous = written;
     })
     .await?;
     Ok(keys.len() as u64)
