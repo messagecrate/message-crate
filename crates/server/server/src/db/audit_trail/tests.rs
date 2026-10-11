@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::test_fixture;
+use crate::test_support::{test_fixture, with_trigger_lifted};
 
 /// A refused login as a username nobody holds keeps the text typed only when
 /// it could be a username. Anything else, such as a password typed into the
@@ -124,11 +124,14 @@ async fn a_renewed_session_does_not_read_as_expired() {
         .await
         .unwrap();
     let stale = "2000-01-01T00:00:00+00:00";
-    sqlx::query("UPDATE audit_entries SET session_expires_at = $1")
-        .bind(stale)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    with_trigger_lifted(&mut conn, "audit_entries_never_edited", async |conn| {
+        sqlx::query("UPDATE audit_entries SET session_expires_at = $1")
+            .bind(stale)
+            .execute(conn)
+            .await
+            .unwrap();
+    })
+    .await;
     crate::credentials::change_password_on_conn(&mut conn, account, None)
         .await
         .unwrap();
@@ -153,13 +156,16 @@ async fn expire_session(conn: &mut SqliteConnection) {
         .execute(&mut *conn)
         .await
         .unwrap();
-    sqlx::query(
-        "UPDATE audit_entries SET session_expires_at = '2000-01-01T00:00:00+00:00'
-         WHERE action = 'logged_in'",
-    )
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    with_trigger_lifted(conn, "audit_entries_never_edited", async |conn| {
+        sqlx::query(
+            "UPDATE audit_entries SET session_expires_at = '2000-01-01T00:00:00+00:00'
+             WHERE action = 'logged_in'",
+        )
+        .execute(conn)
+        .await
+        .unwrap();
+    })
+    .await;
 }
 
 /// How each Session ended, oldest login first: `None` for one still live.
@@ -334,4 +340,101 @@ async fn each_run_table_records_its_own_runs_credential() {
             Some("mc-api-Sd..mE".to_string())
         )
     );
+}
+
+/// The schema refuses a statement that edits or deletes an Audit Trail
+/// entry, whoever runs it, and still lets through the two writes the server
+/// makes: deleting an account, which unlinks its entries, and the 90-day trim
+/// of refused logins as a username nobody held (ADR 0020, #2277).
+#[tokio::test]
+async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
+    let fixture = test_fixture().await;
+    let account = fixture.account("alice").await;
+    let other = fixture.account("bob").await;
+    let mut conn = fixture.conn().await;
+    crate::db::session_tokens::open_session(&mut conn, account, "alice", None)
+        .await
+        .unwrap();
+    record_refused_login(
+        &mut conn,
+        "alice",
+        Some((account, "alice")),
+        AuditReason::WrongPassword,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let move_to_other = format!("UPDATE audit_entries SET account_id = {other}");
+    assert_refused(
+        &mut conn,
+        &[
+            "UPDATE audit_entries SET action = 'account_created' WHERE action = 'logged_in'",
+            "UPDATE audit_entries SET at = '2000-01-01T00:00:00+00:00'",
+            "UPDATE audit_entries SET details = '{}'",
+            &move_to_other,
+            "UPDATE audit_entries SET account_id = NULL",
+            "UPDATE audit_entries SET deletion_entry_id = id",
+            "DELETE FROM audit_entries WHERE action = 'logged_in'",
+            "DELETE FROM audit_entries WHERE action = 'login_refused'",
+        ],
+    )
+    .await;
+    assert_eq!(count_entries(&mut conn).await, 2);
+
+    assert!(
+        account_profile::delete_account(&mut conn, account, AuditActor::Owner)
+            .await
+            .unwrap()
+    );
+    let unlinked: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_entries
+         WHERE account_id IS NULL AND deletion_entry_id IS NOT NULL",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    let total = count_entries(&mut conn).await;
+    assert_eq!(unlinked, total, "every entry about alice is kept, unlinked");
+    // Once set, an entry's deletion_entry_id and NULL account_id stay.
+    assert_refused(
+        &mut conn,
+        &[
+            "UPDATE audit_entries SET deletion_entry_id = NULL",
+            "UPDATE audit_entries SET deletion_entry_id = deletion_entry_id + 1",
+            &move_to_other,
+        ],
+    )
+    .await;
+
+    sqlx::query(
+        "INSERT INTO audit_entries (at, action, actor, username, reason)
+         VALUES ('2000-01-01T00:00:00+00:00', 'login_refused', 'anonymous',
+                 'nobody', 'unknown_username')",
+    )
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(trim_refused_logins(&mut conn).await.unwrap(), 1);
+    assert_eq!(count_entries(&mut conn).await, total);
+}
+
+/// Run each of `statements`, and check the schema refuses every one.
+async fn assert_refused(conn: &mut SqliteConnection, statements: &[&str]) {
+    for statement in statements {
+        let error = sqlx::query(statement)
+            .execute(&mut *conn)
+            .await
+            .expect_err(statement)
+            .to_string();
+        assert!(error.contains("an Audit Trail entry is never"), "{error}");
+    }
+}
+
+/// How many Audit Trail entries there are.
+async fn count_entries(conn: &mut SqliteConnection) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_entries")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
 }
