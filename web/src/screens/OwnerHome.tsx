@@ -11,7 +11,7 @@ import {
 } from "../components/leftPanelWidth";
 import { NAV_LEADING_ROW_CLASS } from "../components/navSectionLayout";
 import PlainButton from "../components/PlainButton";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import { parseSelectKey } from "../lib/selectKey";
 import { useWindowWidth } from "../lib/useWindowWidth";
 import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";

@@ -1,5 +1,5 @@
 import { Navigate, Outlet } from "react-router-dom";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useIsOwner } from "../lib/useIsOwner";
 import { useNeedsProfileSetup } from "../lib/useNeedsProfileSetup";

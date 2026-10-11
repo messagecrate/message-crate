@@ -5,7 +5,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { errorText } from "../../lib/apiErrorMessage";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { accountRunDirectories } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
