@@ -167,24 +167,46 @@ fn emit(log: &mut Option<&mut dyn FnMut(&str)>, line: &str) {
 /// Sum sizes of non-temp files under `attachments/` (directory-level total).
 fn attachments_dir_bytes(attachments: &Path) -> Result<u64> {
     let mut total = 0u64;
-    let mut stack = vec![attachments.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if !is_msgmedia_temp(&path) {
-                total = total.saturating_add(
-                    entry
-                        .metadata()
-                        .with_context(|| format!("stat {}", path.display()))?
-                        .len(),
-                );
-            }
+    for entry in files_under(attachments)? {
+        let path = entry.path();
+        if !is_msgmedia_temp(&path) {
+            total = total.saturating_add(
+                entry
+                    .metadata()
+                    .with_context(|| format!("stat {}", path.display()))?
+                    .len(),
+            );
         }
     }
     Ok(total)
+}
+
+/// Every file under `root`, recursively, reading each entry's type without
+/// following a symlink: only real directories are descended into, and a
+/// symlink is skipped whatever it points at. A link under `root` therefore
+/// never brings files from elsewhere into a media pass, and a link to a
+/// parent directory cannot make the walk loop (#2262).
+///
+/// # Errors
+///
+/// Returns an error when a directory under `root` cannot be read.
+fn files_under(root: &Path) -> Result<Vec<fs::DirEntry>> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir).with_context(|| format!("read {}", dir.display()))? {
+            let entry = entry.with_context(|| format!("read {}", dir.display()))?;
+            let file_type = entry
+                .file_type()
+                .with_context(|| format!("stat {}", entry.path().display()))?;
+            if file_type.is_dir() {
+                stack.push(entry.path());
+            } else if !file_type.is_symlink() {
+                out.push(entry);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// A byte count as KB, MB, or GB with one decimal, for progress lines and
@@ -215,26 +237,19 @@ pub(crate) use crate::mime::Kind;
 /// List the files media conversion would touch under `root`.
 ///
 /// Every non-temp file [`classify`] recognizes, recursively, sorted so two
-/// runs enumerate in the same order. Callers hand the result — or a subset of
+/// runs enumerate in the same order. A symlink is skipped and never followed,
+/// so nothing outside `root` is listed. Callers hand the result — or a subset of
 /// it — to [`process_attachment_files`].
 ///
 /// # Errors
 ///
 /// Returns an error when a directory under `root` cannot be read.
 pub fn collect_media_files(root: &Path) -> Result<Vec<PathBuf>> {
-    let mut out = Vec::new();
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if !is_msgmedia_temp(&path) && classify(&path).is_some() {
-                out.push(path);
-            }
-        }
-    }
+    let mut out: Vec<PathBuf> = files_under(root)?
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| !is_msgmedia_temp(path) && classify(path).is_some())
+        .collect();
     out.sort();
     Ok(out)
 }
@@ -248,16 +263,10 @@ fn is_msgmedia_temp(path: &Path) -> bool {
 
 /// Delete `*.msgmedia.tmp.*` files left by an interrupted run anywhere under `root`.
 fn remove_msgmedia_temps(root: &Path) -> Result<()> {
-    let mut stack = vec![root.to_path_buf()];
-    while let Some(dir) = stack.pop() {
-        for entry in fs::read_dir(&dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-            } else if is_msgmedia_temp(&path) {
-                let _ = fs::remove_file(&path);
-            }
+    for entry in files_under(root)? {
+        let path = entry.path();
+        if is_msgmedia_temp(&path) {
+            let _ = fs::remove_file(&path);
         }
     }
     Ok(())
