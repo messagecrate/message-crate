@@ -557,14 +557,14 @@ async fn forget_contacts(
     if ids.is_empty() {
         return Ok(());
     }
-    let now = now.format("%Y-%m-%d %H:%M:%S").to_string();
+    let last_modified = now.format("%Y-%m-%d %H:%M:%S").to_string();
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let placeholders = in_placeholders(3, chunk.len());
         let sql = format!(
             "UPDATE contacts SET preferred_name = '', last_modified = $2
              WHERE account_id = $1 AND id IN ({placeholders})"
         );
-        let mut q = sqlx::query(&sql).bind(account_id).bind(&now);
+        let mut q = sqlx::query(&sql).bind(account_id).bind(&last_modified);
         for id in chunk {
             q = q.bind(*id);
         }
