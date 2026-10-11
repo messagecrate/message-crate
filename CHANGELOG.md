@@ -435,12 +435,15 @@ released versions carry their date on the heading.
   is not there.** A backup path the desktop app is not allowed to read, such
   as a directory macOS protects until the app has Full Disk Access, used to be
   reported as "This path does not exist.", which sent people looking for a
-  different path when the fix was a permission. The form now says "Message
-  Crate is not allowed to read this path" with the reason the system gave.
-  When the app could not check a path at all, the form says it could not
-  read it rather than calling it missing. A staged Import Run whose directory
-  the app may not read is no longer offered for discarding as if the
-  directory were gone (#2173).
+  different path when the fix was a permission. The form now says Message
+  Crate isn't allowed to read the path, gives the reason the system gave, and
+  says that on a Mac, Full Disk Access lets it read the path. On a Mac
+  without Full Disk Access, Apple Messages on this Mac now fills in the
+  Messages database anyway, so that message shows at once. When the app
+  could not check a path at all, the form says so rather than calling it
+  missing. A stopped Import Run whose directory or backup the app may not
+  read is no longer offered for discarding as if it were gone or changed
+  (#2173).
 - 2026-10-10: **Converting or compressing attachments no longer follows a
   symlink.** When the Media Stage of an Import Run converts or compresses
   attachments, a symlink among the staged attachments used to be followed:

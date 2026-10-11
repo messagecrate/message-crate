@@ -74,20 +74,16 @@ const NO_IDENTIFIERS: readonly string[] = [];
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
 /**
- * Whether a run's directory is still on disk. A stat that fails
- * outright, or a directory the operating system will not describe, is
- * "unknown", not "missing": neither says anything about whether the
- * directory is there, and reading it as gone would offer to discard staged
- * work that may well still be there.
+ * Whether a run's directory is still on disk. A check that fails outright,
+ * or a directory the operating system will not describe, is "unknown", not
+ * "missing": neither says anything about whether the directory is there,
+ * and reading it as gone would offer to discard staged work that may well
+ * still be there.
  */
 async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
-  try {
-    const stat = await invokePathStat(runDir);
-    if (stat.unreadable) return "unknown";
-    return stat.exists && stat.isDirectory ? "present" : "missing";
-  } catch {
-    return "unknown";
-  }
+  const stat = await probeImportPath(runDir);
+  if (stat === null || stat.unreadable) return "unknown";
+  return stat.exists && stat.isDirectory ? "present" : "missing";
 }
 
 export default function ImportScreen() {
@@ -627,7 +623,7 @@ export default function ImportScreen() {
         const prefill = shouldPrefillMacMessagesDb({
           os: home.os,
           homeDir: home.path,
-          chatDbExists: stat.exists && stat.isFile,
+          chatDb: stat,
           rememberedPath: loadedBackup,
         });
         if (prefill === "") return;

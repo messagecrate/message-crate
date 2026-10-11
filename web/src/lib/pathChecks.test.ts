@@ -60,24 +60,24 @@ describe("checkOptionalPath", () => {
 });
 
 describe("a path the app could not read", () => {
-  it("says the app is not allowed to read it, with the reason, rather than that it is missing", () => {
-    expect(check("/tmp/x", DENIED_STAT, "directory")).toEqual({
-      field: "Message Crate is not allowed to read this path: Operation not permitted (os error 1)",
-    });
+  const denied =
+    "Message Crate isn't allowed to read this path. The system says: Operation not permitted (os error 1). On a Mac, give Message Crate Full Disk Access in System Settings, under Privacy & Security.";
+
+  it("says the app is not allowed to read it, with the reason and the fix, rather than that it is missing", () => {
+    expect(check("/tmp/x", DENIED_STAT, "directory")).toEqual({ field: denied });
     const errors: Partial<Record<Key, string>> = {};
     checkRequiredPath(DENIED_STAT, errors, "field", { expected: "file", kindError: "Wrong kind." });
-    expect(errors.field).toBe(
-      "Message Crate is not allowed to read this path: Operation not permitted (os error 1)",
-    );
+    expect(errors.field).toBe(denied);
   });
 
   it("says it could not read a path the system refused for another reason", () => {
     const stat: ImportPathStat = {
       ...DENIED_STAT,
-      unreadable: { permissionDenied: false, reason: "Too many levels of symbolic links" },
+      unreadable: { kind: "other", reason: "Too many levels of symbolic links." },
     };
     expect(check("/tmp/x", stat, "file")).toEqual({
-      field: "Message Crate could not read this path: Too many levels of symbolic links",
+      field:
+        "Message Crate could not read this path. The system says: Too many levels of symbolic links.",
     });
   });
 });
@@ -98,11 +98,11 @@ describe("probeImportPath", () => {
     expect(invokePathStat).toHaveBeenCalledWith("/tmp/chat.db");
   });
 
-  it("reads a failed check as a path it could not read, not as a missing one", async () => {
+  it("reads a failed check as a path it could not check, not as a missing or unreadable one", async () => {
     invokePathStat.mockRejectedValue(new Error("ipc down"));
     const stat = await probeImportPath("/tmp/chat.db");
     expect(check("/tmp/chat.db", stat, "file")).toEqual({
-      field: "Message Crate could not read this path: ipc down",
+      field: "Message Crate could not check this path. The check failed with: ipc down.",
     });
   });
 });

@@ -1,4 +1,21 @@
 import type { ImportPathStat } from "../lib/pathChecks";
+import type { PathStat } from "../lib/tauri";
+
+/**
+ * What the desktop app's `path_stat` answers, for a file of 1000 bytes
+ * unless `overrides` says otherwise.
+ */
+export function desktopPathStat(overrides: Partial<PathStat> = {}): PathStat {
+  return {
+    exists: true,
+    isFile: true,
+    isDirectory: false,
+    sizeBytes: 1000,
+    modifiedUnixMs: 1_700_000_000_000,
+    unreadable: null,
+    ...overrides,
+  };
+}
 
 /** What the Import form's path check finds for each kind of path. */
 export const DIRECTORY_STAT: ImportPathStat = {
@@ -31,5 +48,5 @@ export const DENIED_STAT: ImportPathStat = {
   exists: false,
   isFile: false,
   isDirectory: false,
-  unreadable: { permissionDenied: true, reason: "Operation not permitted (os error 1)" },
+  unreadable: { kind: "permission_denied", reason: "Operation not permitted (os error 1)" },
 };

@@ -115,6 +115,9 @@ export function checkSourceFingerprint(
   stat: PathStat | null,
 ): FingerprintCheck {
   if (!stored) return "unknown";
+  // A source the operating system will not describe may be unchanged: the
+  // fix is a permission, so it is never read as gone or changed.
+  if (stat?.unreadable) return "unknown";
   if (!stat?.exists) return "source_missing";
   return stored.size_bytes === stat.sizeBytes && stored.modified_unix_ms === stat.modifiedUnixMs
     ? "match"

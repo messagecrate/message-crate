@@ -175,17 +175,26 @@ export function macMessagesDbPath(homeDir: string): string {
   return `${trimmed}/Library/Messages/chat.db`;
 }
 
+/**
+ * The path to fill in for Apple Messages on this Mac: the remembered one, or
+ * else `chat.db` when it is there. A `chat.db` macOS will not let the app
+ * read is filled in too, because the form's check then says that Full Disk
+ * Access lets Message Crate read it.
+ */
 export function shouldPrefillMacMessagesDb(args: {
   os: string;
   homeDir: string;
-  chatDbExists: boolean;
+  chatDb: ImportPathStat;
   rememberedPath: string;
 }): string {
   const remembered = args.rememberedPath.trim();
   if (remembered !== "") {
     return remembered;
   }
-  if (args.os !== "macos" || !args.chatDbExists) {
+  const found =
+    (args.chatDb.exists && args.chatDb.isFile) ||
+    args.chatDb.unreadable?.kind === "permission_denied";
+  if (args.os !== "macos" || !found) {
     return "";
   }
   return macMessagesDbPath(args.homeDir);

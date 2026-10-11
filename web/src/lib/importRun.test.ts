@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { desktopPathStat } from "../test/pathStats";
 import { accountRunDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
@@ -40,14 +41,15 @@ describe("accountRunDirectories", () => {
 describe("buildSourceFingerprint", () => {
   it("records the path, size, and mtime of the backup", () => {
     expect(
-      buildSourceFingerprint("/Users/u/Backup/abc", {
-        exists: true,
-        isFile: false,
-        isDirectory: true,
-        sizeBytes: 4096,
-        modifiedUnixMs: 1_756_512_000_000,
-        unreadable: null,
-      }),
+      buildSourceFingerprint(
+        "/Users/u/Backup/abc",
+        desktopPathStat({
+          isFile: false,
+          isDirectory: true,
+          sizeBytes: 4096,
+          modifiedUnixMs: 1_756_512_000_000,
+        }),
+      ),
     ).toEqual({
       path: "/Users/u/Backup/abc",
       size_bytes: 4096,

@@ -1,10 +1,20 @@
 import { type PathStat as DesktopPathStat, invokePathStat, type PathUnreadable } from "./tauri";
 
-/** What the Import form knows about a path the person typed or picked. */
-export type ImportPathStat = Pick<
-  DesktopPathStat,
-  "exists" | "isFile" | "isDirectory" | "unreadable"
->;
+/**
+ * Why the Import form knows nothing about a path: the operating system
+ * refused to describe it (`PathUnreadable`), or the desktop app's check
+ * itself failed (`check_failed`), which says nothing about the path at all.
+ */
+export type ImportPathUnknown = PathUnreadable | { kind: "check_failed"; reason: string };
+
+/**
+ * What the Import form knows about a path the person typed or picked. When
+ * `unreadable` is set, `exists`, `isFile` and `isDirectory` are all false,
+ * because nothing is known.
+ */
+export type ImportPathStat = Pick<DesktopPathStat, "exists" | "isFile" | "isDirectory"> & {
+  unreadable: ImportPathUnknown | null;
+};
 
 /** Whether a path field takes a file or a directory. */
 export type PathKind = "file" | "directory";
@@ -15,20 +25,27 @@ export type PathRequirement = { expected: PathKind; kindError: string };
 export const PATH_MISSING = "This path does not exist.";
 
 /**
- * What the form says about a path the operating system would not describe.
- * Such a path may well be there, so it is never `PATH_MISSING`: the fix is a
- * permission, such as Full Disk Access on macOS, not a different path.
+ * What the form says about a path it knows nothing about. Such a path may
+ * well be there, so it is never `PATH_MISSING`. A permission refusal says
+ * what lets Message Crate read it; a failed check says the path was never
+ * looked at, so it does not send the person to change permissions.
  */
-function unreadableMessage({ permissionDenied, reason }: PathUnreadable): string {
-  return permissionDenied
-    ? `Message Crate is not allowed to read this path: ${reason}`
-    : `Message Crate could not read this path: ${reason}`;
+function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
+  const said = reason.trim().replace(/\.$/, "");
+  switch (kind) {
+    case "permission_denied":
+      return `Message Crate isn't allowed to read this path. The system says: ${said}. On a Mac, give Message Crate Full Disk Access in System Settings, under Privacy & Security.`;
+    case "other":
+      return `Message Crate could not read this path. The system says: ${said}.`;
+    case "check_failed":
+      return `Message Crate could not check this path. The check failed with: ${said}.`;
+  }
 }
 
 /**
  * Check a path the person typed or picked. Null for an empty path. A check
  * the desktop app could not run says nothing about the path, so it comes
- * back as a path that could not be read, never as one that is missing.
+ * back as `check_failed`, never as a path that is missing.
  */
 export async function probeImportPath(path: string): Promise<ImportPathStat | null> {
   const trimmed = path.trim();
@@ -41,7 +58,7 @@ export async function probeImportPath(path: string): Promise<ImportPathStat | nu
       isFile: false,
       isDirectory: false,
       unreadable: {
-        permissionDenied: false,
+        kind: "check_failed",
         reason: err instanceof Error ? err.message : String(err),
       },
     };
@@ -81,7 +98,7 @@ export function checkRequiredPath<K extends string>(
   { expected, kindError }: PathRequirement,
 ): void {
   if (stat.unreadable) {
-    errors[key] = unreadableMessage(stat.unreadable);
+    errors[key] = unknownPathMessage(stat.unreadable);
     return;
   }
   if (!stat.exists) {

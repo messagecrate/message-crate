@@ -340,7 +340,7 @@ describe("ImportScreen entering Import", () => {
       isDirectory: false,
       sizeBytes: 0,
       modifiedUnixMs: null,
-      unreadable: { permissionDenied: true, reason: "Permission denied (os error 13)" },
+      unreadable: { kind: "permission_denied", reason: "Permission denied (os error 13)" },
     });
     renderWithProviders(<ImportScreen />);
 
