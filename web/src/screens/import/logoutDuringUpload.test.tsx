@@ -82,7 +82,7 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => true,
 }));
 
-const { AuthProvider } = await import("../../lib/auth");
+const { default: AuthShell } = await import("../../components/AuthShell");
 const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
 const { importRunService, useImportJob } = await import("./useImportJob");
@@ -145,10 +145,13 @@ type Screen = {
   auth: ReturnType<typeof useAuth>;
 };
 
-/** The Import screen's hook beside the login state, under the real AuthProvider. */
+/**
+ * The Import screen's hook beside the login state, under the real AuthProvider
+ * and the logout dialog, as `App.tsx` renders them.
+ */
 async function logIn(): Promise<{ current: Screen }> {
   const { result } = renderHook((): Screen => ({ job: useImportJob(), auth: useAuth() }), {
-    wrapper: AuthProvider,
+    wrapper: AuthShell,
   });
   await act(() => result.current.auth.login("http://127.0.0.1:8080", "session-token", 7));
   return result;

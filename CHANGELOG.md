@@ -190,6 +190,9 @@ released versions carry their date on the heading.
   could not be started, instead of saying there is no connection to the
   download's server (#2213).
 
+- 2026-10-11: The way logging out works in the app was reworked inside, with
+  nothing visible (#2214).
+
 - 2026-10-11: The way attachments are converted and compressed, and their
   Thumbnails and Previews made, was reworked inside, with nothing visible
   (#2206).
