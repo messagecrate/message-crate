@@ -10,7 +10,7 @@ import TextField from "../components/TextField";
 import { useRunDesktopJob } from "../hooks/useRunDesktopJob";
 import { getBaseUrl } from "../lib/api";
 import { errorText } from "../lib/apiErrorMessage";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import { holdDesktopJob } from "../lib/desktopJob";
 import { writeInExportDir } from "../lib/exportDir";
 import { createRunCancel, type RunCancel } from "../lib/runCancel";

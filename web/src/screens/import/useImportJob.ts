@@ -9,7 +9,7 @@ import { profileAddresses } from "../../lib/account";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { errorText } from "../../lib/apiErrorMessage";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
 import { getDeviceId } from "../../lib/deviceId";
 import type { ActiveImportRun } from "../../lib/importRun";

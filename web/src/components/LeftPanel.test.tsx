@@ -22,7 +22,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile }),
 }));
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/useContactGroups", () => ({
   useContactGroups: () => ({ groups: [] }),

@@ -7,7 +7,7 @@ import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import MessageTagsNav from "./MessageTagsNav";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 afterEach(() => {
   cleanup();

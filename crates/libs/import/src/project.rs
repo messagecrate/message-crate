@@ -113,7 +113,7 @@ fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
 mod tests {
     use super::*;
     use message_ir::IrAttachment;
-    use message_ir::testutil::sample_document;
+    use message_ir::testutil::{sample_attachment, sample_document};
 
     #[test]
     fn serializes_ir_sms() {
@@ -135,16 +135,10 @@ mod tests {
     fn projects_missing_reason_and_clears_digest() {
         let mut msg = sample_document("with attachment").messages.remove(0);
         msg.attachments = vec![IrAttachment {
-            path: Some("attachments/big.bin".into()),
-            original_name: Some("big.bin".into()),
-            mime_type: Some("application/octet-stream".into()),
+            original_name: Some("big.jpg".into()),
             digest_sha256: Some("deadbeef".into()),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(99),
-            missing_reason: None,
-            bytes: None,
+            ..sample_attachment()
         }];
         let (line, _) = message_line(
             &msg,
@@ -164,7 +158,7 @@ mod tests {
         assert_eq!(parsed.attachments[0].size_bytes, Some(5_000_000));
         assert_eq!(
             parsed.attachments[0].original_name.as_deref(),
-            Some("big.bin")
+            Some("big.jpg")
         );
     }
 }

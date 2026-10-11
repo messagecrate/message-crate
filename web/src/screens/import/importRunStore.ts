@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, onAccountIdChange } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { MediaToolName, StagingSummary } from "../../lib/tauri";

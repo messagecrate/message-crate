@@ -50,7 +50,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ accountId: 7, token: "test-token", isAuthenticated: true }),
 }));
 

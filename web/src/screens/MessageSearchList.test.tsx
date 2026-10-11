@@ -10,7 +10,7 @@ import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import MessageSearchList from "./MessageSearchList";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
