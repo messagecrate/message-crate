@@ -1077,16 +1077,17 @@ Does a route group then never define a wire type of its own? It does, when the
 answer is not one read's result as it stands. An action's answer is a
 `VerbNounResponse`, such as `DeleteMessagesResponse`. A thing assembled from
 several reads is defined in the route group: `Account`, `Contact`, and
-`ImportRun`, which is an `ImportRunSummary` with the run's issues and notes. So
-is a thing whose fields depend on who asks: `ApiToken` carries a `null`
-`token_hint` when the owner lists another account's tokens. So is a thing whose
-stored form is not its wire form: `ImportRunSummary` decodes the JSON text
-the read returns in `form_json`, `summary_json`, `source_fingerprint` and
-`source_identities` into JSON values, and the same read also answers
-`OwnerImportRun`. So is a thing no
-table holds, such as `Asset`, `MediaLink` or `PhoneCountry`. A struct that
-repeats a `db/` struct's fields and is filled from it field by field is none
-of these, so it is not written: the `db/` struct goes on the wire instead.
+`ImportRun`, which is an `ImportRunSummary` with the run's issues and notes.
+So is a thing whose fields depend on who asks: `ApiToken` carries a `null`
+`token_hint` when the owner lists another account's tokens, and
+`OwnerImportRun` leaves out what the backup held. So is a thing whose stored
+form is not its wire form: `ImportRunSummary` decodes the JSON text its row
+holds in `form_json`, `summary_json`, `source_fingerprint` and
+`source_identities` into JSON values, and answers `form_json` as `form` and
+`summary_json` as `summary`. So is a thing no table holds, such as `Asset`,
+`MediaLink` or `PhoneCountry`. A struct that repeats a `db/` struct's fields
+and is filled from it field by field is none of these, so it is not written:
+the `db/` struct goes on the wire instead.
 
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and
