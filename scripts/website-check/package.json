@@ -1,0 +1,9 @@
+{
+  "name": "message-crate-website-check",
+  "private": true,
+  "type": "module",
+  "description": "The browser check of the served website, which scripts/check-served-website.sh runs inside the Playwright image of the same version. A tree of its own, so web/ carries no browser driver.",
+  "dependencies": {
+    "playwright": "1.64.0"
+  }
+}

@@ -3,7 +3,7 @@
 # that it runs with its privileges dropped and serves the Demo Account.
 #
 #   docker build -f docker/Dockerfile -t message-crate-server:check .
-#   ./scripts/check-docker-compose.sh message-crate-server:check [host-port]
+#   ./scripts/check-docker-compose.sh [--website] message-crate-server:check [host-port]
 #
 # Both Compose files drop every Linux capability, set no-new-privileges and
 # make the root filesystem read-only (#2178). This script checks that both
@@ -12,6 +12,12 @@
 # Demo Account logs in. A server that writes outside /app/data or /tmp at
 # start fails here rather than in a self-hoster's container. It runs no
 # import or export, so a write outside them made only then passes.
+#
+# --website also runs scripts/check-served-website.sh against the stack: the
+# website it serves loads in a headless browser, logs in to the Demo
+# Account, searches and opens a conversation (#2217). That pulls the
+# Playwright image and adds a few minutes, so nightly.yml passes it and
+# CI's job does not.
 #
 # The stack runs under its own project name, on its own volume, published on
 # 127.0.0.1:<host-port> (18080 unless given), so it never touches a running
@@ -23,8 +29,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
+WEBSITE=false
+if [[ "${1:-}" == "--website" ]]; then
+  WEBSITE=true
+  shift
+fi
 if [[ $# -lt 1 || $# -gt 2 ]]; then
-  echo "usage: $0 <image> [host-port]" >&2
+  echo "usage: $0 [--website] <image> [host-port]" >&2
   exit 2
 fi
 IMAGE="$1"
@@ -99,8 +110,16 @@ if [[ "${username}" != "demo" ]]; then
   failures=$((failures + 1))
 fi
 
+if [[ "${WEBSITE}" == "true" ]] && ! ./scripts/check-served-website.sh "${BASE}"; then
+  failures=$((failures + 1))
+fi
+
 if [[ ${failures} -gt 0 ]]; then
   echo "Docker Compose check failed (${failures} failure(s))." >&2
   exit 1
 fi
-echo "The release Compose stack runs with its privileges dropped and serves the Demo Account."
+if [[ "${WEBSITE}" == "true" ]]; then
+  echo "The release Compose stack runs with its privileges dropped and serves the Demo Account and its website."
+else
+  echo "The release Compose stack runs with its privileges dropped and serves the Demo Account."
+fi
