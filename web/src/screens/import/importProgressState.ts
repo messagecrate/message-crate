@@ -76,9 +76,12 @@ const PHASE_MOVES: Record<ImportPhaseEvent, { from: readonly ImportPhase[]; to: 
  *
  * Unlike `step`, which leaves its state alone on an event it has no rule for,
  * a move the table does not hold throws, so the test that runs the write
- * fails. It is a bug in that write. In the app, the action that asked for the
- * move stops there, none of its write lands, the screen stays in the phase it
- * was in, and the error reaches the console.
+ * fails. It is a bug in that write. In the app, none of that write lands, and
+ * what the person sees depends on the caller. Where the caller catches the
+ * error, as the review stops after a directory read do, the screen goes back
+ * to the form with the error's text, as if the read had failed. Elsewhere the
+ * action stops there, the screen stays in the phase it was in, and the error
+ * reaches the console.
  */
 export function nextPhase(phase: ImportPhase, event: ImportPhaseEvent): ImportPhase {
   const move = PHASE_MOVES[event];
