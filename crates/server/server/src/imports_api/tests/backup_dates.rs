@@ -511,7 +511,7 @@ async fn the_later_backup_decides_the_duplicate_flag() {
         import_jsonl_files(&db, &files, &options).await.unwrap();
         let sms_options = ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,

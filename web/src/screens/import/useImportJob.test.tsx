@@ -71,6 +71,12 @@ const invokeDeleteRunDirMock = vi.fn();
 const toolsStatusMock = vi.fn<() => Promise<ToolsStatus>>();
 const setImportStageMock = vi.fn();
 const discardImportRunMock = vi.fn();
+/** The account's running Import Run. A network that is down answers nothing. */
+const getActiveImportRunMock = vi.fn(
+  async (_signal?: AbortSignal): Promise<ActiveImportRun | null> => {
+    throw new Error("offline");
+  },
+);
 const invokeImessageBackupIdentitiesMock = vi.fn();
 const readRunRecordMock = vi.fn();
 const saveRunRecordMock = vi.fn();
@@ -133,6 +139,7 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
       completeImport: (...args) => completeImportMock(...args),
       setImportStage: (...args) => setImportStageMock(...args),
       discardImportRun: (...args) => discardImportRunMock(...args),
+      getActiveImportRun: (...args) => getActiveImportRunMock(...args),
       token: () => auth.token,
       accountId: () => auth.accountId,
       baseUrl: () => "http://127.0.0.1:8080",
@@ -371,6 +378,7 @@ describe("useImportJob wiring", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
     invokeImessageBackupIdentitiesMock.mockReset();
     // No identities read by default, so the identity check never stops an
     // existing test that doesn't set up its own probe/profile response
@@ -1246,6 +1254,54 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("form");
     expect(result.current.resumeError).toBe("offline");
+  });
+
+  it("deletes the directory when a Cancel at a Review loses the discard's answer but the run is no longer running (#2807)", async () => {
+    // The server committed the discard and the connection dropped before its
+    // answer arrived. Nothing will offer the run again, so nothing else
+    // would ever delete its directory.
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(null);
+    const { result } = renderJob();
+    await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
+    await act(() => result.current.cancelRun());
+
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({
+      run_dir: "/home/sam/message-crate/staging-iphone",
+    });
+    expect(result.current.phase).toBe("form");
+    expect(result.current.resumeError).toBeNull();
+  });
+
+  it("keeps the directory when a discard's answer is lost and the run is still the running one (#2807)", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(activeRun({ id: 7 }));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "Failed to fetch" });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes the directory when a proxy answers a discard with 504 and the run is no longer running (#2807)", async () => {
+    // The proxy's upstream timed out after the server committed the discard.
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(504, "Gateway Timeout"));
+    getActiveImportRunMock.mockResolvedValueOnce(null);
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "discarded" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+  });
+
+  it("deletes the directory when a discard's answer is lost and another run is the running one now (#2807)", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(activeRun({ id: 8 }));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "discarded" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
   });
 
   it("still discards the run, and still returns to the form, even when deleting the directory fails", async () => {
@@ -3144,6 +3200,7 @@ describe("useImportJob resumeAtReview", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
   });
 
   it("starts a resume with none of the fields an earlier run left, and the resumed run's directory and id", async () => {

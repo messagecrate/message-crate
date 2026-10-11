@@ -1,7 +1,12 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
-import { type ActiveImportRun, discardImportRun, setImportStage } from "../../lib/importRun";
+import {
+  type ActiveImportRun,
+  discardImportRun,
+  getActiveImportRun,
+  setImportStage,
+} from "../../lib/importRun";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
 import {
@@ -67,6 +72,7 @@ const appDeps: ImportRunDeps = {
     completeImport: (...args) => completeImport(...args),
     setImportStage: (...args) => setImportStage(...args),
     discardImportRun: (...args) => discardImportRun(...args),
+    getActiveImportRun: (...args) => getActiveImportRun(...args),
     token: () => getToken(),
     accountId: () => getAccountId(),
     baseUrl: () => getBaseUrl(),

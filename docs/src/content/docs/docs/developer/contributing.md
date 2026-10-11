@@ -51,14 +51,14 @@ cargo install tauri-cli --version "^2"
 
 ### Install Node
 
-Ubuntu's `nodejs` package is usually too old. Node 22 or newer is required; nvm is the easy way to get it.
+Ubuntu's `nodejs` package is usually too old. Node.js 24 is what CI and the Docker image build on. nvm is the easy way to get it.
 
-```bash title="Install Node.js 22"
+```bash title="Install Node.js 24"
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 source ~/.bashrc   # or open a new terminal
-nvm install 22
-nvm use 22
-node -v            # should print v22.x
+nvm install 24
+nvm use 24
+node -v            # should print v24.x
 npm -v
 ```
 

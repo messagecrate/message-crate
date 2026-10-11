@@ -27,7 +27,7 @@ pub async fn import_jsonl_text(
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source,
             account_id,
