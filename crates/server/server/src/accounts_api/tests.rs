@@ -2867,7 +2867,7 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
         &fixture.state,
         "/v1/imports",
         &alice.token,
-        serde_json::json!({ "source": "imessage" }),
+        serde_json::json!({ "source": "imessage", "stage": "write" }),
     )
     .await;
     // What the desktop app sends at the Staging Review: its staging summary.

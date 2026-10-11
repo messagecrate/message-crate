@@ -13,7 +13,7 @@ async fn run_with_summary(summary: serde_json::Value) -> (TestFixture, Registere
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage" }),
+        serde_json::json!({ "source": "imessage", "stage": "write" }),
     )
     .await;
     let import_id = created["id"].as_i64().expect("created run has an id");
@@ -52,7 +52,7 @@ async fn a_stage_change_with_a_summary_stores_it() {
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage" }),
+        serde_json::json!({ "source": "imessage", "stage": "write" }),
     )
     .await;
     let import_id = created["id"].as_i64().unwrap();
@@ -116,6 +116,41 @@ async fn a_stage_change_without_a_summary_does_not_erase_the_stored_one() {
     );
 }
 
+/// A run moved backwards is resumed at the wrong stage on the next visit
+/// (#2167): the move is a state conflict naming both stages, and the run
+/// keeps its stage and summary.
+#[tokio::test]
+async fn a_backward_stage_move_is_a_state_conflict() {
+    let (fixture, account, import_id) =
+        run_with_summary(serde_json::json!({"approved": true})).await;
+    let path = format!("/v1/imports/{import_id}");
+
+    let (status, text) = crate::test_support::patch_json_raw(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({"stage": "parse", "summary": {"approved": false}}),
+    )
+    .await;
+    let sentence = crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::StateConflict,
+    )
+    .sentence();
+    assert!(
+        sentence.contains("staging_review") && sentence.contains("parse"),
+        "the refusal names both stages: {sentence}"
+    );
+
+    let run: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(run["stage"], "staging_review");
+    assert_eq!(
+        stored_summary(&fixture, import_id).await,
+        Some(serde_json::json!({"approved": true}))
+    );
+}
+
 #[tokio::test]
 async fn a_stage_answers_by_the_words_of_context_md_only() {
     // The stages and Reviews of an Import Run are named as CONTEXT.md names
@@ -125,7 +160,7 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage" }),
+        serde_json::json!({ "source": "imessage", "stage": "write" }),
     )
     .await;
     let path = format!("/v1/imports/{}", created["id"]);

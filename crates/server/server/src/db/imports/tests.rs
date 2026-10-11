@@ -323,9 +323,15 @@ async fn stage_advances_and_discard_frees_the_slot() {
     let args = StartImportArgs::new(account, "imessage", "append", None);
     let id = start_import(&mut conn, &args).await.unwrap();
 
-    set_import_stage(&mut conn, account, id, ImportStage::Upload, None)
-        .await
-        .unwrap();
+    for stage in [
+        ImportStage::Write,
+        ImportStage::StagingReview,
+        ImportStage::Upload,
+    ] {
+        set_import_stage(&mut conn, account, id, stage, None)
+            .await
+            .unwrap();
+    }
     let active = running_import(&mut conn, account).await.unwrap();
     assert_eq!(active.stage, Some(ImportStage::Upload));
 
@@ -439,6 +445,97 @@ fn every_stage_round_trips_through_its_string() {
         assert_eq!(serde_json::to_value(stage).unwrap(), stage.as_str());
     }
     assert_eq!(ImportStage::parse("gate_1"), None);
+}
+
+/// The moves the desktop app makes: a review re-recorded after its write
+/// failed is a stage to itself, a resumed Staging writes `write` again, and
+/// approving moves to the next stage, or from the Staging Review straight to
+/// Upload when the import has no Media Stage.
+const DESKTOP_APP_MOVES: [(ImportStage, ImportStage); 6] = [
+    (ImportStage::Parse, ImportStage::Write),
+    (ImportStage::Write, ImportStage::StagingReview),
+    (ImportStage::StagingReview, ImportStage::Media),
+    (ImportStage::StagingReview, ImportStage::Upload),
+    (ImportStage::Media, ImportStage::MediaReview),
+    (ImportStage::MediaReview, ImportStage::Upload),
+];
+
+#[test]
+fn a_stage_moves_only_to_itself_the_next_stage_or_from_staging_review_to_upload() {
+    for from in ImportStage::ALL {
+        for to in ImportStage::ALL {
+            let expected = from == to || DESKTOP_APP_MOVES.contains(&(from, to));
+            assert_eq!(
+                from.may_move_to(to),
+                expected,
+                "{} -> {}",
+                from.as_str(),
+                to.as_str()
+            );
+        }
+    }
+}
+
+/// A run moved backwards is resumed at the wrong stage on the next visit
+/// (#1227, #2167), so the server refuses the move and keeps the stage.
+#[tokio::test]
+async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let args = StartImportArgs {
+        stage: ImportStage::Upload,
+        ..default_start_args(ACCOUNT_ID)
+    };
+    let id = start_import(&mut conn, &args).await.unwrap();
+
+    let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Parse, Some("{}"))
+        .await
+        .unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            ImportLookupError::StageMove {
+                from: ImportStage::Upload,
+                to: ImportStage::Parse,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    let message = err.to_string();
+    assert!(
+        message.contains("upload") && message.contains("parse"),
+        "the refusal names both stages: {message}"
+    );
+    let row = get_owned_import(&mut conn, ACCOUNT_ID, id).await.unwrap();
+    assert_eq!(row.stage, Some(ImportStage::Upload));
+    assert_eq!(row.summary_json, None, "a refused move records no summary");
+}
+
+/// Every move the desktop app makes is accepted, each review written twice as a
+/// resume after a failed write does.
+#[tokio::test]
+async fn every_move_the_desktop_app_makes_is_accepted() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    for (from, to) in DESKTOP_APP_MOVES {
+        let args = StartImportArgs {
+            stage: from,
+            ..default_start_args(ACCOUNT_ID)
+        };
+        let id = start_import(&mut conn, &args).await.unwrap();
+        for stage in [from, to, to] {
+            set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
+                .await
+                .unwrap_or_else(|e| panic!("{} -> {}: {e}", from.as_str(), to.as_str()));
+        }
+        let row = get_owned_import(&mut conn, ACCOUNT_ID, id).await.unwrap();
+        assert_eq!(row.stage, Some(to));
+        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[])
+            .await
+            .unwrap();
+    }
 }
 
 /// A finished run is its permanent record. Completing a discarded run once
