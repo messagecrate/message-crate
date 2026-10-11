@@ -1,5 +1,6 @@
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
 import { formatBytes } from "../../../lib/formatBytes";
+import { countOf } from "../../../lib/plural";
 import PageControl from "./PageControl";
 import type { TopAttachment } from "./storageUtils";
 import {
@@ -36,8 +37,7 @@ export default function TopAttachmentsTable({
       ) : (
         <>
           <p className={sectionHintClass}>
-            Top {topAttachments.length} {topAttachments.length === 1 ? "attachment" : "attachments"}{" "}
-            by file size
+            Top {countOf(topAttachments.length, "attachment")} by file size
             {topAttachments.length > ATTACHMENT_PAGE_SIZE
               ? ` · ${ATTACHMENT_PAGE_SIZE} per page`
               : ""}
