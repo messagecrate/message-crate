@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::{self, Origin};
-use crate::db::named_membership;
 use crate::db::{WriteTx, begin_write};
+use crate::db::{handles, named_membership};
 
 /// The columns of the file, in the order Export writes them.
 pub const COLUMNS: [&str; 6] = [
@@ -481,12 +481,15 @@ fn row_identity(
     };
     let Some(handle_type) = parse_handle_type(&row.identity_type) else {
         return Err(format!(
-            "row {n}: identity_type \"{}\" is not one Message Crate stores; use phone, email, username or other",
+            "row {n}: identity_type \"{}\" is not one Message Crate stores; use phone, email or other",
             row.identity_type
         ));
     };
     if row.identity.is_empty() {
         return Err(format!("row {n}: identity is blank"));
+    }
+    if let Err(refusal) = handles::check_service_carries(&row.identity, service, handle_type) {
+        return Err(format!("row {n}: {refusal}"));
     }
     let key = |normalized: String| IdentityKey {
         service,

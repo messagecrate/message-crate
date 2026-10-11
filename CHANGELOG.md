@@ -800,6 +800,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-11: **An address book load refuses an identity its service cannot
+  hold.** A row that put an email address on WhatsApp, or a username on
+  either service, was stored as an identity that reaches nobody. The load now
+  refuses it, naming the row, the service and the kind of identity, as adding
+  one to a contact already did (#2212).
+
 - 2026-10-10: **Contacts calls a search that finds nothing a search.** When
   the text in **Search contacts** matched no contact, the list said "No
   contacts match this filter". It now says "No contacts match this search"
