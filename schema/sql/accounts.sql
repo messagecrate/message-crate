@@ -399,8 +399,8 @@ CREATE TABLE IF NOT EXISTS import_contacts_set_aside (
 
 -- The Audit Trail: what each user did on this Message Crate, and when, for
 -- everything `imports` and `exports` do not already record. An entry is
--- written once and never changed by a route; deleting an account sets its
--- `account_id` NULL and keeps the entry
+-- written once and never changed, which the triggers below hold; deleting an
+-- account sets its `account_id` NULL and keeps the entry
 -- (docs/adr/0020-the-audit-trail-outlives-the-account.md). A password, a
 -- session token and an API token never enter it, hashed or not, and nothing
 -- here says what a message said or which conversation it was in.
@@ -466,3 +466,46 @@ CREATE INDEX IF NOT EXISTS ix_audit_entries_session
 
 CREATE INDEX IF NOT EXISTS ix_audit_entries_deletion
     ON audit_entries(deletion_entry_id);
+
+-- An Audit Trail entry is never edited. The only changes allowed are the two
+-- that deleting an account makes. `deletion_entry_id` is set once, to the
+-- `account_deleted` entry about the entry's own account. `account_id` is set
+-- NULL by the foreign key, once the account's row is gone. Anything else, a
+-- route, a mistaken query or a statement run by hand, fails here rather than
+-- rewriting the record (docs/adr/0020-the-audit-trail-outlives-the-account.md).
+CREATE TRIGGER IF NOT EXISTS audit_entries_never_edited
+BEFORE UPDATE ON audit_entries
+WHEN NEW.id IS NOT OLD.id
+  OR (NEW.account_id IS NOT OLD.account_id
+      AND (NEW.account_id IS NOT NULL
+           OR EXISTS (SELECT 1 FROM accounts WHERE id = OLD.account_id)))
+  OR (NEW.deletion_entry_id IS NOT OLD.deletion_entry_id
+      AND (OLD.deletion_entry_id IS NOT NULL
+           OR NOT EXISTS (SELECT 1 FROM audit_entries d
+                          WHERE d.id = NEW.deletion_entry_id
+                            AND d.action = 'account_deleted'
+                            AND d.account_id IS OLD.account_id)))
+  OR NEW.at IS NOT OLD.at
+  OR NEW.action IS NOT OLD.action
+  OR NEW.actor IS NOT OLD.actor
+  OR NEW.username IS NOT OLD.username
+  OR NEW.reason IS NOT OLD.reason
+  OR NEW.app_kind IS NOT OLD.app_kind
+  OR NEW.app_build IS NOT OLD.app_build
+  OR NEW.session_entry_id IS NOT OLD.session_entry_id
+  OR NEW.session_expires_at IS NOT OLD.session_expires_at
+  OR NEW.details IS NOT OLD.details
+BEGIN
+    SELECT RAISE(ABORT, 'an Audit Trail entry is never edited');
+END;
+
+-- An Audit Trail entry is never deleted, except a refused login as a
+-- username no account held. The server deletes those once they are 90 days
+-- old (`trim_refused_logins`). The age is the server's rule, so the trigger
+-- holds no clock.
+CREATE TRIGGER IF NOT EXISTS audit_entries_never_deleted
+BEFORE DELETE ON audit_entries
+WHEN NOT (OLD.action = 'login_refused' AND OLD.reason IS 'unknown_username')
+BEGIN
+    SELECT RAISE(ABORT, 'an Audit Trail entry is never deleted');
+END;
