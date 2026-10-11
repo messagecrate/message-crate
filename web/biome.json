@@ -55,7 +55,7 @@
           "options": {
             "paths": {
               "@tanstack/react-query": {
-                "importNames": ["useMutation"],
+                "importNames": ["useMutation", "MutationObserver", "*"],
                 "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
               },
               "@tauri-apps/api/core": "Call the desktop through src/lib/tauri.ts",
@@ -130,7 +130,7 @@
               "options": {
                 "paths": {
                   "@tanstack/react-query": {
-                    "importNames": ["useMutation"],
+                    "importNames": ["useMutation", "MutationObserver", "*"],
                     "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
                   },
                   "@tauri-apps/api/core": "Call the desktop through src/lib/tauri.ts",
