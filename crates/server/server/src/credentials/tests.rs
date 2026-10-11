@@ -353,7 +353,8 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         assert!(!is_valid_username(bad), "{bad:?} must be refused");
     }
 
-    // Letters from other scripts are refused; `is_valid_username` says why.
+    // Letters from other scripts are refused. The doc comment on
+    // `is_valid_username` gives the reason.
     for other_script in ["аdmin", "mätt", "матт", "ｍatt", "matt\u{0301}", "٣"] {
         assert!(
             !is_valid_username(other_script),
