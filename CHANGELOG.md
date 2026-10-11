@@ -579,6 +579,17 @@ released versions carry their date on the heading.
   conversation that is no longer with yourself gets its person back, with a
   contact. Messages are not changed (#1662).
 
+#### The server
+
+- 2026-10-10: **The Docker image no longer lets pages on port 5173 call its
+  server.** The image's settings allowed web pages from port 5173 on the
+  viewer's computer, the port a Message Crate developer's tools use, to call
+  the server. Nothing in a release uses that port, so the only effect was
+  that any page served on it could call a Message Crate in Docker, though it
+  still needed a login to read anything. The image now allows only the desktop app and the website the
+  server serves itself, as a Message Crate started by the desktop app does
+  (#2144).
+
 ### Upgrading
 
 - The **ffmpeg directory** field in Settings → System is gone, and the

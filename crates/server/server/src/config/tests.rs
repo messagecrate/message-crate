@@ -356,8 +356,12 @@ fn example_cors_origins_uncomments_to_a_complete_array() {
     }
 }
 
+/// The Docker image names no origin of its own: the server allows the
+/// packaged desktop app's origins whatever the config says, and the website
+/// it serves is same-origin. A Vite origin here would let any page on port
+/// 5173 of the viewer's computer call a Message Crate in Docker (#2144).
 #[test]
-fn docker_config_includes_packaged_desktop_origins() {
+fn docker_config_names_no_cors_origins() {
     let docker = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../config/config.docker.toml"
@@ -368,10 +372,5 @@ fn docker_config_includes_packaged_desktop_origins() {
         .as_ref()
         .expect("[server] in docker config")
         .cors_origins;
-    for origin in PACKAGED_ORIGINS {
-        assert!(
-            origins.iter().any(|item| item == origin),
-            "missing {origin} in {origins:?}"
-        );
-    }
+    assert!(origins.is_empty(), "config.docker.toml names {origins:?}");
 }
