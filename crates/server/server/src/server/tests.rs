@@ -7,7 +7,9 @@ use crate::imports_api::{
     update_import,
 };
 use crate::problem::ProblemType;
-use crate::test_support::{expect_problem, expect_problem_for, http_client};
+use crate::test_support::{
+    ImportingAccount, expect_problem, expect_problem_for, http_client, test_fixture,
+};
 use axum::extract::State;
 use tempfile::TempDir;
 
@@ -144,40 +146,6 @@ async fn disabling_an_account_kills_its_live_api_token() {
     );
 }
 
-async fn test_state() -> (TempDir, AppState, String, i64) {
-    let (pool, tmp) = crate::db::engine::test_pool().await;
-    let data_dir = tmp.path().join("data");
-    {
-        let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_schema(&mut conn).await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-            .await
-            .unwrap();
-    }
-    let token = crate::db::session_tokens::insert_account_session_token(
-        &mut pool.acquire().await.unwrap(),
-        TEST_ACCOUNT,
-    )
-    .await
-    .unwrap();
-    let import_id = crate::db::imports::start_import(
-        &mut pool.acquire().await.unwrap(),
-        &crate::db::imports::StartImportArgs::new(
-            TEST_ACCOUNT,
-            "ios",
-            "append",
-            Some("message-crate-server"),
-        ),
-    )
-    .await
-    .unwrap();
-
-    let state = test_app_state(pool, &data_dir);
-
-    (tmp, state, token, import_id)
-}
-
 fn auth_headers(token: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -259,7 +227,8 @@ fn allow_origin(response: &reqwest::Response) -> Option<&str> {
 
 #[tokio::test]
 async fn cors_preflight_allows_packaged_desktop_and_vite_origins() {
-    let (_dir, state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
     let origins = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -282,7 +251,8 @@ async fn cors_preflight_allows_packaged_desktop_and_vite_origins() {
 /// to be configured.
 #[tokio::test]
 async fn cors_preflight_allows_packaged_desktop_without_configuration() {
-    let (_dir, state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
     for origin in PACKAGED_DESKTOP_ORIGINS {
         let response = cors_preflight(with_cors(state.clone(), &[]), origin).await;
         assert_eq!(
@@ -296,14 +266,16 @@ async fn cors_preflight_allows_packaged_desktop_without_configuration() {
 /// Built in does not mean open: everything else still has to be listed.
 #[tokio::test]
 async fn cors_preflight_rejects_unknown_origin_without_configuration() {
-    let (_dir, state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
     let response = cors_preflight(with_cors(state, &[]), "https://evil.example").await;
     assert_eq!(allow_origin(&response), None);
 }
 
 #[tokio::test]
 async fn cors_preflight_rejects_unknown_origin() {
-    let (_dir, state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
     let response = cors_preflight(
         with_cors(state, &["tauri://localhost"]),
         "https://evil.example",
@@ -314,7 +286,8 @@ async fn cors_preflight_rejects_unknown_origin() {
 
 #[tokio::test]
 async fn openapi_ui_off_does_not_serve_spec() {
-    let (_dir, state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
     assert!(!state.cfg.require_server().unwrap().openapi_ui);
     let response = get_path(state, "/openapi.json").await;
     assert_ne!(
@@ -329,7 +302,8 @@ async fn openapi_ui_off_does_not_serve_spec() {
 
 #[tokio::test]
 async fn openapi_ui_on_serves_spec_without_token() {
-    let (_dir, mut state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
     {
         let cfg = Arc::make_mut(&mut state.cfg);
         cfg.server.as_mut().unwrap().openapi_ui = true;
@@ -346,7 +320,8 @@ async fn openapi_ui_on_serves_spec_without_token() {
 /// check that guards `/v1` must not refuse it.
 #[tokio::test]
 async fn openapi_ui_routes_carry_a_request_id_and_cors_headers() {
-    let (_dir, mut state, _token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
     {
         let cfg = Arc::make_mut(&mut state.cfg);
         cfg.server.as_mut().unwrap().openapi_ui = true;
@@ -374,7 +349,10 @@ async fn openapi_ui_routes_carry_a_request_id_and_cors_headers() {
 
 #[tokio::test]
 async fn imports_complete_and_detail_surface_timings_and_issues() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let body = CompleteImportRequest {
         status: "completed".into(),
         bytes_uploaded: Some(100),
@@ -454,7 +432,10 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
 
 #[tokio::test]
 async fn imports_complete_stores_completed_with_issues_status() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let body = CompleteImportRequest {
         status: "completed_with_issues".into(),
         bytes_uploaded: Some(100),
@@ -480,7 +461,10 @@ async fn imports_complete_stores_completed_with_issues_status() {
 
 #[tokio::test]
 async fn imports_complete_rejects_unknown_status() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let body = CompleteImportRequest {
         status: "victorious".into(),
         bytes_uploaded: None,
@@ -517,7 +501,10 @@ async fn imports_complete_rejects_unknown_status() {
 /// before the run is written.
 #[tokio::test]
 async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let body = CompleteImportRequest {
         status: "completed".into(),
         bytes_uploaded: Some(100),
@@ -562,7 +549,10 @@ async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
 
 #[tokio::test]
 async fn imports_get_handler_returns_not_found_for_missing_import() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let err = get_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -582,7 +572,10 @@ async fn imports_get_handler_returns_not_found_for_missing_import() {
 
 #[tokio::test]
 async fn active_session_is_empty_then_reports_the_live_one() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
 
     let body = CreateImportRequest {
         source: "imessage".into(),
@@ -596,7 +589,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         source_identities: None,
         phone_country: None,
     };
-    // `test_state` already opened a session; close it so this one can start.
+    // The fixture already opened a session; close it so this one can start.
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -634,7 +627,10 @@ async fn active_session_is_empty_then_reports_the_live_one() {
 /// client posts: the row outlives the run, and the secret must not.
 #[tokio::test]
 async fn a_stored_form_snapshot_drops_credentials() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -695,7 +691,10 @@ async fn a_stored_form_snapshot_drops_credentials() {
 /// so a resumed Staging Review can show it without re-reading the backup.
 #[tokio::test]
 async fn imports_create_stores_source_identities() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -739,7 +738,9 @@ async fn imports_create_stores_source_identities() {
 
 #[tokio::test]
 async fn a_second_session_is_refused_with_conflict() {
-    let (_dir, state, token, _import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, .. } = fixture.account_with_running_import(TEST_ACCOUNT).await;
     let body = CreateImportRequest {
         source: "imessage".into(),
         mode: ImportMode::Append,
@@ -773,7 +774,10 @@ async fn a_second_session_is_refused_with_conflict() {
 
 #[tokio::test]
 async fn stage_endpoint_advances() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
 
     let _ = update_import(
         State(state.clone()),
@@ -794,7 +798,10 @@ async fn stage_endpoint_advances() {
 
 #[tokio::test]
 async fn discard_frees_the_slot() {
-    let (_dir, state, token, import_id) = test_state().await;
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let ImportingAccount { token, import_id } =
+        fixture.account_with_running_import(TEST_ACCOUNT).await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
