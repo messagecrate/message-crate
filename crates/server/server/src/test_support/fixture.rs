@@ -4,7 +4,7 @@
 
 use tempfile::TempDir;
 
-use super::{insert_account_with_id, log_in, register_via_api};
+use super::{RegisteredAccount, insert_account_with_id, log_in, register_via_api};
 use crate::server::AppState;
 
 /// A server state plus its temp directory. Drop the `TempDir` last.
@@ -13,16 +13,6 @@ pub struct TestFixture {
     tmp: TempDir,
     /// The server state every helper drives.
     pub state: AppState,
-}
-
-/// An account created through the API, with its session token.
-pub struct RegisteredAccount {
-    /// The new account's id.
-    pub account_id: i64,
-    /// The username it was created with.
-    pub username: String,
-    /// A live session token for it.
-    pub token: String,
 }
 
 /// An empty database with schema applied and no accounts.
@@ -125,19 +115,20 @@ impl TestFixture {
             .unwrap()
     }
 
-    /// Insert an account at `id`, open a session on it, and start one running
-    /// Import Run for it, all straight into the database, for a test that
-    /// calls an import handler function directly rather than over HTTP.
-    pub async fn account_with_running_import(&self, id: i64) -> ImportingAccount {
+    /// Insert an account, `importer`, under the id the database hands out,
+    /// open a session on it, and start one running Import Run for it, all
+    /// straight into the database, for a test that calls an import handler
+    /// function directly rather than over HTTP.
+    pub async fn account_with_running_import(&self) -> ImportingAccount {
+        let account_id = self.account("importer").await;
         let mut conn = self.conn().await;
-        insert_account_with_id(&mut conn, id, "importer").await;
-        let token = crate::db::session_tokens::insert_account_session_token(&mut conn, id)
+        let token = crate::db::session_tokens::insert_account_session_token(&mut conn, account_id)
             .await
             .unwrap();
         let import_id = crate::db::imports::start_import(
             &mut conn,
             &crate::db::imports::StartImportArgs::new(
-                id,
+                account_id,
                 "ios",
                 "append",
                 Some("message-crate-server"),
@@ -145,13 +136,19 @@ impl TestFixture {
         )
         .await
         .unwrap();
-        ImportingAccount { token, import_id }
+        ImportingAccount {
+            account_id,
+            token,
+            import_id,
+        }
     }
 }
 
 /// An account with a live session and a running Import Run, from
 /// [`TestFixture::account_with_running_import`].
 pub struct ImportingAccount {
+    /// The account's id.
+    pub account_id: i64,
     /// A live session token for the account.
     pub token: String,
     /// The id of its running Import Run.

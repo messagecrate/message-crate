@@ -15,6 +15,8 @@
 //!   import leaves behind.
 //! - `logs`: the server's log lines.
 //! - `lines`: the JSON Lines a test imports.
+//! - `client`: the HTTP client a test calls its own server with, shared
+//!   with the tests under `tests/`.
 //!
 //! The HTTP helpers drive the whole stack over real HTTP, for tests that
 //! check a route's contract end to end. The other helpers need no HTTP, and
@@ -30,17 +32,15 @@ mod logs;
 mod seed;
 
 pub use client::http_client;
-pub use fixture::{
-    ImportingAccount, PASSWORD, RegisteredAccount, TestFixture, fixture_with_account, test_fixture,
-};
+pub use fixture::{ImportingAccount, PASSWORD, TestFixture, fixture_with_account, test_fixture};
 pub use http::{
-    TestServer, claim_as_owner, delete_json, delete_json_raw, delete_json_with_body, delete_raw,
-    delete_status, delete_status_with_body, expect_internal_problem, expect_problem,
-    expect_problem_for, expect_problem_response, get_json, get_raw, get_status, location, log_in,
-    log_in_raw, login_status, patch_failure, patch_json, patch_json_raw, patch_status,
-    post_created_json, post_json, post_json_raw, post_logged_out, post_raw, post_status,
-    post_status_logged_out, problem, put_json, put_json_raw, put_raw, put_status, register_via_api,
-    serve, serve_router,
+    RegisteredAccount, TestServer, claim_as_owner, delete_json, delete_json_raw,
+    delete_json_with_body, delete_raw, delete_status, delete_status_with_body,
+    expect_internal_problem, expect_problem, expect_problem_for, expect_problem_response, get_json,
+    get_raw, get_status, location, log_in, log_in_raw, login_status, patch_failure, patch_json,
+    patch_json_raw, patch_status, post_created_json, post_json, post_json_raw, post_logged_out,
+    post_raw, post_status, post_status_logged_out, problem, put_json, put_json_raw, put_raw,
+    put_status, register_via_api, serve, serve_router,
 };
 pub use imports::{
     assert_every_person_is_on_a_contact, at_current_schema_version, import_ada_conversation,

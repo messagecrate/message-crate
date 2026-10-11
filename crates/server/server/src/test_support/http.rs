@@ -5,8 +5,18 @@
 use axum::http::StatusCode;
 use serde::de::DeserializeOwned;
 
-use super::{RegisteredAccount, http_client};
+use super::http_client;
 use crate::server::{AppState, http_app};
+
+/// An account created through the API, with its session token.
+pub struct RegisteredAccount {
+    /// The new account's id.
+    pub account_id: i64,
+    /// The username it was created with.
+    pub username: String,
+    /// A live session token for it.
+    pub token: String,
+}
 
 /// A running instance of the real axum app on an ephemeral port.
 ///
