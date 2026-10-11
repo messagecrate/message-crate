@@ -6,7 +6,6 @@ import {
   IMESSAGE_ERR_IPHONE_PATH_IS_FILE,
   IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR,
   IMESSAGE_ERR_MAC_PATH_IS_DIR,
-  IMESSAGE_ERR_PATH_MISSING,
   IMESSAGE_METHODS,
   imessageApplePlatform,
   imessageAttachmentRootRequired,
@@ -20,6 +19,7 @@ import {
   macMessagesDbPath,
   shouldPrefillMacMessagesDb,
 } from "./imessageImport";
+import { PATH_MISSING } from "./pathChecks";
 
 const presentFile: { exists: true; isFile: true; isDirectory: false } = {
   exists: true,
@@ -291,7 +291,7 @@ describe("imessageCanImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.attachmentRoot).toBe(IMESSAGE_ERR_PATH_MISSING);
+    expect(result.errors.attachmentRoot).toBe(PATH_MISSING);
   });
 
   it("rejects an attachment directory that is a file", () => {
