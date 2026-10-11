@@ -201,6 +201,16 @@ export async function stopStageNotRecorded(
 }
 
 /**
+ * How a `discardRun` went: the server closed the run, refused the close
+ * (with the server's message, or why the close never reached it), or
+ * refused the session the close was sent with.
+ */
+export type DiscardOutcome =
+  | { kind: "discarded" }
+  | { kind: "refused"; message: string }
+  | { kind: "session_ended" };
+
+/**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
@@ -208,18 +218,20 @@ export async function stopStageNotRecorded(
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
- * delete then runs whatever the close's outcome, but one: a session the
- * server refused to the close. The run stays open for the account's next
- * login to offer again, so its directory stays with it. Otherwise a live run
- * with no directory blocks the next import, and a directory with no run is
- * litter nothing will ever clean up. `runDir` is null for a run whose
+ * directory goes only once the server has closed the run (#2669). A close
+ * the server refused, or one that never reached it, leaves the run open
+ * there, holding the account's import slot, so its directory stays with it
+ * for the next visit to Import to offer again, and the outcome carries the
+ * server's message for the caller to show. A session the server refused to
+ * the close is no fault of the run: the run stays for the account's next
+ * login, with its directory and no message. `runDir` is null for a run whose
  * directory is not on this device. Never throws.
  */
 export async function discardRun(
   ctx: RunContext,
   runId: number | null,
   runDir: string | null,
-): Promise<void> {
+): Promise<DiscardOutcome> {
   let issues: ImportIssue[] = [];
   let notes: ImportNote[] = [];
   if (runDir != null) {
@@ -240,8 +252,10 @@ export async function discardRun(
         ctx.server.discardImportRun(runId, issueRequests(issues), notes),
       );
     } catch (e: unknown) {
-      if (e instanceof SessionRefusedError) return;
+      if (e instanceof SessionRefusedError) return { kind: "session_ended" };
+      return { kind: "refused", message: errorText(e) };
     }
   }
   if (runDir != null) await discardRunDirectory(ctx, runDir);
+  return { kind: "discarded" };
 }
