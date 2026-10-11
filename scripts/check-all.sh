@@ -23,7 +23,7 @@ cd "${REPO_ROOT}"
 echo "==> license consistency"
 "${SCRIPT_DIR}/check-license.sh"
 
-echo "==> docker rust-builder copies patched crates"
+echo "==> the Dockerfile's build context and base image pins"
 "${SCRIPT_DIR}/check-docker-context.sh"
 
 echo "==> product version lockstep"
