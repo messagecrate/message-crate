@@ -27,7 +27,7 @@ use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
 use crate::models::StoredTime;
-use crate::paging::{Direction, Page, SortKey};
+use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::search::bridge::Sql;
 use crate::server::ApiError;
 
@@ -939,12 +939,11 @@ pub async fn get_conversation_messages(
             _ => 0,
         };
         let items = load_messages(conn, &where_sql, &params, order, limit, offset).await?;
-        return Ok(Some(Page {
+        return Ok(Some(page_from_rows(
             items,
             total,
-            limit,
-            offset,
-        }));
+            PageParams { limit, offset },
+        )));
     };
 
     // The message's place in the order: its timestamp, `sort_order` and id,
@@ -1062,10 +1061,9 @@ pub async fn get_conversation_messages(
         MessageWindow::After(_) => position + 1,
         _ => position - before,
     };
-    Ok(Some(Page {
+    Ok(Some(page_from_rows(
         items,
         total,
-        limit,
-        offset,
-    }))
+        PageParams { limit, offset },
+    )))
 }

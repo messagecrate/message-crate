@@ -1,8 +1,7 @@
-import Checkbox from "../../components/Checkbox";
-import PasswordField from "../../components/PasswordField";
-import PathPicker from "../../components/PathPicker";
-import { textInputClass } from "../../components/TextField";
-import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
+import Checkbox from "../../../components/Checkbox";
+import PasswordField from "../../../components/PasswordField";
+import PathPicker from "../../../components/PathPicker";
+import { textInputClass } from "../../../components/TextField";
 import {
   isWhatsappMethod,
   whatsappCryptRequired,
@@ -13,7 +12,8 @@ import {
   whatsappShowsKey,
   whatsappShowsMedia,
   whatsappShowsPassword,
-} from "../whatsappImport";
+} from "../../../lib/whatsappImport";
+import { hintClass, StackedField } from "../ImportFormUi";
 import { FieldStatus } from "./FieldStatus";
 import type { ImportFormSectionProps } from "./types";
 

@@ -8,7 +8,8 @@ import { WHATSAPP_SOURCE } from "./whatsapp";
 /**
  * Each source's descriptor by its id. Typed by `EXPORT_SOURCES`, so a source
  * listed there without a descriptor here, or one here that is not listed,
- * does not build.
+ * does not build. A new source also needs its form section in
+ * `IMPORT_FORM_SECTIONS` (`screens/import/formSections/`).
  */
 const DESCRIPTORS: Record<ImportSourceId, ImportSourceDescriptor> = {
   imessage: IMESSAGE_SOURCE,

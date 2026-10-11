@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
-import Checkbox from "../../components/Checkbox";
-import PhoneTokenField from "../../components/PhoneTokenField";
-import { textInputClass } from "../../components/TextField";
-import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
-import { accentLinkClass } from "../uiStyles";
+import Checkbox from "../../../components/Checkbox";
+import PhoneTokenField from "../../../components/PhoneTokenField";
+import { textInputClass } from "../../../components/TextField";
+import { accentLinkClass } from "../../../lib/uiStyles";
+import { hintClass, StackedField } from "../ImportFormUi";
 import type { ImportFormSectionProps } from "./types";
 
 /**

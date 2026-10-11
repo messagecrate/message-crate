@@ -10,7 +10,9 @@ use sqlx::SqliteConnection;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
-use crate::paging::{Direction, MAX_CONTACT_SUMMARY_IDS, Page, SortKey};
+use crate::paging::{
+    Direction, MAX_CONTACT_SUMMARY_IDS, Page, PageParams, SortKey, page_from_rows,
+};
 use crate::search::bridge::{TrashScope, contact_sent_messages};
 use crate::search::emit::{NOT_TRASHED_CONTACT, NOT_TRASHED_CONVERSATION};
 use crate::server::ApiError;
@@ -270,12 +272,11 @@ pub async fn list_contacts_sorted(
         )
         .collect();
 
-    Ok(Page {
-        items: contacts,
+    Ok(page_from_rows(
+        contacts,
         total,
-        limit,
-        offset,
-    })
+        PageParams { limit, offset },
+    ))
 }
 
 /// The ids of every contact `q` matches, a query in the search language,
