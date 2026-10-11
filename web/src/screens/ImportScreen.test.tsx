@@ -220,6 +220,7 @@ function storedForm(overrides: Record<string, unknown> = {}): Record<string, unk
     isBusinessApp: false,
     whatsappOwnerPhone: "",
     timeZone: "America/New_York",
+    phoneCountry: "",
     backupPasswordGiven: false,
     whatsappKeyGiven: false,
     assetMaxBytes: 512 * 1024 * 1024,

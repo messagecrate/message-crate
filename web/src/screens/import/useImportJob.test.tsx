@@ -38,7 +38,7 @@ import type {
   ImportProgressEvent,
 } from "../../lib/types";
 import { account } from "../../test/apiShapes";
-import { importForm } from "../../test/importForm";
+import { importForm, MIB } from "../../test/importForm";
 import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "../settings/ConvertSection";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
@@ -291,8 +291,6 @@ function stagedMode(): AttachmentMediaMode {
     | undefined;
   return args?.attachment_media ?? "copy";
 }
-
-const MIB = 1024 * 1024;
 
 function okProbe(): ToolsStatus {
   return {

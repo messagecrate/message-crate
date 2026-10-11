@@ -2,12 +2,13 @@
  * The Import form's values for an iPhone backup, for tests that start or
  * resume an Import Run. Typed as `ImportJobFormValues`, so a field added to
  * the form fails to compile here until it is given a value, rather than
- * leaving a copy in one test file behind (#2243).
+ * leaving a copy in one test file behind.
  */
 
 import type { ImportJobFormValues } from "../lib/importSources/types";
 
-const MIB = 1024 * 1024;
+/** One mebibyte, the unit the form's `assetMaxBytes` is written in. */
+export const MIB = 1024 * 1024;
 
 /** An iPhone backup Import with attachments copied, with `overrides` on top. */
 export function importForm(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues {
