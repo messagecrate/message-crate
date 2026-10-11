@@ -588,7 +588,7 @@ impl<'a> Export<'a> {
 
     /// Write one JSON Lines file per conversation and return how many.
     ///
-    /// The stem comes from [`message_ir::ConversationDocument::filename_stem`],
+    /// The stem comes from [`message_ir_format::filename_stem`],
     /// which appends `packaging_stem_suffix` (the sanitized source, set here
     /// so the same chat from two sources lands in two files). The write is
     /// atomic: ir-format writes a `.tmp` sibling and renames it, so a crash
@@ -615,7 +615,8 @@ impl<'a> Export<'a> {
             .collect();
         // Two groups from one source can still share a title or their people.
         let mut names: Vec<&mut message_ir::ConversationDocument> = docs.iter_mut().collect();
-        message_ir::give_each_document_its_own_file(&mut names).map_err(anyhow::Error::msg)?;
+        message_ir_format::give_each_document_its_own_file(&mut names)
+            .map_err(anyhow::Error::msg)?;
         for doc in &docs {
             message_ir_format::write_conversation_jsonl(&self.cfg.out_dir, doc)?;
         }

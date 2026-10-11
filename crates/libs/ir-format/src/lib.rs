@@ -2,7 +2,9 @@
 //! Crate emits itself: JSON, JSON Lines (one JSON object per line), CSV, EML
 //! and MBOX. [`FormatSink`] buffers documents, applies obfuscation and the
 //! media mode, and writes them; a merged archive owned by another crate
-//! plugs in through [`MergedArchive`].
+//! plugs in through [`MergedArchive`]. [`filename_stem`] and
+//! [`give_each_document_its_own_file`] name the files a conversation is
+//! written to.
 //!
 //! The resumable write path lives in `message-staging`, directory convert in
 //! `message-reexport`, the run model in `message-crate-core`, and the
@@ -11,6 +13,7 @@
 mod clean;
 mod export_transforms;
 mod format_sink;
+mod naming;
 mod normalize;
 mod placeholders;
 mod read_csv;
@@ -22,6 +25,7 @@ mod write;
 pub use clean::{EXPORT_SENTINEL, clean_previous_ir_output, mark_export_directory};
 pub use export_transforms::clear_attachments_when_disabled;
 pub use format_sink::{FormatSink, MergedArchive, write_documents_through_sink};
+pub use naming::{filename_stem, give_each_document_its_own_file};
 pub use read_csv::read_conversation_csv;
 pub use read_json::{
     read_conversation_json, read_conversation_jsonl, read_conversation_jsonl_with_lines,

@@ -47,6 +47,10 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 [[package]]
 name = "android-fields"
 version = "0.1.0"
+dependencies = [
+ "message-ir",
+ "serde_json",
+]
 
 [[package]]
 name = "android_system_properties"
@@ -2111,6 +2115,7 @@ dependencies = [
  "anyhow",
  "csv",
  "file-io",
+ "hex",
  "mail",
  "media",
  "message-crate-core",
@@ -2119,6 +2124,7 @@ dependencies = [
  "obfuscate",
  "phone",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -3296,6 +3302,7 @@ dependencies = [
 name = "sms-backup-plus-exporter"
 version = "0.1.0"
 dependencies = [
+ "android-fields",
  "anyhow",
  "chrono",
  "csv",

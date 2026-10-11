@@ -13,8 +13,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
 
 mod attachment_path;
 mod conversation_key;
@@ -701,178 +699,10 @@ impl IrImessage {
 }
 
 impl ConversationDocument {
-    /// Filename stem used for CSV, JSON, and mail directories (no extension).
-    pub fn filename_stem(&self) -> String {
-        let handles: Vec<String> = self
-            .conversation
-            .participants
-            .iter()
-            .filter_map(|p| p.identity.clone())
-            .collect();
-        conversation_stem(
-            self.conversation.conversation_type.as_str(),
-            &self.conversation.chat_identifier,
-            self.conversation.group_title.as_deref(),
-            &handles,
-            self.packaging_stem_suffix.as_deref(),
-        )
-    }
-
     /// Recompute [`ConversationMeta::stats`] from `messages`.
     pub fn finalize_stats(&mut self) {
         self.conversation.stats = compute_stats(&self.messages);
     }
-}
-
-/// Give every document a file name no other document in `docs` has.
-///
-/// Two conversations can reduce to one [`filename_stem`](ConversationDocument::filename_stem):
-/// two groups with the same title, two untitled groups with the same people,
-/// or two names that differ only in case on a disk that ignores case. Written
-/// as they are, the second file would replace the first and lose its
-/// messages. Each document in such a clash gets a short suffix taken from its
-/// chat identifier, so the names are the same on every run over the same
-/// backup and a resumed run finds its files.
-///
-/// # Errors
-///
-/// Names the file when two documents still share one after that (the same
-/// chat identifier twice), so the caller can refuse rather than write one
-/// over the other.
-pub fn give_each_document_its_own_file(
-    docs: &mut [&mut ConversationDocument],
-) -> Result<(), String> {
-    let mut by_name: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, doc) in docs.iter().enumerate() {
-        by_name
-            .entry(doc.filename_stem().to_lowercase())
-            .or_default()
-            .push(i);
-    }
-    for clash in by_name.values().filter(|indexes| indexes.len() > 1) {
-        for &i in clash {
-            let doc = &mut *docs[i];
-            let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
-            let suffix = doc.packaging_stem_suffix.take().unwrap_or_default();
-            doc.packaging_stem_suffix = Some(format!("{suffix}__{}", &digest[..8]));
-        }
-    }
-    let mut names = HashSet::new();
-    for doc in docs.iter() {
-        let stem = doc.filename_stem();
-        if !names.insert(stem.to_lowercase()) {
-            return Err(format!("two conversations would both be written to {stem}"));
-        }
-    }
-    Ok(())
-}
-
-/// Max peer phones included in an untitled group filename stem.
-const GROUP_FILENAME_MAX_PHONES: usize = 10;
-
-/// A file stem with anything but letters, digits, `-`, `_`, and `+` replaced by `_`.
-fn sanitize_stem(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '+' {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect()
-}
-
-/// True for a handle that is a phone number: an optional `+` then digits.
-fn is_phone_handle(value: &str) -> bool {
-    let value = value.trim();
-    if value.is_empty() {
-        return false;
-    }
-    if let Some(rest) = value.strip_prefix('+') {
-        !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
-    } else {
-        value.chars().all(|c| c.is_ascii_digit())
-    }
-}
-
-/// The stem with `suffix` appended when there is one.
-fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
-    match suffix {
-        Some(s) if !s.is_empty() => format!("{stem}{s}"),
-        _ => stem.to_string(),
-    }
-}
-
-/// Standard per-conversation filename stem (no extension — callers append
-/// `.csv`, `.jsonl`, …).
-///
-/// - Individual → `sanitize_stem(chat_id)` (+ optional suffix); `unknown`
-///   when the chat id is empty, so no file is named only by its extension
-/// - Group with a real `group_title` → sanitized title
-/// - Untitled group → `group_+A_+B_…` (sorted unique E.164, max 10);
-///   if more than 10 peers, append `_<16 hex>` of SHA-256 over the full roster
-/// - Untitled group with empty roster → `group_unknown` (or hash of `chat_id`)
-pub fn conversation_stem(
-    conversation_type: &str,
-    chat_id: &str,
-    group_title: Option<&str>,
-    participant_e164s: &[String],
-    suffix: Option<&str>,
-) -> String {
-    let is_group = conversation_type.eq_ignore_ascii_case("group");
-    if !is_group {
-        let mut stem = sanitize_stem(chat_id);
-        if stem.is_empty() {
-            stem = "unknown".to_string();
-        }
-        return with_suffix(&stem, suffix);
-    }
-
-    if let Some(title) = group_title.and_then(trimmed) {
-        let stem = sanitize_stem(title);
-        if !stem.is_empty() && !stem.chars().all(|c| c == '_') {
-            return with_suffix(&stem, suffix);
-        }
-    }
-
-    let phones = unique_sorted_phone_handles(participant_e164s);
-
-    if phones.is_empty() {
-        let stem = if chat_id.trim().is_empty() {
-            "group_unknown".to_string()
-        } else {
-            let digest = hex::encode(Sha256::digest(chat_id.as_bytes()));
-            format!("group_{}", &digest[..16])
-        };
-        return with_suffix(&stem, suffix);
-    }
-
-    let mut stem = "group".to_string();
-    for phone in phones.iter().take(GROUP_FILENAME_MAX_PHONES) {
-        stem.push('_');
-        stem.push_str(phone);
-    }
-    if phones.len() > GROUP_FILENAME_MAX_PHONES {
-        let joined = phones.join("|");
-        let digest = hex::encode(Sha256::digest(joined.as_bytes()));
-        stem.push('_');
-        stem.push_str(&digest[..16]);
-    }
-    with_suffix(&stem, suffix)
-}
-
-/// Trim, keep phone-looking handles, sort, and drop duplicates.
-fn unique_sorted_phone_handles(participant_e164s: &[String]) -> Vec<String> {
-    let mut phones: Vec<String> = participant_e164s
-        .iter()
-        .map(|p| p.trim().to_string())
-        .filter(|p| is_phone_handle(p))
-        .collect();
-    phones.sort();
-    phones.dedup();
-    phones
 }
 
 /// Count messages and attachments and find first/last timestamps.
@@ -924,16 +754,6 @@ pub fn nonempty(s: &str) -> Option<String> {
     trimmed(s).map(str::to_string)
 }
 
-/// `value` trimmed, unless it is blank or the literal `null` / `none` that
-/// some backups write where an attachment name is missing.
-pub fn valid_filename(value: &str) -> Option<String> {
-    let value = value.trim();
-    (!value.is_empty()
-        && !value.eq_ignore_ascii_case("null")
-        && !value.eq_ignore_ascii_case("none"))
-    .then(|| value.to_string())
-}
-
 /// One mebibyte, for byte counts shown or compared in MiB.
 pub const MIB: u64 = 1024 * 1024;
 
@@ -946,40 +766,6 @@ pub fn owner_sender(export: &ExportMeta) -> (Option<String>, Option<String>) {
         .and_then(nonempty)
         .or_else(|| handle.as_ref().map(|_| "Me".into()));
     (handle, display)
-}
-
-/// Parse Android type strings / numbers into `i32`.
-pub fn parse_android_type(s: &str) -> Option<i32> {
-    let t = s.trim();
-    if t.is_empty() {
-        return None;
-    }
-    t.parse::<i32>().ok()
-}
-
-/// The [`IrSource`] of one message from an Android SMS backup: `fields`
-/// with the conversation title added as `android_group_title`, and the
-/// message's `android_type` extra read with [`parse_android_type`]. The
-/// title is stored as data only; filenames do not use it.
-pub fn android_source(
-    conversation: &PendingConversation,
-    msg: &PendingMessage,
-    mut fields: Map<String, Value>,
-) -> IrSource {
-    if let Some(title) = conversation
-        .display_name
-        .as_deref()
-        .filter(|t| !t.is_empty())
-    {
-        fields.insert(
-            "android_group_title".into(),
-            Value::String(title.to_string()),
-        );
-    }
-    IrSource {
-        android_type: parse_android_type(msg.extra_str("android_type")),
-        fields,
-    }
 }
 
 /// Export and conversation metadata without messages (JSONL header line
@@ -1158,92 +944,6 @@ impl PendingConversation {
 }
 
 #[cfg(test)]
-mod conversation_stem_tests {
-    use super::conversation_stem;
-
-    #[test]
-    fn individual_uses_chat_id() {
-        assert_eq!(
-            conversation_stem("individual", "+15550112", None, &[], None),
-            "+15550112"
-        );
-    }
-
-    #[test]
-    fn individual_with_an_empty_chat_id_is_unknown() {
-        assert_eq!(
-            conversation_stem("individual", "", None, &[], None),
-            "unknown"
-        );
-        assert_eq!(conversation_stem("individual", "  ", None, &[], None), "__");
-        assert_eq!(
-            conversation_stem("individual", "", None, &[], Some("__whatsapp")),
-            "unknown__whatsapp"
-        );
-    }
-
-    #[test]
-    fn group_with_title_uses_title() {
-        assert_eq!(
-            conversation_stem("group", "chat-x", Some("Family Chat"), &[], None),
-            "Family_Chat"
-        );
-    }
-
-    #[test]
-    fn group_with_a_one_word_title_uses_it_and_not_the_phones() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-x", Some("Family"), &peers, None),
-            "Family"
-        );
-    }
-
-    #[test]
-    fn untitled_group_lists_sorted_phones() {
-        let peers = vec!["+18285550100".into(), "+14075550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-group-x", None, &peers, None),
-            "group_+14075550100_+18285550100"
-        );
-    }
-
-    #[test]
-    fn untitled_group_over_ten_appends_hash() {
-        let peers: Vec<String> = (100..=112).map(|i| format!("+1555555{i:04}")).collect();
-        let stem = conversation_stem("group", "chat-x", None, &peers, None);
-        assert!(stem.starts_with("group_+15555550100_"));
-        assert!(stem.contains("+15555550109_"));
-        assert!(!stem.contains("+15555550110"));
-        let hash = stem.rsplit('_').next().unwrap();
-        assert_eq!(hash.len(), 16);
-        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
-        assert_eq!(
-            stem,
-            conversation_stem("group", "other-id", None, &peers, None)
-        );
-    }
-
-    #[test]
-    fn whatsapp_suffix() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "x", None, &peers, Some("__whatsapp")),
-            "group_+15555550100__whatsapp"
-        );
-    }
-
-    #[test]
-    fn none_title_uses_phones_not_synthetic() {
-        let peers = vec!["+15555550100".into()];
-        assert_eq!(
-            conversation_stem("group", "chat-group-x", None, &peers, None),
-            "group_+15555550100"
-        );
-    }
-}
-
-#[cfg(test)]
 mod identity_service_tests {
     use super::IdentityService;
 
@@ -1364,23 +1064,6 @@ mod storage_id_round_trip_tests {
         for v in [IrDirection::Incoming, IrDirection::Outgoing] {
             assert_matches_serde(v, v.as_str());
         }
-    }
-}
-
-#[cfg(test)]
-mod valid_filename_tests {
-    use super::valid_filename;
-
-    #[test]
-    fn a_blank_name_or_the_word_null_or_none_is_no_file_name() {
-        for missing in ["", "   ", "null", "NULL", "none"] {
-            assert_eq!(valid_filename(missing), None, "{missing:?}");
-        }
-    }
-
-    #[test]
-    fn a_real_name_comes_back_trimmed() {
-        assert_eq!(valid_filename(" a.jpg ").as_deref(), Some("a.jpg"));
     }
 }
 

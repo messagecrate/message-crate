@@ -16,7 +16,6 @@ pub(crate) fn base_sms() -> MailMessage {
         export_tool: "SMS Backup & Restore".into(),
         export_tool_version: "10.26.003".into(),
         backup_taken_at_unix_ms: None,
-        filename_suffix: None,
         message: IrMessage {
             guid: "aabbccddeeff00112233445566778899".into(),
             timestamp_unix_ms: 1_400_773_261_000,
@@ -52,8 +51,7 @@ fn im_mut(msg: &mut MailMessage) -> &mut message_ir::IrImessage {
 #[test]
 fn writes_individual_sms_text_only() {
     let tmp = tempfile::tempdir().unwrap();
-    let dir = write_conversation(tmp.path(), &[base_sms()]).unwrap();
-    assert_eq!(dir.file_name().unwrap(), "+15555550101");
+    let dir = write_conversation(&tmp.path().join("+15555550101"), &[base_sms()]).unwrap();
 
     let mut emls: Vec<_> = fs::read_dir(&dir)
         .unwrap()
@@ -146,8 +144,7 @@ fn writes_group_mms_with_image_part() {
     }];
 
     let tmp = tempfile::tempdir().unwrap();
-    let dir = write_conversation(tmp.path(), &[msg]).unwrap();
-    assert_eq!(dir.file_name().unwrap(), "Family");
+    let dir = write_conversation(&tmp.path().join("Family"), &[msg]).unwrap();
 
     let eml = fs::read_dir(&dir).unwrap().next().unwrap().unwrap().path();
     let bytes = fs::read(&eml).unwrap();
@@ -325,7 +322,7 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
     msg.message.sender_identity = None;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[msg]).unwrap();
     let text = fs::read_to_string(&path).unwrap();
     assert_eq!(
         text.lines().next(),
@@ -465,7 +462,11 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     from_email.message.timestamp_unix_ms = 1_401_700_001_000;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[incoming, outgoing, from_email]).unwrap();
+    let path = write_conversation_mbox(
+        &tmp.path().join("c.mbox"),
+        &[incoming, outgoing, from_email],
+    )
+    .unwrap();
 
     let text = fs::read_to_string(&path).unwrap();
     let from_lines: Vec<&str> = text.lines().filter(|l| l.starts_with("From ")).collect();
@@ -494,8 +495,7 @@ fn writes_conversation_mboxrd() {
     b.message.timestamp_unix_ms = 1_400_773_361_000;
 
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[b, a]).unwrap();
-    assert_eq!(path.file_name().unwrap(), "+15555550101.mbox");
+    let path = write_conversation_mbox(&tmp.path().join("+15555550101.mbox"), &[b, a]).unwrap();
 
     let text = fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("From "));
@@ -521,7 +521,7 @@ fn a_messages_own_owner_survives_an_mbox_round_trip() {
     msg.message.direction = IrDirection::Outgoing;
     msg.message.owner_identity = Some("me@example.com".into());
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(
         parsed[0].message.owner_identity.as_deref(),
@@ -551,7 +551,7 @@ fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
         sticker_effect: None,
     }];
     let tmp = tempfile::tempdir().unwrap();
-    let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
+    let path = write_conversation_mbox(&tmp.path().join("c.mbox"), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(parsed[0].attachments[0].bytes, card);
 }
@@ -948,7 +948,7 @@ fn assert_every_value_reads_back(values: &[String]) {
                 let written = x_me_values(&msg);
                 let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
                 let dir = tmp.path().join(format!("{i}-{d}"));
-                let mbox = write_mail_package(&dir, MailPackage::Mbox, &[msg]).unwrap();
+                let mbox = write_mail_package(&dir, "c", MailPackage::Mbox, &[msg]).unwrap();
                 let from_mbox = crate::mail_messages_from_mbox(&mbox);
                 from_eml.is_ok_and(|m| x_me_values(&m) == written)
                     && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written)
@@ -1080,8 +1080,13 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
 fn written_and_read_back(msg: &MailMessage) -> (MailMessage, MailMessage) {
     let from_eml = crate::mail_message_from_eml_bytes(&build_eml(msg).unwrap()).unwrap();
     let tmp = tempfile::tempdir().unwrap();
-    let mbox =
-        write_mail_package(tmp.path(), MailPackage::Mbox, std::slice::from_ref(msg)).unwrap();
+    let mbox = write_mail_package(
+        tmp.path(),
+        "c",
+        MailPackage::Mbox,
+        std::slice::from_ref(msg),
+    )
+    .unwrap();
     let mut from_mbox = crate::mail_messages_from_mbox(&mbox).unwrap();
     assert_eq!(from_mbox.len(), 1, "the mbox holds one mail");
     (from_eml, from_mbox.remove(0))
@@ -1256,7 +1261,7 @@ fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
                 }
 
                 let tmp = tempfile::tempdir().unwrap();
-                let mbox = write_mail_package(tmp.path(), MailPackage::Mbox, &[msg]).unwrap();
+                let mbox = write_mail_package(tmp.path(), "c", MailPackage::Mbox, &[msg]).unwrap();
                 let text = fs::read_to_string(&mbox).unwrap();
                 let envelope = text.lines().next().unwrap();
                 let fields: Vec<&str> = envelope.split(' ').collect();
