@@ -164,6 +164,11 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **An attachment an import could not save is named in the
+  Import Run's log.** It used to be written where no log of Message Crate
+  showed it. The way an import passes its log, its progress and its cancel
+  around was reworked inside as well, with nothing else visible (#2165).
+
 - 2026-10-10: The check that ffmpeg is there before an import converts or
   compresses attachments was reworked inside, with nothing visible (#2166).
 
