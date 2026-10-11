@@ -270,7 +270,7 @@ fn participants_with_contact(trash: TrashScope) -> String {
 /// Contact in the trash is left out unless the query carries `trashed:`, as
 /// in [`participants_with_contact`] (#724). The caller appends ` AND ` and
 /// the match.
-fn chat_handle_contact(trash: TrashScope) -> String {
+fn chat_handle_person(trash: TrashScope) -> String {
     format!(
         "handles chh \
          LEFT JOIN contact_handles chch ON chch.handle_id = chh.id AND chch.account_id = c.account_id \
@@ -281,11 +281,11 @@ fn chat_handle_contact(trash: TrashScope) -> String {
     )
 }
 
-/// The name of the person [`chat_handle_contact`] binds: the Contact's name,
+/// The name of the person [`chat_handle_person`] binds: the Contact's name,
 /// else `''`, as [`PARTICIPANT_NAME`] is for a participant. There is no
 /// per-conversation backup name to fall back on, since the conversation has
 /// no participants rows.
-const CHAT_HANDLE_PERSON_NAME: &str = "coalesce(NULLIF(chct.preferred_name, ''), '')";
+const CHAT_HANDLE_PERSON_NAME: &str = "coalesce(chct.preferred_name, '')";
 
 /// Free text: the row's own text, one meaning applied per row type.
 fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
@@ -308,7 +308,7 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
             free_text_match(out, &conversation_identity_text(), term);
             out.push(&format!(
                 " OR EXISTS (SELECT 1 FROM {} AND ",
-                chat_handle_contact(ctx.trash)
+                chat_handle_person(ctx.trash)
             ));
             free_text_match(out, CHAT_HANDLE_PERSON_NAME, term);
             out.push(")");
@@ -520,7 +520,7 @@ fn emit_text_word(
             result = text_match(o, PARTICIPANT_NAME, term, v);
             o.push(&format!(
                 ") OR EXISTS (SELECT 1 FROM {} AND ",
-                chat_handle_contact(ctx.trash)
+                chat_handle_person(ctx.trash)
             ));
             if result.is_ok() {
                 result = text_match(o, CHAT_HANDLE_PERSON_NAME, term, v);

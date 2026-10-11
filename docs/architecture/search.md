@@ -405,8 +405,8 @@ An Unsent message has no subject line here, for the same reason as `body:`.
 Text, `none`, `any`.
 
 - **Contacts**: the contact's own name. `none` is a contact with no name.
-- **Conversations**: a participant's name. `none` is a participant with no name. A one-to-one conversation with no participants is listed under its own identity's person, so that person's name counts as a participant's: the name of the contact the identity is on, and no name when it is on none (#2737).
-- **Messages**: a participant's name in the message's conversation.
+- **Conversations**: a participant's name. `none` is a participant with no name. A one-to-one conversation with no participants is listed under the person whose address is the conversation's own identity, so that person's name counts as a participant's: the name of the contact that identity is on, and no name when it is on none (#2737).
+- **Messages**: a participant's name in the message's conversation, read as on Conversations, the person of a one-to-one conversation with no participants included.
 
 ### `title:`
 

@@ -834,7 +834,7 @@ mod free_text {
         let alice = contact(&mut conn, ACCOUNT, "Alice Smith", &[alice_handle]).await;
         let with_alice =
             conversation(&mut conn, ACCOUNT, alice_handle, "individual", None, &[]).await;
-        message(
+        let to_alice = message(
             &mut conn,
             ACCOUNT,
             msg(with_alice, "2024-03-01T10:00:00Z", false, None, "hello"),
@@ -865,6 +865,10 @@ mod free_text {
                 "Conversations {query}"
             );
         }
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "name:alice").await,
+            vec![to_alice]
+        );
         for query in ["quill", "name:quill"] {
             assert_eq!(
                 run(&mut conn, ListKind::Conversations, query).await,
