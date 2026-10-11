@@ -22,6 +22,8 @@ sha2 = { workspace = true }
 message-crate-api-types = { version = "0.1.0", path = "../api-types" }
 
 [dev-dependencies]
+# `testutil` reads an Import Run log back as level and text pairs.
+message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 message-ir = { path = "../../libs/ir", features = ["testutil"] }
 tempfile = { workspace = true }
 httpmock = "0.8"
