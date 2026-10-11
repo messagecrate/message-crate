@@ -151,10 +151,17 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **An Import Run keeps only the Import form choices it needs to
+  resume.** The desktop app now stores a named list of the form's
+  choices with each Import Run, rather than everything but the backup
+  password and WhatsApp key. A secret field added to the form later is
+  never kept in the database by mistake. Nothing changes on screen (#2142).
+
 - 2026-10-10: **Apple Messages and WhatsApp check an optional path the same
   way.** The Import form's check of an optional path is now one check that
   both imports use, so they can no longer drift apart. Nothing changes on
   screen (#2141).
+
 - 2026-10-10: **An SMS Backup & Restore group conversation is identified
   the way the SMS Backup+ and GO SMS Pro imports identify theirs.** The
   three imports now share one rule, so they can no longer drift apart. Each

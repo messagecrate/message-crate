@@ -315,7 +315,7 @@ country: the same digits are another number there. The bare identity shows
 **A country comes from three explicit sources and nothing else.** The archive,
 when the source names the phone's country. SMS Backup+ does not. Apple's
 `chat.db` does, in the `country` column of its `handle` table (`us`, `gb`),
-but Message Crate does not read it yet: `imessage-database` 4.2.0's `Handle`
+but Message Crate does not read it yet: `imessage-database` 4.3.0's `Handle`
 does not load the column, so the Apple Messages Reader cannot pass it on, and
 the conversation file has no field for it
 ([#1994](https://github.com/messagecrate/message-crate/issues/1994)). The

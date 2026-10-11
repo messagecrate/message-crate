@@ -11,6 +11,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use imessage_database::{
     tables::{
+        capabilities::Capabilities,
         chat::Chat,
         messages::Message,
         table::{Cacheable, ME, UNKNOWN},
@@ -37,6 +38,9 @@ pub(crate) struct MailSession {
     pub options: ReaderOptions,
     pub offset: i64,
     pub data_source: DataSource,
+    /// What the Messages database's schema holds, which the library's
+    /// message and attachment queries are built to.
+    pub capabilities: Capabilities,
     pub chatrooms: HashMap<i32, Chat>,
     /// Apple's `chat.style` by chat rowid; empty when the column is absent.
     chat_styles: HashMap<i32, i64>,
@@ -62,6 +66,7 @@ impl MailSession {
     pub fn new(options: ReaderOptions) -> Result<Self, RuntimeError> {
         let data_source = DataSource::from(&options)?;
         let db = data_source.db();
+        let capabilities = Capabilities::determine(db)?;
 
         options.emit_log("Building cache...");
         options.setup_step(1, CACHE_STEPS, "Caching chats");
@@ -87,6 +92,7 @@ impl MailSession {
         options.emit_log("Cache built!");
 
         Ok(Self {
+            capabilities,
             chatrooms,
             chat_styles,
             chat_members,

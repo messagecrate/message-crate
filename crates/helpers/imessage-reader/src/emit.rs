@@ -62,9 +62,16 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
     let mut last_row = -1;
     let mut seen = 0u64;
     let mut failures = 0u64;
-    let total = Message::get_count(session.data_source.db(), &session.options.query_context)?;
-    let mut statement =
-        Message::stream_rows(session.data_source.db(), &session.options.query_context)?;
+    let total = Message::get_count(
+        session.data_source.db(),
+        &session.capabilities,
+        &session.options.query_context,
+    )?;
+    let mut statement = Message::stream_rows(
+        session.data_source.db(),
+        &session.capabilities,
+        &session.options.query_context,
+    )?;
 
     for message in Message::rows(&mut statement, [])? {
         let mut msg = message?;
@@ -625,7 +632,7 @@ fn classify_row(
         .shared_location_kind()
         .map(shared_location_label)
         .map(str::to_string);
-    let app = build_balloon_value(session.data_source.db(), message);
+    let app = build_balloon_value(session.data_source.db(), &session.capabilities, message);
     let plain = || message.text.clone().unwrap_or_default();
 
     let (kind, text, announcement, tapback) =
