@@ -205,7 +205,7 @@ mod tests {
         use message_crate_core::LogSink;
 
         use super::super::{identities_with, read_identities};
-        use crate::testutil::{fake_helper, retry_while_busy, source_line, spawn_fake};
+        use crate::testutil::{fake_helper, source_line, spawn_fake};
 
         fn request() -> Request {
             Request::Identities(IdentitiesRequest {
@@ -225,16 +225,14 @@ mod tests {
             root: &Path,
             log: LogSink,
         ) -> anyhow::Result<Vec<String>> {
-            retry_while_busy(|| {
-                identities_with(
-                    Path::new("/nowhere/chat.db"),
-                    false,
-                    None,
-                    root,
-                    script,
-                    log.clone(),
-                )
-            })
+            identities_with(
+                Path::new("/nowhere/chat.db"),
+                false,
+                None,
+                root,
+                script,
+                log,
+            )
         }
 
         const ANSWER: &str = r#"echo '{"event":"identities","values":["+15555550110"]}'"#;
