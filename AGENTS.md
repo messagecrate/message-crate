@@ -24,15 +24,15 @@ vocabulary. Read it before writing any of those.
 
   ```bash
   # Set the body from a file
-  gh api -X PATCH repos/messagecrate/message-crate/issues/<N> -F body=@<file>
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -F body=@<file>
   # Set the title
-  gh api -X PATCH repos/messagecrate/message-crate/issues/<N> -f title='<title>'
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -f title='<title>'
   # Add a label
-  gh api -X POST repos/messagecrate/message-crate/issues/<N>/labels -f 'labels[]=<label>'
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/labels -f 'labels[]=<label>'
   # Remove a label
-  gh api -X DELETE repos/messagecrate/message-crate/issues/<N>/labels/<label>
-  # Assign yourself
-  gh api -X POST repos/messagecrate/message-crate/issues/<N>/assignees -f "assignees[]=$(gh api user -q .login)"
+  gh api -X DELETE repos/{owner}/{repo}/issues/<N>/labels/<label>
+  # Assign the logged-in gh user
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/assignees -f "assignees[]=$(gh api user -q .login)"
   ```
 - Merge a pull request as "Merging" below says.
 
