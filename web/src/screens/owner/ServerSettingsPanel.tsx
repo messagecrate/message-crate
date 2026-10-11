@@ -148,7 +148,9 @@ export function ServerSettingsPanel() {
             {info.data.schema_fingerprint}
           </dd>
           <dt className="text-muted">Journal mode</dt>
-          <dd className="m-0 font-mono text-[0.813rem] text-text">{info.data.journal_mode}</dd>
+          <dd className="m-0 font-mono text-[0.813rem] text-text">
+            {info.data.journal_mode ?? "unknown (the server's log says why)"}
+          </dd>
         </dl>
       ) : null}
     </section>

@@ -870,6 +870,12 @@ describe("OwnerHome", () => {
     await screen.findByText("bob");
     await waitFor(() => expect(getServerState).toHaveBeenCalled());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    cleanup();
+
+    renderHome(["/owner/settings"]);
+    expect((await screen.findByText("Journal mode")).nextElementSibling).toHaveTextContent(
+      "unknown (the server's log says why)",
+    );
   });
 
   it("says nothing under the header while the server and the app are one release", async () => {

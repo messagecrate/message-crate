@@ -133,33 +133,44 @@ where
     JournalMode::parse(&name)
 }
 
+/// The journal mode the database runs in now, or `None`, with a warning in
+/// the log, when it cannot be read.
+pub async fn journal_mode_or_warn<'c, E>(executor: E) -> Option<JournalMode>
+where
+    E: sqlx::SqliteExecutor<'c>,
+{
+    mode_or_warn(journal_mode(executor).await)
+}
+
+/// The mode an answer names, or `None`, with a warning in the log, when the
+/// answer is an error.
+fn mode_or_warn(answer: Result<JournalMode>) -> Option<JournalMode> {
+    answer
+        .inspect_err(|err| {
+            tracing::warn!(
+                error = format!("{err:#}"),
+                "The database's journal mode could not be read"
+            );
+        })
+        .ok()
+}
+
 /// Ask SQLite for write-ahead logging, and return the mode the database ends
 /// in. A hot rollback journal or another process holding the database can
 /// make the request fail. SQLite also turns it down without an error where
 /// the database cannot use it (one held in memory, say), and answers the
 /// mode it kept. Either way the pool stays usable, and a warning in the log
-/// says so. `None` when the mode cannot be read at all, which is warned of
-/// too and never stops the open: the pool is handed back as it was before
-/// the mode was reported.
+/// says so. `None` when the mode cannot be read at all. That is warned of
+/// too, and [`open_pool_for_path`] still returns the pool.
 async fn try_enable_wal(pool: &SqlitePool) -> Option<JournalMode> {
-    let answer = match sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
+    let mode = match sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
         .fetch_one(pool)
         .await
     {
-        Ok(name) => JournalMode::parse(&name),
+        Ok(name) => mode_or_warn(JournalMode::parse(&name))?,
         Err(err) => {
             tracing::warn!(error = %err, "Write-ahead logging could not be turned on, so the database goes on without it");
-            journal_mode(pool).await
-        }
-    };
-    let mode = match answer {
-        Ok(mode) => mode,
-        Err(err) => {
-            tracing::warn!(
-                error = format!("{err:#}"),
-                "The database's journal mode could not be read"
-            );
-            return None;
+            return journal_mode_or_warn(pool).await;
         }
     };
     if mode != JournalMode::Wal {
