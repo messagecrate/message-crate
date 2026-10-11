@@ -475,7 +475,7 @@ mod tests {
 
     /// A run waiting for a download is sent marked by the program, with its
     /// bytes and no counts: the shape `progressDetail` in
-    /// `web/src/screens/import/useImportJob.ts` reads, whose tests feed the
+    /// `web/src/screens/import/run/desktopJob.ts` reads, whose tests feed the
     /// same JSON.
     #[test]
     fn a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes() {
