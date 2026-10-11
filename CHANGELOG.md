@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+
 - 2026-10-11: The way the Demo Account's generator and the server agree on
   what a demo bundle holds was reworked inside, with nothing visible (#2265).
 
@@ -634,6 +638,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **An attachment's file name in an Upload never picks up a
+  file the server already holds.** An Upload sends each attachment's file
+  first and names it by its fingerprint. The server also looked up the file
+  name the message gave inside the account's own stored files, so a name
+  that matched a half-received file or one of the server's own notes beside
+  a stored file was saved as a new attachment. The server now finds an
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
 - 2026-10-11: **Discarding an import keeps its files when Message Crate
   does not take the discard.** When you discarded an import, or cancelled
   one at a Review, and the server refused or could not be reached, the

@@ -35,7 +35,7 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -104,7 +104,7 @@ async fn media_none_skips_attachment_copy() {
         &[path],
         &ImportOptions {
             assets_dir: &assets_dir,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Replace,
             source: "",
             account_id: TEST_ACCOUNT,
@@ -160,7 +160,7 @@ fn media_convert_stores_the_converted_file_not_the_original() {
             &[path],
             &ImportOptions {
                 assets_dir: &assets_dir,
-                asset_root: tmp.path(),
+                asset_root: Some(tmp.path()),
                 mode: ImportMode::Replace,
                 source: "",
                 account_id: TEST_ACCOUNT,
@@ -229,7 +229,7 @@ async fn persists_missing_reason_with_null_sha256() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -370,7 +370,7 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
@@ -419,7 +419,7 @@ async fn rejects_attachment_path_traversal() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &export_dir,
+            asset_root: Some(&export_dir),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -432,5 +432,69 @@ async fn rejects_attachment_path_traversal() {
     assert!(
         err.to_string().contains(message_ir::UNSAFE_ATTACHMENT_PATH),
         "expected path rejection, got: {err}"
+    );
+}
+
+/// Import `photo.bin`, whose bytes are `on_disk`, from an export directory,
+/// on a message that states `stated` as its SHA-256, and answer the refusal.
+async fn import_photo_stating(on_disk: &[u8], stated: &str) -> String {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let export_dir = tmp.path().join("export");
+    fs::create_dir_all(&export_dir).unwrap();
+    fs::write(export_dir.join("photo.bin"), on_disk).unwrap();
+    let path = write_jsonl(
+        &export_dir,
+        "photo.jsonl",
+        &format!(
+            "{}\n{}\n",
+            conversation_header("imessage", "+15555550123").participant("+15555550123", None),
+            message_line("g-photo", "x")
+                .sender("+15555550123")
+                .attachment(message_ir::IrAttachment {
+                    digest_sha256: Some(stated.to_string()),
+                    ..attachment("photo.bin", "photo.bin", "application/octet-stream")
+                }),
+        ),
+    );
+    let err = import_jsonl_files(
+        &db,
+        &[path],
+        &ImportOptions::fixed(FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: Some(&export_dir),
+            mode: ImportMode::Append,
+            source: "imessage",
+            account_id: TEST_ACCOUNT,
+            import_id: None,
+            phone_country: None,
+        }),
+    )
+    .await
+    .unwrap_err();
+    format!("{err:#}")
+}
+
+/// A file whose bytes do not hash to the SHA-256 its message states is the
+/// sender's to fix: the refusal names the line and the file.
+#[tokio::test]
+async fn a_file_that_does_not_match_its_stated_sha256_is_refused_naming_it() {
+    let stated = file_io::sha256_hex(b"the bytes the export saw");
+    let err = import_photo_stating(b"the bytes on disk", &stated).await;
+    assert!(
+        err.contains("Line 2") && err.contains("photo.bin") && err.contains(&stated),
+        "{err}"
+    );
+}
+
+/// A stated SHA-256 that is not 64 hex digits, on a file that is there, is
+/// the sender's to fix too: the refusal names the line and the file.
+#[tokio::test]
+async fn a_stated_sha256_that_is_not_one_is_refused_naming_the_file() {
+    let err = import_photo_stating(b"the bytes on disk", "not-a-fingerprint").await;
+    assert!(
+        err.contains("Line 2") && err.contains("photo.bin") && err.contains("not-a-fingerprint"),
+        "{err}"
     );
 }

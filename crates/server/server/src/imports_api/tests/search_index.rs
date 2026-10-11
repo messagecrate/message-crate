@@ -21,7 +21,7 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -134,7 +134,7 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
