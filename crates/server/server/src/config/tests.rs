@@ -510,3 +510,55 @@ fn the_desktop_app_layout_is_accepted() {
 
     cfg.require_static_dir_apart().unwrap();
 }
+
+/// A link whose target is not there yet still decides where SQLite creates
+/// the database, so it is followed like any other.
+#[cfg(unix)]
+#[test]
+fn a_dangling_symlink_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    fs::create_dir_all(dir.path().join("data")).unwrap();
+    std::os::unix::fs::symlink(
+        "../static/messagecrate.db",
+        dir.path().join("data/messagecrate.db"),
+    )
+    .unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// When a link hides the nesting, the refusal says where the path really
+/// is, or the two paths it names would not look nested.
+#[cfg(unix)]
+#[test]
+fn the_refusal_names_where_a_link_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("static/data"), dir.path().join("data")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    let real = dir.path().canonicalize().unwrap().join("static/data");
+    let text = refusal(&cfg);
+    assert!(text.contains(&real.display().to_string()), "{text}");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("loop", dir.path().join("loop")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"loop/messagecrate.db\"\ndata_dir = \"loop\"\n[server]\n",
+    );
+
+    assert!(refusal(&cfg).contains("loop"));
+}

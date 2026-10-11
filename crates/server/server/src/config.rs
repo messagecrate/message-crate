@@ -1,6 +1,6 @@
 //! Config file model ([`Config`]) plus path/source validation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -401,28 +401,32 @@ impl Config {
         let website = real_path(&server.static_dir)?;
         let data_dir = real_path(&self.paths.data_dir)?;
         let db = real_path(&self.paths.db)?;
-        let published = |path: &Path, what: &str| {
-            format!(
-                "{what} {} is inside the website directory {}, which the server serves to \
-                 anyone who can reach it, without a login. Move one outside the other",
-                path.display(),
-                server.static_dir.display()
-            )
-        };
-        if is_within(&data_dir, &website) {
-            bail!("{}", published(&self.paths.data_dir, "The Data Directory"));
-        }
-        if is_within(&db, &website) {
-            bail!("{}", published(&self.paths.db, "The database"));
-        }
-        if is_within(&website, &data_dir) {
-            bail!(
-                "The website directory {} is inside the Data Directory {}. Everything in the \
-                 website directory is served to anyone who can reach the server, without a \
-                 login. Move one outside the other",
-                server.static_dir.display(),
-                self.paths.data_dir.display()
-            );
+        let website_dir = (
+            "the website directory",
+            server.static_dir.as_path(),
+            &website,
+        );
+        let data_directory = (
+            "the Data Directory",
+            self.paths.data_dir.as_path(),
+            &data_dir,
+        );
+        let database = ("the database", self.paths.db.as_path(), &db);
+        for (inner, outer) in [
+            (data_directory, website_dir),
+            (database, website_dir),
+            (website_dir, data_directory),
+        ] {
+            if is_within(inner.2, outer.2) {
+                bail!(
+                    "{} {} is inside {} {}. Everything in the website directory is served to \
+                     anyone who can reach the server, without a login. Move one outside the other",
+                    capitalized(inner.0),
+                    shown(inner.1, inner.2),
+                    outer.0,
+                    shown(outer.1, outer.2)
+                );
+            }
         }
         Ok(())
     }
@@ -462,42 +466,90 @@ fn resolve_path(base: &Path, configured: &Path) -> PathBuf {
     }
 }
 
+/// How many symlinks [`real_path`] follows in one path before it gives up,
+/// as Linux does (`MAXSYMLINKS`).
+const MAX_SYMLINKS: usize = 40;
+
 /// `path` as the filesystem resolves it: absolute, with every symlink
-/// followed and every `.` and `..` gone. The part of `path` that does not
-/// exist yet is appended to the real path of the part that does, with its
-/// `..` taken lexically, which is right because a directory that does not
-/// exist cannot be a symlink.
+/// followed and every `.` and `..` gone. A link is followed even when what
+/// it points at does not exist yet, because a file or directory made at the
+/// path is made where the link points. The part that does not exist is kept
+/// as written.
 ///
 /// # Errors
 ///
 /// Returns an error when `path` is relative and the working directory
-/// cannot be read.
+/// cannot be read, or when it leads through more than [`MAX_SYMLINKS`]
+/// links, as a loop of links does.
 fn real_path(path: &Path) -> Result<PathBuf> {
     let absolute = std::path::absolute(path)
         .with_context(|| format!("could not resolve {}", path.display()))?;
-    let components: Vec<Component> = absolute.components().collect();
-    for existing in (1..=components.len()).rev() {
-        let prefix: PathBuf = components[..existing].iter().collect();
-        let Ok(mut real) = prefix.canonicalize() else {
-            continue;
-        };
-        for component in &components[existing..] {
-            match component {
-                Component::ParentDir => {
-                    real.pop();
+    let mut to_walk: VecDeque<PathBuf> = absolute
+        .components()
+        .map(|component| PathBuf::from(component.as_os_str()))
+        .collect();
+    let mut real = PathBuf::new();
+    let mut links = 0;
+    while let Some(next) = to_walk.pop_front() {
+        match next.components().next() {
+            Some(Component::Normal(_)) => {
+                let candidate = real.join(&next);
+                // Fails for anything that is not a link, including a path
+                // that does not exist, which is then taken as written.
+                let Ok(target) = fs::read_link(&candidate) else {
+                    real = candidate;
+                    continue;
+                };
+                links += 1;
+                if links > MAX_SYMLINKS {
+                    bail!(
+                        "{} leads through more than {MAX_SYMLINKS} symlinks",
+                        path.display()
+                    );
                 }
-                Component::Normal(name) => real.push(name),
-                Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+                if target.is_absolute() {
+                    real = PathBuf::new();
+                }
+                for component in target.components().rev() {
+                    to_walk.push_front(PathBuf::from(component.as_os_str()));
+                }
             }
+            // `real` holds no link, so its parent is the real parent.
+            Some(Component::ParentDir) => {
+                real.pop();
+            }
+            Some(Component::CurDir) | None => {}
+            Some(Component::RootDir | Component::Prefix(_)) => real.push(&next),
         }
-        return Ok(real);
     }
-    Ok(absolute)
+    Ok(real)
+}
+
+/// A configured path for a refusal, with where it really leads when a link
+/// or a `..` makes that differ.
+fn shown(configured: &Path, real: &Path) -> String {
+    if configured == real {
+        configured.display().to_string()
+    } else {
+        format!("{} (really {})", configured.display(), real.display())
+    }
+}
+
+/// `text` with its first letter capitalized.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
 }
 
 /// Whether `path` is `dir` or inside it, component by component, so `website`
 /// is not inside `web`. macOS and Windows ignore letter case by default, so
-/// there `Static` and `static` are one directory.
+/// there `Static` and `static` are one directory. [`real_path`] keeps names
+/// as written, and a part that does not exist yet has no case on disk to
+/// compare, so the case is folded here. On a volume of theirs that does
+/// tell case apart, two names differing only in case are refused too:
+/// refusing a safe layout is the cheaper mistake than publishing the data.
 fn is_within(path: &Path, dir: &Path) -> bool {
     if cfg!(any(target_os = "macos", windows)) {
         let fold = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
