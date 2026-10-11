@@ -1179,7 +1179,9 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
         return Plan::RemoveIncomplete;
     }
     // A GIF is an animation, so it gets no still Preview, but it is an image
-    // and gets a Thumbnail like any other.
+    // and gets a Thumbnail like any other. A file called a GIF whose bytes
+    // are not one is not shown as it is, so it gets a Preview like any other
+    // image.
     let preview_kind = media::kind_of(
         Path::new(&row.assets_path),
         row.mime_type.as_deref(),
@@ -1220,7 +1222,7 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
         kind,
         thumbnail: need(matches!(kind, Kind::Image | Kind::Video), on_disk.thumbnail),
         preview: need(
-            preview_kind.is_some() && !on_disk.browser_shows,
+            (preview_kind.is_some() || is_gif) && !on_disk.browser_shows,
             on_disk.preview,
         ),
     })

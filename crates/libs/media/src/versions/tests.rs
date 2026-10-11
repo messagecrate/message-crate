@@ -79,7 +79,7 @@ const SIGNATURES: [(&str, &[u8]); 7] = [
 ];
 
 /// Write `bytes` to a file named `name` in `dir`, and answer its path.
-fn file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
+fn write_file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
     let path = dir.join(name);
     fs::write(&path, bytes).unwrap();
     path
@@ -89,7 +89,7 @@ fn file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
 fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
     let dir = tempfile::tempdir().unwrap();
     for (index, (shown, bytes)) in SIGNATURES.iter().enumerate() {
-        let src = file(dir.path(), &index.to_string(), bytes);
+        let src = write_file(dir.path(), &index.to_string(), bytes);
         assert_eq!(browser_shows(&src, Some(shown)), Some(true), "{shown}");
     }
     let nowhere = Path::new("no/such/file");
@@ -121,12 +121,12 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
 #[test]
 fn a_file_whose_bytes_are_not_its_declared_type_is_not_shown_as_it_is() {
     let dir = tempfile::tempdir().unwrap();
-    let png = file(dir.path(), "png", b"\x89PNG\r\n\x1A\nrest");
-    let text = file(dir.path(), "text", b"just some words, not a picture");
-    let empty = file(dir.path(), "empty", b"");
-    let short = file(dir.path(), "short", b"\xFF\xD8");
-    let adts = file(dir.path(), "adts", b"\xFF\xF1\x50\x80rest");
-    let wave = file(dir.path(), "wave", b"RIFF\x24\x00\x00\x00WAVEfmt rest");
+    let png = write_file(dir.path(), "png", b"\x89PNG\r\n\x1A\nrest");
+    let text = write_file(dir.path(), "text", b"just some words, not a picture");
+    let empty = write_file(dir.path(), "empty", b"");
+    let short = write_file(dir.path(), "short", b"\xFF\xD8");
+    let adts = write_file(dir.path(), "adts", b"\xFF\xF1\x50\x80rest");
+    let wave = write_file(dir.path(), "wave", b"RIFF\x24\x00\x00\x00WAVEfmt rest");
 
     for (src, declared) in [
         (&png, "image/jpeg"),
@@ -149,8 +149,9 @@ fn a_file_whose_bytes_are_not_its_declared_type_is_not_shown_as_it_is() {
     }
     assert_eq!(
         browser_shows(Path::new("no/such/file"), Some("image/jpeg")),
-        Some(false),
-        "a file that cannot be read is not shown as it is"
+        None,
+        "nothing is known about a file that cannot be read, so a caller keeps \
+         what it knew before"
     );
 }
 
@@ -185,7 +186,7 @@ fn without_ffprobe_an_mp4_is_not_known() {
     let tools = FakeTools::missing();
     let nowhere = Path::new("no/such/file");
     let dir = tempfile::tempdir().unwrap();
-    let jpeg = file(dir.path(), "photo", SIGNATURES[0].1);
+    let jpeg = write_file(dir.path(), "photo", SIGNATURES[0].1);
 
     assert_eq!(browser_shows_with(&tools, nowhere, Some("video/mp4")), None);
     assert_eq!(

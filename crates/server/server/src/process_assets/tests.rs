@@ -125,6 +125,19 @@ fn a_gif_gets_a_thumbnail_and_no_preview_because_it_is_an_animation() {
     assert_eq!(plan(&declared, &opts, FRESH_SHOWN), want);
 }
 
+/// A file called a GIF whose bytes are not one, such as a PNG stored as
+/// `.gif`, is not shown as it is ([`media::browser_shows`]), so it gets a
+/// still Preview like any other image rather than opening in no version.
+#[test]
+fn a_gif_whose_bytes_are_not_a_gif_gets_a_preview() {
+    let opts = ProcessAssetsOptions::default();
+    let want = versions(Kind::Image, Need::Make, Need::Make);
+    assert_eq!(plan(&row("aa/photo.gif"), &opts, FRESH), want);
+    let mut declared = row(&format!("ab/{SHA}"));
+    declared.mime_type = Some("image/gif".to_string());
+    assert_eq!(plan(&declared, &opts, FRESH), want);
+}
+
 #[test]
 fn an_image_or_a_video_gets_a_thumbnail_and_audio_none() {
     let opts = ProcessAssetsOptions::default();

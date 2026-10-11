@@ -27,15 +27,29 @@ pub const THUMBNAIL_LONG_EDGE: u32 = 560;
 const PREVIEW_VIDEO_LONG_EDGE: u32 = 1920;
 
 /// The media types every browser shows as they are (rule 2): JPEG, PNG, GIF
-/// and WebP images, and MP3 audio. MP4 is one too, but only with H.264 video,
-/// which only the file can tell ([`browser_shows`]).
-const SHOWN_AS_IS: &[&str] = &[
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-    "audio/mpeg",
+/// and WebP images, and MP3 audio, each with the test its file's first
+/// [`HEAD_LEN`] bytes must pass to be one. MP4 is one too, but only with
+/// H.264 video, which only the file can tell ([`browser_shows`]).
+const SHOWN_AS_IS: &[(&str, fn(&[u8]) -> bool)] = &[
+    ("image/jpeg", |head| head.starts_with(&[0xFF, 0xD8, 0xFF])),
+    ("image/png", |head| head.starts_with(b"\x89PNG\r\n\x1A\n")),
+    ("image/gif", |head| head.starts_with(b"GIF8")),
+    ("image/webp", |head| {
+        head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP")
+    }),
+    ("audio/mpeg", is_mp3),
 ];
+
+/// How many bytes from the start of a file [`SHOWN_AS_IS`] reads.
+const HEAD_LEN: u64 = 12;
+
+/// Whether `head` starts an MP3: an `ID3` tag, or an MPEG audio frame sync
+/// of layer I, II or III. An AAC ADTS frame, whose layer bits are `00`, is
+/// not an MP3.
+fn is_mp3(head: &[u8]) -> bool {
+    head.starts_with(b"ID3")
+        || matches!(head, [0xFF, second, ..] if second & 0xE0 == 0xE0 && second & 0x06 != 0)
+}
 
 /// The media type of an attachment, lowercased and without parameters, from
 /// what is known about it, in the order [`kind_of`](crate::kind_of) reads
@@ -83,13 +97,13 @@ pub fn media_type_of(
 ///
 /// A declared type is only a claim, so a JPEG, PNG, GIF, WebP or MP3 is
 /// shown as it is only when its first bytes are that type's
-/// ([`starts_as`]). One that cannot be read, or starts as something else,
-/// gets a Preview.
+/// ([`SHOWN_AS_IS`]). One that starts as something else gets a Preview.
+/// `None` for one that cannot be read: nothing is known about its bytes, so
+/// a caller keeps what it knew before.
 ///
 /// An MP4 is opened by ffprobe, to read its video codec. One ffprobe
 /// cannot read counts as not shown, so it is given a Preview. `None` for an
-/// MP4 while ffprobe is missing: nothing can be known about its codec, so a
-/// caller keeps what it knew before.
+/// MP4 while ffprobe is missing, for the same reason.
 #[must_use]
 pub fn browser_shows(src: &Path, media_type: Option<&str>) -> Option<bool> {
     browser_shows_with(&InstalledTools, src, media_type)
@@ -104,8 +118,8 @@ pub(crate) fn browser_shows_with(
     let Some(media_type) = media_type else {
         return Some(false);
     };
-    if SHOWN_AS_IS.contains(&media_type) {
-        return Some(starts_as(src, media_type));
+    if let Some((_, starts_as)) = SHOWN_AS_IS.iter().find(|(shown, _)| *shown == media_type) {
+        return read_head(src).ok().map(|head| starts_as(&head));
     }
     if media_type != "video/mp4" {
         return Some(false);
@@ -116,30 +130,14 @@ pub(crate) fn browser_shows_with(
     Some(tools.probe(src).is_ok_and(|probe| probe.codec == "h264"))
 }
 
-/// Whether the first bytes of `src` are those of a file of `media_type`,
-/// one of [`SHOWN_AS_IS`]: JPEG `FF D8 FF`, PNG `89 50 4E 47 0D 0A 1A 0A`,
-/// GIF `GIF8`, WebP `RIFF` then `WEBP` at byte 8, and MP3 either an `ID3`
-/// tag or an MPEG audio frame sync of layer I, II or III (an AAC ADTS
-/// frame, layer bits `00`, is not an MP3). `false` when `src` cannot be
-/// read.
-fn starts_as(src: &Path, media_type: &str) -> bool {
+/// The first [`HEAD_LEN`] bytes of `src`, or all of it when it is shorter.
+fn read_head(src: &Path) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
-    let mut head = Vec::with_capacity(12);
-    let read = std::fs::File::open(src).and_then(|file| file.take(12).read_to_end(&mut head));
-    if read.is_err() {
-        return false;
-    }
-    match media_type {
-        "image/jpeg" => head.starts_with(&[0xFF, 0xD8, 0xFF]),
-        "image/png" => head.starts_with(b"\x89PNG\r\n\x1A\n"),
-        "image/gif" => head.starts_with(b"GIF8"),
-        "image/webp" => head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP"),
-        "audio/mpeg" => {
-            head.starts_with(b"ID3")
-                || matches!(head.as_slice(), [0xFF, second, ..] if second & 0xE0 == 0xE0 && second & 0x06 != 0)
-        }
-        _ => false,
-    }
+    let mut head = Vec::new();
+    std::fs::File::open(src)?
+        .take(HEAD_LEN)
+        .read_to_end(&mut head)?;
+    Ok(head)
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the
