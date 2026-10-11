@@ -5,6 +5,7 @@
 //! SMS Backup & Restore, and WhatsApp).
 
 mod assets;
+pub mod bundle;
 mod config;
 mod contacts;
 mod conversations;
@@ -27,9 +28,8 @@ use rand_chacha::ChaCha8Rng;
 pub use config::{DemoSize, SeedConfig};
 pub use conversations::GenStats;
 
-const IMESSAGE_SOURCE: &str = "imessage";
-const SBR_SOURCE: &str = "sms-backup-restore";
-const WHATSAPP_SOURCE: &str = "whatsapp";
+use bundle::{IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE};
+
 const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
 
 /// The error generation returns when its cancel flag is set: it stopped
@@ -205,7 +205,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
 
     let (roster, mut rng) = seeded_roster(cfg, &names)?;
     contacts::write_address_book(&config_dir, &roster)?;
-    contacts::write_seed_toml(&config_dir)?;
+    bundle::write_seed_toml(&config_dir)?;
 
     let staging = conversations::StagingDirs {
         imessage: &imessage_staging,

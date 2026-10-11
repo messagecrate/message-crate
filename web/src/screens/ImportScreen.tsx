@@ -59,6 +59,7 @@ import {
   resumeDecisionFor,
   resumeReadsBackup,
 } from "./import/resumeDecision";
+import type { DiscardOutcome } from "./import/run/finish";
 import { parseStoredStagingSummary } from "./import/run/stagingSummary";
 import { useImportJob } from "./import/useImportJob";
 
@@ -227,6 +228,13 @@ export default function ImportScreen() {
   const [resume, setResume] = useState<ResumeDecision>(NO_RESUME);
   const [resumeChecked, setResumeChecked] = useState(false);
   const discardingRef = useRef(false);
+  /**
+   * Why the panel's last Discard, or the discard before a Start over, did
+   * not close the run; null once one goes through or a resume starts. Kept
+   * here rather than on the run store's `resumeError`: the store may hold
+   * another account's run, and the panel's run is the account's on screen.
+   */
+  const [discardError, setDiscardError] = useState<string | null>(null);
   const resumingRef = useRef(false);
 
   /**
@@ -329,22 +337,31 @@ export default function ImportScreen() {
    * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
    * and a run with no recorded device counts as this install's there too.
    */
-  async function discardOfferedRun(run: ActiveImportRun): Promise<void> {
+  async function discardOfferedRun(run: ActiveImportRun): Promise<DiscardOutcome> {
     const thisDevice = !run.device_id || run.device_id === getDeviceId();
-    await discardRun(run.id, thisDevice ? run.run_dir : null);
+    return discardRun(run.id, thisDevice ? run.run_dir : null);
   }
 
   async function handleDiscardResume(): Promise<void> {
     const run = resume.run;
     if (!run || discardingRef.current || resumingRef.current) return;
     discardingRef.current = true;
+    setDiscardError(null);
+    let notClosed = false;
     try {
-      // The panel drops to the form either way; if the run is still
-      // live server-side, the next visit shows it again.
-      await discardOfferedRun(run);
+      // A discard that did not close the run (`not_closed`) keeps the
+      // panel, with the message on it, and the run's files: the run is
+      // still open there.
+      // Otherwise the panel drops to the form; a run whose session ended is
+      // offered again at the account's next login.
+      const outcome = await discardOfferedRun(run);
+      if (outcome.kind === "not_closed") {
+        notClosed = true;
+        setDiscardError(outcome.message);
+      }
     } finally {
       discardingRef.current = false;
-      setResume(NO_RESUME);
+      if (!notClosed) setResume(NO_RESUME);
       // The run is gone, or the server still has it; either way the badge
       // asks again rather than keep saying "waiting".
       cache.invalidateAccount();
@@ -368,6 +385,7 @@ export default function ImportScreen() {
     // of screen state.
     if (resumingRef.current || discardingRef.current) return;
     resumingRef.current = true;
+    setDiscardError(null);
     try {
       const run = resume.run;
       const storedForm = restoreFormFromSnapshot(run.form);
@@ -426,12 +444,17 @@ export default function ImportScreen() {
       // server allows only one running Import Run per account, so give up the old
       // one before starting the new run. setResume stays put until right
       // before startImport, so the panel (not a blank form) covers the
-      // discard round trip. The old directory goes with the run: nothing
-      // will ever reach it again, and it can be multiple gigabytes. A failed
-      // delete stays on screen through the new run.
-      // If the server is unreachable, the create call below surfaces its
-      // own error the same as any other failed import start.
-      await discardOfferedRun(run);
+      // discard round trip. The old directory goes with the run once the
+      // server has closed it: nothing will ever reach it again, and it can
+      // be multiple gigabytes. A failed delete stays on screen through the
+      // new run. A discard the server did not take leaves the old run
+      // holding the account's import slot, so the restart stops there: the
+      // panel stays with the message, as a Discard's does.
+      const outcome = await discardOfferedRun(run);
+      if (outcome.kind === "not_closed") {
+        setDiscardError(outcome.message);
+        return;
+      }
       cache.invalidateAccount();
       setResume(NO_RESUME);
       await startImport(restoredForm);
@@ -779,7 +802,7 @@ export default function ImportScreen() {
         <ResumeImportPanel
           decision={resume}
           secret={resumeSecret}
-          error={resumeError}
+          error={discardError ?? resumeError}
           onResume={(typedSecret) => void handleResumeAction(typedSecret)}
           onDiscard={() => void handleDiscardResume()}
         />
