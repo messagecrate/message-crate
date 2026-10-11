@@ -170,9 +170,10 @@ api() {
   shift 2
   local body status
   body="$(mktemp)"
-  status="$(curl -sS --max-time 60 -o "${body}" -w '%{http_code}' -X "${method}" "$@" "${BASE}${path}")" ||
-    status="no answer"
-  if [[ "${status}" == 2* ]]; then
+  if ! status="$(curl -sS --max-time 60 -o "${body}" -w '%{http_code}' -X "${method}" "$@" "${BASE}${path}")"; then
+    echo "${method} ${path} gave no answer: the connection failed or took over 60 seconds" >&2
+    status="none"
+  elif [[ "${status}" == 2* ]]; then
     cat "${body}"
   else
     echo "${method} ${path} answered ${status}: $(cat "${body}")" >&2

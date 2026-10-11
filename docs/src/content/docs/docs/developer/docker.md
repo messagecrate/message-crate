@@ -38,7 +38,8 @@ It then claims the Message Crate, creates an account, and imports one conversati
 It waits for the media pass to make the video's Thumbnail and Preview, and runs an Export of everything the account holds, so a write made during an import, the media pass or an export fails it too.
 The conversation is `tests/fixtures/docker-compose-check/conversation.jsonl`, and the video is the server's test fixture `crates/server/server/tests/fixtures/media/hevc.mov`.
 CI's "Docker image builds" job and the nightly build run it.
-A pull request runs the job only when it changes what the image is built from (the Dockerfile, a Cargo manifest, the lockfile, the toolchain pin) or the check and its fixtures, so a change to the server's code alone is caught by the nightly build on `main`, not on the pull request.
+A pull request runs the job only when it changes what the image is built from (the Dockerfile, a Cargo manifest, the lockfile, the toolchain pin) or the check and its fixtures.
+A change to the server's code alone is caught by the nightly build on `main`, not on the pull request.
 The stack runs under its own Compose project, `message-crate-compose-check-<host-port>`, and its own volume, so it never touches a running Message Crate, and the script removes it on exit.
 
 `--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.

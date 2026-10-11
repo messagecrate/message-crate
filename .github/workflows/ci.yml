@@ -107,7 +107,7 @@ jobs:
               # stay green. The job also starts the image with the script
               # that checks it, which imports its own fixture and the
               # server's hevc.mov. A change to the server's code alone does
-              # not run the job; nightly.yml runs the same check on main.
+              # not run the job. nightly.yml runs the same check on main.
               docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh|tests/fixtures/docker-compose-check/*|crates/server/server/tests/fixtures/media/hevc.mov) rust=true; docker=true ;;
               crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
               # The server's config, whose website and Data Directory check
@@ -408,7 +408,7 @@ jobs:
       # privilege, so an image that writes outside /app/data builds and then
       # fails to start, or fails an import, the media pass or an export. This
       # starts it the way Compose does and runs all three.
-      - name: Start the release Compose stack, log in to the Demo Account, import, make media and export
+      - name: Start the release Compose stack, log in to the Demo Account, import, run the media pass and export
         run: ./scripts/check-docker-compose.sh message-crate-server:check
 
   # ── Always: product version lockstep ──────────────────────────────────
