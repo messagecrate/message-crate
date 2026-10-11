@@ -15,8 +15,8 @@ import {
   invokeExportDirectory,
   invokeOpenDataDirectory,
   invokeSetOpenToNetwork,
-  invokeSetStagingRoot,
-  invokeStagingRoot,
+  invokeSetStagingDirectory,
+  invokeStagingDirectory,
   type LocalServerStatus,
   type ToolName,
   type ToolStatus,
@@ -412,7 +412,7 @@ export function SystemSection() {
   /** The Staging Directory the desktop process holds now. */
   const stagingQuery = useQuery({
     queryKey: keys.desktopStagingDirectory.all,
-    queryFn: invokeStagingRoot,
+    queryFn: invokeStagingDirectory,
     enabled: isTauri(),
     retry: false,
   });
@@ -441,7 +441,7 @@ export function SystemSection() {
   const onStagingPathChange = (next: string) => {
     setTypedStagingPath(next);
     const gen = ++stagingSaveGen.current;
-    const save = invokeSetStagingRoot(next.trim());
+    const save = invokeSetStagingDirectory(next.trim());
     lastStagingSave.current = save;
     save.then(
       () => {
@@ -469,7 +469,7 @@ export function SystemSection() {
     setSaveError(null);
     lastStagingSave.current
       .catch(() => undefined)
-      .then(() => invokeStagingRoot())
+      .then(() => invokeStagingDirectory())
       .then(
         (held) => {
           if (gen !== stagingSaveGen.current) return;
