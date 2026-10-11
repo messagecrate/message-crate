@@ -672,7 +672,7 @@ pub async fn account_clock(
 }
 
 /// [`account_clock`] at the instant `now`, so a test names the instant.
-pub async fn account_clock_at(
+async fn account_clock_at(
     conn: &mut SqliteConnection,
     account_id: i64,
     now: chrono::DateTime<chrono::Utc>,
