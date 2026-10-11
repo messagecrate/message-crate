@@ -3,7 +3,7 @@
 //! list of message places each run hands over, which its pages read.
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, ExportStatus};
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqliteRow;
@@ -149,12 +149,16 @@ fn id_list(raw: Option<String>) -> Result<Vec<i64>> {
 
 /// Record a new run as `running` with zero counts and return its id. The
 /// caller lists the run's messages and then sets the counts with
-/// [`record_counts`], in the same transaction.
+/// [`record_counts`], in the same transaction. The run starts at `now`.
 ///
 /// # Errors
 ///
 /// Returns an error when the insert fails.
-pub async fn start_export(conn: &mut SqliteConnection, args: &StartExportArgs<'_>) -> Result<i64> {
+pub async fn start_export(
+    conn: &mut SqliteConnection,
+    args: &StartExportArgs<'_>,
+    now: DateTime<Utc>,
+) -> Result<i64> {
     let (kind, list, query, conversation_ids, message_ids) = match args.scope {
         ExportScope::Everything => ("everything", None, None, None, None),
         ExportScope::Query { list, q } => {
@@ -186,7 +190,7 @@ pub async fn start_export(conn: &mut SqliteConnection, args: &StartExportArgs<'_
     .bind(conversation_ids)
     .bind(message_ids)
     .bind(args.tool)
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .fetch_one(&mut *conn)
     .await?;
     Ok(id)
@@ -240,11 +244,11 @@ pub async fn get_export(
     row.as_ref().map(export_from_row).transpose()
 }
 
-/// Close a running run with `status`, stamp `finished_at`, and delete the
-/// list of messages it matched at creation: a closed run hands nothing over.
-/// Returns `false` when the run was not running, which is the caller's
-/// `409`: the status check and the write are one statement, so two closers
-/// racing cannot both win.
+/// Close a running run with `status`, stamp `finished_at` with `now`, and
+/// delete the list of messages it matched at creation: a closed run hands
+/// nothing over. Returns `false` when the run was not running, which is the
+/// caller's `409`: the status check and the write are one statement, so two
+/// closers racing cannot both win.
 ///
 /// # Errors
 ///
@@ -254,6 +258,7 @@ pub async fn finish_export(
     account_id: i64,
     export_id: i64,
     status: ExportStatus,
+    now: DateTime<Utc>,
 ) -> Result<bool> {
     let mut tx = begin_write(conn).await?;
     let done = sqlx::query(
@@ -261,7 +266,7 @@ pub async fn finish_export(
          WHERE id = $3 AND account_id = $4 AND status = 'running'",
     )
     .bind(status.as_str())
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .bind(export_id)
     .bind(account_id)
     .execute(&mut *tx)
