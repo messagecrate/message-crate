@@ -237,6 +237,19 @@ export function SelectChevronIcon({ size, className, ...rest }: IconProps) {
 }
 
 /**
+ * Small chevron pointing left — the way back on the sign-in cards. The
+ * left-pointing sibling of `SelectChevronIcon`: the same 10-unit grid and 1.5
+ * stroke.
+ */
+export function BackChevronIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} viewBox="0 0 10 10" strokeWidth="1.5" {...rest}>
+      <path d="M6.5 1.5 3 5l3.5 3.5" />
+    </IconShell>
+  );
+}
+
+/**
  * Magnifying glass inside the search box. Its handle is shorter than
  * `SearchIcon`'s (it ends at 20,20, not 21,21), which keeps the glyph compact
  * at the left edge of the box.
