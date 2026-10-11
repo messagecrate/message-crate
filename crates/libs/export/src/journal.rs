@@ -122,13 +122,13 @@ pub fn append(path: &Path, event: &ExportJournalEvent) -> Result<()> {
 pub fn compact(path: &Path, target: &ServerTarget, state: &ExportJournalState) -> Result<()> {
     let mut assets: Vec<_> = state.assets.iter().collect();
     assets.sort_unstable();
-    let mut events: Vec<ExportJournalEvent> = assets
-        .into_iter()
-        .map(|sha| ExportJournalEvent::AssetOk {
+    let mut events = Vec::new();
+    for sha in assets {
+        events.push(ExportJournalEvent::AssetOk {
             target: target.clone(),
             sha256: sha.clone(),
-        })
-        .collect();
+        });
+    }
     if state.export_complete {
         // A later Export Run ignores the counts; an `export_complete` row
         // only means the last Export Run finished.
