@@ -470,11 +470,36 @@ export function notesToDiscard(record: RunRecord): ImportNote[] {
 }
 
 /**
+ * Most characters the server takes in an Import Error's `item` or `reason`:
+ * the `maxLength` its reference states, which a test holds this to.
+ */
+export const IMPORT_ERROR_TEXT_MAX_CHARS = 2000;
+
+/**
+ * `text` trimmed, and cut to the server's cap with `…` at its end when it is
+ * longer. Counted in code points, as the server counts characters, so a cut
+ * never splits a surrogate pair.
+ */
+function cutToCap(text: string): string {
+  const chars = Array.from(text.trim());
+  if (chars.length <= IMPORT_ERROR_TEXT_MAX_CHARS) return chars.join("");
+  return `${chars.slice(0, IMPORT_ERROR_TEXT_MAX_CHARS - 1).join("")}…`;
+}
+
+/**
  * The issues as the server takes them, without the conversation an Upload
- * or Staging row names for the record's own use.
+ * or Staging row names for the record's own use. An `item` or `reason` over
+ * the server's cap is cut to it: a reason can carry a tool's whole error
+ * output, such as ffmpeg's, and a refused completion or Discard would leave
+ * the run open for good (#2183).
  */
 export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
-  return issues.map(({ kind, stage, item, reason }) => ({ kind, stage, item, reason }));
+  return issues.map(({ kind, stage, item, reason }) => ({
+    kind,
+    stage,
+    item: cutToCap(item),
+    reason: cutToCap(reason),
+  }));
 }
 
 /**

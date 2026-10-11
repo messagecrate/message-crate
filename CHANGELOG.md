@@ -308,6 +308,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **Names, addresses and Import Errors have a length limit.**
+  A display name or a contact's name may be up to 200 characters, an
+  address up to 320, and each part of an Import Error up to 2,000. Anything
+  longer is refused with a message naming the limit, where before it was
+  kept at any length and shown in full on every list that held it. An
+  Import Error the desktop app reports, such as one carrying a converter's
+  whole error output, is shortened to the limit and ends with "…", so the
+  import still finishes (#2183).
 - 2026-10-10: **A screen the server refuses shows its error at once.**
   When the server refused to show something, because it was not found, not
   allowed, or asked too often, the website and the desktop app asked a second

@@ -54,6 +54,9 @@ use crate::server::{
     ApiError, AppState, Created, ImportAccess, content_type_base, is_jsonl_content_type,
     resolve_import_account, run_blocking, stream_body_to_file,
 };
+use crate::text_caps::{
+    MAX_IMPORT_ERROR_TEXT_CHARS, MAX_IMPORT_RUN_JSON_BYTES, capped_json, capped_text,
+};
 
 /// Full import settings: paths, mode, and media handling.
 #[derive(Debug, Clone)]
@@ -644,13 +647,16 @@ pub(crate) struct CreateImportRequest {
     /// Import form snapshot, stored so the screen can be restored.
     ///
     /// Credentials are stripped before storage: a `backupPassword` or
-    /// `whatsappKey` posted here is dropped rather than persisted.
+    /// `whatsappKey` posted here is dropped rather than persisted. Over
+    /// 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) form: Option<serde_json::Value>,
-    /// Source path, size, mtime, and message count.
+    /// Source path, size, mtime, and message count. Over 65,536 bytes of
+    /// JSON is refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) source_fingerprint: Option<serde_json::Value>,
     /// Addresses the backup's device sent from, when the client read them.
+    /// Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) source_identities: Option<serde_json::Value>,
 }
@@ -756,38 +762,59 @@ pub(crate) struct ImportIssueRequest {
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
     /// What the issue is about, such as a conversation file or an
-    /// attachment's path.
+    /// attachment's path. Stored trimmed; over 2,000 characters is refused
+    /// with `422 Unprocessable Entity`.
+    // `max_length` takes only a literal; a test holds it to
+    // `MAX_IMPORT_ERROR_TEXT_CHARS`.
+    #[schema(max_length = 2000)]
     pub(crate) item: String,
-    /// Why the item failed or was skipped, in one sentence.
+    /// Why the item failed or was skipped, in one sentence. Stored trimmed;
+    /// over 2,000 characters is refused with `422 Unprocessable Entity`.
+    #[schema(max_length = 2000)]
     pub(crate) reason: String,
 }
 
-/// Refuse an issue that is not an Import Error: the run stores only
-/// `error` and `skip` rows as its issues. Checked before a connection is
+/// The requested issues as the database records them, their text trimmed.
+/// Refuses an issue that is not an Import Error, since the run stores only
+/// `error` and `skip` rows as its issues, and an `item` or `reason` over its
+/// cap (`text_caps`), naming every one. Checked before a connection is
 /// opened, so a refused request writes nothing.
-fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
-    for issue in issues {
-        match issue.kind {
-            RunIssueKind::Error | RunIssueKind::Skip => {}
-            RunIssueKind::Note | RunIssueKind::Resolved => {
-                return Err(ApiError::validation(format!(
-                    "invalid import issue kind '{}'; expected 'error' or 'skip'",
-                    issue.kind
-                )));
-            }
+fn import_issue_inputs(
+    issues: &[ImportIssueRequest],
+) -> Result<Vec<crate::db::imports::ImportIssueInput>, ApiError> {
+    let mut inputs = Vec::with_capacity(issues.len());
+    let mut errors = Vec::new();
+    for (at, issue) in issues.iter().enumerate() {
+        if matches!(issue.kind, RunIssueKind::Note | RunIssueKind::Resolved) {
+            errors.push(format!(
+                "issues[{at}].kind: invalid import issue kind '{}'; expected 'error' or 'skip'",
+                issue.kind
+            ));
+        }
+        let cap = |field: &str, text| {
+            capped_text(
+                &format!("issues[{at}].{field}"),
+                text,
+                MAX_IMPORT_ERROR_TEXT_CHARS,
+            )
+        };
+        match (cap("item", &issue.item), cap("reason", &issue.reason)) {
+            (Ok(item), Ok(reason)) => inputs.push(crate::db::imports::ImportIssueInput {
+                kind: issue.kind,
+                stage: issue.stage,
+                item: item.to_string(),
+                reason: reason.to_string(),
+            }),
+            (item, reason) => errors.extend(
+                [item.err(), reason.err()]
+                    .into_iter()
+                    .flatten()
+                    .map(|e| e.to_string()),
+            ),
         }
     }
-    Ok(())
-}
-
-/// One requested issue, as the database records it.
-fn issue_input(issue: ImportIssueRequest) -> crate::db::imports::ImportIssueInput {
-    crate::db::imports::ImportIssueInput {
-        kind: issue.kind,
-        stage: issue.stage,
-        item: issue.item,
-        reason: issue.reason,
-    }
+    ApiError::unless_broken(errors)?;
+    Ok(inputs)
 }
 
 fn validate_import_status(status: &str) -> Result<(), ApiError> {
@@ -831,6 +858,19 @@ fn optional_json_string(
             .map(Some)
             .map_err(|e| ApiError::Internal(anyhow::anyhow!("serialize {field}: {e}"))),
     }
+}
+
+/// [`optional_json_string`] for a value an Import Run stores as it is
+/// created, refused when over [`MAX_IMPORT_RUN_JSON_BYTES`].
+fn capped_json_string(
+    value: Option<&serde_json::Value>,
+    field: &str,
+) -> Result<Option<String>, ApiError> {
+    let json = optional_json_string(value, field)?;
+    if let Some(json) = &json {
+        capped_json(field, json, MAX_IMPORT_RUN_JSON_BYTES)?;
+    }
+    Ok(json)
 }
 
 /// `GET /v1/imports`: a page, narrowed to one `status` when given. One of the
@@ -1259,11 +1299,10 @@ pub(crate) async fn create_import(
     let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);
     // Credentials never reach the row, whoever the client is.
     let form = body.form.as_ref().map(strip_form_credentials);
-    let form_json = optional_json_string(form.as_ref(), "form")?;
+    let form_json = capped_json_string(form.as_ref(), "form")?;
     let fingerprint_json =
-        optional_json_string(body.source_fingerprint.as_ref(), "source_fingerprint")?;
-    let identities_json =
-        optional_json_string(body.source_identities.as_ref(), "source_identities")?;
+        capped_json_string(body.source_fingerprint.as_ref(), "source_fingerprint")?;
+    let identities_json = capped_json_string(body.source_identities.as_ref(), "source_identities")?;
 
     let mut conn = state.db.acquire().await?;
     crate::db::account_profile::ensure_account_row(&mut conn, account).await?;
@@ -1320,7 +1359,7 @@ pub(crate) async fn complete_import(
     Json(body): Json<CompleteImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    validate_import_issues(&body.issues)?;
+    let issues = import_issue_inputs(&body.issues)?;
     validate_import_status(&body.status)?;
     let summary_json =
         match body.summary {
@@ -1340,7 +1379,7 @@ pub(crate) async fn complete_import(
         prepare_ms: body.prepare_ms,
         upload_ms: body.upload_ms,
         summary_json,
-        issues: body.issues.into_iter().map(issue_input).collect(),
+        issues,
         notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
@@ -1642,8 +1681,7 @@ pub(crate) async fn discard_import(
     Json(body): Json<DiscardImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    validate_import_issues(&body.issues)?;
-    let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
+    let issues = import_issue_inputs(&body.issues)?;
     let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;

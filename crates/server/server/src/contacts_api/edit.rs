@@ -18,6 +18,7 @@ use crate::identity_country::{
     CountryError, SetIdentityCountryRequest, Whose, set_identity_country,
 };
 use crate::server::ApiError;
+use crate::text_caps::{self, MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 /// Why a contact edit did not happen.
 ///
@@ -61,6 +62,13 @@ impl From<ContactEditError> for ApiError {
             ContactEditError::Country(error) => error.into(),
             ContactEditError::Failed(cause) => Self::Internal(cause),
         }
+    }
+}
+
+/// A value over its cap is the person's to shorten.
+impl From<text_caps::TooLong> for ContactEditError {
+    fn from(error: text_caps::TooLong) -> Self {
+        Self::Refused(error.to_string())
     }
 }
 
@@ -194,7 +202,7 @@ impl ContactEditor<'_> {
 
     /// Name the contact.
     async fn rename(&mut self, name: &str) -> Result<bool, ContactEditError> {
-        let name = name.trim();
+        let name = capped_text("name", name, MAX_PERSON_NAME_CHARS)?;
         if name.is_empty() {
             refuse!("name must not be empty");
         }
@@ -218,7 +226,11 @@ impl ContactEditor<'_> {
         &mut self,
         add: &AddContactIdentityRequest,
     ) -> Result<bool, ContactEditError> {
-        let raw = add.address.trim();
+        let raw = capped_text(
+            "add_identity.address",
+            &add.address,
+            MAX_IDENTITY_ADDRESS_CHARS,
+        )?;
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
@@ -242,7 +254,11 @@ impl ContactEditor<'_> {
         upd: &UpdateContactIdentityRequest,
     ) -> Result<bool, ContactEditError> {
         let prev = upd.previous_address.trim();
-        let next = upd.address.trim();
+        let next = capped_text(
+            "update_identity.address",
+            &upd.address,
+            MAX_IDENTITY_ADDRESS_CHARS,
+        )?;
         if prev.is_empty() || next.is_empty() {
             refuse!("previous_address and address must not be empty");
         }

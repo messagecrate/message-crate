@@ -39,6 +39,7 @@ use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
 };
+use crate::text_caps::{MAX_IDENTITY_ADDRESS_CHARS, MAX_PERSON_NAME_CHARS, capped_text};
 
 pub(crate) mod api_tokens;
 
@@ -289,10 +290,12 @@ pub struct CreateAccountRequest {
     /// no password.
     #[serde(default)]
     pub password: Option<String>,
-    /// Display name shown in Message Crate.
+    /// Display name shown in Message Crate, trimmed. Over 200 characters is
+    /// refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub preferred_name: Option<String>,
-    /// Phone number linked to the account.
+    /// Phone number linked to the account, trimmed. Over 320 characters is
+    /// refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub phone: Option<String>,
 }
@@ -357,8 +360,18 @@ pub async fn create_account(
     };
 
     let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
-    let preferred_name = req.preferred_name.as_deref().and_then(message_ir::nonempty);
-    let phone = req.phone.as_deref().and_then(message_ir::nonempty);
+    let preferred_name = req
+        .preferred_name
+        .as_deref()
+        .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS))
+        .transpose()?
+        .and_then(message_ir::nonempty);
+    let phone = req
+        .phone
+        .as_deref()
+        .map(|phone| capped_text("phone", phone, MAX_IDENTITY_ADDRESS_CHARS))
+        .transpose()?
+        .and_then(message_ir::nonempty);
 
     let mut conn = state.db.acquire().await?;
     if !by_owner && !server_settings::load(&mut conn).await?.public_registration {
@@ -455,7 +468,9 @@ pub async fn get_account(
 /// One identity to link onto the account, with its platform service.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct LinkAccountIdentityRequest {
-    /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
+    /// The address as typed, e.g. `+15555550100` or `alex@example.com`. Over
+    /// 320 characters after trimming is refused with
+    /// `422 Unprocessable Entity`.
     pub address: String,
     /// The service the address is on. It never decides the identity's type,
     /// which comes from the address: an email address is on the phone
@@ -481,7 +496,8 @@ pub struct UnlinkAccountIdentityRequest {
 pub struct UpdateAccountRequest {
     /// Display name. Absent leaves the current name unchanged, `null` clears
     /// it, and a string sets it, trimmed. A string that is empty after
-    /// trimming clears it.
+    /// trimming clears it, and one over 200 characters is refused with
+    /// `422 Unprocessable Entity`.
     #[serde(default, deserialize_with = "present")]
     #[schema(value_type = Option<String>)]
     pub preferred_name: Option<Option<String>>,
@@ -529,6 +545,30 @@ where
 }
 
 impl UpdateAccountRequest {
+    /// Refuse a display name or an identity to link that is over its cap
+    /// (`text_caps`), before anything in the body is applied, naming every
+    /// one that is. An identity to unlink is not held to it: it names a row
+    /// already stored.
+    fn check_caps(&self) -> Result<(), ApiError> {
+        let name = self
+            .preferred_name
+            .iter()
+            .flatten()
+            .map(|name| capped_text("preferred_name", name, MAX_PERSON_NAME_CHARS));
+        let addresses = self.identities.iter().enumerate().map(|(at, entry)| {
+            capped_text(
+                &format!("identities[{at}].address"),
+                &entry.address,
+                MAX_IDENTITY_ADDRESS_CHARS,
+            )
+        });
+        ApiError::unless_broken(
+            name.chain(addresses)
+                .filter_map(|checked| checked.err().map(|e| e.to_string()))
+                .collect(),
+        )
+    }
+
     /// True when the body names the display name, the time zone or an identity.
     fn touches_profile(&self) -> bool {
         self.preferred_name.is_some()
@@ -802,6 +842,7 @@ pub async fn update_account(
 ) -> Result<Json<Account>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    req.check_caps()?;
     if req.touches_flags() {
         refuse_for_demo_account(target, "status and permissions are fixed")?;
     }

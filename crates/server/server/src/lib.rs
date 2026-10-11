@@ -55,6 +55,7 @@ pub(crate) mod server_api;
 pub(crate) mod session_api;
 #[cfg(test)]
 pub mod test_support;
+pub(crate) mod text_caps;
 pub(crate) mod trash_api;
 
 pub use db::conversation_messages::{DEFAULT_MESSAGE_SORT, MESSAGE_SORT_KEYS, MessageSort};

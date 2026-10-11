@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type { UploadFinishedReport } from "../../lib/tauri";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  IMPORT_ERROR_TEXT_MAX_CHARS,
+  issueRequests,
   issuesToDiscard,
   notesToDiscard,
   parseRunRecord,
@@ -479,6 +483,40 @@ describe("the run's notes (#1626)", () => {
     const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [live] }));
     expect(notesToDiscard(carried)).toEqual([live]);
     expect(notesToDiscard(EMPTY_RUN_RECORD)).toEqual([]);
+  });
+});
+
+describe("issueRequests (#2183)", () => {
+  it("cuts an item or reason over the server's cap, so the completion is not refused", () => {
+    // ffmpeg's error output on a damaged video runs to 8 KiB.
+    const stderr = "error while decoding MB 12 34 \u{1F4F7}\n".repeat(400);
+    const [sent] = issueRequests([
+      { kind: "skip", stage: "media", item: ` ${"v".repeat(2500)} `, reason: stderr },
+    ]);
+    for (const text of [sent.item, sent.reason]) {
+      expect(Array.from(text)).toHaveLength(IMPORT_ERROR_TEXT_MAX_CHARS);
+      expect(text.endsWith("…")).toBe(true);
+    }
+    expect(sent.item.startsWith("v")).toBe(true);
+  });
+
+  it("cuts to the cap the server's reference states", () => {
+    const path = fileURLToPath(
+      new URL("../../../../docs/src/assets/openapi.json", import.meta.url),
+    );
+    const doc = JSON.parse(readFileSync(path, "utf8"));
+    const fields = doc.components.schemas.ImportIssueRequest.properties;
+    expect(fields.item.maxLength).toBe(IMPORT_ERROR_TEXT_MAX_CHARS);
+    expect(fields.reason.maxLength).toBe(IMPORT_ERROR_TEXT_MAX_CHARS);
+  });
+
+  it("sends text at or under the cap as it is, trimmed, without the conversation", () => {
+    const atCap = "r".repeat(IMPORT_ERROR_TEXT_MAX_CHARS);
+    expect(
+      issueRequests([
+        { kind: "error", stage: "upload", item: " a.jsonl ", reason: atCap, conversation: "c" },
+      ]),
+    ).toEqual([{ kind: "error", stage: "upload", item: "a.jsonl", reason: atCap }]);
   });
 });
 
