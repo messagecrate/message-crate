@@ -36,10 +36,12 @@ import type { components } from "../lib/serverApi.types";
 import { useTimeZone } from "../lib/timeZone";
 import { UNKNOWN_GROUP } from "../lib/unknownGroup";
 import { useContactGroups } from "../lib/useContactGroups";
+import { useDebouncedValue } from "../lib/useDebouncedValue";
 import { useResetOnChange } from "../lib/useResetOnChange";
 import { useSelectAll } from "../lib/useSelectAll";
 
-const FILTER_DEBOUNCE_MS = 300;
+/** How long the search waits after the last key before it asks the server. */
+export const FILTER_DEBOUNCE_MS = 300;
 /** Fixed row height keeps virtualization slots aligned with flex-centered content. */
 const CONTACT_ROW_HEIGHT = 49;
 
@@ -127,7 +129,6 @@ export default function ContactList({
   /** Increment to uncheck every row (Clear contacts on the selection card). */
   clearCheckedRev?: number;
 }) {
-  const [serverQ, setServerQ] = useState("");
   const [sortState, setSortState] = useState<ContactSortState>(() => loadContactSort());
   const zone = useTimeZone();
   const [checkedIds, setCheckedIds] = useState<Set<string>>(() => new Set());
@@ -142,6 +143,27 @@ export default function ContactList({
   const groupActions = useContactGroupActions();
   const setGroupMembers = useSetContactGroupMembers();
   const setRightToolbar = useSetRightToolbar();
+
+  const groupActive = Boolean(groupFilter);
+  const advancedActive = hasFieldToken(filter);
+  const combined = groupListQuery(groupFilter, filter);
+  const groupPageOnly = groupActive && !filter.trim();
+  // The query the list wants from the server, and whether it waits for typing to stop.
+  let wantedQ = combined;
+  let waitForTyping = false;
+  if (!combined.trim()) {
+    // Empty filter: load the full catalog.
+    wantedQ = "";
+  } else if (haveFullCatalog && !advancedActive) {
+    // The full catalog is already in memory, so filter it in the browser.
+    wantedQ = "";
+  } else {
+    // A search waits for the last key. A Contact Group page opens at once.
+    waitForTyping = !groupPageOnly;
+  }
+  // A search keeps the query in use until it settles. The query starts empty,
+  // so a list opened on a search loads the full catalog first.
+  const serverQ = useDebouncedValue(wantedQ, waitForTyping ? FILTER_DEBOUNCE_MS : 0, "");
 
   const onSortChange = (next: ContactSortState) => {
     setSortState(next);
@@ -191,9 +213,6 @@ export default function ContactList({
     !loading && !refreshing && contacts.length >= total && (total > 0 || contacts.length === 0);
   if (catalogComplete && !serverQ.trim() && !haveFullCatalog) setHaveFullCatalog(true);
 
-  const groupActive = Boolean(groupFilter);
-  const advancedActive = hasFieldToken(filter);
-
   // A new filter or group unticks every row, so a tick never applies to a row the list no longer shows.
   useResetOnChange([filter, groupFilter], () => {
     setRangeAnchor(null);
@@ -205,27 +224,6 @@ export default function ContactList({
     setRangeAnchor(null);
     setCheckedIds(new Set());
   }, [clearCheckedRev]);
-
-  useEffect(() => {
-    const combined = groupListQuery(groupFilter, filter);
-    // Empty filter: load the full catalog.
-    if (!combined.trim()) {
-      setServerQ("");
-      return;
-    }
-    // The full catalog is already in memory, so filter it in the browser.
-    if (haveFullCatalog && !advancedActive) {
-      setServerQ("");
-      return;
-    }
-    // Group-page click: do not wait for the search debounce.
-    if (groupActive && !filter.trim()) {
-      setServerQ(combined);
-      return;
-    }
-    const t = window.setTimeout(() => setServerQ(combined), FILTER_DEBOUNCE_MS);
-    return () => window.clearTimeout(t);
-  }, [filter, haveFullCatalog, advancedActive, groupFilter, groupActive]);
 
   const filterActive = filter.trim().length > 0;
   const needles = filterNeedles(filter);
