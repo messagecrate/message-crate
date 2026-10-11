@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { checkOptionalPath, PATH_MISSING, type PathKind, type PathStat } from "./pathChecks";
+import { checkOptionalPath, type ImportPathStat, PATH_MISSING, type PathKind } from "./pathChecks";
 
-const dir: PathStat = { exists: true, isFile: false, isDirectory: true };
-const file: PathStat = { exists: true, isFile: true, isDirectory: false };
-const missing: PathStat = { exists: false, isFile: false, isDirectory: false };
+const dir: ImportPathStat = { exists: true, isFile: false, isDirectory: true };
+const file: ImportPathStat = { exists: true, isFile: true, isDirectory: false };
+const missing: ImportPathStat = { exists: false, isFile: false, isDirectory: false };
 
 type Key = "field";
 
-function check(path: string, stat: PathStat | null, expected: PathKind) {
+function check(path: string, stat: ImportPathStat | null, expected: PathKind) {
   const errors: Partial<Record<Key, string>> = {};
   checkOptionalPath(path, stat, errors, "field", "Wrong kind.", expected);
   return errors;

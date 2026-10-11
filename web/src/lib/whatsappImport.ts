@@ -1,4 +1,4 @@
-import { checkOptionalPath, PATH_MISSING, type PathStat } from "./pathChecks";
+import { checkOptionalPath, type ImportPathStat, PATH_MISSING } from "./pathChecks";
 
 export const WHATSAPP_SOURCE_ID = "whatsapp";
 
@@ -53,10 +53,10 @@ export function whatsappCryptRequired(hasMsgstoreDb: boolean, cryptName: string 
 }
 
 export type WhatsappPathStats = {
-  backup: PathStat | null;
-  contactsDb: PathStat | null;
-  media: PathStat | null;
-  db: PathStat | null;
+  backup: ImportPathStat | null;
+  contactsDb: ImportPathStat | null;
+  media: ImportPathStat | null;
+  db: ImportPathStat | null;
   hasMsgstoreDb: boolean;
   cryptName: string | null;
   /** Whether the iPhone backup directory is encrypted; null when unknown or not iPhone. */

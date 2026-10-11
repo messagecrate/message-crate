@@ -1,4 +1,4 @@
-import { checkOptionalPath, PATH_MISSING, type PathStat } from "./pathChecks";
+import { checkOptionalPath, type ImportPathStat, PATH_MISSING } from "./pathChecks";
 
 export const IMESSAGE_SOURCE_ID = "imessage";
 
@@ -49,9 +49,9 @@ export function imessageVisiblePlatforms(
 }
 
 export type ImessagePathStats = {
-  backup: PathStat | null;
-  attachmentRoot: PathStat | null;
-  appleContacts: PathStat | null;
+  backup: ImportPathStat | null;
+  attachmentRoot: ImportPathStat | null;
+  appleContacts: ImportPathStat | null;
   backupEncrypted: boolean | null;
 };
 
