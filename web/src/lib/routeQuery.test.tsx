@@ -122,7 +122,7 @@ describe("createQueryClient", () => {
   });
 
   it("asks again once when the server answers 500 Internal Server Error", async () => {
-    expect(await callsUntilError(new ApiError(500, "server error"))).toBe(2);
+    expect(await callsUntilError(new ApiError(500, "Internal Server Error"))).toBe(2);
   });
 
   it("asks again once when the request never reached the server", async () => {
