@@ -67,13 +67,13 @@ export interface RunDirConfig {
 }
 
 /** The Staging Directory, and the directory used when Settings name none. */
-export interface StagingDirectory {
+export interface StagingDirectorySetting {
   root: string;
   defaultRoot: string;
 }
 
 /** The Staging Directory the desktop process keeps. */
-export async function invokeStagingDirectory(): Promise<StagingDirectory> {
+export async function invokeStagingDirectory(): Promise<StagingDirectorySetting> {
   return invoke("staging_root");
 }
 
@@ -81,7 +81,7 @@ export async function invokeStagingDirectory(): Promise<StagingDirectory> {
  * Store the Staging Directory. An empty string goes back to the default.
  * Directories made under the earlier setting keep working.
  */
-export async function invokeSetStagingDirectory(root: string): Promise<StagingDirectory> {
+export async function invokeSetStagingDirectory(root: string): Promise<StagingDirectorySetting> {
   return invoke("set_staging_root", { root });
 }
 
