@@ -190,10 +190,10 @@ nothing — the opposite of the pattern this decision removes.
 - Every write marks the whole account's cache stale once it settles, through
   one call: `invalidateAccount` on `useRouteCache` in
   `web/src/lib/routeQuery.ts`. A write made with TanStack Query goes through
-  `useRouteMutation` in the same file, which makes that call before the
-  write's own `onSettled`, and Biome refuses `useMutation` anywhere else
-  (`web/biome.json`). Before that, each write added the call itself, and a
-  new write that left it out compiled and passed its own tests (issue #2162).
+  `useRouteMutation` in the same file. It makes that call before the write's
+  own `onSettled`. Biome refuses `useMutation` anywhere else
+  (`web/biome.json`). Before that, each write added the call itself. A new
+  write that left it out compiled and passed its own tests (issue #2162).
   The mutations that change no account data, such as an attachment download
   or a Media Link, are named in the Biome override that lets them use
   `useMutation`. No write names the entries it changes. Each write once named

@@ -401,18 +401,21 @@ export function useRouteCache(): RouteCache {
 }
 
 /**
- * A write to the logged-in account's data: `useMutation`, with the account's
- * cache marked stale once the write settles, before the write's own
- * `onSettled` runs.
+ * A write to the logged-in account's data. It is `useMutation`, with the
+ * account's cache marked stale once the write settles. The account is marked
+ * before the write's own `onSettled` runs.
  *
- * Every write to account data goes through this rather than `useMutation`, so
- * none can leave out the `invalidateAccount` call that ADR 0002 asks of each
- * one: a write that did would leave every other screen showing the old state.
- * The account is marked stale whether the server accepted the write or refused
- * it: a refused write may still have changed something, and an optimistic
- * write has drawn a change the server never made. Biome refuses
- * `useMutation` outside this module (`web/biome.json`), except in the few
- * writes that change no account data. See
+ * Every write to account data goes through this rather than `useMutation`.
+ * So none can leave out the `invalidateAccount` call that ADR 0002 asks of
+ * each one. A write that left it out would leave every other screen showing
+ * the old state.
+ *
+ * The account is marked stale whether the server accepted the write or
+ * refused it. A refused write may still have changed something. An optimistic
+ * write has drawn a change the server never made.
+ *
+ * Biome refuses `useMutation` outside this module (`web/biome.json`). The
+ * few mutations that change no account data are the exceptions. See
  * `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
  */
 export function useRouteMutation<
