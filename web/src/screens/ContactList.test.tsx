@@ -19,7 +19,7 @@ import { RightToolbarProvider } from "../components/RightToolbarContext";
 import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
 import { mockedAuth, Providers } from "../test/providers";
-import ContactList from "./ContactList";
+import ContactList, { FILTER_DEBOUNCE_MS } from "./ContactList";
 
 vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
@@ -312,6 +312,99 @@ describe("ContactList", () => {
 
     rerender(page("none"));
     await waitFor(() => expect(listed()).toEqual(["Alice"]));
+  });
+
+  describe("the search the server is asked", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Let timers up to `ms` fire, and every read they start land and draw its rows. */
+    async function wait(ms: number) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(ms);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+    }
+
+    const page = (filter: string, groupFilter: string | null = null) => (
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList filter={filter} groupFilter={groupFilter} onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>
+    );
+
+    const asked = () => listContactsMock.mock.calls.map(([params]) => params?.q);
+
+    it("asks once, for the search as it stands when typing stops", async () => {
+      const { rerender } = render(page(""));
+      await wait(0);
+      expect(asked()).toEqual([""]);
+
+      // A `word:` token only the server can apply, so the loaded list is not enough.
+      rerender(page("name:a"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      rerender(page("name:al"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      rerender(page("name:ali"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      expect(asked()).toEqual([""]);
+
+      await wait(1);
+      expect(asked()).toEqual(["", "name:ali"]);
+    });
+
+    it("loads the full list first when it opens on a search", async () => {
+      render(page("ali"));
+      await wait(FILTER_DEBOUNCE_MS);
+      expect(asked()).toEqual([""]);
+    });
+
+    it("keeps the full list a cleared search went back to while the next search waits", async () => {
+      const { rerender } = render(page(""));
+      await wait(0);
+      rerender(page("name:a"));
+      await wait(FILTER_DEBOUNCE_MS);
+      expect(asked()).toEqual(["", "name:a"]);
+
+      // Cleared, then a new search typed before the old one's wait would have ended.
+      rerender(page(""));
+      await wait(FILTER_DEBOUNCE_MS / 3);
+      rerender(page("name:b"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      expect(asked()).toEqual(["", "name:a", ""]);
+
+      await wait(1);
+      expect(asked()).toEqual(["", "name:a", "", "name:b"]);
+    });
+
+    it("asks for a Contact Group's page without waiting", async () => {
+      render(page("", "Family"));
+      await wait(0);
+      expect(asked().at(-1)).toBe(groupListQuery("Family", ""));
+    });
+
+    it("stops asking once the search is cleared before the wait ends", async () => {
+      const { rerender } = render(page(""));
+      await wait(0);
+
+      rerender(page("name:al"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      rerender(page(""));
+      await wait(FILTER_DEBOUNCE_MS);
+      expect(asked()).toEqual([""]);
+    });
   });
 
   it("names the search box's text a search when no contact matches it", async () => {
