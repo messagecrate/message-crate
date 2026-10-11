@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
+import { useMemo } from "react";
+import { keys } from "./queryKeys";
+import { useRouteQuery } from "./routeQuery";
 import { type SearchField, type SearchList, useSearchFields } from "./searchFields";
 import {
   forPerson,
@@ -7,6 +10,10 @@ import {
   suggestion as suggestionTerm,
 } from "./searchQuery";
 import { listContacts } from "./serverApi";
+import { useDebouncedValue } from "./useDebouncedValue";
+
+/** How long a person word's value waits after the last keystroke before contacts are asked for. */
+export const CONTACT_SUGGESTION_DEBOUNCE_MS = 150;
 
 interface ContactName {
   id: string;
@@ -78,7 +85,6 @@ export function applySuggestionToQuery(value: string, suggestion: Suggestion): s
  */
 export function useSearchSuggestions(value: string, list: SearchList | null): Suggestion[] {
   const { fields } = useSearchFields(list);
-  const [contacts, setContacts] = useState<ContactName[]>([]);
 
   const typedToken = lastToken(value).text;
   const colonIdx = typedToken.indexOf(":");
@@ -87,24 +93,20 @@ export function useSearchSuggestions(value: string, list: SearchList | null): Su
   const valuePart = completingValue ? typedToken.slice(colonIdx + 1).replace(/^"|"$/g, "") : "";
   const personOp = completingValue && isPersonWord(fields.find((f) => f.word === word));
 
-  useEffect(() => {
-    if (!personOp) {
-      setContacts([]);
-      return;
-    }
-    const ac = new AbortController();
-    const t = window.setTimeout(() => {
-      listContacts({ q: valuePart, limit: 20, offset: 0 }, { signal: ac.signal })
-        .then((res) => setContacts(res.items.map((c) => ({ id: String(c.id), name: c.name }))))
-        .catch(() => {
-          if (!ac.signal.aborted) setContacts([]);
-        });
-    }, 150);
-    return () => {
-      window.clearTimeout(t);
-      ac.abort();
-    };
-  }, [personOp, valuePart]);
+  // Null while no person word is typed, so the value of a word typed before
+  // one is never asked for as a name.
+  const prefix = useDebouncedValue(personOp ? valuePart : null, CONTACT_SUGGESTION_DEBOUNCE_MS);
+  const { data } = useRouteQuery(
+    keys.contacts.suggest(prefix ?? ""),
+    (signal) => listContacts({ q: prefix ?? "", limit: 20, offset: 0 }, { signal }),
+    // The last prefix's contacts stay offered while the next one is asked
+    // for, so the list does not blank between keystrokes.
+    { enabled: personOp && prefix !== null, placeholderData: keepPreviousData },
+  );
+  const contacts = useMemo<ContactName[]>(
+    () => (data?.items ?? []).map((c) => ({ id: String(c.id), name: c.name })),
+    [data],
+  );
 
   return buildSearchSuggestions({
     completingValue,

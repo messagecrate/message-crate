@@ -173,6 +173,12 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: **The search box remembers the contacts it offered.** After a
+  word such as `with:` or `from:`, the names the search box suggests for a
+  prefix are kept the way every other list is, so typing the same prefix
+  again within half a minute shows them without asking the server, and the
+  names already shown stay up while the next ones load (#2181).
+
 - 2026-10-10: The way an import passes its log, its progress and its cancel
   around was reworked inside, with nothing visible (#2165).
 
