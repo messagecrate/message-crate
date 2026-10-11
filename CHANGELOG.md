@@ -704,6 +704,14 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **A request too large for the server reads the same
+  everywhere.** When the server refuses a request for being over its size
+  limit, the message now always reads "the request body is too large". It
+  used to read three ways depending on what was sent: "request body too
+  large" for an attachment, an import or an address book sent without a
+  stated size, "a part of this upload is at most" a number of bytes for a
+  part of a large attachment, and a technical sentence from the web
+  framework for some other requests (#2283).
 - 2026-10-10: **The server's log and the desktop app's Import Run logs no
   longer act on a terminal that shows them.** A file name in a backup or a
   tool's output can carry a terminal control character, such as the escape

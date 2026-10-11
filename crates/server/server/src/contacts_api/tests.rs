@@ -2682,10 +2682,10 @@ fn address_book_of(len: usize) -> String {
 }
 
 /// The size cap is on the file as sent: a book of exactly
-/// `MAX_ADDRESS_BOOK_BYTES` loads, and one byte more answers `413` with
-/// `read_body_limited`'s sentence, which proves the route's own cap answered
-/// and not the app-wide body limit layer (whose sentence is "the request
-/// body is too large") or Axum's 2 MiB extractor default.
+/// `MAX_ADDRESS_BOOK_BYTES` loads, and one byte more answers `413`. Only the
+/// route's own cap can refuse that body: the app-wide body limit layer's
+/// 512 MiB cap is far above it, and the route reads the body itself rather
+/// than through the JSON extractor.
 #[tokio::test]
 async fn an_address_book_at_the_size_cap_loads_and_one_byte_over_is_a_413() {
     use address_book::MAX_ADDRESS_BOOK_BYTES;
@@ -2716,8 +2716,8 @@ async fn an_address_book_at_the_size_cap_loads_and_one_byte_over_is_a_413() {
     );
     assert_eq!(
         problem.detail.as_deref(),
-        Some("request body too large"),
-        "the sentence must be the route's own: {text}"
+        Some("the request body is too large"),
+        "{text}"
     );
 }
 
