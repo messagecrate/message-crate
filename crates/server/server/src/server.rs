@@ -630,7 +630,8 @@ impl ApiError {
 
     /// The sentence of a variant that carries nothing else, or `None` for a
     /// variant with fields of its own. The one list of those variants, read
-    /// by [`Self::to_problem`] for the `detail` and by `Display`.
+    /// by [`Self::to_problem`] for the `detail` and by `Display`. A variant
+    /// put in the `None` arm needs an arm of its own in both.
     fn message(&self) -> Option<&str> {
         match self {
             Self::MalformedBody(m)
@@ -660,6 +661,17 @@ impl ApiError {
             | Self::RangeNotSatisfiable { .. }
             | Self::Internal(_) => None,
         }
+    }
+
+    /// The sentence of a variant that the last arm of [`Self::to_problem`]
+    /// or `Display` reached. A variant with fields of its own that has no arm
+    /// above that one panics here, so the first test that answers or displays
+    /// it fails rather than giving an empty sentence.
+    fn sentence(&self) -> &str {
+        let Some(sentence) = self.message() else {
+            unreachable!("{self:?} has fields of its own and needs its own arm");
+        };
+        sentence
     }
 
     /// The registered type, or `None` for an internal error.
@@ -771,7 +783,7 @@ impl ApiError {
             }
             Self::Internal(_) => unreachable!("handled above"),
             // The variants that carry only a sentence: `message` lists them.
-            _ => problem.detail = self.message().map(str::to_string),
+            _ => problem.detail = Some(self.sentence().to_string()),
         }
         problem
     }
@@ -797,7 +809,7 @@ impl std::fmt::Display for ApiError {
             | Self::IdentityExists { detail, .. }
             | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
             // The variants that carry only a sentence: `message` lists them.
-            _ => f.write_str(self.message().unwrap_or_default()),
+            _ => f.write_str(self.sentence()),
         }
     }
 }
