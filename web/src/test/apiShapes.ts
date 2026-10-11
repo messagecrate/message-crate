@@ -132,6 +132,7 @@ export function auditEntry(
     at: "2026-10-02T10:00:00+00:00",
     actor: "holder",
     account_id: null,
+    account_deleted: false,
     username: null,
     api_token_hint: null,
     api_token_label: null,

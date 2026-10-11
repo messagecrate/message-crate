@@ -361,6 +361,7 @@ describe("OwnerHome", () => {
           at: "2026-10-02T10:00:00+00:00",
           actor: "owner",
           account_id: null,
+          account_deleted: true,
           username: "carol",
         },
         {
@@ -429,6 +430,7 @@ describe("OwnerHome", () => {
       at: "2026-10-03T10:00:00+00:00",
       actor: "owner",
       account_id: null,
+      account_deleted: true,
       username: "carol",
     };
     listAuditTrail.mockImplementation(async (params: { deleted_account_id?: number }) => ({
