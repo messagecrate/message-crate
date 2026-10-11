@@ -369,13 +369,33 @@ impl IdentityService {
         }
     }
 
-    /// The type an address of shape `kind` takes on this service. WhatsApp
-    /// carries no email address, so an `@` address on WhatsApp, such as
-    /// `123456@lid`, is `Other`. Every other shape keeps its type (#1671).
-    pub fn type_on(self, kind: IdentityType) -> IdentityType {
+    /// Whether this service carries identities of type `kind`. Text Message
+    /// carries phone numbers and email addresses, because iMessage reaches an
+    /// email address. WhatsApp carries phone numbers and its own ids
+    /// (`…@lid`, `…@g.us`), which are `Other`. Every service carries `Other`,
+    /// the type of a name that is neither a number nor an address, such as
+    /// the sender `AMAZON`. No service carries a username.
+    ///
+    /// Every pair is listed, so a new service or type does not compile until
+    /// someone decides whether it is carried.
+    pub fn carries(self, kind: IdentityType) -> bool {
         match (self, kind) {
-            (Self::Whatsapp, IdentityType::Email) => IdentityType::Other,
-            (_, kind) => kind,
+            (Self::Phone, IdentityType::Phone | IdentityType::Email | IdentityType::Other)
+            | (Self::Whatsapp, IdentityType::Phone | IdentityType::Other) => true,
+            (Self::Phone, IdentityType::Username)
+            | (Self::Whatsapp, IdentityType::Email | IdentityType::Username) => false,
+        }
+    }
+
+    /// The type an address of shape `kind` takes on this service: the shape's
+    /// type when the service carries it ([`Self::carries`]), and `Other`
+    /// otherwise. WhatsApp carries no email address, so an `@` address on
+    /// WhatsApp, such as `123456@lid`, is `Other` (#1671).
+    pub fn type_on(self, kind: IdentityType) -> IdentityType {
+        if self.carries(kind) {
+            kind
+        } else {
+            IdentityType::Other
         }
     }
 
@@ -1089,6 +1109,51 @@ mod pending_message_tests {
         assert!(msg.extra_flag("is_sticker"));
         assert!(!msg.extra_flag("is_deleted"));
         assert!(!msg.extra_flag("never_set"));
+    }
+}
+
+/// Which identity types each service carries, and the type an address of
+/// each shape takes there
+/// (`docs/architecture/contacts-identities-and-messages.md`).
+#[cfg(test)]
+mod service_carries_tests {
+    use super::{IdentityService, IdentityType};
+
+    /// Every `(service, type)` pair and whether the service carries it.
+    /// Text Message carries phone numbers and email addresses (iMessage
+    /// reaches one), WhatsApp phone numbers and its own ids, which are
+    /// `other`, and every service carries `other`, the type of a name that is
+    /// neither a number nor an address. No service carries a username.
+    const TABLE: [(IdentityService, IdentityType, bool); 8] = [
+        (IdentityService::Phone, IdentityType::Phone, true),
+        (IdentityService::Phone, IdentityType::Email, true),
+        (IdentityService::Phone, IdentityType::Username, false),
+        (IdentityService::Phone, IdentityType::Other, true),
+        (IdentityService::Whatsapp, IdentityType::Phone, true),
+        (IdentityService::Whatsapp, IdentityType::Email, false),
+        (IdentityService::Whatsapp, IdentityType::Username, false),
+        (IdentityService::Whatsapp, IdentityType::Other, true),
+    ];
+
+    #[test]
+    fn each_service_carries_only_the_types_it_names() {
+        for (service, kind, carried) in TABLE {
+            assert_eq!(service.carries(kind), carried, "{service:?} {kind:?}");
+        }
+    }
+
+    /// A shape the service carries keeps its type, and one it cannot carry
+    /// is `other`, so an import never stores a pair the service refuses.
+    #[test]
+    fn a_shape_the_service_cannot_carry_is_other() {
+        for (service, kind, carried) in TABLE {
+            let expected = if carried { kind } else { IdentityType::Other };
+            assert_eq!(service.type_on(kind), expected, "{service:?} {kind:?}");
+            assert!(
+                service.carries(service.type_on(kind)),
+                "{service:?} {kind:?}"
+            );
+        }
     }
 }
 

@@ -84,34 +84,64 @@ pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
     service.type_on(handle_type_of(address))
 }
 
-/// A new identity refused because its service cannot carry its type: an
-/// email address on WhatsApp, the one pair refused. WhatsApp reaches a person
-/// by phone number, and keeps an internal id for one it knows by no number as
-/// `other`, so it carries no email address. The phone service carries every
-/// type: iMessage reaches an email address too.
+/// A new identity refused because its service cannot carry its type
+/// ([`IdentityService::carries`]), such as an email address on WhatsApp.
+/// WhatsApp reaches a person by phone number, and keeps an internal id for
+/// one it knows by no number as `other`, so it carries no email address.
 #[derive(Debug, thiserror::Error)]
-#[error("{address} is an email address, and WhatsApp carries no email addresses")]
-pub struct EmailOnWhatsapp {
+#[error(
+    "{address} is {}, and {} carries no {}",
+    type_noun(*handle_type).0,
+    service_name(*service),
+    type_noun(*handle_type).1
+)]
+pub struct ServiceCannotCarry {
     /// The address as the request gave it.
     pub address: String,
+    /// The service the identity was asked for on.
+    pub service: IdentityService,
+    /// The identity's type.
+    pub handle_type: IdentityType,
+}
+
+/// The service's name as the app shows it.
+fn service_name(service: IdentityService) -> &'static str {
+    match service {
+        IdentityService::Phone => "Text Message",
+        IdentityService::Whatsapp => "WhatsApp",
+    }
+}
+
+/// One identity of the type, and many, as a refusal names them.
+fn type_noun(handle_type: IdentityType) -> (&'static str, &'static str) {
+    match handle_type {
+        IdentityType::Phone => ("a phone number", "phone numbers"),
+        IdentityType::Email => ("an email address", "email addresses"),
+        IdentityType::Username => ("a username", "usernames"),
+        IdentityType::Other => ("an identity of type other", "identities of type other"),
+    }
 }
 
 /// Refuse a new identity of `handle_type` on `service` when the service
-/// cannot carry it.
+/// does not carry it.
 ///
 /// # Errors
 ///
-/// [`EmailOnWhatsapp`] for an email address on WhatsApp.
+/// [`ServiceCannotCarry`] for every pair [`IdentityService::carries`]
+/// refuses.
 pub fn check_service_carries(
     address: &str,
     service: IdentityService,
     handle_type: IdentityType,
-) -> std::result::Result<(), EmailOnWhatsapp> {
-    match (service, handle_type) {
-        (IdentityService::Whatsapp, IdentityType::Email) => Err(EmailOnWhatsapp {
+) -> std::result::Result<(), ServiceCannotCarry> {
+    if service.carries(handle_type) {
+        Ok(())
+    } else {
+        Err(ServiceCannotCarry {
             address: address.to_string(),
-        }),
-        _ => Ok(()),
+            service,
+            handle_type,
+        })
     }
 }
 
@@ -593,6 +623,44 @@ mod tests {
     use crate::db::schema;
 
     const TEST_ACCOUNT: i64 = 7;
+
+    /// A new identity is refused for every pair its service does not carry,
+    /// with a reason naming the service and the type, and let through for
+    /// every pair it carries. A username on Text Message was let through,
+    /// because only an email address on WhatsApp was refused (#2212).
+    #[test]
+    fn a_new_identity_is_refused_for_every_type_its_service_does_not_carry() {
+        for (service, handle_type, refusal) in [
+            (IdentityService::Phone, IdentityType::Phone, None),
+            (IdentityService::Phone, IdentityType::Email, None),
+            (
+                IdentityService::Phone,
+                IdentityType::Username,
+                Some("x is a username, and Text Message carries no usernames"),
+            ),
+            (IdentityService::Phone, IdentityType::Other, None),
+            (IdentityService::Whatsapp, IdentityType::Phone, None),
+            (
+                IdentityService::Whatsapp,
+                IdentityType::Email,
+                Some("x is an email address, and WhatsApp carries no email addresses"),
+            ),
+            (
+                IdentityService::Whatsapp,
+                IdentityType::Username,
+                Some("x is a username, and WhatsApp carries no usernames"),
+            ),
+            (IdentityService::Whatsapp, IdentityType::Other, None),
+        ] {
+            let answer =
+                check_service_carries("x", service, handle_type).map_err(|e| e.to_string());
+            assert_eq!(
+                answer,
+                refusal.map_or(Ok(()), |m| Err(m.to_string())),
+                "{service:?} {handle_type:?}"
+            );
+        }
+    }
 
     /// The count of numbers that need a look takes one for each identity the
     /// call both created and flagged, so a plain new number and a flagged
