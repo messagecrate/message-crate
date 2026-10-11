@@ -24,9 +24,11 @@ pub const INTERNAL_TYPE: &str = "about:blank";
 /// and the OpenAPI problem types ([`crate::openapi::shared_parts`]) walk
 /// `ALL`, and a type missing from it would ship with neither. Nor can a type
 /// be declared without its slug, status or title, because the pattern
-/// requires all three on the variant's line. A new type still needs its
-/// [`ProblemType::page`] arm here, and an [`crate::server::ApiError`] variant
-/// with its arm in `ApiError::problem_type`.
+/// requires all three in each entry. A new type also needs its
+/// [`ProblemType::page`] arm, which the compiler demands, and an
+/// [`crate::server::ApiError`] variant mapped to it in
+/// `ApiError::problem_type`, which nothing checks: a type no variant maps to
+/// is never answered.
 macro_rules! problem_types {
     ($($(#[$doc:meta])* $name:ident => ($slug:literal, $status:ident, $title:literal),)*) => {
         /// One registered kind of failure.
