@@ -273,15 +273,11 @@ async fn import_notes_to_yourself(
 
 /// Import `body`, a WhatsApp conversation file, in one completed Import Run.
 async fn import_whatsapp(state: &crate::server::AppState, token: &str, body: String) {
-    let path = batches_path(state, token, "whatsapp").await;
-    let (status, text) =
-        crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
-    assert!(status.is_success(), "{status} {text}");
-    let _: serde_json::Value = post_json(
+    import_one_batch_requesting(
         state,
-        &path.replace("/batches", "/complete"),
         token,
-        serde_json::json!({ "status": "completed" }),
+        serde_json::json!({ "source": "whatsapp" }),
+        body,
     )
     .await;
 }
