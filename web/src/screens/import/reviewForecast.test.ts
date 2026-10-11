@@ -1,20 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import { MIB } from "../../test/units";
 import { estimatePiles, estimatesHeading, filesOverLimit, mediaJobVerb } from "./reviewForecast";
-
-const MB = 1024 * 1024;
 
 function file(
   name: string,
-  sizeMb: number,
+  sizeMib: number,
   verdict: AttachmentForecast["verdict"],
-  estimateMb = sizeMb,
+  estimateMib = sizeMib,
 ): AttachmentForecast {
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MB,
-    estimateBytes: estimateMb * MB,
+    sizeBytes: sizeMib * MIB,
+    estimateBytes: estimateMib * MIB,
     verdict,
   };
 }
@@ -28,7 +27,7 @@ function summary(forecasts: AttachmentForecast[]): StagingSummary {
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,
-    assetMaxBytes: 50 * MB,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
   };
 }
