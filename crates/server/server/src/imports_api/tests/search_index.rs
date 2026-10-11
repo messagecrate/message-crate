@@ -21,7 +21,7 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -134,7 +134,7 @@ async fn deferred_fts_indexes_attachment_text_after_promote() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
@@ -176,29 +176,6 @@ fn one_message_batch(
     format!("{header}\n{message}\n")
 }
 
-/// Import `body` as one batch of a new `whatsapp` run in `mode`.
-async fn import_batch(state: &crate::server::AppState, token: &str, mode: &str, body: String) {
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": "whatsapp", "mode": mode }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let path = format!("/v1/imports/{id}/batches");
-    let (status, text) =
-        crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
-}
-
 /// The texts of the messages `GET /v1/messages?q=` finds, and its `total`.
 async fn message_search(
     state: &crate::server::AppState,
@@ -226,9 +203,10 @@ async fn search_forgets_the_attachment_name_of_a_deleted_message() {
         crate::test_support::register_via_api(&fixture.state, "importer", "hunter2hunter2").await;
     let (state, token) = (&fixture.state, account.token.as_str());
 
-    import_batch(
+    import_one_batch(
         state,
         token,
+        "whatsapp",
         "append",
         one_message_batch(
             "+15555550107",
@@ -252,9 +230,10 @@ async fn search_forgets_the_attachment_name_of_a_deleted_message() {
     .await;
     assert_eq!(message_search(state, token, "zzinvoice").await, (vec![], 0));
 
-    import_batch(
+    import_one_batch(
         state,
         token,
+        "whatsapp",
         "append",
         one_message_batch("+15555550108", "g-new", "lunch tomorrow", None),
     )

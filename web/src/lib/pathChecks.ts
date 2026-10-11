@@ -1,11 +1,28 @@
-import { type PathStat as DesktopPathStat, invokePathStat, type PathUnreadable } from "./tauri";
+import {
+  type PathStat as DesktopPathStat,
+  invokeHomeDir,
+  invokePathStat,
+  type PathUnreadable,
+} from "./tauri";
+
+/** An operating system the desktop app ships for, as the app names it. */
+export type DesktopOs = "macos" | "windows" | "linux";
 
 /**
- * Why the Import form knows nothing about a path: the operating system
- * refused to describe it (`PathUnreadable`), or the desktop app's check
- * itself failed (`check_failed`), which says nothing about the path at all.
+ * Why the Import form knows nothing about a path: the operating system would
+ * not let the app read it (`permission_denied`, with the operating system,
+ * which decides how to give the app access), refused for another reason
+ * (`other`), or the desktop app's check itself failed (`check_failed`), which
+ * says nothing about the path at all.
  */
-export type ImportPathUnknown = PathUnreadable | { kind: "check_failed"; reason: string };
+export type ImportPathUnknown =
+  | {
+      kind: "permission_denied";
+      reason: string;
+      /** The operating system that refused; null when the desktop app could not say. */
+      os: DesktopOs | null;
+    }
+  | { kind: "other" | "check_failed"; reason: string };
 
 /**
  * What the Import form knows about a path the person typed or picked. When
@@ -25,20 +42,80 @@ export type PathRequirement = { expected: PathKind; kindError: string };
 export const PATH_MISSING = "This path does not exist.";
 
 /**
- * What the form says about a path it knows nothing about. Such a path may
- * well be there, so it is never `PATH_MISSING`. A permission refusal says
- * what lets Message Crate read it; a failed check says the path was never
- * looked at, so it does not send the person to change permissions.
+ * What gives Message Crate access to a path the operating system `os` would
+ * not let it read, as a sentence to follow the refusal, or "" when there is
+ * nothing to say. macOS protects some directories until the app has Full
+ * Disk Access; on Windows and Linux the app reads as the person's own user,
+ * so it is that user's permission that counts.
  */
-function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
-  const said = reason.trim().replace(/\.$/, "");
-  switch (kind) {
+function accessSentence(os: DesktopOs | null): string {
+  switch (os) {
+    case "macos":
+      return " Give Message Crate access to it, such as Full Disk Access in System Settings.";
+    case "windows":
+      return " Check that your Windows user may read it, on the Security tab of its Properties.";
+    case "linux":
+      return " Check that your Linux user may read it.";
+    case null:
+      return "";
+  }
+}
+
+/**
+ * The operating system this desktop app runs on, from its answer to
+ * `home_dir`. Null on any other system, and when `home_dir` fails, which it
+ * does only when the system reports no home directory for the person's user.
+ * A message built with a null system says nothing about access.
+ */
+export async function desktopOs(): Promise<DesktopOs | null> {
+  try {
+    return toDesktopOs((await invokeHomeDir()).os);
+  } catch {
+    return null;
+  }
+}
+
+/** An operating system name from the desktop app, or null for one it does not ship for. */
+export function toDesktopOs(os: string): DesktopOs | null {
+  return os === "macos" || os === "windows" || os === "linux" ? os : null;
+}
+
+/**
+ * Add the operating system to a refusal from the desktop app's `path_stat`
+ * when it is a permission refusal, so its message can say how to give
+ * Message Crate access there. `os` is asked only for a permission refusal;
+ * a caller describing several refusals passes one that asks the app once.
+ */
+export async function describeUnreadable(
+  unreadable: PathUnreadable,
+  os: () => Promise<DesktopOs | null> = desktopOs,
+): Promise<ImportPathUnknown> {
+  if (unreadable.kind !== "permission_denied") {
+    return { kind: unreadable.kind, reason: unreadable.reason };
+  }
+  return { kind: "permission_denied", reason: unreadable.reason, os: await os() };
+}
+
+/**
+ * What Message Crate says about a path it knows nothing about, naming the
+ * path as `subject`: "this path" on the Import form, "it" after the path
+ * itself. Such a path may well be there, so it is never `PATH_MISSING`. A
+ * permission refusal says what lets Message Crate read it on the operating
+ * system that refused; a failed check says the path was never looked at, so
+ * it does not send the person to change permissions.
+ */
+export function unknownPathMessage(
+  unknown: ImportPathUnknown,
+  subject: "this path" | "it" = "this path",
+): string {
+  const said = unknown.reason.trim().replace(/\.$/, "");
+  switch (unknown.kind) {
     case "permission_denied":
-      return `Message Crate isn't allowed to read this path. The system says: ${said}. Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.`;
+      return `Message Crate isn't allowed to read ${subject}. The system says: ${said}.${accessSentence(unknown.os)}`;
     case "other":
-      return `Message Crate could not read this path. The system says: ${said}.`;
+      return `Message Crate could not read ${subject}. The system says: ${said}.`;
     case "check_failed":
-      return `Message Crate could not check this path. The check failed with: ${said}.`;
+      return `Message Crate could not check ${subject}. The check failed with: ${said}.`;
   }
 }
 
@@ -51,8 +128,9 @@ function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
 export async function probePath(path: string): Promise<ImportPathStat | null> {
   const trimmed = path.trim();
   if (trimmed === "") return null;
+  let stat: DesktopPathStat;
   try {
-    return await invokePathStat(trimmed);
+    stat = await invokePathStat(trimmed);
   } catch (err) {
     return {
       exists: false,
@@ -64,6 +142,12 @@ export async function probePath(path: string): Promise<ImportPathStat | null> {
       },
     };
   }
+  return {
+    exists: stat.exists,
+    isFile: stat.isFile,
+    isDirectory: stat.isDirectory,
+    unreadable: stat.unreadable && (await describeUnreadable(stat.unreadable)),
+  };
 }
 
 /**

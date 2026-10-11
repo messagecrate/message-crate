@@ -31,31 +31,14 @@ async fn import_run(
     phone_country: Option<&str>,
     body: String,
 ) {
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    import_one_batch_requesting(
         state,
-        "/v1/imports",
         token,
         serde_json::json!({
             "source": source,
             "phone_country": phone_country,
         }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
         body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
     )
     .await;
 }

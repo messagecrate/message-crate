@@ -1,5 +1,5 @@
-//! Writes the demo's address book and the small config files the server reads
-//! when it builds the Demo Account.
+//! Writes the demo's address book, which the server loads when it builds the
+//! Demo Account.
 
 use std::fmt::Write as _;
 use std::fs;
@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use crate::personas::{OWNER_EMAIL, OWNER_PHONE, Roster};
+use crate::personas::Roster;
 
 /// The columns of the address book, as the server's Export writes them.
 const ADDRESS_BOOK_HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
@@ -66,35 +66,6 @@ fn csv_field(value: &str) -> String {
     } else {
         value.to_string()
     }
-}
-
-/// Write `seed.toml` with the demo account name, phone, and username.
-///
-/// The server reads this file only when it builds the Demo Account:
-/// `reset-demo`, `serve` on a new database, and the Owner Home action.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be written.
-pub fn write_seed_toml(config_dir: &Path) -> Result<()> {
-    let path = config_dir.join("seed.toml");
-    let body = format!(
-        r#"# Demo account identity, read only when the server builds the Demo Account
-# (`reset-demo`, `serve` on a new database, the Owner Home action).
-
-[owner]
-display_name = "Demo User"
-# (raw handle, handle type) pairs linked into `account_handles` by reset-demo.
-handle_specs = [["{OWNER_PHONE}", "phone"]]
-# Each email is an identity too: reset-demo links it into `account_handles`.
-emails = ["{OWNER_EMAIL}"]
-
-[account]
-username = "demo"
-"#
-    );
-    fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
-    Ok(())
 }
 
 #[cfg(test)]

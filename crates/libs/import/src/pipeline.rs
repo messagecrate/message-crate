@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::Result;
-use message_crate_core::{RunLogLevel, check_cancel, count_of};
+use message_crate_core::{RunLogLevel, count_of};
 use message_crate_http::HttpError;
 
 use crate::directory::file_label;
@@ -44,7 +44,8 @@ pub(crate) enum ChunkStep {
     Continue,
     /// A flush failed for this conversation; drop its remaining chunks but keep the run going.
     FileFailed,
-    /// The run was cancelled and must stop.
+    /// The run must stop: the caller cancelled it, or the server refused the
+    /// session.
     Abort,
 }
 
@@ -413,8 +414,8 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the run was cancelled, which
-    /// includes a session the server refused. Otherwise the failure is
+    /// A failed request stops the run only when the caller cancelled it or
+    /// the server refused the session. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
     ///
     /// # Errors
@@ -427,7 +428,7 @@ impl<'a> ImportPipeline<'a> {
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
         let request_ok = self.flush(wait, out)?;
-        Ok(request_ok || !self.is_cancelled())
+        Ok(request_ok || !self.must_stop())
     }
 
     /// Finish the current in-flight import (if any), then start the pending batch (if any).
@@ -451,8 +452,9 @@ impl<'a> ImportPipeline<'a> {
         let Some(batch) = self.pending.take() else {
             return Ok(ok);
         };
-        // Do not start a new import after cancel; leave pending unsent.
-        if self.is_cancelled() {
+        // Do not start a new import after a cancel or a refused session;
+        // leave pending unsent.
+        if self.must_stop() {
             return Ok(false);
         }
         self.inflight = Some(self.spawn_import(batch));
@@ -727,9 +729,10 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the caller asked the run to stop.
-    fn is_cancelled(&self) -> bool {
-        check_cancel(&self.cfg.cancel).is_err()
+    /// True once the run must stop: the caller cancelled it, or the server
+    /// refused the session.
+    fn must_stop(&self) -> bool {
+        self.session.check_stop().is_err()
     }
 
     /// Lock the shared journal (panics only if another thread panicked while holding it).

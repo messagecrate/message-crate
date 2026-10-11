@@ -11,7 +11,8 @@ vocabulary. Read it before writing any of those.
 ## Git Workflow
 
 - Every change goes on a branch or worktree. `main` takes pull requests only:
-  its ruleset requires one, plus the ten `ci.yml` checks.
+  its ruleset requires one, plus the `ci.yml` checks that
+  `docs/adr/0007-ci-is-the-only-gate.md` names as required.
 - Before pushing, run `git fetch`, then read the pull request's real state
   with `gh pr list`, `gh pr view <number> --json <fields>`, and
   `gh pr checks <number>`.
@@ -326,9 +327,9 @@ The product has two pieces:
 | Database               | SQLite file at `data/messagecrate.db`. Table SQL lives in `schema/sql/`. The server fingerprints those files at compile time (`SCHEMA_FINGERPRINT` in `db/schema.rs`) and rebuilds a database stamped with any other fingerprint empty, so a schema change is only a change to the SQL: nothing to bump. The rebuilt database needs a fresh import. |
 | Desktop app            | Tauri 2 native window. Vite 8 + React 19 + TypeScript SPA in `web/`. React Router 7, React Aria, Tailwind CSS 4. Vitest + Biome.  |
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
-| Node                   | Node.js 22+ for `web/`, `docs/`, and Docker frontend builds.                                                                      |
+| Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. `.nvmrc` holds the major and every workflow that installs Node.js reads it. `scripts/check-docker-context.sh` fails when the Dockerfile's frontend-builder stage is on another Node.js major. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
-| Packaging              | Docker (Node 22 + Rust image). GitHub Actions on `v*` tags builds the image and Tauri installers.                                 |
+| Packaging              | Docker (Node.js 24 frontend build, Rust build, Node.js 20 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
@@ -407,13 +408,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install tauri-cli --version "^2"
 ```
 
-**3. Node.js 22+**. Distro Node is usually too old. nvm example:
+**3. Node.js 24**, the major in `.nvmrc`. Distro Node is usually too old. nvm example:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 # new shell, then:
-nvm install 22
-nvm use 22
+nvm install 24
+nvm use 24
 ```
 
 **4. Optional helpers**
@@ -459,6 +460,16 @@ Work from the repository root. The server process must be running before the web
 `serve` adds the Demo Account to a database that does not exist yet, so a plain first start has it too; `--reset` creates the database empty first (`create-database`). `--reset` and `--reset-demo` cannot be combined. Neither claims the Message Crate; add `--owner` to either for that. `--owner` refuses to run unless `[server] bind` in `config/config.toml` is `127.0.0.1`, `localhost` or `[::1]`, because `admin` / `admin` must never be reachable from another machine. It also refuses a bind written other than as one `bind = "..."` line under `[server]`, because the script reads only that form. The check runs before anything is wiped. `./scripts/run-dev.sh --help` lists every flag with examples. The script writes `config/config.toml` from the example (CORS for Vite `:5173` enabled) only when the file is missing. Later sessions omit `--reset-demo` so the existing database stays.
 
 API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--owner`, log in as `admin` / `admin`. Otherwise create the owner in the UI.
+
+The server is up when `GET http://127.0.0.1:8080/health` answers `200 OK` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404 Not Found`. The host and port are `[server] bind` in `config/config.toml`, `127.0.0.1:8080` when that line is absent or unchanged. The line below uses `127.0.0.1:8080`, so a changed `bind` needs the same address in it.
+
+The server listens only after any seeding: `--reset-demo` seeds before `serve` starts, and `serve` seeds a database that does not exist yet before it listens. A `200 OK` does not say which process answered, so `/health` must fail before `./scripts/run-dev.sh` starts. Otherwise a server left running (an earlier run, the one `cargo tauri dev` started, the Docker stack) passes the wait.
+
+The line below asks once a second for at most 15 minutes, then asks once more, so it exits non-zero when the server never came up. The 15 minutes cover a first compile and the `--reset-demo --large` seed, which takes about 3 minutes on the debug build.
+
+```bash
+for _ in $(seq 900); do curl -fs --max-time 2 -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; curl -fs --max-time 2 http://127.0.0.1:8080/health
+```
 
 Restart terminal 1 after edits under `crates/server/server/` (debug `cargo run`; no hot reload).
 
@@ -522,10 +533,11 @@ cargo build --manifest-path src-tauri/Cargo.toml
 ./scripts/mutants.sh --file crates/libs/phone/src/lib.rs
 
 # Start docker/compose.release.yml on a built image under its own project,
-# volume and port (127.0.0.1:18080), check it drops its privileges and
-# serves the Demo Account, then remove it. CI's "Docker image builds" job and
-# nightly.yml run it. It exercises no import. --website also uses the website
-# it serves in a headless browser (below); nightly.yml passes it.
+# volume and port (127.0.0.1:18080), check it drops its privileges, serves
+# the Demo Account, and imports a conversation with a video, makes its
+# Thumbnail and Preview and exports it under them, then remove it. CI's
+# "Docker image builds" job and nightly.yml run it. --website also uses the
+# website it serves in a headless browser (below); nightly.yml passes it.
 docker build -f docker/Dockerfile -t message-crate-server:check .
 ./scripts/check-docker-compose.sh message-crate-server:check
 ./scripts/check-docker-compose.sh --website message-crate-server:check
@@ -558,7 +570,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs everything CI runs, serially, starting with `check-pr.sh`. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially on the machine it is started on, starting with `check-pr.sh`, except the Docker image build. On Linux or macOS it skips the Windows-only cases of the server config tests, which CI's `windows-config` job runs. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 

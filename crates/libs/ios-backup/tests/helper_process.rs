@@ -16,8 +16,14 @@ fn identities_come_back_cleaned_from_the_helper_process() {
     let db_path = write_chat_db(dir.path());
     let scratch_root = tempfile::tempdir().unwrap();
 
-    let mut identities =
-        ios_backup::backup_identities(&db_path, false, None, scratch_root.path()).unwrap();
+    let mut identities = ios_backup::backup_identities(
+        &db_path,
+        false,
+        None,
+        scratch_root.path(),
+        message_crate_core::LogSink::none(),
+    )
+    .unwrap();
     let left: Vec<_> = fs::read_dir(scratch_root.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name())

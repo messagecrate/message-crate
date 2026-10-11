@@ -72,7 +72,8 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 message-crate-core = { path = "../crates/core/message-crate-core", features = ["testutil"] }
 # `testutil` builds the sample conversation the Export Directory tests write.
 message-ir = { path = "../crates/libs/ir", features = ["testutil"] }
-# `testutil` gives the lock a test holds while it names a Tools Directory.
+# `testutil` gives the lock a test holds while it names a Tools Directory,
+# and tells a test whether this account may read any file.
 media = { path = "../crates/libs/media", features = ["testutil"] }
 httpmock = "0.8"
 # Holds a test port with a socket that never listens (`local_server` tests).

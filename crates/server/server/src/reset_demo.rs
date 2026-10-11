@@ -16,8 +16,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
+use demo_seed::bundle::{DemoSeed, IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE, read_seed_toml};
 use message_ir::IdentityType;
-use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 
 use crate::config::Config;
@@ -38,10 +38,6 @@ use crate::progress::Progress;
 /// Stable id of the Demo Account, which every demo build writes.
 pub use crate::db::account_profile::DEMO_ACCOUNT_ID;
 
-const IMESSAGE_SOURCE: &str = "imessage";
-const SBR_SOURCE: &str = "sms-backup-restore";
-const WHATSAPP_SOURCE: &str = "whatsapp";
-
 /// Counts reported when a demo reset finishes.
 #[derive(Debug)]
 pub struct ResetDemoStats {
@@ -55,34 +51,6 @@ pub struct ResetDemoStats {
     pub dedupe_keys_filled: u64,
     /// Stats from the post-import media processing pass.
     pub process_assets: process_assets::ProcessAssetsStats,
-}
-
-/// `config/seed.toml` in a demo bundle. A key it does not use is an error,
-/// never ignored (`deny_unknown_fields` here and on both sections): a misspelt
-/// key would seed the Demo Account without what the line asked for.
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DemoSeed {
-    owner: DemoOwner,
-    account: DemoAccount,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DemoOwner {
-    display_name: String,
-    /// `(raw handle, handle type)` pairs linked into `account_handles`.
-    #[serde(default)]
-    handle_specs: Vec<(String, IdentityType)>,
-    /// Email identities, linked into `account_handles`.
-    #[serde(default)]
-    emails: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct DemoAccount {
-    username: String,
 }
 
 struct PreparedBundle {
@@ -885,7 +853,7 @@ async fn import_demo_sources_with(
                     progress,
                     ..ImportOptions::fixed(FixedImportArgs {
                         assets_dir: &assets_dir,
-                        asset_root: export_dir,
+                        asset_root: Some(export_dir),
                         mode,
                         source: source.source,
                         account_id,
@@ -982,7 +950,7 @@ fn validate_prepared_bundle(bundle: &Path) -> Result<PreparedBundle> {
         );
     }
     Ok(PreparedBundle {
-        seed: load_demo_seed(&demo_seed)?,
+        seed: read_seed_toml(&demo_seed)?,
         imessage_dir,
         sbr_dir,
         whatsapp_dir,
@@ -2032,13 +2000,6 @@ async fn vacuum_after_demo(db: &SqlitePool, progress: Progress) {
         }
     };
     maintenance::vacuum_import_tables(&mut conn, progress).await;
-}
-
-/// Parse `config/seed.toml` from the bundle.
-fn load_demo_seed(path: &Path) -> Result<DemoSeed> {
-    let text = fs::read_to_string(path)
-        .with_context(|| format!("failed to read demo seed {}", path.display()))?;
-    toml::from_str(&text).with_context(|| format!("failed to parse demo seed {}", path.display()))
 }
 
 /// Seed the demo account row and profile in the database `db`.

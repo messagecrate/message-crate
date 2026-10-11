@@ -152,6 +152,13 @@ On Linux and macOS it also needs permission to run:
 chmod +x ~/message-crate/tools/wtsexporter
 ```
 
+The permission has to be for the account that runs the app.
+A copy that another account owns, such as one root put there, can have permission to run for its owner alone.
+The Import form and **Settings → System** then say `wtsexporter` isn't used because it `is not executable by this account`.
+The account that owns the file runs `chmod +x` on it, or gives the account that runs the app ownership of it.
+The same reason shows when the disk the Tools Directory is on is mounted `noexec`, which lets no program on it run.
+Mounting it without `noexec` fixes that.
+
 The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds.
 [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
@@ -237,6 +244,7 @@ A failed download is tried again the next time the app starts, or at once with *
 | `The file could not be written to or read back from the Tools Directory` | The disk is full or failing, or the Tools Directory can't be written to. The reason ends with the operating system's words. | Free space on that disk, or give the account that runs the app permission to write to the Tools Directory, then **Try again**. |
 | `The downloaded file could not be unpacked` | The file arrived and passed its checksum, and isn't a gzip file the app can unpack. A damaged file on GitHub, or a checksum this app carries for the wrong file, does this. | **Try again**. A failure that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the reason it names, and meanwhile a copy put in the Tools Directory by hand is used. |
 | `ffmpeg in the Tools Directory doesn't run on this computer`, or ffprobe or wtsexporter | The file passed its checksum and is in place, and the computer won't run it. The app doesn't download it again, because the download would be the same file. | For ffmpeg and ffprobe on Linux and Windows, the system's package manager, above, as the reason itself says. On macOS the app doesn't see Homebrew's copy, so [macOS blocks a program](#macos-blocks-a-program) is the fix there. For `wtsexporter`, `chmod +x` on Linux and macOS, and on macOS [macOS blocks a program](#macos-blocks-a-program) too. |
+| `ffmpeg in the Tools Directory could not be marked as a program that runs`, or ffprobe or wtsexporter | A copy found in the Tools Directory that the app didn't put there passed its checksum, doesn't run, and the app couldn't mark it as a program that runs. The reason ends with the operating system's words, most often that the file belongs to another account. The app tries again each time it starts. | Give the account that runs the app ownership of the file, or run `chmod +x` on it as its owner, then start the app again. For ffmpeg and ffprobe, the system's package manager, above, works too. |
 | `The download was interrupted` | The download stopped partway through. | **Try again**. |
 | `The download could not be started` | The app couldn't start the download at all. | Starting the app again. |
 

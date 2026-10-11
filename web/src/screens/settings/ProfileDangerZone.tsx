@@ -4,15 +4,17 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
-import { errorText } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
-import { accountRunDirectories } from "../../lib/importRun";
+import { type AccountRunDirectories, accountRunDirectories } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
 import { isTauri } from "../../lib/tauri-check";
 import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
 import { dangerButtonClass } from "./profileStyles";
+
+const NO_DIRECTORIES: AccountRunDirectories = { found: [], unreadable: [] };
 
 const CANNOT_DELETE = "Deleting is not permitted for this account. The owner can delete it.";
 
@@ -25,9 +27,11 @@ const dangerZoneButtonClass = `${dangerButtonClass} !box-border !w-auto !min-w-[
  * it has one (`hasPassword`) and logs out. In the desktop app it also deletes
  * the directories of the account's Import Runs on this computer, which the dialog names
  * first: the server deletes the account's Import Runs with it, so nothing
- * would offer those directories again. Given `managedAccountId`, the owner is deleting someone
- * else's: no password is asked, because the owner does not know it, and the
- * owner lands back on User Accounts. The owner deletes on the strength of the
+ * would offer those directories again. One the app may not read is named,
+ * with the system's reason, once the account is deleted. Given
+ * `managedAccountId`, the owner is deleting someone else's: no password is
+ * asked, because the owner does not know it, and the owner lands back on
+ * User Accounts. The owner deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
  *
  * `canDelete` is the account's own `delete` permission. Deleting the account
@@ -81,8 +85,9 @@ export function ProfileDangerZone({
   );
   // A look that failed deletes nothing, as the dialog says, even with an
   // earlier list still cached.
-  const directoriesToDelete =
-    checkDirectories && !runDirectories.isError ? (runDirectories.data ?? []) : [];
+  const accountDirectories =
+    (checkDirectories && !runDirectories.isError ? runDirectories.data : undefined) ??
+    NO_DIRECTORIES;
 
   const deleteAllMessages = async () => {
     if (messagesFixed || notPermitted) return;
@@ -92,7 +97,7 @@ export function ProfileDangerZone({
       if (managed) await removeManagedMessages.mutateAsync(managedAccountId);
       else await deleteAllMessagesRoute({ confirm: true });
     } catch (e) {
-      setDangerError(errorText(e));
+      setDangerError(errorLine(e));
     } finally {
       // The owner's deletion is a mutation that marks the cache stale itself.
       if (!managed) cache.invalidateAccount();
@@ -119,10 +124,10 @@ export function ProfileDangerZone({
       // named are deleted once the session is revoked.
       void logout({
         ask: false,
-        deletedAccountDirectories: directoriesToDelete,
+        deletedAccountDirectories: accountDirectories,
       });
     } catch (e) {
-      setDangerError(errorText(e));
+      setDangerError(errorLine(e));
     } finally {
       setDeleting(false);
     }
@@ -254,7 +259,7 @@ export function ProfileDangerZone({
                   // A look still under way holds the confirm, even with an earlier
                   // list cached: that list may miss a directory made since.
                   checking: runDirectories.isFetching,
-                  paths: directoriesToDelete,
+                  paths: accountDirectories.found,
                   error: runDirectories.error?.message ?? "",
                 }
               : undefined

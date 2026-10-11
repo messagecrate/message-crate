@@ -14,8 +14,13 @@ import { SystemSection } from "./SystemSection";
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
 const toolsStatus = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
-const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
-const setStagingRoot = vi.hoisted(() => vi.fn());
+const desktopStaging = vi.hoisted(() => ({
+  root: "",
+  defaultRoot: "/home/demo/message-crate",
+  /** Set to make reading the Staging Directory fail with this text. */
+  readError: null as string | null,
+}));
+const setStagingDirectory = vi.hoisted(() => vi.fn());
 const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -33,11 +38,14 @@ vi.mock("../../lib/tauri-check", () => ({
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
   invokeToolsStatus: () => toolsStatus(),
-  invokeStagingRoot: async () => ({
-    root: desktopStaging.root || desktopStaging.defaultRoot,
-    defaultRoot: desktopStaging.defaultRoot,
-  }),
-  invokeSetStagingRoot: (root: string) => setStagingRoot(root),
+  invokeStagingDirectory: async () => {
+    if (desktopStaging.readError !== null) throw desktopStaging.readError;
+    return {
+      root: desktopStaging.root || desktopStaging.defaultRoot,
+      defaultRoot: desktopStaging.defaultRoot,
+    };
+  },
+  invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
   invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
   invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
   invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
@@ -52,8 +60,9 @@ beforeEach(() => {
   localStorage.clear();
   tauriState.isTauri = true;
   desktopStaging.root = "";
-  setStagingRoot.mockReset();
-  setStagingRoot.mockImplementation(async (root: string) => {
+  desktopStaging.readError = null;
+  setStagingDirectory.mockReset();
+  setStagingDirectory.mockImplementation(async (root: string) => {
     // The desktop process refuses a relative directory, as resolve_staging_root does.
     if (root !== "" && !root.startsWith("/")) throw "The staging directory must be a full path.";
     desktopStaging.root = root === desktopStaging.defaultRoot ? "" : root;
@@ -212,14 +221,14 @@ describe("SystemSection", () => {
     await fill(user, stagingInput, "/tmp/my-staging");
 
     await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
-    expect(setStagingRoot).toHaveBeenLastCalledWith("/tmp/my-staging");
+    expect(setStagingDirectory).toHaveBeenLastCalledWith("/tmp/my-staging");
   });
 
   it("says why the desktop process refused a staging directory", async () => {
     const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
-    setStagingRoot.mockRejectedValue("Could not save staging.json: disk full");
+    setStagingDirectory.mockRejectedValue("Could not save staging.json: disk full");
 
     await user.type(stagingInput, "/x");
 
@@ -241,7 +250,7 @@ describe("SystemSection", () => {
     (stagingInput as HTMLInputElement).select();
     // The desktop process accepts the pasted directory, but answers late.
     let answer!: () => void;
-    setStagingRoot.mockImplementationOnce(
+    setStagingDirectory.mockImplementationOnce(
       (root: string) =>
         new Promise((resolve) => {
           answer = () => {
@@ -280,6 +289,24 @@ describe("SystemSection", () => {
 
     expect(stagingInput).toHaveValue("/srv/staging");
     expect(screen.queryByText(/must be a full path/)).toBeNull();
+  });
+
+  it("says why the staging directory could not be read, and reads it again when the field is left", async () => {
+    const user = setupUser();
+    desktopStaging.readError = "Could not read staging.json: permission denied";
+    desktopStaging.root = "/srv/staging";
+    render(<SystemSection />);
+
+    expect(await screen.findByText(/permission denied/)).toBeInTheDocument();
+    const stagingInput = screen.getByLabelText("Staging directory");
+    expect(stagingInput).toHaveValue("");
+
+    desktopStaging.readError = null;
+    await user.click(stagingInput);
+    await user.tab();
+
+    await waitFor(() => expect(stagingInput).toHaveValue("/srv/staging"));
+    expect(screen.queryByText(/permission denied/)).toBeNull();
   });
 
   it("shows where ffmpeg, ffprobe and wtsexporter were found, and the Tools Directory", async () => {

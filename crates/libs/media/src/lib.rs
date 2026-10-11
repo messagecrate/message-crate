@@ -34,7 +34,7 @@ pub use tools::{
 };
 pub use versions::{
     THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,
-    preview_extension,
+    preview_extension, shown_as_is_by_type,
 };
 
 use std::fmt;

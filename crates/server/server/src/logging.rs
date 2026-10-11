@@ -41,7 +41,9 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 
 /// Install the subscriber: stderr, and the server's log once
 /// [`write_files_in`] opens it. Call once, before any work; a second call is
-/// ignored so tests that build a server in-process do not panic.
+/// ignored so tests that build a server in-process do not panic. A unit
+/// test never calls it: the log capture of unit tests installs its own
+/// process-wide subscriber.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = tracing_subscriber::registry()
@@ -73,15 +75,73 @@ pub fn write_files_in(data_dir: &Path) -> std::io::Result<LogFiles> {
 }
 
 /// A subscriber that writes, at `filter`, to `files` alone, formatted as the
-/// server's log is. For a test that reads what a run left in the log.
+/// server's log is. For a test that reads what a run left in the log. Its
+/// first call also installs [`AskEachTime`] process-wide, through
+/// [`install_ask_each_time`].
 #[cfg(test)]
 pub(crate) fn subscriber_for(
     files: LogFiles,
     filter: &str,
 ) -> impl tracing::Subscriber + Send + Sync {
+    install_ask_each_time();
     tracing_subscriber::registry()
         .with(EnvFilter::new(filter))
         .with(file_layer(FileTarget::Files(files)))
+}
+
+/// Install [`AskEachTime`] as the process-wide subscriber, once.
+///
+/// A test installs its log capture as its thread's default, beside tests on
+/// other threads that install none. `tracing` caches, once per process,
+/// whether any subscriber wants each `tracing::warn!` and the like. While
+/// exactly one subscriber exists in the process, it fills that cache by
+/// asking only the subscriber of the thread that first reaches the line. A
+/// test thread with no subscriber then marks the line as wanted by no one,
+/// and the test whose subscriber does want it reads an empty log (#2824).
+/// With a process-wide subscriber, at least two subscribers exist whenever
+/// a test captures the log, so `tracing` asks every one of them.
+#[cfg(test)]
+fn install_ask_each_time() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        tracing::subscriber::set_global_default(AskEachTime)
+            .expect("no unit test calls `init` or installs a process-wide subscriber");
+    });
+}
+
+/// The process-wide subscriber of a test run: it records nothing, and
+/// answers "ask me each time" for every line, so no line's cached answer is
+/// ever "no one wants it" and each line asks the subscriber of the thread
+/// it runs on.
+#[cfg(test)]
+struct AskEachTime;
+
+#[cfg(test)]
+impl tracing::Subscriber for AskEachTime {
+    fn register_callsite(
+        &self,
+        _: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
+    }
+
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        false
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, _: &tracing::Event<'_>) {}
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 /// The server's log layer: the stderr format without colour, one event per

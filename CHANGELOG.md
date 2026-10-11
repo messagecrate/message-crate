@@ -183,6 +183,21 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+
+- 2026-10-11: The way the Demo Account's generator and the server agree on
+  what a demo bundle holds was reworked inside, with nothing visible (#2265).
+
+- 2026-10-11: The way an Upload and an Export remember what they already
+  did for each server and account was reworked inside, with nothing visible
+  (#2253).
+
 - 2026-10-11: The way the Import screen moves between the form, a running
   import and its reviews was reworked inside, with nothing visible (#2252).
 
@@ -358,6 +373,26 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **Deleting an account names an Import Run's directory the
+  desktop app may not read.** When a person deletes their own account in
+  the desktop app, the app deletes the directories of the account's Import
+  Runs on this computer. A directory the system would not let Message Crate
+  read, such as one macOS protects until the app has Full Disk Access, was
+  skipped without a word and could stay on disk with the deleted account's
+  messages. It is now listed once the account is deleted, with what the
+  system said. It may be on this computer, and it can be deleted by hand
+  (#2651).
+
+- 2026-10-11: **Settings says why a downloaded tool found in the Tools
+  Directory could not be made to run.** When the desktop app finds ffmpeg,
+  ffprobe or wtsexporter already in its Tools Directory, it marks the file
+  as a program it can run. When the computer refused that, Settings said
+  only that the tool doesn't run there, and from the next start on it no
+  longer tried. It now says the tool could not be marked as a program that
+  runs, and what the computer refused, such as a permission error. The app
+  tries again each time it starts, so fixing the permission is enough
+  (#2255).
+
 - 2026-10-11: **No account is created after the owner closes registration.**
   A stranger's registration that arrived just as the owner closed
   registration could still create an account. Whether registration is open
@@ -531,6 +566,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **A wtsexporter the app's account can't run no longer shows
+  as found.** The desktop app took a `wtsexporter` in its Tools Directory as
+  ready when the file had permission to run for any account, so a copy that
+  root owns and only root may run showed as found in Settings and on the
+  Import form, and the WhatsApp import failed only once it started the
+  program. Settings and the Import form now say `wtsexporter` isn't used
+  because it is not executable by this account, and how to fix that
+  (#2793).
+
 - 2026-10-11: **A downloaded program that does not unpack says so.** When
   ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
   Settings and a run waiting for it said the file could not be written to
@@ -617,6 +661,41 @@ released versions carry their date on the heading.
   log that it happened. When H.264 fails as well, what is reported for the
   video names both failures (#2256).
 
+- 2026-10-11: **A path the desktop app may not read says what to check on
+  your operating system.** The Import form, and the list of Import Run
+  directories left after an account is deleted, told people on Windows and
+  Linux to give Message Crate Full Disk Access, which is a Mac setting. The
+  message now names Full Disk Access only on a Mac. On Windows it says to
+  check that your Windows user may read the path, on the Security tab of its
+  Properties. On Linux it says to check that your Linux user may read it
+  (#2650).
+
+- 2026-10-11: **Cancelling an import at a Review deletes its files when
+  the connection drops after Message Crate took the cancel.** The desktop
+  app kept the import's staged files as if the cancel had failed, but no
+  import was left to resume or discard, so the files stayed on disk with
+  nothing that would ever delete them. The app now asks Message Crate
+  whether the import is still running, and deletes the files when it is
+  not (#2807).
+
+- 2026-10-11: **An attachment's file name in an Upload never picks up a
+  file the server already holds.** An Upload sends each attachment's file
+  first and names it by its fingerprint. The server also looked up the file
+  name the message gave inside the account's own stored files, so a name
+  that matched a half-received file or one of the server's own notes beside
+  a stored file was saved as a new attachment. The server now finds an
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
+
+- 2026-10-11: **Discarding an import keeps its files when Message Crate
+  does not take the discard.** When you discarded an import, or cancelled
+  one at a Review, and the server refused or could not be reached, the
+  desktop app deleted the import's staged files anyway, while Message Crate
+  still held the import as running. It could then be neither resumed nor
+  discarded cleanly. The files now go only once Message Crate has taken the
+  discard. Otherwise the import is offered again with what went wrong, and
+  **Discard this import** tries again (#2669).
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The
@@ -818,6 +897,14 @@ released versions carry their date on the heading.
   too.
 
 #### Browsing and search
+
+- 2026-10-11: **An attachment is opened as it is only when its contents
+  match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
+  was opened in the browser as one without anyone checking, so a file
+  named wrongly the first time, such as a PNG called a JPEG or a text file
+  called a photo, was handed to the browser as something it was not, for
+  good. The server now reads the first bytes of such a file, and one that
+  is not what it was called gets a Preview instead (#2257).
 
 - 2026-10-11: **Search finds a conversation by the name it is listed
   under.** A one-to-one conversation whose backup recorded only the

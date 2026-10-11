@@ -71,6 +71,12 @@ const invokeDeleteRunDirMock = vi.fn();
 const toolsStatusMock = vi.fn<() => Promise<ToolsStatus>>();
 const setImportStageMock = vi.fn();
 const discardImportRunMock = vi.fn();
+/** The account's running Import Run. A network that is down answers nothing. */
+const getActiveImportRunMock = vi.fn(
+  async (_signal?: AbortSignal): Promise<ActiveImportRun | null> => {
+    throw new Error("offline");
+  },
+);
 const invokeImessageBackupIdentitiesMock = vi.fn();
 const readRunRecordMock = vi.fn();
 const saveRunRecordMock = vi.fn();
@@ -133,6 +139,7 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
       completeImport: (...args) => completeImportMock(...args),
       setImportStage: (...args) => setImportStageMock(...args),
       discardImportRun: (...args) => discardImportRunMock(...args),
+      getActiveImportRun: (...args) => getActiveImportRunMock(...args),
       token: () => auth.token,
       accountId: () => auth.accountId,
       baseUrl: () => "http://127.0.0.1:8080",
@@ -371,6 +378,7 @@ describe("useImportJob wiring", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
     invokeImessageBackupIdentitiesMock.mockReset();
     // No identities read by default, so the identity check never stops an
     // existing test that doesn't set up its own probe/profile response
@@ -516,8 +524,11 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     await act(() =>
       result.current.startImport(importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }), {
-        runId: 9,
-        runDir: "/home/sam/message-crate/staging-iphone",
+        at: "upload",
+        run: {
+          runId: 9,
+          runDir: "/home/sam/message-crate/staging-iphone",
+        },
       }),
     );
 
@@ -530,11 +541,10 @@ describe("useImportJob wiring", () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     const { result } = renderJob();
     await act(() =>
-      result.current.startImport(
-        importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }),
-        undefined,
-        { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
-      ),
+      result.current.startImport(importForm({ attachmentMedia: "copy", assetMaxBytes: 7 * MIB }), {
+        at: "staging",
+        run: { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
+      }),
     );
 
     expect(getServerStateMock).not.toHaveBeenCalled();
@@ -1182,15 +1192,118 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("deletes the directory even when discarding the run fails", async () => {
-    // Either half failing must not leave the other undone: an open run with
-    // no directory blocks the next import, and a directory with no run is litter
-    // nothing will ever clean up.
+  it("keeps the directory, and shows the server's message, when the server refuses a discarded paused run (#2669)", async () => {
+    // The server still holds the run as running, so its files stay for the
+    // next visit to Import to offer it again.
+    discardImportRunMock.mockRejectedValueOnce(
+      new ApiError(422, "The import can't be discarded.", {
+        type: "https://messagecrate.app/problems/validation-failed",
+        title: "The import can't be discarded.",
+        status: 422,
+      }),
+    );
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "The import can't be discarded." });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "409 Conflict",
+      new ApiError(409, "import 7 is not running", {
+        type: "https://messagecrate.app/problems/state-conflict",
+        title: "State conflict",
+        status: 409,
+      }),
+    ],
+    [
+      "404 Not Found",
+      new ApiError(404, "import 7 not found for this account", {
+        type: "https://messagecrate.app/problems/not-found",
+        title: "Not found",
+        status: 404,
+      }),
+    ],
+  ])(
+    "deletes the directory when the server answers a discard with %s: the run is already closed",
+    async (_name, answer) => {
+      discardImportRunMock.mockRejectedValueOnce(answer);
+      const { result } = renderJob();
+      const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+      expect(outcome).toEqual({ kind: "discarded" });
+      expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+    },
+  );
+
+  it("keeps the directory when a 404 Not Found with no problem comes from in front of the server", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(404, "Not Found"));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "Not Found" });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the directory when a Cancel at a Review never reaches the server (#2669)", async () => {
     discardImportRunMock.mockRejectedValueOnce(new Error("offline"));
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(invokeDeleteRunDirMock).toHaveBeenCalled();
+
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("form");
+    expect(result.current.resumeError).toBe("offline");
+  });
+
+  it("deletes the directory when a Cancel at a Review loses the discard's answer but the run is no longer running (#2807)", async () => {
+    // The server committed the discard and the connection dropped before its
+    // answer arrived. Nothing will offer the run again, so nothing else
+    // would ever delete its directory.
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(null);
+    const { result } = renderJob();
+    await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
+    await act(() => result.current.cancelRun());
+
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({
+      run_dir: "/home/sam/message-crate/staging-iphone",
+    });
+    expect(result.current.phase).toBe("form");
+    expect(result.current.resumeError).toBeNull();
+  });
+
+  it("keeps the directory when a discard's answer is lost and the run is still the running one (#2807)", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(activeRun({ id: 7 }));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "Failed to fetch" });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes the directory when a proxy answers a discard with 504 and the run is no longer running (#2807)", async () => {
+    // The proxy's upstream timed out after the server committed the discard.
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(504, "Gateway Timeout"));
+    getActiveImportRunMock.mockResolvedValueOnce(null);
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "discarded" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+  });
+
+  it("deletes the directory when a discard's answer is lost and another run is the running one now (#2807)", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    getActiveImportRunMock.mockResolvedValueOnce(activeRun({ id: 8 }));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "discarded" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
   });
 
   it("still discards the run, and still returns to the form, even when deleting the directory fails", async () => {
@@ -1538,10 +1651,13 @@ describe("useImportJob wiring", () => {
       );
       const { result } = renderJob();
       await act(() =>
-        result.current.startImport(importForm({ attachmentMedia: "copy" }), undefined, {
-          runId: 1,
-          runDir: "/staging/run-1",
-          identities: null,
+        result.current.startImport(importForm({ attachmentMedia: "copy" }), {
+          at: "staging",
+          run: {
+            runId: 1,
+            runDir: "/staging/run-1",
+            identities: null,
+          },
         }),
       );
       await act(() => result.current.approve());
@@ -2585,10 +2701,13 @@ describe("useImportJob wiring", () => {
     it("resume_write reaches the Staging Review with the run's stored identities, without re-probing", async () => {
       const { result } = renderJob();
       await act(async () => {
-        await result.current.startImport(imessageForm(), undefined, {
-          runId: 42,
-          runDir: "/home/u/message-crate/staging-260830",
-          identities: ["+15555550110"],
+        await result.current.startImport(imessageForm(), {
+          at: "staging",
+          run: {
+            runId: 42,
+            runDir: "/home/u/message-crate/staging-260830",
+            identities: ["+15555550110"],
+          },
         });
       });
       expect(invokeImessageBackupIdentitiesMock).not.toHaveBeenCalled();
@@ -2602,11 +2721,13 @@ describe("useImportJob wiring", () => {
       await act(async () => {
         await result.current.startImport(
           { ...imessageForm(), backupPassword: "hunter2" },
-          undefined,
           {
-            runId: 42,
-            runDir: "/home/u/message-crate/staging-260830",
-            identities: null,
+            at: "staging",
+            run: {
+              runId: 42,
+              runDir: "/home/u/message-crate/staging-260830",
+              identities: null,
+            },
           },
         );
       });
@@ -2657,8 +2778,11 @@ describe("useImportJob resume path", () => {
     const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2678,8 +2802,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2702,8 +2829,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2725,9 +2855,12 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
-        approved: stagingSummary({ mediaMode: "compress" }),
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+          approved: stagingSummary({ mediaMode: "compress" }),
+        },
       });
     });
 
@@ -2762,9 +2895,12 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
-        approved,
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+          approved,
+        },
       });
     });
 
@@ -2785,8 +2921,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2830,8 +2969,11 @@ describe("useImportJob resume path", () => {
     const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -2919,7 +3061,10 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderJob();
     await act(async () => {
-      await result.current.startImport(importForm(), { runId: 7, runDir: "/staging/paused" });
+      await result.current.startImport(importForm(), {
+        at: "upload",
+        run: { runId: 7, runDir: "/staging/paused" },
+      });
     });
 
     expect(seen.record?.issues).toEqual([
@@ -2955,7 +3100,10 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderJob();
     await act(async () => {
-      await result.current.startImport(importForm(), { runId: 7, runDir: "/staging/paused" });
+      await result.current.startImport(importForm(), {
+        at: "upload",
+        run: { runId: 7, runDir: "/staging/paused" },
+      });
     });
     expect(seen.record).toBeDefined();
     readRunRecordMock.mockResolvedValue(seen.record);
@@ -2971,8 +3119,11 @@ describe("useImportJob resume path", () => {
 
     await act(async () => {
       await result.current.startImport(importForm(), {
-        runId: 99,
-        runDir: "/home/u/message-crate/staging-260830",
+        at: "upload",
+        run: {
+          runId: 99,
+          runDir: "/home/u/message-crate/staging-260830",
+        },
       });
     });
 
@@ -3089,6 +3240,7 @@ describe("useImportJob resumeAtReview", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
   });
 
   it("starts a resume with none of the fields an earlier run left, and the resumed run's directory and id", async () => {

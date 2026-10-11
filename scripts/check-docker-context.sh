@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Assert docker/Dockerfile copies every [patch.crates-io] path crate and
-# rust-toolchain.toml, that its rust base image is on the pinned minor, and
-# that every base image is pinned by tag and digest.
+# rust-toolchain.toml, that its rust base image is on the pinned minor, that
+# its frontend-builder stage is on the Node.js major in .nvmrc, and that every
+# base image, and the BuildKit frontend its syntax line names, is pinned by
+# tag and digest.
 #
 #   ./scripts/check-docker-context.sh
 #
@@ -19,6 +21,8 @@ cd "${REPO_ROOT}"
 DOCKERFILE="docker/Dockerfile"
 failures=0
 saw_patch=0
+# An image pinned by tag and digest: <image>:<tag>@sha256:<digest>.
+pinned_image_re='^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$'
 
 if [[ ! -f "${DOCKERFILE}" ]]; then
   echo "${DOCKERFILE}: missing" >&2
@@ -58,6 +62,52 @@ if [[ "${in_patch}" -eq 1 && "${saw_patch}" -eq 0 ]]; then
   echo "Cargo.toml [patch.crates-io] has no path = crates; nothing to check." >&2
 fi
 
+# The frontend. A "# syntax=" parser directive makes BuildKit pull that
+# image and parse the Dockerfile with it, so it is pinned like a base image
+# (#2670). The comment under the Dockerfile's syntax line says how its
+# digest is moved.
+#
+# This reads the directives as BuildKit's parser does
+# (frontend/dockerfile/parser/directives.go): it drops a byte order mark
+# and skips a first line that starts with "#!", then reads "# key=value"
+# lines until the first line that is not one, or whose key is not syntax,
+# escape or check. The key is in any case, and spaces may sit around the
+# "#", the key and the "=". When that finds no syntax, BuildKit reads the
+# directives again with "//" in place of "#", so this does too. BuildKit
+# pulls only the first word of the syntax value; the rest are frontend
+# arguments.
+#
+# Sets syntax_value and syntax_line when it finds a syntax directive.
+read_syntax_directive() {
+  local prefix="$1" on_first_line=1 line
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    if [[ "${on_first_line}" -eq 1 ]]; then
+      on_first_line=0
+      line="${line#$'\xEF\xBB\xBF'}"
+      [[ "${line}" == '#!'* ]] && continue
+    fi
+    [[ "${line}" =~ ^${prefix}[[:space:]]*([A-Za-z][A-Za-z0-9]*)[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]] || return 0
+    case "${BASH_REMATCH[1],,}" in
+      syntax)
+        syntax_value="${BASH_REMATCH[2]%%[[:space:]]*}"
+        syntax_line="${line}"
+        return 0
+        ;;
+      escape | check) ;;
+      *) return 0 ;;
+    esac
+  done <"${DOCKERFILE}"
+}
+syntax_value=""
+syntax_line=""
+read_syntax_directive "#"
+[[ -n "${syntax_line}" ]] || read_syntax_directive "//"
+if [[ -n "${syntax_line}" && ! "${syntax_value}" =~ ${pinned_image_re} ]]; then
+  echo "${DOCKERFILE}: pin the BuildKit frontend by tag and digest (# syntax=<image>:<tag>@sha256:<digest>): ${syntax_line}" >&2
+  failures=$((failures + 1))
+fi
+
 # The base images. A tag names whatever its publisher pushed last, so a
 # FROM by tag alone can start two builds of one commit from different
 # images. Each FROM names its digest after the tag, and Dependabot's docker
@@ -68,9 +118,11 @@ fi
 # stage (AS <name>), or scratch, has no image of its own to pin. A line
 # inside a heredoc, or after a line that ends in a backslash, is not an
 # instruction, so it is skipped. The first rust:<version> image is kept for
-# the compiler check below.
+# the compiler check below, and the frontend-builder stage's image for the
+# Node.js check.
 stages=()
 image_rust=""
+image_frontend=""
 heredoc=""
 continued=0
 while IFS= read -r line || [[ -n "${line}" ]]; do
@@ -107,15 +159,38 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   for name in "${stages[@]}"; do
     [[ "${image,,}" == "${name}" ]] && names_no_image=1
   done
-  if [[ "${names_no_image}" -eq 0 && ! "${image}" =~ ^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+  if [[ "${names_no_image}" -eq 0 && ! "${image}" =~ ${pinned_image_re} ]]; then
     echo "${DOCKERFILE}: pin the base image by tag and digest (FROM <image>:<tag>@sha256:<digest>): ${line}" >&2
     failures=$((failures + 1))
   fi
   if [[ -z "${image_rust}" && "${image}" =~ ^rust:([0-9][0-9.]*) ]]; then
     image_rust="${BASH_REMATCH[1]}"
   fi
+  [[ "${stage}" == "frontend-builder" ]] && image_frontend="${image}"
   [[ -n "${stage}" ]] && stages+=("${stage}")
 done <"${DOCKERFILE}"
+
+# Node.js. .nvmrc holds the one major that every workflow that installs
+# Node.js reads (actions/setup-node's node-version-file) and that builds web/
+# in the image, so CI tests the website on the Node.js that builds it there
+# (#2821). The file holds the major alone, and only the major of the stage's
+# tag is compared with it, so a tag such as node:24.11.1-bookworm-slim
+# passes. The runtime stage runs the server, not the build, and is not
+# checked.
+nvmrc_major="$(tr -d '[:space:]' 2>/dev/null <.nvmrc || true)"
+if [[ ! "${nvmrc_major}" =~ ^[1-9][0-9]*$ ]]; then
+  echo ".nvmrc: hold a Node.js major alone, such as 24; found '${nvmrc_major}'" >&2
+  failures=$((failures + 1))
+elif [[ -z "${image_frontend}" ]]; then
+  echo "${DOCKERFILE}: could not read a FROM ... AS frontend-builder stage" >&2
+  failures=$((failures + 1))
+elif [[ ! "${image_frontend}" =~ ^node:([0-9]+)([.@-]|$) ]]; then
+  echo "${DOCKERFILE}: the frontend-builder stage is not a node:<major>[.<minor>[.<patch>]][-<variant>] image: ${image_frontend}" >&2
+  failures=$((failures + 1))
+elif [[ "${BASH_REMATCH[1]}" != "${nvmrc_major}" ]]; then
+  echo "${DOCKERFILE}: the frontend-builder stage is on Node.js ${BASH_REMATCH[1]}, .nvmrc names ${nvmrc_major}; keep them on one major" >&2
+  failures=$((failures + 1))
+fi
 
 # The compiler. rust-toolchain.toml pins it; the rust-builder stage has to
 # copy the file so rustup installs that version inside the image. The base

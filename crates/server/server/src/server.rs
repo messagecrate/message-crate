@@ -944,6 +944,11 @@ impl From<crate::db::imports::StartImportError> for ApiError {
                 // surface the same error through anyhow.
                 Self::StateConflict(err.to_string())
             }
+            err @ crate::db::imports::StartImportError::OpeningStage { .. } => {
+                // A body field that broke a rule the client fixes by
+                // sending `parse` (`docs/architecture/http-api.md`).
+                Self::validation(err.to_string())
+            }
             crate::db::imports::StartImportError::Db(err) => Self::Internal(err),
         }
     }

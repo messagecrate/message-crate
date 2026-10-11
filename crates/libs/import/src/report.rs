@@ -103,10 +103,11 @@ pub struct ImportReport {
     /// The cancel flag halts it when it leaves conversations unsent: they are
     /// in `conversations_cancelled`, and the journal leaves them for the next
     /// Upload. A cancel that arrives after the last request went out halts
-    /// nothing, so it is `false` then. Only the cancel flag halts a run: a
-    /// failed request fails its conversations and the run goes on. A session
-    /// the server refused mid-run halts the run through the same flag, and
-    /// it is `true` then even when no conversation was left unsent.
+    /// nothing, so it is `false` then. Only the cancel flag or a refused
+    /// session halts a run: a failed request fails its conversations and the
+    /// run goes on. A session the server refused mid-run halts the run as a
+    /// cancel does, without setting the caller's cancel flag, and it is
+    /// `true` then even when no conversation was left unsent.
     pub cancelled: bool,
     /// `true` when the server refused the session token during the run (it
     /// expired or was ended), which halted the run as for a cancel. The

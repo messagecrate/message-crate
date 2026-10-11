@@ -354,6 +354,7 @@ async fn a_run_started_after_the_delete_commits_keeps_its_original() {
         &mut conn,
         alice.account_id,
         crate::db::audit_trail::AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap()

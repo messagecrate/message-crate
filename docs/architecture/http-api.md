@@ -431,6 +431,16 @@ Every failure answers an RFC 7807 problem document as
 `request_id`. A validation failure replaces `detail` with `errors`, a list of
 every rule that broke rather than the first.
 
+`detail`, and each entry of `errors`, is one sentence in lowercase with no
+final period, naming the thing and what is wrong with it: `asset not found`,
+`new passwords do not match`. A word always written with a capital keeps it,
+such as a header (`Content-Type must be text/csv`) or an abbreviation
+(`API token not found`). The client decides how the sentence starts and ends
+on its screen, because it may show the sentence alone or joined with others.
+The web app joins a validation failure's `errors` with `; ` into one line, and
+a screen that shows a sentence on a line of its own capitalises its first
+letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
 The code is the registry: each type is declared once in
@@ -876,7 +886,15 @@ other change of stage, backwards or skipping a stage, answers
 `409` `state-conflict` naming both stages, and the run keeps its stage and
 summary. Why: the next visit resumes a run at the stage the server holds, so a
 client that sent a wrong stage would have the run resumed at work it already
-did (#1227).
+did (#1227). A run opens only at `parse`: `POST /v1/imports` with any other
+`stage` answers `422 Unprocessable Entity` (`validation-failed`) and opens no
+run. Why: a run opened later in the order would be resumed at work nobody did
+(#2638), and `422` because the client fixes it by sending `parse`.
+
+A running run with no stored stage is refused any change of stage with
+`500 Internal Server Error`. Why: the server never writes such a row, so there
+is no stage to check the move from, and passing it unchecked would let any
+move through (#2638).
 
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`

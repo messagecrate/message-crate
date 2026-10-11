@@ -381,7 +381,7 @@ pub async fn create_account(
     }
     // Hashed before a connection is taken for the write, so neither a pooled
     // connection nor the write lock is held for the length of an Argon2 hash.
-    let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
+    let password_hash = hash_user_password(req.password.as_deref().unwrap_or("")).await?;
 
     let mut conn = state.db.acquire().await?;
 
@@ -993,10 +993,13 @@ pub async fn delete_account(
         if has_password(password_hash.as_deref()) {
             let Some(pw) = req.current_password.as_deref() else {
                 return Err(ApiError::validation(
-                    "Current password is required to delete this account.",
+                    "current password is required to delete this account",
                 ));
             };
-            require_current_password(&state, target, password_hash.as_deref(), pw)?;
+            // No pooled connection is held for the length of the Argon2 check.
+            drop(conn);
+            require_current_password(&state, target, password_hash.as_deref(), pw).await?;
+            conn = state.db.acquire().await?;
         }
     }
 
@@ -1035,7 +1038,10 @@ pub async fn delete_account(
 /// account, and past the login's limit the guess is refused unchecked: an open
 /// session must not be a way to guess the password faster than the login
 /// allows.
-fn require_current_password(
+///
+/// Argon2 runs on the blocking thread pool. The caller holds no database
+/// connection across this call.
+async fn require_current_password(
     state: &AppState,
     account_id: i64,
     password_hash: Option<&str>,
@@ -1043,10 +1049,10 @@ fn require_current_password(
 ) -> Result<(), ApiError> {
     let bucket = password_bucket(account_id);
     refuse_when_rate_limited(&state.auth_rate_limits, &bucket)?;
-    if !passwords_match(password_hash, current) {
+    if !passwords_match(password_hash, current).await? {
         count_auth_failure(&state.auth_rate_limits, &bucket)?;
         return Err(ApiError::InvalidCredentials(
-            "Current password is incorrect.".into(),
+            "current password is incorrect".into(),
         ));
     }
     Ok(())
@@ -1108,8 +1114,16 @@ pub async fn replace_account_password(
     LoggedIn(auth): LoggedIn,
     Json(req): Json<ReplaceAccountPasswordRequest>,
 ) -> Result<Response, ApiError> {
-    let mut conn = state.db.acquire().await?;
-    let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
+    // The reads before the Argon2 runs take a pooled connection only for the
+    // statement that needs it, and the write takes one after them, so no
+    // connection is held for the length of a hash or a check.
+    let reach = require_account_reach(
+        &mut *state.db.acquire().await?,
+        &auth,
+        target,
+        Admits::Owner,
+    )
+    .await?;
     // The login card's button enters the Demo Account with no password, so
     // one set by anybody would shut it.
     refuse_for_demo_account(target, "password cannot be set")?;
@@ -1120,29 +1134,31 @@ pub async fn replace_account_password(
     if reach == Reach::OwnersOwn {
         let Some(current) = req.current_password.as_deref() else {
             return Err(ApiError::validation(
-                "Current password is required to change the owner's password.",
+                "current password is required to change the owner's password",
             ));
         };
-        let password_hash = account_profile::load_password_hash(&mut conn, target).await?;
-        require_current_password(&state, target, password_hash.as_deref(), current)?;
+        let password_hash =
+            account_profile::load_password_hash(&mut *state.db.acquire().await?, target).await?;
+        require_current_password(&state, target, password_hash.as_deref(), current).await?;
         if req.password != req.password_confirmation {
-            return Err(ApiError::validation("New passwords do not match."));
+            return Err(ApiError::validation("new passwords do not match"));
         }
         if req.password == current {
             return Err(ApiError::validation(
-                "New password must be different from the current password.",
+                "new password must be different from the current password",
             ));
         }
     } else if req.password != req.password_confirmation {
-        return Err(ApiError::validation("New passwords do not match."));
+        return Err(ApiError::validation("new passwords do not match"));
     }
 
     // The owner must have a password; a user account may have none.
     let new_hash = if account_profile::is_server_owner(target) {
-        Some(hash_owner_password(&req.password)?)
+        Some(hash_owner_password(&req.password).await?)
     } else {
-        hash_user_password(&req.password)?
+        hash_user_password(&req.password).await?
     };
+    let mut conn = state.db.acquire().await?;
     let new_hash = new_hash.as_deref();
 
     match reach {
