@@ -225,6 +225,21 @@ where
     })
 }
 
+/// One `asset_ok` event per Asset fingerprint in `assets`, in sorted order,
+/// each built by `asset_ok` from its fingerprint.
+///
+/// The Upload's journal and the Export's both start a compacted journal with
+/// these events, so a compacted file comes out the same whatever order the
+/// skip set held its fingerprints in.
+pub fn asset_ok_events<'a, E>(
+    assets: impl IntoIterator<Item = &'a String>,
+    asset_ok: impl FnMut(String) -> E,
+) -> Vec<E> {
+    let mut assets: Vec<&String> = assets.into_iter().collect();
+    assets.sort_unstable();
+    assets.into_iter().cloned().map(asset_ok).collect()
+}
+
 /// Read the journal, transform the surviving events with `rebuild`, and
 /// rewrite the file — all under one write-lock acquisition, so a concurrent
 /// [`append`] either lands before the read or after the rewrite, never between
@@ -576,6 +591,22 @@ mod tests {
                 seen("http://b", "alice", "b"),
                 seen("http://a", "bob", "bob"),
                 seen("http://a", "alice", "new"),
+            ]
+        );
+    }
+
+    /// The events come out sorted by fingerprint, whatever order the
+    /// fingerprints went in, each built by the caller's closure.
+    #[test]
+    fn asset_ok_events_are_sorted_by_fingerprint() {
+        let assets = ["ccc".to_string(), "aaa".to_string(), "bbb".to_string()];
+        let events = asset_ok_events(&assets, |sha| seen("http://a", "alice", &sha));
+        assert_eq!(
+            events,
+            [
+                seen("http://a", "alice", "aaa"),
+                seen("http://a", "alice", "bbb"),
+                seen("http://a", "alice", "ccc"),
             ]
         );
     }
