@@ -69,25 +69,43 @@ fi
 # This reads the directives as BuildKit's parser does
 # (frontend/dockerfile/parser/directives.go): it drops a byte order mark
 # and skips a first line that starts with "#!", then reads "# key=value"
-# lines until the first line that is not one. The key is in any case, and
-# spaces may sit around the "#", the key and the "=". BuildKit pulls only
-# the first word of the syntax value; the rest are frontend arguments.
-on_first_line=1
-while IFS= read -r line || [[ -n "${line}" ]]; do
-  line="${line%$'\r'}"
-  if [[ "${on_first_line}" -eq 1 ]]; then
-    on_first_line=0
-    line="${line#$'\xEF\xBB\xBF'}"
-    [[ "${line}" == '#!'* ]] && continue
-  fi
-  [[ "${line}" =~ ^#[[:space:]]*([A-Za-z][A-Za-z0-9]*)[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]] || break
-  [[ "${BASH_REMATCH[1],,}" == "syntax" ]] || continue
-  frontend="${BASH_REMATCH[2]%%[[:space:]]*}"
-  if [[ ! "${frontend}" =~ ${pinned_image_re} ]]; then
-    echo "${DOCKERFILE}: pin the BuildKit frontend by tag and digest (# syntax=<image>:<tag>@sha256:<digest>): ${line}" >&2
-    failures=$((failures + 1))
-  fi
-done <"${DOCKERFILE}"
+# lines until the first line that is not one, or whose key is not syntax,
+# escape or check. The key is in any case, and spaces may sit around the
+# "#", the key and the "=". When that finds no syntax, BuildKit reads the
+# directives again with "//" in place of "#", so this does too. BuildKit
+# pulls only the first word of the syntax value; the rest are frontend
+# arguments.
+#
+# Sets syntax_value and syntax_line when it finds a syntax directive.
+read_syntax_directive() {
+  local prefix="$1" on_first_line=1 line
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%$'\r'}"
+    if [[ "${on_first_line}" -eq 1 ]]; then
+      on_first_line=0
+      line="${line#$'\xEF\xBB\xBF'}"
+      [[ "${line}" == '#!'* ]] && continue
+    fi
+    [[ "${line}" =~ ^${prefix}[[:space:]]*([A-Za-z][A-Za-z0-9]*)[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]] || return 0
+    case "${BASH_REMATCH[1],,}" in
+      syntax)
+        syntax_value="${BASH_REMATCH[2]%%[[:space:]]*}"
+        syntax_line="${line}"
+        return 0
+        ;;
+      escape | check) ;;
+      *) return 0 ;;
+    esac
+  done <"${DOCKERFILE}"
+}
+syntax_value=""
+syntax_line=""
+read_syntax_directive "#"
+[[ -n "${syntax_line}" ]] || read_syntax_directive "//"
+if [[ -n "${syntax_line}" && ! "${syntax_value}" =~ ${pinned_image_re} ]]; then
+  echo "${DOCKERFILE}: pin the BuildKit frontend by tag and digest (# syntax=<image>:<tag>@sha256:<digest>): ${syntax_line}" >&2
+  failures=$((failures + 1))
+fi
 
 # The base images. A tag names whatever its publisher pushed last, so a
 # FROM by tag alone can start two builds of one commit from different
