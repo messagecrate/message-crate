@@ -23,8 +23,10 @@ pub const INTERNAL_TYPE: &str = "about:blank";
 /// declared and left out of `ALL`: the error pages ([`crate::error_docs`])
 /// and the OpenAPI problem types ([`crate::openapi::shared_parts`]) walk
 /// `ALL`, and a type missing from it would ship with neither. Nor can a type
-/// be declared without its slug, status or title, because a new type is one
-/// line here rather than one arm in each of three `match` tables.
+/// be declared without its slug, status or title, because the pattern
+/// requires all three on the variant's line. A new type still needs its
+/// [`ProblemType::page`] arm here, and an [`crate::server::ApiError`] variant
+/// with its arm in `ApiError::problem_type`.
 macro_rules! problem_types {
     ($($(#[$doc:meta])* $name:ident => ($slug:literal, $status:ident, $title:literal),)*) => {
         /// One registered kind of failure.
