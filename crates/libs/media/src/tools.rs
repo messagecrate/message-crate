@@ -23,13 +23,14 @@ struct ToolsState {
     /// not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     generation: u64,
-    /// The files that answered, by path and the arguments they were run
-    /// with, each beside the file as it was when it answered. Every lookup
-    /// searches `PATH` and the Tools Directory again, which only reads file
-    /// metadata, and a lookup runs once per file staged and once per Asset
-    /// shown; the answer kept here means a file that answered is not run
-    /// again until it changes. The arguments are part of the key, so an
-    /// answer to one question never stands for another.
+    /// The files that answered, by path, each with the arguments it answered
+    /// and the file as it was when it answered. Every lookup searches `PATH`
+    /// and the Tools Directory again, which only reads file metadata, and a
+    /// lookup runs once per file staged and once per Asset shown; the answer
+    /// kept here means a file that answered is not run again until it
+    /// changes. An answer counts only for the arguments it was given, so an
+    /// answer to one question never stands for another. A lookup that finds
+    /// its answer allocates nothing.
     ///
     /// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
     /// missing a shared library, or one that failed to start for a passing
@@ -37,7 +38,26 @@ struct ToolsState {
     /// approval in System Settings, an installed library, the passing cause
     /// going away) leaves the file's modified time, size and permissions as
     /// they were, and a kept failure would hide the fix until a restart.
-    answered: HashMap<(PathBuf, Vec<String>), FileStamp>,
+    answered: HashMap<PathBuf, Vec<Answer>>,
+}
+
+/// One question a file answered: the arguments it was run with, and the
+/// file as it was when it answered.
+struct Answer {
+    args: Vec<String>,
+    file: FileStamp,
+}
+
+impl Answer {
+    /// Whether this is the answer of `file` to `args`.
+    fn is(&self, args: &[&str], file: &FileStamp) -> bool {
+        self.file == *file
+            && self
+                .args
+                .iter()
+                .map(String::as_str)
+                .eq(args.iter().copied())
+    }
 }
 
 /// What tells one version of a file from another without reading it: a
@@ -406,20 +426,18 @@ pub fn is_executable(path: &Path) -> bool {
 
 /// True when `candidate`, as `file` describes it, exits successfully run
 /// with `args`, which is `-version` for ffmpeg and ffprobe. An answer is
-/// kept in [`ToolsState::answered`] under the file and `args`, so the same
-/// file asked the same question is run once until it changes or the lookup
-/// is forgotten; a failure is not kept, so
-/// the file is run again on the next lookup. No lock is held while it runs.
+/// kept in [`ToolsState::answered`] with `args`, so the same file asked the
+/// same question is run once until it changes or the lookup is forgotten; a
+/// failure is not kept, so the file is run again on the next lookup. No
+/// lock is held while it runs.
 fn candidate_runs(candidate: &Path, file: FileStamp, args: &[&str]) -> bool {
-    let key = (
-        candidate.to_path_buf(),
-        args.iter()
-            .map(|arg| (*arg).to_string())
-            .collect::<Vec<_>>(),
-    );
     let generation = {
         let state = tools_state().lock().expect("tools state lock");
-        if state.answered.get(&key) == Some(&file) {
+        if state
+            .answered
+            .get(candidate)
+            .is_some_and(|answers| answers.iter().any(|answer| answer.is(args, &file)))
+        {
             return true;
         }
         state.generation
@@ -428,7 +446,14 @@ fn candidate_runs(candidate: &Path, file: FileStamp, args: &[&str]) -> bool {
     if runs {
         let mut state = tools_state().lock().expect("tools state lock");
         if state.generation == generation {
-            state.answered.insert(key, file);
+            let answers = state.answered.entry(candidate.to_path_buf()).or_default();
+            // Drop an answer of the file before it changed, which stands for
+            // nothing now, and one another lookup kept meanwhile.
+            answers.retain(|answer| answer.file == file && !answer.is(args, &file));
+            answers.push(Answer {
+                args: args.iter().map(|arg| (*arg).to_string()).collect(),
+                file,
+            });
         }
     }
     runs

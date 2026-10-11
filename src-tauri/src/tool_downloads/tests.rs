@@ -5,6 +5,9 @@ use std::io::{Read, Write};
 
 use file_io::sha256_hex;
 use httpmock::prelude::*;
+use media::testutil::RUNNABLE;
+#[cfg(unix)]
+use media::testutil::{write_program, write_runnable};
 
 impl Retry {
     /// The check's thread, when one started.
@@ -440,12 +443,6 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     };
     assert!(reason.contains(&sha256_hex(b"ffmpeg")), "{reason}");
 }
-
-// A program the check counts in place must answer `-version` (ffmpeg) or
-// `--help` (wtsexporter): a file that does not run reads as one that does
-// not run, or as one still being copied in (#2692).
-#[cfg(unix)]
-use media::testutil::{RUNNABLE, write_program, write_runnable};
 
 /// A program from an older release, which runs.
 #[cfg(unix)]

@@ -186,8 +186,9 @@ pub fn write_with_mode(path: &Path, mode: u32) {
 }
 
 /// A shell script that exits successfully whatever it is asked, as a whole
-/// program answers `-version` or `--help`.
-#[cfg(unix)]
+/// program answers `-version` or `--help`. A program a test puts in the
+/// Tools Directory must run to count as in place: a file that does not run
+/// reads as one that does not run, or as one still being copied in (#2692).
 pub const RUNNABLE: &[u8] = b"#!/bin/sh\nexit 0\n";
 
 /// Write `contents` at `path`, executable by everyone, as a program put in

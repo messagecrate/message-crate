@@ -560,9 +560,10 @@ released versions carry their date on the heading.
   The app now checks that the copy runs, and uses it only once it does.
   Until then Settings and the Import form say it doesn't run, and that a
   copy still being copied runs once the copy is whole. The app's own
-  downloaded copy is checked the same way. A `pipx` install linked there
-  whose Python has gone is now named in Settings and on the Import form,
-  before an import starts, rather than when the import fails (#2692).
+  downloaded copy is checked the same way. A `pipx` install linked into the
+  Tools Directory whose Python has gone is now named in Settings and on the
+  Import form. That happens before an import starts, not when the import
+  fails (#2692).
 
 - 2026-10-11: **A wtsexporter the app's account can't run no longer shows
   as found.** The desktop app took a `wtsexporter` in its Tools Directory as
