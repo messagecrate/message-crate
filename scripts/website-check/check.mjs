@@ -4,8 +4,10 @@
 //
 //   node check.mjs <base-url>
 //
-// Fails, naming the step, when a screen does not appear, and at the end when
-// the browser logged a console error or an uncaught exception, or the server
+// Fails, naming the step, when a screen does not appear, when the search does
+// not reach the server, finds nothing, narrows nothing, is not what the list
+// shows, or opens a conversation it did not find; and at the end when the
+// browser logged a console error or an uncaught exception, or the server
 // answered any request with a 5xx. A script or stylesheet the website cannot
 // load is a console error in Chromium, so a broken static/ bundle fails too.
 import { chromium } from "playwright";
@@ -56,6 +58,10 @@ try {
   await explore.waitFor();
 
   step = "log in to the Demo Account";
+  const listed = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/v1/conversations" && !url.searchParams.has("q");
+  });
   await explore.click();
   const search = page.getByRole("combobox", { name: "Search conversations" });
   await search.waitFor();
@@ -64,6 +70,9 @@ try {
   // The search term comes from the list the Demo Account shows, so the check
   // does not depend on which names the demo generator picks.
   step = "list the Demo Account's conversations";
+  const all = await listed;
+  if (!all.ok()) throw new Error(`the list answered ${all.status()}`);
+  const allTotal = (await all.json()).total;
   const rows = page.getByRole("checkbox", { name: /^Select (?!all conversations$)/ });
   await rows.first().waitFor();
   const title = (await rows.first().getAttribute("aria-label"))?.replace(/^Select /, "") ?? "";
@@ -71,9 +80,9 @@ try {
   if (!term) throw new Error(`no search term in the first conversation's name "${title}"`);
 
   // The row named `title` was on screen before the search, so finding it
-  // afterwards proves nothing. The search must reach the server and find at
-  // least one conversation, the list must shrink to the answer, and the row
-  // must open a conversation the answer holds.
+  // afterwards proves nothing. The search must reach the server, find fewer
+  // conversations than the whole list, and the list's range must then show
+  // the answer's total; the row must open a conversation the answer holds.
   step = `search conversations for "${term}"`;
   const answered = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -83,17 +92,14 @@ try {
   await search.press("Enter");
   const response = await answered;
   if (!response.ok()) throw new Error(`the search answered ${response.status()}`);
-  const found = (await response.json()).items ?? [];
+  const answer = await response.json();
+  const found = answer.items ?? [];
   if (found.length === 0) throw new Error("the search found no conversation");
-  // The list renders only the rows in view, so a search that the website
-  // ignored still shows more rows than a short answer holds.
-  const deadline = Date.now() + STEP_TIMEOUT_MS;
-  while ((await rows.count()) > found.length) {
-    if (Date.now() > deadline) {
-      throw new Error(`the list still shows more than the ${found.length} conversation(s) found`);
-    }
-    await page.waitForTimeout(200);
+  if (answer.total >= allTotal) {
+    throw new Error(`the search found ${answer.total} of ${allTotal} conversations, narrowing nothing`);
   }
+  // The range reads "1–9 of 102" (formatVisibleRange in web/src/lib/listPaging.ts).
+  await page.getByText(new RegExp(`^(\\d+–\\d+|…) of ${answer.total}$`)).waitFor();
   const result = page.getByRole("button", { name: title, exact: false }).first();
   await result.waitFor();
 
