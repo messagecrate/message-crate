@@ -66,18 +66,33 @@ fn a_media_type_comes_from_the_extension_then_the_declared_type_then_a_name() {
     assert_eq!(media_type_of(Path::new("ab/abc"), None, &[None]), None);
 }
 
+/// The first bytes of a file of each type every browser shows as it is,
+/// each followed by bytes no signature reads.
+const SIGNATURES: [(&str, &[u8]); 7] = [
+    ("image/jpeg", b"\xFF\xD8\xFF\xE0rest"),
+    ("image/png", b"\x89PNG\r\n\x1A\nrest"),
+    ("image/gif", b"GIF89arest"),
+    ("image/webp", b"RIFF\x24\x00\x00\x00WEBPVP8 rest"),
+    ("audio/mpeg", b"ID3\x04\x00rest"),
+    ("audio/mpeg", b"\xFF\xFB\x90\x64rest"),
+    ("audio/mpeg", b"\xFF\xF3\x48\xC4rest"),
+];
+
+/// Write `bytes` to a file named `name` in `dir`, and answer its path.
+fn file(dir: &Path, name: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = dir.join(name);
+    fs::write(&path, bytes).unwrap();
+    path
+}
+
 #[test]
 fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
-    let nowhere = Path::new("no/such/file");
-    for shown in [
-        "image/jpeg",
-        "image/png",
-        "image/gif",
-        "image/webp",
-        "audio/mpeg",
-    ] {
-        assert_eq!(browser_shows(nowhere, Some(shown)), Some(true), "{shown}");
+    let dir = tempfile::tempdir().unwrap();
+    for (index, (shown, bytes)) in SIGNATURES.iter().enumerate() {
+        let src = file(dir.path(), &index.to_string(), bytes);
+        assert_eq!(browser_shows(&src, Some(shown)), Some(true), "{shown}");
     }
+    let nowhere = Path::new("no/such/file");
     for preview in [
         "image/heic",
         "image/tiff",
@@ -98,6 +113,44 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
         browser_shows(nowhere, None),
         Some(false),
         "a file of no known type gets a Preview"
+    );
+}
+
+/// A declared type is only a claim: a file whose first bytes are not that
+/// type's is not shown as it is, so it gets a Preview.
+#[test]
+fn a_file_whose_bytes_are_not_its_declared_type_is_not_shown_as_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let png = file(dir.path(), "png", b"\x89PNG\r\n\x1A\nrest");
+    let text = file(dir.path(), "text", b"just some words, not a picture");
+    let empty = file(dir.path(), "empty", b"");
+    let short = file(dir.path(), "short", b"\xFF\xD8");
+    let adts = file(dir.path(), "adts", b"\xFF\xF1\x50\x80rest");
+    let wave = file(dir.path(), "wave", b"RIFF\x24\x00\x00\x00WAVEfmt rest");
+
+    for (src, declared) in [
+        (&png, "image/jpeg"),
+        (&text, "image/jpeg"),
+        (&text, "image/png"),
+        (&text, "image/gif"),
+        (&text, "image/webp"),
+        (&text, "audio/mpeg"),
+        (&empty, "image/jpeg"),
+        (&short, "image/jpeg"),
+        (&adts, "audio/mpeg"),
+        (&wave, "image/webp"),
+    ] {
+        assert_eq!(
+            browser_shows(src, Some(declared)),
+            Some(false),
+            "{} declared {declared}",
+            src.display()
+        );
+    }
+    assert_eq!(
+        browser_shows(Path::new("no/such/file"), Some("image/jpeg")),
+        Some(false),
+        "a file that cannot be read is not shown as it is"
     );
 }
 
@@ -131,10 +184,12 @@ fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
 fn without_ffprobe_an_mp4_is_not_known() {
     let tools = FakeTools::missing();
     let nowhere = Path::new("no/such/file");
+    let dir = tempfile::tempdir().unwrap();
+    let jpeg = file(dir.path(), "photo", SIGNATURES[0].1);
 
     assert_eq!(browser_shows_with(&tools, nowhere, Some("video/mp4")), None);
     assert_eq!(
-        browser_shows_with(&tools, nowhere, Some("image/jpeg")),
+        browser_shows_with(&tools, &jpeg, Some("image/jpeg")),
         Some(true)
     );
     assert_eq!(

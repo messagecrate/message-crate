@@ -1547,7 +1547,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let first =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let dropped = |scanned, dropped| ProcessAssetsStats {
         dropped,
@@ -1570,7 +1570,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
         message_id,
         &"b".repeat(64),
         "audio/mpeg",
-        b"y",
+        b"ID3 y",
     )
     .await;
     let second_preview = name_damaged_preview(&opened, &mut conn, second, &"d".repeat(64)).await;
@@ -1647,7 +1647,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let first =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let second = attach_stored_original(
         &opened,
@@ -1655,7 +1655,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
         message_id,
         &"b".repeat(64),
         "audio/mpeg",
-        b"y",
+        b"ID3 y",
     )
     .await;
     let second_preview =

@@ -52,7 +52,11 @@ types every browser shows are exactly JPEG, PNG, GIF and WebP images, MP3
 audio, and MP4 with H.264 video, and every other image, video or audio file
 gets a Preview. The type comes from the stored file's extension, then the
 type the import declared, then the name the export gave the file, the order
-the server reads a type everywhere. Only an MP4 is opened, by ffprobe, to read
+the server reads a type everywhere. That type is only a claim, which the first
+import to name a fingerprint's type decides for good, so a JPEG, PNG, GIF,
+WebP or MP3 is shown as it is only when its first bytes are that type's
+signature; one that starts as anything else, or cannot be read, gets a
+Preview (#2257). An MP4 is opened by ffprobe, to read
 its video codec, so a HEVC video in an `.mp4` gets a Preview too. The list is
 exact rather than generous: AAC audio in an `.m4a` plays in most browsers and
 still gets a Preview, because a list that holds a type most browsers show

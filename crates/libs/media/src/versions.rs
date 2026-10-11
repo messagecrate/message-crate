@@ -81,7 +81,12 @@ pub fn media_type_of(
 /// Anything else, a HEIC photo, a HEVC video, an AMR voice note, needs a
 /// Preview.
 ///
-/// Only an MP4 is opened, by ffprobe, to read its video codec. One ffprobe
+/// A declared type is only a claim, so a JPEG, PNG, GIF, WebP or MP3 is
+/// shown as it is only when its first bytes are that type's
+/// ([`starts_as`]). One that cannot be read, or starts as something else,
+/// gets a Preview.
+///
+/// An MP4 is opened by ffprobe, to read its video codec. One ffprobe
 /// cannot read counts as not shown, so it is given a Preview. `None` for an
 /// MP4 while ffprobe is missing: nothing can be known about its codec, so a
 /// caller keeps what it knew before.
@@ -100,7 +105,7 @@ pub(crate) fn browser_shows_with(
         return Some(false);
     };
     if SHOWN_AS_IS.contains(&media_type) {
-        return Some(true);
+        return Some(starts_as(src, media_type));
     }
     if media_type != "video/mp4" {
         return Some(false);
@@ -109,6 +114,32 @@ pub(crate) fn browser_shows_with(
         return None;
     }
     Some(tools.probe(src).is_ok_and(|probe| probe.codec == "h264"))
+}
+
+/// Whether the first bytes of `src` are those of a file of `media_type`,
+/// one of [`SHOWN_AS_IS`]: JPEG `FF D8 FF`, PNG `89 50 4E 47 0D 0A 1A 0A`,
+/// GIF `GIF8`, WebP `RIFF` then `WEBP` at byte 8, and MP3 either an `ID3`
+/// tag or an MPEG audio frame sync of layer I, II or III (an AAC ADTS
+/// frame, layer bits `00`, is not an MP3). `false` when `src` cannot be
+/// read.
+fn starts_as(src: &Path, media_type: &str) -> bool {
+    use std::io::Read;
+    let mut head = Vec::with_capacity(12);
+    let read = std::fs::File::open(src).and_then(|file| file.take(12).read_to_end(&mut head));
+    if read.is_err() {
+        return false;
+    }
+    match media_type {
+        "image/jpeg" => head.starts_with(&[0xFF, 0xD8, 0xFF]),
+        "image/png" => head.starts_with(b"\x89PNG\r\n\x1A\n"),
+        "image/gif" => head.starts_with(b"GIF8"),
+        "image/webp" => head.starts_with(b"RIFF") && head.get(8..12) == Some(b"WEBP"),
+        "audio/mpeg" => {
+            head.starts_with(b"ID3")
+                || matches!(head.as_slice(), [0xFF, second, ..] if second & 0xE0 == 0xE0 && second & 0x06 != 0)
+        }
+        _ => false,
+    }
 }
 
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the
