@@ -16,7 +16,7 @@
 # fails here rather than in a self-hoster's container. The conversation is
 # tests/fixtures/docker-compose-check/conversation.jsonl, and its video is
 # the server's own test fixture crates/server/server/tests/fixtures/media/hevc.mov,
-# a HEVC video, which needs both a Thumbnail and a Preview.
+# an HEVC video, which needs both a Thumbnail and a Preview.
 #
 # --website also runs scripts/check-served-website.sh against the stack: the
 # website it serves loads in a headless browser, logs in to the Demo
@@ -162,24 +162,23 @@ OWNER_PASSWORD="Compose-Check-Owner-7q2Lx9Vb"
 READER_PASSWORD="Compose-Check-Reader-3kN8wZr4"
 
 # One call to the server: METHOD PATH [curl arguments...]. Prints the body,
-# and fails with the status and body when the answer is not a 2xx.
+# and fails with the status and body when the answer is not a 2xx. Every
+# call gives up after 60 seconds, so a server that never answers fails the
+# check rather than holding it until the CI job times out.
 api() {
   local method="$1" path="$2"
   shift 2
   local body status
   body="$(mktemp)"
-  status="$(curl -sS -o "${body}" -w '%{http_code}' -X "${method}" "$@" "${BASE}${path}")" || {
-    rm -f "${body}"
-    echo "${method} ${path} did not answer" >&2
-    return 1
-  }
-  if [[ "${status}" != 2* ]]; then
+  status="$(curl -sS --max-time 60 -o "${body}" -w '%{http_code}' -X "${method}" "$@" "${BASE}${path}")" ||
+    status="no answer"
+  if [[ "${status}" == 2* ]]; then
+    cat "${body}"
+  else
     echo "${method} ${path} answered ${status}: $(cat "${body}")" >&2
-    rm -f "${body}"
-    return 1
   fi
-  cat "${body}"
   rm -f "${body}"
+  [[ "${status}" == 2* ]]
 }
 
 # The import, media pass and export. Each step stops at its first failure,
@@ -257,9 +256,8 @@ if ! import_media_export; then
   failures=$((failures + 1))
 fi
 
-
 if [[ ${failures} -gt 0 ]]; then
   echo "Docker Compose check failed (${failures} failure(s))." >&2
   exit 1
 fi
-echo "The release Compose stack runs with its privileges dropped, serves ${served}, and imports, converts and exports under them."
+echo "The release Compose stack runs with its privileges dropped, serves ${served}, and imports, makes the Thumbnail and Preview and exports under them."
