@@ -159,16 +159,8 @@ mod tests {
 
     fn attachment(size: u64) -> IrAttachment {
         IrAttachment {
-            path: None,
-            original_name: Some("photo.jpg".into()),
-            mime_type: Some("image/jpeg".into()),
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(size),
-            missing_reason: None,
-            bytes: None,
+            ..message_ir::testutil::sample_attachment()
         }
     }
 

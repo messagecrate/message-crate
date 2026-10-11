@@ -698,6 +698,7 @@ pub(crate) async fn head_asset(
             content_type = "*/*",
             headers(
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -708,6 +709,7 @@ pub(crate) async fn head_asset(
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -719,20 +721,23 @@ pub(crate) async fn get_asset(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     let account = reader.account_id;
-    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-        return Err(ApiError::not_found("asset"));
-    };
-
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    stream_file(
-        &assets_dir.join(&stored.assets_path),
-        stored.mime_type,
-        &headers,
-        Some(format!("\"{sha256}\"")),
-    )
-    .await
+    let answer = async {
+        let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+            return Err(ApiError::not_found("asset"));
+        };
+        let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+        stream_file(
+            &assets_dir.join(&stored.assets_path),
+            stored.mime_type,
+            &headers,
+            Some(format!("\"{sha256}\"")),
+        )
+        .await
+    }
+    .await;
+    reader.with_cache_control(answer)
 }
 
 /// Download the preview of a stored asset: the JPEG, MP4 or MP3 the server
@@ -759,7 +764,10 @@ pub(crate) async fn get_asset(
             status = 200,
             description = "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -767,7 +775,8 @@ pub(crate) async fn get_asset(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
@@ -778,7 +787,7 @@ pub(crate) async fn get_asset_preview(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     stream_version(&state, reader, &headers, &sha256, Version::Preview).await
 }
 
@@ -808,7 +817,10 @@ pub(crate) async fn get_asset_preview(
             status = 200,
             description = "The thumbnail's bytes, in the thumbnail's own media type",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -816,7 +828,8 @@ pub(crate) async fn get_asset_preview(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
@@ -827,7 +840,7 @@ pub(crate) async fn get_asset_thumbnail(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     stream_version(&state, reader, &headers, &sha256, Version::Thumbnail).await
 }
 
@@ -840,28 +853,32 @@ async fn stream_version(
     headers: &HeaderMap,
     sha256: &Sha256,
     version: Version,
-) -> Result<Response, ApiError> {
+) -> Response {
     let account = reader.account_id;
-    let Some(stored) = lookup_for_read(state, account, sha256).await? else {
-        return Err(ApiError::not_found("asset"));
-    };
-    let file = crate::db::attachment_versions::file_of(
-        &mut *state.db.acquire().await?,
-        version,
-        OriginalRows {
-            account_id: account,
-            original_sha: &stored.sha256,
-        },
-    )
-    .await?;
-    let Some((path, mime_type)) = file else {
-        return Err(ApiError::NotFound(format!(
-            "asset has no {} yet",
-            version.to_string().to_lowercase()
-        )));
-    };
-    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(&converted_dir.join(path), mime_type, headers, None).await
+    let answer = async {
+        let Some(stored) = lookup_for_read(state, account, sha256).await? else {
+            return Err(ApiError::not_found("asset"));
+        };
+        let file = crate::db::attachment_versions::file_of(
+            &mut *state.db.acquire().await?,
+            version,
+            OriginalRows {
+                account_id: account,
+                original_sha: &stored.sha256,
+            },
+        )
+        .await?;
+        let Some((path, mime_type)) = file else {
+            return Err(ApiError::NotFound(format!(
+                "asset has no {} yet",
+                version.to_string().to_lowercase()
+            )));
+        };
+        let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+        stream_file(&converted_dir.join(path), mime_type, headers, None).await
+    }
+    .await;
+    reader.with_cache_control(answer)
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read
@@ -886,7 +903,8 @@ pub(crate) async fn lookup_for_read(
 /// when none is known: the whole file, or the one byte range the request's
 /// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
 /// tag when it has one, which an `If-Range` must name for a range to be
-/// served.
+/// served. The caller adds the reader's `Cache-Control`
+/// ([`AssetReadAccess::with_cache_control`]).
 async fn stream_file(
     path: &Path,
     mime_type: Option<String>,

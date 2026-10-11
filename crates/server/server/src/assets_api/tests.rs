@@ -1455,6 +1455,24 @@ pub(crate) const ORIGINAL_BYTES: &[u8] = b"a photo as the phone took it";
 pub(crate) const UNCONVERTED_BYTES: &[u8] = b"a photo with no preview";
 pub(crate) const PREVIEW_BYTES: &[u8] = b"the same photo as a jpeg";
 
+/// Give the attachment `sha` a Thumbnail that is its Preview's file: what is
+/// served does not matter, only that the route has a file to answer.
+pub(crate) async fn give_thumbnail_the_preview_file(state: &AppState, sha: &str) {
+    let mut conn = state.db.acquire().await.unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
+            thumbnail_assets_path = derived_assets_path,
+            thumbnail_mime_type = derived_mime_type
+         WHERE sha256 = $1",
+    )
+    .bind(sha)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+}
+
 pub(crate) async fn seed_attachment_with_preview(
     state: &AppState,
     account_id: i64,
@@ -1624,22 +1642,7 @@ async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
     let state = &fixture.state;
     let seeded = seed_attachment_with_preview(state, user.account_id).await;
     let sha = &seeded.with_preview;
-    // The Thumbnail is the Preview's file here: what is served does not
-    // matter, only that the route has a file to describe.
-    let mut conn = state.db.acquire().await.unwrap();
-    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query(
-        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
-            thumbnail_assets_path = derived_assets_path,
-            thumbnail_mime_type = derived_mime_type
-         WHERE sha256 = $1",
-    )
-    .bind(sha)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
-    drop(conn);
+    give_thumbnail_the_preview_file(state, sha).await;
     let server = crate::test_support::serve(state).await;
     let client = http_client();
     let head = |path: String, range: Option<&'static str>| {

@@ -535,7 +535,15 @@ security scheme with its scopes, so every route says which it accepts.
   signing the same terms with the Session the account holds now, so a link
   for another asset, another account, a later expiry or an ended Session
   fails the same check. The server's log shows `media_link=[hidden]`,
-  because a credential is never logged.
+  because a credential is never logged. Every answer the three asset
+  routes give once the credential is accepted carries
+  `Cache-Control: private`, because the bytes are one account's
+  attachment, and one read with a Media Link carries `private, no-store`:
+  that request sends no `Authorization` header, so a shared cache in front
+  of the server would otherwise keep the answer under the link's URL and
+  serve it after the hour or the Session has ended. A problem such as `404`
+  or `416` carries it too, because a cache may keep a `404` and hide a
+  Preview made later.
   Why an hour: a phone video is watched and sought in within minutes, and an
   hour leaves room for a long one; a link copied out of the page stops
   working soon after. The web app makes a new link whenever it opens an
@@ -592,10 +600,11 @@ What each reaches:
   refused whatever its scopes.
 - The Demo Account is refused with `403 Forbidden` and
   `demo-account-protected` by its id, whatever its permission row says, on
-  every route that needs the `import` scope or the `delete` permission and on
-  `POST /v1/contacts`. Its profile reports `export` and neither `import` nor
-  `delete`, from the same id. Why: it has no password, so its limits must not
-  rest on a row (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
+  every route that needs the `import` scope or the `delete` permission, on
+  `POST /v1/contacts`, and on `POST /v1/accounts/{id}/api-tokens`. Its
+  profile reports `export` and neither `import` nor `delete`, from the same
+  id. Why: it has no password, so its limits must not rest on a row
+  (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
 - An account may do everything with its own messages, deleting them and
   itself included, unless the owner limits it. Deleting an account deletes
   every message it owns, so an account whose `delete` permission is off
