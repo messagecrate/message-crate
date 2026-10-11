@@ -533,10 +533,11 @@ cargo build --manifest-path src-tauri/Cargo.toml
 ./scripts/mutants.sh --file crates/libs/phone/src/lib.rs
 
 # Start docker/compose.release.yml on a built image under its own project,
-# volume and port (127.0.0.1:18080), check it drops its privileges and
-# serves the Demo Account, then remove it. CI's "Docker image builds" job and
-# nightly.yml run it. It exercises no import. --website also uses the website
-# it serves in a headless browser (below); nightly.yml passes it.
+# volume and port (127.0.0.1:18080), check it drops its privileges, serves
+# the Demo Account, and imports a conversation with a video, makes its
+# Thumbnail and Preview and exports it under them, then remove it. CI's
+# "Docker image builds" job and nightly.yml run it. --website also uses the
+# website it serves in a headless browser (below); nightly.yml passes it.
 docker build -f docker/Dockerfile -t message-crate-server:check .
 ./scripts/check-docker-compose.sh message-crate-server:check
 ./scripts/check-docker-compose.sh --website message-crate-server:check
