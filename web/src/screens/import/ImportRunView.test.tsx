@@ -78,6 +78,9 @@ function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues
   });
 }
 
+/** One gibibyte, for the attachment totals. */
+const GIB = 1024 * MIB;
+
 function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
   return {
     conversations: 312,
@@ -85,7 +88,7 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     contactIdentifiers: [],
     ownerIdentities: [],
     attachments: 6118,
-    attachmentBytes: 9.4 * 1024 * MIB,
+    attachmentBytes: 9.4 * GIB,
     forecasts: [],
     assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
@@ -649,7 +652,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done" }),
       stagingSummary: staged(),
       mediaSummary: staged({
-        attachmentBytes: 4.1 * 1024 * MIB,
+        attachmentBytes: 4.1 * GIB,
         forecasts: [file("huge-mv.mp4", 84, "probably_too_big")],
       }),
       mediaFailedCount: 2,
