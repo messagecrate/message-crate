@@ -141,7 +141,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
       errors,
       "attachmentRoot",
       IMESSAGE_ERR_ATTACHMENT_IS_FILE,
-      true,
+      "directory",
     );
   }
 
@@ -152,7 +152,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
       errors,
       "appleContacts",
       IMESSAGE_ERR_CONTACTS_IS_DIR,
-      false,
+      "file",
     );
   }
 

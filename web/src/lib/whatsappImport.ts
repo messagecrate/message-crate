@@ -163,7 +163,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
       errors,
       "contactsDb",
       WHATSAPP_ERR_MUST_BE_FILE,
-      false,
+      "file",
     );
   }
 
@@ -174,12 +174,12 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
       errors,
       "media",
       WHATSAPP_ERR_MUST_BE_DIRECTORY,
-      true,
+      "directory",
     );
   }
 
   if (whatsappShowsDb(args.method)) {
-    checkOptionalPath(args.db, args.stats.db, errors, "db", WHATSAPP_ERR_MUST_BE_FILE, false);
+    checkOptionalPath(args.db, args.stats.db, errors, "db", WHATSAPP_ERR_MUST_BE_FILE, "file");
   }
 
   const contactsCheckPending =
