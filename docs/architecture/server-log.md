@@ -44,10 +44,18 @@ Each file holds one event per line, in the stderr format without colour: the
 time in UTC (RFC 3339, microseconds), the level, the request or work the event
 belongs to, and what it says. A line break inside an event, from an error
 chain or a message that holds one, is written as the two characters `\n`.
+Every other control character (U+0000 to U+001F, and U+007F) is written as
+`\x` and two hex digits: ESC as `\x1b`.
 
 Why: every line then starts with its time and level, so a line read from
 anywhere in a file, backwards or forwards, is a whole event, and a person
-reading the downloaded file with `grep` gets whole events too.
+reading the downloaded file with `grep` gets whole events too. A control
+character written as it is would act on the terminal of a person reading the
+file with `cat`, `less -r` or `tail`, clearing the screen or rewriting a line,
+and a file name in a backup is enough to carry one
+([#2275](https://github.com/messagecrate/message-crate/issues/2275)).
+`tracing-subscriber` escapes them in an event's message but not in a field
+written with `%`, so the file writer escapes them all.
 
 ## Trimmed by size only: 5 files of 50 MB
 

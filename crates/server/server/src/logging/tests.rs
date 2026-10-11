@@ -117,6 +117,44 @@ fn a_line_break_inside_an_event_is_written_as_backslash_n() {
     );
 }
 
+/// `tracing-subscriber` escapes a control character in an event's message
+/// but not in a field written with `%`, such as a path from a backup. The
+/// line holds it as `\xNN`, so a terminal showing the file shows it rather
+/// than clearing the screen, and the reader reads the line back whole.
+#[test]
+fn a_control_character_in_a_display_field_is_written_as_backslash_x() {
+    let tmp = TempDir::new().unwrap();
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    let path = "IMG\x1b[2J\x07.jpg";
+    tracing::subscriber::with_default(super::subscriber_for(files, "info"), || {
+        tracing::warn!(path = %path, "could not store the attachment");
+    });
+
+    let number = file_numbers(tmp.path()).unwrap()[0];
+    let text = std::fs::read_to_string(tmp.path().join(file_name(number))).unwrap();
+    assert!(text.contains(r"path=IMG\x1b[2J\x07.jpg"), "{text:?}");
+    assert!(!text.trim_end().chars().any(char::is_control), "{text:?}");
+    let (lines, _) = read_lines(tmp.path(), &query(1)).unwrap();
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    assert!(lines[0].text.contains(r"IMG\x1b[2J\x07.jpg"));
+}
+
+/// `write_event` itself, for bytes no subscriber escaped: line breaks become
+/// `\n`, every other control character `\xNN`.
+#[test]
+fn every_control_character_in_an_event_is_escaped() {
+    let tmp = TempDir::new().unwrap();
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    files
+        .write_event(b"2026-10-04T12:00:00.000000Z ERROR a\x1b[2J\x08\tb\x7f\none\r\n")
+        .unwrap();
+    let text = std::fs::read_to_string(tmp.path().join(file_name(1))).unwrap();
+    assert_eq!(
+        text,
+        "2026-10-04T12:00:00.000000Z ERROR a\\x1b[2J\\x08\\x09b\\x7f\\none\n"
+    );
+}
+
 /// What the subscriber writes is what the reader reads back: the level and
 /// the text of the event, newest first.
 #[test]

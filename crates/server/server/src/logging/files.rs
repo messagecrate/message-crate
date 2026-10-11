@@ -92,7 +92,8 @@ impl LogFiles {
     /// Write one formatted event as one line. A line break inside it, from a
     /// message or an error chain that holds one, is written as the two
     /// characters `\n`, so every line of the file is one event and starts
-    /// with its time and level.
+    /// with its time and level. Any other control character is written as
+    /// `\xNN`.
     ///
     /// # Errors
     ///
@@ -216,22 +217,20 @@ fn open_append(path: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).append(true).open(path)
 }
 
-/// `event` as one line ending in `\n`: trailing line breaks dropped, and each
-/// line break inside written as `\n`.
+/// `event` as one line ending in `\n`: trailing line breaks dropped, each
+/// line break inside written as `\n`, and every other control character as
+/// `\xNN` (`message_crate_log_lines::escape_controls`), so a terminal shows
+/// the line rather than acting on it. `tracing-subscriber` escapes them in an
+/// event's message, but not in a field written with `%`.
 fn one_line(event: &[u8]) -> Vec<u8> {
-    let trimmed = event
-        .iter()
-        .rposition(|b| *b != b'\n' && *b != b'\r')
-        .map_or(&event[..0], |last| &event[..=last]);
-    let mut line = Vec::with_capacity(trimmed.len() + 1);
-    let mut bytes = trimmed.iter().peekable();
-    while let Some(&b) = bytes.next() {
-        match b {
-            b'\r' if bytes.peek() == Some(&&b'\n') => {}
-            b'\n' | b'\r' => line.extend_from_slice(b"\\n"),
-            _ => line.push(b),
-        }
-    }
+    let text = String::from_utf8_lossy(event);
+    let joined = text
+        .trim_end_matches(['\n', '\r'])
+        .replace("\r\n", "\n")
+        .replace(['\n', '\r'], "\\n");
+    let mut line = message_crate_log_lines::escape_controls(&joined)
+        .into_owned()
+        .into_bytes();
     line.push(b'\n');
     line
 }

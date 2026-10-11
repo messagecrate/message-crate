@@ -15,7 +15,14 @@
 //! [`parse_line`] reads both, [`LineFilter`] filters both, and
 //! [`lines_backward`] walks both from their newest line. The desktop app
 //! writes its lines with [`format_lines`].
+//!
+//! A line never holds a control character a terminal acts on: each one is
+//! written as `\xNN` ([`escape_controls`]), so a line opened with `cat`,
+//! `less -r` or `tail` shows what it says and cannot move the cursor, clear
+//! the screen or ring the bell.
 
+use std::borrow::Cow;
+use std::fmt::Write as _;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::ControlFlow;
 
@@ -74,9 +81,10 @@ pub fn time_now() -> String {
 
 /// `text` at `level` as lines, each stamped with `time` and ending in a line
 /// break. Text that holds a line break is written as one line per part, each
-/// with the time and the level, so every line is whole on its own. Empty when
-/// `text` holds nothing but white space, so a blank spacer line is not
-/// written.
+/// with the time and the level, so every line is whole on its own, and any
+/// other control character in a part is written as `\xNN`
+/// ([`escape_controls`]). Empty when `text` holds nothing but white space, so
+/// a blank spacer line is not written.
 pub fn format_lines(time: &str, level: LogLevel, text: &str) -> String {
     let mut out = String::new();
     for part in text
@@ -84,9 +92,39 @@ pub fn format_lines(time: &str, level: LogLevel, text: &str) -> String {
         .map(str::trim_end)
         .filter(|part| !part.trim().is_empty())
     {
+        let part = escape_controls(part);
         out.push_str(&format!("{time} {:>5} {part}\n", level.word()));
     }
     out
+}
+
+/// `text` with every control character, U+0000 to U+001F and U+007F, written
+/// as `\x` and two lowercase hex digits: ESC as `\x1b`, BEL as `\x07`. A
+/// line break is a control character too, so a writer that keeps line breaks
+/// as lines splits on them first. The text is borrowed as it is when it holds
+/// none.
+///
+/// Why: a log is read in a terminal as well as in the Logs panel, and a file
+/// name in a backup or a tool's output can carry these characters. Written
+/// as they are, they would rewrite what the reader sees.
+pub fn escape_controls(text: &str) -> Cow<'_, str> {
+    if !text.chars().any(is_control) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 8);
+    for c in text.chars() {
+        if is_control(c) {
+            let _ = write!(out, "\\x{:02x}", u32::from(c));
+        } else {
+            out.push(c);
+        }
+    }
+    Cow::Owned(out)
+}
+
+/// Whether [`escape_controls`] writes `c` as `\xNN`.
+fn is_control(c: char) -> bool {
+    c < ' ' || c == '\x7f'
 }
 
 /// One line read back, borrowed from the text it was read from.
@@ -249,6 +287,57 @@ mod tests {
             format!("{TIME}  INFO Summary\n{TIME}  INFO   12 messages\n")
         );
         assert_eq!(format_lines(TIME, LogLevel::Info, "  "), "");
+    }
+
+    /// A terminal acts on a control character it is shown: ESC starts a
+    /// sequence that can clear the screen, backspace rubs out what came
+    /// before, BEL rings. A line holds each as `\xNN` instead.
+    #[test]
+    fn a_control_character_is_written_as_backslash_x() {
+        let text = format_lines(TIME, LogLevel::Warn, "a.jpg\x1b[2J\x08\x07\t\x7f\rdone");
+        assert_eq!(
+            text,
+            format!("{TIME}  WARN a.jpg\\x1b[2J\\x08\\x07\\x09\\x7f\\x0ddone\n")
+        );
+        assert!(matches!(escape_controls("plain é"), Cow::Borrowed("plain é")));
+    }
+
+    /// Every line the writer writes, whatever control characters its text
+    /// held, is read back whole by the reader, with its time, its level, and
+    /// no control character left in its text.
+    #[test]
+    fn a_line_holding_control_characters_reads_back_whole() {
+        let said = "wtsexporter: \x1b[31mfailed\x1b[0m\x00 on \x1b]0;title\x07 \x0b\x0cnext\r\nlast\x1b";
+        let written = format_lines(TIME, LogLevel::Warn, said);
+        let mut read = Vec::new();
+        lines_backward(
+            &mut Cursor::new(written.as_bytes()),
+            written.len() as u64,
+            |_, raw| {
+                read.push(raw.to_string());
+                ControlFlow::Continue(())
+            },
+        )
+        .unwrap();
+        read.reverse();
+        let texts: Vec<String> = read
+            .iter()
+            .map(|raw| {
+                let line = parse_line(raw).unwrap();
+                assert_eq!((line.time, line.level), (TIME, LogLevel::Warn));
+                assert!(!line.text.chars().any(is_control), "{:?}", line.text);
+                line.text.to_string()
+            })
+            .collect();
+        assert_eq!(
+            texts,
+            [
+                "wtsexporter: \\x1b[31mfailed\\x1b[0m\\x00 on \\x1b]0;title\\x07 \\x0b\\x0cnext",
+                "last\\x1b",
+            ]
+        );
+        // Writing a line read back writes it again unchanged.
+        assert_eq!(format_lines(TIME, LogLevel::Warn, &texts.join("\n")), written);
     }
 
     #[test]
