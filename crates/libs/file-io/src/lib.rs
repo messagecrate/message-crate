@@ -3,8 +3,10 @@
 //! the same write through a temporary file the caller names, which staged
 //! attachments and exported Assets use ([`write_atomic_via`]), the synced
 //! rename for a file another program wrote ([`rename_into_place`]), the
-//! streamed SHA-256 of a file ([`file_sha256`]), and the same fingerprint of
-//! bytes already in memory ([`sha256_hex`]).
+//! streamed SHA-256 of a file ([`file_sha256`]), the same fingerprint of
+//! bytes already in memory ([`sha256_hex`]), and the open and hash that refuse
+//! a symlink rather than follow it, which the server's asset store reads
+//! through ([`open_nofollow`], [`file_sha256_nofollow`]).
 //!
 //! [`sha256_hex`] lives here, not with its callers, so it stays beside
 //! [`file_sha256`] and the tests pin the two to one fingerprint format,
@@ -20,8 +22,10 @@ use std::io::{self, Read};
 use std::path::Path;
 
 mod durable;
+mod nofollow;
 
 pub use durable::{rename_into_place, write_atomic, write_atomic_via};
+pub use nofollow::{ensure_regular_file, file_sha256_nofollow, open_nofollow};
 
 /// Stream a file through SHA-256 in 64 KB chunks (no full read into memory).
 ///

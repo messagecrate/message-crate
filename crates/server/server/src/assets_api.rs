@@ -7,12 +7,12 @@
 //! and the multipart upload routes also live here; multipart staging itself is in `asset_uploads`.
 
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, Read, Write};
+use std::fs;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
@@ -260,7 +260,7 @@ fn store_verified_inner(
     copy_ready: impl FnOnce(),
     selection_ready: impl FnOnce(),
 ) -> Result<(StoredAsset, bool), AssetError> {
-    ensure_regular_file(source)?;
+    file_io::ensure_regular_file(source)?;
     // The export's claim, else a guess from the source file's name. The stored
     // file has no extension, so it can say nothing about its own type.
     let mime_type = resolve_mime(export_mime, source);
@@ -399,8 +399,8 @@ fn copy_to_verified_temp(
 ) -> Result<tempfile::NamedTempFile, AssetError> {
     let mut temporary = crate::asset_store::shard_temp_file(shard)
         .with_context(|| format!("create temporary asset in {}", shard.display()))?;
-    let mut src =
-        open_nofollow_read(source).with_context(|| format!("open source {}", source.display()))?;
+    let mut src = file_io::open_nofollow(source)
+        .with_context(|| format!("open source {}", source.display()))?;
     let mut hasher = Sha256Hasher::new();
     let mut buf = vec![0u8; COPY_BUFFER_BYTES];
     loop {
@@ -466,8 +466,8 @@ pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
 
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.
 ///
-/// Not `file_io::file_sha256`: this opens the file without following a
-/// symlink, so a symlink at `path` is refused rather than followed.
+/// `file_io::file_sha256_nofollow`, so a symlink at `path` is refused rather
+/// than followed; tests also see each path it hashes through [`hashed`].
 ///
 /// # Errors
 ///
@@ -475,18 +475,7 @@ pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
 pub(crate) fn hash_file(path: &Path) -> Result<String> {
     #[cfg(test)]
     hashed::record(path);
-    let file = open_nofollow_read(path)?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256Hasher::new();
-    let mut buf = [0u8; COPY_BUFFER_BYTES];
-    loop {
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hex::encode(hasher.finalize()))
+    file_io::file_sha256_nofollow(path)
 }
 
 /// Every path [`hash_file`] was asked to read, so a test can show that a
@@ -521,7 +510,7 @@ pub(crate) mod hashed {
 
 /// Read the MIME sidecar for `sha`, if present and non-empty.
 fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
-    let file = open_nofollow_read(&sidecar_path(assets_root, sha)).ok()?;
+    let file = file_io::open_nofollow(&sidecar_path(assets_root, sha)).ok()?;
     let mut mime = String::new();
     file.take(1024).read_to_string(&mut mime).ok()?;
     let mime = mime.trim();
@@ -585,36 +574,6 @@ fn is_regular_file(path: &Path) -> bool {
     match fs::symlink_metadata(path) {
         Ok(meta) => meta.is_file() && !meta.file_type().is_symlink(),
         Err(_) => false,
-    }
-}
-
-/// Fail unless `path` is a regular file, not a symlink.
-fn ensure_regular_file(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path).with_context(|| format!("stat {}", path.display()))?;
-    if meta.file_type().is_symlink() {
-        bail!("refusing to follow symlink: {}", path.display());
-    }
-    if !meta.is_file() {
-        bail!("asset source is not a file: {}", path.display());
-    }
-    Ok(())
-}
-
-/// Open `path` for reading without following a symlink.
-fn open_nofollow_read(path: &Path) -> Result<File> {
-    ensure_regular_file(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-            .with_context(|| format!("open {}", path.display()))
-    }
-    #[cfg(not(unix))]
-    {
-        File::open(path).with_context(|| format!("open {}", path.display()))
     }
 }
 
