@@ -890,6 +890,10 @@ did (#1227). A run opens only at `parse`: `POST /v1/imports` with any other
 `stage` answers `422 Unprocessable Entity` (`validation-failed`) and opens no
 run. Why: a run opened later in the order would be resumed at work nobody did
 (#2638), and `422` because the client fixes it by sending `parse`.
+A running run with no stored stage is refused any change of stage with
+`500 Internal Server Error`: the server never writes such a row, so there is
+no stage to check the move from, and passing it unchecked would let any move
+through (#2638).
 
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
