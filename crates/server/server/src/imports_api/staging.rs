@@ -112,8 +112,9 @@ fn try_store_converted(
     .map_err(StagingError::Internal)
 }
 
-/// Store an attachment by the sha256 the export claims (reusing an Asset the store already holds) or by
-/// hashing its file, counting the ones whose file is missing.
+/// Store an attachment by the sha256 the export claims (reusing an Asset the
+/// store already holds) or by hashing its file, counting the ones whose file
+/// is missing.
 fn store_claimed_or_path(
     att: &AttachmentRecord,
     export_dir: &Path,

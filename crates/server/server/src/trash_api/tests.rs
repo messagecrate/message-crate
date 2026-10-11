@@ -311,8 +311,8 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let (fixture, alice) = fixture_with_account().await;
     let sha = fake_sha256('c');
     let doomed = seed(&fixture, &alice, "+15555550178").await;
-    let asset_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
-    let sidecar = asset_file.parent().unwrap().join(format!(".{sha}.mime"));
+    let doomed_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &sha).await;
+    let sidecar = doomed_file.parent().unwrap().join(format!(".{sha}.mime"));
     let kept = seed(&fixture, &alice, "+15555550181").await;
     let kept_file =
         attach_stored_file(&fixture.state, alice.account_id, kept, &fake_sha256('d')).await;
@@ -322,13 +322,13 @@ async fn a_file_kept_for_a_running_import_goes_when_the_run_ends() {
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(
-        asset_file.is_file(),
+        doomed_file.is_file(),
         "a running Import Run may still need the file"
     );
 
     complete_run(&fixture, &alice, run).await;
     assert!(
-        !asset_file.exists(),
+        !doomed_file.exists(),
         "nothing names the file once the run ended"
     );
     assert!(!sidecar.exists(), "its MIME sidecar goes with it");
