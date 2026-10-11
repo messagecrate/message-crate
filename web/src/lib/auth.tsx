@@ -81,18 +81,20 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
   // Check that the restored token still works.
   useEffect(() => {
-    if (!state.isAuthenticated || restored) return;
+    const { serverUrl, token, accountId } = state;
+    if (!state.isAuthenticated || restored || token === null || accountId === null) return;
+    const login = { serverUrl, token, accountId };
 
     let cancelled = false;
     const validate = async () => {
-      const check = await checkSavedLogin(state);
+      const check = await checkSavedLogin(login);
       if (cancelled) return;
       if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still
         // owes profile setup is read from it, so fetching it here keeps the
         // guards from deciding against an empty cache. A profile that fails
         // to load is left to the guards, which hold until it loads.
-        await fetchAccountProfileFor(queryClient, state.accountId, true);
+        await fetchAccountProfileFor(queryClient, login.accountId, true);
         if (!cancelled) setRestored(true);
         return;
       }

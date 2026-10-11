@@ -7,7 +7,7 @@ export function initialLoginServerUrl(savedUrl: string | undefined, inTauri: boo
   return inTauri ? DEFAULT_TAURI_SERVER_URL : "";
 }
 
-export interface ParsedPersistedAuth {
+export interface SavedLogin {
   serverUrl: string;
   token: string;
   accountId: number;
@@ -21,7 +21,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Read a saved login session from JSON.
  * Returns null when the text is not valid JSON or required fields are missing.
  */
-export function parsePersistedAuth(raw: string): ParsedPersistedAuth | null {
+export function parsePersistedAuth(raw: string): SavedLogin | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);

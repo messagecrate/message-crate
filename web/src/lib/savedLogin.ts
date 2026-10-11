@@ -5,9 +5,9 @@
  * and the server address on its own. Passwords are never stored.
  */
 import { ApiError } from "./api";
-import { type ApiSession, applyApiSession } from "./apiSession";
+import { applyApiSession } from "./apiSession";
 import type { AuthState } from "./authContext";
-import { type ParsedPersistedAuth, parsePersistedAuth } from "./authGuards";
+import { parsePersistedAuth, type SavedLogin } from "./authGuards";
 import { getSession } from "./serverApi";
 import { readPref, removePref, writePref } from "./storage";
 
@@ -23,7 +23,7 @@ const SAVED_LOGIN_KEY = "message-crate-auth";
 const SERVER_ADDRESS_KEY = "message-crate-server-address";
 
 /** The saved login, or null when none is saved or it cannot be read. */
-export function loadSavedLogin(): ParsedPersistedAuth | null {
+export function loadSavedLogin(): SavedLogin | null {
   const raw = readPref(SAVED_LOGIN_KEY);
   if (!raw) return null;
   return parsePersistedAuth(raw);
@@ -81,14 +81,14 @@ export function startingAuthState(): AuthState {
 export type SavedLoginCheck = "valid" | "refused" | "unanswered";
 
 /**
- * Point `api.ts` at `login` and ask the server whether that session still
- * works.
+ * Point `api.ts` at `login`, and leave it there, then ask the server
+ * whether that session still works.
  *
  * Only the server can say a token is no longer valid, and it says so with a
  * 401. A request nothing answered, or a 502 from a proxy, says nothing about
  * the token.
  */
-export async function checkSavedLogin(login: ApiSession): Promise<SavedLoginCheck> {
+export async function checkSavedLogin(login: SavedLogin): Promise<SavedLoginCheck> {
   applyApiSession(login);
   try {
     await getSession();
