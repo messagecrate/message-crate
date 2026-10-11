@@ -521,8 +521,9 @@ fn programs_run_by(source: &SourceConfig) -> &'static [Program] {
 ///
 /// # Errors
 ///
-/// Returns an error if the exporter fails, or if the source is format
-/// conversion (that job uses the `format` command instead).
+/// Returns an error if the exporter fails, or if the source is
+/// `SourceConfig::Format`: Convert runs through the `format` command, never
+/// through `extract`.
 fn run_exporter(config: &ExporterConfig) -> anyhow::Result<RunResult> {
     match &config.source {
         SourceConfig::GoSmsPro(_) => run_go_sms_pro(config),
@@ -532,7 +533,9 @@ fn run_exporter(config: &ExporterConfig) -> anyhow::Result<RunResult> {
         SourceConfig::Imazing(_) => run_imazing(config),
         SourceConfig::Apple(_) => run_imessage(config),
         SourceConfig::Whatsapp(_) => run_whatsapp(config),
-        SourceConfig::Format(_) => Err(anyhow::anyhow!("Format conversion not yet wired")),
+        SourceConfig::Format(_) => Err(anyhow::anyhow!(
+            "Convert runs through the format command, not extract"
+        )),
     }
 }
 
