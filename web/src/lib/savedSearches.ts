@@ -1,7 +1,7 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { keys } from "./queryKeys";
-import { useRouteCache, useRouteQuery } from "./routeQuery";
+import { useRouteMutation, useRouteQuery } from "./routeQuery";
 import {
   createSavedSearch,
   deleteSavedSearch,
@@ -43,10 +43,8 @@ export function useSavedSearches(): {
 
 /** Every write marks the account's cache stale, so the sidebar's list is read again. */
 function useSavedSearchWrite<T, V>(write: (vars: V) => Promise<T>): UseMutationResult<T, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<T, Error, V>({
+  return useRouteMutation<T, Error, V>({
     mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

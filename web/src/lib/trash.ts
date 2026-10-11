@@ -1,5 +1,5 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
-import { useRouteCache } from "./routeQuery";
+import type { UseMutationResult } from "@tanstack/react-query";
+import { useRouteMutation } from "./routeQuery";
 import {
   deleteContact,
   deleteConversation,
@@ -22,10 +22,8 @@ import {
  * it settles, like every other write.
  */
 function useTrashWrite<V>(write: (vars: V) => Promise<void>): UseMutationResult<void, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<void, Error, V>({
+  return useRouteMutation<void, Error, V>({
     mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

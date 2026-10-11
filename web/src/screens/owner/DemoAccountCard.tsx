@@ -1,11 +1,10 @@
-import { useMutation } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { parseSelectKey } from "../../lib/selectKey";
 import { getDemoAccount, replaceDemoAccount } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
@@ -40,13 +39,12 @@ export function DemoAccountCard() {
   });
   const [size, setSize] = useState<DemoDataSize>("medium");
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const build = useMutation({
+  const build = useRouteMutation({
     mutationFn: (chosen: DemoDataSize) => replaceDemoAccount({ size: chosen }),
     onSuccess: (started) => {
       cache.set(keys.demoAccount.all, started);
       setConfirmOpen(false);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 
   // When a build ends, the account list, the storage counts and the login

@@ -189,15 +189,22 @@ nothing — the opposite of the pattern this decision removes.
   in each path, which releases memory and nothing more.
 - Every write marks the whole account's cache stale once it settles, through
   one call: `invalidateAccount` on `useRouteCache` in
-  `web/src/lib/routeQuery.ts`. No write names the entries it changes. Each
-  write once named its own list of entries, and the review of 2 October 2026
-  found six that left out entries they changed, so the screens showing those
-  kept the old state (issue #1239). A list per write is a list someone forgets
-  to extend; the account prefix is the one key no write can leave out. The
-  cost is small, because TanStack Query refetches only the entries on screen.
-  A write that answers with the whole value still writes it into its entry,
-  and the optimistic chips of Contact Groups and Message Tags still draw
-  before the server answers, so neither waits for the refetch.
+  `web/src/lib/routeQuery.ts`. A write made with TanStack Query goes through
+  `useRouteMutation` in the same file, which makes that call before the
+  write's own `onSettled`, and Biome refuses `useMutation` anywhere else
+  (`web/biome.json`). Before that, each write added the call itself, and a
+  new write that left it out compiled and passed its own tests (issue #2162).
+  The mutations that change no account data, such as an attachment download
+  or a Media Link, are named in the Biome override that lets them use
+  `useMutation`. No write names the entries it changes. Each write once named
+  its own list of entries, and the review of 2 October 2026 found six that
+  left out entries they changed, so the screens showing those kept the old
+  state (issue #1239). A list per write is a list someone forgets to extend;
+  the account prefix is the one key no write can leave out. The cost is
+  small, because TanStack Query refetches only the entries on screen. A write
+  that answers with the whole value still writes it into its entry, and the
+  optimistic chips of Contact Groups and Message Tags still draw before the
+  server answers, so neither waits for the refetch.
 - `contact_id` on a conversation participant became an `i64`. It was the only
   contact id on the whole API sent as a string; every other shape — the contact
   list, one contact, a selection summary, an import's contacts, and the

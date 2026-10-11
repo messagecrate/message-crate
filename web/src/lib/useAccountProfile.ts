@@ -1,9 +1,9 @@
-import { type UseMutationResult, useMutation, useQueryClient } from "@tanstack/react-query";
+import { type UseMutationResult, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import type { AccountProfile } from "./account";
 import { useAuth } from "./auth";
 import { keys } from "./queryKeys";
-import { useRouteCache, useRouteQuery } from "./routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./routeQuery";
 import { ANONYMOUS_ACCOUNT, routeQueryKey } from "./routeQueryKey";
 import { getAccountProfile, updateAccountProfile } from "./serverApi";
 
@@ -52,12 +52,11 @@ export function useUpdateAccountProfile(): UseMutationResult<
   AccountProfileChange
 > {
   const cache = useRouteCache();
-  return useMutation<AccountProfile, Error, AccountProfileChange>({
+  return useRouteMutation<AccountProfile, Error, AccountProfileChange>({
     mutationFn: (body) => updateAccountProfile(body),
     onSuccess: (profile) => {
       cache.set(keys.accountProfile.all, profile);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

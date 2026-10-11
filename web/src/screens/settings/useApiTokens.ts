@@ -1,9 +1,9 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { useRevealApiToken } from "../../components/apiTokenRevealState";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { createApiToken, deleteApiToken, listApiTokens, renameApiToken } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
 
@@ -18,11 +18,9 @@ function useApiTokenWrite<T, V>(
   write: (vars: V) => Promise<T>,
   onSuccess?: (res: T) => void,
 ): UseMutationResult<T, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<T, Error, V>({
+  return useRouteMutation<T, Error, V>({
     mutationFn: write,
     onSuccess,
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

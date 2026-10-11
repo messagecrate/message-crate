@@ -1,7 +1,7 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import {
   deleteAccountById,
   deleteAccountMessages,
@@ -24,10 +24,8 @@ const fetchAccounts = (signal: AbortSignal) => listAccounts({ signal });
 function useOwnerWrite<V>(
   write: (vars: V) => Promise<unknown>,
 ): UseMutationResult<unknown, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<unknown, Error, V>({
+  return useRouteMutation<unknown, Error, V>({
     mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 
@@ -42,12 +40,11 @@ export function useUpdateAccount(): UseMutationResult<
   { id: number; changes: ManagedAccountChanges }
 > {
   const cache = useRouteCache();
-  return useMutation<ManagedAccount, Error, { id: number; changes: ManagedAccountChanges }>({
+  return useRouteMutation<ManagedAccount, Error, { id: number; changes: ManagedAccountChanges }>({
     mutationFn: ({ id, changes }) => updateAccount(id, changes),
     onSuccess: (account) => {
       cache.set(keys.ownerAccounts.member(account.account_id), account);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { freshEntries, seedEntries } from "../test/staleEntries";
 import type { OffsetPage } from "./routeQuery";
-import { useRouteCache, useRoutePagedList, useRouteQuery } from "./routeQuery";
+import { useRouteCache, useRouteMutation, useRoutePagedList, useRouteQuery } from "./routeQuery";
 
 const account = { current: 7 };
 vi.mock("./auth", () => ({
@@ -337,5 +337,58 @@ describe("useRouteCache", () => {
 
     expect(freshEntries(client, 7, entries)).toEqual([]);
     expect(freshEntries(client, 8, entries)).toEqual(entries);
+  });
+});
+
+describe("useRouteMutation", () => {
+  const entries = [["contacts", "list", ""], ["account-profile"], ["api-tokens"]];
+
+  it("marks every entry of the logged-in account stale once the write succeeds", async () => {
+    seedEntries(client, 7, entries);
+    seedEntries(client, 8, entries);
+    const { result } = renderHook(() => useRouteMutation({ mutationFn: async () => "saved" }), {
+      wrapper,
+    });
+
+    await act(() => result.current.mutateAsync());
+
+    expect(freshEntries(client, 7, entries)).toEqual([]);
+    expect(freshEntries(client, 8, entries)).toEqual(entries);
+  });
+
+  it("marks the account stale when the server refuses the write too", async () => {
+    seedEntries(client, 7, entries);
+    const { result } = renderHook(
+      () =>
+        useRouteMutation({
+          mutationFn: async () => {
+            throw new Error("refused");
+          },
+        }),
+      { wrapper },
+    );
+
+    await act(() => result.current.mutateAsync().catch(() => {}));
+
+    expect(freshEntries(client, 7, entries)).toEqual([]);
+  });
+
+  it("runs the write's own onSettled after the account is marked stale", async () => {
+    seedEntries(client, 7, entries);
+    const seen: unknown[] = [];
+    const { result } = renderHook(
+      () =>
+        useRouteMutation({
+          mutationFn: async (name: string) => `saved ${name}`,
+          onSettled: (data, error, name) => {
+            seen.push([data, error, name, freshEntries(client, 7, entries)]);
+          },
+        }),
+      { wrapper },
+    );
+
+    await act(() => result.current.mutateAsync("Ada"));
+
+    expect(seen).toEqual([["saved Ada", null, "Ada", []]]);
   });
 });
