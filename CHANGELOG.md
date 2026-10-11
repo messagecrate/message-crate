@@ -357,6 +357,12 @@ released versions carry their date on the heading.
   takes a name in any script. An account made before this change keeps its
   username and still logs in with it (#2229).
 
+- 2026-10-11: **Every letter and digit is equally likely in the secret of a
+  Session or an API Token.** Each secret favoured the letters A to H, which
+  came up a quarter more often than the other letters and digits. Each now
+  comes up equally often. The secrets were never close to guessable, and
+  they keep the same length and form (#2220).
+
 - 2026-10-11: **The login screen no longer reads Disconnected for a moment
   while an import runs.** An import can keep the server's database busy for
   longer than its health check waits, so one check could fail though the

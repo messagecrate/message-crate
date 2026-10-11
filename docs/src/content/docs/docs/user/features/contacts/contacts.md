@@ -52,7 +52,7 @@ The identity table has these columns:
 
 | Column | What it shows |
 |---|---|
-| **Service** | **Text message**, **Email**, or **WhatsApp** |
+| **Service** | **Text Message**, **Email**, or **WhatsApp** |
 | **Identity** | The phone number, email address, or username |
 | **First heard from** | The date of the first message the contact sent from this identity |
 | **Last heard from** | The date of the last message the contact sent from this identity |
@@ -81,12 +81,12 @@ An Address Book load replaces it only when the file gives the contact a differen
 ## Add or remove an identity
 
 **Add identity** opens a dialog with two fields.
-**Service** is **Text message**, **Email**, or **WhatsApp**.
+**Service** is **Text Message**, **Email**, or **WhatsApp**.
 **Identity** is the phone number or the email address.
 
 - A phone number must have 7 to 15 digits. Spaces, dots, dashes, and parentheses are accepted.
 - An email address must have the form `name@example.com`.
-- The same number on **Text message** and on **WhatsApp** is two identities, so both can be added.
+- The same number on **Text Message** and on **WhatsApp** is two identities, so both can be added.
 - An identity the contact already has is refused with **This identity is already in the list.**
 - An identity that belongs to another contact with a name is refused, because an identity belongs to at most one contact. It must be removed from the other contact first. An identity on a contact with no name moves to this one, and a contact with no name left with no identity goes.
 
@@ -241,7 +241,7 @@ The `identity` column should be kept as text, because a spreadsheet that reads `
 - **Put a contact in a Contact Group.** Add the group's name to `groups`. A name that matches no Contact Group creates one.
 - **Give a contact another identity.** Add a row with the same `contact_id`.
 - **Move an identity to another contact.** Change the row's `contact_id` to the other contact's.
-  A row moves only the identity it lists. A phone number on **Text message** and the same number on **WhatsApp** are two identities, so a row that moves one of them leaves the other where it is.
+  A row moves only the identity it lists. A phone number on **Text Message** and the same number on **WhatsApp** are two identities, so a row that moves one of them leaves the other where it is.
   To move both, give each its own row under the same `contact_id`.
 - **Make a new contact.** Leave `contact_id` blank. To give a new contact several identities, put the same made-up word, such as `new-1`, in `contact_id` on each of its rows.
 - **Leave a contact alone.** Delete its rows from the file. A contact the file does not mention is never changed.
