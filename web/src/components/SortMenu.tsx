@@ -1,9 +1,8 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
+import type { SortOrder } from "../lib/sortOrder";
 import { focusRingClass, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
 import { MenuCheckIcon, SortIcon } from "./icons";
 import PlainButton from "./PlainButton";
-
-export type SortOrder = "asc" | "desc";
 
 export type SortField<Id extends string> = {
   id: Id;

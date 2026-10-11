@@ -1,4 +1,4 @@
-import type { SortOrder } from "../components/SortMenu";
+import type { SortOrder } from "./sortOrder";
 import { readPref, writePref } from "./storage";
 
 /**
