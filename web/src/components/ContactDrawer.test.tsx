@@ -388,7 +388,7 @@ describe("ContactDrawer", () => {
     });
   });
 
-  it("stubs overlay addresses from thread preview while detail is pending", async () => {
+  it("stubs overlay addresses from the conversation preview while detail is pending", async () => {
     let resolveDetail!: (d: ContactDetail) => void;
     const pending = new Promise<ContactDetail>((resolve) => {
       resolveDetail = resolve;
@@ -439,7 +439,7 @@ describe("ContactDrawer", () => {
     });
   });
 
-  it("stubs one overlay identity row when thread preview has no handle strings", async () => {
+  it("stubs one overlay identity row when the conversation preview has no handle strings", async () => {
     let resolveDetail!: (d: ContactDetail) => void;
     const pending = new Promise<ContactDetail>((resolve) => {
       resolveDetail = resolve;

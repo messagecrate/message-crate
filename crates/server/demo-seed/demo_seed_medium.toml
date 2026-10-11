@@ -40,9 +40,9 @@ high_tail = 0.08
 span_mean_years = 4.0
 span_mean_jitter = 1.0
 span_max_years = 14.0
-# Newest thread may start this many days ago.
+# Newest conversation may start this many days ago.
 newest_days = 7
-# Fraction of contacts with a 1:1 thread (others group-only or silent).
+# Fraction of contacts with a one-to-one conversation (others group-only or silent).
 one_to_one_fraction = 0.85
 
 [groups]
@@ -58,7 +58,7 @@ participants_max = 25
 large_min_count = 4
 large_participants_min = 8
 large_participants_max = 20
-# Messages per year. Typical band + log-skewed high tail (same shape as 1:1).
+# Messages per year. Typical band + log-skewed high tail (same shape as one-to-one).
 # Timestamps are bursty: several msgs on active days, quiet gaps, occasional floods.
 typical_min = 60
 typical_max = 150
@@ -74,7 +74,7 @@ phone_only_fraction = 0.08
 
 [messages]
 emoji_probability = 0.015
-# Attachments sparse on large threads (stride grows with size).
+# Attachments sparse on large conversations (stride grows with size).
 jpg_base_stride = 40
 other_base_stride = 90
 tapback_stride = 80
@@ -96,14 +96,14 @@ empty_group = true
 
 # Backup sources: imessage (primary), sms-backup-restore (Android XML-style), and whatsapp.
 [sources]
-# Share of 1:1 contacts (after overlap) that are Android-only.
+# Share of one-to-one contacts (after overlap) that are Android-only.
 android_only_fraction = 0.12
 # Contacts present in both staging trees (light overlap for Sources + dedupe).
 overlap_count = 10
-# Fraction of an overlap thread's iMessage messages also written to Android (shared fingerprint).
+# Fraction of an overlap conversation's iMessage messages also written to Android (shared fingerprint).
 overlap_shared_fraction = 0.35
-# Extra Android-only messages appended on overlap threads.
+# Extra Android-only messages appended on overlap conversations.
 overlap_android_extra_min = 20
 overlap_android_extra_max = 80
-# Contacts that also get a WhatsApp 1:1 thread (same phone, platform whatsapp).
+# Contacts that also get a WhatsApp one-to-one conversation (same phone, platform whatsapp).
 whatsapp_contact_fraction = 0.20
