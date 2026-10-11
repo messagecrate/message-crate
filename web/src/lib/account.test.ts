@@ -12,6 +12,7 @@ describe("fixedSettings", () => {
       password: true,
       deleteMessages: true,
       deleteOwnAccount: true,
+      apiTokens: true,
     });
   });
 

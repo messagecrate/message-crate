@@ -267,6 +267,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The Demo Account can no longer make API Tokens.** Anyone
+  who entered the Demo Account could make one, even one that never expires,
+  and walk away with a way back in that outlived the visit. Every visitor
+  shares the Demo Account, so each one also saw the tokens the others made
+  and could revoke them. Its Settings now say it makes no API Tokens, and the
+  server refuses one (#2148).
 - 2026-10-10: **No API token works on the owner's account.** The owner
   cannot make an API token, but a token on the owner's account that got
   there another way, such as in a restored database, used to import into
