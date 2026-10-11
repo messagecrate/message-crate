@@ -645,7 +645,12 @@ async fn reset_check_refuses_a_reset_that_loses_the_old_demo_accounts_audit_trai
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &temp.path().join("data"));
 
+    // The schema refuses the delete, so the trigger is dropped first: the
+    // check still has to catch a reset that gets past it.
     let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |db| {
+        sqlx::query("DROP TRIGGER audit_entries_never_deleted")
+            .execute(db)
+            .await?;
         sqlx::query("DELETE FROM audit_entries WHERE id = $1")
             .bind(entry)
             .execute(db)
