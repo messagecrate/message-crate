@@ -20,8 +20,8 @@ const UPLOAD_NOT_PAUSED =
 
 /**
  * The dialog logout shows, read from `useLogoutPrompt`, or nothing while
- * logging out has nothing to show. `App.tsx` places it once, under
- * `AuthProvider`.
+ * logging out has nothing to show. `AuthShell` places it once, beside what
+ * `AuthProvider` wraps.
  *
  * While the Upload pauses there is nothing to go back to, so the only
  * button is **Log out now**, which stops waiting.

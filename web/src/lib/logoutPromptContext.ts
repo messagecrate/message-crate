@@ -2,8 +2,8 @@
  * What logging out has to show the person, as `LogoutDialog` reads it.
  *
  * `AuthProvider` runs the logout and fills this context; the dialog that
- * shows it lives in `components/` and is placed by `App.tsx`, so `lib/`
- * renders nothing of its own (#2214).
+ * shows it lives in `components/` and `components/AuthShell.tsx` places it
+ * beside the provider, so `lib/` renders nothing of its own (#2214).
  */
 import { createContext, useContext } from "react";
 import type { UndeletedDirectory } from "./importRun";

@@ -92,7 +92,7 @@ function clearPersisted() {
  * Holds login state for the app and restores a saved session on startup.
  *
  * It also holds what logging out has to show, for `LogoutDialog` to read
- * from `useLogoutPrompt`; the app places that dialog, not this provider.
+ * from `useLogoutPrompt`; `AuthShell` places that dialog, not this provider.
  *
  * It also builds the query client every screen fetches through. A query or
  * mutation the server refuses because the session has ended has to log the
