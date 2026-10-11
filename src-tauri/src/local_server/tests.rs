@@ -99,11 +99,14 @@ fn settled(server: &LocalServer) -> Status {
     }
 }
 
-fn launch_at(address: SocketAddr, program: &Path, data_dir: &Path) -> Launch {
+/// A launch with its Data Directory and its website side by side in `dir`,
+/// as the packaged app keeps them apart: `serve` refuses a website inside the
+/// Data Directory, or the reverse (#2682).
+fn launch_at(address: SocketAddr, program: &Path, dir: &Path) -> Launch {
     Launch {
         program: program.to_path_buf(),
-        data_dir: data_dir.to_path_buf(),
-        static_dir: data_dir.join("website"),
+        data_dir: dir.join("data"),
+        static_dir: dir.join("website"),
         address,
         open_to_network: false,
         cors_origins: Vec::new(),
@@ -182,7 +185,7 @@ fn the_server_is_told_the_tools_directory() {
         ..launch_at(
             OWN_ADDRESS.parse().unwrap(),
             Path::new("unused"),
-            Path::new("/data"),
+            Path::new("/app"),
         )
     };
     assert_eq!(
@@ -205,7 +208,7 @@ fn open_to_the_network_listens_on_every_address_at_the_same_port() {
         ..launch_at(
             OWN_ADDRESS.parse().unwrap(),
             Path::new("unused"),
-            Path::new("/data"),
+            Path::new("/app"),
         )
     };
     assert_eq!(launch.arguments()[3..5], ["--bind", "0.0.0.0:8080"]);
@@ -555,7 +558,8 @@ fn the_first_start_is_the_one_with_no_database() {
     let dir = tempfile::tempdir().unwrap();
     let launch = launch_at(free_address(), Path::new("unused"), dir.path());
     assert!(launch.is_first_start());
-    std::fs::write(dir.path().join(DATABASE_FILE), b"").unwrap();
+    std::fs::create_dir_all(&launch.data_dir).unwrap();
+    std::fs::write(launch.data_dir.join(DATABASE_FILE), b"").unwrap();
     assert!(!launch.is_first_start());
 }
 
