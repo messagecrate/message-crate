@@ -5,7 +5,7 @@ const dir: ImportPathStat = { exists: true, isFile: false, isDirectory: true };
 const file: ImportPathStat = { exists: true, isFile: true, isDirectory: false };
 const missing: ImportPathStat = { exists: false, isFile: false, isDirectory: false };
 // A socket, a device file, or a pipe: it exists but is neither.
-const other: ImportPathStat = { exists: true, isFile: false, isDirectory: false };
+const neither: ImportPathStat = { exists: true, isFile: false, isDirectory: false };
 
 type Key = "field";
 
@@ -41,7 +41,7 @@ describe("checkOptionalPath", () => {
   });
 
   it("gives the field's own message for a path that is neither a file nor a directory", () => {
-    expect(check("/tmp/x", other, "directory")).toEqual({ field: "Wrong kind." });
-    expect(check("/tmp/x", other, "file")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", neither, "directory")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", neither, "file")).toEqual({ field: "Wrong kind." });
   });
 });
