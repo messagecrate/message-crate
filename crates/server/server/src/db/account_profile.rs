@@ -668,8 +668,17 @@ pub async fn account_clock(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<(chrono_tz::Tz, chrono::NaiveDate)> {
+    account_clock_at(conn, account_id, chrono::Utc::now()).await
+}
+
+/// [`account_clock`] at the instant `now`, so a test names the instant.
+pub async fn account_clock_at(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<(chrono_tz::Tz, chrono::NaiveDate)> {
     let zone = load_time_zone(conn, account_id).await?;
-    Ok((zone, crate::search::today_in(zone, chrono::Utc::now())))
+    Ok((zone, crate::search::today_in(zone, now)))
 }
 
 /// Load the `preferred_name` for an account, if set.
@@ -948,6 +957,31 @@ mod tests {
                 address: "+15555550100".to_string(),
                 services: vec![ApiIdentityService::Phone],
             }]
+        );
+    }
+
+    /// Today is the day on the account's clock. At 10:00 UTC on 1 September
+    /// it is already 2 September on Kiritimati, 14 hours ahead (#2216).
+    #[tokio::test]
+    async fn today_is_the_day_in_the_accounts_zone() {
+        use chrono::TimeZone;
+        let fixture = crate::test_support::test_fixture().await;
+        fixture.account_with_id(ACCOUNT_ID, "Alice").await;
+        let mut conn = fixture.conn().await;
+        let kiritimati = chrono_tz::Pacific::Kiritimati;
+        set_time_zone(&mut conn, ACCOUNT_ID, kiritimati)
+            .await
+            .unwrap();
+        let now = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 10, 0, 0).unwrap();
+
+        let clock = account_clock_at(&mut conn, ACCOUNT_ID, now).await.unwrap();
+
+        assert_eq!(
+            clock,
+            (
+                kiritimati,
+                chrono::NaiveDate::from_ymd_opt(2026, 9, 2).unwrap()
+            )
         );
     }
 
