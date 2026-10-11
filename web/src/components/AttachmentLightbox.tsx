@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { type AssetRequest, useAssetObjectUrls } from "../hooks/useAssetObjectUrl";
-import { attachmentName, fullVersion } from "../lib/attachmentMedia";
+import { attachmentName, fullVersion, noPreviewNote } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
 import { focusRingClass } from "../lib/uiStyles";
 import { Z_MODAL } from "../lib/zLayers";
@@ -79,9 +79,12 @@ export default function AttachmentLightbox({
   if (full?.url) {
     media = <img src={full.url} alt={name} className="max-h-[90vh] max-w-[90vw] object-contain" />;
   } else {
+    const noPreview = noPreviewNote(attachment);
     const message =
       version === "none"
-        ? "This photo has no copy a browser can show yet. Download it to open the original."
+        ? noPreview
+          ? `${noPreview}\nDownload it to open the original.`
+          : "This photo has no copy a browser can show yet. Download it to open the original."
         : full?.error
           ? "Failed to load attachment"
           : "Loading…";
@@ -95,7 +98,9 @@ export default function AttachmentLightbox({
             className="max-h-[80vh] max-w-[90vw] object-contain"
           />
         ) : null}
-        <div className={`${noteClass} max-w-[28rem] text-center`}>{message}</div>
+        <div className={`${noteClass} max-w-[28rem] whitespace-pre-line break-words text-center`}>
+          {message}
+        </div>
         {version === "none" ? (
           <DownloadAttachmentButton attachment={attachment} look="text" />
         ) : null}

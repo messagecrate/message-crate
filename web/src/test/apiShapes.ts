@@ -20,9 +20,11 @@ export function attachment(fields: Partial<Schema["Attachment"]> = {}): Schema["
     original_name: null,
     path: null,
     preview_mime_type: null,
+    preview_not_made_reason: null,
     sha256: null,
     shown_as_is: false,
     thumbnail_mime_type: null,
+    thumbnail_not_made_reason: null,
     transcription: null,
     ...fields,
   };

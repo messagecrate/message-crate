@@ -78,6 +78,19 @@ export function fullVersion(attachment: MessageAttachment): FullVersion {
   return attachment.preview_mime_type ? "preview" : "none";
 }
 
+/**
+ * What a screen says about an attachment that opens in no version because the
+ * server tried to make its Preview and could not: "No Preview could be made"
+ * and the server's `preview_not_made_reason`, what ffmpeg said about the file
+ * (`docs/architecture/media.md`, rule 4). `null` when it opens in a version,
+ * or no try has failed, as while the Preview is still to be made.
+ */
+export function noPreviewNote(attachment: MessageAttachment): string | null {
+  const reason = attachment.preview_not_made_reason;
+  if (fullVersion(attachment) !== "none" || !reason) return null;
+  return `No Preview could be made: ${reason}`;
+}
+
 /** The name a person knows the attachment by: the export's name, else its path's last part. */
 export function attachmentName(attachment: MessageAttachment): string {
   if (attachment.original_name?.trim()) return attachment.original_name.trim();

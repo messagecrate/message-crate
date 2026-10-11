@@ -952,3 +952,62 @@ fn a_file_a_later_run_fills_in_gets_its_thumbnail() {
         assert_eq!(attachments[0]["thumbnail_mime_type"], "image/jpeg");
     });
 }
+
+/// A file ffmpeg cannot read gets no Thumbnail and no Preview, and the
+/// conversation answers why for each (`docs/architecture/media.md`, rule 4),
+/// in ffmpeg's words, so the viewer can say it rather than the owner
+/// searching the server's log. The words name no path outside the data
+/// directory: the original's and the work file's paths are made relative.
+/// A file made beside it carries no reason.
+#[test]
+fn a_file_ffmpeg_cannot_read_answers_why_it_has_no_versions() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        let files: Vec<(&str, &str, Vec<u8>)> = vec![
+            ("photo.png", "image/png", fixture_bytes("photo.png")),
+            (
+                "broken.heic",
+                "image/heic",
+                b"not a picture at all".to_vec(),
+            ),
+        ];
+        let (shas, conversation_id) = import_files(&fixture, &alice, &files).await;
+
+        let made = work_through(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
+
+        assert_eq!(made.not_made, 1, "{made:?}");
+        let after = attachments(state, &alice, conversation_id).await;
+        let of = |sha: &str| {
+            after
+                .iter()
+                .find(|attachment| attachment["sha256"] == sha)
+                .unwrap_or_else(|| panic!("no attachment {sha} in {after:?}"))
+                .clone()
+        };
+        let photo = of(&shas[0]);
+        assert_eq!(photo["thumbnail_mime_type"], "image/jpeg", "{photo}");
+        assert_eq!(photo["thumbnail_not_made_reason"], serde_json::Value::Null);
+        assert_eq!(photo["preview_not_made_reason"], serde_json::Value::Null);
+
+        let broken = of(&shas[1]);
+        assert_eq!(broken["preview_mime_type"], serde_json::Value::Null);
+        assert_eq!(broken["thumbnail_mime_type"], serde_json::Value::Null);
+        let data_dir = state.cfg.paths.data_dir.display().to_string();
+        for field in ["preview_not_made_reason", "thumbnail_not_made_reason"] {
+            let reason = broken[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("{field} says why: {broken}"));
+            assert!(
+                reason.contains("Invalid data"),
+                "{field} is what ffmpeg said about the file: {reason}"
+            );
+            assert!(
+                !reason.contains(&data_dir),
+                "{field} names no path outside the data directory: {reason}"
+            );
+        }
+    });
+}

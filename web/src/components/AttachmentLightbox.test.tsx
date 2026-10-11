@@ -219,6 +219,25 @@ describe("AttachmentLightbox and the type rule", () => {
     expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" });
   });
 
+  it("says why the server could not make a HEIC's Preview, and offers the original", () => {
+    open(0, [
+      {
+        ...heic,
+        preview_mime_type: null,
+        preview_not_made_reason: "Error opening input file ab/ccc.heic.",
+      },
+    ]);
+
+    expect(
+      screen.getByText(/No Preview could be made: Error opening input file ab\/ccc\.heic\./),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no copy a browser can show yet/)).not.toBeInTheDocument();
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByRole("button", { name: "Download IMG_0001.heic" }).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("downloads the original of a photo it shows as its Preview", async () => {
     const user = setupUser();
     vi.mocked(fetchAsset).mockResolvedValue(new Blob(["heic"]));

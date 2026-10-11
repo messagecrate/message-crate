@@ -321,6 +321,20 @@ describe("a video in the conversation", () => {
     expect(screen.getByRole("button", { name: "Download clip.mov" })).toBeInTheDocument();
   });
 
+  it("says why the server could not make a HEVC video's Preview, and offers the download", () => {
+    const reason = "Error opening input file dd/ddd.mov.";
+    renderWithProviders(
+      <MessageAttachments
+        message={message([{ ...mov, preview_mime_type: null, preview_not_made_reason: reason }])}
+      />,
+    );
+
+    expect(screen.getByText(`No Preview could be made: ${reason}`)).toBeInTheDocument();
+    expect(screen.queryByText(NO_PLAYABLE_COPY)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play clip.mov" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download clip.mov" })).toBeInTheDocument();
+  });
+
   it("shows a file chip when no file was stored, as a photo with no digest does", () => {
     renderWithProviders(
       <MessageAttachments

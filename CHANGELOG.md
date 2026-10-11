@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-10: **An attachment says why it has no copy a browser can show.**
+  When the server tries to make the Preview of a photo, video or recording
+  and cannot, opening it now says **No Preview could be made** and what
+  ffmpeg said about the file, such as that the file holds data it cannot
+  read, or that the original file is missing. It used to say only that no
+  copy existed yet, as if one were still coming, and the reason was in the
+  server's log alone. The reason goes away once a later try makes the
+  Preview (#2170).
+
 - 2026-10-10: **User Accounts shows which accounts have no password.** In
   Owner Home, the Status of an account that has no password now reads
   **No password** under it. Once such an account is active, anyone who

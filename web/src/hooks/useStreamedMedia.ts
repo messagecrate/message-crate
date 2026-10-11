@@ -1,13 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 import { type SyntheticEvent, useState } from "react";
-import { fullVersion } from "../lib/attachmentMedia";
+import { fullVersion, noPreviewNote } from "../lib/attachmentMedia";
 import { createMediaLink } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
 
 /** `MediaError.MEDIA_ERR_NETWORK`: the stream broke off, rather than the file being unplayable. */
 const MEDIA_ERR_NETWORK = 2;
 
-/** What a player says about a file of a type browsers often cannot play, before its Preview is made. */
+/**
+ * What a player says about a file of a type browsers often cannot play, before
+ * its Preview is made. A Preview the server could not make says why instead
+ * (`noPreviewNote`).
+ */
 export const NO_PLAYABLE_COPY = "No copy a browser can play yet";
 
 /** What a player says when its stream broke off, as it does when its Media Link ends. */
@@ -41,7 +45,7 @@ export function useStreamedMedia(attachment: MessageAttachment) {
     pending: link.isPending,
     note:
       version === "none"
-        ? NO_PLAYABLE_COPY
+        ? (noPreviewNote(attachment) ?? NO_PLAYABLE_COPY)
         : link.isError
           ? "Could not start playing"
           : failure === "stopped"
