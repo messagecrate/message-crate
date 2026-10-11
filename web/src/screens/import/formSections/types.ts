@@ -1,56 +1,41 @@
 import type { ReactNode, RefObject } from "react";
 import type { PhoneTokenFieldHandle } from "../../../components/PhoneTokenField";
-import type { ImessagePathStats } from "../../../lib/imessageImport";
-import type { ImportSourceDescriptor, OwnerPhoneState } from "../../../lib/importSources/types";
+import type {
+  ImportSourceDescriptor,
+  OwnerPhoneState,
+  ReadinessInput,
+} from "../../../lib/importSources/types";
 import type { PhoneCountryChoice } from "../../../lib/phoneCountries";
 import type { AttachmentChoices } from "../../../lib/types";
-import type { WhatsappPathStats } from "../../../lib/whatsappImport";
 
 /**
- * The Import form's props. They carry every field a source's readiness
- * reads (`ReadinessInput`, less the owner phone entry the form builds), and
- * every source's form section is given them.
+ * The Import form's props: the fields a source's readiness reads, less the
+ * owner phone entry the form builds itself, and the rest of the form's
+ * fields and handlers. Every source's form section is given them.
  */
-export type ImportFormFieldsProps = {
-  source: string;
+export type ImportFormFieldsProps = Omit<ReadinessInput, "ownerPhoneEntry"> & {
   onSourceChange: (source: string) => void;
-  backupPath: string;
   onBackupPathChange: (path: string) => void;
-  backupPassword: string;
   onBackupPasswordChange: (value: string) => void;
   showBackupPassword: boolean;
   onToggleBackupPassword: () => void;
-  attachmentRoot: string;
   onAttachmentRootChange: (path: string) => void;
-  appleContacts: string;
   onAppleContactsChange: (path: string) => void;
-  pathStats: ImessagePathStats;
-  whatsappKey: string;
   onWhatsappKeyChange: (value: string) => void;
   showWhatsappKey: boolean;
   onToggleWhatsappKey: () => void;
-  whatsappWa: string;
   onWhatsappWaChange: (path: string) => void;
-  whatsappMedia: string;
   onWhatsappMediaChange: (path: string) => void;
-  whatsappDb: string;
   onWhatsappDbChange: (path: string) => void;
   isBusinessApp: boolean;
   onIsBusinessAppChange: (value: boolean) => void;
-  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
-  whatsappOwnerPhone: string;
   onWhatsappOwnerPhoneChange: (value: string) => void;
-  whatsappStats: WhatsappPathStats;
   attachments: AttachmentChoices;
   onAttachmentsChange: (attachments: AttachmentChoices) => void;
-  ownerPhones: string[];
   onOwnerPhonesChange: (phones: string[]) => void;
-  /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
-  ownerEmails: string;
   onOwnerEmailsChange: (value: string) => void;
   /** The account's phones for SBR mismatch checks (empty until loaded). */
   profilePhones: string[];
-  profilePhonesReady: boolean;
   /** True when the profile request failed (fail open on the mismatch check). */
   profilePhonesError: boolean;
   showMissingAccountPhoneWarning: boolean;

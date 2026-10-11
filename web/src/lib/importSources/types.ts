@@ -100,8 +100,8 @@ export type OwnerPhoneState = {
 
 /**
  * What a source's readiness reads from the Import form to decide whether
- * Import can start. The form's props carry every field here, so the form
- * passes them as they are.
+ * Import can start. The form's props are built on these fields, so the form
+ * passes its props as they are, with the owner phone entry it builds.
  */
 export type ReadinessInput = {
   /** The selected method's id. */
@@ -115,12 +115,12 @@ export type ReadinessInput = {
   whatsappWa: string;
   whatsappMedia: string;
   whatsappDb: string;
+  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
   whatsappOwnerPhone: string;
   whatsappStats: WhatsappPathStats;
   ownerPhones: string[];
-  /** Owner email addresses as typed; commas separate several. */
+  /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
   ownerEmails: string;
-  /** True once the account's phones have been read. */
   profilePhonesReady: boolean;
   ownerPhoneEntry: OwnerPhoneState;
 };
