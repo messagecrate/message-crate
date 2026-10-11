@@ -173,6 +173,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The settings the Demo Account is built from now call its
+  Contact Groups Contact Groups rather than labels, with nothing visible
+  (#2197).
+
 - 2026-10-11: The way the server finds and hides duplicate messages was
   reworked inside, with nothing visible (#2182).
 
