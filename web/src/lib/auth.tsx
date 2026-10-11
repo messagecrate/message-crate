@@ -311,12 +311,13 @@ function SessionProvider({
     clearSession();
   }, [clearSession]);
 
-  // What logout shows: the question it asks while an Upload runs, the wait
-  // while that Upload pauses, and a notice once logged out. `answer` settles
-  // the logout waiting on the question; `logOutNow` ends the wait.
-  const [dialog, setDialog] = useState<LogoutPromptState | null>(null);
-  const answer = useRef<(logOut: boolean) => void>(() => {});
-  const logOutNow = useRef<() => void>(() => {});
+  // Where logout is, for `LogoutDialog`: asking while an Upload runs, waiting
+  // while that Upload pauses, or what it has to say once logged out.
+  // `answerRef` settles the logout waiting on the question; `logOutNowRef`
+  // ends the wait.
+  const [prompt, setPrompt] = useState<LogoutPromptState | null>(null);
+  const answerRef = useRef<(logOut: boolean) => void>(() => {});
+  const logOutNowRef = useRef<() => void>(() => {});
 
   /**
    * Pause the running Upload. `paused` resolves to whether it paused before
@@ -329,11 +330,11 @@ function SessionProvider({
     const paused = new Promise<boolean>((resolve) => {
       const settle = (done: boolean) => {
         clearTimeout(timer);
-        logOutNow.current = () => {};
+        logOutNowRef.current = () => {};
         resolve(done);
       };
       const timer = setTimeout(() => settle(false), UPLOAD_PAUSE_LIMIT_MS);
-      logOutNow.current = () => settle(false);
+      logOutNowRef.current = () => settle(false);
       void ended.then(() => settle(true));
     });
     return { paused, ended };
@@ -350,13 +351,13 @@ function SessionProvider({
       const uploadRunning = isUploadRunning();
       if (ask && uploadRunning) {
         const logOut = await new Promise<boolean>((resolve) => {
-          answer.current = resolve;
-          setDialog({ kind: "asking" });
+          answerRef.current = resolve;
+          setPrompt({ kind: "asking" });
         });
         if (!logOut) return;
       }
       if (uploadRunning) {
-        setDialog({ kind: "pausing", accountDeleted: deletedAccountDirectories !== undefined });
+        setPrompt({ kind: "pausing", accountDeleted: deletedAccountDirectories !== undefined });
       }
       const pause = pauseWithinLimit();
       let paused = true;
@@ -364,7 +365,7 @@ function SessionProvider({
         paused = await pause.paused;
         await revokeSession();
       } finally {
-        setDialog(null);
+        setPrompt(null);
       }
       if (deletedAccountDirectories) {
         // The run went with the account, so nothing resumes; its directories go
@@ -375,10 +376,10 @@ function SessionProvider({
         await pause.ended;
         const undeleted = await deleteRunDirectories(deletedAccountDirectories);
         if (undeleted.length > 0) {
-          setDialog({ kind: "undeletedDirectories", directories: undeleted });
+          setPrompt({ kind: "undeletedDirectories", directories: undeleted });
         }
       } else if (!paused) {
-        setDialog({ kind: "notPaused" });
+        setPrompt({ kind: "notPaused" });
       }
     },
     [revokeSession, pauseWithinLimit],
@@ -446,16 +447,16 @@ function SessionProvider({
 
   const logoutPrompt = useMemo(
     () => ({
-      state: dialog,
-      logOut: () => answer.current(true),
+      state: prompt,
+      logOut: () => answerRef.current(true),
       goBack: () => {
-        setDialog(null);
-        answer.current(false);
+        setPrompt(null);
+        answerRef.current(false);
       },
-      logOutNow: () => logOutNow.current(),
-      dismiss: () => setDialog(null),
+      logOutNow: () => logOutNowRef.current(),
+      dismiss: () => setPrompt(null),
     }),
-    [dialog],
+    [prompt],
   );
 
   return (
