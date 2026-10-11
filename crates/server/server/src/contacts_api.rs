@@ -28,7 +28,8 @@ use edit::mutate_contact;
 /// An address to link, and the service to link it on.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AddContactIdentityRequest {
-    /// The address to link.
+    /// The address to link. Over 320 characters after trimming is refused
+    /// with `422 Unprocessable Entity`.
     pub address: String,
     /// The service to link it on; the phone service when omitted. It never
     /// decides the identity's type, which comes from the address. A new email
@@ -42,7 +43,8 @@ pub struct AddContactIdentityRequest {
 pub struct UpdateContactIdentityRequest {
     /// The address currently linked.
     pub previous_address: String,
-    /// The replacement address.
+    /// The replacement address. Over 320 characters after trimming is
+    /// refused with `422 Unprocessable Entity`.
     pub address: String,
     /// The service of the new address. The previous address is found on
     /// its own service whatever this names: on the named service first when
@@ -68,7 +70,8 @@ pub struct RemoveContactIdentityRequest {
 /// Body for `PATCH /v1/contacts/{id}`. Exactly one mutation field should be set.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateContactRequest {
-    /// New display name; `None` leaves it unchanged.
+    /// New display name, trimmed; `None` leaves it unchanged. Blank or over
+    /// 200 characters is refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub name: Option<String>,
     /// Identity to link.

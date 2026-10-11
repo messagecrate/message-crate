@@ -430,6 +430,91 @@ async fn creating_an_import_with_a_space_around_the_source_is_a_validation_failu
     assert_eq!(runs["total"], 0, "no run was created: {runs}");
 }
 
+/// Each JSON value a run stores as it is created is at most 64 KiB, and a
+/// body over the cap creates no run. They were stored at any size a JSON body
+/// could carry (#2183).
+#[tokio::test]
+async fn creating_an_import_with_an_oversized_json_value_is_a_validation_failure() {
+    let (state, _fixture, token) = importer().await;
+    let big = serde_json::json!({ "backupPath": "p".repeat(64 * 1024) });
+    for field in ["form", "source_fingerprint", "source_identities"] {
+        let (status, text) = crate::test_support::post_json_raw(
+            &state,
+            "/v1/imports",
+            &token,
+            serde_json::json!({ "source": "imessage", field: big }),
+        )
+        .await;
+        let problem = crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::ValidationFailed,
+        );
+        assert!(
+            problem.sentence().starts_with(&format!("{field}: ")),
+            "{text}"
+        );
+    }
+    let runs: serde_json::Value = get_json(&state, "/v1/imports", &token).await;
+    assert_eq!(runs["total"], 0, "no run was created: {runs}");
+}
+
+/// An Import Error's `item` and `reason` are each at most 2,000 characters,
+/// on a completion and a discard alike, and a body over the cap leaves the
+/// run running. They were stored at any length a JSON body could carry
+/// (#2183).
+#[tokio::test]
+async fn an_import_error_over_the_text_cap_is_refused_and_the_run_stays_running() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let long = "x".repeat(2_001);
+
+    for (route, field, issue) in [
+        (
+            "complete",
+            "item",
+            serde_json::json!({ "kind": "skip", "stage": "media", "item": long, "reason": "r" }),
+        ),
+        (
+            "discard",
+            "reason",
+            serde_json::json!({ "kind": "error", "stage": "media", "item": "a", "reason": long }),
+        ),
+    ] {
+        let mut body = serde_json::json!({ "issues": [issue], "notes": [] });
+        if route == "complete" {
+            body["status"] = "completed_with_issues".into();
+        }
+        let (status, text) = crate::test_support::post_json_raw(
+            state,
+            &format!("/v1/imports/{id}/{route}"),
+            token,
+            body,
+        )
+        .await;
+        let problem = crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::ValidationFailed,
+        );
+        assert!(
+            problem.sentence().starts_with(&format!("issues.{field}: ")),
+            "{route}: {text}"
+        );
+    }
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
+    assert_eq!(run["status"], "running", "{run}");
+}
+
 /// A discarded run keeps the Import Errors the desktop app sends with the
 /// discard: a run paused and then given up still has the record of what went
 /// wrong before it stopped (#1479).

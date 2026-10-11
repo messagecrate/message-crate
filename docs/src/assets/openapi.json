@@ -13214,7 +13214,7 @@
         "properties": {
           "address": {
             "type": "string",
-            "description": "The address to link."
+            "description": "The address to link. Over 320 characters after trimming is refused\nwith `422 Unprocessable Entity`."
           },
           "service": {
             "oneOf": [
@@ -14216,14 +14216,14 @@
               "string",
               "null"
             ],
-            "description": "Phone number linked to the account."
+            "description": "Phone number linked to the account, trimmed. Over 320 characters is\nrefused with `422 Unprocessable Entity`."
           },
           "preferred_name": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Display name shown in Message Crate."
+            "description": "Display name shown in Message Crate, trimmed. Over 200 characters is\nrefused with `422 Unprocessable Entity`."
           },
           "username": {
             "type": "string",
@@ -14537,7 +14537,7 @@
             "description": "Which install is creating the Import Run."
           },
           "form": {
-            "description": "Import form snapshot, stored so the screen can be restored.\n\nCredentials are stripped before storage: a `backupPassword` or\n`whatsappKey` posted here is dropped rather than persisted."
+            "description": "Import form snapshot, stored so the screen can be restored.\n\nCredentials are stripped before storage: a `backupPassword` or\n`whatsappKey` posted here is dropped rather than persisted. Over\n65,536 bytes of JSON is refused with `422 Unprocessable Entity`."
           },
           "mode": {
             "$ref": "#/components/schemas/ImportMode",
@@ -14562,10 +14562,10 @@
             "description": "Source id the run imports, such as `imessage` or `whatsapp`, which\nevery message the run brings in records. It holds lowercase letters,\ndigits, `-` and `_`, starts with a letter or a digit, and is at most\n64 characters. Any other id, one with a space around it included, is\nrefused with `422 Unprocessable Entity`."
           },
           "source_fingerprint": {
-            "description": "Source path, size, mtime, and message count."
+            "description": "Source path, size, mtime, and message count. Over 65,536 bytes of\nJSON is refused with `422 Unprocessable Entity`."
           },
           "source_identities": {
-            "description": "Addresses the backup's device sent from, when the client read them."
+            "description": "Addresses the backup's device sent from, when the client read them.\nOver 65,536 bytes of JSON is refused with `422 Unprocessable Entity`."
           },
           "stage": {
             "oneOf": [
@@ -15476,7 +15476,7 @@
         "properties": {
           "item": {
             "type": "string",
-            "description": "What the issue is about, such as a conversation file or an\nattachment's path."
+            "description": "What the issue is about, such as a conversation file or an\nattachment's path. Stored trimmed; over 2,000 characters is refused\nwith `422 Unprocessable Entity`."
           },
           "kind": {
             "$ref": "#/components/schemas/RunIssueKind",
@@ -15484,7 +15484,7 @@
           },
           "reason": {
             "type": "string",
-            "description": "Why the item failed or was skipped, in one sentence."
+            "description": "Why the item failed or was skipped, in one sentence. Stored trimmed;\nover 2,000 characters is refused with `422 Unprocessable Entity`."
           },
           "stage": {
             "$ref": "#/components/schemas/ImportIssueStage",
@@ -15821,7 +15821,7 @@
         "properties": {
           "address": {
             "type": "string",
-            "description": "The address as typed, e.g. `+15555550100` or `alex@example.com`."
+            "description": "The address as typed, e.g. `+15555550100` or `alex@example.com`. Over\n320 characters after trimming is refused with\n`422 Unprocessable Entity`."
           },
           "service": {
             "$ref": "#/components/schemas/IdentityService",
@@ -19554,7 +19554,7 @@
               "string",
               "null"
             ],
-            "description": "Display name. Absent leaves the current name unchanged, `null` clears\nit, and a string sets it, trimmed. A string that is empty after\ntrimming clears it."
+            "description": "Display name. Absent leaves the current name unchanged, `null` clears\nit, and a string sets it, trimmed. A string that is empty after\ntrimming clears it, and one over 200 characters is refused with\n`422 Unprocessable Entity`."
           },
           "remove_identities": {
             "type": "array",
@@ -19606,7 +19606,7 @@
         "properties": {
           "address": {
             "type": "string",
-            "description": "The replacement address."
+            "description": "The replacement address. Over 320 characters after trimming is\nrefused with `422 Unprocessable Entity`."
           },
           "previous_address": {
             "type": "string",
@@ -19645,7 +19645,7 @@
               "string",
               "null"
             ],
-            "description": "New display name; `None` leaves it unchanged."
+            "description": "New display name, trimmed; `None` leaves it unchanged. Blank or over\n200 characters is refused with `422 Unprocessable Entity`."
           },
           "remove_identity": {
             "oneOf": [

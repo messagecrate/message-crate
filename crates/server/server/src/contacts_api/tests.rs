@@ -292,6 +292,66 @@ async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
     assert_eq!(identities, [("+15555550100", "phone")], "{detail}");
 }
 
+/// A contact's name is at most 200 characters and an identity address it
+/// takes at most 320, and an edit over either is refused with nothing
+/// changed. Both were stored at any length a JSON body could carry (#2183).
+#[tokio::test]
+async fn a_contact_edit_over_the_name_or_address_cap_is_refused_and_changes_nothing() {
+    let (fixture, account) = contacts_fixture_with_handles(&[]).await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let ada =
+        insert_contact_with_handle(&mut conn, account.account_id, "Ada", "+15555550100").await;
+    drop(conn);
+    let path = format!("/v1/contacts/{ada}");
+    let long_address = format!("{}@example.com", "a".repeat(309));
+    assert_eq!(long_address.chars().count(), 321);
+
+    for (body, field) in [
+        (serde_json::json!({ "name": "n".repeat(201) }), "name"),
+        (
+            serde_json::json!({ "add_identity": { "address": long_address } }),
+            "add_identity.address",
+        ),
+        (
+            serde_json::json!({
+                "update_identity": { "previous_address": "+15555550100", "address": long_address }
+            }),
+            "update_identity.address",
+        ),
+    ] {
+        let sentence = crate::test_support::patch_failure(
+            &fixture.state,
+            &path,
+            &account.token,
+            body,
+            ProblemType::ValidationFailed,
+        )
+        .await;
+        assert!(sentence.starts_with(&format!("{field}: ")), "{sentence}");
+    }
+
+    let detail: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(detail["name"], "Ada", "{detail}");
+    let addresses: Vec<&str> = detail["identities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| i["address"].as_str().unwrap())
+        .collect();
+    assert_eq!(addresses, ["+15555550100"], "{detail}");
+
+    // At the cap, both are taken.
+    let at_cap: serde_json::Value = crate::test_support::patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({ "name": format!(" {} ", "n".repeat(200)) }),
+    )
+    .await;
+    assert_eq!(at_cap["name"], "n".repeat(200), "{at_cap}");
+}
+
 /// A contact deleted after the edit found it: the rename updated no row and
 /// answered `500` with "contact missing after mutate". The edit is one write
 /// transaction, so it finds the contact gone and answers `404`.

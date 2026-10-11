@@ -1769,7 +1769,10 @@ export interface components {
         };
         /** @description An address to link, and the service to link it on. */
         AddContactIdentityRequest: {
-            /** @description The address to link. */
+            /**
+             * @description The address to link. Over 320 characters after trimming is refused
+             *     with `422 Unprocessable Entity`.
+             */
             address: string;
             /**
              * @description The service to link it on; the phone service when omitted. It never
@@ -2320,9 +2323,15 @@ export interface components {
              *     no password.
              */
             password?: string | null;
-            /** @description Phone number linked to the account. */
+            /**
+             * @description Phone number linked to the account, trimmed. Over 320 characters is
+             *     refused with `422 Unprocessable Entity`.
+             */
             phone?: string | null;
-            /** @description Display name shown in Message Crate. */
+            /**
+             * @description Display name shown in Message Crate, trimmed. Over 200 characters is
+             *     refused with `422 Unprocessable Entity`.
+             */
             preferred_name?: string | null;
             /** @description Login username. */
             username: string;
@@ -2505,7 +2514,8 @@ export interface components {
              * @description Import form snapshot, stored so the screen can be restored.
              *
              *     Credentials are stripped before storage: a `backupPassword` or
-             *     `whatsappKey` posted here is dropped rather than persisted.
+             *     `whatsappKey` posted here is dropped rather than persisted. Over
+             *     65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
              */
             form?: unknown;
             /**
@@ -2535,9 +2545,15 @@ export interface components {
              *     refused with `422 Unprocessable Entity`.
              */
             source: string;
-            /** @description Source path, size, mtime, and message count. */
+            /**
+             * @description Source path, size, mtime, and message count. Over 65,536 bytes of
+             *     JSON is refused with `422 Unprocessable Entity`.
+             */
             source_fingerprint?: unknown;
-            /** @description Addresses the backup's device sent from, when the client read them. */
+            /**
+             * @description Addresses the backup's device sent from, when the client read them.
+             *     Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
+             */
             source_identities?: unknown;
             /** @description Stage the run opens at. Defaults to `parse`. */
             stage?: components["schemas"]["ImportStage"] | null;
@@ -3110,7 +3126,8 @@ export interface components {
         ImportIssueRequest: {
             /**
              * @description What the issue is about, such as a conversation file or an
-             *     attachment's path.
+             *     attachment's path. Stored trimmed; over 2,000 characters is refused
+             *     with `422 Unprocessable Entity`.
              */
             item: string;
             /**
@@ -3121,7 +3138,10 @@ export interface components {
              *     before it sends it.
              */
             kind: components["schemas"]["RunIssueKind"];
-            /** @description Why the item failed or was skipped, in one sentence. */
+            /**
+             * @description Why the item failed or was skipped, in one sentence. Stored trimmed;
+             *     over 2,000 characters is refused with `422 Unprocessable Entity`.
+             */
             reason: string;
             /** @description Stage the issue came from. */
             stage: components["schemas"]["ImportIssueStage"];
@@ -3310,7 +3330,11 @@ export interface components {
         ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
         /** @description One identity to link onto the account, with its platform service. */
         LinkAccountIdentityRequest: {
-            /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
+            /**
+             * @description The address as typed, e.g. `+15555550100` or `alex@example.com`. Over
+             *     320 characters after trimming is refused with
+             *     `422 Unprocessable Entity`.
+             */
             address: string;
             /**
              * @description The service the address is on. It never decides the identity's type,
@@ -5415,7 +5439,8 @@ export interface components {
             /**
              * @description Display name. Absent leaves the current name unchanged, `null` clears
              *     it, and a string sets it, trimmed. A string that is empty after
-             *     trimming clears it.
+             *     trimming clears it, and one over 200 characters is refused with
+             *     `422 Unprocessable Entity`.
              */
             preferred_name?: string | null;
             /** @description Identities to unlink from the account profile. */
@@ -5442,7 +5467,10 @@ export interface components {
         };
         /** @description The previous and new addresses for a link change. */
         UpdateContactIdentityRequest: {
-            /** @description The replacement address. */
+            /**
+             * @description The replacement address. Over 320 characters after trimming is
+             *     refused with `422 Unprocessable Entity`.
+             */
             address: string;
             /** @description The address currently linked. */
             previous_address: string;
@@ -5460,7 +5488,10 @@ export interface components {
         UpdateContactRequest: {
             /** @description Identity to link. */
             add_identity?: components["schemas"]["AddContactIdentityRequest"] | null;
-            /** @description New display name; `None` leaves it unchanged. */
+            /**
+             * @description New display name, trimmed; `None` leaves it unchanged. Blank or over
+             *     200 characters is refused with `422 Unprocessable Entity`.
+             */
             name?: string | null;
             /** @description Identity to unlink. */
             remove_identity?: components["schemas"]["RemoveContactIdentityRequest"] | null;

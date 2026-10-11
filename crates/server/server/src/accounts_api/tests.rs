@@ -635,6 +635,75 @@ async fn patching_with_an_unknown_time_zone_is_a_validation_failure() {
     );
 }
 
+/// An account's display name is at most 200 characters and an identity
+/// address it links at most 320, on a change and on a registration alike,
+/// and a body over either is refused whole. Both were stored at any length a
+/// JSON body could carry (#2183).
+#[tokio::test]
+async fn a_display_name_or_identity_address_over_its_cap_is_refused() {
+    let (fixture, account) = fixture_with_account().await;
+    let path = member(account.account_id);
+    let long_address = format!("{}@example.com", "a".repeat(309));
+    assert_eq!(long_address.chars().count(), 321);
+
+    for (body, field) in [
+        (
+            serde_json::json!({ "preferred_name": "n".repeat(201), "time_zone": "Europe/Paris" }),
+            "preferred_name",
+        ),
+        (
+            serde_json::json!({
+                "time_zone": "Europe/Paris",
+                "identities": [{ "address": long_address, "service": "phone" }]
+            }),
+            "identities.address",
+        ),
+    ] {
+        let sentence = patch_failure(
+            &fixture.state,
+            &path,
+            &account.token,
+            body,
+            ProblemType::ValidationFailed,
+        )
+        .await;
+        assert!(sentence.starts_with(&format!("{field}: ")), "{sentence}");
+    }
+    let after: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(
+        after["time_zone"], "UTC",
+        "nothing in a refused body lands: {after}"
+    );
+    assert_eq!(after["emails"], serde_json::json!([]), "{after}");
+
+    let at_cap: serde_json::Value = patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({ "preferred_name": format!(" {} ", "n".repeat(200)) }),
+    )
+    .await;
+    assert_eq!(at_cap["preferred_name"], "n".repeat(200));
+
+    for (body, field) in [
+        (
+            serde_json::json!({ "username": "sam", "preferred_name": "n".repeat(201) }),
+            "preferred_name",
+        ),
+        (
+            serde_json::json!({ "username": "sam", "phone": "1".repeat(321) }),
+            "phone",
+        ),
+    ] {
+        let (status, text) = post_logged_out(&fixture.state, "/v1/accounts", body).await;
+        let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
+        assert!(
+            problem.sentence().starts_with(&format!("{field}: ")),
+            "{text}"
+        );
+    }
+}
+
 /// The flags are the owner's alone. A body naming one is refused whole when
 /// the account sends it: nothing in it is applied.
 #[tokio::test]

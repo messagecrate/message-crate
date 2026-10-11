@@ -725,6 +725,17 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
+- Free text a route stores has a cap of its own, stated in the field's
+  OpenAPI description: a name a person types (an account's display name, a
+  contact's name) at most 200 characters, an identity address it links at
+  most 320, an Import Error's `item` and `reason` at most 2,000 each, and
+  each JSON value an Import Run stores as it is created at most 65,536
+  bytes. The value is trimmed first, and one over its cap is
+  `validation-failed`, never cut short. Why: the value is stored, shown on
+  every list that holds it, and written into the Audit Trail and the
+  server's log, so the 32 MiB body cap is no bound on it (#2183). An address
+  given to unlink or to find a row is not held to the cap, because it names
+  something already stored.
 - Each part of a multipart upload is held to the part size its upload was
   told when it started, which the upload's manifest records, and not to the
   limit as it is now. Why: an upload in progress keeps the limit it started
