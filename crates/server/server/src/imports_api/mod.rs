@@ -656,7 +656,9 @@ pub(crate) struct CreateImportRequest {
     /// request leaves it out.
     #[serde(default)]
     pub(crate) tool: Option<String>,
-    /// Stage the run opens at. Defaults to `parse`.
+    /// Stage the run opens at, `parse` when the request leaves it out. A run
+    /// opens only at `parse`; any other stage is refused with
+    /// `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) stage: Option<crate::db::imports::ImportStage>,
     /// Absolute path to the run directory on the client that owns this Import Run.

@@ -2579,7 +2579,11 @@ export interface components {
              *     Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
              */
             source_identities?: unknown;
-            /** @description Stage the run opens at. Defaults to `parse`. */
+            /**
+             * @description Stage the run opens at, `parse` when the request leaves it out. A run
+             *     opens only at `parse`; any other stage is refused with
+             *     `422 Unprocessable Entity`.
+             */
             stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as

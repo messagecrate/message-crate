@@ -568,7 +568,7 @@ async fn active_import_run_is_empty_then_reports_the_live_one() {
         source: "imessage".into(),
         mode: ImportMode::Append,
         tool: Some("message-crate".into()),
-        stage: Some(crate::db::imports::ImportStage::Write),
+        stage: Some(crate::db::imports::ImportStage::Parse),
         run_dir: Some("/home/u/message-crate/staging-260830".into()),
         device_id: Some("device-a".into()),
         form: Some(serde_json::json!({ "source": "imessage-ios" })),
@@ -601,7 +601,7 @@ async fn active_import_run_is_empty_then_reports_the_live_one() {
         .await
         .expect("a running run is listed");
     assert_eq!(session.id, created.body.id);
-    assert_eq!(session.stage, Some(crate::db::imports::ImportStage::Write));
+    assert_eq!(session.stage, Some(crate::db::imports::ImportStage::Parse));
     assert_eq!(
         session.run_dir.as_deref(),
         Some("/home/u/message-crate/staging-260830")

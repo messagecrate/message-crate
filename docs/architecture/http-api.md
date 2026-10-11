@@ -886,7 +886,10 @@ other change of stage, backwards or skipping a stage, answers
 `409` `state-conflict` naming both stages, and the run keeps its stage and
 summary. Why: the next visit resumes a run at the stage the server holds, so a
 client that sent a wrong stage would have the run resumed at work it already
-did (#1227).
+did (#1227). A run opens only at `parse`: `POST /v1/imports` with any other
+`stage` answers `422 Unprocessable Entity` (`validation-failed`) and opens no
+run. Why: a run opened later in the order would be resumed at work nobody did
+(#2638), and `422` because the client fixes it by sending `parse`.
 
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
