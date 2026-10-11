@@ -1,6 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
-import { checkOptionalPath, type ImportPathStat, PATH_MISSING, type PathKind } from "./pathChecks";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DENIED_STAT,
+  DIRECTORY_STAT,
+  FILE_STAT,
+  MISSING_STAT,
+  NEITHER_STAT,
+} from "../test/pathStats";
+import {
+  checkOptionalPath,
+  checkRequiredPath,
+  type ImportPathStat,
+  PATH_MISSING,
+  type PathKind,
+  probePath,
+} from "./pathChecks";
+
+const invokePathStat = vi.hoisted(() => vi.fn());
+vi.mock("./tauri", () => ({
+  invokePathStat: (...a: unknown[]) => invokePathStat(...a),
+}));
 
 type Key = "field";
 
@@ -38,5 +56,53 @@ describe("checkOptionalPath", () => {
   it("gives the field's own message for a path that is neither a file nor a directory", () => {
     expect(check("/tmp/x", NEITHER_STAT, "directory")).toEqual({ field: "Wrong kind." });
     expect(check("/tmp/x", NEITHER_STAT, "file")).toEqual({ field: "Wrong kind." });
+  });
+});
+
+describe("a path the app could not read", () => {
+  const denied =
+    "Message Crate isn't allowed to read this path. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.";
+
+  it("says the app is not allowed to read it, with the reason and the fix, rather than that it is missing", () => {
+    expect(check("/tmp/x", DENIED_STAT, "directory")).toEqual({ field: denied });
+    const errors: Partial<Record<Key, string>> = {};
+    checkRequiredPath(DENIED_STAT, errors, "field", { expected: "file", kindError: "Wrong kind." });
+    expect(errors.field).toBe(denied);
+  });
+
+  it("says it could not read a path the system refused for another reason", () => {
+    const stat: ImportPathStat = {
+      ...DENIED_STAT,
+      unreadable: { kind: "other", reason: "Too many levels of symbolic links." },
+    };
+    expect(check("/tmp/x", stat, "file")).toEqual({
+      field:
+        "Message Crate could not read this path. The system says: Too many levels of symbolic links.",
+    });
+  });
+});
+
+describe("probePath", () => {
+  beforeEach(() => {
+    invokePathStat.mockReset();
+  });
+
+  it("does not check an empty path", async () => {
+    expect(await probePath("  ")).toBeNull();
+    expect(invokePathStat).not.toHaveBeenCalled();
+  });
+
+  it("checks the trimmed path", async () => {
+    invokePathStat.mockResolvedValue(FILE_STAT);
+    expect(await probePath(" /tmp/chat.db ")).toEqual(FILE_STAT);
+    expect(invokePathStat).toHaveBeenCalledWith("/tmp/chat.db");
+  });
+
+  it("reads a failed check as a path it could not check, not as a missing or unreadable one", async () => {
+    invokePathStat.mockRejectedValue(new Error("ipc down"));
+    const stat = await probePath("/tmp/chat.db");
+    expect(check("/tmp/chat.db", stat, "file")).toEqual({
+      field: "Message Crate could not check this path. The check failed with: ipc down.",
+    });
   });
 });

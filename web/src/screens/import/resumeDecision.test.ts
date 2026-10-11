@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activeImportRun } from "../../test/apiShapes";
+import { desktopPathStat, PERMISSION_DENIED } from "../../test/pathStats";
 import { checkSourceFingerprint, resumeDecisionFor } from "./resumeDecision";
 
 describe("resumeDecisionFor", () => {
@@ -207,60 +208,42 @@ describe("checkSourceFingerprint", () => {
   };
 
   it("cannot judge a run that stored no fingerprint", () => {
-    expect(
-      checkSourceFingerprint(null, {
-        exists: true,
-        isFile: true,
-        isDirectory: false,
-        sizeBytes: 1000,
-        modifiedUnixMs: 1_700_000_000_000,
-      }),
-    ).toBe("unknown");
+    expect(checkSourceFingerprint(null, desktopPathStat())).toBe("unknown");
   });
 
   it("reports a source it could not find", () => {
     expect(checkSourceFingerprint(stored, null)).toBe("source_missing");
     expect(
-      checkSourceFingerprint(stored, {
-        exists: false,
-        isFile: false,
-        isDirectory: false,
-        sizeBytes: 0,
-        modifiedUnixMs: null,
-      }),
+      checkSourceFingerprint(
+        stored,
+        desktopPathStat({ exists: false, isFile: false, sizeBytes: 0, modifiedUnixMs: null }),
+      ),
     ).toBe("source_missing");
   });
 
-  it("matches when size and modified time both agree", () => {
+  it("cannot judge a source the app may not read, rather than calling it gone", () => {
     expect(
-      checkSourceFingerprint(stored, {
-        exists: true,
-        isFile: true,
-        isDirectory: false,
-        sizeBytes: 1000,
-        modifiedUnixMs: 1_700_000_000_000,
-      }),
-    ).toBe("match");
+      checkSourceFingerprint(
+        stored,
+        desktopPathStat({
+          exists: false,
+          isFile: false,
+          sizeBytes: 0,
+          modifiedUnixMs: null,
+          unreadable: PERMISSION_DENIED,
+        }),
+      ),
+    ).toBe("unknown");
+  });
+
+  it("matches when size and modified time both agree", () => {
+    expect(checkSourceFingerprint(stored, desktopPathStat())).toBe("match");
   });
 
   it("notices a different size or a different modified time", () => {
+    expect(checkSourceFingerprint(stored, desktopPathStat({ sizeBytes: 2000 }))).toBe("mismatch");
     expect(
-      checkSourceFingerprint(stored, {
-        exists: true,
-        isFile: true,
-        isDirectory: false,
-        sizeBytes: 2000,
-        modifiedUnixMs: 1_700_000_000_000,
-      }),
-    ).toBe("mismatch");
-    expect(
-      checkSourceFingerprint(stored, {
-        exists: true,
-        isFile: true,
-        isDirectory: false,
-        sizeBytes: 1000,
-        modifiedUnixMs: 1_700_000_000_001,
-      }),
+      checkSourceFingerprint(stored, desktopPathStat({ modifiedUnixMs: 1_700_000_000_001 })),
     ).toBe("mismatch");
   });
 });
