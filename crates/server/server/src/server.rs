@@ -1040,7 +1040,9 @@ pub(crate) const PACKAGED_DESKTOP_ORIGINS: &[&str] = &[
 /// `[server].cors_origins`. CORS is the browser rule that decides which other
 /// websites may call this API.
 ///
-/// - `["*"]` → fully permissive (local debugging only)
+/// - `["*"]` → fully permissive (local debugging only), with a `WARN` line
+///   in the server's log as it starts, since any website a person on the
+///   network visits can then call the routes a stranger may call (#2218)
 /// - otherwise → exact origin allow list, always including
 ///   [`PACKAGED_DESKTOP_ORIGINS`]
 ///
@@ -1049,6 +1051,9 @@ pub(crate) const PACKAGED_DESKTOP_ORIGINS: &[&str] = &[
 /// itself is same-origin and needs no header at all.
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
     if origins.iter().any(|o| o.trim() == "*") {
+        tracing::warn!(
+            "[server] cors_origins lists \"*\", so any website can call this server through a visitor's browser; list the origins that need it instead"
+        );
         return CorsLayer::permissive();
     }
     let mut allowed: Vec<HeaderValue> = Vec::new();
