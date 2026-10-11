@@ -76,7 +76,7 @@ impl Fetch for HttpFetch {
         }
         let total = response.content_length();
         progress(0, total);
-        copy(
+        copy_with_progress(
             &mut response,
             into,
             &|err| DownloadError::NoNetwork(error_chain(&err)),
@@ -91,7 +91,7 @@ impl Fetch for HttpFetch {
 /// A failure to read `from` is the error `read_error` makes of it, since
 /// what that means depends on what is read; a failure to write `into` is
 /// [`DownloadError::CouldNotWrite`].
-fn copy(
+fn copy_with_progress(
     from: &mut dyn Read,
     into: &mut dyn Write,
     read_error: &dyn Fn(io::Error) -> DownloadError,
@@ -231,7 +231,7 @@ pub(super) fn install(
 /// the Tools Directory, and a failure to write `into`, are
 /// [`DownloadError::CouldNotWrite`].
 pub(super) fn unpack(packed: &mut dyn Read, into: &mut dyn Write) -> Result<(), DownloadError> {
-    copy(
+    copy_with_progress(
         &mut flate2::read::GzDecoder::new(packed),
         into,
         &|err| match err.kind() {

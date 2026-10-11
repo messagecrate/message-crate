@@ -489,7 +489,9 @@ released versions carry their date on the heading.
   Settings and a run waiting for it said the file could not be written to
   the Tools Directory, which sent you looking at disk space and permissions.
   The reason now reads "The downloaded file could not be unpacked", since the
-  file that arrived is at fault (#2716).
+  file that arrived is at fault. A disk that fails while the app reads the
+  file back now reads "could not be written to or read back from the Tools
+  Directory" (#2716).
 
 - 2026-10-11: **The desktop app keeps trying to download ffmpeg and
   wtsexporter when the computer is not online yet.** At start the app
