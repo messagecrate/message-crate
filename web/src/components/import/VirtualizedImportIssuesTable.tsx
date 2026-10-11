@@ -10,7 +10,7 @@ import {
   TableLayout,
   Virtualizer,
 } from "react-aria-components";
-import { focusRing } from "../../lib/uiStyles";
+import { focusRingClass } from "../../lib/uiStyles";
 import { ChevronDownIcon, ChevronRightIcon } from "../icons";
 import PlainButton from "../PlainButton";
 import { groupImportIssues, type ImportIssueGroup } from "./groupImportIssues";
@@ -151,7 +151,7 @@ function IssuesTable({ issues, words }: { issues: ImportIssue[]; words: TableWor
                         aria-label={rowAriaLabel(row, expanded, words)}
                         aria-expanded={expanded}
                         onPress={() => toggleRow(row.id)}
-                        className={`mt-px flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-muted hover:text-text ${focusRing}`}
+                        className={`mt-px flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-muted hover:text-text ${focusRingClass}`}
                       >
                         {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
                       </PlainButton>

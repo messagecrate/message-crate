@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { attachmentName } from "../lib/attachmentMedia";
 import { downloadAttachment } from "../lib/downloadAttachment";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { DownloadIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
@@ -38,7 +38,7 @@ export default function DownloadAttachmentButton({
         onPress={() => download.mutate()}
         isDisabled={download.isPending}
         aria-label={label}
-        className={`shrink-0 cursor-pointer rounded border-none bg-transparent p-0 text-[0.75rem] text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}
+        className={`shrink-0 cursor-pointer rounded border-none bg-transparent p-0 text-[0.75rem] text-accent hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${focusRingClass}`}
       >
         {download.isPending ? "Downloading…" : download.isError ? "Download failed" : "Download"}
       </PlainButton>
@@ -52,7 +52,7 @@ export default function DownloadAttachmentButton({
       isDisabled={download.isPending}
       aria-label={label}
       title={download.isError ? "Download failed" : "Download"}
-      className={`${round.className} flex cursor-pointer items-center justify-center rounded-full border-none text-lightbox-text disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}
+      className={`${round.className} flex cursor-pointer items-center justify-center rounded-full border-none text-lightbox-text disabled:cursor-not-allowed disabled:opacity-50 ${focusRingClass}`}
     >
       <DownloadIcon size={round.icon} />
     </PlainButton>

@@ -3,7 +3,7 @@ import { Header, ListBoxSection } from "react-aria-components";
 import Select, {
   ListBoxItem,
   selectItemClassName,
-  selectSectionHeaderClassName,
+  selectSectionHeaderClass,
 } from "../../components/Select";
 import { formatDateTime } from "../../lib/formatDate";
 import type { DeletedAccount } from "../../lib/serverApi";
@@ -83,7 +83,7 @@ export function OwnerAuditTrailPanel() {
             ))}
             {deleted.length > 0 && (
               <ListBoxSection>
-                <Header className={selectSectionHeaderClassName}>Deleted accounts</Header>
+                <Header className={selectSectionHeaderClass}>Deleted accounts</Header>
                 {deletedLabels(deleted).map(({ account, label }) => {
                   return (
                     <ListBoxItem

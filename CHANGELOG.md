@@ -21,6 +21,13 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-10: **User Accounts shows which accounts have no password.** In
+  Owner Home, the Status of an account that has no password now reads
+  **No password** under it. Once such an account is active, anyone who
+  reaches the server and knows its username logs in with an empty password,
+  and the list used to give no sign of which accounts those were. The Demo
+  Account has no password by design and is not marked (#2146).
+
 - 2026-10-10: **Docker reports whether the server answers.** The Docker image
   asks the server every 30 seconds whether it is up. `docker ps` adds
   `(healthy)` after `Up` while the server answers and `(unhealthy)` after
@@ -367,6 +374,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-10: **A large attachment no longer fails to import because the
+  server said another request held its upload.** The desktop app sends a
+  large attachment to the server in parts, and the server could refuse a
+  part with "another request to this upload holds its lock" when nothing
+  else was sending to that upload, and the import of that attachment
+  failed. A part is now refused this way only while another request to the
+  same upload is still running (#2510).
 - 2026-10-10: **An SMS Backup & Restore import says "drafts or messages
   never sent" for what it skips.** It said "drafts or unsent messages",
   but Unsent is the mark on a message its sender pulled back after sending

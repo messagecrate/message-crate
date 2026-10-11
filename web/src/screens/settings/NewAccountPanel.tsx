@@ -1,10 +1,11 @@
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
+import { textInputClass } from "../../components/TextField";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache } from "../../lib/routeQuery";
 import { useCreateAccountForm } from "../auth/useCreateAccountForm";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * The Account section of an account that does not exist yet, which the
@@ -62,7 +63,7 @@ export function NewAccountPanel() {
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="off"
           disabled={busy}
-          className={inputClassName}
+          className={textInputClass}
         />
       </div>
 
@@ -76,7 +77,7 @@ export function NewAccountPanel() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -87,7 +88,7 @@ export function NewAccountPanel() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <Button variant="primary" type="submit" disabled={busy} size="sm">

@@ -1,7 +1,7 @@
 import { useStreamedMedia } from "../hooks/useStreamedMedia";
 import { attachmentName } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import { PlayIcon } from "./icons";
 import PlainButton from "./PlainButton";
@@ -22,7 +22,7 @@ export default function AudioPlayer({ attachment }: { attachment: MessageAttachm
             onPress={media.play}
             isDisabled={media.pending}
             aria-label={`Play ${name}`}
-            className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-sent-text disabled:cursor-wait ${focusRing}`}
+            className={`flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-sent-text disabled:cursor-wait ${focusRingClass}`}
           >
             <PlayIcon size={14} />
           </PlainButton>
