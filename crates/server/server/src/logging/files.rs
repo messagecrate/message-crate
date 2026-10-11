@@ -218,19 +218,24 @@ fn open_append(path: &Path) -> io::Result<File> {
 }
 
 /// `event` as one line ending in `\n`: trailing line breaks dropped, each
-/// line break inside written as `\n`, and every other control character as
-/// `\xNN` (`message_crate_log_lines::escape_controls`), so a terminal shows
-/// the line rather than acting on it. `tracing-subscriber` escapes them in an
-/// event's message, but not in a field written with `%`.
+/// line break inside written as `\n`, and every other control character
+/// escaped (`message_crate_log_lines::push_escaped`), so a terminal shows the
+/// line rather than acting on it. `tracing-subscriber` escapes them in an
+/// event's message, but not in a field written with `%`. The event is read as
+/// UTF-8, which is all `tracing-subscriber` writes; a byte that is not would
+/// be written as U+FFFD.
 fn one_line(event: &[u8]) -> Vec<u8> {
     let text = String::from_utf8_lossy(event);
-    let joined = text
-        .trim_end_matches(['\n', '\r'])
-        .replace("\r\n", "\n")
-        .replace(['\n', '\r'], "\\n");
-    let mut line = message_crate_log_lines::escape_controls(&joined)
-        .into_owned()
-        .into_bytes();
-    line.push(b'\n');
-    line
+    let text = text.trim_end_matches(['\n', '\r']);
+    let mut line = String::with_capacity(text.len() + 1);
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' if chars.peek() == Some(&'\n') => {}
+            '\n' | '\r' => line.push_str("\\n"),
+            _ => message_crate_log_lines::push_escaped(&mut line, c),
+        }
+    }
+    line.push('\n');
+    line.into_bytes()
 }

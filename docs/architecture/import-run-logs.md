@@ -76,9 +76,9 @@ Each line starts with its time in UTC (RFC 3339, microseconds) and its level,
 `ERROR`, `WARN` or `INFO`, then the text: the format of the server's log, so
 one viewer reads both and the level filter means the same in each. Text that
 holds a line break, such as the Upload's summary, is written as one line per
-part, each with its time and level. Every other control character is written
-as `\x` and two hex digits, as in the server's log (`server-log.md`, "One line
-per event"): a file name or a tool's output can carry one, and a person
+part, each with its time and level. Every other control character is
+escaped as in the server's log, such as ESC as `\x1b` (`server-log.md`, "One
+line per event"): a file name or a tool's output can carry one, and a person
 reading the log in a terminal would otherwise have it act on the screen.
 
 - `ERROR`: what stopped, a stage that failed, a conversation not sent, an
