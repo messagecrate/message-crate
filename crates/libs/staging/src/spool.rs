@@ -23,7 +23,6 @@ use std::sync::Mutex;
 use anyhow::{Context, Result};
 use message_crate_core::{ATTACHMENT_SPOOL_DIRECTORY, ScratchDir};
 use message_ir::IrAttachment;
-use sha2::{Digest, Sha256};
 
 use crate::headroom::{Disk, check_headroom};
 use crate::write_queue::AttachmentSource;
@@ -98,7 +97,7 @@ impl AttachmentSpool {
     /// Returns an error when the spool's directory cannot be made, its disk
     /// has no room for the payload, or the payload file cannot be written.
     pub fn put(&self, bytes: &[u8]) -> Result<String> {
-        let digest = hex::encode(Sha256::digest(bytes));
+        let digest = file_io::sha256_hex(bytes);
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
         if state.sizes.contains_key(&digest) {
             return Ok(digest);
