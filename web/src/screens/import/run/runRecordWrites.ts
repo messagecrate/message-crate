@@ -1,20 +1,14 @@
-import { invokeSaveImportRunRecord, type UploadFinishedReport } from "../../../lib/tauri";
-import { importRunStore as store } from "../importRunStore";
+import type { UploadFinishedReport } from "../../../lib/tauri";
 import { type RunRecord, recordToCarry } from "../runRecord";
-import { currentPart, runScratch } from "./scratch";
+import type { RunContext } from "./context";
+import { currentPart } from "./scratch";
 
 /** A write of the run record waiting for the one before it to finish. */
-type RecordWrite = { runDir: string; build: () => RunRecord };
-
-/** Every write of the run record so far, in order: settles when the last has. */
-let recordWrites: Promise<void> = Promise.resolve();
-
-/** The write queued behind the one in progress, not yet started. */
-let queuedRecordWrite: RecordWrite | null = null;
+export type RecordWrite = { runDir: string; build: () => RunRecord };
 
 /** Settles when every write of the run record asked for so far has. */
-export function recordWritesSettled(): Promise<void> {
-  return recordWrites;
+export function recordWritesSettled(ctx: RunContext): Promise<void> {
+  return ctx.recordWrites;
 }
 
 /**
@@ -26,22 +20,25 @@ export function recordWritesSettled(): Promise<void> {
  * next. A failed write is not shown: the run goes on, and a resume starts
  * from the record the directory already held.
  */
-function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
-  if (queuedRecordWrite?.runDir === runDir) {
-    queuedRecordWrite.build = build;
-    return recordWrites;
+function writeRunRecord(ctx: RunContext, runDir: string, build: () => RunRecord): Promise<void> {
+  if (ctx.queuedRecordWrite?.runDir === runDir) {
+    ctx.queuedRecordWrite.build = build;
+    return ctx.recordWrites;
   }
   const write: RecordWrite = { runDir, build };
-  queuedRecordWrite = write;
-  recordWrites = recordWrites.then(async () => {
-    if (queuedRecordWrite === write) queuedRecordWrite = null;
+  ctx.queuedRecordWrite = write;
+  ctx.recordWrites = ctx.recordWrites.then(async () => {
+    if (ctx.queuedRecordWrite === write) ctx.queuedRecordWrite = null;
     try {
-      await invokeSaveImportRunRecord({ run_dir: write.runDir, record: write.build() });
+      await ctx.desktop.invokeSaveImportRunRecord({
+        run_dir: write.runDir,
+        record: write.build(),
+      });
     } catch {
       // Nothing to show; see above.
     }
   });
-  return recordWrites;
+  return ctx.recordWrites;
 }
 
 /**
@@ -63,13 +60,14 @@ function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
  * conversation this part has since sent, or written, go.
  */
 export async function saveCarriedRecord(
+  ctx: RunContext,
   report: UploadFinishedReport | null = null,
   uploadMs: number | null = null,
 ): Promise<void> {
-  const { runDir } = store.get();
+  const { runDir } = ctx.store.get();
   if (runDir == null) return;
-  const run = runScratch();
-  await writeRunRecord(runDir, () =>
-    recordToCarry(run.carried, currentPart(report, uploadMs, run)),
+  const run = ctx.scratch;
+  await writeRunRecord(ctx, runDir, () =>
+    recordToCarry(run.carried, currentPart(ctx, report, uploadMs, run)),
   );
 }

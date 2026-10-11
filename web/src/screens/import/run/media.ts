@@ -3,20 +3,17 @@ import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import {
   ffmpegMissing,
-  invokeToolsStatus,
-  invokeTranscodeStaging,
   type MediaToolName,
   type StagingSummary,
   type TranscodeFinishedReport,
 } from "../../../lib/tauri";
 import type { AttachmentMediaMode } from "../../../lib/types";
 import { MEDIA_LABEL } from "../importProgressState";
-import { importRunStore as store } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
+import type { RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { saveCarriedRecord } from "./runRecordWrites";
-import { runScratch } from "./scratch";
 import {
   failActiveStep,
   mediaDoneDetail,
@@ -31,10 +28,13 @@ import { moveStage, moveStageAtReview } from "./serverCalls";
  * Which of ffmpeg and ffprobe this mode needs and cannot use; empty when it
  * needs neither or both are found. Both when the desktop process can't say.
  */
-export async function mediaToolsMissingFor(mode: AttachmentMediaMode): Promise<MediaToolName[]> {
+export async function mediaToolsMissingFor(
+  ctx: RunContext,
+  mode: AttachmentMediaMode,
+): Promise<MediaToolName[]> {
   if (mediaJobVerb(mode) === null) return [];
   try {
-    return ffmpegMissing(await invokeToolsStatus());
+    return ffmpegMissing(await ctx.desktop.invokeToolsStatus());
   } catch {
     return ["ffmpeg", "ffprobe"];
   }
@@ -54,31 +54,38 @@ export async function mediaToolsMissingFor(mode: AttachmentMediaMode): Promise<M
  * the resume over a plan that can no longer be read.
  */
 export async function runMediaStage(
+  ctx: RunContext,
   form: ImportJobFormValues,
   runId: number,
   outputDir: string,
   approvedSummary?: StagingSummary,
 ): Promise<void> {
+  const { store } = ctx;
   store.set({ running: true, phase: "running" });
-  runScratch().activeStage = "media";
-  setRowByLabel(MEDIA_LABEL, { status: "active", detail: `${mediaVerb(form.attachmentMedia)}…` });
+  ctx.scratch.activeStage = "media";
+  setRowByLabel(ctx, MEDIA_LABEL, {
+    status: "active",
+    detail: `${mediaVerb(form.attachmentMedia)}…`,
+  });
 
   // Carries the plan approved at the Staging Review even on this stage: a
   // crash mid-stage must not leave `summary_json` null with no baseline for
   // a later resume to diff against.
   try {
-    await moveStage(runId, "media", approvedSummary);
+    await moveStage(ctx, runId, "media", approvedSummary);
   } catch (e: unknown) {
-    await stopStageNotRecorded(e, runId, "media");
+    await stopStageNotRecorded(ctx, e, runId, "media");
     return;
   }
 
-  const mediaStartedAt = performance.now();
+  const mediaStartedAt = ctx.now();
   let transcodeReport: TranscodeFinishedReport | undefined;
   let threw = false;
   let cancelled = false;
   try {
-    const result = await runJob(() => invokeTranscodeStaging({ run_dir: outputDir }));
+    const result = await runJob(ctx, () =>
+      ctx.desktop.invokeTranscodeStaging({ run_dir: outputDir }),
+    );
     transcodeReport = result.transcode;
   } catch (e: unknown) {
     const msg = errorText(e);
@@ -87,13 +94,13 @@ export async function runMediaStage(
       cancelled = true;
     } else {
       threw = true;
-      recordError(runScratch().activeStage, msg);
+      recordError(ctx, ctx.scratch.activeStage, msg);
     }
   }
-  const mediaMs = performance.now() - mediaStartedAt;
+  const mediaMs = ctx.now() - mediaStartedAt;
 
   if (threw || cancelled) {
-    failActiveStep();
+    failActiveStep(ctx);
     // Neither path writes another stage: the run stays at `media`,
     // which is exactly where it got to. A cancellation also skips
     // `/complete` outright (see finishImport), so the run stays running and
@@ -101,7 +108,7 @@ export async function runMediaStage(
     // run directory nobody can reach any more. A failed stage is discarded:
     // it completes as failed and its directory goes, so a broken ffmpeg does
     // not lock the account out of importing.
-    await finishImport({
+    await finishImport(ctx, {
       runId,
       status: cancelled ? "cancelled" : "failed",
       uploadReport: null,
@@ -111,27 +118,29 @@ export async function runMediaStage(
     return;
   }
 
-  setRowByLabel(MEDIA_LABEL, {
+  setRowByLabel(ctx, MEDIA_LABEL, {
     status: "done",
     detail: mediaDoneDetail(form.attachmentMedia),
     durationMs: mediaMs,
   });
 
   store.set({ computingSummary: true });
-  if ((await moveStageAtReview(runId, "media_review", approvedSummary)) === "refused") return;
+  if ((await moveStageAtReview(ctx, runId, "media_review", approvedSummary)) === "refused") {
+    return;
+  }
   // Media's times are only in memory until now, and the run may be resumed
   // from this Review after the app closes.
-  await saveCarriedRecord();
+  await saveCarriedRecord(ctx);
   try {
-    const actual = await summarizeStagingWithProgress({ run_dir: outputDir });
+    const actual = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
     store.set({ mediaSummary: actual, mediaFailedCount: transcodeReport?.failed ?? null });
-    waitAtReview("media_review");
+    waitAtReview(ctx, "media_review");
   } catch (e: unknown) {
     // Media itself succeeded; only reading the directory afterwards failed.
     // The converted directory is the run's work, so the run is not completed
     // and its directory stays: back to the form, as after Staging, with the
     // failure on `resumeError`. The run waits at the Media Review on the
     // server, and resuming it there reads the directory again.
-    returnToFormWithError(e);
+    returnToFormWithError(ctx, e);
   }
 }
