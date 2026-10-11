@@ -2053,6 +2053,8 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.cancel());
     expect(result.current.summaryView?.status).toBe("cancelled");
 
+    // The form, where the next run starts, shows only once the person leaves the ended run.
+    act(() => result.current.returnToForm());
     invokeExtractMock.mockClear();
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     await act(() => result.current.startImport(importForm({ attachmentMedia: "copy" })));

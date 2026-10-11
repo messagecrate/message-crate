@@ -18,6 +18,7 @@ import {
   failActiveStep,
   mediaDoneDetail,
   mediaVerb,
+  movePhase,
   returnToFormWithError,
   setRowByLabel,
   waitAtReview,
@@ -61,7 +62,7 @@ export async function runMediaStage(
   approvedSummary?: StagingSummary,
 ): Promise<void> {
   const { store } = ctx;
-  store.set({ running: true, phase: "running" });
+  movePhase(ctx, "media_start", { running: true });
   ctx.scratch.activeStage = "media";
   setRowByLabel(ctx, MEDIA_LABEL, {
     status: "active",
