@@ -25,8 +25,8 @@ released versions carry their date on the heading.
   Owner Home, the Status of an account that has no password now reads
   **No password** under it. Once such an account is active, anyone who
   reaches the server and knows its username logs in with an empty password,
-  and the list used to give no sign of which accounts those were. The Demo Account has no password
-  by design and is not marked (#2146).
+  and the list used to give no sign of which accounts those were. The Demo
+  Account has no password by design and is not marked (#2146).
 
 - 2026-10-10: **Docker reports whether the server answers.** The Docker image
   asks the server every 30 seconds whether it is up. `docker ps` adds

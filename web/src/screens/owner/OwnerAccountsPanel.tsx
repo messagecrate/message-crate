@@ -20,10 +20,11 @@ function statusLabel(account: ManagedAccount): string {
 /**
  * Whether the Status column marks the account as having no password, so that
  * once it is active anyone who knows its username logs in with an empty one.
- * A disabled account is marked too, since enabling it opens it at once. The
- * Demo Account is left out: it has no password by design (ADR 0016).
+ * A disabled account is marked too, because once enabled it logs in with an
+ * empty password. The Demo Account is left out: it has no password by design
+ * (ADR 0016).
  */
-function opensWithoutPassword(account: ManagedAccount): boolean {
+function loginNeedsNoPassword(account: ManagedAccount): boolean {
   return !account.has_password && !account.is_demo;
 }
 
@@ -105,7 +106,7 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                   </td>
                   <td className={account.disabled ? tdClass : tdMutedClass}>
                     <div>{statusLabel(account)}</div>
-                    {opensWithoutPassword(account) ? (
+                    {loginNeedsNoPassword(account) ? (
                       <div className="text-[0.75rem] text-warn-soft-text">No password</div>
                     ) : null}
                   </td>

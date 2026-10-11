@@ -6,7 +6,7 @@
  * An account with no password logs in with an empty one for anyone who knows
  * its username, and the list gave the owner no way to see which accounts
  * those were. A disabled account with no password is marked too: it cannot log
- * in while disabled, but enabling it opens it at once. The Demo Account has no
+ * in while disabled, but once enabled it logs in with an empty password. The Demo Account has no
  * password by design, so it is not marked.
  */
 
