@@ -1,6 +1,7 @@
 //! Shared scaffolding for the export crates' tests and the Import Run log
 //! tests, such as the exporters' `convert_smoke` tests, the attachment
-//! byte-total tests, and [`run_log_lines`] (behind `testutil`).
+//! byte-total tests, and the tests that read an Import Run log back through
+//! [`run_log_lines`] (behind `testutil`).
 
 use crate::{
     ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue, RunLogLevel,
