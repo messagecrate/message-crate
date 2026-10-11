@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::*;
-use crate::db::engine;
+use crate::db::{engine, schema};
 use crate::progress::Progress;
 use crate::test_support::{ConversationRow, MessageRow, stored_time};
 
@@ -1745,14 +1745,11 @@ fn survivor(rows: &HashMap<i64, GenRow>, id: i64, ctx: &str) -> i64 {
 async fn assert_dedupe_invariants(conn: &mut SqliteConnection, ctx: &str) {
     let rows = load_gen_rows(conn).await;
 
-    let expected: HashMap<i64, String> =
-        ContentKeyInputs::load(conn, TEST_ACCOUNT_ID, KeyScope::All)
-            .await
-            .unwrap()
-            .expect("the database has messages")
-            .hash()
-            .into_iter()
-            .collect();
+    let inputs = db::content_key_inputs(conn, TEST_ACCOUNT_ID, KeyScope::All)
+        .await
+        .unwrap()
+        .expect("the database has messages");
+    let expected: HashMap<i64, String> = hash_inputs(&inputs).into_iter().collect();
     for (id, row) in &rows {
         assert_eq!(
             row.content_key.as_deref(),

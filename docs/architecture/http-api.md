@@ -973,9 +973,13 @@ twice (the identity counts for contacts and for accounts were).
 Does the rule stop at handlers? No. An import stage (`imports_api/staging.rs`,
 `imports_api/promote.rs`) is not a handler, but it holds no SQL either: it
 sequences its statements, logs them and keeps the counts, and the statements
-are in `db/staging.rs`, the module for the staging tables. Why: the point of
-the rule is that the SQL for a table is found in one place, and a stage that
-carried its own statements would be a second place for `staging_messages`.
+are in `db/staging.rs`, the module for the staging tables. The dedupe every
+import batch runs (`dedupe.rs`) is a stage too: it hashes the content keys
+and picks the copy shown, and the statements that read and write
+`messages.content_key` and `messages.duplicate_of` for it are in
+`db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
+found in one place, and a stage that carried its own statements would be a
+second place for `staging_messages`.
 
 A promotion statement reads a staging table and writes a production one in
 the same `INSERT ... SELECT`, and it belongs with the staging tables rather

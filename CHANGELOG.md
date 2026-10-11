@@ -173,6 +173,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the server finds and hides duplicate messages was
+  reworked inside, with nothing visible (#2182).
+
 - 2026-10-10: **The Docker Compose files take away what the server does not
   need.** The container they start keeps no Linux privileges, cannot gain
   any, and cannot change its own files: the server writes only to the data

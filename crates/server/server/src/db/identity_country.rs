@@ -18,8 +18,8 @@ use sqlx::SqliteConnection;
 use message_crate_api_types::IdentityHolder;
 
 use crate::db::contacts::{self, IdentityGoes, Origin};
+use crate::db::dedupe::HAS_CONTENT_KEY_SQL;
 use crate::db::{account_profile, handles};
-use crate::dedupe::HAS_CONTENT_KEY_SQL;
 
 /// Why a country cannot be picked for an identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
