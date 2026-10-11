@@ -571,10 +571,7 @@ fn guess_mime(ext: Option<&str>) -> Option<String> {
 
 /// True for a plain file; symlinks are never followed into the asset store.
 fn is_regular_file(path: &Path) -> bool {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => meta.is_file() && !meta.file_type().is_symlink(),
-        Err(_) => false,
-    }
+    file_io::ensure_regular_file(path).is_ok()
 }
 
 /// Stored asset fingerprint and path.
