@@ -51,7 +51,7 @@ export function selectItemClassName(
 }
 
 /** The heading of a section in a Select's or a ComboBox's list. */
-export const selectSectionHeaderClassName =
+export const selectSectionHeaderClass =
   "px-2 pt-1.5 pb-1 text-[0.688rem] font-semibold uppercase tracking-[0.05em] text-muted";
 
 /**

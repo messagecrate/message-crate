@@ -4,7 +4,7 @@ import { errorText } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/auth";
 import { useRouteCache } from "../../lib/routeQuery";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { inputClass, sectionTitleClass } from "./profileStyles";
 
 /**
  * Change an account's password: the logged-in account's own, or, given
@@ -91,7 +91,7 @@ export function ChangePasswordSection({
               onChange={(e) => setCurrentPw(e.target.value)}
               autoComplete="current-password"
               disabled={disabled}
-              className={inputClassName}
+              className={inputClass}
             />
           </label>
         )}
@@ -103,7 +103,7 @@ export function ChangePasswordSection({
             onChange={(e) => setNewPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={inputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -114,7 +114,7 @@ export function ChangePasswordSection({
             onChange={(e) => setConfirmPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={inputClass}
           />
         </label>
         <div className="mt-4 flex flex-wrap gap-2">

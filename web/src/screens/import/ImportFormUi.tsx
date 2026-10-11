@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Disclosure, DisclosurePanel } from "react-aria-components";
 import FormField from "../../components/FormField";
 import PlainButton from "../../components/PlainButton";
-import { textInputClassName } from "../../components/TextField";
+import { textInputClass } from "../../components/TextField";
 import type { AttachmentMediaMode } from "../../lib/types";
 import { focusRingClass } from "../../lib/uiStyles";
 
@@ -15,7 +15,7 @@ export const ATTACHMENT_OPTIONS: { id: AttachmentMediaMode; label: string }[] = 
 
 export const RESOLUTION_OPTIONS = ["720p", "1080p", "4k"];
 
-export const fieldClass = textInputClassName;
+export const fieldClass = textInputClass;
 export const hintClass = "mt-1 text-[0.75rem] text-muted";
 
 export const sectionGapClass = "mb-[1.1rem]";

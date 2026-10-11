@@ -4,7 +4,7 @@ import Button from "../../components/Button";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache } from "../../lib/routeQuery";
 import { useCreateAccountForm } from "../auth/useCreateAccountForm";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { inputClass, sectionTitleClass } from "./profileStyles";
 
 /**
  * The Account section of an account that does not exist yet, which the
@@ -62,7 +62,7 @@ export function NewAccountPanel() {
           onChange={(e) => setUsername(e.target.value)}
           autoComplete="off"
           disabled={busy}
-          className={inputClassName}
+          className={inputClass}
         />
       </div>
 
@@ -76,7 +76,7 @@ export function NewAccountPanel() {
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={inputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -87,7 +87,7 @@ export function NewAccountPanel() {
             onChange={(e) => setConfirmPassword(e.target.value)}
             autoComplete="new-password"
             disabled={busy}
-            className={inputClassName}
+            className={inputClass}
           />
         </label>
         <Button variant="primary" type="submit" disabled={busy} size="sm">

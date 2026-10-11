@@ -1,6 +1,6 @@
-import { textInputClassName } from "../../components/TextField";
+import { textInputClass } from "../../components/TextField";
 
-export const inputClassName = textInputClassName;
+export const inputClass = textInputClass;
 export const sectionTitleClass =
   "text-[0.688rem] font-semibold uppercase tracking-[0.05em] text-muted mb-2";
 export const dangerButtonClass =
