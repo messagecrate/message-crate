@@ -3,6 +3,7 @@ import {
   checkOptionalPath,
   checkRequiredPath,
   type ImportPathStat,
+  type ImportPathUnknown,
   type PathRequirement,
 } from "./pathChecks";
 
@@ -173,7 +174,9 @@ export function macMessagesDbPath(homeDir: string): string {
 export function shouldPrefillMacMessagesDb(args: {
   os: string;
   homeDir: string;
-  chatDb: Pick<ImportPathStat, "exists" | "isFile"> & { unreadable: { kind: string } | null };
+  chatDb: Pick<ImportPathStat, "exists" | "isFile"> & {
+    unreadable: { kind: ImportPathUnknown["kind"] } | null;
+  };
   rememberedPath: string;
 }): string {
   const remembered = args.rememberedPath.trim();
