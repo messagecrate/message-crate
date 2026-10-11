@@ -27,6 +27,7 @@ import {
   getAccountId,
   getBaseUrl,
   getToken,
+  NEVER_FOLLOW,
   problemFromBody,
 } from "./api";
 import { type AssetVersion, buildAssetPath } from "./assetUrl";
@@ -480,8 +481,7 @@ export async function fetchAsset(
     method: "GET",
     headers,
     signal,
-    // Never follow a redirect with the Session's header: `NEVER_FOLLOW` in `api.ts`.
-    redirect: "error",
+    redirect: NEVER_FOLLOW,
   });
   if (!res.ok) {
     const text = await res.text();

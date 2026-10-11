@@ -72,6 +72,7 @@ vi.mock("./api", () => ({
   getAccountId: () => 7,
   getBaseUrl: () => "http://127.0.0.1:8080",
   getToken: () => "mc-user-test",
+  NEVER_FOLLOW: "error",
   problemFromBody: (status: number, text: string) => new Error(`${status}: ${text}`),
 }));
 

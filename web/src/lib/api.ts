@@ -166,7 +166,7 @@ export function problemFromBody(status: number, text: string): ApiError {
  * the Session token to another host in a WebView that keeps `Authorization`
  * across origins. The failure reads as an unreachable server.
  */
-const NEVER_FOLLOW: RequestRedirect = "error";
+export const NEVER_FOLLOW: RequestRedirect = "error";
 
 async function request<T>(
   method: string,
