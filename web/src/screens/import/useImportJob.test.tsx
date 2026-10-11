@@ -378,6 +378,7 @@ describe("useImportJob wiring", () => {
     setImportStageMock.mockResolvedValue(undefined);
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
     invokeImessageBackupIdentitiesMock.mockReset();
     // No identities read by default, so the identity check never stops an
     // existing test that doesn't set up its own probe/profile response
