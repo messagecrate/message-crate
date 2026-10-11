@@ -9,6 +9,10 @@ File helpers that know nothing about conversations:
   program wrote, such as an ffmpeg output.
 - `file_sha256` streams a file through SHA-256 and returns the lowercase hex
   fingerprint that `digest_sha256` fields carry and assets are keyed on.
+- `file_sha256_nofollow` gives the same fingerprint but refuses a symlink
+  rather than following it; `open_nofollow` is the open behind it, and
+  `ensure_regular_file` the check behind that. The server's asset store reads
+  through them.
 
 They sit in a leaf crate so `media`, the journal, the export and import
 crates and the desktop app share one copy without depending on the
