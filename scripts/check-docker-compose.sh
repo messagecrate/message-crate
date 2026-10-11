@@ -15,9 +15,9 @@
 #
 # --website also runs scripts/check-served-website.sh against the stack: the
 # website it serves loads in a headless browser, logs in to the Demo
-# Account, searches and opens a conversation (#2217). That pulls the
-# Playwright image and adds a few minutes, so nightly.yml passes it and
-# CI's job does not.
+# Account, searches and opens a conversation (#2217). nightly.yml passes it
+# and CI's job does not, because every run would pull the Playwright image,
+# mcr.microsoft.com/playwright, which is about 2.5 GB unpacked.
 #
 # The stack runs under its own project name, on its own volume, published on
 # 127.0.0.1:<host-port> (18080 unless given), so it never touches a running
