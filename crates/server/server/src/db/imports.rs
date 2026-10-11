@@ -68,7 +68,7 @@ impl ImportStage {
     /// backup, and resumes an interrupted run by moving the run it already
     /// has; the importer library sends no stage and so opens at `parse` too.
     /// A run opened at any later stage would be resumed at work nobody did.
-    pub fn may_open_at(self) -> bool {
+    pub fn opens_a_run(self) -> bool {
         self == Self::Parse
     }
 
@@ -435,8 +435,8 @@ pub enum StartImportError {
         "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
-    /// The run asked to open at a stage [`ImportStage::may_open_at`] does
-    /// not allow.
+    /// The run asked to open at a stage that does not open a run
+    /// ([`ImportStage::opens_a_run`]).
     #[error("an Import Run opens at stage parse, not at stage {}", stage.as_str())]
     OpeningStage {
         /// The stage the request asked for.
@@ -460,7 +460,7 @@ pub async fn start_import(
     args: &StartImportArgs<'_>,
     now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
-    if !args.stage.may_open_at() {
+    if !args.stage.opens_a_run() {
         return Err(StartImportError::OpeningStage { stage: args.stage });
     }
     let started_at = now.to_rfc3339();

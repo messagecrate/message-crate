@@ -19,6 +19,22 @@ fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
     StartImportArgs::new(account_id, "ios", "append", Some("message-crate"))
 }
 
+/// Open a run at `parse` and move it through the stages in order to
+/// `stage`, the only way a run reaches a later stage.
+async fn open_run_at(conn: &mut SqliteConnection, stage: ImportStage) -> i64 {
+    let id = start_import(conn, &default_start_args(ACCOUNT_ID), fixed_start_instant())
+        .await
+        .unwrap();
+    let last = ImportStage::ALL.iter().position(|s| *s == stage).unwrap();
+    // `ALL[0]` is `parse`, where the run opened.
+    for next in &ImportStage::ALL[1..=last] {
+        set_import_stage(conn, ACCOUNT_ID, id, *next, None)
+            .await
+            .unwrap();
+    }
+    id
+}
+
 #[tokio::test]
 async fn complete_import_persists_timings_and_issues() {
     let (pool, _dir) = setup_accounts_only().await;
@@ -679,22 +695,7 @@ async fn a_running_run_without_a_stage_refuses_a_move() {
 async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let id = start_import(
-        &mut conn,
-        &default_start_args(ACCOUNT_ID),
-        fixed_start_instant(),
-    )
-    .await
-    .unwrap();
-    for stage in [
-        ImportStage::Write,
-        ImportStage::StagingReview,
-        ImportStage::Upload,
-    ] {
-        set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
-            .await
-            .unwrap();
-    }
+    let id = open_run_at(&mut conn, ImportStage::Upload).await;
 
     let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Parse, Some("{}"))
         .await
@@ -728,18 +729,8 @@ async fn every_move_the_desktop_app_makes_is_accepted() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     for (from, to) in DESKTOP_APP_MOVES {
-        let id = start_import(
-            &mut conn,
-            &default_start_args(ACCOUNT_ID),
-            fixed_start_instant(),
-        )
-        .await
-        .unwrap();
-        // A run opens at `parse`, so it walks the stages in order to `from`.
-        let to_from = ImportStage::ALL
-            .into_iter()
-            .take_while(|stage| *stage != from);
-        for stage in to_from.chain([from, to, to]) {
+        let id = open_run_at(&mut conn, from).await;
+        for stage in [from, to, to] {
             set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
                 .await
                 .unwrap_or_else(|e| panic!("{} -> {}: {e}", from.as_str(), to.as_str()));
