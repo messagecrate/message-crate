@@ -69,7 +69,7 @@ pub struct SeedConfig {
     pub groups: GroupsConfig,
     /// Message mix: attachments, replies, tapbacks, transports.
     pub messages: MessagesConfig,
-    /// Deliberately awkward data: unassigned handles, orphans, empty threads.
+    /// Deliberately awkward data: unassigned handles, orphans, empty conversations.
     pub edge_cases: EdgeCasesConfig,
     /// How conversations are split across the backup directories.
     pub sources: SourcesConfig,
@@ -276,7 +276,7 @@ pub struct SourcesConfig {
     pub android_only_fraction: f64,
     /// How many contacts are written into both the iMessage and Android directories.
     pub overlap_count: usize,
-    /// Share of messages in those overlapping iMessage threads that also appear
+    /// Share of messages in those overlapping iMessage conversations that also appear
     /// in the Android backup with the same text and time.
     pub overlap_shared_fraction: f64,
     /// Fewest Android-only messages added to each overlapping conversation.

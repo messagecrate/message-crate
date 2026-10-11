@@ -8,7 +8,7 @@ const STEP_CLASS =
  * Find in conversation (#1391). The term runs on the server (`GET /v1/messages`
  * with `in:#id`), so the count is every match in the conversation. Typing
  * jumps to the newest match; ▲ and ▼ step to the older and newer one, with the
- * messages around it; ✕ closes Find and leaves the thread where it is.
+ * messages around it; ✕ closes Find and leaves the conversation where it is.
  */
 export default function MessageFindBar({
   findTerm,

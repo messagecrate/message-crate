@@ -385,7 +385,7 @@ describe("useConversationMessages", () => {
     expect(result.current.landing.to).toEqual({ id: 3, align: "start" });
   });
 
-  it("steps Find through the matches in place, newest first, without hiding the thread", async () => {
+  it("steps Find through the matches in place, newest first, without hiding the conversation", async () => {
     getMessages.mockImplementation((async (_id: number, params: { around?: number }) => ({
       items: params.around === undefined ? [message(99)] : [message(params.around)],
       total: 99,
@@ -421,7 +421,7 @@ describe("useConversationMessages", () => {
     expect(result.current.find.position).toBe(1);
     await waitFor(() => expect(result.current.messages.map((m) => m.id)).toEqual([20]));
 
-    // ✕ leaves the thread where it is.
+    // ✕ leaves the conversation where it is.
     act(() => result.current.find.close());
     expect(result.current.highlightId).toBeNull();
     expect(result.current.messages.map((m) => m.id)).toEqual([20]);

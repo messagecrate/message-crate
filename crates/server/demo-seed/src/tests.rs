@@ -249,15 +249,18 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
     assert_eq!(per_source(IMESSAGE_SOURCE), 18);
     assert_eq!(per_source(SBR_SOURCE), 3);
     assert_eq!(per_source(WHATSAPP_SOURCE), 4);
-    let empty_threads = documents
+    let empty_conversations = documents
         .iter()
         .filter(|(_, doc)| doc.messages.is_empty())
         .count();
-    assert_eq!(empty_threads, 2, "one empty individual and one empty group");
+    assert_eq!(
+        empty_conversations, 2,
+        "one empty individual and one empty group"
+    );
     // Replies and tapbacks are placed on a stride, so how many there are
     // says nothing a pinned number could check. What has to hold is that
     // every reply names a message written earlier in the same conversation:
-    // a reply whose target is missing is a thread the server cannot show.
+    // a reply whose target is missing points at a message the server cannot show.
     let mut replies = 0;
     let mut tapbacks = 0;
     for (source, doc) in &documents {
@@ -995,7 +998,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     assert!(message.attachments.is_empty(), "{}", message.guid);
                     assert!(message.reactions.is_empty(), "{}", message.guid);
                     // Only an iMessage can be unsent, and an unsent reply would be
-                    // an empty message threaded under another.
+                    // an empty message replying to another.
                     assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
                     assert!(
                         message.reply_to.is_none(),
