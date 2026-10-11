@@ -593,3 +593,38 @@ fn compress_settings_reach_the_config() {
         ]
     );
 }
+
+/// Every source takes the output directory, the Scratch Directory, and the
+/// output format from the form; only iMazing reads the time zone field.
+#[test]
+fn every_source_carries_the_shared_form_fields() {
+    let form = Form {
+        input: concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml").into(),
+        output: "  out  ".into(),
+        owner_phones: "+15555550100".into(),
+        owner_emails: "me@example.com".into(),
+        timezone: "UTC-05:00".into(),
+        attachment_media: AttachmentMedia::Clone,
+        output_format: OutputFormat::Eml,
+        ..Form::default()
+    };
+    for exporter in [
+        Exporter::Imessage,
+        Exporter::Whatsapp,
+        Exporter::Imazing,
+        Exporter::OpenExtract,
+        Exporter::GoSmsPro,
+        Exporter::SmsBackupRestore,
+        Exporter::SmsBackupPlus,
+    ] {
+        let config = form
+            .to_config(exporter, Path::new("/cache"))
+            .unwrap_or_else(|errors| panic!("{exporter:?}: {errors:?}"));
+        assert_eq!(config.output, PathBuf::from("out"), "{exporter:?}");
+        assert_eq!(config.scratch_dir, PathBuf::from("/cache"), "{exporter:?}");
+        assert_eq!(config.output_format, OutputFormat::Eml, "{exporter:?}");
+        let timezone = (exporter == Exporter::Imazing).then_some("UTC-05:00");
+        assert_eq!(config.timezone.as_deref(), timezone, "{exporter:?}");
+        assert!(!config.resume, "{exporter:?}");
+    }
+}
