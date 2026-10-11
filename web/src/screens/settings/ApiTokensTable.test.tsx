@@ -12,7 +12,7 @@ describe("ApiTokensTable focus", () => {
   it("draws the focus ring on a token's row", () => {
     render(
       <ApiTokensTable
-        items={[
+        tokens={[
           {
             id: 1,
             label: "Phone backup",
@@ -42,7 +42,7 @@ describe("ApiTokensTable empty", () => {
   it("says when the account has no API Token", () => {
     render(
       <ApiTokensTable
-        items={[]}
+        tokens={[]}
         busy={false}
         composing={false}
         onRename={() => {}}

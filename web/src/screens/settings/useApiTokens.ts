@@ -167,7 +167,7 @@ export function useApiTokens() {
   };
 
   return {
-    items: data ?? [],
+    tokens: data ?? [],
     loading,
     loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
     busy,
@@ -216,7 +216,7 @@ export function useManagedApiTokens(accountId: number) {
   };
 
   return {
-    items: data ?? [],
+    tokens: data ?? [],
     loading,
     loadError: loadError ? apiErrorMessage(loadError, "Could not load API Tokens.") : "",
     busy: revokeToken.isPending,
