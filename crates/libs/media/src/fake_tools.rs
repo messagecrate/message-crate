@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::{Result, anyhow, bail};
 
 use crate::MediaProbe;
-use crate::tools::MediaTools;
+use crate::tools::{MediaTools, ffmpeg_command_line};
 
 /// What ffprobe reports about a small, low-bitrate 320x240 video in
 /// `codec` at `fps` frames per second.
@@ -115,9 +115,7 @@ impl MediaTools for FakeTools {
         if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
             bail!("stopped before ffmpeg started");
         }
-        let mut run = args.to_vec();
-        run.push(dest.to_string_lossy().into_owned());
-        self.runs.borrow_mut().push(run);
+        self.runs.borrow_mut().push(ffmpeg_command_line(args, dest));
         std::fs::write(dest, &self.output)?;
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));

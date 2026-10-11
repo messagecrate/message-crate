@@ -914,8 +914,8 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
     }
 }
 
-/// The compress arguments for an image, which the fake accepts whatever
-/// they are, are ones the real ffmpeg runs.
+/// The fake accepts any arguments, so this runs the image compress
+/// arguments through the real ffmpeg to show it accepts them.
 #[test]
 fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
     let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {

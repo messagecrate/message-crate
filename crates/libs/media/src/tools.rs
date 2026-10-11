@@ -243,8 +243,7 @@ pub fn require_ffmpeg() -> Result<()> {
 /// location (`testutil::real_ffmpeg_test_guard`). [`InstalledTools`] is
 /// the one implementation outside tests.
 ///
-/// [`MediaTools::probe`] and [`MediaTools::transcode`] run the programs,
-/// for the Media Stage and for the Thumbnail and Preview versions alike.
+/// [`MediaTools::probe`] and [`MediaTools::transcode`] run the programs;
 /// [`MediaTools::require`] and [`MediaTools::can_probe`] say whether the
 /// programs were found where they were looked for and answered `-version`.
 pub(crate) trait MediaTools {
@@ -283,10 +282,15 @@ impl MediaTools for InstalledTools {
     }
 
     fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()> {
-        let mut args = args.to_vec();
-        args.push(dest.to_string_lossy().into_owned());
-        run_ffmpeg_with(&args, stop)
+        run_ffmpeg_with(&ffmpeg_command_line(args, dest), stop)
     }
+}
+
+/// The arguments ffmpeg is given to write `dest`: `args`, then `dest`.
+pub(crate) fn ffmpeg_command_line(args: &[String], dest: &Path) -> Vec<String> {
+    let mut line = args.to_vec();
+    line.push(dest.to_string_lossy().into_owned());
+    line
 }
 
 /// How many times a program whose file is busy is started before it is
