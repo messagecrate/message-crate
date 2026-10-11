@@ -1,8 +1,10 @@
 use super::*;
 
 use std::ffi::OsString;
+use std::io::{Read, Write};
 
 use httpmock::prelude::*;
+use sha2::{Digest, Sha256};
 
 /// The SHA-256 of `bytes`, in lowercase hex.
 impl Retry {
@@ -117,7 +119,13 @@ fn check_waiting(
     downloads: &ToolDownloads,
     wait: &dyn Fn(Duration),
 ) {
-    download_missing(dir, base, pinned, downloads.begin_check(), wait);
+    download_missing(
+        dir,
+        &HttpFetch::new(base),
+        pinned,
+        downloads.begin_check(),
+        wait,
+    );
 }
 
 /// A server on this computer that closes a connection without an answer, as
@@ -210,6 +218,115 @@ fn a_download_whose_checksum_does_not_match_is_refused() {
         "the reason does not name the checksum: {reason}"
     );
     assert!(reason.contains(&sha256_hex(b"a file changed on the way")));
+}
+
+/// A fetch that writes `bytes` for any pin, as if the download arrived.
+struct FixedFetch {
+    bytes: Vec<u8>,
+}
+
+impl Fetch for FixedFetch {
+    fn fetch(
+        &self,
+        _pinned: &Pinned,
+        into: &mut dyn Write,
+        progress: &dyn Fn(u64, Option<u64>),
+    ) -> Result<(), DownloadError> {
+        let total = self.bytes.len() as u64;
+        into.write_all(&self.bytes)
+            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
+        progress(total, Some(total));
+        Ok(())
+    }
+}
+
+/// [`download_missing`] as one check of `downloads`, getting every file
+/// with a fetch that writes `bytes`. A wait before a try again returns at
+/// once.
+fn check_fetching(dir: &Path, bytes: &[u8], pinned: &[Pinned], downloads: &ToolDownloads) {
+    let fetch = FixedFetch {
+        bytes: bytes.to_vec(),
+    };
+    download_missing(dir, &fetch, pinned, downloads.begin_check(), &|_| {});
+}
+
+/// What a fetch writes is refused when its SHA-256 is not the pinned one,
+/// with no server: no program and no temporary file is left in the Tools
+/// Directory, and the failure names both checksums.
+#[test]
+fn a_fetched_file_whose_checksum_does_not_match_is_not_left_behind() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin_with(
+        Program::Wtsexporter,
+        "r1",
+        b"",
+        false,
+        &sha256_hex(b"the pinned file"),
+    );
+    let downloads = ToolDownloads::default();
+
+    check_fetching(
+        tools.path(),
+        b"a file changed on the way",
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::ChecksumMismatch {
+                expected: sha256_hex(b"the pinned file"),
+                actual: sha256_hex(b"a file changed on the way"),
+            }
+            .to_string(),
+        })
+    );
+}
+
+/// A gzipped asset that passes its checksum and does not unpack puts no
+/// program in place and leaves no temporary file, and the program already
+/// there stays.
+#[test]
+fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"the old wtsexporter").unwrap();
+    let not_gzip = b"not a gzip stream";
+    let pinned = Pinned {
+        program: Program::Wtsexporter,
+        repo: "owner/project",
+        release: "r2",
+        asset: "wtsexporter-test.gz",
+        sha256: leak(sha256_hex(not_gzip)),
+        program_sha256: leak(sha256_hex(b"wtsexporter")),
+        gzipped: true,
+    };
+    let downloads = ToolDownloads::default();
+
+    check_fetching(
+        tools.path(),
+        not_gzip,
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert_eq!(std::fs::read(&target).unwrap(), b"the old wtsexporter");
+    assert_eq!(
+        other_files(tools.path(), &[&Program::Wtsexporter.file_name()]),
+        Vec::<String>::new()
+    );
+    assert!(
+        matches!(
+            downloads.get(Program::Wtsexporter),
+            Some(DownloadState::Failed { .. })
+        ),
+        "the unpack did not fail: {:?}",
+        downloads.get(Program::Wtsexporter)
+    );
 }
 
 /// A program the app wrote from an older release stays in use while the
@@ -1465,7 +1582,7 @@ fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
 
     let retried = retry_with(
         tools.path().to_path_buf(),
-        "http://127.0.0.1:9".into(),
+        Box::new(HttpFetch::new("http://127.0.0.1:9")),
         vec![pinned],
         &downloads,
         &[Program::Wtsexporter],

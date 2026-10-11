@@ -47,16 +47,16 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs::File;
-use std::io::{self, Read, Seek, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use sha2::{Digest, Sha256};
-
+mod fetch;
 mod pins;
+use fetch::{Fetch, HttpFetch, install, make_executable};
 pub use pins::pinned_for;
 
 /// Where the pinned releases are downloaded from. Tests point the download
@@ -359,7 +359,8 @@ pub enum DownloadError {
     CouldNotWrite(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
-    /// The check's thread could not be started, so nothing was downloaded.
+    /// The check's thread, or the client the download goes through, could
+    /// not be started, so nothing was downloaded.
     CouldNotStart(String),
     /// The check stopped partway through the download, such as on a panic
     /// in its thread, so the download never ended.
@@ -403,132 +404,6 @@ impl fmt::Display for DownloadError {
             Self::Interrupted => f.write_str("The download was interrupted."),
         }
     }
-}
-
-/// An error and the errors under it, as one line.
-fn error_chain(err: &dyn std::error::Error) -> String {
-    let mut line = err.to_string();
-    let mut source = err.source();
-    while let Some(cause) = source {
-        line.push_str(": ");
-        line.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    line
-}
-
-/// The client the downloads use: rustls, a `User-Agent` naming the app, 30
-/// seconds to connect, and 60 seconds for any one read, so a stalled
-/// download fails rather than hanging the check.
-fn download_client() -> reqwest::Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
-        .user_agent(concat!(
-            "MessageCrate/",
-            env!("MESSAGE_CRATE_BUILD"),
-            " (desktop app tool download)"
-        ))
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(60))
-        .build()
-}
-
-/// Download `pinned` from `url` into `dir` and put it in place.
-///
-/// The file is streamed to a temporary file in `dir` and its SHA-256
-/// computed on the way. On a match it is unpacked when gzipped and the
-/// program's SHA-256 checked, then made executable and renamed over the
-/// program; on a mismatch, or any failure,
-/// the temporary file is deleted and the program there is left as it was.
-/// `progress` hears the bytes received so far and the total when the
-/// server says it.
-fn download(
-    client: &reqwest::blocking::Client,
-    url: &str,
-    pinned: &Pinned,
-    dir: &Path,
-    progress: &dyn Fn(u64, Option<u64>),
-) -> Result<Written, DownloadError> {
-    let write_error = |err: io::Error| DownloadError::CouldNotWrite(err.to_string());
-    let mut response = client
-        .get(url)
-        .send()
-        .map_err(|err| DownloadError::NoNetwork(error_chain(&err)))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(DownloadError::Http(status.as_u16()));
-    }
-    let total = response.content_length();
-    let mut arrived = tempfile::Builder::new()
-        .prefix(&temp_prefix(pinned.program, "download"))
-        .tempfile_in(dir)
-        .map_err(write_error)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 64 * 1024];
-    let mut received = 0u64;
-    progress(received, total);
-    loop {
-        let read = match response.read(&mut buffer) {
-            Ok(0) => break,
-            Ok(read) => read,
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-            Err(err) => return Err(DownloadError::NoNetwork(error_chain(&err))),
-        };
-        hasher.update(&buffer[..read]);
-        arrived.write_all(&buffer[..read]).map_err(write_error)?;
-        received += read as u64;
-        progress(received, total);
-    }
-    let actual = hex::encode(hasher.finalize());
-    if actual != pinned.sha256 {
-        return Err(DownloadError::ChecksumMismatch {
-            expected: pinned.sha256.to_string(),
-            actual,
-        });
-    }
-    let mut program = if pinned.gzipped {
-        let mut unpacked = tempfile::Builder::new()
-            .prefix(&temp_prefix(pinned.program, "unpack"))
-            .tempfile_in(dir)
-            .map_err(write_error)?;
-        let packed = arrived.as_file_mut();
-        packed.rewind().map_err(write_error)?;
-        io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
-        unpacked.flush().map_err(write_error)?;
-        let actual = file_io::file_sha256(unpacked.path()).map_err(write_error)?;
-        if actual != pinned.program_sha256 {
-            return Err(DownloadError::ChecksumMismatch {
-                expected: pinned.program_sha256.to_string(),
-                actual,
-            });
-        }
-        unpacked
-    } else {
-        arrived
-    };
-    program.flush().map_err(write_error)?;
-    program.as_file().sync_all().map_err(write_error)?;
-    make_executable(program.path()).map_err(write_error)?;
-    let target = dir.join(pinned.program.file_name());
-    program
-        .persist(&target)
-        .map_err(|err| write_error(err.error))?;
-    // Renaming keeps the size, modified time and inode, so the stamp taken
-    // now is the one the next start sees.
-    let stamp = Stamp::at(&target).map_err(write_error)?;
-    Ok(Written::of(pinned, stamp))
-}
-
-/// Give the file at `path` its executable bits.
-#[cfg(unix)]
-fn make_executable(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
-}
-
-/// Windows runs any `.exe`, so there is no bit to set.
-#[cfg(not(unix))]
-fn make_executable(_path: &Path) -> io::Result<()> {
-    Ok(())
 }
 
 /// Where one program's download stands, as Settings shows it.
@@ -801,7 +676,7 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 }
 
 /// Check `dir` against `pinned` and download, one after another, what is
-/// missing or not the pinned release, from `base`. ffmpeg and ffprobe are
+/// missing or not the pinned release, with `fetch`. ffmpeg and ffprobe are
 /// passed over when both are on `PATH`. Each download's progress and
 /// failure go to the downloads `run` belongs to, and each file written goes
 /// into the record.
@@ -814,7 +689,7 @@ fn lock_check(dir: &Path) -> io::Result<Option<File>> {
 /// network: [`std::thread::sleep`] in the app.
 fn download_missing(
     dir: &Path,
-    base: &str,
+    fetch: &dyn Fetch,
     pinned: &[Pinned],
     mut run: CheckRun,
     wait: &dyn Fn(Duration),
@@ -824,7 +699,7 @@ fn download_missing(
         Ok(None) => return,
         Err(_) => None,
     };
-    check(dir, base, pinned, &mut run, lock, wait);
+    check(dir, fetch, pinned, &mut run, lock, wait);
 }
 
 /// What [`retry`] did.
@@ -842,7 +717,9 @@ pub enum Retry {
 }
 
 /// Start the check of `dir` again on a thread of its own, as **Try again**
-/// on the Import form asks (#1053), and return without waiting for it.
+/// on the Import form asks (#1053), and return without waiting for it. The
+/// files are downloaded from the releases under `base`, which is [`GITHUB`]
+/// outside tests.
 ///
 /// `not_found` are the programs the window says are not found. They show as
 /// downloading before this returns, so the window, which asks again only
@@ -857,7 +734,8 @@ pub fn retry(
     downloads: &ToolDownloads,
     not_found: &[Program],
 ) -> Retry {
-    retry_with(dir, base, pinned, downloads, not_found, |work| {
+    let fetch = Box::new(HttpFetch::new(base));
+    retry_with(dir, fetch, pinned, downloads, not_found, |work| {
         std::thread::Builder::new()
             .name("tool-downloads-retry".into())
             .spawn(work)
@@ -867,11 +745,11 @@ pub fn retry(
 /// The work [`retry`] hands to a new thread.
 type Work = Box<dyn FnOnce() + Send>;
 
-/// [`retry`], starting the check's thread with `spawn`, so a test can make
-/// the start fail.
+/// [`retry`], getting the files with `fetch` and starting the check's
+/// thread with `spawn`, so a test can make the start fail.
 fn retry_with(
     dir: PathBuf,
-    base: String,
+    fetch: Box<dyn Fetch>,
     pinned: Vec<Pinned>,
     downloads: &ToolDownloads,
     not_found: &[Program],
@@ -898,7 +776,7 @@ fn retry_with(
     let (hand_over, handed) = std::sync::mpsc::sync_channel::<CheckRun>(1);
     let spawned = spawn(Box::new(move || {
         if let Ok(mut run) = handed.recv() {
-            check(&dir, &base, &pinned, &mut run, lock, &std::thread::sleep);
+            check(&dir, &*fetch, &pinned, &mut run, lock, &std::thread::sleep);
         }
     }));
     match spawned {
@@ -932,7 +810,7 @@ fn retry_with(
 /// download that found no network is tried again.
 fn check(
     dir: &Path,
-    base: &str,
+    fetch: &dyn Fetch,
     pinned: &[Pinned],
     run: &mut CheckRun,
     _lock: Option<File>,
@@ -998,10 +876,6 @@ fn check(
             );
         }
     };
-    let client = match download_client() {
-        Ok(client) => client,
-        Err(err) => return fail_all(DownloadError::NoNetwork(error_chain(&err))),
-    };
     if let Err(err) = std::fs::create_dir_all(dir) {
         return fail_all(DownloadError::CouldNotWrite(err.to_string()));
     }
@@ -1011,7 +885,7 @@ fn check(
         let progress = |received, total| {
             downloads.set(program, DownloadState::Downloading { received, total });
         };
-        let mut attempt = || download(&client, &pin.url(base), pin, dir, &progress);
+        let mut attempt = || install(fetch, pin, dir, &progress);
         let show_downloading = || {
             downloads.set(
                 program,
@@ -1130,7 +1004,15 @@ pub fn start(dir: PathBuf, downloads: &ToolDownloads) {
     let run = downloads.begin_check();
     let _ = std::thread::Builder::new()
         .name("tool-downloads".into())
-        .spawn(move || download_missing(&dir, GITHUB, &pinned, run, &std::thread::sleep));
+        .spawn(move || {
+            download_missing(
+                &dir,
+                &HttpFetch::new(GITHUB),
+                &pinned,
+                run,
+                &std::thread::sleep,
+            )
+        });
 }
 
 #[cfg(test)]

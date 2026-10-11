@@ -183,6 +183,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
+  into the Tools Directory was reworked inside, with nothing visible (#2213).
+
 - 2026-10-11: The way attachments are converted and compressed, and their
   Thumbnails and Previews made, was reworked inside, with nothing visible
   (#2206).
