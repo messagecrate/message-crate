@@ -250,11 +250,7 @@ fn field_term(
     if raw.trim().is_empty() {
         return Err(empty_value_error(spec, word, span));
     }
-    let pieces: Vec<&str> = if quoted {
-        vec![raw]
-    } else {
-        raw.split(',').filter(|p| !p.trim().is_empty()).collect()
-    };
+    let pieces = comma_values(raw, quoted);
     if pieces.is_empty() {
         return Err(empty_value_error(spec, word, span));
     }
@@ -291,16 +287,23 @@ fn unbalanced(span: Range<usize>, msg: &str) -> QueryError {
     QueryError::new(QueryErrorKind::Unbalanced, span, msg)
 }
 
-/// The comma values of an unchecked `word:value`, counted as
-/// [`field_term`] splits them, so a query read without a list counts its
-/// parts as every list would.
-fn unchecked_field(raw: &str, quoted: bool) -> UncheckedField {
-    let values = if quoted {
-        1
+/// The values of a `word:value`: the whole value when it came in quotes,
+/// otherwise each non-blank piece between commas, which mean OR.
+fn comma_values(raw: &str, quoted: bool) -> Vec<&str> {
+    if quoted {
+        vec![raw]
     } else {
-        raw.split(',').filter(|p| !p.trim().is_empty()).count()
-    };
-    UncheckedField { values }
+        raw.split(',').filter(|p| !p.trim().is_empty()).collect()
+    }
+}
+
+/// An unchecked `word:value` with its values counted as [`field_term`]
+/// splits them, so a query read without a list counts its parts as every
+/// list would.
+fn unchecked_field(raw: &str, quoted: bool) -> UncheckedField {
+    UncheckedField {
+        values: comma_values(raw, quoted).len(),
+    }
 }
 
 /// Reads tokens into an [`Expr`]; `field` turns each `word:value` into the
