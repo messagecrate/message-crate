@@ -12,7 +12,7 @@
 //! maps) before building a [`ConversationDocument`].
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
@@ -1012,11 +1012,6 @@ pub fn android_source(
         android_type: parse_android_type(msg.extra_str("android_type")),
         fields,
     }
-}
-
-/// Parse a JSON string into a [`Value`], or return the string as a JSON string value.
-pub fn parse_json_value(s: &str) -> Value {
-    serde_json::from_str(s).unwrap_or_else(|_| json!(s))
 }
 
 /// Export and conversation metadata without messages (JSONL header line
