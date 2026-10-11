@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, render, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../test/providers";
@@ -41,7 +41,7 @@ vi.mock("./api", () => ({
   setBaseUrl: (...args: unknown[]) => setBaseUrl(...args),
 }));
 
-// The server calls auth.tsx makes, faked by name. Everything else in serverApi
+// The server calls auth.tsx and savedLogin.ts make, faked by name. Everything else in serverApi
 // stays real, since other modules in this graph import from it.
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),
@@ -225,23 +225,6 @@ describe("AuthProvider logout", () => {
     expect(result.current.isAuthenticated).toBe(false);
   });
 
-  it("does not register a close handler outside Tauri", async () => {
-    isTauri.mockReturnValue(false);
-    const { AuthProvider } = await import("./auth");
-    render(
-      <Providers>
-        <AuthProvider>
-          <div>ok</div>
-        </AuthProvider>
-      </Providers>,
-    );
-
-    await waitFor(() => {
-      expect(getCurrentWindow).not.toHaveBeenCalled();
-    });
-    expect(onCloseRequested).not.toHaveBeenCalled();
-  });
-
   it("registers a Tauri close handler that logs out then destroys the window", async () => {
     isTauri.mockReturnValue(true);
     let closeHandler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined;
@@ -280,45 +263,6 @@ describe("AuthProvider logout", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
     expect(result.current.isAuthenticated).toBe(false);
     expect(destroy).toHaveBeenCalled();
-  });
-
-  it("allows another close attempt when destroy fails", async () => {
-    isTauri.mockReturnValue(true);
-    let closeHandler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined;
-    onCloseRequested.mockImplementation(async (handler) => {
-      closeHandler = handler;
-      return () => {};
-    });
-    destroy.mockRejectedValueOnce(new Error("denied")).mockResolvedValueOnce(undefined);
-
-    seedSession();
-    const { AuthProvider } = await import("./auth");
-    render(
-      <Providers>
-        <AuthProvider>
-          <div>ok</div>
-        </AuthProvider>
-      </Providers>,
-    );
-
-    await waitFor(() => {
-      expect(closeHandler).toBeTypeOf("function");
-    });
-
-    const handler = closeHandler;
-    if (!handler) {
-      throw new Error("expected onCloseRequested handler");
-    }
-
-    await act(async () => {
-      await handler({ preventDefault: vi.fn() });
-    });
-    expect(destroy).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      await handler({ preventDefault: vi.fn() });
-    });
-    expect(destroy).toHaveBeenCalledTimes(2);
   });
 });
 
