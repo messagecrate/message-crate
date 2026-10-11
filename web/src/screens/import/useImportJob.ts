@@ -87,6 +87,7 @@ import {
   UPLOAD_LABEL,
 } from "./importProgressState";
 import {
+  CLEARED_RUN,
   type ImportRunState,
   importRunStore,
   initialImportRunState,
@@ -553,17 +554,8 @@ function setRowByLabel(label: string, patch: Partial<ImportStep>): void {
  */
 function returnToForm(): void {
   store.set({
+    ...CLEARED_RUN,
     phase: "form",
-    summaryView: null,
-    runDir: null,
-    importRunId: null,
-    stagingSummary: null,
-    mediaSummary: null,
-    mediaFailedCount: null,
-    mediaToolsMissing: [],
-    mediaPartiallyRan: false,
-    computingSummary: false,
-    reviewError: null,
     form: null,
   });
 }
@@ -1440,20 +1432,11 @@ async function runImport(
   let form = withShownAttachmentMode(submitted);
   beginRun(form, "staging");
   store.set({
+    ...CLEARED_RUN,
     running: true,
     phase: "running",
     form,
-    summaryView: null,
-    runDir: null,
-    importRunId: null,
-    stagingSummary: null,
-    mediaSummary: null,
-    mediaFailedCount: null,
-    mediaToolsMissing: [],
-    mediaPartiallyRan: false,
     resumeError: null,
-    reviewError: null,
-    computingSummary: false,
   });
 
   let runId: number | null = null;
@@ -1908,17 +1891,11 @@ export function useImportJob() {
     beginRun(known, importRun.stage === "media" ? "media" : "staging");
     await loadCarriedRecord(outputDir);
     store.set({
+      ...CLEARED_RUN,
       resumeError: null,
-      reviewError: null,
       form: known,
-      summaryView: null,
       runDir: outputDir,
       importRunId: runId,
-      stagingSummary: null,
-      mediaSummary: null,
-      mediaFailedCount: null,
-      mediaToolsMissing: [],
-      mediaPartiallyRan: false,
       sourceIdentities: parseSourceIdentities(importRun.source_identities),
     });
 

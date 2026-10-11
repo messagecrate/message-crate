@@ -1779,6 +1779,62 @@ async fn a_valid_token_under_another_scheme_answers_401() {
     assert_eq!(response.status().as_u16(), 401);
 }
 
+/// No API token acts as the owner (ADR 0008). The route that issues tokens
+/// refuses the owner, but a token row on the owner's account can still
+/// exist: written by hand, or carried over in a restored database. A request
+/// with it answers the same `401 Unauthorized` as a token the server never
+/// issued, on a route the owner's session reaches, on one an import reaches,
+/// and on logging out, and leaves no record of a use on the token.
+#[tokio::test]
+async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() {
+    let fixture = crate::test_support::test_fixture().await;
+    let state = fixture.state.clone();
+    crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let created = {
+        let mut conn = fixture.conn().await;
+        api_tokens::create_api_token(
+            &mut conn,
+            account_profile::OWNER_ACCOUNT_ID,
+            "by hand",
+            Permissions::all(),
+            None,
+        )
+        .await
+        .unwrap()
+    };
+
+    let send = async |method: &str, path: &str, token: &str| match method {
+        "GET" => crate::test_support::get_raw(&state, path, token).await,
+        "DELETE" => crate::test_support::delete_raw(&state, path, token).await,
+        other => panic!("no helper for {other}"),
+    };
+    for (method, path) in [
+        ("GET", "/v1/session"),
+        ("GET", "/v1/accounts"),
+        ("GET", "/v1/imports"),
+        ("DELETE", "/v1/session"),
+    ] {
+        let (status, text) = send(method, path, &created.token).await;
+        let owners = expect_problem_for(
+            &format!("{method} {path} with a token on the owner's account"),
+            status,
+            &text,
+            ProblemType::AuthenticationRequired,
+        );
+        let (status, text) = send(method, path, "mc-api-never-issued").await;
+        let unknown = expect_problem(status, &text, ProblemType::AuthenticationRequired);
+        assert_eq!(owners.detail, unknown.detail, "{method} {path}");
+    }
+
+    let last_used: Option<String> =
+        sqlx::query_scalar("SELECT last_accessed_at FROM account_api_tokens WHERE id = $1")
+            .bind(created.id)
+            .fetch_one(&mut *fixture.conn().await)
+            .await
+            .unwrap();
+    assert_eq!(last_used, None, "a refused token records no use");
+}
+
 /// `docker stop` and a service manager send SIGTERM. The server must drain a
 /// request in flight and then exit, as it does on Ctrl-C (#1218).
 #[cfg(unix)]

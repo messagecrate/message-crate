@@ -4,7 +4,7 @@
 
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
 import type { HeaderSearch } from "./AppHeader";
-import type { ContactBrowseKind, ContactPreview } from "./contactDrawer/contactDrawerTypes";
+import type { ContactBrowseTarget, ContactPreview } from "./contactDrawer/contactDrawerTypes";
 
 /**
  * What a route under the app layout tells the layout's header and navigation
@@ -27,13 +27,6 @@ export interface LayoutSection {
 export interface ShownSection {
   search: HeaderSearch;
   browseQuery: string;
-}
-
-/** The contact, or the one handle of it, whose conversations to open. */
-export interface ContactBrowseTarget {
-  contactId: string;
-  kind: ContactBrowseKind;
-  handle?: string;
 }
 
 /** What the app layout hands the routes under it. */

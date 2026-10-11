@@ -1,24 +1,19 @@
 import { describe, expect, it } from "vitest";
+import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
 import { checkOptionalPath, type ImportPathStat, PATH_MISSING, type PathKind } from "./pathChecks";
-
-const dir: ImportPathStat = { exists: true, isFile: false, isDirectory: true };
-const file: ImportPathStat = { exists: true, isFile: true, isDirectory: false };
-const missing: ImportPathStat = { exists: false, isFile: false, isDirectory: false };
-// A socket, a device file, or a pipe: it exists but is neither.
-const neither: ImportPathStat = { exists: true, isFile: false, isDirectory: false };
 
 type Key = "field";
 
 function check(path: string, stat: ImportPathStat | null, expected: PathKind) {
   const errors: Partial<Record<Key, string>> = {};
-  checkOptionalPath(path, stat, errors, "field", "Wrong kind.", expected);
+  checkOptionalPath(path, stat, errors, "field", { expected, kindError: "Wrong kind." });
   return errors;
 }
 
 describe("checkOptionalPath", () => {
   it("leaves an empty or blank path alone, whatever the check found", () => {
-    expect(check("", missing, "directory")).toEqual({});
-    expect(check("   ", missing, "file")).toEqual({});
+    expect(check("", MISSING_STAT, "directory")).toEqual({});
+    expect(check("   ", MISSING_STAT, "file")).toEqual({});
   });
 
   it("says nothing while the path has not been checked yet", () => {
@@ -26,22 +21,22 @@ describe("checkOptionalPath", () => {
   });
 
   it("says a path that does not exist does not exist", () => {
-    expect(check("/tmp/x", missing, "directory")).toEqual({ field: PATH_MISSING });
-    expect(check("/tmp/x", missing, "file")).toEqual({ field: PATH_MISSING });
+    expect(check("/tmp/x", MISSING_STAT, "directory")).toEqual({ field: PATH_MISSING });
+    expect(check("/tmp/x", MISSING_STAT, "file")).toEqual({ field: PATH_MISSING });
   });
 
   it("gives the field's own message for a file where a directory is needed", () => {
-    expect(check("/tmp/x", file, "directory")).toEqual({ field: "Wrong kind." });
-    expect(check("/tmp/x", dir, "directory")).toEqual({});
+    expect(check("/tmp/x", FILE_STAT, "directory")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", DIRECTORY_STAT, "directory")).toEqual({});
   });
 
   it("gives the field's own message for a directory where a file is needed", () => {
-    expect(check("/tmp/x", dir, "file")).toEqual({ field: "Wrong kind." });
-    expect(check("/tmp/x", file, "file")).toEqual({});
+    expect(check("/tmp/x", DIRECTORY_STAT, "file")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", FILE_STAT, "file")).toEqual({});
   });
 
   it("gives the field's own message for a path that is neither a file nor a directory", () => {
-    expect(check("/tmp/x", neither, "directory")).toEqual({ field: "Wrong kind." });
-    expect(check("/tmp/x", neither, "file")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", NEITHER_STAT, "directory")).toEqual({ field: "Wrong kind." });
+    expect(check("/tmp/x", NEITHER_STAT, "file")).toEqual({ field: "Wrong kind." });
   });
 });

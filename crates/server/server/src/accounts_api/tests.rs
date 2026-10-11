@@ -140,6 +140,24 @@ async fn the_owner_leads_the_account_list() {
     assert!(!body.items[1].is_owner);
 }
 
+/// The owner holds no messages and no permissions (ADR 0008), so its entry
+/// in the list reports none, whatever its row says: the row's columns
+/// default to on, and the owner's is written at claim without setting them.
+#[tokio::test]
+async fn the_owners_entry_reports_no_permissions() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    let body: crate::paging::Page<Account> = get_json(&state, "/v1/accounts", &owner.token).await;
+
+    let entry = &body.items[0];
+    assert!(entry.is_owner);
+    assert!(!entry.can_import, "the owner imports nothing");
+    assert!(!entry.can_export, "the owner exports nothing");
+    assert!(!entry.can_delete, "the owner deletes nothing");
+}
+
 /// Sort and return an object's keys. Panics if `v` is not an object —
 /// every wire body this test touches is expected to be one.
 fn sorted_keys(v: &serde_json::Value) -> Vec<&str> {
