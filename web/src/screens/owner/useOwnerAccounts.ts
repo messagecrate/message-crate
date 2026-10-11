@@ -20,8 +20,6 @@ export type ManagedAccountChanges = Partial<
 
 const fetchAccounts = (signal: AbortSignal) => listAccounts({ signal });
 
-/** A deletion from one account changes the account list, the Dashboard and the Demo Account. */
-
 /**
  * Change an account's status or permissions. The server answers with the
  * account as it now stands, which goes straight into the entry its Settings

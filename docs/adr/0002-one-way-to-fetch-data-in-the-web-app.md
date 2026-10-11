@@ -191,7 +191,8 @@ nothing — the opposite of the pattern this decision removes.
   one call: `invalidateAccount` on `useRouteCache` in
   `web/src/lib/routeQuery.ts`. A write made with TanStack Query goes through
   `useRouteMutation` in the same file. It makes that call before the write's
-  own `onSettled`. Biome refuses `useMutation` anywhere else
+  own `onSettled`. Biome refuses `useMutation`, `MutationObserver` and a
+  namespace import of `@tanstack/react-query` anywhere else
   (`web/biome.json`). Before that, each write added the call itself. A new
   write that left it out compiled and passed its own tests (issue #2162).
   The mutations that change no account data, such as an attachment download
