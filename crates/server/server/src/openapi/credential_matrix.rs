@@ -272,6 +272,29 @@ impl Operation {
         self.path.contains('{') && !own_store
     }
 
+    /// Whether an answer may carry `cache_control` (`docs/architecture/http-api.md`,
+    /// "Caching"): `no-store` on every `/v1` answer, except that an asset
+    /// read sets its own `private`, or `private, no-store` under a Media Link,
+    /// once the credential is accepted. A route outside `/v1`, such as
+    /// `/health`, is left as it is.
+    fn allows_cache_control(&self, cache_control: Option<&str>) -> bool {
+        if !crate::server::is_api_path(&self.path) {
+            return cache_control.is_none();
+        }
+        let is_asset_read = matches!(self.method.as_str(), "get" | "head")
+            && matches!(
+                self.path.as_str(),
+                "/v1/assets/{sha256}"
+                    | "/v1/assets/{sha256}/preview"
+                    | "/v1/assets/{sha256}/thumbnail"
+            );
+        match cache_control {
+            Some("no-store") => true,
+            Some("private" | "private, no-store") => is_asset_read,
+            _ => false,
+        }
+    }
+
     fn is_an_upload(&self) -> bool {
         self.path.starts_with("/v1/assets/{sha256}/uploads")
     }
@@ -638,8 +661,9 @@ impl<'a> World<'a> {
         self.tokens.for_credential(credential)
     }
 
-    /// Call `op` with `credential` and return the status.
-    async fn call(&self, op: &Operation, credential: Credential) -> StatusCode {
+    /// Call `op` with `credential` and return the status and the
+    /// `Cache-Control` the answer carries.
+    async fn call(&self, op: &Operation, credential: Credential) -> (StatusCode, Option<String>) {
         let method = reqwest::Method::from_bytes(op.method.to_uppercase().as_bytes()).unwrap();
         let mut request = http_client()
             .request(method, self.url(&self.path_for(op)))
@@ -651,8 +675,12 @@ impl<'a> World<'a> {
         }
         let response = request.send().await.unwrap();
         let status = response.status();
+        let cache_control = response
+            .headers()
+            .get(reqwest::header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_string());
         let _ = response.bytes().await;
-        status
+        (status, cache_control)
     }
 
     /// Whether Alice can still send a part of her upload.
@@ -765,7 +793,7 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             .unwrap();
     }
     let expected = op.expected(credential);
-    let status = world.call(&op, credential).await;
+    let (status, cache_control) = world.call(&op, credential).await;
     let row = |outcome: String| {
         format!(
             "{:<60} {:<20} {outcome}",
@@ -778,6 +806,9 @@ async fn run(shared: &Shared, n: usize, op: Operation, credential: Credential) -
             "expected {expected:<8} got {}",
             status.as_u16()
         )));
+    }
+    if !op.allows_cache_control(cache_control.as_deref()) {
+        return Some(row(format!("answered Cache-Control {cache_control:?}")));
     }
     if credential == Credential::OtherAccount && op.is_an_upload() && !world.upload_survives().await
     {

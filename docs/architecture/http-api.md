@@ -480,7 +480,8 @@ send one, and the rule would refuse the web app on its first request.
 Every `/v1` answer carries `Cache-Control: no-store` unless its route sets a
 `Cache-Control` of its own. The rule covers every status and every answer a
 layer gives before the handler runs: a `401` or `403` from the credential
-check, a `405`, a `406`, a `413`, the `404` of a path no route matches. The
+check, a `405`, a `406`, a `413`, the `404` of a path no route matches, and
+the answer to a CORS preflight. The
 only routes that set their own are the three asset reads, which send
 `private`, or `private, no-store` under a Media Link, once the credential is
 accepted (see [Credentials and reach](#credentials-and-reach)). Their
@@ -495,7 +496,9 @@ a `GET` answer to disk, and a proxy that does not follow the RFC may keep
 one. `no-store` says in the answer itself that nothing may keep it.
 How: one layer in `server.rs` wraps the whole router, so a route added later
 is covered without remembering to, and it sets the header only when the
-answer has none.
+answer has none. The OpenAPI document states the rule once, in its
+description, as it does for `405`, and the walk over every operation checks
+it (see [The reference](#the-reference)).
 
 Rejected: `private` for every answer. It still lets the browser write message
 text and a Session token to its disk cache, and the web app fetches afresh

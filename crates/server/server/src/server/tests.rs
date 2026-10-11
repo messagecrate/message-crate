@@ -2153,8 +2153,9 @@ fn a_logged_uri_hides_a_search_and_every_value_that_is_not_a_number_or_a_fixed_w
 /// `no-store`, so neither a browser's disk cache nor a proxy keeps a Session
 /// token, message text or a refusal (#2295). That holds for an answer a
 /// handler gives, one an extractor refuses, and one a layer outside the
-/// handler gives. An asset read keeps the `private` it sets itself, and the
-/// website and `/health`, outside `/v1`, are left alone.
+/// handler gives, CORS answering a preflight included. An asset read keeps
+/// the `private` it sets itself, and the website and `/health`, outside
+/// `/v1`, are left alone.
 #[tokio::test]
 async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
@@ -2165,6 +2166,8 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
     let mut cfg = (*state.cfg).clone();
     cfg.server.as_mut().unwrap().static_dir = site;
     state.cfg = std::sync::Arc::new(cfg);
+    let origin = "http://localhost:5173";
+    let state = with_cors(state, &[origin]);
     let server = crate::test_support::serve(&state).await;
     let client = http_client();
     let url = |path: &str| format!("{}{path}", server.base());
@@ -2228,6 +2231,15 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
         .await
         .unwrap();
     assert_eq!(wrong_method.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let preflight = client
+        .request(reqwest::Method::OPTIONS, url("/v1/session"))
+        .header("Origin", origin)
+        .header("Access-Control-Request-Method", "GET")
+        .header("Access-Control-Request-Headers", "authorization")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(allow_origin(&preflight), Some(origin));
     let unknown = client.get(url("/v1/no-such-route")).send().await.unwrap();
     assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
     for (what, response) in [
@@ -2237,6 +2249,7 @@ async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
         ("not acceptable", &not_acceptable),
         ("undeclared query", &undeclared_query),
         ("wrong method", &wrong_method),
+        ("CORS preflight", &preflight),
         ("unknown route", &unknown),
     ] {
         assert_eq!(
