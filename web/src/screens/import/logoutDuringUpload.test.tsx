@@ -85,7 +85,8 @@ vi.mock("../../lib/tauri-check", () => ({
 const { AuthProvider } = await import("../../lib/auth");
 const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
-const { useImportJob, resetImportRun } = await import("./useImportJob");
+const { useImportJob } = await import("./useImportJob");
+const { resetImportRun } = await import("./run/scratch");
 
 const MIB = 1024 * 1024;
 
