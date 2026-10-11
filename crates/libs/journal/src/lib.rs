@@ -110,18 +110,16 @@ fn ends_in_a_torn_row(file: &mut File) -> std::io::Result<bool> {
     Ok(last[0] != b'\n')
 }
 
-/// Parse every event from a journal file.
+/// Parse every event from a journal file, of every target.
 ///
 /// A missing file is treated as an empty journal. Each line that cannot be
-/// parsed is reported to `on_unreadable(line_number, parse_error)` and skipped —
-/// the caller decides whether to warn or stay silent. A line that is not
-/// valid UTF-8, such as a row a crash cut inside a character, is one of
-/// those lines, so it cannot stop every later run from reading the file.
+/// parsed is reported to `on_unreadable(line_number, parse_error)` and
+/// skipped, as [`load_for_target`] says.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or read.
-pub fn load_events<E: DeserializeOwned>(
+fn load_events<E: DeserializeOwned>(
     label: &str,
     path: &Path,
     on_unreadable: &mut dyn FnMut(usize, &serde_json::Error),
@@ -147,8 +145,11 @@ pub fn load_events<E: DeserializeOwned>(
 /// Read the journal, keep the events of `target`, and fold them in file order
 /// into a state that starts from `S::default()`.
 ///
-/// Reads as [`load_events`] does: a missing file folds nothing, and each line
-/// that cannot be parsed goes to `on_unreadable` and is skipped.
+/// A missing file folds nothing. Each line that cannot be parsed is reported
+/// to `on_unreadable(line_number, parse_error)` and skipped — the caller
+/// decides whether to warn or stay silent. A line that is not valid UTF-8,
+/// such as a row a crash cut inside a character, is one of those lines, so it
+/// cannot stop every later run from reading the file.
 ///
 /// # Errors
 ///
