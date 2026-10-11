@@ -11,7 +11,7 @@ import { inTimeZone } from "../test/timeZone";
 import { setupUser } from "../test/user";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 const summaries = vi.fn();
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({

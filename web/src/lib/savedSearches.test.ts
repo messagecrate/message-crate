@@ -25,7 +25,7 @@ import {
 } from "./serverApi";
 
 const account = { current: 7 };
-vi.mock("./auth", () => ({ useAuth: () => ({ accountId: account.current }) }));
+vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: account.current }) }));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),

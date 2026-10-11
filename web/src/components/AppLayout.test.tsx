@@ -107,7 +107,7 @@ vi.mock("./ImportExportRoute", () => ({
 vi.mock("./MessageRoute", () => ({ default: () => <div data-testid="message-route" /> }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 // The desktop app with a profile shows Export in the left panel.
 const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({

@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../../test/providers";
 import LocalAuthTabs from "./LocalAuthTabs";
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ login: vi.fn(), setServer: vi.fn(), serverUrl: "" }),
 }));
 

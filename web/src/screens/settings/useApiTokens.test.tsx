@@ -19,7 +19,7 @@ import { useApiTokens } from "./useApiTokens";
 
 type ApiToken = components["schemas"]["ApiToken"];
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

@@ -37,7 +37,7 @@ const showGroups = [keys.contactGroups.all, keys.contacts.all];
 /** The lists that show a Message Tag's name, and the Trash count a tag search narrows. */
 const showTags = [keys.messageTags.all, keys.conversations.all, keys.trash.all];
 
-vi.mock("./auth", () => ({
+vi.mock("./authContext", () => ({
   useAuth: () => ({ accountId: 7 }),
 }));
 

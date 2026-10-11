@@ -122,7 +122,7 @@ vi.mock("../lib/tauri", () => ({
   invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/tauri-check", () => ({
   isTauri: () => false,
