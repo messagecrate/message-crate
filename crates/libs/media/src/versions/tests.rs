@@ -2,9 +2,9 @@ use std::fs;
 use std::path::Path;
 
 use super::*;
-use crate::fake_tools::FakeTools;
+use crate::fake_tools::{FakeTools, video_probe};
+use crate::probe_media;
 use crate::tools::run_ffmpeg;
-use crate::{MediaProbe, probe_media};
 
 /// A stop that is never set, for a conversion that runs to its end.
 static NOT_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -104,13 +104,7 @@ fn every_browser_shows_jpeg_png_gif_webp_and_mp3_as_they_are() {
 #[test]
 fn an_mp4_is_shown_as_it_is_only_with_h264_video() {
     let clip = Path::new("clip.mp4");
-    let video = |codec: &str| MediaProbe {
-        codec: codec.to_string(),
-        width: 320,
-        height: 240,
-        fps: Some(10.0),
-        bitrate: 100_000,
-    };
+    let video = |codec: &str| video_probe(codec, 10.0);
 
     let h264 = FakeTools::new().probing(video("h264"));
     assert_eq!(

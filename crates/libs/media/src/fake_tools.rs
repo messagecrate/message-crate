@@ -11,10 +11,22 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Result, anyhow, bail};
 
 use crate::MediaProbe;
 use crate::tools::MediaTools;
+
+/// What ffprobe reports about a small, low-bitrate 320x240 video in
+/// `codec` at `fps` frames per second.
+pub(crate) fn video_probe(codec: &str, fps: f32) -> MediaProbe {
+    MediaProbe {
+        codec: codec.to_string(),
+        width: 320,
+        height: 240,
+        fps: Some(fps),
+        bitrate: 100_000,
+    }
+}
 
 /// ffmpeg and ffprobe as a test sets them up, with every ffmpeg run kept.
 pub(crate) struct FakeTools {
@@ -98,13 +110,14 @@ impl MediaTools for FakeTools {
             .ok_or_else(|| anyhow!("ffprobe cannot read {} (fake)", path.display()))
     }
 
-    fn transcode(&self, args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
+    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()> {
         self.require()?;
         if stop.is_some_and(|stop| stop.load(Ordering::Relaxed)) {
             bail!("stopped before ffmpeg started");
         }
-        self.runs.borrow_mut().push(args.to_vec());
-        let dest = args.last().context("no output file")?;
+        let mut run = args.to_vec();
+        run.push(dest.to_string_lossy().into_owned());
+        self.runs.borrow_mut().push(run);
         std::fs::write(dest, &self.output)?;
         if args.iter().any(|arg| self.failing.contains(arg)) {
             bail!("ffmpeg failed (fake) on {}", args.join(" "));

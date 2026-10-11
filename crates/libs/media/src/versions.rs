@@ -152,10 +152,9 @@ pub(crate) fn make_thumbnail_with(
         "image2".into(),
         "-c:v".into(),
         "mjpeg".into(),
-        path_str(dest),
     ];
     tools
-        .transcode(&args, Some(stop))
+        .transcode(&args, dest, Some(stop))
         .with_context(|| format!("thumbnail of {}", src.display()))
 }
 
@@ -248,9 +247,8 @@ pub(crate) fn make_preview_with(
             ]);
         }
     }
-    args.push(path_str(dest));
     tools
-        .transcode(&args, Some(stop))
+        .transcode(&args, dest, Some(stop))
         .with_context(|| format!("preview of {}", src.display()))
 }
 

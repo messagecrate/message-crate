@@ -1,5 +1,5 @@
 use super::*;
-use crate::fake_tools::FakeTools;
+use crate::fake_tools::{FakeTools, video_probe};
 use crate::kind_for_mime;
 use crate::testutil::PNG_1X1_RGB;
 use crate::tools::run_ffmpeg;
@@ -497,13 +497,7 @@ fn compress_skips_an_efficient_video_unless_told_not_to() {
     fs::create_dir_all(&attachments).unwrap();
     let hevc = attachments.join("hevc.mp4");
     fs::write(&hevc, b"a small, low-bitrate hevc video").unwrap();
-    let efficient = MediaProbe {
-        codec: "hevc".to_string(),
-        width: 320,
-        height: 240,
-        fps: Some(10.0),
-        bitrate: 100_000,
-    };
+    let efficient = video_probe("hevc", 10.0);
     let opts = CompressOptions {
         min_size_bytes: fs::metadata(&hevc).unwrap().len(),
         ..CompressOptions::default()
@@ -562,13 +556,7 @@ fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
     let clip = attachments.join("clip.mov");
     fs::write(&clip, b"a 60 fps h264 video").unwrap();
     let tools = FakeTools::new()
-        .probing(MediaProbe {
-            codec: "h264".to_string(),
-            width: 320,
-            height: 240,
-            fps: Some(60.0),
-            bitrate: 100_000,
-        })
+        .probing(video_probe("h264", 60.0))
         .failing_on("libx265")
         .writing("the h264 re-encode");
     let opts = CompressOptions {
@@ -924,6 +912,33 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
     for name in ["a.png", "b.png", "c.png"] {
         assert!(!attachments.join(name).exists(), "{name} was left behind");
     }
+}
+
+/// The compress arguments for an image, which the fake accepts whatever
+/// they are, are ones the real ffmpeg runs.
+#[test]
+fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
+    let Some(_tools) = crate::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("still.png");
+    fs::write(&src, PNG_1X1_RGB).unwrap();
+    let dest = dir.path().join("still.jpg.in_progress");
+
+    let outcome = transcode_file(
+        &src,
+        &dest,
+        MediaMode::Compress,
+        &CompressOptions::default(),
+    )
+    .unwrap();
+
+    assert_eq!(outcome, TranscodeOutcome::Produced);
+    assert!(
+        fs::read(&dest).unwrap().starts_with(&[0xff, 0xd8]),
+        "the derivative is not a JPEG"
+    );
 }
 
 #[test]

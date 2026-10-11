@@ -242,6 +242,11 @@ pub fn require_ffmpeg() -> Result<()> {
 /// output, and needs neither ffmpeg installed nor the lock over the tool
 /// location (`testutil::real_ffmpeg_test_guard`). [`InstalledTools`] is
 /// the one implementation outside tests.
+///
+/// [`MediaTools::probe`] and [`MediaTools::transcode`] run the programs,
+/// for the Media Stage and for the Thumbnail and Preview versions alike.
+/// [`MediaTools::require`] and [`MediaTools::can_probe`] say whether the
+/// programs were found where they were looked for and answered `-version`.
 pub(crate) trait MediaTools {
     /// Fail, naming what is missing and where it was looked for, when
     /// ffmpeg or ffprobe cannot be used ([`require_ffmpeg`]).
@@ -253,10 +258,10 @@ pub(crate) trait MediaTools {
     /// What ffprobe reports about `path` ([`crate::probe_media`]).
     fn probe(&self, path: &Path) -> Result<crate::MediaProbe>;
 
-    /// Run ffmpeg with `args`, which end with the file it writes. With
-    /// `stop`, setting it kills ffmpeg and fails the run
-    /// ([`run_ffmpeg_with`]).
-    fn transcode(&self, args: &[String], stop: Option<&AtomicBool>) -> Result<()>;
+    /// Run ffmpeg with `args` to write `dest`, which goes after them on
+    /// ffmpeg's command line. With `stop`, setting it kills ffmpeg and fails
+    /// the run ([`run_ffmpeg_with`]).
+    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()>;
 }
 
 /// The ffmpeg and ffprobe this process finds on `PATH` or in the Tools
@@ -277,8 +282,10 @@ impl MediaTools for InstalledTools {
         crate::probe_media(path)
     }
 
-    fn transcode(&self, args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
-        run_ffmpeg_with(args, stop)
+    fn transcode(&self, args: &[String], dest: &Path, stop: Option<&AtomicBool>) -> Result<()> {
+        let mut args = args.to_vec();
+        args.push(dest.to_string_lossy().into_owned());
+        run_ffmpeg_with(&args, stop)
     }
 }
 

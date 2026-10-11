@@ -826,11 +826,10 @@ fn convert_image(
         "1".into(),
         "-q:v".into(),
         quality.into(),
-        path_str(&tmp),
     ];
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, None)
+            .transcode(&args, &tmp, None)
             .with_context(|| format!("convert image {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -863,10 +862,9 @@ fn convert_audio(
     } else {
         args.extend(["-q:a".into(), "4".into()]);
     }
-    args.push(path_str(&tmp));
     with_temp_output(&tmp, || {
         tools
-            .transcode(&args, None)
+            .transcode(&args, &tmp, None)
             .with_context(|| format!("convert audio {}", path.display()))?;
         if keep_smaller && !is_smaller(&tmp, path)? {
             let _ = fs::remove_file(&tmp);
@@ -906,10 +904,9 @@ fn convert_video(tools: &dyn MediaTools, path: &Path, commit: Commit<'_>) -> Res
             "128k".into(),
             "-movflags".into(),
             "+faststart".into(),
-            path_str(&tmp),
         ];
         tools
-            .transcode(&args, None)
+            .transcode(&args, &tmp, None)
             .with_context(|| format!("convert video {}", path.display()))?;
         commit_produced(commit, path, &tmp)
     })
@@ -925,9 +922,8 @@ fn remux_mp4(tools: &dyn MediaTools, path: &Path, tmp: &Path) -> Result<()> {
         "copy".into(),
         "-movflags".into(),
         "+faststart".into(),
-        path_str(tmp),
     ];
-    tools.transcode(&args, None)
+    tools.transcode(&args, tmp, None)
 }
 
 /// Leave an MP4 as it is; remux anything else into one, so every video the
@@ -982,7 +978,7 @@ fn compress_video(
 
     with_temp_output(&tmp, || {
         // Prefer libx265; fall back to libx264.
-        let mut hevc_args = base_video_args(path, &tmp, &vf);
+        let mut hevc_args = base_video_args(path, &vf);
         hevc_args.extend([
             "-c:v".into(),
             "libx265".into(),
@@ -998,11 +994,10 @@ fn compress_video(
             "128k".into(),
             "-movflags".into(),
             "+faststart".into(),
-            path_str(&tmp),
         ]);
-        if tools.transcode(&hevc_args, None).is_err() {
+        if tools.transcode(&hevc_args, &tmp, None).is_err() {
             let _ = fs::remove_file(&tmp);
-            let mut avc_args = base_video_args(path, &tmp, &vf);
+            let mut avc_args = base_video_args(path, &vf);
             avc_args.extend([
                 "-c:v".into(),
                 "libx264".into(),
@@ -1016,10 +1011,9 @@ fn compress_video(
                 "96k".into(),
                 "-movflags".into(),
                 "+faststart".into(),
-                path_str(&tmp),
             ]);
             tools
-                .transcode(&avc_args, None)
+                .transcode(&avc_args, &tmp, None)
                 .with_context(|| format!("compress video {}", path.display()))?;
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
@@ -1041,7 +1035,7 @@ fn frame_rate_cap(source_fps: Option<f32>, max_fps: f32) -> Option<f32> {
 }
 
 /// The ffmpeg arguments shared by every video re-encode: input, filter graph, and output settings.
-fn base_video_args(path: &Path, _tmp: &Path, vf: &str) -> Vec<String> {
+fn base_video_args(path: &Path, vf: &str) -> Vec<String> {
     vec![
         "-y".into(),
         "-i".into(),
