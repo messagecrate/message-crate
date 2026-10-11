@@ -210,44 +210,6 @@ async fn complete_run(state: &crate::server::AppState, token: &str, import_id: i
     finished_at[..10].to_string()
 }
 
-/// Every saved search the account owns as `(name, query, kind)`, and every
-/// Contact Group as `(name, kind, member contact ids ascending)`.
-async fn shortcuts(
-    state: &crate::server::AppState,
-    account_id: i64,
-) -> (
-    Vec<(String, String, String)>,
-    Vec<(String, String, Vec<i64>)>,
-) {
-    let mut conn = state.db.acquire().await.unwrap();
-    let searches: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT name, query, kind FROM saved_searches WHERE account_id = $1 ORDER BY name",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await
-    .unwrap();
-    let groups: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, name, kind FROM contact_groups WHERE account_id = $1 ORDER BY name",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await
-    .unwrap();
-    let mut out = Vec::new();
-    for (id, name, kind) in groups {
-        let members: Vec<i64> = sqlx::query_scalar(
-            "SELECT contact_id FROM contact_group_members WHERE group_id = $1 ORDER BY contact_id",
-        )
-        .bind(id)
-        .fetch_all(&mut *conn)
-        .await
-        .unwrap();
-        out.push((name, kind, members));
-    }
-    (searches, out)
-}
-
 /// Create an Import Run for `source`, post `body` as its one batch, complete
 /// it, and hand back the run's id and the day it finished.
 pub(super) async fn completed_run(

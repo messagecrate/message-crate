@@ -13,6 +13,44 @@ async fn run_account(state: &crate::server::AppState, import_id: i64) -> i64 {
         .unwrap()
 }
 
+/// Every saved search the account owns as `(name, query, kind)`, and every
+/// Contact Group as `(name, kind, member contact ids ascending)`.
+async fn shortcuts(
+    state: &crate::server::AppState,
+    account_id: i64,
+) -> (
+    Vec<(String, String, String)>,
+    Vec<(String, String, Vec<i64>)>,
+) {
+    let mut conn = state.db.acquire().await.unwrap();
+    let searches: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT name, query, kind FROM saved_searches WHERE account_id = $1 ORDER BY name",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    let groups: Vec<(i64, String, String)> = sqlx::query_as(
+        "SELECT id, name, kind FROM contact_groups WHERE account_id = $1 ORDER BY name",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    let mut out = Vec::new();
+    for (id, name, kind) in groups {
+        let members: Vec<i64> = sqlx::query_scalar(
+            "SELECT contact_id FROM contact_group_members WHERE group_id = $1 ORDER BY contact_id",
+        )
+        .bind(id)
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+        out.push((name, kind, members));
+    }
+    (searches, out)
+}
+
 /// Finishing a run that stored messages leaves two shortcuts behind: a
 /// saved search whose query is the run's id, and a Contact Group holding
 /// exactly the contacts the run recorded touching. Both carry the source
