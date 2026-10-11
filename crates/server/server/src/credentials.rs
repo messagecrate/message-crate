@@ -258,7 +258,7 @@ pub(crate) fn require_valid_username(raw: &str) -> Result<String, ApiError> {
     let username = normalize_username(raw);
     if !is_valid_username(&username) {
         return Err(ApiError::validation(
-            "username must be 1–128 characters of ASCII letters, digits, _, - or .",
+            "username must be 1–128 characters: letters A to Z, digits, _, - or .",
         ));
     }
     Ok(username)
