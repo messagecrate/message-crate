@@ -325,6 +325,29 @@ async fn an_unknown_service_is_refused_with_its_row() {
     );
 }
 
+/// A row whose service does not carry its identity type is refused with the
+/// reason, as an identity added by hand is: a load stored an email address on
+/// WhatsApp and a username on Text Message, which nothing else stores (#2212).
+#[tokio::test]
+async fn an_identity_type_its_service_does_not_carry_is_refused_with_its_row() {
+    let (mut conn, _pool, _dir) = account().await;
+    let text = file(&[
+        "a,Ada,,phone,phone,+15555550100",
+        "b,Bao,,whatsapp,email,bao@example.com",
+        "c,Cy,,phone,username,cy",
+        "d,Di,,whatsapp,username,di",
+    ]);
+    let reasons = refused(&mut conn, &text, LoadMode::Append).await;
+    assert_eq!(
+        reasons,
+        [
+            "row 3: bao@example.com is an email address, and WhatsApp carries no email addresses",
+            "row 4: cy is a username, and Text Message carries no usernames",
+            "row 5: di is a username, and WhatsApp carries no usernames",
+        ]
+    );
+}
+
 #[tokio::test]
 async fn an_unknown_identity_type_is_refused_with_its_row() {
     let (mut conn, _pool, _dir) = account().await;
@@ -1260,7 +1283,7 @@ async fn an_export_loaded_straight_back_changes_nothing() {
     join_group(&mut conn, ada, "Chess Club").await;
     imported(&mut conn, "", &[("phone", "phone", "020 7946 0000")]).await;
     imported(&mut conn, "Bank", &[("phone", "phone", "*611")]).await;
-    imported(&mut conn, "Sam", &[("phone", "username", "@sam")]).await;
+    imported(&mut conn, "Sam", &[("phone", "other", "@sam")]).await;
     contacts::create_contact(&mut conn, ACCOUNT, "Cy", Origin::User)
         .await
         .unwrap();
@@ -1478,7 +1501,7 @@ async fn export_writes_a_quote_before_a_cell_a_spreadsheet_would_run() {
         name,
         &[
             ("phone", "phone", "+15555550100"),
-            ("phone", "username", "@ada"),
+            ("phone", "other", "@ada"),
             ("phone", "other", "-ada"),
         ],
     )
@@ -1492,8 +1515,8 @@ async fn export_writes_a_quote_before_a_cell_a_spreadsheet_would_run() {
         format!(
             "{HEADER}\n\
              {ada},{cell},'+Work,phone,other,'-ada\n\
-             {ada},{cell},'+Work,phone,phone,'+15555550100\n\
-             {ada},{cell},'+Work,phone,username,'@ada\n"
+             {ada},{cell},'+Work,phone,other,'@ada\n\
+             {ada},{cell},'+Work,phone,phone,'+15555550100\n"
         )
     );
 }
@@ -1511,7 +1534,7 @@ async fn a_quoted_cell_loaded_straight_back_changes_nothing() {
     )
     .await;
     join_group(&mut conn, ada, "-Family").await;
-    imported(&mut conn, "'=1+1", &[("phone", "username", "@bo")]).await;
+    imported(&mut conn, "'=1+1", &[("phone", "other", "@bo")]).await;
     let stamp = "2001-01-01 00:00:00";
     sqlx::query("UPDATE contacts SET last_modified = $1")
         .bind(stamp)
@@ -1622,7 +1645,7 @@ async fn an_export_libreoffice_saved_again_changes_nothing() {
         "=HYPERLINK(\"http://example.com/?\"&B2,\"Ada\")",
         &[
             ("phone", "phone", "+15555550100"),
-            ("phone", "username", "@ada"),
+            ("phone", "other", "@ada"),
         ],
     )
     .await;
