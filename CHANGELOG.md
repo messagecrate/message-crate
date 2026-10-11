@@ -173,6 +173,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the Demo Account is built was reworked inside, with
+  nothing visible (#2197).
+
 - 2026-10-11: The way the server finds and hides duplicate messages was
   reworked inside, with nothing visible (#2182).
 
@@ -494,6 +497,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **Messages about the backup password read as plain
+  sentences.** An encrypted iPhone backup with no password is now refused
+  with "The backup is encrypted. Fill in the Encryption password.", and a
+  password given with a backup that has none with "This backup is not
+  encrypted. Clear the Encryption password." The server's message when it
+  finds no accounts to process attachments for, and its report line on
+  phone numbers that need review, no longer join two clauses with a dash
+  either (#2189).
 - 2026-10-10: **An attachment an import could not save is named in the
   Import Run's log.** It used to be written where no log of Message Crate
   showed it (#2165).
