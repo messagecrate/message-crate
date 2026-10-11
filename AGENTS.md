@@ -121,16 +121,19 @@ resolves it.
    ```bash
    bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/reviews \
      -f commit_id=<headRefOid> -f event=COMMENT \
-     -f body=$'<!-- pr-review -->\n<summary>' \
-     -f 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
-     -f comments[][body]=$'<!-- pr-review -->\n<the finding and why it matters>'
+     -F body=@<summary-file> \
+     -F 'comments[][path]=<file>' -F 'comments[][line]=<line>' \
+     -F 'comments[][body]=@<finding-file>'
    ```
 
-   Repeat the three `comments[]` fields for each finding. The marker goes in
-   each `comments[][body]`, because that comment opens the thread. A finding
-   with no line in the diff goes in a top-level comment instead, with the
-   marker on its first line. It has no thread, so it is answered by a new
-   marked top-level comment that quotes it:
+   Repeat the three `comments[]` fields for each finding, every one with
+   `-F`: `gh` builds each `comments[]` object only from fields passed with
+   the same flag, so mixing `-f` and `-F` splits a comment in two and GitHub
+   answers `422`. The marker starts the summary file and each finding file,
+   because the finding's comment opens the thread. A finding with no line in
+   the diff goes in a top-level comment instead, with the marker on its first
+   line. It has no thread, so it is answered by a new marked top-level
+   comment that quotes it:
 
    ```bash
    bash <gh-as-reviewer> pr comment <N> --body-file <file>
