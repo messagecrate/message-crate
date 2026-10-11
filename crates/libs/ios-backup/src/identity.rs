@@ -42,6 +42,9 @@ pub fn ios_backup_phone_number(backup_root: &Path) -> Option<String> {
 /// deleted when the request ends, and what a killed request left under
 /// `scratch_root` is deleted before this one starts ([`ScratchDir`]).
 ///
+/// The program's log lines go to `log`, so a check that fails for a reason
+/// the program logged leaves that reason in the caller's log.
+///
 /// # Errors
 ///
 /// Returns an error when the source cannot be opened: missing database,
@@ -53,20 +56,28 @@ pub fn backup_identities(
     ios: bool,
     backup_password: Option<&str>,
     scratch_root: &Path,
+    log: LogSink,
 ) -> anyhow::Result<Vec<String>> {
-    identities_with(db_path, ios, backup_password, scratch_root, |request| {
-        Helper::spawn(request, LogSink::none(), ProgressSink::none())
-    })
+    identities_with(
+        db_path,
+        ios,
+        backup_password,
+        scratch_root,
+        log,
+        |request, log| Helper::spawn(request, log, ProgressSink::none()),
+    )
 }
 
-/// [`backup_identities`], starting the program with `spawn`. Tests pass a
-/// fake program.
+/// [`backup_identities`], starting the program with `spawn`, which is given
+/// the request and the sink for the program's log lines. Tests pass a fake
+/// program.
 fn identities_with(
     db_path: &Path,
     ios: bool,
     backup_password: Option<&str>,
     scratch_root: &Path,
-    spawn: impl FnOnce(&Request) -> anyhow::Result<Helper>,
+    log: LogSink,
+    spawn: impl FnOnce(&Request, LogSink) -> anyhow::Result<Helper>,
 ) -> anyhow::Result<Vec<String>> {
     let scratch = ScratchDir::create(scratch_root)?;
     let request = Request::Identities(IdentitiesRequest {
@@ -79,7 +90,7 @@ fn identities_with(
     });
     // The program is stopped (by `finish`, or by its drop on an error)
     // before the scratch directory is deleted.
-    let mut values = read_identities(spawn(&request)?)?;
+    let mut values = read_identities(spawn(&request, log)?)?;
     drop(scratch);
     if ios {
         values.extend(ios_backup_phone_number(db_path));
@@ -193,8 +204,10 @@ mod tests {
             IdentitiesRequest, PROTOCOL_VERSION, Platform, Request, Source,
         };
 
+        use message_crate_core::LogSink;
+
         use super::super::{identities_with, read_identities};
-        use crate::testutil::{fake_helper, source_line, spawn_fake};
+        use crate::testutil::{fake_helper, source_line, spawn_fake, spawn_fake_logging_to};
 
         fn request() -> Request {
             Request::Identities(IdentitiesRequest {
@@ -251,7 +264,8 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
                 false,
                 None,
                 root.path(),
-                |request| Ok(spawn_fake(&script, request)),
+                LogSink::none(),
+                |request, _| Ok(spawn_fake(&script, request)),
             )
             .unwrap();
             assert_eq!(values, vec!["+15555550110"]);
@@ -282,7 +296,8 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
                 false,
                 None,
                 root.path(),
-                |request| Ok(spawn_fake(&script, request)),
+                LogSink::none(),
+                |request, _| Ok(spawn_fake(&script, request)),
             )
             .unwrap_err();
             assert!(
@@ -310,7 +325,8 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
                 false,
                 None,
                 root.path(),
-                |request| Ok(spawn_fake(&script, request)),
+                LogSink::none(),
+                |request, _| Ok(spawn_fake(&script, request)),
             )
             .unwrap();
             assert!(
@@ -318,6 +334,40 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
                 "{:?}",
                 left_in(root.path())
             );
+        }
+
+        /// A line the program logs before it fails reaches the sink the
+        /// caller passed, so the reason for the failure is left to read
+        /// (#2645).
+        #[test]
+        fn the_programs_log_lines_reach_the_callers_sink() {
+            use std::sync::{Arc, Mutex};
+
+            let dir = tempfile::tempdir().unwrap();
+            let root = tempfile::tempdir().unwrap();
+            let body = format!(
+                "{}\necho '{{\"event\":\"log\",\"line\":\"opening chat.db\"}}'\n\
+                 echo '{{\"event\":\"error\",\"message\":\"chat.db is locked\"}}'",
+                source_line(PROTOCOL_VERSION)
+            );
+            let script = fake_helper(dir.path(), &body);
+            let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+            let log = {
+                let logged = Arc::clone(&logged);
+                LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
+            };
+
+            let err = identities_with(
+                Path::new("/nowhere/chat.db"),
+                false,
+                None,
+                root.path(),
+                log,
+                |request, log| Ok(spawn_fake_logging_to(&script, request, &log)),
+            )
+            .unwrap_err();
+            assert_eq!(format!("{err:#}"), "chat.db is locked");
+            assert_eq!(*logged.lock().unwrap(), ["opening chat.db"]);
         }
 
         #[test]

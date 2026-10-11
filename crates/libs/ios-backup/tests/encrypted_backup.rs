@@ -122,6 +122,7 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
         true,
         Some(BACKUP_PASSWORD),
         scratch_root.path(),
+        LogSink::none(),
     )
     .unwrap();
 
@@ -206,7 +207,14 @@ fn an_unencrypted_backup_answers_without_a_password() {
     let backup = backup(Encryption::None);
     let scratch_root = tempfile::tempdir().unwrap();
 
-    let mut identities = backup_identities(backup.path(), true, None, scratch_root.path()).unwrap();
+    let mut identities = backup_identities(
+        backup.path(),
+        true,
+        None,
+        scratch_root.path(),
+        LogSink::none(),
+    )
+    .unwrap();
 
     identities.sort();
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);
@@ -226,6 +234,7 @@ fn a_wrong_password_is_refused_in_the_readers_words() {
         true,
         Some("not-the-password"),
         scratch_root.path(),
+        LogSink::none(),
     )
     .unwrap_err();
 
@@ -251,6 +260,7 @@ fn a_request_that_fails_while_decrypting_leaves_no_scratch_directory() {
         true,
         Some(BACKUP_PASSWORD),
         scratch_root.path(),
+        LogSink::none(),
     )
     .unwrap_err();
 

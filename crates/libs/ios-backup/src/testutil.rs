@@ -37,8 +37,17 @@ pub fn fake_helper(dir: &Path, body: &str) -> PathBuf {
 ///
 /// Panics when the fake cannot be started.
 pub fn spawn_fake(path: &Path, request: &Request) -> Helper {
+    spawn_fake_logging_to(path, request, &LogSink::none())
+}
+
+/// [`spawn_fake`], relaying the fake's log lines to `log`.
+///
+/// # Panics
+///
+/// Panics when the fake cannot be started.
+pub fn spawn_fake_logging_to(path: &Path, request: &Request, log: &LogSink) -> Helper {
     for _ in 0..50 {
-        match Helper::spawn_at(path, request, LogSink::none(), ProgressSink::none()) {
+        match Helper::spawn_at(path, request, log.clone(), ProgressSink::none()) {
             Ok(helper) => return helper,
             Err(e)
                 if e.downcast_ref::<std::io::Error>()
