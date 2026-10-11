@@ -8,10 +8,7 @@ async fn setup_accounts_only() -> (sqlx::SqlitePool, tempfile::TempDir) {
     crate::db::schema::ensure_accounts_schema(&mut conn)
         .await
         .unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $2)")
-        .bind(ACCOUNT_ID)
-        .bind("alice")
-        .execute(&mut *conn)
+    crate::db::account_profile::insert_account_at(&mut conn, ACCOUNT_ID, "alice", None, None)
         .await
         .unwrap();
     (pool, dir)

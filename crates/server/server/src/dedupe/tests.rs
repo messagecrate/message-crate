@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use super::*;
 use crate::db::engine;
 use crate::progress::Progress;
-use crate::test_support::{MessageRow, stored_time};
+use crate::test_support::{ConversationRow, MessageRow, stored_time};
 
 #[test]
 fn normalize_collapses_whitespace() {
@@ -193,9 +193,7 @@ const TEST_ACCOUNT_ID: i64 = 7;
 
 async fn setup_db(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'test')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
+    crate::db::account_profile::insert_account_at(conn, TEST_ACCOUNT_ID, "test", None, None)
         .await
         .unwrap();
     sqlx::query(
@@ -215,19 +213,9 @@ async fn setup_db(conn: &mut SqliteConnection) {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        r"
-        INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-        )
-        VALUES ($1, $2, 'individual', NULL, 't.json')
-        ",
-    )
-    .bind(TEST_ACCOUNT_ID)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow::new(TEST_ACCOUNT_ID, handle_id)
+        .insert(conn)
+        .await;
 }
 
 #[tokio::test]
@@ -1088,8 +1076,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES (8, 'another')")
-        .execute(&mut *other)
+    crate::db::account_profile::insert_account_at(&mut other, 8, "another", None, None)
         .await
         .unwrap();
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
@@ -1148,21 +1135,12 @@ async fn handle(conn: &mut SqliteConnection, normalized: &str) -> i64 {
 /// A conversation of the test account whose chat handle is `chat`.
 async fn conversation(conn: &mut SqliteConnection, chat: &str, kind: &str) -> i64 {
     let chat_handle = handle(conn, chat).await;
-    sqlx::query_scalar(
-        r"
-        INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-        )
-        VALUES ($1, $2, $3, NULL, 't.json')
-        RETURNING id
-        ",
-    )
-    .bind(TEST_ACCOUNT_ID)
-    .bind(chat_handle)
-    .bind(kind)
-    .fetch_one(&mut *conn)
+    ConversationRow {
+        conversation_type: kind,
+        ..ConversationRow::new(TEST_ACCOUNT_ID, chat_handle)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 async fn add_participant(conn: &mut SqliteConnection, conversation_id: i64, normalized: &str) {
@@ -1188,9 +1166,7 @@ async fn add_attachment(conn: &mut SqliteConnection, message_id: i64, sha: &str)
 
 async fn setup_account(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'test')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
+    crate::db::account_profile::insert_account_at(conn, TEST_ACCOUNT_ID, "test", None, None)
         .await
         .unwrap();
 }

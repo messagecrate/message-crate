@@ -425,7 +425,6 @@ pub(crate) fn unix_secs_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::schema;
 
     /// Known-answer vectors, not a round trip.
     ///
@@ -475,10 +474,7 @@ mod tests {
     async fn lookup_rejects_expired_session() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(7_i64)
-            .execute(&mut *conn)
+        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
             .await
             .unwrap();
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
@@ -497,10 +493,7 @@ mod tests {
     async fn lookup_rejects_a_session_that_expired_an_hour_ago() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(7_i64)
-            .execute(&mut *conn)
+        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
             .await
             .unwrap();
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
@@ -526,10 +519,7 @@ mod tests {
         const THIRTY_DAYS_SECS: u64 = 2_592_000;
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(7_i64)
-            .execute(&mut *conn)
+        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
             .await
             .unwrap();
         let before = now_unix_secs();
@@ -554,10 +544,7 @@ mod tests {
     async fn insert_session_with_ttl_sets_expires_at() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(7_i64)
-            .execute(&mut *conn)
+        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
             .await
             .unwrap();
         let before = now_unix_secs();
@@ -580,10 +567,7 @@ mod tests {
     async fn revoke_session_token_removes_row() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        schema::ensure_accounts_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(7_i64)
-            .execute(&mut *conn)
+        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
             .await
             .unwrap();
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();

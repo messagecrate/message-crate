@@ -5,6 +5,7 @@ use super::*;
 use crate::asset_store::tests::make_abandoned;
 use crate::config::PathsConfig;
 use crate::db::engine;
+use crate::test_support::ConversationRow;
 use media::testutil::PNG_1X1_RGB;
 
 /// A stop that is never set, for a pass that runs to its end.
@@ -516,10 +517,7 @@ async fn open_db() -> (OpenDb, tempfile::TempDir) {
 }
 
 async fn seed_account(conn: &mut SqliteConnection, id: i64) {
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $2)")
-        .bind(id)
-        .bind(format!("user{id}"))
-        .execute(&mut *conn)
+    crate::db::account_profile::insert_account_at(conn, id, &format!("user{id}"), None, None)
         .await
         .unwrap();
 }
@@ -536,15 +534,7 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 't') RETURNING id",
-    )
-    .bind(ACCOUNT)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow::new(ACCOUNT, handle_id).insert(conn).await;
     crate::test_support::MessageRow {
         source,
         ..crate::test_support::MessageRow::new(ACCOUNT, conversation_id)

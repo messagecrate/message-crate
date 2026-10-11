@@ -120,12 +120,7 @@ async fn saved_searches_are_scoped_per_account() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let other = 102_i64;
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'bob')")
-        .bind(other)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    let other = fixture.account_with_id(102, "bob").await;
 
     let mine = create(
         &mut conn,

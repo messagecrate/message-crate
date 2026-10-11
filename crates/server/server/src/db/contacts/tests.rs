@@ -7,9 +7,7 @@ async fn who_may_name_a_contact() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 't')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
+    crate::db::account_profile::insert_account_at(&mut conn, TEST_ACCOUNT_ID, "t", None, None)
         .await
         .unwrap();
 
