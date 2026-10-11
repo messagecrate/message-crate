@@ -76,7 +76,12 @@ mod tests {
     /// `fixture`'s backup: the photo's stored file in the backup.
     fn photo_path(session: &MailSession, fixture: &FixtureBackup) -> PathBuf {
         let messages = FixtureDb::messages(session);
-        let attachments = Attachment::from_message(session.data_source.db(), &messages[0]).unwrap();
+        let attachments = Attachment::from_message(
+            session.data_source.db(),
+            &messages[0],
+            &session.capabilities,
+        )
+        .unwrap();
         let path = resolved_path(session, &attachments[0]).unwrap();
         assert_eq!(
             path,
@@ -125,8 +130,12 @@ mod tests {
         let fixture = FixtureDb::write();
         let session = fixture.session();
         let messages = FixtureDb::messages(&session);
-        let mut attachments =
-            Attachment::from_message(session.data_source.db(), &messages[0]).unwrap();
+        let mut attachments = Attachment::from_message(
+            session.data_source.db(),
+            &messages[0],
+            &session.capabilities,
+        )
+        .unwrap();
         assert_eq!(attachments.len(), 1);
 
         assert_eq!(
