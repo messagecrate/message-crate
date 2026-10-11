@@ -154,6 +154,7 @@ impl AttachmentSpool {
 mod tests {
     use super::*;
     use message_crate_core::testutil::names_in;
+    use message_ir::testutil::sample_attachment;
 
     #[test]
     fn a_payload_is_on_disk_under_its_digest_until_the_spool_is_dropped() {
@@ -209,16 +210,8 @@ mod tests {
         let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"photo").unwrap();
         let mut att = IrAttachment {
-            path: None,
-            original_name: Some("photo.jpg".into()),
-            mime_type: Some("image/jpeg".into()),
             digest_sha256: Some(digest.clone()),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
-            bytes: None,
+            ..sample_attachment()
         };
         let (source, size) = spool.source(&att).unwrap();
         assert!(matches!(source, AttachmentSource::Path(p) if p == spool.path(&digest).unwrap()));

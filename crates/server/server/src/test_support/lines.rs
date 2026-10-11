@@ -282,13 +282,7 @@ pub fn attachment(path: &str, original_name: &str, mime_type: &str) -> message_i
         path: Some(path.to_string()),
         original_name: Some(original_name.to_string()),
         mime_type: Some(mime_type.to_string()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }
 }
 

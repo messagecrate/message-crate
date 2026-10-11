@@ -61,6 +61,8 @@ demo-seed = { path = "../demo-seed", features = ["testutil"] }
 # `media::testutil`, so a test that runs the real ffmpeg skips or fails the
 # way every other crate's does.
 media = { path = "../../libs/media", features = ["testutil"] }
+# `message_ir::testutil::sample_attachment`, which `test_support::lines::attachment` builds on.
+message-ir = { workspace = true, features = ["testutil"] }
 reqwest = { workspace = true }
 # The desktop app's import library, so a test can run an Upload as the app
 # sends one against the server binary.
