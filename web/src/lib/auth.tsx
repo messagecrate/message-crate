@@ -1,29 +1,24 @@
-import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
+import { getToken } from "./api";
+import { applyApiSession, useApiSession } from "./apiSession";
 import { AuthContext, type AuthState } from "./authContext";
-import { parsePersistedAuth } from "./authGuards";
 import { deleteRunDirectories } from "./importRun";
 import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
-import { createQueryClient } from "./routeQuery";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
-import { getSession, logout as serverLogout } from "./serverApi";
+import {
+  checkSavedLogin,
+  forgetSavedLogin,
+  loadSavedLogin,
+  saveLogin,
+  saveServerAddress,
+  startingAuthState,
+} from "./savedLogin";
+import { logout as serverLogout } from "./serverApi";
+import { SessionQueryClientProvider } from "./sessionQueryClient";
 import { onSessionRefused } from "./sessionRefusal";
-import { readPref, removePref, writePref } from "./storage";
-import { destroyWindow, onWindowCloseRequested } from "./tauri";
-import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
-
-const STORAGE_KEY = "message-crate-auth";
-
-/**
- * The server address, a setting of its own. It is kept apart from the saved
- * login so that logging out, or a session the server refuses, leaves it as
- * it is: the next start opens on the login card for the same Message Crate,
- * and the desktop app starts its own only when this is its own address
- * (#1972).
- */
-const SERVER_ADDRESS_KEY = "message-crate-server-address";
+import { useLogoutOnWindowClose } from "./windowCloseLogout";
 
 /**
  * How long logout waits for a running Upload to pause before it revokes the
@@ -45,80 +40,26 @@ function logoutTimeoutSignal(): AbortSignal {
   return controller.signal;
 }
 
-/** Read the last saved login from browser storage. */
-function loadPersisted(): { serverUrl: string; token: string; accountId: number } | null {
-  const raw = readPref(STORAGE_KEY);
-  if (!raw) return null;
-  const parsed = parsePersistedAuth(raw);
-  if (!parsed) return null;
-  return {
-    serverUrl: parsed.serverUrl,
-    token: parsed.token,
-    accountId: parsed.accountId,
-  };
-}
-
 /**
- * The saved server address. Empty when none is saved, or when the saved one
- * is the website's own origin.
- */
-function loadServerAddress(): string {
-  return readPref(SERVER_ADDRESS_KEY) ?? "";
-}
-
-/** Save the server address for the next start. */
-function saveServerAddress(url: string) {
-  writePref(SERVER_ADDRESS_KEY, url);
-}
-
-/** Write the current login to browser storage. Passwords are never stored. */
-function persistState(state: AuthState) {
-  writePref(
-    STORAGE_KEY,
-    JSON.stringify({
-      serverUrl: state.serverUrl,
-      token: state.token,
-      accountId: state.accountId,
-    }),
-  );
-}
-
-/** Remove the saved login from browser storage. */
-function clearPersisted() {
-  removePref(STORAGE_KEY);
-}
-
-/**
- * Holds login state for the app and restores a saved session on startup.
+ * Holds login state for the app and shares it through `useAuth`.
  *
  * It also holds what logging out has to show, for `LogoutDialog` to read
  * from `useLogoutPrompt`; `AuthShell` places that dialog, not this provider.
  *
- * It also builds the query client every screen fetches through. A query or
- * mutation the server refuses because the session has ended has to log the
- * person out, and the client only learns how at construction, so the provider
- * that owns the logout owns the client too.
+ * The rest of the login lives beside it: the query client in
+ * `sessionQueryClient.tsx`, keeping `api.ts` on the login in `apiSession.ts`,
+ * the saved login in `savedLogin.ts`, and logging out when the desktop
+ * window closes in `windowCloseLogout.ts`.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const sessionEnded = useRef<() => void>(() => {});
-  const [queryClient] = useState(() =>
-    createQueryClient({ onUnauthorized: () => sessionEnded.current() }),
-  );
   return (
-    <QueryClientProvider client={queryClient}>
-      <SessionProvider sessionEnded={sessionEnded}>{children}</SessionProvider>
-    </QueryClientProvider>
+    <SessionQueryClientProvider>
+      <SessionProvider>{children}</SessionProvider>
+    </SessionQueryClientProvider>
   );
 }
 
-function SessionProvider({
-  children,
-  sessionEnded,
-}: {
-  children: ReactNode;
-  /** Set here to what the query client calls when the server ends the session. */
-  sessionEnded: { current: () => void };
-}) {
+function SessionProvider({ children }: { children: ReactNode }) {
   // Talking to the client directly rather than through `routeQuery`'s hooks,
   // which read `useAuth` from this provider.
   const queryClient = useQueryClient();
@@ -129,37 +70,14 @@ function SessionProvider({
   // Incremented on login and logout so an older profile request is ignored.
   const authEpoch = useRef(0);
   const [state, setState] = useState<AuthState>(() => {
-    const serverUrl = loadServerAddress();
-    const persisted = loadPersisted();
-    // An empty server URL is allowed: it means "same host as this page".
-    // A login saved for another address is left alone, so a token only ever
-    // goes to the server that issued it.
-    if (persisted?.token && persisted.serverUrl === serverUrl) {
-      // Apply before children mount. Otherwise Contact Groups loads without
-      // a token, fails, and the sidebar stays on "No group" only.
-      setBaseUrl(persisted.serverUrl);
-      setToken(persisted.token);
-      setAccountId(persisted.accountId);
-      return {
-        serverUrl: persisted.serverUrl,
-        token: persisted.token,
-        accountId: persisted.accountId,
-        isAuthenticated: true,
-      };
-    }
-    return {
-      serverUrl,
-      token: null,
-      accountId: null,
-      isAuthenticated: false,
-    };
+    const starting = startingAuthState();
+    // Apply before children mount. Otherwise Contact Groups loads without
+    // a token, fails, and the sidebar stays on "No group" only.
+    if (starting.isAuthenticated) applyApiSession(starting);
+    return starting;
   });
 
-  useEffect(() => {
-    setBaseUrl(state.serverUrl);
-    setToken(state.token);
-    setAccountId(state.accountId);
-  }, [state.serverUrl, state.token, state.accountId]);
+  useApiSession(state);
 
   // Check that the restored token still works.
   useEffect(() => {
@@ -167,66 +85,48 @@ function SessionProvider({
 
     let cancelled = false;
     const validate = async () => {
-      try {
-        setBaseUrl(state.serverUrl);
-        setToken(state.token);
-        setAccountId(state.accountId);
-        await getSession();
-        if (cancelled) return;
-
+      applyApiSession(state);
+      const check = await checkSavedLogin();
+      if (cancelled) return;
+      if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still
         // owes profile setup is read from it, so fetching it here keeps the
-        // guards from deciding against an empty cache.
-        try {
-          await fetchAccountProfileFor(queryClient, state.accountId, true);
-        } catch {
-          // The guards treat a profile that has not loaded as "not decided
-          // yet" and hold, so there is nothing to fall back to here.
-        }
-
+        // guards from deciding against an empty cache. A profile that fails
+        // to load is left to the guards, which hold until it loads.
+        await fetchAccountProfileFor(queryClient, state.accountId, true);
         if (!cancelled) setRestored(true);
-      } catch (err) {
-        // Only the server can say a token is no longer valid, and it says so
-        // with a 401. A request nothing answered, or a 502 from a proxy, says
-        // nothing about the token, so the saved login stays for
-        // `retrySavedLogin`. Either way this session shows the login screen.
-        if (!cancelled) {
-          authEpoch.current++;
-          setToken(null);
-          setAccountId(null);
-          if (err instanceof ApiError && err.status === 401) clearPersisted();
-          setState((s) => ({
-            ...s,
-            token: null,
-            accountId: null,
-            isAuthenticated: false,
-          }));
-          setRestored(true);
-        }
+        return;
       }
+      // A login the server gave no answer about stays saved for
+      // `retrySavedLogin`. Either way this session shows the login screen.
+      authEpoch.current++;
+      applyApiSession({ token: null, accountId: null });
+      if (check === "refused") forgetSavedLogin();
+      setState((s) => ({
+        ...s,
+        token: null,
+        accountId: null,
+        isAuthenticated: false,
+      }));
+      setRestored(true);
     };
     validate();
     return () => {
       cancelled = true;
     };
-  }, [state.isAuthenticated, restored, state.serverUrl, state.token, queryClient, state.accountId]);
+  }, [state, restored, queryClient]);
 
   const setServer = useCallback((url: string) => {
-    setBaseUrl(url);
+    applyApiSession({ serverUrl: url });
     saveServerAddress(url);
     setState((s) => ({ ...s, serverUrl: url }));
   }, []);
 
   const retrySavedLogin = useCallback((serverUrl: string) => {
-    const persisted = loadPersisted();
-    if (!persisted?.token || persisted.serverUrl !== serverUrl) return;
+    const saved = loadSavedLogin();
+    if (!saved || saved.serverUrl !== serverUrl) return;
     // Back to the state the app starts in, which runs the check above again.
-    setState({
-      serverUrl: persisted.serverUrl,
-      token: persisted.token,
-      accountId: persisted.accountId,
-      isAuthenticated: true,
-    });
+    setState({ ...saved, isAuthenticated: true });
     setRestored(false);
   }, []);
 
@@ -236,11 +136,9 @@ function SessionProvider({
       // One call, and it cannot be incomplete: every cached entry is named
       // with the account that filled it, so this only releases memory.
       resetRouteCache();
-      setBaseUrl(serverUrl);
-      setToken(token);
       // The profile is the account's own row, addressed by this id, so the
       // client must know it before the fetch below.
-      setAccountId(accountId);
+      applyApiSession({ serverUrl, token, accountId });
 
       // Fetch the profile before the app renders: it carries whether this
       // account still owes profile setup or a password change, and the guards
@@ -256,24 +154,19 @@ function SessionProvider({
         isAuthenticated: true,
       };
       saveServerAddress(serverUrl);
-      persistState(newState);
+      saveLogin(newState);
       setState(newState);
       setRestored(true);
     },
-    [
-      // One call, and it cannot be incomplete: every cached entry is named
-      // with the account that filled it, so this only releases memory.
-      resetRouteCache,
-      queryClient,
-    ],
+    [resetRouteCache, queryClient],
   );
 
   const updateToken = useCallback((token: string) => {
-    setToken(token);
+    applyApiSession({ token });
     setState((s) => {
       if (!s.isAuthenticated) return s;
       const next: AuthState = { ...s, token };
-      persistState(next);
+      saveLogin(next);
       return next;
     });
   }, []);
@@ -284,10 +177,9 @@ function SessionProvider({
    */
   const clearSession = useCallback(() => {
     authEpoch.current++;
-    setToken(null);
-    setAccountId(null);
+    applyApiSession({ token: null, accountId: null });
     resetRouteCache();
-    clearPersisted();
+    forgetSavedLogin();
     setState((s) => ({
       ...s,
       token: null,
@@ -402,48 +294,10 @@ function SessionProvider({
       void pauseRunningUpload();
       clearSession();
     };
-    sessionEnded.current = () => end();
     return onSessionRefused(end);
-  }, [sessionEnded, clearSession]);
+  }, [clearSession]);
 
-  // Desktop only: on window close, revoke the session then quit.
-  const closingRef = useRef(false);
-  useEffect(() => {
-    if (!isTauri()) return;
-
-    let unlisten: (() => void) | undefined;
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        unlisten = await onWindowCloseRequested(async (event) => {
-          event.preventDefault();
-          if (closingRef.current) return;
-          closingRef.current = true;
-          try {
-            // No pause: closing the window ends the Upload with the app, and
-            // the run resumes from what the Upload's journal recorded as sent.
-            await revokeSession();
-            await destroyWindow();
-          } catch {
-            // Destroy failed or window already gone — allow another close attempt.
-            closingRef.current = false;
-          }
-        });
-        if (cancelled) {
-          unlisten();
-          unlisten = undefined;
-        }
-      } catch {
-        // Missing window permissions or not a real Tauri window — leave close alone.
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [revokeSession]);
+  useLogoutOnWindowClose(revokeSession);
 
   const logoutPrompt = useMemo(
     () => ({
