@@ -2595,10 +2595,16 @@ export interface components {
              */
             name: string;
             /**
-             * @description The query in the search language, trimmed and stored as written. The
-             *     server does not check it when storing it, so a query a list cannot
-             *     run is refused when it runs. A blank query is refused with `422
-             *     Unprocessable Entity`.
+             * @description The query in the search language, trimmed and stored as written. A
+             *     blank query is refused with `422 Unprocessable Entity`
+             *     (`validation-failed`). A query that every list refuses, one over
+             *     2,048 bytes, with a syntax error such as a parenthesis or quote that
+             *     never closes, with more than 32 words, more than 64 parts, or nesting
+             *     deeper than 32, is refused with `422 Unprocessable Entity`
+             *     (`search-query-invalid`) and the search language's own sentence. A
+             *     `word:` is not checked against any list, because a Saved Search runs
+             *     on more than one: a word or value the list cannot use is refused when
+             *     it runs there.
              */
             query: string;
         };
@@ -12704,7 +12710,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12958,7 +12968,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -34,7 +34,9 @@ The **+** beside **Saved Searches** opens **New saved search**, which has two fi
 The search in the search box is not copied in, so it has to be typed or pasted.
 
 **Save** stays disabled until both fields hold text.
-The search is stored as typed and is not checked, so a mistake in it shows only when the Saved Search runs.
+The search is stored as typed.
+**Save** refuses a search that no list can run, with the message the search box would give: one longer than 2,048 bytes, one with a parenthesis or quote that never closes, one with more than 32 words, or one with too many parts or levels of nesting.
+The words in it are not checked, because a word can work on one list and not another, so a word the conversation list does not have shows only when the Saved Search runs.
 
 Two Saved Searches in one Account can't share a name, and letter case does not make a name different.
 A Saved Search with a name already in use is not created.

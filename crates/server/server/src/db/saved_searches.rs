@@ -1,9 +1,11 @@
 //! Per-account saved searches: named queries a user runs again from the sidebar.
 //!
-//! A saved search collects nothing. It stores a query string verbatim and is
-//! never validated: each list accepts its own subset of the search language,
-//! so a query legal for one list can be a `422 Unprocessable Entity` on
-//! another (see `search`).
+//! A saved search collects nothing. It stores a query string verbatim. The
+//! query is checked only for what every list refuses alike, its length, its
+//! syntax and its limits ([`crate::search::check_for_every_list`]): each list
+//! accepts its own subset of the search language's words, so a query legal
+//! for one list can be a `422 Unprocessable Entity` on another (see
+//! `search`).
 //!
 //! Rows are addressed by `id` rather than by name, as Contact Groups and
 //! Message Tags are: an edit changes the name and the query together, so a
@@ -52,6 +54,8 @@ pub struct SavedSearch {
 #[derive(Debug)]
 pub enum SavedSearchError {
     BadRequest(String),
+    /// The query breaks a rule of the search language that every list shares.
+    Query(crate::search::QueryError),
     NotFound,
     Conflict(String),
     Internal(anyhow::Error),
@@ -67,6 +71,7 @@ impl From<SavedSearchError> for crate::server::ApiError {
     fn from(e: SavedSearchError) -> Self {
         match e {
             SavedSearchError::BadRequest(m) => Self::validation(m),
+            SavedSearchError::Query(e) => e.into(),
             SavedSearchError::NotFound => Self::not_found("saved search"),
             SavedSearchError::Conflict(m) => Self::NameTaken(m),
             SavedSearchError::Internal(e) => Self::Internal(e),
@@ -110,12 +115,14 @@ fn normalize_name(name: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-/// Trim a query. Empty queries are rejected; the contents are never inspected.
+/// Trim a query. An empty query is rejected, and so is one every list would
+/// refuse; a `word:` is not looked up, because lists differ in their words.
 fn normalize_query(query: &str) -> Result<String> {
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Err(SavedSearchError::BadRequest("query required".into()));
     }
+    crate::search::check_for_every_list(trimmed).map_err(SavedSearchError::Query)?;
     Ok(trimmed.to_string())
 }
 
