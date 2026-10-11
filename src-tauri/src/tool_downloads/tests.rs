@@ -668,18 +668,14 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
 
 /// A recorded wtsexporter with an executable bit this account may not run,
 /// as a root-owned `0o744` file is to any other account, is not kept as in
-/// place: it is said not to run, and not downloaded again (#2793). An
-/// account that may read a `0o000` file, such as root, may run any file
-/// with a bit, so the test skips there.
+/// place: it is said not to run, and not downloaded again (#2793). It skips
+/// where [`media::testutil::may_read_any_file`] says so.
 #[cfg(unix)]
 #[test]
 fn a_recorded_wtsexporter_this_account_may_not_run_does_not_run() {
     use std::os::unix::fs::PermissionsExt;
     let tools = tempfile::tempdir().unwrap();
-    let probe = tools.path().join("probe");
-    std::fs::write(&probe, b"").unwrap();
-    std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o000)).unwrap();
-    if std::fs::read(&probe).is_ok() {
+    if media::testutil::may_read_any_file(tools.path()) {
         return;
     }
     let _tools = no_ffmpeg_on_path(tools.path());

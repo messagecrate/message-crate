@@ -282,7 +282,9 @@ enum Need {
     /// The file there is the pinned one and runs: it stays.
     Keep,
     /// The file there is the pinned one and does not run: it stays, and
-    /// Settings says so, since downloading it again gives the same file.
+    /// Settings says so. Downloading it again gives the same file, and a
+    /// file this account may not run, such as one another account took
+    /// ownership of, is left for that account to fix, as an adopted one is.
     DoesNotRun,
     /// The file there is the pinned program with no entry, or with a stamp
     /// that changed: it stays and goes into the record.

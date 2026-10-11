@@ -109,9 +109,9 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// On Unix the file must have an executable bit this account may run. It
 /// is not run here: a `pipx` shim is slow to start. A shim is what is
 /// linked there on a computer the app has no download for, such as Linux
-/// on ARM. So a link
-/// to a `pipx` shim whose Python has gone is found, and fails only when it
-/// is run, with the hint [`run_wtsexporter`] gives (`docs/adr/0019`).
+/// on ARM. So a link to a `pipx` shim whose Python has gone is found, and
+/// fails only when it is run, with the hint [`run_wtsexporter`] gives
+/// (`docs/adr/0019`).
 ///
 /// # Errors
 ///
@@ -129,7 +129,8 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
         bail!(
             "{} is not executable by this account. It must be {RELEASE_FILE_HINT}. \
              A copy another account owns needs that account to run chmod +x on it, \
-             or to give this account ownership of it.",
+             or to give this account ownership of it. On a disk mounted noexec no \
+             program runs, whoever owns it.",
             candidate.display()
         );
     }

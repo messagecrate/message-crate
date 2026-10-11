@@ -630,15 +630,13 @@ fn a_wtsexporter_that_is_not_executable_is_refused() {
 
 /// A copy with an executable bit this account may not run, as a root-owned
 /// `0o744` file is to any other account, is refused too, and the error says
-/// whose `chmod +x` fixes it (#2793). An account that may read a `0o000`
-/// file, such as root, may run any file with a bit, so the test skips there.
+/// whose `chmod +x` fixes it (#2793). It skips where
+/// [`media::testutil::may_read_any_file`] says so.
 #[cfg(unix)]
 #[test]
 fn a_wtsexporter_this_account_may_not_run_is_refused() {
     let tools = tempfile::tempdir().unwrap();
-    let probe = tools.path().join("probe");
-    write_with_mode(&probe, 0o000);
-    if std::fs::read(&probe).is_ok() {
+    if media::testutil::may_read_any_file(tools.path()) {
         return;
     }
     let program = tools.path().join(wtsexporter_file_name());
