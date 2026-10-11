@@ -89,34 +89,71 @@ pub struct PathStat {
     /// `None` when the platform does not report one. For a directory this
     /// does not move when a file inside it changes (see the type's docs).
     pub modified_unix_ms: Option<i64>,
+    /// Why the operating system would not say what is at the path, when it
+    /// would not; `None` when it answered, whether or not the path is there.
+    /// `exists` is `false` alongside it, because nothing is known.
+    pub unreadable: Option<PathUnreadable>,
+}
+
+/// The operating system's refusal to say what is at a path.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathUnreadable {
+    /// `true` when the app is not allowed to read the path, such as a
+    /// directory macOS protects until the app has Full Disk Access.
+    pub permission_denied: bool,
+    /// The operating system's own words for the refusal.
+    pub reason: String,
 }
 
 /// Stat a path without canonicalizing it (the path may not exist yet). A
-/// path that cannot be read is reported as absent rather than as an error.
+/// path that is not there, or that runs through a file, is reported as
+/// absent; any other error, such as permission denied, as unreadable.
 pub(crate) fn path_stat_inner(path: &str) -> PathStat {
+    let absent = PathStat {
+        exists: false,
+        is_file: false,
+        is_directory: false,
+        size_bytes: 0,
+        modified_unix_ms: None,
+        unreadable: None,
+    };
     let trimmed = path.trim();
     if trimmed.is_empty() {
-        return PathStat {
-            exists: false,
-            is_file: false,
-            is_directory: false,
-            size_bytes: 0,
-            modified_unix_ms: None,
-        };
+        return absent;
     }
-    let path = Path::new(trimmed);
-    let meta = std::fs::metadata(path).ok();
+    let meta = match std::fs::metadata(trimmed) {
+        Ok(meta) => meta,
+        Err(err)
+            if matches!(
+                err.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return absent;
+        }
+        Err(err) => {
+            return PathStat {
+                unreadable: Some(PathUnreadable {
+                    permission_denied: err.kind() == std::io::ErrorKind::PermissionDenied,
+                    reason: err.to_string(),
+                }),
+                ..absent
+            };
+        }
+    };
     let modified_unix_ms = meta
-        .as_ref()
-        .and_then(|m| m.modified().ok())
+        .modified()
+        .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .and_then(|d| i64::try_from(d.as_millis()).ok());
     PathStat {
-        exists: path.exists(),
-        is_file: path.is_file(),
-        is_directory: path.is_dir(),
-        size_bytes: meta.as_ref().map_or(0, std::fs::Metadata::len),
+        exists: true,
+        is_file: meta.is_file(),
+        is_directory: meta.is_dir(),
+        size_bytes: meta.len(),
         modified_unix_ms,
+        unreadable: None,
     }
 }
 
@@ -772,6 +809,50 @@ mod tests {
     fn blank_path_is_missing() {
         let stat = path_stat_inner("  ");
         assert!(!stat.exists);
+    }
+
+    /// A path the operating system will not let the app look at, such as one
+    /// macOS protects until the app has Full Disk Access, is not a path that
+    /// is missing: the form must say the fix is a permission, not the path.
+    #[cfg(unix)]
+    #[test]
+    fn a_path_the_app_may_not_read_is_unreadable_not_missing() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let locked = dir.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        let backup = locked.join("backup");
+        fs::create_dir(&backup).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let refused = fs::metadata(&backup).is_err();
+        let stat = path_stat_inner(backup.to_str().unwrap());
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        // Root reads past the mode bits, so there is nothing to refuse.
+        if !refused {
+            return;
+        }
+
+        let unreadable = stat.unreadable.expect("a refused path is unreadable");
+        assert!(unreadable.permission_denied);
+        assert!(!unreadable.reason.is_empty());
+        assert!(!stat.exists && !stat.is_file && !stat.is_directory);
+    }
+
+    #[test]
+    fn a_missing_path_and_a_path_under_a_file_are_missing_not_unreadable() {
+        assert!(
+            path_stat_inner("/no/such/message-crate-path-stat")
+                .unreadable
+                .is_none()
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("chat.db");
+        fs::write(&file, b"sqlite").unwrap();
+        let under_file = path_stat_inner(file.join("child").to_str().unwrap());
+        assert!(!under_file.exists);
+        assert!(under_file.unreadable.is_none());
     }
 
     /// The fingerprint a resumed import compares against is built from these

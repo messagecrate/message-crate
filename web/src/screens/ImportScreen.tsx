@@ -16,7 +16,7 @@ import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
 import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
-import type { ImportPathStat } from "../lib/pathChecks";
+import { probeImportPath } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
@@ -73,25 +73,17 @@ const NO_IDENTIFIERS: readonly string[] = [];
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
-async function probePath(path: string): Promise<ImportPathStat | null> {
-  const trimmed = path.trim();
-  if (trimmed === "") return null;
-  try {
-    return await invokePathStat(trimmed);
-  } catch {
-    return { exists: false, isFile: false, isDirectory: false };
-  }
-}
-
 /**
  * Whether a run's directory is still on disk. A stat that fails
- * outright is "unknown", not "missing": an IPC error says nothing about the
- * directory, and reading it as gone would offer to discard staged work that
- * may well still be there.
+ * outright, or a directory the operating system will not describe, is
+ * "unknown", not "missing": neither says anything about whether the
+ * directory is there, and reading it as gone would offer to discard staged
+ * work that may well still be there.
  */
 async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
   try {
     const stat = await invokePathStat(runDir);
+    if (stat.unreadable) return "unknown";
     return stat.exists && stat.isDirectory ? "present" : "missing";
   } catch {
     return "unknown";
@@ -265,7 +257,7 @@ export default function ImportScreen() {
         const directory = run?.run_dir ? await runDirectoryCheck(run.run_dir) : "missing";
         // Only a resume of the copy consults this; every later stage works
         // from the staged directory rather than the backup. The desktop
-        // `PathStat`, not `probePath`'s `ImportPathStat`: the comparison needs
+        // `PathStat`, not `probeImportPath`'s `ImportPathStat`: the comparison needs
         // the size and modified time, which `ImportPathStat` leaves out.
         const sourceStat = run?.source_fingerprint?.path
           ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
@@ -519,9 +511,9 @@ export default function ImportScreen() {
     const timer = window.setTimeout(() => {
       void (async () => {
         const [backup, attachment, contacts] = await Promise.all([
-          probePath(backupPath),
-          probePath(attachmentRoot),
-          probePath(appleContacts),
+          probeImportPath(backupPath),
+          probeImportPath(attachmentRoot),
+          probeImportPath(appleContacts),
         ]);
         let backupEncrypted: boolean | null = null;
         if (source === "imessage-ios" && backup?.exists && backup.isDirectory) {
@@ -555,14 +547,14 @@ export default function ImportScreen() {
       void (async () => {
         const root = backupPath.trim();
         const [backup, contactsDb, media, db, msgstore, cryptHits] = await Promise.all([
-          probePath(backupPath),
-          probePath(whatsappWa),
-          probePath(whatsappMedia),
-          probePath(whatsappDb),
-          probePath(root ? `${root}/msgstore.db` : ""),
+          probeImportPath(backupPath),
+          probeImportPath(whatsappWa),
+          probeImportPath(whatsappMedia),
+          probeImportPath(whatsappDb),
+          probeImportPath(root ? `${root}/msgstore.db` : ""),
           Promise.all(
             WHATSAPP_CRYPT_NAMES.map(async (name) => {
-              const stat = await probePath(root ? `${root}/${name}` : "");
+              const stat = await probeImportPath(root ? `${root}/${name}` : "");
               return stat?.exists && stat.isFile ? name : null;
             }),
           ),

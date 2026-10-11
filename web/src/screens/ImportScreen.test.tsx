@@ -332,6 +332,22 @@ describe("ImportScreen entering Import", () => {
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
   });
 
+  it("says the run directory could not be checked, not that it is gone, when the app may not read it", async () => {
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
+    invokePathStatMock.mockResolvedValue({
+      exists: false,
+      isFile: false,
+      isDirectory: false,
+      sizeBytes: 0,
+      modifiedUnixMs: null,
+      unreadable: { permissionDenied: true, reason: "Permission denied (os error 13)" },
+    });
+    renderWithProviders(<ImportScreen />);
+
+    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
+  });
+
   it("discards the run and drops through to the form", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));

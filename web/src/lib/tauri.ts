@@ -583,6 +583,16 @@ export interface PathStat {
   isDirectory: boolean;
   sizeBytes: number;
   modifiedUnixMs: number | null;
+  /** Why the operating system would not say what is at the path; null when it answered. */
+  unreadable: PathUnreadable | null;
+}
+
+/** The operating system's refusal to say what is at a path. */
+export interface PathUnreadable {
+  /** True when the app is not allowed to read the path, such as one macOS protects until the app has Full Disk Access. */
+  permissionDenied: boolean;
+  /** The operating system's own words for the refusal. */
+  reason: string;
 }
 
 /**

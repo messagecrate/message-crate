@@ -214,6 +214,7 @@ describe("checkSourceFingerprint", () => {
         isDirectory: false,
         sizeBytes: 1000,
         modifiedUnixMs: 1_700_000_000_000,
+        unreadable: null,
       }),
     ).toBe("unknown");
   });
@@ -227,6 +228,7 @@ describe("checkSourceFingerprint", () => {
         isDirectory: false,
         sizeBytes: 0,
         modifiedUnixMs: null,
+        unreadable: null,
       }),
     ).toBe("source_missing");
   });
@@ -239,6 +241,7 @@ describe("checkSourceFingerprint", () => {
         isDirectory: false,
         sizeBytes: 1000,
         modifiedUnixMs: 1_700_000_000_000,
+        unreadable: null,
       }),
     ).toBe("match");
   });
@@ -251,6 +254,7 @@ describe("checkSourceFingerprint", () => {
         isDirectory: false,
         sizeBytes: 2000,
         modifiedUnixMs: 1_700_000_000_000,
+        unreadable: null,
       }),
     ).toBe("mismatch");
     expect(
@@ -260,6 +264,7 @@ describe("checkSourceFingerprint", () => {
         isDirectory: false,
         sizeBytes: 1000,
         modifiedUnixMs: 1_700_000_000_001,
+        unreadable: null,
       }),
     ).toBe("mismatch");
   });

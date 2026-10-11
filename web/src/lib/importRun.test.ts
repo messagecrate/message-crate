@@ -46,6 +46,7 @@ describe("buildSourceFingerprint", () => {
         isDirectory: true,
         sizeBytes: 4096,
         modifiedUnixMs: 1_756_512_000_000,
+        unreadable: null,
       }),
     ).toEqual({
       path: "/Users/u/Backup/abc",
