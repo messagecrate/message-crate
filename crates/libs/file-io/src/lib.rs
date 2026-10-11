@@ -2,8 +2,9 @@
 //! write that conversation files and journals go through ([`write_atomic`]),
 //! the same write through a temporary file the caller names, which staged
 //! attachments and exported Assets use ([`write_atomic_via`]), the synced
-//! rename for a file another program wrote ([`rename_into_place`]), and the
-//! streamed SHA-256 of a file ([`file_sha256`]).
+//! rename for a file another program wrote ([`rename_into_place`]), the
+//! streamed SHA-256 of a file ([`file_sha256`]), and the same fingerprint of
+//! bytes already in memory ([`sha256_hex`]).
 //!
 //! They live in a leaf crate so attachment staging, media conversion, the
 //! journal, the export and import crates and the desktop app share one copy
@@ -45,6 +46,13 @@ pub fn file_sha256(path: &Path) -> io::Result<String> {
         }
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+/// SHA-256 of `bytes`, as 64 lowercase hex digits: the same fingerprint
+/// [`file_sha256`] gives for a file holding them.
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
 }
 
 #[cfg(test)]

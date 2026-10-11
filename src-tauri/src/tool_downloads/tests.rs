@@ -3,10 +3,9 @@ use super::*;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 
+use file_io::sha256_hex;
 use httpmock::prelude::*;
-use sha2::{Digest, Sha256};
 
-/// The SHA-256 of `bytes`, in lowercase hex.
 impl Retry {
     /// The check's thread, when one started.
     fn started(self) -> Option<JoinHandle<()>> {
@@ -15,10 +14,6 @@ impl Retry {
             Self::AlreadyRunning | Self::CouldNotStart => None,
         }
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
 }
 
 /// `bytes` gzipped, as `ffmpeg-static` publishes its files.

@@ -267,7 +267,7 @@ async fn a_batch_whose_file_does_not_match_its_sha256_is_a_422_naming_the_file()
     let assets_dir = state.cfg.paths.assets_dir_for_account(account.account_id);
     fs::create_dir_all(&assets_dir).unwrap();
     fs::write(assets_dir.join("photo.bin"), b"the bytes on disk").unwrap();
-    let stated = assets_api::sha256_hex(b"the bytes the export saw");
+    let stated = file_io::sha256_hex(b"the bytes the export saw");
     let body = one_attachment_batch("photo.bin", Some(&stated));
     let (status, text) =
         crate::test_support::post_raw(&state, &path, &account.token, "application/jsonl", body)

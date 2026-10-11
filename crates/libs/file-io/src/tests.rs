@@ -1,12 +1,13 @@
-//! Known answers for the file hash the rest of the product keys on.
+//! Known answers for the hashes the rest of the product keys on.
 //!
 //! `file_sha256` is behind every digest check and asset key in import, staging
-//! and transcode. A change to it silently re-keys everything already in a
+//! and transcode, and `sha256_hex` gives the same fingerprint for bytes already
+//! in memory. A change to it silently re-keys everything already in a
 //! database, so it is pinned to values computed outside Rust (Python's
 //! `hashlib`). The message id's known answers are in `message-ir`'s
 //! `identity.rs`.
 
-use crate::file_sha256;
+use crate::{file_sha256, sha256_hex};
 
 /// A file in the temp directory, removed when dropped.
 struct TempFile(std::path::PathBuf);
@@ -50,4 +51,19 @@ fn file_sha256_names_a_missing_file() {
     let path = std::env::temp_dir().join("file-io-no-such-file");
     let err = file_sha256(&path).unwrap_err();
     assert!(err.to_string().contains("file-io-no-such-file"), "{err}");
+}
+
+#[test]
+fn sha256_hex_of_bytes_in_memory() {
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+}
+
+#[test]
+fn sha256_hex_matches_file_sha256_of_the_same_bytes() {
+    let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    let file = TempFile::with("same-bytes", &bytes);
+    assert_eq!(sha256_hex(&bytes), file_sha256(&file.0).unwrap());
 }

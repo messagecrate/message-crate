@@ -51,14 +51,6 @@ fn options(mode: MediaMode, limit: u64) -> TranscodeOptions {
     }
 }
 
-fn hex_sha256(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
 #[test]
 fn a_converted_attachment_is_patched_before_its_final_name_exists() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
@@ -116,7 +108,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
     let on_disk = std::fs::read(&derivative).unwrap();
     assert_eq!(
         att.digest_sha256.as_deref(),
-        Some(hex_sha256(&on_disk).as_str())
+        Some(file_io::sha256_hex(&on_disk).as_str())
     );
     assert_eq!(att.size_bytes, Some(on_disk.len() as u64));
     assert_eq!(att.mime_type.as_deref(), Some("image/jpeg"));
@@ -649,7 +641,7 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
     );
     assert_eq!(
         att.digest_sha256.as_deref(),
-        Some(hex_sha256(&std::fs::read(&original).unwrap()).as_str()),
+        Some(file_io::sha256_hex(&std::fs::read(&original).unwrap()).as_str()),
         "digest recomputed from the recovered original, not the stale pre-crash value"
     );
     assert!(
@@ -707,7 +699,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     assert!(att.missing_reason.is_none());
     assert_eq!(
         att.digest_sha256.as_deref(),
-        Some(hex_sha256(&std::fs::read(&original).unwrap()).as_str())
+        Some(file_io::sha256_hex(&std::fs::read(&original).unwrap()).as_str())
     );
     assert!(original.exists(), "a skipped file's original is left alone");
 }

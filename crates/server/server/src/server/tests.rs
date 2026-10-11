@@ -1970,7 +1970,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     assert_eq!(status, StatusCode::OK, "{text}");
 
     let bytes = vec![b'x'; 21];
-    let sha = crate::assets_api::sha256_hex(&bytes);
+    let sha = file_io::sha256_hex(&bytes);
     let (status, text) = crate::test_support::put_raw(
         &state,
         &format!("/v1/assets/{sha}"),
