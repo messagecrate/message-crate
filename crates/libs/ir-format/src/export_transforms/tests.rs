@@ -15,15 +15,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document("hi");
     doc.messages[0].attachments = vec![IrAttachment {
         path: Some("photo.jpg".into()),
-        original_name: Some("photo.jpg".into()),
-        mime_type: Some("image/jpeg".into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc
 }
@@ -214,14 +206,12 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             attachments: vec![IrAttachment {
                 path: Some("attachments/LEAK-12.jpg".into()),
                 original_name: Some("LEAK-13.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
                 digest_sha256: Some("LEAK-14".into()),
-                is_sticker: false,
                 transcription: Some("LEAK-15".into()),
                 sticker_effect: Some("shiny".into()),
                 size_bytes: Some(4),
                 missing_reason: Some("file_missing".into()),
-                bytes: None,
+                ..message_ir::testutil::sample_attachment()
             }],
             reactions: vec![Reaction {
                 part_index: 0,

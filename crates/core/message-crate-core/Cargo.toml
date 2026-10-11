@@ -31,6 +31,7 @@ testutil = ["dep:message-csv", "dep:serde_json"]
 message-csv = { path = "../../libs/csv" }
 serde_json = { workspace = true }
 media = { path = "../../libs/media", features = ["testutil"] }
+message-ir = { path = "../../libs/ir", features = ["testutil"] }
 
 [lints]
 workspace = true
