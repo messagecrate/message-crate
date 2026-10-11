@@ -87,24 +87,33 @@ export type ImportRunState = {
   runDirDeleteFailure: RunDirDeleteFailure | null;
 };
 
+/**
+ * What a finished run leaves on screen, cleared when the form comes back or a
+ * new run starts. `resumeError` and `runDirDeleteFailure` are not in it: each
+ * outlives a return to the form, so the sites that do clear them write them.
+ */
+export const CLEARED_RUN = {
+  summaryView: null,
+  runDir: null,
+  importRunId: null,
+  stagingSummary: null,
+  mediaSummary: null,
+  mediaFailedCount: null,
+  mediaToolsMissing: [],
+  mediaPartiallyRan: false,
+  computingSummary: false,
+  reviewError: null,
+} satisfies Partial<ImportRunState>;
+
 export function initialImportRunState(steps: ImportStep[]): ImportRunState {
   return {
+    ...CLEARED_RUN,
     accountId: null,
     phase: "form",
     running: false,
     steps,
     form: null,
-    summaryView: null,
-    runDir: null,
-    importRunId: null,
-    stagingSummary: null,
-    mediaSummary: null,
-    mediaFailedCount: null,
-    mediaToolsMissing: [],
-    mediaPartiallyRan: false,
     resumeError: null,
-    reviewError: null,
-    computingSummary: false,
     sourceIdentities: null,
     runDirDeleteFailure: null,
   };

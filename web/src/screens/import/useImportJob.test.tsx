@@ -33,7 +33,7 @@ import type {
 } from "../../lib/types";
 import { fill, setupUser } from "../../test/user";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
-import { importRunStore } from "./importRunStore";
+import { CLEARED_RUN, type ImportRunState, importRunStore } from "./importRunStore";
 
 const createImportMock = vi.fn();
 const getServerStateMock = vi.fn();
@@ -355,6 +355,63 @@ describe("useImportJob wiring", () => {
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
+  });
+
+  /** A value for every field a finished run leaves, none of them the cleared one. */
+  const LEFT_BEHIND = {
+    summaryView: { kind: "uploaded" } as unknown as ImportRunState["summaryView"],
+    runDir: "/home/sam/message-crate/staging-earlier",
+    importRunId: 99,
+    stagingSummary: stagingSummary(),
+    mediaSummary: stagingSummary(),
+    mediaFailedCount: 3,
+    mediaToolsMissing: ["ffmpeg"],
+    mediaPartiallyRan: true,
+    computingSummary: true,
+    reviewError: "The server did not record the review.",
+  } satisfies { [K in keyof typeof CLEARED_RUN]: ImportRunState[K] };
+
+  function clearedFields(state: ImportRunState) {
+    return Object.fromEntries(
+      Object.keys(CLEARED_RUN).map((key) => [key, state[key as keyof ImportRunState]]),
+    );
+  }
+
+  it("clears every field a finished run leaves when the form comes back, and keeps the resume error and the delete failure", async () => {
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form()));
+    const deleteFailure = { path: "/home/sam/message-crate/staging-old", reason: "busy" };
+    act(() =>
+      importRunStore.set({
+        ...LEFT_BEHIND,
+        resumeError: "The directory could not be read.",
+        runDirDeleteFailure: deleteFailure,
+      }),
+    );
+
+    act(() => result.current.returnToForm());
+
+    const state = importRunStore.get();
+    expect(Object.keys(LEFT_BEHIND).sort()).toEqual(Object.keys(CLEARED_RUN).sort());
+    expect(clearedFields(state)).toEqual(CLEARED_RUN);
+    expect(state.resumeError).toBe("The directory could not be read.");
+    expect(state.runDirDeleteFailure).toEqual(deleteFailure);
+  });
+
+  it("starts a new run with none of the fields an earlier run left", async () => {
+    importRunStore.set({ ...LEFT_BEHIND, resumeError: "The directory could not be read." });
+    let atStart: ImportRunState | null = null;
+    getServerStateMock.mockImplementation(async () => {
+      atStart = importRunStore.get();
+      return { asset_max_bytes: 512 * MIB };
+    });
+    const { result } = renderHook(() => useImportJob());
+
+    await act(() => result.current.startImport(form()));
+
+    expect(atStart).not.toBeNull();
+    expect(clearedFields(atStart as unknown as ImportRunState)).toEqual(CLEARED_RUN);
+    expect((atStart as unknown as ImportRunState).resumeError).toBeNull();
   });
 
   it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {
