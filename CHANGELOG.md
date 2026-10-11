@@ -751,6 +751,14 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server will not publish its own data as the website.**
+  The server shows everything in its website directory to anyone who can
+  reach it, without a login. A config that put the Data Directory or the
+  database inside that directory, or the website directory inside the Data
+  Directory, used to start and serve every message and attachment that way.
+  The server now refuses to start and names both directories, even when a
+  link or a `..` in a path hides the overlap (#2175).
+
 - 2026-10-11: **A database failure while reading a conversation or a search's
   messages says what the server was reading.** The error in the server's
   log used to give only the database's own message, such as that a table
