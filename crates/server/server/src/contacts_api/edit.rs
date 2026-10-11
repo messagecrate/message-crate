@@ -329,12 +329,14 @@ impl ContactEditor<'_> {
     /// A row the account already holds for the address on `platform` is
     /// taken as it is, with the type its import gave it: a WhatsApp internal
     /// id such as `123456789012345@lid` is `other` there, as every import
-    /// types it (#1671). A new row is typed by the address alone (#1432).
+    /// types it (#1671). A new row is typed the same way, by `platform` and
+    /// then the address's shape ([`handles::handle_type_on`]), so a new `@`
+    /// address on WhatsApp is `other` too (#2709).
     ///
     /// # Errors
     ///
-    /// Refused when `platform` does not carry a new identity of that type,
-    /// such as an email address on WhatsApp.
+    /// Refused when `platform` does not carry the type the address takes
+    /// there ([`handles::check_service_carries`]).
     async fn handle_row(
         &mut self,
         raw: &str,
@@ -346,7 +348,7 @@ impl ContactEditor<'_> {
         {
             return Ok(id);
         }
-        let handle_type = handles::handle_type_of(raw);
+        let handle_type = handles::handle_type_on(raw, platform);
         handles::check_service_carries(raw, platform, handle_type)
             .map_err(|refusal| ContactEditError::Refused(refusal.to_string()))?;
         let (id, _) = handles::upsert_handle_row(

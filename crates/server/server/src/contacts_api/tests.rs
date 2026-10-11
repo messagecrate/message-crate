@@ -1610,9 +1610,10 @@ async fn handle_type_and_service(
         .unwrap()
 }
 
-/// An identity added by hand is typed by its address alone, whatever service
-/// the request names: a number is a phone number on any service, an address
-/// with `@` is an email address, and anything else is `other`. Typed by the
+/// An identity added by hand takes its type from its address within what its
+/// service carries: a number is a phone number on any service, an address
+/// with `@` on Text Message is an email address, and anything else is
+/// `other`. Typed by the
 /// service, `ada@example.com` under `imessage` was stored as a phone number
 /// (#1432); `imessage` is no longer a service a request can name (#1630).
 #[tokio::test]
@@ -1642,36 +1643,41 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     }
 }
 
-/// An email address cannot be a WhatsApp identity, so adding one under
-/// `whatsapp` is refused with the reason rather than stored as an identity
-/// WhatsApp cannot carry.
+/// An identity typed into a contact is typed by its service and then its
+/// address, as an import types it: an `@` address on WhatsApp, such as the
+/// internal id `123456789012345@lid`, is `other`, and one on Text Message is
+/// an email address. Typed by its shape alone, the WhatsApp id was an email
+/// address, which WhatsApp carries none of, so adding it was refused (#2709).
 #[tokio::test]
-async fn an_email_address_is_not_added_on_whatsapp() {
-    let fixture = test_fixture().await;
-    let account = fixture.account_with_id(101, "alice").await;
-    let mut conn = fixture.conn().await;
-    let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
+async fn a_contact_edit_types_a_new_at_address_by_its_service() {
+    let (fixture, account) = contacts_fixture_with_handles(&[]).await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let sam =
+        insert_contact_with_handle(&mut conn, account.account_id, "Sam", "+15555550100").await;
+    drop(conn);
+    let path = format!("/v1/contacts/{sam}");
 
-    let refusal = mutate_committed(
-        &mut conn,
-        account,
-        contact_id,
-        &UpdateContactRequest {
-            name: None,
-            add_identity: Some(AddContactIdentityRequest {
-                address: "ann@example.com".into(),
-                service: Some(ApiIdentityService::Whatsapp),
-            }),
-            update_identity: None,
-            remove_identity: None,
-            set_identity_country: None,
-        },
-    )
-    .await;
+    for (address, service) in [
+        ("123456789012345@lid", "whatsapp"),
+        ("sam@example.com", "phone"),
+    ] {
+        let _: serde_json::Value = crate::test_support::patch_json(
+            &fixture.state,
+            &path,
+            &account.token,
+            serde_json::json!({ "add_identity": { "address": address, "service": service } }),
+        )
+        .await;
+    }
 
-    assert!(
-        matches!(&refusal, Err(ContactEditError::Refused(m)) if m == "ann@example.com is an email address, and WhatsApp carries no email addresses"),
-        "{refusal:?}"
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    assert_eq!(
+        handle_type_and_service(&mut conn, account.account_id, "123456789012345@lid").await,
+        ("other".to_string(), Some("whatsapp".to_string()))
+    );
+    assert_eq!(
+        handle_type_and_service(&mut conn, account.account_id, "sam@example.com").await,
+        ("email".to_string(), Some("phone".to_string()))
     );
 }
 
@@ -1937,26 +1943,27 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
 }
 
 /// With no service named the new identity stays on the old one's service,
-/// and WhatsApp carries no email address, so the edit is refused with the
-/// reason and the contact keeps its number. It used to store an email
-/// identity on WhatsApp (#1411).
+/// and an `@` address on WhatsApp is `other`, so a WhatsApp number swapped
+/// for one is an `other` identity on WhatsApp. It used to store an email
+/// identity on WhatsApp (#1411), and then refused the swap (#2709).
 #[tokio::test]
-async fn replacing_a_whatsapp_number_with_an_email_address_is_refused() {
+async fn replacing_a_whatsapp_number_with_an_at_address_keeps_it_on_whatsapp_as_other() {
     let fixture = test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let contact_id = contact_on_whatsapp(&mut conn, account).await;
 
     let answer =
-        try_replace_identity(&mut conn, account, contact_id, "ann@example.com", None).await;
+        try_replace_identity(&mut conn, account, contact_id, "123456789012345@lid", None).await;
 
-    assert!(
-        matches!(&answer, Err(ContactEditError::Refused(m)) if m == "ann@example.com is an email address, and WhatsApp carries no email addresses"),
-        "{answer:?}"
-    );
+    assert!(matches!(answer, Ok(true)), "{answer:?}");
     assert_eq!(
         contact_identities(&mut conn, account, contact_id).await,
-        [("+15555550100".to_string(), "whatsapp".to_string())]
+        [("123456789012345@lid".to_string(), "whatsapp".to_string())]
+    );
+    assert_eq!(
+        handle_type_and_service(&mut conn, account, "123456789012345@lid").await,
+        ("other".to_string(), Some("whatsapp".to_string()))
     );
 }
 

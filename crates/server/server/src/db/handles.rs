@@ -61,16 +61,18 @@ pub fn normalize_handle(
 
 /// The shape of an address the source did not type: [`phone::Handle::parse`],
 /// the one rule for what an address looks like. A blank address is `Other`.
-/// An import never stores this type without asking the service first:
+/// No identity is stored with this type without asking the service first:
 /// [`handle_type_on`] does both.
 pub fn handle_type_of(address: &str) -> IdentityType {
     phone::Handle::parse(address).map_or(IdentityType::Other, |handle| handle.kind())
 }
 
-/// The type an import gives an address it meets on `service`: the service
-/// decides which types are valid, and the shape ([`handle_type_of`]) picks
-/// among them. Every address an import meets is typed here, and the
-/// conversation file states no type (#1933).
+/// The type an address takes on `service`: the service decides which types
+/// are valid, and the shape ([`handle_type_of`]) picks among them. Every
+/// address an import meets is typed here, and the conversation file states
+/// no type (#1933). So is every identity a person adds by hand to a contact
+/// or to their own account, so one typed in matches the row an import
+/// stored for the same address (#2709).
 ///
 /// WhatsApp carries phone numbers and its own ids (`…@lid`, `…@g.us`,
 /// `…@s.whatsapp.net`), which are `Other`, so an address with an `@` on

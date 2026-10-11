@@ -179,7 +179,7 @@ internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`. T
 reaches an email address. Every service carries `other`, and neither carries
 a username. A shape the service cannot carry is never that type: an address
 with an `@` on WhatsApp is not an email address, however it looks, and an
-import stores it as `other`. A name that is neither a number
+import, a contact edit and the account's profile store it as `other`. A name that is neither a number
 nor an address, such as the sender `AMAZON`, is `other` on every service. Why:
 the service knows what it can carry, and the address alone does not. Typed
 by shape alone, a WhatsApp participant such as `123456789012345@lid` was
@@ -189,9 +189,10 @@ and the identities list named it `email`
 
 **Every pair of service and type is decided, and a pair the service does
 not carry is refused.** `IdentityService::carries` lists every pair, and an
-import stores no other. An identity added by hand to an account or a
-contact, or by an address book load, in a type its service does not carry is
-refused, and the reason names the service and the type. Why: the check
+import stores no other. An identity added by hand to an account or a contact
+is typed by the rule above, so it takes a type its service carries. A row of
+an address book load states its type, and one whose service does not carry
+that type is refused, and the reason names the service and the type. Why: the check
 refused an email address on WhatsApp and let every other pair through, so a
 new service or type would have been carried everywhere without anyone
 deciding it. Now a new one does not compile until someone does
@@ -445,11 +446,13 @@ chat handle, a participant, a sender, a reaction's sender, an owner
 address, an identifier checked before an import, an identity a person adds
 or swaps in on a contact, and one an account adds to its own profile all take
 their shape from it, and no second rule reads the characters. An import then
-holds the shape to its service (above). A contact edit and the account's
-profile refuse an email address on WhatsApp instead (below). A contact edit
-that names an address the account already holds on that service takes that
-row as it is, so a WhatsApp internal id the import stored as `other` stays
-`other`.
+holds the shape to its service (above), and so do a contact edit and the
+account's profile (`handle_type_on`), so a WhatsApp internal id typed in by
+hand is `other` there, as an import stores it. A contact edit that names an
+address the account already holds on that service takes that row as it is.
+Typed by its shape alone, a new `123456789012345@lid` was an email address,
+which WhatsApp does not carry, so a person adding it by hand was refused
+([#2709](https://github.com/messagecrate/message-crate/issues/2709)).
 Why: identities of one address are linked only when their types are equal.
 A second rule that read characters typed `tel:+15555550157` as `other` and
 the same number as a sender as `phone`, and one that read the service typed
@@ -471,14 +474,14 @@ edit names the old address and the new one, and may name a service for the
 new one. The old identity is the one on the named service when the address
 is on the contact under more than one, and otherwise the one it has, so one
 edit moves a contact from WhatsApp to Text Message. With no service named,
-the new identity stays on the old one's service, and an address that service
-cannot carry, an email address on WhatsApp, is refused with the reason.
+the new identity stays on the old one's service and is typed there, so an
+`@` address swapped in for a WhatsApp identity is `other` on WhatsApp.
 Why: looked up on the named service, a WhatsApp identity was never found for
 a Text Message edit, and an email address swapped in with no service became
 an email identity on WhatsApp
 ([#1411](https://github.com/messagecrate/message-crate/issues/1411)). The
-edit refuses rather than moving the identity to the phone service, because
-the person did not ask for a service change.
+edit keeps the identity on WhatsApp rather than moving it to the phone
+service, because the person did not ask for a service change.
 
 **An import names only a nameless contact.** When the backup knows a name and
 the contact has none, the import sets it, whatever made the contact: an

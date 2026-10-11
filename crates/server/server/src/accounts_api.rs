@@ -664,7 +664,7 @@ async fn apply_profile_update(
             continue;
         }
         let service = IdentityService::from(entry.service);
-        let handle_type = handles::handle_type_of(raw);
+        let handle_type = handles::handle_type_on(raw, service);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
 
@@ -674,7 +674,7 @@ async fn apply_profile_update(
             continue;
         }
         let service = IdentityService::from(entry.service);
-        let handle_type = handles::handle_type_of(raw);
+        let handle_type = handles::handle_type_on(raw, service);
         handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(
             conn,
