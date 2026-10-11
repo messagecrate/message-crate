@@ -146,7 +146,7 @@ fn load_events<E: DeserializeOwned>(
 /// into a state that starts from `S::default()`.
 ///
 /// A missing file folds nothing. Each line that cannot be parsed is reported
-/// to `on_unreadable(line_number, parse_error)` and skipped — the caller
+/// to `on_unreadable(line_number, parse_error)` and skipped. The caller
 /// decides whether to warn or stay silent. A line that is not valid UTF-8,
 /// such as a row a crash cut inside a character, is one of those lines, so it
 /// cannot stop every later run from reading the file.
@@ -515,7 +515,7 @@ mod tests {
     }
 
     /// A missing file folds nothing, and an unreadable line is reported and
-    /// skipped, as `load_events` does.
+    /// skipped.
     #[test]
     fn load_for_target_reports_unreadable_lines_and_starts_from_default() {
         let dir = tempfile::tempdir().unwrap();
