@@ -809,6 +809,66 @@ mod free_text {
         );
     }
 
+    /// A one-to-one conversation with no participants rows is shown under the
+    /// Contact name of its chat handle (`db::participant_names`,
+    /// `load_from_chat_handle`), so plain text finds it by that name (#2737).
+    /// A group conversation's chat handle is not a person, and a Contact in
+    /// the trash names nobody unless the query carries `trashed:`, as in the
+    /// list.
+    #[tokio::test]
+    async fn plain_text_finds_a_conversation_by_its_chat_handle_contact_name() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let alice_handle = handle(&mut conn, ACCOUNT, "+15550001111", "sms").await;
+        let alice = contact(&mut conn, ACCOUNT, "Alice Smith", &[alice_handle]).await;
+        let with_alice =
+            conversation(&mut conn, ACCOUNT, alice_handle, "individual", None, &[]).await;
+        message(
+            &mut conn,
+            ACCOUNT,
+            msg(with_alice, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let group_handle = handle(&mut conn, ACCOUNT, "chat1000000005", "sms").await;
+        contact(&mut conn, ACCOUNT, "Quill Ward", &[group_handle]).await;
+        let group = conversation(&mut conn, ACCOUNT, group_handle, "group", None, &[]).await;
+        message(
+            &mut conn,
+            ACCOUNT,
+            msg(group, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in ["alice", "smith", "\"Alice Smith\"", "ali*"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                vec![with_alice],
+                "Conversations {query}"
+            );
+        }
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "quill").await,
+            Vec::<i64>::new(),
+            "a group conversation's chat handle named a person"
+        );
+
+        sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
+            .bind(ACCOUNT)
+            .bind(alice)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "alice").await,
+            Vec::<i64>::new(),
+            "a trashed Contact named the conversation"
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "trashed:any alice").await,
+            vec![with_alice]
+        );
+    }
+
     /// `-(a or b)` negates the group, the same as `not (a or b)`, and the
     /// group and its negation split the list.
     #[tokio::test]

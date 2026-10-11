@@ -777,6 +777,12 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **Search finds a conversation by the name it is listed
+  under.** A one-to-one conversation whose backup recorded only the
+  address is listed under the name of the Contact that address is on, but
+  searching that name on the Conversations list found nothing; only the
+  address found it. Searching the name now finds it (#2737).
+
 - 2026-10-11: **A Saved Search no list could ever run is not saved.** A
   search longer than 2,048 bytes, with a parenthesis or quote that never
   closes, with more than 32 words, or too many parts or levels of nesting is

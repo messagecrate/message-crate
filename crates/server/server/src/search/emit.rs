@@ -261,6 +261,28 @@ fn participants_with_contact(trash: TrashScope) -> String {
     )
 }
 
+/// FROM and WHERE binding `chct` to the Contact the chat handle of
+/// conversation `c` is on, for a one-to-one conversation with no
+/// participants rows: the person the list names from the chat handle
+/// (`db::participant_names`, `load_from_chat_handle`), so plain text finds
+/// the conversation by the name it is shown under (#2737). The same
+/// conditions as that query: only a one-to-one conversation's chat handle is
+/// a person, and a conversation with yourself has no participants. A Contact
+/// in the trash is left out unless the query carries `trashed:`, as in
+/// [`participants_with_contact`]. The caller appends ` AND ` and the match.
+fn chat_handle_contact(trash: TrashScope) -> String {
+    format!(
+        "contact_handles chch \
+         JOIN contacts chct ON chct.id = chch.contact_id AND chct.account_id = c.account_id{} \
+         WHERE chch.handle_id = c.chat_handle_id AND chch.account_id = c.account_id \
+         AND c.conversation_type = 'individual' COLLATE NOCASE \
+         AND NOT {} \
+         AND NOT EXISTS (SELECT 1 FROM participants chp WHERE chp.conversation_id = c.id)",
+        trash.contact_clause("chct"),
+        is_with_yourself_sql("c")
+    )
+}
+
 /// Free text: the row's own text, one meaning applied per row type.
 fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
     match ctx.list {
@@ -280,6 +302,12 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
             free_text_match(out, &shown_title_text(), term);
             out.push(" OR ");
             free_text_match(out, &conversation_identity_text(), term);
+            out.push(&format!(
+                " OR EXISTS (SELECT 1 FROM {} AND ",
+                chat_handle_contact(ctx.trash)
+            ));
+            free_text_match(out, "chct.preferred_name", term);
+            out.push(")");
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
             // the name the source gave.
