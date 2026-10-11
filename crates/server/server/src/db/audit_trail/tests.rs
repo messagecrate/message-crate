@@ -252,6 +252,88 @@ async fn deleting_an_account_ends_its_live_session() {
     assert_eq!(ended, [(Some(AuditReason::Revoked), AuditActor::Owner)]);
 }
 
+/// An entry says its account has been deleted from the account's deletion,
+/// from every source: an entry, a Session that ran out, an Import Run and an
+/// Export Run. An entry about no account says no even when it carries a
+/// username, as does a refused login as a username nobody holds, and the
+/// entries of an account that still exists.
+#[tokio::test]
+async fn an_entry_says_its_account_was_deleted_only_when_it_was() {
+    let fixture = test_fixture().await;
+    let alice = fixture.account("alice").await;
+    let bob = fixture.account("bob").await;
+    let mut conn = fixture.conn().await;
+    crate::db::session_tokens::open_session(&mut conn, alice, "alice", None)
+        .await
+        .unwrap();
+    expire_session(&mut conn).await;
+    crate::db::session_tokens::open_session(&mut conn, bob, "bob", None)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO imports (account_id, source, mode, status, started_at)
+         VALUES ($1, 'imessage', 'append', 'completed', '2026-10-01T00:00:00+00:00')",
+    )
+    .bind(alice)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    crate::db::exports::start_export(
+        &mut conn,
+        &crate::db::exports::StartExportArgs {
+            account_id: alice,
+            scope: &message_crate_api_types::ExportScope::Everything,
+            tool: None,
+        },
+    )
+    .await
+    .unwrap();
+    record(
+        &mut conn,
+        &NewEntry {
+            username: Some("carol"),
+            ..NewEntry::about_no_account(AuditAction::RegistrationOpened, AuditActor::Owner)
+        },
+    )
+    .await
+    .unwrap();
+    record_refused_login(
+        &mut conn,
+        "nobody",
+        None,
+        AuditReason::UnknownUsername,
+        None,
+    )
+    .await
+    .unwrap();
+
+    account_profile::delete_account(&mut conn, alice, AuditActor::Owner)
+        .await
+        .unwrap();
+
+    let (items, _) = page(&mut conn, Scope::All, 50, 0).await.unwrap();
+    let deleted: Vec<AuditAction> = items
+        .iter()
+        .filter(|item| item.account_deleted)
+        .map(|item| item.action)
+        .collect();
+    let alices: Vec<AuditAction> = items
+        .iter()
+        .filter(|item| item.username.as_deref() == Some("alice"))
+        .map(|item| item.action)
+        .collect();
+    assert_eq!(deleted, alices, "every entry about alice, and no other");
+    for action in [
+        AuditAction::LoggedIn,
+        AuditAction::SessionEnded,
+        AuditAction::ImportRun,
+        AuditAction::ExportRun,
+        AuditAction::AccountDeleted,
+    ] {
+        assert!(deleted.contains(&action), "{action:?} reads as deleted");
+    }
+}
+
 /// What started a run, as one run table's row records it.
 type RecordedCredential = (
     String,

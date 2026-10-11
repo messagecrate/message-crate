@@ -1082,7 +1082,6 @@ mod asset_ref_tests {
 #[cfg(test)]
 mod asset_fetch_tests {
     use super::*;
-    use sha2::{Digest, Sha256};
     use std::io::{BufRead, BufReader, Write};
     use std::net::TcpListener;
     use std::thread;
@@ -1153,8 +1152,8 @@ mod asset_fetch_tests {
         // the mixed bytes into place.
         let pdf = vec![b'p'; 4096];
         let jpg = vec![b'j'; 4096];
-        let pdf_sha = hex::encode(Sha256::digest(&pdf));
-        let jpg_sha = hex::encode(Sha256::digest(&jpg));
+        let pdf_sha = file_io::sha256_hex(&pdf);
+        let jpg_sha = file_io::sha256_hex(&jpg);
         let base_url = serve_two_fetches_at_once(HashMap::from([
             (pdf_sha.clone(), pdf.clone()),
             (jpg_sha.clone(), jpg.clone()),

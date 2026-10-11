@@ -10,13 +10,12 @@ android-fields = { path = "../android-fields" }
 message-ir = { workspace = true }
 mms-parts = { path = "../mms-parts" }
 anyhow = { workspace = true }
+file-io = { workspace = true }
 base64 = "0.23.1"
-hex = { workspace = true }
 html-escape = "0.2.14"
 phone = { path = "../phone" }
 quick-xml = { workspace = true }
 serde = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
