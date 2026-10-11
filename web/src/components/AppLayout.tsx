@@ -45,8 +45,8 @@ export default function AppLayout() {
     });
   };
 
-  const browseContactConversations = ({ contactId, kind, handle }: ContactBrowseTarget) => {
-    const query = contactBrowseQuery(contactId, kind, handle);
+  const browseContactConversations = (target: ContactBrowseTarget) => {
+    const query = contactBrowseQuery(target);
     setSelectedContact(null);
     navigate(`/?q=${encodeURIComponent(query)}&f=${encodeURIComponent(query)}`);
   };
