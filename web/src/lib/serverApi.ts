@@ -27,6 +27,7 @@ import {
   getAccountId,
   getBaseUrl,
   getToken,
+  NEVER_FOLLOW,
   problemFromBody,
 } from "./api";
 import { type AssetVersion, buildAssetPath } from "./assetUrl";
@@ -476,7 +477,12 @@ export async function fetchAsset(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`${getBaseUrl()}${path}`, { method: "GET", headers, signal });
+  const res = await fetch(`${getBaseUrl()}${path}`, {
+    method: "GET",
+    headers,
+    signal,
+    redirect: NEVER_FOLLOW,
+  });
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);
