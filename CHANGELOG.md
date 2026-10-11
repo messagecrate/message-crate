@@ -605,6 +605,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **The import log says why videos were compressed as H.264.**
+  When ffmpeg could not compress a video as HEVC, most often because it was
+  built without the HEVC encoder, the import compressed it as H.264 instead
+  and said nothing, so videos came out larger than expected with no reason
+  given. The import log now carries ffmpeg's reason as a warning, once per
+  import. When H.264 fails as well, the issue reported for the video names
+  both failures (#2256).
+
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The

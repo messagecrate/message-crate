@@ -77,7 +77,7 @@ fn transform(
         media::transcode_file_as(source_path, kind, &out, mode, &server_compress_options())
             .with_context(|| format!("convert {}", source_path.display()))?;
     Ok(Some(match outcome {
-        TranscodeOutcome::Produced => ResolvedMedia {
+        TranscodeOutcome::Produced { .. } => ResolvedMedia {
             path: out,
             mime_type: media::mime_for_ext(target).map(str::to_string),
         },

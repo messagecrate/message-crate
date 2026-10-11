@@ -175,6 +175,11 @@ pub struct TranscodeReport {
     pub bytes_before: u64,
     /// Total bytes of the derivatives it wrote.
     pub bytes_after: u64,
+    /// Why HEVC failed, from the first video the Media stage compressed as
+    /// H.264 instead. The caller logs it once with
+    /// [`media::hevc_fallback_line`], so a person can see why videos came out
+    /// larger than expected.
+    pub hevc_failure: Option<String>,
 }
 
 /// Convert or compress every original still staged under `run_dir`.
@@ -742,7 +747,10 @@ fn apply_transcode(
             report.skipped += 1;
             Ok(())
         }
-        Ok(TranscodeOutcome::Produced) => {
+        Ok(TranscodeOutcome::Produced { hevc_failure }) => {
+            if report.hevc_failure.is_none() {
+                report.hevc_failure = hevc_failure;
+            }
             let produced_len = std::fs::metadata(&marker)
                 .with_context(|| format!("stat {}", marker.display()))?
                 .len();

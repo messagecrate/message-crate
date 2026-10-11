@@ -100,14 +100,15 @@ pub(crate) fn process_attachment_files_with(
     emit(&mut log, &starting_line(verb, total, report.bytes_before));
 
     let mut done = 0usize;
+    let mut hevc_failure = None;
     for path in files {
-        match process_one(tools, output_dir, path, mode, compress) {
+        match process_one(tools, output_dir, path, mode, compress, &mut hevc_failure) {
             Ok(Outcome::Changed { old_rel, new_rel }) => {
                 report.processed += 1;
                 remap.insert(old_rel, new_rel);
             }
             Ok(Outcome::Skipped) => report.skipped += 1,
-            Err(err) => report.errors.push(format!("{}: {err}", path.display())),
+            Err(err) => report.errors.push(format!("{}: {err:#}", path.display())),
         }
         done += 1;
         if done.is_multiple_of(MEDIA_PROGRESS_EVERY) || done == total {
@@ -119,6 +120,9 @@ pub(crate) fn process_attachment_files_with(
     remove_msgmedia_temps(&attachments)?;
     report.bytes_after = attachments_dir_bytes(&attachments)?;
 
+    if let Some(reason) = &hevc_failure {
+        emit(&mut log, &format!("  {}", hevc_fallback_line(reason)));
+    }
     emit(&mut log, &done_line_with_failures(mode, &report));
 
     Ok((report, remap))
@@ -167,6 +171,14 @@ fn done_line_with_failures(mode: MediaMode, report: &MediaReport) -> String {
         let _ = write!(line, ", {} failed", files(report.errors.len()));
     }
     line
+}
+
+/// The log line saying that HEVC failed and H.264 stood in, with ffmpeg's
+/// `reason`, so a person can see why compressed videos came out larger than
+/// expected. Each pass writes it once, whatever the number of videos.
+#[must_use]
+pub fn hevc_fallback_line(reason: &str) -> String {
+    format!("HEVC encoding failed, so videos were compressed as H.264 instead: {reason}")
 }
 
 /// Send one line to the log callback, if there is one.
@@ -409,6 +421,7 @@ fn run_one(
     mode: MediaMode,
     compress: &CompressOptions,
     commit: Commit<'_>,
+    hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let ext = path
         .extension()
@@ -448,7 +461,9 @@ fn run_one(
             convert_audio(tools, path, true, same_format, commit)
         }
         (Kind::Video, MediaMode::Convert) => convert_video(tools, path, commit).map(Some),
-        (Kind::Video, MediaMode::Compress) => compress_video(tools, path, compress, commit),
+        (Kind::Video, MediaMode::Compress) => {
+            compress_video(tools, path, compress, commit, hevc_failure)
+        }
         (_, MediaMode::Clone | MediaMode::Disabled) => Ok(None),
     }
 }
@@ -460,23 +475,38 @@ fn process_one(
     path: &Path,
     mode: MediaMode,
     compress: &CompressOptions,
+    hevc_failure: &mut Option<String>,
 ) -> Result<Outcome> {
     let old_rel = rel_path(output_dir, path)?;
     let kind = classify(path).context("unknown media kind")?;
-    match run_one(tools, path, kind, mode, compress, Commit::InPlace)? {
+    match run_one(
+        tools,
+        path,
+        kind,
+        mode,
+        compress,
+        Commit::InPlace,
+        hevc_failure,
+    )? {
         Some(new_path) => changed(output_dir, &old_rel, &new_path),
         None => Ok(Outcome::Skipped),
     }
 }
 
 /// What [`transcode_file`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TranscodeOutcome {
     /// Nothing was written: the mode does not touch this file, or a
     /// same-format re-encode came out no smaller.
     Skipped,
     /// A derivative was written to the destination the caller named.
-    Produced,
+    Produced {
+        /// Why HEVC failed, when a compressed video was written as H.264
+        /// instead. A caller logs it once per run with
+        /// [`hevc_fallback_line`], so a person can see why videos came out
+        /// larger than expected.
+        hevc_failure: Option<String>,
+    },
 }
 
 /// File name the media step would produce for `src`, or `None` when it leaves
@@ -657,8 +687,17 @@ fn transcode_as(
     compress: &CompressOptions,
 ) -> Result<TranscodeOutcome> {
     tools.require()?;
-    match run_one(tools, src, kind, mode, compress, Commit::To(dest))? {
-        Some(_) => Ok(TranscodeOutcome::Produced),
+    let mut hevc_failure = None;
+    match run_one(
+        tools,
+        src,
+        kind,
+        mode,
+        compress,
+        Commit::To(dest),
+        &mut hevc_failure,
+    )? {
+        Some(_) => Ok(TranscodeOutcome::Produced { hevc_failure }),
         None => Ok(TranscodeOutcome::Skipped),
     }
 }
@@ -945,11 +984,17 @@ fn keep_or_remux(
 }
 
 /// Re-encode a video under the resolution, frame-rate, and quality caps; `None` when it is already within them.
+///
+/// HEVC is tried first and H.264 when it fails. When H.264 then succeeds,
+/// why HEVC failed goes into `hevc_failure`, unless an earlier video in the
+/// same run already put a reason there; when H.264 fails too, the error
+/// carries both reasons.
 fn compress_video(
     tools: &dyn MediaTools,
     path: &Path,
     opts: &CompressOptions,
     commit: Commit<'_>,
+    hevc_failure: &mut Option<String>,
 ) -> Result<Option<PathBuf>> {
     let meta = fs::metadata(path)?;
     if meta.len() < opts.min_size_bytes {
@@ -995,7 +1040,7 @@ fn compress_video(
             "-movflags".into(),
             "+faststart".into(),
         ]);
-        if tools.transcode(&hevc_args, &tmp, None).is_err() {
+        if let Err(hevc_err) = tools.transcode(&hevc_args, &tmp, None) {
             let _ = fs::remove_file(&tmp);
             let mut avc_args = base_video_args(path, &vf);
             avc_args.extend([
@@ -1014,7 +1059,9 @@ fn compress_video(
             ]);
             tools
                 .transcode(&avc_args, &tmp, None)
+                .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
+            hevc_failure.get_or_insert_with(|| format!("{hevc_err:#}"));
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })
