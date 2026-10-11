@@ -1,4 +1,5 @@
 import { appHeaders } from "./build";
+import { startTimeLimit } from "./timeLimit";
 
 let baseUrl = "";
 let authToken: string | null = null;
@@ -194,57 +195,71 @@ function durationText(ms: number): string {
 }
 
 /**
+ * The error for a call its time limit ended: an `ApiError` of status 0 (no
+ * answer arrived, so there is no HTTP status) whose message says how long it
+ * waited, so a screen shows a sentence rather than the browser's abort text.
+ */
+export function requestTimeoutError(ms: number): ApiError {
+  return new ApiError(0, `The server didn't answer within ${durationText(ms)}.`);
+}
+
+/**
+ * The headers every call carries: this app and its Build, the Session's
+ * token when there is one, and `contentType` when the call has a body.
+ */
+function callHeaders(contentType: string | null): Record<string, string> {
+  const headers: Record<string, string> = { ...appHeaders() };
+  if (contentType) {
+    headers["Content-Type"] = contentType;
+  }
+  if (authToken) {
+    headers.Authorization = `Bearer ${authToken}`;
+  }
+  return headers;
+}
+
+/**
  * Send one request and read its answer with `read`, within the call's time
  * limit. The limit covers the body as well as the headers, since a server
  * can stall partway through either.
  *
- * A call the limit ends rejects with an `ApiError` of status 0 (no answer
- * arrived, so there is no HTTP status) whose message says how long it
- * waited, so a screen shows a sentence rather than the browser's abort text.
- * A call its caller's signal ends rejects with that abort, as before, since a
- * cancel is not a failure to show.
- *
- * The limit is a timer and an `AbortController` rather than
- * `AbortSignal.timeout` and `AbortSignal.any`, which older WebViews lack.
+ * A call the limit ends rejects with `requestTimeoutError`. A call its
+ * caller's signal ends rejects with that abort, as before, since a cancel is
+ * not a failure to show.
  */
 async function exchange<T>(
+  method: string,
   path: string,
-  init: RequestInit,
+  body: { text: string; contentType: string } | null,
   opts: ApiRequestOptions | undefined,
   read: (res: Response) => Promise<T>,
 ): Promise<T> {
   const timeoutMs = opts?.timeoutMs ?? REQUEST_TIMEOUT_MS;
-  const caller = opts?.signal;
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    if (controller.signal.aborted) return;
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const onCallerAbort = () => controller.abort(caller?.reason);
-  if (caller?.aborted) {
-    onCallerAbort();
-  } else {
-    caller?.addEventListener("abort", onCallerAbort, { once: true });
-  }
-
+  const limit = startTimeLimit(timeoutMs, opts?.signal);
   try {
     const res = await fetch(`${baseUrl}${path}`, {
-      ...init,
-      signal: controller.signal,
+      method,
+      headers: callHeaders(body?.contentType ?? null),
+      body: body?.text,
+      signal: limit.signal,
       redirect: NEVER_FOLLOW,
     });
     return await read(res);
   } catch (e: unknown) {
-    if (timedOut) {
-      throw new ApiError(0, `The server didn't answer within ${durationText(timeoutMs)}.`);
-    }
+    if (limit.timedOut()) throw requestTimeoutError(timeoutMs);
     throw e;
   } finally {
-    clearTimeout(timer);
-    caller?.removeEventListener("abort", onCallerAbort);
+    limit.dispose();
   }
+}
+
+/**
+ * A JSON body, or none. A request says it carries JSON only when it does: the
+ * server reads a body wherever the media type promises one, so an empty
+ * DELETE marked as JSON is refused as unparseable.
+ */
+function jsonBody(body: unknown): { text: string; contentType: string } | null {
+  return body ? { text: JSON.stringify(body), contentType: "application/json" } : null;
 }
 
 /** Read a JSON answer: a failure's problem document, nothing for a 204, or the body. */
@@ -262,75 +277,22 @@ async function readJson<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
 }
 
+/** Read a file's text, or a failure's problem document as everywhere else. */
+async function readText(res: Response): Promise<string> {
+  const text = await res.text();
+  if (!res.ok) {
+    throw problemFromBody(res.status, text);
+  }
+  return text;
+}
+
 function request<T>(
   method: string,
   path: string,
   body: unknown,
   opts?: ApiRequestOptions,
 ): Promise<T> {
-  const headers: Record<string, string> = { ...appHeaders() };
-  // A request says it carries JSON only when it does. The server reads a body
-  // wherever the media type promises one, so an empty DELETE marked as JSON is
-  // refused as unparseable.
-  if (body) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-
-  return exchange(
-    path,
-    { method, headers, body: body ? JSON.stringify(body) : undefined },
-    opts,
-    readJson<T>,
-  );
-}
-
-function requestRaw<T>(
-  method: string,
-  path: string,
-  body: string,
-  contentType: string,
-  opts?: ApiRequestOptions,
-): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": contentType, ...appHeaders() };
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  return exchange(path, { method, headers, body }, opts, readJson<T>);
-}
-
-/**
- * Ask a route that answers a file's text instead of JSON, and return that
- * text: a POST with a JSON body, or a GET with none. A failure is still a
- * problem document, read as everywhere else.
- */
-function requestText(
-  method: "GET" | "POST",
-  path: string,
-  body: unknown,
-  opts?: ApiRequestOptions,
-): Promise<string> {
-  const headers: Record<string, string> = { ...appHeaders() };
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  return exchange(
-    path,
-    { method, headers, body: body === undefined ? undefined : JSON.stringify(body) },
-    opts,
-    async (res) => {
-      const text = await res.text();
-      if (!res.ok) {
-        throw problemFromBody(res.status, text);
-      }
-      return text;
-    },
-  );
+  return exchange(method, path, jsonBody(body), opts, readJson<T>);
 }
 
 export const apiClient = {
@@ -344,15 +306,15 @@ export const apiClient = {
     contentType: string,
     opts?: ApiRequestOptions,
   ): Promise<T> {
-    return requestRaw<T>("POST", path, body, contentType, opts);
+    return exchange("POST", path, { text: body, contentType }, opts, readJson<T>);
   },
   /** POST a JSON body and read the answer as text: a file the server writes. */
   postText(path: string, body: unknown, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("POST", path, body, opts);
+    return exchange("POST", path, jsonBody(body), opts, readText);
   },
   /** GET a route that answers a file's text instead of JSON. */
   getText(path: string, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("GET", path, undefined, opts);
+    return exchange("GET", path, null, opts, readText);
   },
   post<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
     return request<T>("POST", path, body, opts);

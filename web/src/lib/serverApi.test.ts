@@ -14,9 +14,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./api";
 import {
   changePassword,
+  completeImport,
   createAccount,
   createApiToken,
   createContactGroup,
+  createImport,
   createMediaLink,
   createMessageTag,
   deleteAccount,
@@ -25,8 +27,11 @@ import {
   deleteAllMessages,
   deleteApiToken,
   deleteContactGroup,
+  deleteConversation,
   deleteMessageTag,
   discardImport,
+  emptyTrash,
+  exportAddressBook,
   fetchAsset,
   getAccountProfile,
   getAccountStorage,
@@ -34,6 +39,7 @@ import {
   getConversation,
   getConversationSources,
   getImport,
+  getServerLogFile,
   LONG_REQUEST_TIMEOUT_MS,
   listAccountExports,
   listAccountImports,
@@ -48,6 +54,7 @@ import {
   listMessageTags,
   listSavedSearches,
   listSearchFields,
+  loadAddressBook,
   setAccountPassword,
   setImportStage,
   updateAccount,
@@ -68,6 +75,9 @@ vi.mock("./api", () => ({
     put: vi.fn().mockResolvedValue({}),
     patch: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
+    postRaw: vi.fn().mockResolvedValue({}),
+    postText: vi.fn().mockResolvedValue(""),
+    getText: vi.fn().mockResolvedValue(""),
   },
   // The logged-in account, as `auth.tsx` records it after login.
   getAccountId: () => 7,
@@ -75,6 +85,8 @@ vi.mock("./api", () => ({
   getToken: () => "mc-user-test",
   NEVER_FOLLOW: "error",
   problemFromBody: (status: number, text: string) => new Error(`${status}: ${text}`),
+  REQUEST_TIMEOUT_MS: 30_000,
+  requestTimeoutError: (ms: number) => new Error(`no answer within ${ms} ms`),
 }));
 
 const get = vi.mocked(apiClient.get);
@@ -82,6 +94,9 @@ const post = vi.mocked(apiClient.post);
 const put = vi.mocked(apiClient.put);
 const patch = vi.mocked(apiClient.patch);
 const del = vi.mocked(apiClient.delete);
+const postRaw = vi.mocked(apiClient.postRaw);
+const postText = vi.mocked(apiClient.postText);
+const getText = vi.mocked(apiClient.getText);
 
 /** The longer time limit a call whose server work grows with an account passes. */
 const LONG = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
@@ -209,6 +224,52 @@ describe("Import Run routes", () => {
     await getImport(12);
     expect(lastPath(get)).toBe("/v1/imports/12");
   });
+
+  it("starts and completes a run with the longer time limit", async () => {
+    const start = { source: "imessage" } as Parameters<typeof createImport>[0];
+    await createImport(start);
+    expect(post).toHaveBeenCalledWith("/v1/imports", start, LONG);
+    const outcome = { status: "complete" } as Parameters<typeof completeImport>[1];
+    await completeImport(9, outcome);
+    expect(post).toHaveBeenCalledWith("/v1/imports/9/complete", outcome, LONG);
+  });
+});
+
+/**
+ * Calls whose work on the server grows with what an account holds wait the
+ * longer limit, so a large account's delete or file is not cut off at the
+ * default.
+ */
+describe("the longer time limit", () => {
+  it("deletes a conversation and empties the trash with it", async () => {
+    await deleteConversation(4);
+    expect(del).toHaveBeenCalledWith("/v1/conversations/4", undefined, LONG);
+    await emptyTrash();
+    expect(del).toHaveBeenCalledWith("/v1/trash", undefined, LONG);
+  });
+
+  it("loads and exports an address book with it", async () => {
+    await loadAddressBook("name\nAda\n", "merge");
+    expect(postRaw).toHaveBeenCalledWith(
+      "/v1/contacts?mode=merge",
+      "name\nAda\n",
+      "text/csv",
+      LONG,
+    );
+    await exportAddressBook({});
+    expect(postText).toHaveBeenCalledWith("/v1/contacts/address-book", {}, LONG);
+  });
+
+  it("reads a server log file with it, unless the caller asks for its own", async () => {
+    const controller = new AbortController();
+    await getServerLogFile(3, { signal: controller.signal });
+    expect(getText).toHaveBeenCalledWith("/v1/server/log-files/3", {
+      ...LONG,
+      signal: controller.signal,
+    });
+    await getServerLogFile(3, { timeoutMs: 5_000 });
+    expect(getText).toHaveBeenLastCalledWith("/v1/server/log-files/3", { timeoutMs: 5_000 });
+  });
 });
 
 describe("Contact Groups and Message Tags are addressed by id", () => {
@@ -285,7 +346,11 @@ describe("accounts are one collection", () => {
       password_confirmation: "newer-one",
     });
     await deleteAccount({ confirm: true, current_password: "old" });
-    expect(del).toHaveBeenCalledWith("/v1/accounts/7", { confirm: true, current_password: "old" });
+    expect(del).toHaveBeenCalledWith(
+      "/v1/accounts/7",
+      { confirm: true, current_password: "old" },
+      LONG,
+    );
     await deleteAllMessages({ confirm: true });
     expect(del).toHaveBeenCalledWith("/v1/accounts/7/messages", { confirm: true }, LONG);
     await getAccountStorage();
@@ -358,6 +423,57 @@ describe("attachments", () => {
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer mc-user-test" });
     for (const [, init] of fetchMock.mock.calls) {
       expect(init.redirect).toBe("error");
+    }
+  });
+
+  it("gives up on a server that never starts to answer", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+          }),
+      ),
+    );
+    try {
+      const call = fetchAsset("abc").catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await call).toEqual(new Error("no answer within 30000 ms"));
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets an answer that has started take as long as it needs", async () => {
+    vi.useFakeTimers();
+    let finishBody: (bytes: string) => void = () => {};
+    const body = new Promise<string>((resolve) => {
+      finishBody = resolve;
+    });
+    // Like a real body, this one stops arriving when the request's signal aborts.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => ({
+        ok: true,
+        status: 200,
+        blob: () =>
+          new Promise<Blob>((resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+            body.then((bytes) => resolve(new Blob([bytes])));
+          }),
+      })),
+    );
+    try {
+      const call = fetchAsset("abc");
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      finishBody("bytes");
+      expect(await (await call).text()).toBe("bytes");
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
     }
   });
 

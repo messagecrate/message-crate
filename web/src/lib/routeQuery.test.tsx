@@ -13,7 +13,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { freshEntries, seedEntries } from "../test/staleEntries";
-import { ApiError } from "./api";
+import { ApiError, REQUEST_TIMEOUT_MS, requestTimeoutError } from "./api";
 import type { OffsetPage } from "./routeQuery";
 import {
   createQueryClient,
@@ -123,6 +123,10 @@ describe("createQueryClient", () => {
 
   it("asks again once when the server answers 500 Internal Server Error", async () => {
     expect(await callsUntilError(new ApiError(500, "Internal Server Error"))).toBe(2);
+  });
+
+  it("asks once when the server did not answer within the time limit", async () => {
+    expect(await callsUntilError(requestTimeoutError(REQUEST_TIMEOUT_MS))).toBe(1);
   });
 
   it("asks again once when the request never reached the server", async () => {

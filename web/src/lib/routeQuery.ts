@@ -65,6 +65,14 @@ function refusedRequest(error: unknown): boolean {
 }
 
 /**
+ * Whether the call's time limit ended it (`requestTimeoutError` in `api.ts`,
+ * the one `ApiError` with status 0, since no answer arrived).
+ */
+function timedOut(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 0;
+}
+
+/**
  * Build the query client.
  *
  * Exported as a factory rather than a singleton so each test gets a client of
@@ -97,8 +105,11 @@ export function createQueryClient({
         // the same request the same way again, so asking again only delays
         // the error on screen (or the login screen, for an ended session),
         // and a `429 Too Many Requests` adds a request to a client already
-        // over the limit.
-        retry: (failureCount, error) => failureCount < 1 && !refusedRequest(error),
+        // over the limit. A call its time limit ended is not tried again
+        // either: the server already had the whole limit to answer, and a
+        // second try would double the wait before the error shows.
+        retry: (failureCount, error) =>
+          failureCount < 1 && !refusedRequest(error) && !timedOut(error),
         refetchOnWindowFocus: true,
       },
     },

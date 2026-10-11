@@ -29,10 +29,13 @@ import {
   getToken,
   NEVER_FOLLOW,
   problemFromBody,
+  REQUEST_TIMEOUT_MS,
+  requestTimeoutError,
 } from "./api";
 import { type AssetVersion, buildAssetPath } from "./assetUrl";
 import { PAGE_SIZE_MAX } from "./listPaging";
 import type { components, paths } from "./serverApi.types";
+import { startTimeLimit } from "./timeLimit";
 
 type Schema = components["schemas"];
 /** What `GET /v1/server` answers, named by its route so a renamed schema changes nothing here. */
@@ -267,7 +270,7 @@ export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile
 
 /** One file of the server's log, whole, as text. */
 export function getServerLogFile(id: number, opts?: RequestOptions): Promise<string> {
-  return apiClient.getText(`/v1/server/log-files/${id}`, { ...opts, ...LONG_CALL });
+  return apiClient.getText(`/v1/server/log-files/${id}`, { ...LONG_CALL, ...opts });
 }
 
 /** Where the Demo Account stands: absent, building, ready, or failed. */
@@ -311,7 +314,7 @@ export function changePassword(
 
 /** Delete the logged-in account, confirming with its current password. */
 export function deleteAccount(body: Schema["DeleteAccountRequest"]): Promise<void> {
-  return apiClient.delete<void>(ownAccountPath(), body);
+  return apiClient.delete<void>(ownAccountPath(), body, LONG_CALL);
 }
 
 /** How much an account holds: the logged-in one, or as the owner the one named. */
@@ -482,6 +485,10 @@ export function deleteApiToken(id: number, accountId?: number): Promise<void> {
  *
  * Attachment bytes are a blob, not JSON, so this is the one route that goes
  * around `apiClient` and calls `fetch` itself, with the Session's header.
+ *
+ * The client's time limit (`REQUEST_TIMEOUT_MS`) covers only the wait for the
+ * answer to start, so a server that never answers ends the call, and a large
+ * video that is arriving takes as long as it needs.
  */
 export async function fetchAsset(
   sha256: string,
@@ -493,17 +500,26 @@ export async function fetchAsset(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`${getBaseUrl()}${path}`, {
-    method: "GET",
-    headers,
-    signal,
-    redirect: NEVER_FOLLOW,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw problemFromBody(res.status, text);
+  const limit = startTimeLimit(REQUEST_TIMEOUT_MS, signal);
+  try {
+    const res = await fetch(`${getBaseUrl()}${path}`, {
+      method: "GET",
+      headers,
+      signal: limit.signal,
+      redirect: NEVER_FOLLOW,
+    });
+    limit.stopClock();
+    if (!res.ok) {
+      const text = await res.text();
+      throw problemFromBody(res.status, text);
+    }
+    return await res.blob();
+  } catch (e: unknown) {
+    if (limit.timedOut()) throw requestTimeoutError(REQUEST_TIMEOUT_MS);
+    throw e;
+  } finally {
+    limit.dispose();
   }
-  return res.blob();
 }
 
 /**
