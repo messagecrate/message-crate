@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
+import { MIB } from "../test/importForm";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import type { RunDirDeleteFailure } from "./import/importRunStore";
@@ -194,7 +195,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };
@@ -223,7 +224,7 @@ function storedForm(overrides: Record<string, unknown> = {}): Record<string, unk
     phoneCountry: "",
     backupPasswordGiven: false,
     whatsappKeyGiven: false,
-    assetMaxBytes: 512 * 1024 * 1024,
+    assetMaxBytes: 512 * MIB,
     ...overrides,
   };
 }
