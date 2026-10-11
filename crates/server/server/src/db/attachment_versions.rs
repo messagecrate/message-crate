@@ -257,27 +257,41 @@ pub async fn record_shown_as_is(
     tx.commit().await
 }
 
-/// Record on each of `rows` that names no `version` why it could not be
-/// made, the reason the `/v1` Attachment answers. A row that names one keeps
-/// it and no reason: a remake under `--force` that fails, or a concurrent
-/// pass that made it first, leaves a version that works. A version made
-/// later clears it ([`record`], [`share`]), and so does deciding the
-/// original is shown as it is ([`record_shown_as_is`]). The update runs in
-/// a write transaction of its own, as [`record`] does.
+/// Why a version of an original could not be made, and which rows get it:
+/// the `rows` of the original that name no `version`, or name `named`, the
+/// file the pass saw as missing or damaged.
+#[derive(Debug, Clone, Copy)]
+pub struct NotMade<'a> {
+    pub rows: OriginalRows<'a>,
+    pub version: Version,
+    pub named: Option<&'a str>,
+    pub reason: &'a str,
+}
+
+/// Record why a version could not be made on the rows `not_made` names, the
+/// reason the `/v1` Attachment answers. A row that names another file keeps
+/// it and no reason: a concurrent pass made that version after this one
+/// read the rows. A version made later clears it ([`record`], [`share`]),
+/// and so does deciding the original is shown as it is
+/// ([`record_shown_as_is`]). The update runs in a write transaction of its
+/// own, as [`record`] does.
 ///
 /// # Errors
 ///
 /// Returns a database error when the statement fails.
 pub async fn record_not_made(
     conn: &mut SqliteConnection,
-    rows: OriginalRows<'_>,
-    version: Version,
-    reason: &str,
+    not_made: NotMade<'_>,
 ) -> Result<(), sqlx::Error> {
-    let OriginalRows {
-        account_id,
-        original_sha,
-    } = rows;
+    let NotMade {
+        rows: OriginalRows {
+            account_id,
+            original_sha,
+        },
+        version,
+        named,
+        reason,
+    } = not_made;
     let [_, path_column, _] = version.columns();
     let reason_column = version.not_made_reason_column();
     let mut tx = begin_write(conn).await?;
@@ -285,13 +299,14 @@ pub async fn record_not_made(
         "UPDATE attachments
          SET {reason_column} = $1
          WHERE sha256 = $2
-           AND COALESCE({path_column}, '') = ''
+           AND (COALESCE({path_column}, '') = '' OR {path_column} = $4)
            AND {reason_column} IS NOT $1
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
     ))
     .bind(reason)
     .bind(original_sha)
     .bind(account_id)
+    .bind(named)
     .execute(&mut *tx)
     .await?;
     tx.commit().await

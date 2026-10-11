@@ -1229,6 +1229,41 @@ fn a_failed_remake_of_a_working_version_records_no_reason() {
     });
 }
 
+/// A Preview the rows name but whose file is gone works no better than none,
+/// so when its original is missing too, the rows that name it say why it
+/// could not be made.
+#[tokio::test]
+async fn a_named_preview_whose_file_is_gone_gets_the_reason_with_its_original_missing() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let preview = name_version(
+        &opened,
+        &mut conn,
+        attachment_id,
+        Version::Preview,
+        &"c".repeat(64),
+        b"x",
+    )
+    .await;
+    fs::remove_file(&preview).unwrap();
+    let original = opened
+        .cfg
+        .paths
+        .assets_dir_for_account(ACCOUNT)
+        .join(format!("ab/{SHA}"));
+    fs::remove_file(&original).unwrap();
+
+    run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+        .await
+        .unwrap();
+
+    let missing = Some("the original file is missing".to_string());
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (missing.clone(), missing)
+    );
+}
+
 /// An original decided to be shown as it is needs no Preview, so why an
 /// earlier Preview could not be made goes with that decision.
 #[tokio::test]
@@ -1239,12 +1274,17 @@ async fn deciding_an_original_is_shown_as_it_is_clears_why_its_preview_was_not_m
         account_id: ACCOUNT,
         original_sha: SHA,
     };
-    versions_db::record_not_made(&mut conn, rows, Version::Preview, "bad file")
-        .await
-        .unwrap();
-    versions_db::record_not_made(&mut conn, rows, Version::Thumbnail, "bad file")
-        .await
-        .unwrap();
+    for version in Version::ALL {
+        let not_made = versions_db::NotMade {
+            rows,
+            version,
+            named: None,
+            reason: "bad file",
+        };
+        versions_db::record_not_made(&mut conn, not_made)
+            .await
+            .unwrap();
+    }
 
     versions_db::record_shown_as_is(&mut conn, rows, false)
         .await

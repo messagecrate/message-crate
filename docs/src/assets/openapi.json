@@ -13413,7 +13413,7 @@
               "string",
               "null"
             ],
-            "description": "Why the server could not make the attachment's preview the last\ntime it tried: what ffmpeg said about the file, or a phrase of the\nserver's when ffmpeg did not read it, such as when the original\nfile is missing. `null` once the preview is made, and until a try\nhas failed."
+            "description": "Why the server could not make the attachment's preview the last\ntime it tried: what ffmpeg said about the file, or a phrase of the\nserver's when ffmpeg did not read it, such as when the original\nfile is missing. `null` while the attachment has a preview, once\nthe server decides the original is shown as it is, and until a try\nhas failed."
           },
           "sha256": {
             "type": [

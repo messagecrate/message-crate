@@ -1870,7 +1870,8 @@ export interface components {
              * @description Why the server could not make the attachment's preview the last
              *     time it tried: what ffmpeg said about the file, or a phrase of the
              *     server's when ffmpeg did not read it, such as when the original
-             *     file is missing. `null` once the preview is made, and until a try
+             *     file is missing. `null` while the attachment has a preview, once
+             *     the server decides the original is shown as it is, and until a try
              *     has failed.
              */
             preview_not_made_reason: string | null;

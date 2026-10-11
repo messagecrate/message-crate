@@ -26,7 +26,7 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::counts::words;
 use crate::db::attachment_versions::{
-    self as versions_db, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
+    self as versions_db, NotMade, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
 };
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -715,10 +715,11 @@ impl<'a> AccountPass<'a> {
             (Version::Thumbnail, versions.thumbnail),
             (Version::Preview, versions.preview),
         ] {
-            let damaged = match version {
+            let state = match version {
                 Version::Preview => on_disk.preview,
                 Version::Thumbnail => on_disk.thumbnail,
-            } == PreviewFile::Damaged;
+            };
+            let damaged = state == PreviewFile::Damaged;
             let done = match need {
                 Need::Nothing => Ok(false),
                 Need::Share => self.share_existing(db, row, version).await.map(|shared| {
@@ -745,7 +746,9 @@ impl<'a> AccountPass<'a> {
                 (Ok(written), Version::Preview) => outcome.preview = written,
                 (Err(err), _) => {
                     let mut said = format!("{version}: {err:#}");
-                    if let Err(not_recorded) = self.record_not_made(db, row, version, &err).await {
+                    if let Err(not_recorded) =
+                        self.record_not_made(db, row, version, state, &err).await
+                    {
                         said.push_str(&format!(" (why could not be recorded: {not_recorded:#})"));
                     }
                     not_made.push(said);
@@ -810,9 +813,13 @@ impl<'a> AccountPass<'a> {
     }
 
     /// Record on the rows of `row`'s original why `version` was not made,
-    /// as [`not_made_reason`] words `err`. A dry run writes nothing, and
-    /// neither does a pass being stopped: the stop failed the conversion,
-    /// not the file, and the next pass makes it.
+    /// as [`not_made_reason`] words `err`. `state` is the version the rows
+    /// named when the pass read them: an intact one still works, as after a
+    /// failed remake under `--force`, so nothing is recorded beside it. A
+    /// missing or damaged one does not, so the rows that still name it get
+    /// the reason, as do the rows that name none. A dry run writes nothing,
+    /// and neither does a pass being stopped: the stop failed the
+    /// conversion, not the file, and the next pass makes it.
     ///
     /// # Errors
     ///
@@ -822,15 +829,25 @@ impl<'a> AccountPass<'a> {
         db: &SqlitePool,
         row: &StoredOriginal,
         version: Version,
+        state: PreviewFile,
         err: &anyhow::Error,
     ) -> Result<()> {
-        if self.opts.dry_run || self.stop.load(Ordering::Relaxed) {
+        if self.opts.dry_run || self.stop.load(Ordering::Relaxed) || state == PreviewFile::Intact {
             return Ok(());
         }
         let reason = not_made_reason(err, &[&self.assets_dir, self.work_dir]);
-        versions_db::record_not_made(&mut *db.acquire().await?, self.rows(row), version, &reason)
-            .await
-            .context("record why it was not made")
+        let named = row.named(version).assets_path;
+        versions_db::record_not_made(
+            &mut *db.acquire().await?,
+            NotMade {
+                rows: self.rows(row),
+                version,
+                named: named.as_deref(),
+                reason: &reason,
+            },
+        )
+        .await
+        .context("record why it was not made")
     }
 
     /// Point the rows of `row`'s original that name no `version` at the one

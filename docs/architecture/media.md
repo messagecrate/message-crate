@@ -157,15 +157,16 @@ with the paths it named made relative to the account's directories, or a
 phrase of the server's when ffmpeg did not read the file, such as when the
 original is missing. It never holds a path outside the data directory or the
 full error, whose context names the original's path and, for a missing
-ffmpeg, every directory the server looked in. Only rows that name no such
-version get it, so a failed remake under `--force` leaves a working version
-without one. A version made later clears it, and so does deciding that the
-original is shown as it is. A dry run records nothing, and neither does a
-conversion a stop killed. An Asset a later Import Run queues while the pass
-works on it is queued again rather than dropped, so the new run's rows get
-the versions too. The pass holds no database
-connection while ffmpeg runs, and writes its part-made files in a work
-directory under the data directory. A server that stops, on Ctrl-C or
+ffmpeg, every directory the server looked in. It is never recorded beside a
+version that works: a failed remake under `--force` of an intact version
+records nothing, and neither does a pass that fails after another pass made
+the version. Rows that name a version whose file is missing or damaged get
+it. A version made later clears it, and so does deciding that the original
+is shown as it is. A dry run records nothing, and neither does a conversion
+a stop killed. An Asset a later Import Run queues while the pass works on it
+is queued again rather than dropped, so the new run's rows get the versions
+too. The pass holds no database connection while ffmpeg runs, and writes its
+part-made files in a work directory under the data directory. A server that stops, on Ctrl-C or
 SIGTERM, kills the ffmpeg the pass runs and waits for it, removes the work
 directory, and leaves the Asset queued for its next start. A Demo Account
 build the server is running when it stops has its ffmpeg killed the same
