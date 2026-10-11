@@ -10,8 +10,10 @@ level padded to five characters, and its text:
 ```
 
 That is what `tracing-subscriber` writes for the server, so one viewer reads
-both logs and the level filter means the same in each. The crate holds the
-writer (`format_lines`), the parser (`parse_line`), the level and text filter
+both logs and the level filter means the same in each. A line never holds a
+terminal control character: each is written as `\xNN`. The crate holds the
+writer (`format_lines`, and `escape_controls`, which the server's log
+writer uses too), the parser (`parse_line`), the level and text filter
 (`LineFilter`), and the walk from a file's newest line back, a chunk at a time
 (`lines_backward`).
 
