@@ -2,14 +2,14 @@
 //!
 //! Staging layout: `{assets}/.incoming/{sha256}/{upload_id}/part-NNNN` + `manifest.json`.
 
-use std::collections::BTreeSet;
-use std::fs::{self, File, OpenOptions};
+use std::collections::{BTreeSet, HashSet};
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
@@ -167,28 +167,49 @@ fn write_manifest(session: &Path, manifest: &UploadManifest) -> Result<()> {
     Ok(())
 }
 
-/// Exclusive lock for manifest read-modify-write (concurrent part uploads).
+/// The upload directories a request is working in now. The lock is held in
+/// the server's memory, not on a file: a lock on a file stays held while a copy
+/// of its descriptor is open, and every process the server starts (ffmpeg, the
+/// Apple Messages Reader) gets a copy of each descriptor open at that moment,
+/// which it keeps until it begins running its program. A part sent straight
+/// after the previous one was then refused as locked while nothing held it.
+/// One server works in a data directory at a time, so the server's memory is
+/// the only place a lock has to be seen from.
+static LOCKED_SESSIONS: LazyLock<Mutex<HashSet<PathBuf>>> = LazyLock::new(Mutex::default);
+
+/// Exclusive lock for manifest read-modify-write (concurrent part uploads),
+/// held until dropped.
 #[derive(Debug)]
 struct ManifestLock {
-    _file: File,
+    session: PathBuf,
 }
 
-/// Take the session's file lock so two part uploads cannot rewrite the manifest at once.
+impl Drop for ManifestLock {
+    fn drop(&mut self) {
+        locked_sessions().remove(&self.session);
+    }
+}
+
+/// [`LOCKED_SESSIONS`], which no panic can leave half-changed: each change is
+/// one insert or one remove.
+fn locked_sessions() -> std::sync::MutexGuard<'static, HashSet<PathBuf>> {
+    LOCKED_SESSIONS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Take the session's lock so two part uploads cannot rewrite the manifest at once.
 ///
 /// The lock is not waited for. A request refused because another request
 /// holds it is told so, because its bytes may well be right, and sending
 /// them again once the other request finishes succeeds.
 fn lock_session(session: &Path) -> Result<ManifestLock, AssetError> {
-    let path = session.join("manifest.lock");
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&path)
-        .with_context(|| format!("open {}", path.display()))?;
-    file.try_lock_exclusive().map_err(|_| AssetError::Locked)?;
-    Ok(ManifestLock { _file: file })
+    if !locked_sessions().insert(session.to_path_buf()) {
+        return Err(AssetError::Locked);
+    }
+    Ok(ManifestLock {
+        session: session.to_path_buf(),
+    })
 }
 
 /// Canonical extension for the MIME type of an upload's bytes, from the shared
@@ -490,14 +511,8 @@ pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result
         return Ok(());
     }
     // A part or completion still running holds the lock, and emptying the
-    // directory under it would fail it and leave files behind. The lock is
-    // dropped before the removal, because Windows does not delete a file
-    // that is open.
-    match lock_session(&session) {
-        Ok(lock) => drop(lock),
-        Err(AssetError::Internal(_)) if !session.exists() => return Ok(()),
-        Err(err) => return Err(err),
-    }
+    // directory under it would fail it and leave files behind.
+    drop(lock_session(&session)?);
     match fs::remove_dir_all(&session) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -814,6 +829,43 @@ mod tests {
         abort_upload(dir.path(), &sha, &upload_id).unwrap();
         assert!(!session.exists());
         abort_upload(dir.path(), &sha, &upload_id).unwrap();
+    }
+
+    /// A process the server starts (ffmpeg, say) while a request holds an
+    /// upload's lock gets a copy of every descriptor the server has open, and
+    /// keeps it until the process replaces itself with the program it runs.
+    /// The upload must be free again as soon as the request lets go, even while
+    /// such a copy is still open: the next part must not be refused as locked.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_copy_of_a_descriptor_held_by_a_started_process_does_not_keep_the_upload_locked() {
+        use std::os::fd::{BorrowedFd, OwnedFd};
+
+        let (_dir, _sha, _upload_id, session) = started_upload();
+        let held = lock_session(&session).unwrap();
+        // What a fork does: copy each descriptor the lock opened in the
+        // session's directory.
+        let inherited: Vec<OwnedFd> = fs::read_dir("/proc/self/fd")
+            .unwrap()
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let target = fs::read_link(entry.path()).ok()?;
+                if !target.starts_with(&session) {
+                    return None;
+                }
+                let fd: i32 = entry.file_name().to_str()?.parse().ok()?;
+                // SAFETY: `fd` is open: it points into the session directory,
+                // and only `held` opened a file there.
+                unsafe { BorrowedFd::borrow_raw(fd) }
+                    .try_clone_to_owned()
+                    .ok()
+            })
+            .collect();
+        drop(held);
+
+        let again = lock_session(&session);
+        drop(inherited);
+        assert!(again.is_ok(), "{:?}", again.err());
     }
 
     /// S2-8: a second request to an upload while the first holds the lock is
