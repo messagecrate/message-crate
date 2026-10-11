@@ -461,10 +461,14 @@ Work from the repository root. The server process must be running before the web
 
 API: **http://127.0.0.1:8080**. After `--reset-demo`, press **Explore Demo Account** on the login card; the Demo Account has no password. After `--owner`, log in as `admin` / `admin`. Otherwise create the owner in the UI.
 
-The server is up when `GET http://127.0.0.1:8080/health` answers `200` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404`. The host and port are `[server] bind` in `config/config.toml`, `127.0.0.1:8080` unless that line is changed. The server listens only after any seeding: `--reset-demo` seeds before `serve` starts, and `serve` seeds a database that does not exist yet before it listens. A `200` does not say which process answered, so `/health` must fail before the script starts; otherwise a server left running (an earlier run, the one `cargo tauri dev` started, the Docker stack) passes the wait. The line below asks once a second for at most 10 minutes, enough for a first compile and a default start, then asks once more, so it exits non-zero when the server never came up. `--reset-demo --large` can need a larger count.
+The server is up when `GET http://127.0.0.1:8080/health` answers `200 OK` with `ok`. The address has no `/v1` prefix: `/v1/health` does not exist and answers `404 Not Found`. The host and port are `[server] bind` in `config/config.toml`, `127.0.0.1:8080` when that line is absent or unchanged. The line below uses `127.0.0.1:8080`, so a changed `bind` needs the same address in it.
+
+The server listens only after any seeding: `--reset-demo` seeds before `serve` starts, and `serve` seeds a database that does not exist yet before it listens. A `200 OK` does not say which process answered, so `/health` must fail before `./scripts/run-dev.sh` starts. Otherwise a server left running (an earlier run, the one `cargo tauri dev` started, the Docker stack) passes the wait.
+
+The line below asks once a second for at most 15 minutes, then asks once more, so it exits non-zero when the server never came up. The 15 minutes cover a first compile and the `--reset-demo --large` seed, which takes about 3 minutes on the debug build.
 
 ```bash
-for _ in $(seq 600); do curl -fs --max-time 2 -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; curl -fs --max-time 2 http://127.0.0.1:8080/health
+for _ in $(seq 900); do curl -fs --max-time 2 -o /dev/null http://127.0.0.1:8080/health && break; sleep 1; done; curl -fs --max-time 2 http://127.0.0.1:8080/health
 ```
 
 Restart terminal 1 after edits under `crates/server/server/` (debug `cargo run`; no hot reload).
