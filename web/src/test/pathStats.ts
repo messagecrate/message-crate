@@ -53,5 +53,5 @@ export const DENIED_STAT: ImportPathStat = {
   exists: false,
   isFile: false,
   isDirectory: false,
-  unreadable: { ...PERMISSION_DENIED, kind: "permission_denied", os: "macos" },
+  unreadable: { kind: "permission_denied", reason: PERMISSION_DENIED.reason, os: "macos" },
 };
