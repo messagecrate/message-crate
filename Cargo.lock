@@ -754,7 +754,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "hex",
+ "file-io",
  "image",
  "media",
  "message-ir",
@@ -763,7 +763,6 @@ dependencies = [
  "rand_distr",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
  "toml",
 ]
@@ -929,6 +928,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "libc",
  "sha2 0.11.0",
  "tempfile",
 ]
@@ -1151,8 +1151,8 @@ dependencies = [
  "android-fields",
  "anyhow",
  "csv",
+ "file-io",
  "go-sms-mms",
- "hex",
  "media",
  "message-crate-core",
  "message-ir",
@@ -1161,7 +1161,6 @@ dependencies = [
  "phone",
  "quick-xml 0.42.0",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -1921,6 +1920,7 @@ dependencies = [
  "anyhow",
  "csv",
  "file-io",
+ "rustix",
  "serde",
  "tempfile",
 ]
@@ -1956,7 +1956,6 @@ dependencies = [
  "phone",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
 ]
@@ -2005,7 +2004,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "file-io",
- "hex",
  "httpmock",
  "journal",
  "media",
@@ -2017,7 +2015,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -2049,8 +2046,10 @@ dependencies = [
  "clap-markdown",
  "csv",
  "demo-seed",
+ "file-io",
  "fs2",
  "futures-util",
+ "hex",
  "hmac 0.13.0",
  "http-body-util",
  "libc",
@@ -2153,14 +2152,12 @@ dependencies = [
  "anyhow",
  "file-io",
  "fs2",
- "hex",
  "media",
  "message-crate-core",
  "message-ir",
  "message-ir-format",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -3052,14 +3049,13 @@ dependencies = [
  "android-fields",
  "anyhow",
  "base64 0.23.1",
- "hex",
+ "file-io",
  "html-escape",
  "message-ir",
  "mms-parts",
  "phone",
  "quick-xml 0.42.0",
  "serde",
- "sha2 0.11.0",
  "tempfile",
 ]
 
@@ -3306,6 +3302,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "csv",
+ "file-io",
  "hex",
  "mail",
  "mail-builder",

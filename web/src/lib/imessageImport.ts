@@ -2,7 +2,9 @@ import { encryptedBackupPasswordError } from "./encryptedBackup";
 import {
   checkOptionalPath,
   checkRequiredPath,
+  type DesktopOs,
   type ImportPathStat,
+  type ImportPathUnknown,
   type PathRequirement,
 } from "./pathChecks";
 
@@ -67,16 +69,6 @@ export function emptyImessagePathStats(): ImessagePathStats {
     attachmentRoot: null,
     appleContacts: null,
     backupEncrypted: null,
-  };
-}
-
-export function imessageStatsForMethod(
-  method: ImessageMethodId,
-  stats: ImessagePathStats,
-): ImessagePathStats {
-  return {
-    ...stats,
-    backupEncrypted: method === "imessage-ios" ? stats.backupEncrypted : null,
   };
 }
 
@@ -181,9 +173,11 @@ export function macMessagesDbPath(homeDir: string): string {
  * Access lets Message Crate read it.
  */
 export function shouldPrefillMacMessagesDb(args: {
-  os: string;
+  os: DesktopOs | null;
   homeDir: string;
-  chatDb: ImportPathStat;
+  chatDb: Pick<ImportPathStat, "exists" | "isFile"> & {
+    unreadable: { kind: ImportPathUnknown["kind"] } | null;
+  };
   rememberedPath: string;
 }): string {
   const remembered = args.rememberedPath.trim();

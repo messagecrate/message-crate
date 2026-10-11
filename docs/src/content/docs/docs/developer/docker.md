@@ -33,8 +33,14 @@ Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That 
 
 Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
 
-A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, so it catches a write at start and not one made later. CI's "Docker image builds" job and the nightly build run it.
-The stack runs under its own Compose project and volume, so it never touches a running Message Crate, and the script removes it on exit.
+A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, which catches a write at start.
+It then claims the Message Crate, creates an account, and imports one conversation with an HEVC video through `/v1`, because the Demo Account may not import.
+It waits for the media pass to make the video's Thumbnail and Preview, and runs an Export of everything the account holds, so a write made during an import, the media pass or an export fails it too.
+The conversation is `tests/fixtures/docker-compose-check/conversation.jsonl`, and the video is the server's test fixture `crates/server/server/tests/fixtures/media/hevc.mov`.
+CI's "Docker image builds" job and the nightly build run it.
+A pull request runs the job only when it changes what the image is built from (the Dockerfile, a Cargo manifest, the lockfile, the toolchain pin) or the check and its fixtures.
+A change to the server's code alone is caught by the nightly build on `main`, not on the pull request.
+The stack runs under its own Compose project, `message-crate-compose-check-<host-port>`, and its own volume, so it never touches a running Message Crate, and the script removes it on exit.
 
 `--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.
 It runs `scripts/check-served-website.sh`, which opens the website in headless Chromium inside the Playwright image, logs in to the Demo Account, searches the conversation list, and opens a conversation the search found.
@@ -82,9 +88,9 @@ The website in the image is the production Vite build from `web/`. There is no V
 
 The file has three stages. Each stage is a temporary image. Only the last stage is what you run.
 
-1. **Website.** Node 22 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
+1. **Website.** Node.js 24 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
 2. **Server binary.** Rust 1.98.1, the version `rust-toolchain.toml` pins, compiles `message-crate-server` in release mode. The binary carries what it needs to generate Demo Data: the `demo-seed` crate, its two size settings, the Pride and Prejudice text, and the name lists.
-3. **Runtime.** A slim Node 20 image gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` runs `docker/healthcheck.cjs` with Node every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The script reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The script's header comment has the details.
+3. **Runtime.** A slim Node.js 20 image gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` runs `docker/healthcheck.cjs` with Node every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The script reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. `/health` answers `ok` only while the server can take a database connection and run a statement on it, so a server that runs but cannot reach its database reads unhealthy. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The script's header comment has the details.
 
 The build context is the **repository root**. `.dockerignore` decides what Docker sends into that context. It must ignore the live data directory at the repo root (`/data`) so a personal database is not copied into the image. It must not ignore `crates/server/demo-seed/data/`. That directory holds the Pride and Prejudice text and the name lists the server compiles in.
 

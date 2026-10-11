@@ -68,6 +68,7 @@ jobs:
       web: ${{ steps.classify.outputs.web }}
       docs: ${{ steps.classify.outputs.docs }}
       docker: ${{ steps.classify.outputs.docker }}
+      server_config: ${{ steps.classify.outputs.server_config }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -85,10 +86,10 @@ jobs:
               git fetch --quiet origin "$BASE"
               range="origin/$BASE...HEAD" ;;
             *)
-              printf 'rust=true\nweb=true\ndocs=true\ndocker=true\n' >> "$GITHUB_OUTPUT"
+              printf 'rust=true\nweb=true\ndocs=true\ndocker=true\nserver_config=true\n' >> "$GITHUB_OUTPUT"
               exit 0 ;;
           esac
-          rust=false web=false docs=false docker=false
+          rust=false web=false docs=false docker=false server_config=false
           while IFS= read -r f; do
             case "$f" in
               # The committed OpenAPI document feeds the web app's generated
@@ -104,17 +105,27 @@ jobs:
               # and lockfile it copies, and the toolchain pin. A change to one
               # of them is how the image stops building while the Rust jobs
               # stay green. The job also starts the image with the script
-              # that checks it.
-              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh) rust=true; docker=true ;;
+              # that checks it, which imports its own fixture and the
+              # server's hevc.mov. A change to the server's code alone does
+              # not run the job. nightly.yml runs the same check on main.
+              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh|tests/fixtures/docker-compose-check/*|crates/server/server/tests/fixtures/media/hevc.mov) rust=true; docker=true ;;
               crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
-              .github/workflows/*) rust=true; web=true; docs=true; docker=true ;;
+              # The server's config, whose website and Data Directory check
+              # has Windows-only cases the windows-config job tests.
+              crates/server/server/src/config.rs|crates/server/server/src/config/*) rust=true; server_config=true ;;
+              # The Node.js major the web and docs jobs install. The
+              # docker-context job, which runs on every change, checks the
+              # Dockerfile's frontend stage against it.
+              .nvmrc) web=true; docs=true ;;
+              .github/workflows/*) rust=true; web=true; docs=true; docker=true; server_config=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
               *.md) ;;
               *) rust=true ;;               # crates, src-tauri, vendor, schema,
             esac                            # scripts — Rust CI
           done < <(git diff --name-only "$range")
-          printf 'rust=%s\nweb=%s\ndocs=%s\ndocker=%s\n' "$rust" "$web" "$docs" "$docker" >> "$GITHUB_OUTPUT"
-          echo "rust=$rust web=$web docs=$docs docker=$docker"
+          printf 'rust=%s\nweb=%s\ndocs=%s\ndocker=%s\nserver_config=%s\n' \
+            "$rust" "$web" "$docs" "$docker" "$server_config" >> "$GITHUB_OUTPUT"
+          echo "rust=$rust web=$web docs=$docs docker=$docker server_config=$server_config"
 
   # ── Rust: rustfmt ─────────────────────────────────────────────────────
   fmt:
@@ -238,6 +249,38 @@ jobs:
       - name: Test src-tauri
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+  # ── Server config: its tests on Windows ───────────────────────────────
+  # The check that keeps the website directory and the Data Directory apart
+  # (Config::require_static_dir_apart) has cases only Windows has: a
+  # junction's target comes back verbatim (\\?\C:\...) and a short name
+  # (WEBSIT~1) stands for a long one. Every other job runs on Linux, so
+  # this runs the config tests on Windows. On a pull request it runs only
+  # when the config code or a workflow changes: a Windows build is not worth
+  # its time on one that cannot change these paths. A push to main, a tag
+  # and a manual run have no base to diff, so there it runs like every other
+  # job, and a release waits for it (#2683).
+  windows-config:
+    name: Server config tests (Windows)
+    needs: changes
+    if: needs.changes.outputs.server_config == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-server-config-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-server-config-
+
+      - name: Test the server config
+        run: cargo test -p message-crate-server --lib "config::tests::"
+
   # ── Web: lint, generated types, type-check + bundle, tests ────────────
   # `npm run build` is typecheck (both tsconfigs) plus the Vite bundle, so
   # this job catches what a release build would otherwise find first.
@@ -253,7 +296,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -290,7 +333,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
@@ -362,9 +405,10 @@ jobs:
           cache-to: type=gha,mode=max
 
       # The Compose files make the root filesystem read-only and drop every
-      # privilege, so an image that writes outside /app/data at start builds
-      # and then fails to start. This starts it the way Compose does.
-      - name: Start the release Compose stack and log in to the Demo Account
+      # privilege, so an image that writes outside /app/data builds and then
+      # fails to start, or fails an import, the media pass or an export. This
+      # starts it the way Compose does and runs all three.
+      - name: Start the release Compose stack, log in to the Demo Account, import, run the media pass and export
         run: ./scripts/check-docker-compose.sh message-crate-server:check
 
   # ── Always: product version lockstep ──────────────────────────────────
@@ -392,7 +436,7 @@ jobs:
   docker:
     name: Docker image
     if: needs.changes.outputs.release == 'true' || (github.event_name == 'workflow_dispatch' && inputs.push_docker_image)
-    needs: [changes, fmt, clippy, test, check-tauri, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, test, check-tauri, windows-config, web, docs, license, docker-context, version]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -467,7 +511,7 @@ jobs:
   release:
     name: Desktop App (${{ matrix.label }})
     if: needs.changes.outputs.release == 'true'
-    needs: [changes, fmt, clippy, test, check-tauri, web, docs, license, docker-context, version]
+    needs: [changes, fmt, clippy, test, check-tauri, windows-config, web, docs, license, docker-context, version]
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -488,7 +532,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 

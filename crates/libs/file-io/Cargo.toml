@@ -2,13 +2,16 @@
 name = "file-io"
 version = "0.1.0"
 edition = "2024"
-description = "Write a file so a power loss never leaves it cut off, and hash a file without reading it into memory"
+description = "Write a file so a power loss never leaves it cut off, hash a file without reading it into memory, and hash bytes already in memory"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
 anyhow = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = { workspace = true }

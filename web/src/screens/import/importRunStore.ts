@@ -1,8 +1,9 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { getAccountId, onAccountIdChange } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { createExternalStore, useExternalStore } from "../../lib/externalStore";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { MediaToolName, StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
@@ -123,28 +124,22 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
 
 type Patch = Partial<ImportRunState> | ((state: ImportRunState) => Partial<ImportRunState>);
 
-/** A store of one Import Run. The app has one (`importRunStore`); a test may make its own. */
+/**
+ * A store of one Import Run. The app has one (`importRunStore`); a test may make its own.
+ * `set` merges a patch into the run rather than replacing it.
+ */
 export function createImportRunStore(initial: ImportRunState) {
-  let state = initial;
-  const listeners = new Set<() => void>();
+  const store = createExternalStore(initial);
   return {
-    get: (): ImportRunState => state,
+    get: store.get,
     set: (patch: Patch): void => {
+      const state = store.get();
       const next = typeof patch === "function" ? patch(state) : patch;
-      state = { ...state, ...next };
-      for (const listener of listeners) listener();
+      store.set({ ...state, ...next });
     },
-    subscribe: (listener: () => void): (() => void) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
+    subscribe: store.subscribe,
     /** Back to a fresh form: between tests, and when another account takes the store over. */
-    reset: (fresh: ImportRunState): void => {
-      state = fresh;
-      for (const listener of listeners) listener();
-    },
+    reset: (fresh: ImportRunState): void => store.set(fresh),
   };
 }
 
@@ -206,8 +201,11 @@ export function importRunFor(state: ImportRunState, accountId: number | null): I
  */
 export function useImportRunState(store: ImportRunStore = importRunStore): ImportRunState {
   const accountId = useAuth().accountId ?? null;
-  const read = useCallback(() => importRunFor(store.get(), accountId), [store, accountId]);
-  return useSyncExternalStore(store.subscribe, read, read);
+  const select = useCallback(
+    (state: ImportRunState) => importRunFor(state, accountId),
+    [accountId],
+  );
+  return useExternalStore(store, select);
 }
 
 /** True at either review: the run is waiting for the person to decide. */

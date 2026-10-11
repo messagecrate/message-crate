@@ -13526,6 +13526,7 @@
           "action",
           "at",
           "actor",
+          "account_deleted",
           "account_id",
           "api_token_hint",
           "api_token_label",
@@ -13554,13 +13555,17 @@
           "username"
         ],
         "properties": {
+          "account_deleted": {
+            "type": "boolean",
+            "description": "Whether the account the entry is about has since been deleted. `false`\nfor an entry about no account, and for a refused login as a username\nno account holds."
+          },
           "account_id": {
             "type": [
               "integer",
               "null"
             ],
             "format": "int64",
-            "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted."
+            "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted: `account_deleted` tells the two apart."
           },
           "action": {
             "$ref": "#/components/schemas/AuditAction",
@@ -14617,7 +14622,7 @@
                 "type": "null"
               }
             ],
-            "description": "Stage the run opens at. Defaults to `parse`."
+            "description": "Stage the run opens at, `parse` when the request leaves it out. A run\nopens only at `parse`; any other stage is refused with\n`422 Unprocessable Entity`."
           },
           "tool": {
             "type": [
@@ -16860,6 +16865,7 @@
                 "action",
                 "at",
                 "actor",
+                "account_deleted",
                 "account_id",
                 "api_token_hint",
                 "api_token_label",
@@ -16888,13 +16894,17 @@
                 "username"
               ],
               "properties": {
+                "account_deleted": {
+                  "type": "boolean",
+                  "description": "Whether the account the entry is about has since been deleted. `false`\nfor an entry about no account, and for a refused login as a username\nno account holds."
+                },
                 "account_id": {
                   "type": [
                     "integer",
                     "null"
                   ],
                   "format": "int64",
-                  "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted."
+                  "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted: `account_deleted` tells the two apart."
                 },
                 "action": {
                   "$ref": "#/components/schemas/AuditAction",

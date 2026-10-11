@@ -19,7 +19,6 @@ use message_crate_import::{
 use message_ir::testutil::sample_document;
 use message_ir::{ConversationDocument, IrAttachment};
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 /// One SMS conversation used by most mock-server tests: message_ir's sample
@@ -363,7 +362,7 @@ fn an_import_completes_its_import_run_with_the_bytes_it_sent() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
-    let digest = hex::encode(Sha256::digest(PHOTO));
+    let digest = file_io::sha256_hex(PHOTO);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404);
@@ -1078,7 +1077,7 @@ fn profiles_attachment_upload_phases() {
         }));
     });
     let _run = mock_import_start_and_complete(&server, 7);
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404).json_body(json!({
@@ -1201,8 +1200,8 @@ fn two_attachment_docs(
     fs::create_dir(&attachment_dir).unwrap();
     fs::write(attachment_dir.join(a_name), a_bytes).unwrap();
     fs::write(attachment_dir.join(b_name), b_bytes).unwrap();
-    let digest_a = hex::encode(Sha256::digest(a_bytes));
-    let digest_b = hex::encode(Sha256::digest(b_bytes));
+    let digest_a = file_io::sha256_hex(a_bytes);
+    let digest_b = file_io::sha256_hex(b_bytes);
     let mut doc = sample_doc();
     doc.messages[0].attachments = vec![
         ir_attachment(&format!("attachments/{a_name}"), digest_a.clone()),
@@ -1444,7 +1443,7 @@ fn multipart_upload_when_over_proxy_threshold() {
         }));
     });
     let _run = mock_import_start_and_complete(&server, 7);
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404).json_body(json!({
@@ -1555,7 +1554,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
         }));
     });
     let _run = mock_import_start_and_complete(&server, 7);
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404);
@@ -1667,9 +1666,9 @@ fn authenticate_rejects_invalid_url() {
 fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     const ASSET_BYTES: &[u8] = b"on-disk bytes";
     const OTHER_BYTES: &[u8] = b"other on-disk bytes";
-    let disk_digest = hex::encode(Sha256::digest(ASSET_BYTES));
-    let other_disk_digest = hex::encode(Sha256::digest(OTHER_BYTES));
-    let wrong_digest = hex::encode(Sha256::digest(b"other bytes"));
+    let disk_digest = file_io::sha256_hex(ASSET_BYTES);
+    let other_disk_digest = file_io::sha256_hex(OTHER_BYTES);
+    let wrong_digest = file_io::sha256_hex(b"other bytes");
 
     let server = MockServer::start();
     let _auth = mock_session(&server);
@@ -1750,7 +1749,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
 #[test]
 fn shared_attachment_uploaded_once_across_conversations() {
     const ASSET_BYTES: &[u8] = b"shared attachment bytes";
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
 
     let server = MockServer::start();
     let _auth = server.mock(|when, then| {
@@ -1831,7 +1830,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
 #[test]
 fn a_failed_upload_frees_a_shared_file_for_the_next_conversation() {
     const ASSET_BYTES: &[u8] = b"shared attachment bytes";
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
     let (base_url, events) = serve_a_held_first_upload("503 Service Unavailable");
 
     let dir = tempdir().unwrap();
@@ -1971,7 +1970,7 @@ fn serve_a_held_first_upload(first_put: &'static str) -> (String, Arc<Mutex<Vec<
 /// (`guid-b`) claims the file.
 fn two_conversations_sharing_a_file(dir: &Path) {
     const ASSET_BYTES: &[u8] = b"shared attachment bytes";
-    let digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let digest = file_io::sha256_hex(ASSET_BYTES);
     fs::create_dir(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/shared.txt"), ASSET_BYTES).unwrap();
 
@@ -2089,8 +2088,8 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
         }));
     });
     let _run = mock_import_start_and_complete(&server, 7);
-    let small_digest = hex::encode(Sha256::digest(SMALL));
-    let big_digest = hex::encode(Sha256::digest(BIG));
+    let small_digest = file_io::sha256_hex(SMALL);
+    let big_digest = file_io::sha256_hex(BIG);
     let _small_head = server.mock(|when, then| {
         when.method("HEAD")
             .path(format!("/v1/assets/{small_digest}"));
@@ -2221,7 +2220,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
         }));
     });
     let _run = mock_import_start_and_complete(&server, 7);
-    let small_digest = hex::encode(Sha256::digest(SMALL));
+    let small_digest = file_io::sha256_hex(SMALL);
     let _small_head = server.mock(|when, then| {
         when.method("HEAD")
             .path(format!("/v1/assets/{small_digest}"));
@@ -3277,7 +3276,7 @@ fn an_import_goes_on_after_sending_a_large_batch_early() {
 #[test]
 fn an_import_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     let photo = vec![0x5a_u8; 2 * 1024 * 1024];
-    let digest = hex::encode(Sha256::digest(&photo));
+    let digest = file_io::sha256_hex(&photo);
 
     let server = MockServer::start();
     let _auth = mock_session(&server);
@@ -3396,16 +3395,13 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
             "conversations": 1
         }));
     });
-    // The refusal set the first run's cancel flag, so the next Upload starts
-    // with a flag of its own, as the desktop app's does.
-    let resumed = run(
-        &ImportConfig {
-            cancel: CancelFlag::default(),
-            ..cfg.clone()
-        },
-        None,
-    )
-    .unwrap();
+    // The refusal stopped the run without setting the caller's cancel flag,
+    // so the same config runs the next Upload (#2646).
+    assert!(
+        !cfg.cancel.load(Ordering::SeqCst),
+        "a refused session leaves the caller's cancel flag alone"
+    );
+    let resumed = run(&cfg, None).unwrap();
 
     assert!(resumed.ok, "{:?}", resumed.results);
     assert!(!resumed.session_refused);
@@ -3489,6 +3485,10 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     assert_eq!(report.conversations_cancelled, 2);
     assert_eq!(report.conversations_total, 2);
     assert_eq!(batches.calls(), 0);
+    assert!(
+        !cfg.cancel.load(Ordering::SeqCst),
+        "a session refused at login leaves the caller's cancel flag alone"
+    );
 }
 
 /// The phone country the Upload is given reaches the Import Run it starts,

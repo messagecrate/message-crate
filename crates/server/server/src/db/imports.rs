@@ -62,6 +62,16 @@ impl ImportStage {
         Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
 
+    /// Whether a new run may open at `self`: only [`Self::Parse`].
+    ///
+    /// The desktop app opens every run at `parse`, before Staging reads the
+    /// backup, and resumes an interrupted run by moving the run it already
+    /// has; the importer library sends no stage and so opens at `parse` too.
+    /// A run opened at any later stage would be resumed at work nobody did.
+    pub fn opens_a_run(self) -> bool {
+        self == Self::Parse
+    }
+
     /// Whether a running run at `self` may be moved to `next`: the moves the
     /// desktop app makes, and no other.
     ///
@@ -425,22 +435,35 @@ pub enum StartImportError {
         "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
+    /// The run asked to open at a stage that does not open a run
+    /// ([`ImportStage::opens_a_run`]).
+    #[error("an Import Run opens at stage parse, not at stage {}", stage.as_str())]
+    OpeningStage {
+        /// The stage the request asked for.
+        stage: ImportStage,
+    },
     /// Anything else.
     #[error(transparent)]
     Db(anyhow::Error),
 }
 
-/// Open a new Import Run.
+/// Open a new Import Run, started at `now`.
 ///
 /// # Errors
 ///
-/// [`StartImportError::AlreadyActive`] when a running Import Run already exists
-/// for this account; [`StartImportError::Db`] for any other failure.
+/// [`StartImportError::OpeningStage`] when `args.stage` is not one a run
+/// may open at, [`StartImportError::AlreadyActive`] when a running Import Run
+/// already exists for this account; [`StartImportError::Db`] for any other
+/// failure.
 pub async fn start_import(
     conn: &mut SqliteConnection,
     args: &StartImportArgs<'_>,
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
-    let started_at = Utc::now().to_rfc3339();
+    if !args.stage.opens_a_run() {
+        return Err(StartImportError::OpeningStage { stage: args.stage });
+    }
+    let started_at = now.to_rfc3339();
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
         INSERT INTO imports (
@@ -632,10 +655,12 @@ pub async fn set_import_stage(
     let mut tx = begin_write(conn).await?;
     let run = require_running_import(&mut tx, account_id, import_id).await?;
     // A running run always has a stage: `start_import` records one and only
-    // the writes that finish a run clear it.
-    if let Some(from) = run.stage
-        && !from.may_move_to(stage)
-    {
+    // the writes that finish a run clear it. A running run without one is a
+    // row the server did not write, and its move cannot be checked.
+    let from = run.stage.ok_or_else(|| {
+        sqlx::Error::Decode(format!("running import {import_id} has no imports.stage").into())
+    })?;
+    if !from.may_move_to(stage) {
         return Err(ImportLookupError::StageMove {
             import_id,
             from,
@@ -676,10 +701,12 @@ async fn not_running(
 
 /// Close a running Import Run the user gave up on.
 ///
-/// Records `cancelled` with `issues`, the Import Errors the run recorded
-/// before it was given up, and its `notes`, and clears `stage`, which frees the account's
-/// single active slot. Nothing reclaims a run on a timer — a run
-/// is broken by an explicit discard or not at all.
+/// Records `cancelled` at the instant `now` with `issues`, the Import Errors
+/// the run recorded before it was given up, and its `notes`, and clears
+/// `stage`, which frees the account's single active slot. Nothing reclaims a
+/// run on a timer — a run is broken by an explicit discard or not at all.
+/// The caller passes the instant, so a test names it rather than reading
+/// the clock.
 ///
 /// # Errors
 ///
@@ -692,6 +719,7 @@ pub async fn discard_import(
     import_id: i64,
     issues: &[ImportIssueInput],
     notes: &[ImportNoteRow],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), ImportLookupError> {
     // The update and the inserts are one write transaction, so a discarded
     // run never lands without the issues and notes it was discarded with.
@@ -703,7 +731,7 @@ pub async fn discard_import(
          SET status = 'cancelled', stage = NULL, finished_at = $1
          WHERE id = $2 AND account_id = $3 AND status = 'running'",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .bind(import_id)
     .bind(account_id)
     .execute(&mut *tx)
@@ -712,15 +740,15 @@ pub async fn discard_import(
         drop(tx);
         return Err(not_running(conn, account_id, import_id).await);
     }
-    insert_issues(&mut tx, import_id, issues).await?;
-    insert_notes(&mut tx, import_id, notes).await?;
+    insert_issues(&mut tx, import_id, issues, now).await?;
+    insert_notes(&mut tx, import_id, notes, now).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// Discard the account's running Import Run, whichever it is, and return the row
-/// as it was before the discard; `None` when the account has no live
-/// run.
+/// Discard the account's running Import Run, whichever it is, at the instant
+/// `now`, and return the row as it was before the discard; `None` when the
+/// account has no live run.
 ///
 /// This is the way out for a command-line operator: a killed
 /// `message-crate-server import` leaves its run open, and the
@@ -734,6 +762,7 @@ pub async fn discard_import(
 pub async fn discard_running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
     let row = sqlx::query(&format!(
         "SELECT {IMPORT_COLUMNS}
@@ -747,7 +776,7 @@ pub async fn discard_running_import(
         return Ok(None);
     };
     let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[], &[])
+    discard_import(conn, account_id, running.id, &[], &[], now)
         .await
         .map_err(|err| anyhow::anyhow!(err))?;
     Ok(Some(running))
@@ -849,18 +878,19 @@ pub(crate) async fn complete_import(
             message: format!("import {import_id} finished while it was being completed"),
         });
     }
-    insert_issues(&mut tx, import_id, &args.issues).await?;
-    insert_notes(&mut tx, import_id, &args.notes).await?;
+    insert_issues(&mut tx, import_id, &args.issues, now).await?;
+    insert_notes(&mut tx, import_id, &args.notes, now).await?;
     tx.commit().await?;
 
     get_owned_import(&mut *conn, account_id, import_id).await
 }
 
-/// Append issue rows for an import.
+/// Append issue rows for an import, each recorded at the instant `now`.
 async fn insert_issues(
     conn: &mut SqliteConnection,
     import_id: i64,
     issues: &[ImportIssueInput],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), sqlx::Error> {
     for issue in issues {
         sqlx::query(
@@ -875,18 +905,19 @@ async fn insert_issues(
         .bind(issue.stage.as_str())
         .bind(&issue.item)
         .bind(&issue.reason)
-        .bind(Utc::now().to_rfc3339())
+        .bind(now.to_rfc3339())
         .execute(&mut *conn)
         .await?;
     }
     Ok(())
 }
 
-/// Append note rows for an import.
+/// Append note rows for an import, each recorded at the instant `now`.
 async fn insert_notes(
     conn: &mut SqliteConnection,
     import_id: i64,
     notes: &[ImportNoteRow],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), sqlx::Error> {
     for note in notes {
         sqlx::query(
@@ -899,7 +930,7 @@ async fn insert_notes(
         .bind(note.stage.as_str())
         .bind(&note.item)
         .bind(&note.text)
-        .bind(Utc::now().to_rfc3339())
+        .bind(now.to_rfc3339())
         .execute(&mut *conn)
         .await?;
     }

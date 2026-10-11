@@ -34,6 +34,7 @@ async fn page(
         None,
         crate::search::tests::clock(),
         &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
     )
     .await?;
     export_messages(
@@ -58,6 +59,7 @@ async fn counts_of(conn: &mut SqliteConnection, scope: &ExportScope) -> ExportCo
         None,
         crate::search::tests::clock(),
         &crate::db::audit_trail::CredentialUsed::Session(None),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

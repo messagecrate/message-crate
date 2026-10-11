@@ -1,7 +1,12 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # The line above makes BuildKit parse this file with the current Dockerfile
 # frontend rather than the one bundled with the engine, because the frontend
 # bundled with Docker Engine 24 and older refuses HEALTHCHECK --start-interval.
+# BuildKit pulls that frontend as an image and runs it at build time, so it is
+# pinned by tag and digest like the base images below, and
+# scripts/check-docker-context.sh fails it without a digest. Dependabot reads
+# only FROM lines, so this digest is moved by hand: take the new one from
+#   docker buildx imagetools inspect docker/dockerfile:1
 #
 # Multi-stage release image built from the current checkout.
 # Usage (from the repository root):
@@ -16,7 +21,9 @@
 # the release job does, they report the Product Version alone.
 #
 # Each FROM names its base image by tag and digest. The tag is for the
-# reader, and scripts/check-docker-context.sh reads the Rust minor from it.
+# reader, and scripts/check-docker-context.sh reads the Rust minor and the
+# frontend stage's Node.js major from it. That major must be the one in
+# .nvmrc; the script says why.
 # The digest fixes the image, so two builds of one commit start from the
 # same bases. Dependabot's docker entry in .github/dependabot.yml moves the
 # digests by pull request, and scripts/check-docker-context.sh fails a FROM
@@ -25,7 +32,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Vite SPA frontend
 # -----------------------------------------------------------------------------
-FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS frontend-builder
+FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS frontend-builder
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./

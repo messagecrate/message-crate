@@ -5,7 +5,6 @@ use go_sms_mms::ParsedPdu;
 use message_crate_core::digest_prefix;
 use message_ir::PendingAttachment;
 use message_staging::AttachmentSpool;
-use sha2::{Digest, Sha256};
 
 /// Queue PDU attachment parts as metadata, each with its payload's size
 /// whether or not the run copies it. With a `spool`, each payload is
@@ -25,7 +24,7 @@ pub(super) fn queue_pdu_attachments(
     for (idx, att) in parsed.attachments.iter().enumerate() {
         let digest_hex = match spool {
             Some(spool) if !att.data.is_empty() => spool.put(&att.data)?,
-            _ => hex::encode(Sha256::digest(&att.data)),
+            _ => file_io::sha256_hex(&att.data),
         };
         let ext = media::ext_for_mime(&att.content_type).unwrap_or(".bin");
         let name = format!(

@@ -3,6 +3,7 @@ import type {
   ImportNote,
   ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
+import { ApiError } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
 import type { UploadFinishedReport } from "../../../lib/tauri";
 import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
@@ -20,7 +21,7 @@ import { recordError } from "./desktopJob";
 import { discardRunDirectory } from "./runDirectory";
 import { recordWritesSettled, saveCarriedRecord } from "./runRecordWrites";
 import { currentPart } from "./scratch";
-import { failActiveStep, setRowByLabel, updateSteps } from "./screen";
+import { failActiveStep, movePhase, setRowByLabel, updateSteps } from "./screen";
 import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serverCalls";
 
 /**
@@ -172,7 +173,7 @@ export async function finishImport(
   }
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
-  ctx.store.set({ summaryView: finalSummary, phase: "done", running: false, runDir });
+  movePhase(ctx, "finish", { summaryView: finalSummary, running: false, runDir });
 }
 
 /**
@@ -201,6 +202,68 @@ export async function stopStageNotRecorded(
 }
 
 /**
+ * How a `discardRun` went: the run is closed on the server, the server still
+ * holds it running (with the server's message, or why the close never
+ * reached it), or the server refused the session the close was sent with.
+ */
+export type DiscardOutcome =
+  | { kind: "discarded" }
+  | { kind: "not_closed"; message: string }
+  | { kind: "session_ended" };
+
+/**
+ * True when the server's answer to a discard says it holds no running run
+ * by that id for the account: `404 Not Found` (`not-found`), or
+ * `409 Conflict` (`state-conflict`), which this route gives only for a run
+ * that is no longer running. Another window, or a close whose answer was
+ * lost, may have closed it. Read by problem type, so a 404 from something
+ * in front of the server, which never reached it, is not taken for one.
+ */
+function runAlreadyClosed(e: unknown): boolean {
+  return e instanceof ApiError && (e.type === "not-found" || e.type === "state-conflict");
+}
+
+/**
+ * True when a call failed without the server saying why: the request never
+ * left, the connection dropped, its time limit ended it, something in front
+ * of the server answered instead, such as a proxy's `504 Gateway Timeout`,
+ * or the server failed with a `500 Internal Server Error` (`about:blank`).
+ * Every other failure the server answers carries a problem type. In each of
+ * these the server may still have done what the call asked.
+ */
+function answerLost(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.type === null;
+}
+
+/**
+ * How a discard of `runId` that failed with `e` went: `discarded` when the
+ * run is closed all the same. A session the server refused, to the discard
+ * or to the read below, is `session_ended`. A server that says it holds no
+ * such running run (`runAlreadyClosed`) has closed it. A discard whose answer
+ * was lost (`answerLost`) may have been committed although no answer from
+ * the server arrived (#2807), so the account's running run is read again,
+ * and the run is closed when it is no longer that one. A failed read, or any
+ * other refusal, leaves it running: `not_closed`, with the discard's message.
+ */
+async function outcomeOfFailedDiscard(
+  ctx: RunContext,
+  runId: number,
+  e: unknown,
+): Promise<DiscardOutcome> {
+  const discarded: DiscardOutcome = { kind: "discarded" };
+  if (e instanceof SessionRefusedError) return { kind: "session_ended" };
+  if (runAlreadyClosed(e)) return discarded;
+  const notClosed: DiscardOutcome = { kind: "not_closed", message: errorText(e) };
+  if (!answerLost(e)) return notClosed;
+  try {
+    const running = await endSessionIfRefused(ctx, () => ctx.server.getActiveImportRun());
+    return running?.id === runId ? notClosed : discarded;
+  } catch (readError: unknown) {
+    return readError instanceof SessionRefusedError ? { kind: "session_ended" } : notClosed;
+  }
+}
+
+/**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
@@ -208,18 +271,23 @@ export async function stopStageNotRecorded(
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
- * delete then runs whatever the close's outcome, but one: a session the
- * server refused to the close. The run stays open for the account's next
- * login to offer again, so its directory stays with it. Otherwise a live run
- * with no directory blocks the next import, and a directory with no run is
- * litter nothing will ever clean up. `runDir` is null for a run whose
- * directory is not on this device. Never throws.
+ * directory goes only once the run is closed on the server (#2669): the
+ * close went through, the server says the run is no longer running
+ * (`runAlreadyClosed`), or a close whose answer was lost is followed by a
+ * read that finds the run no longer running (`outcomeOfFailedDiscard`). Any
+ * other refusal, or a close that never reached the server, leaves the run
+ * open there, holding the account's import slot, so
+ * its directory stays with it for the next visit to Import to offer again,
+ * and the outcome carries the message for the caller to show. A session
+ * the server refused to the close is no fault of the run: the run stays for
+ * the account's next login, with its directory and no message. `runDir` is
+ * null for a run whose directory is not on this device. Never throws.
  */
 export async function discardRun(
   ctx: RunContext,
   runId: number | null,
   runDir: string | null,
-): Promise<void> {
+): Promise<DiscardOutcome> {
   let issues: ImportIssue[] = [];
   let notes: ImportNote[] = [];
   if (runDir != null) {
@@ -240,8 +308,10 @@ export async function discardRun(
         ctx.server.discardImportRun(runId, issueRequests(issues), notes),
       );
     } catch (e: unknown) {
-      if (e instanceof SessionRefusedError) return;
+      const outcome = await outcomeOfFailedDiscard(ctx, runId, e);
+      if (outcome.kind !== "discarded") return outcome;
     }
   }
   if (runDir != null) await discardRunDirectory(ctx, runDir);
+  return { kind: "discarded" };
 }

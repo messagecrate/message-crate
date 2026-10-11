@@ -258,24 +258,9 @@ mod faults {
             let logged = Arc::clone(&logged);
             message_crate_core::LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
         };
-        // Retried while another test thread's fork still holds the script
-        // open for writing (`ETXTBSY`), as `spawn_fake` does.
-        let mut helper = (0..50)
-            .find_map(|_| {
-                match crate::Helper::spawn_at(
-                    &path,
-                    &identities_request(),
-                    log.clone(),
-                    ProgressSink::none(),
-                ) {
-                    Ok(helper) => Some(helper),
-                    Err(_) => {
-                        std::thread::sleep(std::time::Duration::from_millis(20));
-                        None
-                    }
-                }
-            })
-            .expect("start the fake helper");
+        let mut helper =
+            crate::Helper::spawn_at(&path, &identities_request(), log, ProgressSink::none())
+                .expect("start the fake helper");
 
         assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
         let err = helper

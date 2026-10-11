@@ -7,21 +7,22 @@ import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { createRunCancel } from "../../../lib/runCancel";
 import { CLEARED_RUN, initialImportRunState } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
-import type { ImportRunDeps, RunContext } from "./context";
+import type { ImportRunDeps, OpenRun, RunContext } from "./context";
 import { summarizeStagingWithProgress } from "./desktopJob";
-import { discardRun } from "./finish";
+import { type DiscardOutcome, discardRun } from "./finish";
 import { mediaToolsMissingFor, runMediaStage } from "./media";
 import { dismissRunDirDeleteFailure } from "./runDirectory";
 import { beginRun, freshScratch, loadCarriedRecord } from "./scratch";
 import {
   initialSteps,
+  movePhase,
   resumeSteps,
   returnToForm,
   returnToFormWithError,
   waitAtReview,
 } from "./screen";
 import { accountLeft, moveStageAtReview } from "./serverCalls";
-import { type ResumeUpload, type ResumeWrite, runImport } from "./staging";
+import { type Resume, runImport } from "./staging";
 import { adoptRecordedMode, parseStoredStagingSummary, withRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
@@ -98,7 +99,8 @@ export function createImportRunService(deps: ImportRunDeps) {
   }
 
   /**
-   * Start an import. For a fresh iMessage start this first reads which
+   * Start an import, or resume an existing Import Run at the stage `resume`
+   * names. For a fresh iMessage start this first reads which
    * addresses the backup's device sent from and compares them to the
    * profile; when nothing matches, it parks the form and stops at
    * `identity_stop`, before any run exists, so Cancel has nothing to clean
@@ -108,8 +110,7 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startImport(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: ResumeUpload,
-    resumeWrite?: ResumeWrite,
+    resume?: Resume,
   ): Promise<void> {
     if (!ctx.desktop.isTauri()) return;
     await takeRunFor(account.accountId);
@@ -119,7 +120,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     const started = ctx.scratch;
     await asWork(async () => {
       try {
-        await startRun(account, form, resume, resumeWrite);
+        await startRun(account, form, resume);
       } finally {
         started.startImport = false;
       }
@@ -130,12 +131,12 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startRun(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: ResumeUpload,
-    resumeWrite?: ResumeWrite,
+    resume?: Resume,
   ): Promise<void> {
     let identities: string[] | null = null;
-    const identityRead =
-      resume || resumeWrite ? null : importSourceFor(form.source).appleIdentityRead(form.source);
+    const identityRead = resume
+      ? null
+      : importSourceFor(form.source).appleIdentityRead(form.source);
     if (identityRead) {
       // The probe reads the backup (and, for an encrypted one, decrypts
       // it) before any run exists, which can take seconds: mark the run
@@ -156,16 +157,18 @@ export function createImportRunService(deps: ImportRunDeps) {
         if (accountLeft(ctx)) return;
         if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
           ctx.scratch.pendingIdentityForm = form;
-          store.set({ phase: "identity_stop" });
+          movePhase(ctx, "identity_stop");
           return;
         }
       } finally {
         store.set({ running: false });
       }
     } else {
-      store.set({ sourceIdentities: resumeWrite ? (resumeWrite.identities ?? null) : null });
+      store.set({
+        sourceIdentities: resume?.at === "staging" ? (resume.run.identities ?? null) : null,
+      });
     }
-    await runImport(ctx, account.token, form, identities, resume, resumeWrite);
+    await runImport(ctx, account.token, form, identities, resume);
   }
 
   /** Continue past the identity stop with the parked form. */
@@ -193,15 +196,16 @@ export function createImportRunService(deps: ImportRunDeps) {
     const {
       phase,
       importRunId: runId,
-      runDir: outputDir,
+      runDir,
       stagingSummary,
       mediaSummary,
       reviewError,
     } = store.get();
     // What the person is approving: the directory as Media left it at the
     // Media Review, as Staging left it at the Staging Review.
-    const approvedSummary = phase === "media_review" ? mediaSummary : stagingSummary;
-    if (!form || runId == null || outputDir == null || approvedSummary == null) return;
+    const approved = phase === "media_review" ? mediaSummary : stagingSummary;
+    if (!form || runId == null || runDir == null || approved == null) return;
+    const run: OpenRun = { runId, runDir, approved };
 
     ctx.scratch.reviewAction = true;
     ctx.scratch.runCancel = createRunCancel(ctx.desktop.invokeCancel);
@@ -218,9 +222,9 @@ export function createImportRunService(deps: ImportRunDeps) {
           if (recorded !== "recorded") return;
         }
         if (phase === "staging_review" && mediaJobVerb(form.attachmentMedia) !== null) {
-          await runMediaStage(ctx, form, runId, outputDir, approvedSummary);
+          await runMediaStage(ctx, form, run);
         } else {
-          await runUpload(ctx, account.token, runId, outputDir, approvedSummary);
+          await runUpload(ctx, account.token, run);
         }
       } finally {
         approving.reviewAction = false;
@@ -278,21 +282,24 @@ export function createImportRunService(deps: ImportRunDeps) {
     }
     if (!importRun.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
 
-    const runId = importRun.id;
-    const outputDir = importRun.run_dir;
-    const approved = parseStoredStagingSummary(importRun.summary);
+    const run: OpenRun = {
+      runId: importRun.id,
+      runDir: importRun.run_dir,
+      approved: parseStoredStagingSummary(importRun.summary),
+    };
+    const { runId, runDir, approved } = run;
     // Staging has finished for every stage resumed here, so the mode comes
     // from the directory: through the plan approved at the Staging Review until
     // the summary below is recomputed from the directory itself.
     const known = withRecordedMode(resumedForm, approved);
 
     beginRun(ctx, known, importRun.stage === "media" ? "media" : "staging");
-    await loadCarriedRecord(ctx, outputDir);
+    await loadCarriedRecord(ctx, runDir);
     store.set({
       ...CLEARED_RUN,
       resumeError: null,
       form: known,
-      runDir: outputDir,
+      runDir,
       importRunId: runId,
       sourceIdentities: parseSourceIdentities(importRun.source_identities),
     });
@@ -303,14 +310,13 @@ export function createImportRunService(deps: ImportRunDeps) {
       partiallyRan: boolean,
     ): Promise<void> {
       const mediaDone = review === "media_review";
-      store.set({
+      movePhase(ctx, "resume", {
         steps: resumeSteps(known.attachmentMedia, mediaDone),
         computingSummary: true,
-        phase: "running",
         running: true,
       });
       try {
-        const actual = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
+        const actual = await summarizeStagingWithProgress(ctx, { run_dir: runDir });
         const recorded = adoptRecordedMode(ctx, known, actual);
         store.set({ steps: resumeSteps(recorded.attachmentMedia, mediaDone) });
         if (review === "staging_review") {
@@ -356,16 +362,21 @@ export function createImportRunService(deps: ImportRunDeps) {
       return;
     }
     store.set({ steps: resumeSteps(known.attachmentMedia, false) });
-    await runMediaStage(ctx, known, runId, outputDir, approved);
+    await runMediaStage(ctx, known, run);
   }
 
-  /** Cancel the run at a Review: end it (`discardRun`) and go back to the form. */
+  /**
+   * Cancel the run at a Review: end it (`discardRun`) and go back to the form.
+   * A close the server refused leaves the run open there, so the form's
+   * resume check offers it again, with the server's message on `resumeError`.
+   */
   async function cancelRunAtReview(): Promise<void> {
     if (ctx.scratch.reviewAction) return;
     ctx.scratch.reviewAction = true;
     try {
-      const { importRunId: runId, runDir: outputDir } = store.get();
-      await discardRun(ctx, runId, outputDir);
+      const { importRunId: runId, runDir } = store.get();
+      const outcome = await discardRun(ctx, runId, runDir);
+      if (outcome.kind === "not_closed") store.set({ resumeError: outcome.message });
     } finally {
       ctx.scratch.reviewAction = false;
     }
@@ -393,7 +404,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     returnToForm: (account: RunAccount): void => {
       if (ownsRun(account)) returnToForm(ctx);
     },
-    discardRun: (runId: number | null, runDir: string | null): Promise<void> =>
+    discardRun: (runId: number | null, runDir: string | null): Promise<DiscardOutcome> =>
       discardRun(ctx, runId, runDir),
     dismissRunDirDeleteFailure: (): void => dismissRunDirDeleteFailure(ctx),
   };

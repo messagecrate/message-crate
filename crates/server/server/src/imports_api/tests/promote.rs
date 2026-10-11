@@ -29,6 +29,7 @@ async fn promote_stamps_messages_with_import_id() {
     let import_id = crate::db::imports::start_import(
         &mut conn,
         &crate::db::imports::StartImportArgs::new(TEST_ACCOUNT, "imessage", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -38,7 +39,7 @@ async fn promote_stamps_messages_with_import_id() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
@@ -136,7 +137,7 @@ async fn trunk_zero_phone_imports_digits_with_review_note() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
@@ -202,7 +203,7 @@ async fn source_from_jsonl_stamps_export_source_and_assets() {
         &[path],
         &ImportOptions {
             assets_dir: &assets_dir,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Replace,
             source: "",
             account_id: TEST_ACCOUNT,
@@ -256,7 +257,7 @@ async fn failed_replace_keeps_existing_messages() {
         &[first],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &export_dir,
+            asset_root: Some(&export_dir),
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -284,7 +285,7 @@ async fn failed_replace_keeps_existing_messages() {
         &[bad],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &export_dir,
+            asset_root: Some(&export_dir),
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -344,7 +345,7 @@ async fn failed_promote_keeps_the_trashed_contact_and_adds_no_contacts() {
     fs::create_dir_all(&export_dir).unwrap();
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: &export_dir,
+        asset_root: Some(&export_dir),
         mode: ImportMode::Append,
         source: "sms-backup-restore",
         account_id: TEST_ACCOUNT,

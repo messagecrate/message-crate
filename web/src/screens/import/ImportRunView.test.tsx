@@ -7,7 +7,9 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
+import { importForm } from "../../test/importForm";
 import { Providers } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
 import { type ImportStep, stepsFor } from "./importProgressState";
@@ -43,6 +45,18 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => desktop.isTauri,
 }));
 
+/** The desktop app, with every program found: only it can name a run's log. */
+function onDesktop() {
+  desktop.isTauri = true;
+  desktop.toolsStatus.mockResolvedValue({
+    toolsDir: "/home/sam/message-crate/tools",
+    checking: false,
+    ffmpeg: { state: "found", path: "/home/sam/message-crate/tools/ffmpeg" },
+    ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
+    wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
+  } satisfies ToolsStatus);
+}
+
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
   invokeImportRunLog: (runDir: string) => invokeImportRunLog(runDir),
@@ -65,31 +79,20 @@ vi.mock("react-router-dom", async (importOriginal) => ({
   useNavigate: () => navigateMock,
 }));
 
+/** The run this file shows: an iPhone backup whose attachments are converted. */
 function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues {
-  return {
-    source: "imessage-ios",
+  return importForm({
     backupPath: "/backups/iphone",
-    backupPassword: "",
     attachmentMedia: "convert",
     maxResolution: "720p",
     maxFps: "30",
     minSizeMb: "20",
-    ownerPhones: [],
-    ownerEmails: [],
-    obfuscate: false,
-    attachmentRoot: "",
-    appleContacts: "",
-    whatsappKey: "",
-    whatsappWa: "",
-    whatsappMedia: "",
-    whatsappDb: "",
-    isBusinessApp: false,
-    whatsappOwnerPhone: "",
-    timeZone: "America/New_York",
-    phoneCountry: "",
     ...overrides,
-  };
+  });
 }
+
+/** One gibibyte, for the attachment totals. */
+const GIB = 1024 * MIB;
 
 function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
   return {
@@ -98,9 +101,9 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     contactIdentifiers: [],
     ownerIdentities: [],
     attachments: 6118,
-    attachmentBytes: 9.4 * 1024 * 1024 * 1024,
+    attachmentBytes: 9.4 * GIB,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };
@@ -120,19 +123,17 @@ function finished(overrides: Partial<ImportSummaryView> = {}): ImportSummaryView
   };
 }
 
-const MB = 1024 * 1024;
-
 function file(
   name: string,
-  sizeMb: number,
+  sizeMib: number,
   verdict: AttachmentForecast["verdict"],
-  estimateMb = sizeMb,
+  estimateMib = sizeMib,
 ): AttachmentForecast {
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MB,
-    estimateBytes: estimateMb * MB,
+    sizeBytes: sizeMib * MIB,
+    estimateBytes: estimateMib * MIB,
     verdict,
   };
 }
@@ -281,6 +282,7 @@ describe("ImportRunView", () => {
   });
 
   it("offers no import log until Upload has started, then shows it in the Upload row", async () => {
+    onDesktop();
     const user = setupUser();
     const runDir = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ runDir });
@@ -302,6 +304,7 @@ describe("ImportRunView", () => {
   });
 
   it("keeps the import log once the run ends and its directory is gone", async () => {
+    onDesktop();
     const runDir = "/home/sam/message-crate/staging-iphone";
     const view = renderView({
       runDir,
@@ -324,6 +327,7 @@ describe("ImportRunView", () => {
   });
 
   it("keeps the import log of a run that stops with its directory still there", async () => {
+    onDesktop();
     // A paused run ends the screen's part with its directory kept.
     const staging = "/home/sam/message-crate/staging-iphone";
     const steps = stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" });
@@ -336,6 +340,14 @@ describe("ImportRunView", () => {
       within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
     ).toBeInTheDocument();
     expect(invokeImportRunLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for no import log in the browser, which has no desktop process to name it", () => {
+    renderView({
+      runDir: "/home/sam/message-crate/staging-iphone",
+      steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
+    });
+    expect(invokeImportRunLog).not.toHaveBeenCalled();
   });
 
   it("shows the options group only when Obfuscate is on", () => {
@@ -577,7 +589,7 @@ describe("ImportRunView", () => {
     desktop.toolsStatus.mockResolvedValue({
       toolsDir: "/home/sam/message-crate/tools",
       checking: false,
-      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      ffmpeg: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
       wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
     } satisfies ToolsStatus);
@@ -664,7 +676,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done" }),
       stagingSummary: staged(),
       mediaSummary: staged({
-        attachmentBytes: 4.1 * 1024 * 1024 * 1024,
+        attachmentBytes: 4.1 * GIB,
         forecasts: [file("huge-mv.mp4", 84, "probably_too_big")],
       }),
       mediaFailedCount: 2,

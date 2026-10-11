@@ -17,7 +17,7 @@ use std::thread::Scope;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{check_cancel, parallel_for_each};
+use message_crate_core::parallel_for_each;
 use message_ir::{ConversationDocument, ConversationHeader, IrAttachment, IrMessage};
 use message_ir_format::read_conversation_jsonl_with_lines;
 
@@ -400,7 +400,7 @@ fn build_import_chunks(
         MAX_IMPORT_BODY_BYTES,
     );
     for (i, msg) in doc.messages.iter().enumerate() {
-        check_cancel(&ctx.cfg.cancel)?;
+        ctx.session.check_stop()?;
         // Rewrite attachment fields to uploaded digests or missing placeholders.
         let (line, guid) = project::message_line(msg, &projections[i])?;
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
@@ -665,6 +665,9 @@ fn upload_claimed(
 
     // Work-stealing style: workers pull the next job index from a shared counter.
     let results = parallel_for_each(jobs, ctx.cfg.asset_upload_workers, &ctx.cfg.cancel, |job| {
+        // The pool checks only the caller's flag, so a refused session is
+        // checked here before each upload.
+        ctx.session.check_stop()?;
         upload_one_asset(ctx, job)
     });
 
@@ -709,7 +712,7 @@ fn claim_upload_jobs<'u>(
     let mut jobs = Vec::with_capacity(pending.len());
     let mut busy = Vec::new();
     for &digest in pending {
-        check_cancel(&ctx.cfg.cancel)?;
+        ctx.session.check_stop()?;
         match claims.claim(digest) {
             AssetClaim::Claimed => {}
             AssetClaim::OnServer => {
@@ -743,7 +746,7 @@ fn claim_upload_jobs<'u>(
 fn wait_for_claims(ctx: &PrepareContext<'_>, digests: &[&String]) -> Result<()> {
     let mut journal = ctx.lock_journal();
     while digests.iter().any(|digest| journal.asset_in_flight(digest)) {
-        check_cancel(&ctx.cfg.cancel)?;
+        ctx.session.check_stop()?;
         journal = ctx
             .claim_ended
             .wait_timeout(journal, CLAIM_WAIT_POLL)
@@ -954,7 +957,7 @@ impl PrepareQueue {
                     };
                     let outcome = match prepare_file(ctx, &job.path, &job.name) {
                         Ok(prepared) => PrepareOutcome::Prepared(prepared),
-                        Err(_) if check_cancel(&ctx.cfg.cancel).is_err() => PrepareOutcome::Stopped,
+                        Err(_) if ctx.session.check_stop().is_err() => PrepareOutcome::Stopped,
                         Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
                     };
                     let _ = result_tx.send(PrepareResult {
@@ -1052,7 +1055,6 @@ impl PrepareQueue {
 mod tests {
     use super::*;
     use crate::run::NO_MESSAGE_COUNT_LIMIT;
-    use sha2::{Digest, Sha256};
 
     fn resolver() -> DigestResolver {
         DigestResolver {
@@ -1085,7 +1087,7 @@ mod tests {
         let path = dir.path().join("pic.bin");
         std::fs::write(&path, b"hello").unwrap();
         let claimed = "a".repeat(64);
-        let expected_disk = hex::encode(Sha256::digest(b"hello"));
+        let expected_disk = file_io::sha256_hex(b"hello");
 
         let mut warnings = Vec::new();
         let trusted = resolver()

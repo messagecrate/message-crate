@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { createExternalStore, useExternalStore } from "./externalStore";
 
 /** The screens that run desktop jobs, by the name of what they run. */
 export type DesktopJobName = "Import Run" | "Export" | "Convert";
@@ -18,12 +18,7 @@ export type DesktopJobName = "Import Run" | "Export" | "Convert";
  * releases only its own hold, so the run's hold covers the gaps between its
  * jobs, when the desktop itself has nothing running to refuse a Convert with.
  */
-let holds: { name: DesktopJobName }[] = [];
-const listeners = new Set<() => void>();
-
-function notify(): void {
-  for (const listener of listeners) listener();
-}
+const holds = createExternalStore<readonly { name: DesktopJobName }[]>([]);
 
 /**
  * Mark `name` as the desktop job that is running. Returns the function that
@@ -31,29 +26,26 @@ function notify(): void {
  */
 export function holdDesktopJob(name: DesktopJobName): () => void {
   const hold = { name };
-  holds = [...holds, hold];
-  notify();
+  holds.set([...holds.get(), hold]);
   return () => {
-    if (!holds.includes(hold)) return;
-    holds = holds.filter((held) => held !== hold);
-    notify();
+    if (!holds.get().includes(hold)) return;
+    holds.set(holds.get().filter((held) => held !== hold));
   };
+}
+
+/** The first hold still held: the job that took the desktop first. */
+function firstHeld(held: readonly { name: DesktopJobName }[]): DesktopJobName | null {
+  return held[0]?.name ?? null;
 }
 
 /** The desktop job that is running, or null. */
 export function currentDesktopJob(): DesktopJobName | null {
-  // The first hold still held: the job that took the desktop first.
-  return holds[0]?.name ?? null;
-}
-
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+  return firstHeld(holds.get());
 }
 
 /** The desktop job that is running, or null, kept up to date. */
 export function useDesktopJob(): DesktopJobName | null {
-  return useSyncExternalStore(subscribe, currentDesktopJob, currentDesktopJob);
+  return useExternalStore(holds, firstHeld);
 }
 
 const RUNNING: Record<DesktopJobName, string> = {

@@ -20,6 +20,7 @@ use rand::RngExt;
 use rand::seq::{IndexedRandom, SliceRandom};
 
 use crate::assets::{JPG_PHOTOS, OTHER_ATTACHMENTS};
+use crate::bundle::{IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE};
 use crate::config::SeedConfig;
 use crate::corpus::Corpus;
 use crate::personas::{
@@ -28,10 +29,6 @@ use crate::personas::{
 };
 use crate::phones;
 use crate::stop_if_cancelled;
-
-const IMESSAGE_SOURCE: &str = "imessage";
-const SBR_SOURCE: &str = "sms-backup-restore";
-const WHATSAPP_SOURCE: &str = "whatsapp";
 
 #[derive(Clone, Copy)]
 enum SourceFlavor {

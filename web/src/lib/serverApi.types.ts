@@ -1933,9 +1933,15 @@ export interface components {
          */
         AuditEntry: {
             /**
+             * @description Whether the account the entry is about has since been deleted. `false`
+             *     for an entry about no account, and for a refused login as a username
+             *     no account holds.
+             */
+            account_deleted: boolean;
+            /**
              * Format: int64
              * @description The account the entry is about, or `null` when it is about none, or
-             *     the account has been deleted.
+             *     the account has been deleted: `account_deleted` tells the two apart.
              */
             account_id: number | null;
             /** @description What happened. */
@@ -2573,7 +2579,11 @@ export interface components {
              *     Over 65,536 bytes of JSON is refused with `422 Unprocessable Entity`.
              */
             source_identities?: unknown;
-            /** @description Stage the run opens at. Defaults to `parse`. */
+            /**
+             * @description Stage the run opens at, `parse` when the request leaves it out. A run
+             *     opens only at `parse`; any other stage is refused with
+             *     `422 Unprocessable Entity`.
+             */
             stage?: components["schemas"]["ImportStage"] | null;
             /**
              * @description Name of the program that runs the import, such as
@@ -3965,9 +3975,15 @@ export interface components {
             /** @description The rows on this page. */
             items: {
                 /**
+                 * @description Whether the account the entry is about has since been deleted. `false`
+                 *     for an entry about no account, and for a refused login as a username
+                 *     no account holds.
+                 */
+                account_deleted: boolean;
+                /**
                  * Format: int64
                  * @description The account the entry is about, or `null` when it is about none, or
-                 *     the account has been deleted.
+                 *     the account has been deleted: `account_deleted` tells the two apart.
                  */
                 account_id: number | null;
                 /** @description What happened. */

@@ -32,7 +32,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
         &[first],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -68,7 +68,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
         &[second],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -303,7 +303,7 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
     };
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -442,7 +442,7 @@ async fn one_import_of_two_backups_keeps_the_attachments_and_reactions_of_both()
     // files from one directory, so only a claimed digest tells them apart.
     fs::create_dir_all(tmp.path().join("attachments")).unwrap();
     fs::write(tmp.path().join("attachments/blob.bin"), b"late-bytes").unwrap();
-    let digest = assets_api::sha256_hex(b"late-bytes");
+    let digest = file_io::sha256_hex(b"late-bytes");
     let blob = message_line("g-blob", "blob")
         .sender("+15555550123")
         .attachment(attachment_with("blob.bin", None))
@@ -520,7 +520,7 @@ async fn append_existing_guid_adds_missing_children() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -607,7 +607,7 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -647,7 +647,7 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
     let (sha256, assets_path, missing_reason) = &rows[0];
     assert_eq!(
         sha256.as_deref(),
-        Some(assets_api::sha256_hex(b"found-bytes").as_str())
+        Some(file_io::sha256_hex(b"found-bytes").as_str())
     );
     assert!(assets_path.is_some());
     assert_eq!(missing_reason, &None);

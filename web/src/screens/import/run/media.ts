@@ -4,13 +4,12 @@ import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import {
   ffmpegMissing,
   type MediaToolName,
-  type StagingSummary,
   type TranscodeFinishedReport,
 } from "../../../lib/tauri";
 import type { AttachmentMediaMode } from "../../../lib/types";
 import { MEDIA_LABEL } from "../importProgressState";
 import { mediaJobVerb } from "../reviewForecast";
-import type { RunContext } from "./context";
+import type { OpenRun, RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { saveCarriedRecord } from "./runRecordWrites";
@@ -18,6 +17,7 @@ import {
   failActiveStep,
   mediaDoneDetail,
   mediaVerb,
+  movePhase,
   returnToFormWithError,
   setRowByLabel,
   waitAtReview,
@@ -47,21 +47,15 @@ export async function mediaToolsMissingFor(
  * failed stage ends the import as failed and deletes its directory, never a
  * silent fall-through to Upload. A failed recompute after a stage that
  * succeeded returns to the form and keeps the directory.
- *
- * `approvedSummary` is undefined on a resume whose stored plan failed to
- * parse (`parseStoredStagingSummary`): `moveStage` tolerates that absence,
- * so the stage still runs rather than blocking
- * the resume over a plan that can no longer be read.
  */
 export async function runMediaStage(
   ctx: RunContext,
   form: ImportJobFormValues,
-  runId: number,
-  outputDir: string,
-  approvedSummary?: StagingSummary,
+  run: OpenRun,
 ): Promise<void> {
   const { store } = ctx;
-  store.set({ running: true, phase: "running" });
+  const { runId, runDir, approved } = run;
+  movePhase(ctx, "media_start", { running: true });
   ctx.scratch.activeStage = "media";
   setRowByLabel(ctx, MEDIA_LABEL, {
     status: "active",
@@ -72,7 +66,7 @@ export async function runMediaStage(
   // crash mid-stage must not leave `summary_json` null with no baseline for
   // a later resume to diff against.
   try {
-    await moveStage(ctx, runId, "media", approvedSummary);
+    await moveStage(ctx, runId, "media", approved);
   } catch (e: unknown) {
     await stopStageNotRecorded(ctx, e, runId, "media");
     return;
@@ -83,9 +77,7 @@ export async function runMediaStage(
   let threw = false;
   let cancelled = false;
   try {
-    const result = await runJob(ctx, () =>
-      ctx.desktop.invokeTranscodeStaging({ run_dir: outputDir }),
-    );
+    const result = await runJob(ctx, () => ctx.desktop.invokeTranscodeStaging({ run_dir: runDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
     const msg = errorText(e);
@@ -125,14 +117,14 @@ export async function runMediaStage(
   });
 
   store.set({ computingSummary: true });
-  if ((await moveStageAtReview(ctx, runId, "media_review", approvedSummary)) === "refused") {
+  if ((await moveStageAtReview(ctx, runId, "media_review", approved)) === "refused") {
     return;
   }
   // Media's times are only in memory until now, and the run may be resumed
   // from this Review after the app closes.
   await saveCarriedRecord(ctx);
   try {
-    const actual = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
+    const actual = await summarizeStagingWithProgress(ctx, { run_dir: runDir });
     store.set({ mediaSummary: actual, mediaFailedCount: transcodeReport?.failed ?? null });
     waitAtReview(ctx, "media_review");
   } catch (e: unknown) {

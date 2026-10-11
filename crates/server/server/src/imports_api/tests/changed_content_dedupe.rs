@@ -18,30 +18,7 @@ async fn import(state: &crate::server::AppState, token: &str, source: &str, line
     for line in lines {
         body.push_str(&format!("{}\n", line.clone().sender(CHAT).at(SECOND)));
     }
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": source, "mode": "append" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
-        body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
+    import_one_batch(state, token, source, "append", body).await;
 }
 
 /// The message `guid` edited once, from "see you at six" to `text`.
@@ -236,7 +213,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let before = key(state.clone()).await;
 
     let bytes = b"photo-bytes".to_vec();
-    let sha = assets_api::sha256_hex(&bytes);
+    let sha = file_io::sha256_hex(&bytes);
     let (status, text) = crate::test_support::put_raw(
         &state,
         &format!("/v1/assets/{sha}"),

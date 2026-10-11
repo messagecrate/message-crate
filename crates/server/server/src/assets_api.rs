@@ -7,12 +7,12 @@
 //! and the multipart upload routes also live here; multipart staging itself is in `asset_uploads`.
 
 use std::fmt;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufReader, Read, Write};
+use std::fs;
+use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
@@ -130,7 +130,7 @@ impl Sha256 {
 
     /// The fingerprint of `data`.
     pub fn of_bytes(data: &[u8]) -> Self {
-        Self(sha256_hex(data))
+        Self(file_io::sha256_hex(data))
     }
 
     /// The fingerprint as 64 lower-case hex digits.
@@ -157,18 +157,6 @@ impl<'de> Deserialize<'de> for Sha256 {
         let value = String::deserialize(deserializer)?;
         Self::parse(&value).map_err(serde::de::Error::custom)
     }
-}
-
-/// Encode bytes as lowercase hex.
-pub fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// SHA-256 fingerprint of `data` as 64 lowercase hex digits.
-///
-/// SHA-256 is a short fingerprint of the file contents.
-pub fn sha256_hex(data: &[u8]) -> String {
-    hex_encode(&Sha256Hasher::digest(data))
 }
 
 /// Relative path under the assets root: first two hex digits as a directory, then
@@ -217,7 +205,7 @@ pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAss
 /// received. Hashing the whole file first would read every download twice.
 pub fn lookup_by_sha256_unverified(assets_root: &Path, sha256: &Sha256) -> Option<StoredAsset> {
     let assets_path = shard_rel_path(sha256, "");
-    if !is_regular_file(&assets_root.join(&assets_path)) {
+    if file_io::ensure_regular_file(&assets_root.join(&assets_path)).is_err() {
         return None;
     }
     let mime_type = read_mime_metadata(assets_root, sha256);
@@ -272,7 +260,7 @@ fn store_verified_inner(
     copy_ready: impl FnOnce(),
     selection_ready: impl FnOnce(),
 ) -> Result<(StoredAsset, bool), AssetError> {
-    ensure_regular_file(source)?;
+    file_io::ensure_regular_file(source)?;
     // The export's claim, else a guess from the source file's name. The stored
     // file has no extension, so it can say nothing about its own type.
     let mime_type = resolve_mime(export_mime, source);
@@ -411,8 +399,8 @@ fn copy_to_verified_temp(
 ) -> Result<tempfile::NamedTempFile, AssetError> {
     let mut temporary = crate::asset_store::shard_temp_file(shard)
         .with_context(|| format!("create temporary asset in {}", shard.display()))?;
-    let mut src =
-        open_nofollow_read(source).with_context(|| format!("open source {}", source.display()))?;
+    let mut src = file_io::open_nofollow(source)
+        .with_context(|| format!("open source {}", source.display()))?;
     let mut hasher = Sha256Hasher::new();
     let mut buf = vec![0u8; COPY_BUFFER_BYTES];
     loop {
@@ -431,7 +419,7 @@ fn copy_to_verified_temp(
         .flush()
         .and_then(|()| temporary.as_file().sync_all())
         .with_context(|| format!("flush temporary asset for {}", source.display()))?;
-    let actual = hex_encode(&hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
     if actual != claimed_sha256.as_str() {
         return Err(AssetError::Mismatch {
             claimed: claimed_sha256.clone(),
@@ -453,7 +441,7 @@ pub fn hash_and_store(
     export_mime: Option<&str>,
     stats: &mut AssetStats,
 ) -> Result<Option<StoredAsset>> {
-    if !is_regular_file(source) {
+    if file_io::ensure_regular_file(source).is_err() {
         stats.missing += 1;
         return Ok(None);
     }
@@ -478,24 +466,16 @@ pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
 
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.
 ///
+/// `file_io::file_sha256_nofollow`, so a symlink at `path` is refused rather
+/// than followed; tests also see each path it hashes through [`hashed`].
+///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or read.
 pub(crate) fn hash_file(path: &Path) -> Result<String> {
     #[cfg(test)]
     hashed::record(path);
-    let file = open_nofollow_read(path)?;
-    let mut reader = BufReader::new(file);
-    let mut hasher = Sha256Hasher::new();
-    let mut buf = [0u8; COPY_BUFFER_BYTES];
-    loop {
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hex_encode(&hasher.finalize()))
+    file_io::file_sha256_nofollow(path)
 }
 
 /// Every path [`hash_file`] was asked to read, so a test can show that a
@@ -530,7 +510,7 @@ pub(crate) mod hashed {
 
 /// Read the MIME sidecar for `sha`, if present and non-empty.
 fn read_mime_metadata(assets_root: &Path, sha: &Sha256) -> Option<String> {
-    let file = open_nofollow_read(&sidecar_path(assets_root, sha)).ok()?;
+    let file = file_io::open_nofollow(&sidecar_path(assets_root, sha)).ok()?;
     let mut mime = String::new();
     file.take(1024).read_to_string(&mut mime).ok()?;
     let mime = mime.trim();
@@ -587,44 +567,6 @@ fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
 /// therefore need to be in the shared table.
 fn guess_mime(ext: Option<&str>) -> Option<String> {
     media::mime_for_ext(ext?).map(str::to_string)
-}
-
-/// True for a plain file; symlinks are never followed into the asset store.
-fn is_regular_file(path: &Path) -> bool {
-    match fs::symlink_metadata(path) {
-        Ok(meta) => meta.is_file() && !meta.file_type().is_symlink(),
-        Err(_) => false,
-    }
-}
-
-/// Fail unless `path` is a regular file, not a symlink.
-fn ensure_regular_file(path: &Path) -> Result<()> {
-    let meta = fs::symlink_metadata(path).with_context(|| format!("stat {}", path.display()))?;
-    if meta.file_type().is_symlink() {
-        bail!("refusing to follow symlink: {}", path.display());
-    }
-    if !meta.is_file() {
-        bail!("asset source is not a file: {}", path.display());
-    }
-    Ok(())
-}
-
-/// Open `path` for reading without following a symlink.
-fn open_nofollow_read(path: &Path) -> Result<File> {
-    ensure_regular_file(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-            .with_context(|| format!("open {}", path.display()))
-    }
-    #[cfg(not(unix))]
-    {
-        File::open(path).with_context(|| format!("open {}", path.display()))
-    }
 }
 
 /// Stored asset fingerprint and path.
@@ -899,14 +841,25 @@ async fn stream_version(
             },
         )
         .await?;
-        let Some((path, mime_type)) = file else {
-            return Err(ApiError::NotFound(format!(
+        let no_version = || {
+            ApiError::NotFound(format!(
                 "asset has no {} yet",
                 version.to_string().to_lowercase()
-            )));
+            ))
+        };
+        let Some((path, mime_type)) = file else {
+            return Err(no_version());
         };
         let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-        stream_file(&converted_dir.join(path), mime_type, headers, None).await
+        let Some(full) = crate::asset_store::join_stored(
+            &converted_dir,
+            &path,
+            account,
+            &format!("{version} of {sha256}"),
+        ) else {
+            return Err(no_version());
+        };
+        stream_file(&full, mime_type, headers, None).await
     }
     .await;
     reader.with_cache_control(answer)

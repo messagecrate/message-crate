@@ -125,6 +125,19 @@ fn a_gif_gets_a_thumbnail_and_no_preview_because_it_is_an_animation() {
     assert_eq!(plan(&declared, &opts, FRESH_SHOWN), want);
 }
 
+/// A file called a GIF whose bytes are not one, such as a PNG stored as
+/// `.gif`, is not shown as it is ([`media::browser_shows`]), so it gets a
+/// still Preview like any other image rather than opening in no version.
+#[test]
+fn a_gif_whose_bytes_are_not_a_gif_gets_a_preview() {
+    let opts = ProcessAssetsOptions::default();
+    let want = versions(Kind::Image, Need::Make, Need::Make);
+    assert_eq!(plan(&row("aa/photo.gif"), &opts, FRESH), want);
+    let mut declared = row(&format!("ab/{SHA}"));
+    declared.mime_type = Some("image/gif".to_string());
+    assert_eq!(plan(&declared, &opts, FRESH), want);
+}
+
 #[test]
 fn an_image_or_a_video_gets_a_thumbnail_and_audio_none() {
     let opts = ProcessAssetsOptions::default();
@@ -340,7 +353,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
 fn preview_file_hashes_the_preview_against_its_name() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = b"jpeg-bytes";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
     let rel = format!("{}/{sha}.jpg", &sha[..2]);
     let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
@@ -450,7 +463,7 @@ fn a_work_file_is_stored_content_addressed_and_then_removed() {
         .unwrap();
 
     let expected = VersionFile {
-        sha256: crate::assets_api::sha256_hex(b"jpeg-bytes"),
+        sha256: file_io::sha256_hex(b"jpeg-bytes"),
         assets_path: derived_rel_path(&crate::assets_api::Sha256::of_bytes(b"jpeg-bytes"), ".jpg"),
         mime_type: "image/jpeg".to_string(),
     };
@@ -773,7 +786,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
             .join(&rel);
         let bytes = fs::read(&preview).expect("the preview is under assets_converted/");
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
         assert_eq!(
             rel,
             derived_rel_path(&crate::assets_api::Sha256::parse(&sha).unwrap(), ".jpg")
@@ -855,7 +868,7 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
 
         let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
         let bytes = fs::read(&preview_after).unwrap();
-        assert_eq!(crate::assets_api::sha256_hex(&bytes), sha_after);
+        assert_eq!(file_io::sha256_hex(&bytes), sha_after);
         assert_eq!(
             (sha_after, preview_after),
             (sha, preview),
@@ -968,7 +981,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         )
         .unwrap();
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
     });
 }
 
@@ -1129,6 +1142,40 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         stats(2, 0, 0, 1, 1)
     );
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+}
+
+/// A missing original says nothing about its bytes, so its type decides
+/// whether it needs a Preview: a missing GIF or JPEG is not recorded as a
+/// Preview not made, which its type never needs (#2257).
+#[tokio::test]
+async fn a_missing_original_of_a_type_shown_as_is_wants_no_preview() {
+    for (mime, bytes) in [
+        ("image/gif", &b"GIF89a rest"[..]),
+        ("image/jpeg", &b"\xFF\xD8\xFF\xE0 rest"[..]),
+    ] {
+        let (opened, _dir) = open_db().await;
+        let mut conn = opened.conn().await.unwrap();
+        seed_account(&mut conn, ACCOUNT).await;
+        let message_id = seed_message(&mut conn, "imessage").await;
+        let attachment_id =
+            attach_stored_original(&opened, &mut conn, message_id, SHA, mime, bytes).await;
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::remove_file(&original).unwrap();
+
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, Some("the original file is missing".to_string())),
+            "{mime}"
+        );
+    }
 }
 
 /// Why each version of one attachment row was not made: Preview, then
@@ -1547,7 +1594,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let first =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let dropped = |scanned, dropped| ProcessAssetsStats {
         dropped,
@@ -1570,7 +1617,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
         message_id,
         &"b".repeat(64),
         "audio/mpeg",
-        b"y",
+        b"ID3 y",
     )
     .await;
     let second_preview = name_damaged_preview(&opened, &mut conn, second, &"d".repeat(64)).await;
@@ -1647,7 +1694,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let first =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"ID3 x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let second = attach_stored_original(
         &opened,
@@ -1655,7 +1702,7 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
         message_id,
         &"b".repeat(64),
         "audio/mpeg",
-        b"y",
+        b"ID3 y",
     )
     .await;
     let second_preview =

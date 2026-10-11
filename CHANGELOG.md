@@ -183,6 +183,31 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+
+- 2026-10-11: The way the Demo Account's generator and the server agree on
+  what a demo bundle holds was reworked inside, with nothing visible (#2265).
+
+- 2026-10-11: The way an Upload and an Export remember what they already
+  did for each server and account was reworked inside, with nothing visible
+  (#2253).
+
+- 2026-10-11: The way the Import screen moves between the form, a running
+  import and its reviews was reworked inside, with nothing visible (#2252).
+
+- 2026-10-11: The way the app keeps track of the logged-in account, the
+  running desktop job and the Import Run was reworked inside, with nothing
+  visible (#2250).
+
+- 2026-10-11: The way Message Crate fingerprints attachments, sessions and API
+  tokens was reworked inside, with nothing visible (#2227).
+
 - 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
   into the Tools Directory was reworked inside. The one change you could see:
   on the rare computer where the app cannot set up its downloads at all,
@@ -347,6 +372,33 @@ released versions carry their date on the heading.
 ### Fixes
 
 #### Accounts, Settings and screens
+
+- 2026-10-11: **Deleting an account names an Import Run's directory the
+  desktop app may not read.** When a person deletes their own account in
+  the desktop app, the app deletes the directories of the account's Import
+  Runs on this computer. A directory the system would not let Message Crate
+  read, such as one macOS protects until the app has Full Disk Access, was
+  skipped without a word and could stay on disk with the deleted account's
+  messages. It is now listed once the account is deleted, with what the
+  system said. It may be on this computer, and it can be deleted by hand
+  (#2651).
+
+- 2026-10-11: **Settings says why a downloaded tool found in the Tools
+  Directory could not be made to run.** When the desktop app finds ffmpeg,
+  ffprobe or wtsexporter already in its Tools Directory, it marks the file
+  as a program it can run. When the computer refused that, Settings said
+  only that the tool doesn't run there, and from the next start on it no
+  longer tried. It now says the tool could not be marked as a program that
+  runs, and what the computer refused, such as a permission error. The app
+  tries again each time it starts, so fixing the permission is enough
+  (#2255).
+
+- 2026-10-11: **No account is created after the owner closes registration.**
+  A stranger's registration that arrived just as the owner closed
+  registration could still create an account. Whether registration is open
+  is now decided at the moment the account is written. A Message Crate with
+  registration closed also turns a stranger away at once, without first
+  working on the password they sent (#2231, #2232).
 
 - 2026-10-11: **A new username can no longer hold letters from other
   scripts.** A username could hold letters from any script,
@@ -514,6 +566,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **A wtsexporter the app's account can't run no longer shows
+  as found.** The desktop app took a `wtsexporter` in its Tools Directory as
+  ready when the file had permission to run for any account, so a copy that
+  root owns and only root may run showed as found in Settings and on the
+  Import form, and the WhatsApp import failed only once it started the
+  program. Settings and the Import form now say `wtsexporter` isn't used
+  because it is not executable by this account, and how to fix that
+  (#2793).
+
 - 2026-10-11: **A downloaded program that does not unpack says so.** When
   ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
   Settings and a run waiting for it said the file could not be written to
@@ -591,6 +652,41 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **A path the desktop app may not read says what to check on
+  your operating system.** The Import form, and the list of Import Run
+  directories left after an account is deleted, told people on Windows and
+  Linux to give Message Crate Full Disk Access, which is a Mac setting. The
+  message now names Full Disk Access only on a Mac. On Windows it says to
+  check that your Windows user may read the path, on the Security tab of its
+  Properties. On Linux it says to check that your Linux user may read it
+  (#2650).
+
+- 2026-10-11: **Cancelling an import at a Review deletes its files when
+  the connection drops after Message Crate took the cancel.** The desktop
+  app kept the import's staged files as if the cancel had failed, but no
+  import was left to resume or discard, so the files stayed on disk with
+  nothing that would ever delete them. The app now asks Message Crate
+  whether the import is still running, and deletes the files when it is
+  not (#2807).
+
+- 2026-10-11: **An attachment's file name in an Upload never picks up a
+  file the server already holds.** An Upload sends each attachment's file
+  first and names it by its fingerprint. The server also looked up the file
+  name the message gave inside the account's own stored files, so a name
+  that matched a half-received file or one of the server's own notes beside
+  a stored file was saved as a new attachment. The server now finds an
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
+
+- 2026-10-11: **Discarding an import keeps its files when Message Crate
+  does not take the discard.** When you discarded an import, or cancelled
+  one at a Review, and the server refused or could not be reached, the
+  desktop app deleted the import's staged files anyway, while Message Crate
+  still held the import as running. It could then be neither resumed nor
+  discarded cleanly. The files now go only once Message Crate has taken the
+  discard. Otherwise the import is offered again with what went wrong, and
+  **Discard this import** tries again (#2669).
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The
@@ -793,6 +889,20 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **An attachment is opened as it is only when its contents
+  match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
+  was opened in the browser as one without anyone checking, so a file
+  named wrongly the first time, such as a PNG called a JPEG or a text file
+  called a photo, was handed to the browser as something it was not, for
+  good. The server now reads the first bytes of such a file, and one that
+  is not what it was called gets a Preview instead (#2257).
+
+- 2026-10-11: **Search finds a conversation by the name it is listed
+  under.** A one-to-one conversation whose backup recorded only the
+  address is listed under the name of the Contact that address is on, but
+  searching that name on the Conversations list found nothing; only the
+  address found it. Searching the name now finds it (#2737).
+
 - 2026-10-11: **A Saved Search no list could ever run is not saved.** A
   search longer than 2,048 bytes, with a parenthesis or quote that never
   closes, with more than 32 words, or too many parts or levels of nesting is
@@ -909,6 +1019,15 @@ released versions carry their date on the heading.
   wrote nothing about it. It now writes a warning to its log as it starts,
   naming the setting and the command-line option that can add it, whether
   it runs in Docker or the desktop app starts it (#2218).
+
+- 2026-10-11: **The server trusts a database file less.** The server opens
+  only a database it made, but it knows one only by a number in the file,
+  which anyone can copy. A tampered file that carries that number, such as
+  a restored backup someone else handled, could hold views or triggers that
+  call any function the database engine has while the server reads it. Such
+  views and triggers can now call only functions that change nothing
+  outside the query, and the server refuses to edit the database's list of
+  tables and indexes directly (#2249).
 
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can

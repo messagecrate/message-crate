@@ -569,7 +569,7 @@ describe("AuthProvider when the server says the session has ended", () => {
         auth: useAuth(),
         remove: useRouteMutation({
           mutationFn: async (_password: string) => {
-            throw new ApiError(401, "Current password is incorrect.", {
+            throw new ApiError(401, "current password is incorrect", {
               type: "https://messagecrate.app/problems/invalid-credentials",
               title: "Invalid credentials",
               status: 401,

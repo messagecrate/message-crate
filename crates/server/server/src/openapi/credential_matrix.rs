@@ -504,7 +504,7 @@ impl<'a> World<'a> {
              VALUES ($1, 'photo.png', 'image/png', $2, $3)",
         )
         .bind(message_id)
-        .bind(crate::assets_api::sha256_hex(ASSET_BYTES))
+        .bind(file_io::sha256_hex(ASSET_BYTES))
         .bind(ASSET_BYTES.len() as i64)
         .execute(&mut *tx)
         .await
@@ -562,10 +562,7 @@ impl<'a> World<'a> {
             .as_i64()
             .unwrap();
 
-        let asset = world.url(&format!(
-            "/v1/assets/{}",
-            crate::assets_api::sha256_hex(ASSET_BYTES)
-        ));
+        let asset = world.url(&format!("/v1/assets/{}", file_io::sha256_hex(ASSET_BYTES)));
         let response = http_client()
             .put(asset)
             .bearer_auth(&world.tokens.alice)
@@ -579,10 +576,7 @@ impl<'a> World<'a> {
         assert!(response.status().is_success(), "store the asset");
         world.upload_id = world
             .create(
-                &format!(
-                    "/v1/assets/{}/uploads",
-                    crate::assets_api::sha256_hex(UPLOAD_BYTES)
-                ),
+                &format!("/v1/assets/{}/uploads", file_io::sha256_hex(UPLOAD_BYTES)),
                 json!({ "bytes": UPLOAD_BYTES.len() }),
             )
             .await["upload_id"]
@@ -661,8 +655,8 @@ impl<'a> World<'a> {
             "id" if id("/v1/server/log-files/") => "1".to_string(),
             "token_id" => self.spare_token_id.to_string(),
             "import_id" => self.import_id.to_string(),
-            "sha256" if path.contains("/uploads") => crate::assets_api::sha256_hex(UPLOAD_BYTES),
-            "sha256" => crate::assets_api::sha256_hex(ASSET_BYTES),
+            "sha256" if path.contains("/uploads") => file_io::sha256_hex(UPLOAD_BYTES),
+            "sha256" => file_io::sha256_hex(ASSET_BYTES),
             "upload_id" => self.upload_id.clone(),
             "part" => "1".to_string(),
             _ => panic!("the credential matrix has no row for {{{name}}} in {path}; add one"),
@@ -700,7 +694,7 @@ impl<'a> World<'a> {
     async fn upload_survives(&self) -> bool {
         let path = format!(
             "/v1/assets/{}/uploads/{}/parts/1",
-            crate::assets_api::sha256_hex(UPLOAD_BYTES),
+            file_io::sha256_hex(UPLOAD_BYTES),
             self.upload_id
         );
         let response = http_client()

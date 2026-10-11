@@ -4,9 +4,9 @@ use crate::attachments::attachment_dest_name;
 use crate::config::MediaConfig;
 use crate::process::{CancelFlag, LogSink};
 use crate::progress::{ProgressEvent, ProgressSink};
+use file_io::sha256_hex;
 use media::MediaMode;
 use message_ir::{ConversationDocument, IrAttachment, IrMessage};
-use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -321,7 +321,7 @@ fn persist_clone(
     attachments_dir: &Path,
     bytes: &[u8],
 ) -> Result<(), String> {
-    let digest_hex = hex_sha256(bytes);
+    let digest_hex = sha256_hex(bytes);
     let ext = extension_from_name(job.attachment.original_name.as_deref());
     let secs = job.timestamp_unix_ms.div_euclid(1000);
     let name = attachment_dest_name(secs, &digest_hex, &ext);
@@ -416,16 +416,9 @@ fn refresh_digest_and_size(attachment: &mut IrAttachment, output_dir: &Path) -> 
     };
     let dest = output_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR));
     let bytes = fs::read(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
-    attachment.digest_sha256 = Some(hex_sha256(&bytes));
+    attachment.digest_sha256 = Some(sha256_hex(&bytes));
     attachment.size_bytes = Some(bytes.len() as u64);
     Ok(())
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
 }
 
 /// Longest extension kept on a staged file name. `pkpasses` and `keynote`

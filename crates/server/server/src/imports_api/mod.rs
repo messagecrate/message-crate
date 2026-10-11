@@ -63,8 +63,11 @@ use crate::text_caps::{
 pub struct ImportOptions<'a> {
     /// The account's content-addressed asset store, shared by every source.
     pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL.
-    pub asset_root: &'a Path,
+    /// Root for resolving relative attachment paths in JSONL. `None` when
+    /// the import carries no files, as an HTTP batch does: a path is then
+    /// only a label, still checked as safe, and only a stated SHA-256 finds
+    /// an Asset (#2259).
+    pub asset_root: Option<&'a Path>,
     /// Import mode: replace or append.
     pub mode: ImportMode,
     /// Fixed source id (HTTP / `--source` override). Ignored when
@@ -95,8 +98,8 @@ pub struct ImportOptions<'a> {
 pub struct FixedImportArgs<'a> {
     /// Content-addressed asset store directory.
     pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL.
-    pub asset_root: &'a Path,
+    /// As [`ImportOptions::asset_root`] says.
+    pub asset_root: Option<&'a Path>,
     /// Import mode: replace or append.
     pub mode: ImportMode,
     /// Fixed source id applied to every conversation.
@@ -222,6 +225,7 @@ impl OwnedImportRun {
         let id = imports::start_import(
             conn,
             &imports::StartImportArgs::new(account_id, source, mode.as_str(), Some(tool)),
+            chrono::Utc::now(),
         )
         .await?;
         Ok(Self { account_id, id })
@@ -243,18 +247,12 @@ impl OwnedImportRun {
     }
 }
 
-/// Record an Import Run's outcome, then make the run's Saved Search and
-/// Contact Group. Every path that completes a run calls this: the HTTP
-/// `complete_import`, the server's `import` command and the Demo Account
-/// build (through [`OwnedImportRun::finish`]), so each run gets the same
-/// shortcuts however it was made.
+/// [`complete_run_at`] at the current instant, for the server's `import`
+/// command and the Demo Account build (through [`OwnedImportRun::finish`]).
 ///
 /// # Errors
 ///
-/// Returns the error of recording the outcome ([`imports::complete_import`]):
-/// a run that is not found or not running, kept apart from a database fault
-/// so the handler maps each to its status. A shortcut that cannot be made is
-/// a warning, never an error.
+/// The errors of [`complete_run_at`].
 pub(crate) async fn complete_run(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -264,8 +262,19 @@ pub(crate) async fn complete_run(
     complete_run_at(conn, account_id, import_id, outcome, chrono::Utc::now()).await
 }
 
-/// [`complete_run`] finishing at the instant `now`, so a test names the day
-/// the run's Saved Search and Contact Group are named after.
+/// Record an Import Run's outcome at the instant `now`, then make the run's
+/// Saved Search and Contact Group, named after `now`'s day. Every path that
+/// completes a run reaches this: the HTTP `complete_import`, which queues the
+/// run's Assets at the same instant, and the server's `import` command and
+/// the Demo Account build through [`complete_run`]. So each run gets the
+/// same shortcuts however it was made.
+///
+/// # Errors
+///
+/// Returns the error of recording the outcome ([`imports::complete_import`]):
+/// a run that is not found or not running, kept apart from a database fault
+/// so the handler maps each to its status. A shortcut that cannot be made is
+/// a warning, never an error.
 async fn complete_run_at(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -647,7 +656,9 @@ pub(crate) struct CreateImportRequest {
     /// request leaves it out.
     #[serde(default)]
     pub(crate) tool: Option<String>,
-    /// Stage the run opens at. Defaults to `parse`.
+    /// Stage the run opens at, `parse` when the request leaves it out. A run
+    /// opens only at `parse`; any other stage is refused with
+    /// `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) stage: Option<crate::db::imports::ImportStage>,
     /// Absolute path to the run directory on the client that owns this Import Run.
@@ -1334,7 +1345,7 @@ pub(crate) async fn create_import(
     // The run and what started it land together, so a run never reads as
     // one the server started.
     let mut tx = crate::db::begin_write(&mut conn).await?;
-    let id = crate::db::imports::start_import(&mut tx, &args).await?;
+    let id = crate::db::imports::start_import(&mut tx, &args, chrono::Utc::now()).await?;
     crate::db::audit_trail::record_run_credential(
         &mut tx,
         crate::db::audit_trail::RunTable::Imports,
@@ -1394,12 +1405,14 @@ pub(crate) async fn complete_import(
         issues,
         notes: body.notes.into_iter().map(note_row).collect(),
     };
+    let now = chrono::Utc::now();
     let mut conn = state.db.acquire().await?;
-    let row = complete_run(&mut conn, account, import_id, &args).await?;
+    let row = complete_run_at(&mut conn, account, import_id, &args, now).await?;
     let run = import_run(&mut conn, row).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id).await;
+    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
+        .await;
     run.map(Json)
 }
 
@@ -1695,12 +1708,14 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     let issues = import_issue_inputs(&body.issues)?;
     let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
+    let now = chrono::Utc::now();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
+    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes, now).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
-    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id).await;
+    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id, now)
+        .await;
     run.map(Json)
 }
 
@@ -1840,13 +1855,17 @@ async fn run_import_path(
         ImportMode::Append
     };
 
-    // Attachment paths resolve only through assets already uploaded by
-    // SHA-256; the import body never carries files of its own.
+    // The import body never carries files of its own: attachments are
+    // uploaded first through `/v1/assets` and found by their SHA-256. An
+    // attachment's `path` is only a label and resolves nowhere, never in the
+    // asset store, where it could name an upload in progress or a media type
+    // sidecar and store those bytes (#2259). The path check still refuses an
+    // unsafe path.
     let assets_dir = cfg.paths.assets_dir_for_account(account);
 
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets_dir,
-        asset_root: &assets_dir,
+        asset_root: None,
         mode,
         source: &source_id,
         account_id: account,

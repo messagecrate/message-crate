@@ -431,6 +431,16 @@ Every failure answers an RFC 7807 problem document as
 `request_id`. A validation failure replaces `detail` with `errors`, a list of
 every rule that broke rather than the first.
 
+`detail`, and each entry of `errors`, is one sentence in lowercase with no
+final period, naming the thing and what is wrong with it: `asset not found`,
+`new passwords do not match`. A word always written with a capital keeps it,
+such as a header (`Content-Type must be text/csv`) or an abbreviation
+(`API token not found`). The client decides how the sentence starts and ends
+on its screen, because it may show the sentence alone or joined with others.
+The web app joins a validation failure's `errors` with `; ` into one line, and
+a screen that shows a sentence on a line of its own capitalises its first
+letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
 The code is the registry: each type is declared once in
@@ -876,7 +886,15 @@ other change of stage, backwards or skipping a stage, answers
 `409` `state-conflict` naming both stages, and the run keeps its stage and
 summary. Why: the next visit resumes a run at the stage the server holds, so a
 client that sent a wrong stage would have the run resumed at work it already
-did (#1227).
+did (#1227). A run opens only at `parse`: `POST /v1/imports` with any other
+`stage` answers `422 Unprocessable Entity` (`validation-failed`) and opens no
+run. Why: a run opened later in the order would be resumed at work nobody did
+(#2638), and `422` because the client fixes it by sending `parse`.
+
+A running run with no stored stage is refused any change of stage with
+`500 Internal Server Error`. Why: the server never writes such a row, so there
+is no stage to check the move from, and passing it unchecked would let any
+move through (#2638).
 
 An Export Run's scope is one of three forms, stored as given: everything the
 account holds; a query in the search language; or picked `conversation_ids`
@@ -1058,6 +1076,36 @@ than the production one, because the staging tables have no reader but the
 import while the production tables have many. The messages watermark and
 count a promotion takes before it inserts live there too, for the same
 reason: nothing but a promotion reads them.
+
+A route whose answer is one `db/` read's result, as the read returns it,
+answers with the read's own struct. That struct derives `Serialize` and
+`utoipa::ToSchema`, takes its wire name by the rules above, and the handler
+hands it on unchanged: `list_saved_searches` answers
+`Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
+reads. A struct that a client crate reads too lives in
+`message-crate-api-types`, and the `db/` read returns that struct:
+`ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
+Why: one struct cannot drift from itself, and a copy beside it would be a
+second place to change for every column.
+No client needs the storage shape hidden from it, because no client is kept
+compatible ([Versioning and change](#versioning-and-change)). A column rename
+that reaches the wire costs a rebuild and nothing more.
+
+Does a route group then never define a wire type of its own? It does, when the
+answer is not one read's result as it stands. An action's answer is a
+`VerbNounResponse`, such as `DeleteMessagesResponse`. A thing assembled from
+several reads is defined in the route group: `Account`, `Contact`, and
+`ImportRun`, which is an `ImportRunSummary` with the run's issues and notes.
+So is a thing whose fields depend on who asks: `ApiToken` carries a `null`
+`token_hint` when the owner lists another account's tokens, and
+`OwnerImportRun` leaves out what the backup held. So is a thing whose stored
+form is not its wire form: `ImportRunSummary` decodes the JSON text its row
+holds in `form_json`, `summary_json`, `source_fingerprint` and
+`source_identities` into JSON values, and answers `form_json` as `form` and
+`summary_json` as `summary`. So is a thing no table holds, such as `Asset`,
+`MediaLink` or `PhoneCountry`. A struct that repeats a `db/` struct's fields
+and is filled from it field by field is none of these, so it is not written:
+the `db/` struct goes on the wire instead.
 
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and

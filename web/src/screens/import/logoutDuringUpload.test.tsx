@@ -14,6 +14,7 @@ import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, getToken } from "../../lib/api";
 import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
+import { importForm } from "../../test/importForm";
 import { setupUser } from "../../test/user";
 
 /** Every call that matters to the order, in the order it was made. */
@@ -87,37 +88,13 @@ const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
 const { importRunService, useImportJob } = await import("./useImportJob");
 
-const MIB = 1024 * 1024;
-
 const PAUSING = "Pausing the Upload. You are logged out once it has paused, or after 15 seconds.";
 const DELETED_PAUSING =
   "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
 const NOT_PAUSED =
   "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
 
-const form = {
-  source: "imessage-ios",
-  backupPath: "/backups/iphone.tar",
-  backupPassword: "",
-  attachmentMedia: "copy" as const,
-  maxResolution: "",
-  maxFps: "",
-  minSizeMb: "",
-  ownerPhones: [],
-  ownerEmails: [],
-  obfuscate: false,
-  attachmentRoot: "",
-  appleContacts: "",
-  whatsappKey: "",
-  whatsappWa: "",
-  whatsappMedia: "",
-  whatsappDb: "",
-  isBusinessApp: false,
-  whatsappOwnerPhone: "",
-  timeZone: "America/New_York",
-  phoneCountry: "",
-  assetMaxBytes: 512 * MIB,
-};
+const form = importForm();
 
 /** What `run.rs` reports when the cancel flag pauses the Upload after 200 of 681. */
 function pausedReport(): UploadFinishedReport {
@@ -162,8 +139,11 @@ async function startUpload(): Promise<{ current: Screen }> {
   const result = await logIn();
   act(() => {
     void result.current.job.startImport(form, {
-      runId: 42,
-      runDir: "/home/sam/staging-iphone",
+      at: "upload",
+      run: {
+        runId: 42,
+        runDir: "/home/sam/staging-iphone",
+      },
     });
   });
   await waitFor(() => expect(calls).toContain("upload started"));
@@ -335,7 +315,7 @@ describe("logging out during an Upload", () => {
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: { found: ["/home/sam/staging-iphone"], unreadable: [] },
       }),
     );
 
@@ -360,7 +340,7 @@ describe("logging out during an Upload", () => {
     act(() => {
       void result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: { found: ["/home/sam/staging-iphone"], unreadable: [] },
       });
     });
     await user.click(await screen.findByRole("button", { name: "Log out now" }));
@@ -384,7 +364,10 @@ describe("logging out during an Upload", () => {
     cancelMock.mockImplementation(() => {});
 
     act(() => {
-      void result.current.auth.logout({ ask: false, deletedAccountDirectories: [] });
+      void result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: { found: [], unreadable: [] },
+      });
     });
 
     expect(await screen.findByText(DELETED_PAUSING)).toBeTruthy();
@@ -419,7 +402,10 @@ describe("logging out during an Upload", () => {
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+        deletedAccountDirectories: {
+          found: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+          unreadable: [],
+        },
       }),
     );
 
@@ -428,6 +414,42 @@ describe("logging out during an Upload", () => {
     expect(notice).toHaveTextContent("/home/sam/staging-iphone: permission denied");
     expect(notice).not.toHaveTextContent("/home/sam/staging-android");
     expect(calls).toContain("deleted /home/sam/staging-android");
+  });
+
+  it("names a directory of a deleted account's Import Runs it may not read, and deletes the rest", async () => {
+    const result = await logIn();
+
+    await act(() =>
+      result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: {
+          found: ["/home/sam/staging-android"],
+          unreadable: [
+            {
+              path: "/Users/sam/Documents/staging-iphone",
+              reason:
+                "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings.",
+            },
+          ],
+        },
+      }),
+    );
+
+    // It may not be on this computer at all, so the notice does not say it
+    // could not delete it.
+    const notice = await screen.findByRole("dialog", {
+      name: "Directories of Import Runs that may be left on this computer",
+    });
+    expect(notice).not.toHaveTextContent("Message Crate could not delete");
+    expect(notice).toHaveTextContent(
+      "Message Crate could not tell whether these directories of the deleted account's Import Runs are on this computer.",
+    );
+    expect(notice).toHaveTextContent(
+      "/Users/sam/Documents/staging-iphone: Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+    );
+    expect(notice).not.toHaveTextContent("/home/sam/staging-android");
+    expect(calls).toContain("deleted /home/sam/staging-android");
+    expect(calls).not.toContain("deleted /Users/sam/Documents/staging-iphone");
   });
 
   it("pauses the Upload without asking when the account was just deleted", async () => {
@@ -455,8 +477,11 @@ async function resumeUpload(): Promise<{ current: Screen }> {
   const result = await logIn();
   act(() => {
     void result.current.job.startImport(form, {
-      runId: 42,
-      runDir: "/home/sam/staging-iphone",
+      at: "upload",
+      run: {
+        runId: 42,
+        runDir: "/home/sam/staging-iphone",
+      },
     });
   });
   return result;

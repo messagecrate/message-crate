@@ -3,10 +3,9 @@ use super::*;
 use std::ffi::OsString;
 use std::io::{Read, Write};
 
+use file_io::sha256_hex;
 use httpmock::prelude::*;
-use sha2::{Digest, Sha256};
 
-/// The SHA-256 of `bytes`, in lowercase hex.
 impl Retry {
     /// The check's thread, when one started.
     fn started(self) -> Option<JoinHandle<()>> {
@@ -15,10 +14,6 @@ impl Retry {
             Self::AlreadyRunning | Self::CouldNotStart => None,
         }
     }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    hex::encode(Sha256::digest(bytes))
 }
 
 /// `bytes` gzipped, as `ffmpeg-static` publishes its files.
@@ -664,11 +659,54 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
         assert_eq!(
             reason,
             "ffmpeg in the Tools Directory doesn't run on this computer. \
-             Install it with your package manager instead; the app uses the copy on PATH."
+             Install it with your package manager instead. The app uses the copy on PATH."
         );
     }
 
     asked.assert_calls(1);
+}
+
+/// A recorded wtsexporter with an executable bit this account may not run,
+/// as a root-owned `0o744` file is to any other account, is not kept as in
+/// place: it is said not to run, and not downloaded again (#2793). It skips
+/// where [`media::testutil::may_read_any_file`] says so.
+#[cfg(unix)]
+#[test]
+fn a_recorded_wtsexporter_this_account_may_not_run_does_not_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let tools = tempfile::tempdir().unwrap();
+    if media::testutil::may_read_any_file(tools.path()) {
+        return;
+    }
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinned").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o611)).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+    write_manifest(tools.path(), &manifest).unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+
+    check_now(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    asked.assert_calls(0);
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: "wtsexporter in the Tools Directory doesn't run on this computer.".to_string(),
+        })
+    );
 }
 
 /// The pinned program put there by hand that does not run is kept and
@@ -729,6 +767,47 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
         read_manifest(tools.path()).get(&Program::Ffmpeg),
         Some(&Written::of(&pinned, Stamp::at(&target).unwrap()))
     );
+}
+
+/// An adopted program that does not run, and whose executable bits could
+/// not be set, fails with the reason they could not, not the generic "does
+/// not run" text, so Settings says what to fix, and ffmpeg keeps the advice
+/// to use the copy on `PATH`.
+#[test]
+fn an_adopted_program_that_could_not_be_made_executable_says_why() {
+    let denied = io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
+
+    let Adopted::NotExecutable(err) = classify_adopted(Err(denied), false) else {
+        panic!("a program that does not run and could not be made executable");
+    };
+
+    assert_eq!(
+        DownloadError::CouldNotMakeExecutable(Program::Ffmpeg, err.to_string()).to_string(),
+        "ffmpeg in the Tools Directory could not be marked as a program that runs: \
+         Operation not permitted. Install it with your package manager instead. \
+         The app uses the copy on PATH."
+    );
+}
+
+/// An adopted program that runs is in place whether or not its bits could
+/// be set, and keeps the error when they could not. One whose bits were set
+/// and that does not run fails as not running.
+#[test]
+fn an_adopted_program_blames_its_bits_only_when_setting_them_failed() {
+    let denied = || io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
+
+    assert!(matches!(
+        classify_adopted(Ok(()), true),
+        Adopted::Runs(None)
+    ));
+    assert!(matches!(
+        classify_adopted(Err(denied()), true),
+        Adopted::Runs(Some(_))
+    ));
+    assert!(matches!(
+        classify_adopted(Ok(()), false),
+        Adopted::DoesNotRun
+    ));
 }
 
 /// The app's own file whose stamp stopped matching, as after a sync or a

@@ -314,51 +314,69 @@ async fn a_blank_attachment_path_is_refused_even_with_a_stored_fingerprint() {
     assert_eq!(rows, 0, "no attachment row is stored");
 }
 
-/// S1-11: a file whose bytes do not hash to the SHA-256 the batch states is
-/// the sender's to fix, so it answers 422 naming the file, not 500.
-#[tokio::test]
-async fn a_batch_whose_file_does_not_match_its_sha256_is_a_422_naming_the_file() {
-    let (fixture, account) = fixture_with_account().await;
-    let state = fixture.state.clone();
-    let path = batches_path(&state, &account.token, "whatsapp").await;
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account.account_id);
-    fs::create_dir_all(&assets_dir).unwrap();
-    fs::write(assets_dir.join("photo.bin"), b"the bytes on disk").unwrap();
-    let stated = assets_api::sha256_hex(b"the bytes the export saw");
-    let body = one_attachment_batch("photo.bin", Some(&stated));
-    let (status, text) =
-        crate::test_support::post_raw(&state, &path, &account.token, "application/jsonl", body)
-            .await;
-    let problem = crate::test_support::expect_problem(
-        status,
-        &text,
-        crate::problem::ProblemType::ValidationFailed,
-    );
-    assert_eq!(problem.line, Some(2), "{text}");
-    assert!(problem.errors.unwrap()[0].contains("photo.bin"), "{text}");
-}
-
-/// A stated SHA-256 that is not 64 hex digits, on a file that is there, is
-/// the sender's to fix too: 422 naming the line and the file.
+/// A stated SHA-256 that is not 64 hex digits is the sender's to fix: 422
+/// naming the line and the attachment, though a batch carries no file
+/// (#2259).
 #[tokio::test]
 async fn a_batch_whose_stated_sha256_is_not_one_is_a_422_naming_the_file() {
-    let (fixture, account) = fixture_with_account().await;
-    let state = fixture.state.clone();
-    let path = batches_path(&state, &account.token, "whatsapp").await;
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account.account_id);
-    fs::create_dir_all(&assets_dir).unwrap();
-    fs::write(assets_dir.join("photo.bin"), b"the bytes on disk").unwrap();
+    let (state, _fixture, token) = importer().await;
+    let path = batches_path(&state, &token, "whatsapp").await;
     let body = one_attachment_batch("photo.bin", Some("not-a-fingerprint"));
     let (status, text) =
-        crate::test_support::post_raw(&state, &path, &account.token, "application/jsonl", body)
-            .await;
+        crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
     let problem = crate::test_support::expect_problem(
         status,
         &text,
         crate::problem::ProblemType::ValidationFailed,
     );
     assert_eq!(problem.line, Some(2), "{text}");
-    assert!(problem.errors.unwrap()[0].contains("photo.bin"), "{text}");
+    let error = &problem.errors.unwrap()[0];
+    assert!(
+        error.contains("photo.bin") && error.contains("not-a-fingerprint"),
+        "{text}"
+    );
+}
+
+/// #2259: an HTTP batch never carries files, so an attachment's `path` is
+/// only a label. A path that names a file in the account's own asset store
+/// (a live upload temp, a media type sidecar, a stored original) stores
+/// nothing: only a stated fingerprint finds an Asset.
+#[tokio::test]
+async fn a_batch_path_naming_a_file_in_the_asset_store_stores_no_asset() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = fixture.state.clone();
+    let assets_dir = state.cfg.paths.assets_dir_for_account(account.account_id);
+    let sha = file_io::sha256_hex(b"an upload still arriving");
+    let shard = &sha[..2];
+    let files = [
+        format!(".incoming/{sha}-1.part"),
+        format!("{shard}/.{sha}.mime"),
+        format!("{shard}/{sha}"),
+    ];
+    for rel in &files {
+        let file = assets_dir.join(rel);
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(&file, format!("bytes of {rel}")).unwrap();
+    }
+
+    let path = batches_path(&state, &account.token, "whatsapp").await;
+    for rel in &files {
+        let body = one_attachment_batch(rel, None);
+        let (status, text) =
+            crate::test_support::post_raw(&state, &path, &account.token, "application/jsonl", body)
+                .await;
+        assert_eq!(status, axum::http::StatusCode::OK, "{rel}: {text}");
+        let answer: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(answer["assets_copied"], 0, "{rel}: {text}");
+        assert_eq!(answer["assets_missing"], 1, "{rel}: {text}");
+    }
+
+    let stored: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE sha256 IS NOT NULL")
+            .fetch_one(&state.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, 0, "no attachment names an Asset");
 }
 
 /// A batch is refused before its body is read when the run is over: the

@@ -985,6 +985,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "libc",
  "sha2 0.11.0",
 ]
 
@@ -1401,8 +1402,8 @@ dependencies = [
  "android-fields",
  "anyhow",
  "csv",
+ "file-io",
  "go-sms-mms",
- "hex",
  "media",
  "message-crate-core",
  "message-ir",
@@ -1411,7 +1412,6 @@ dependencies = [
  "phone",
  "quick-xml",
  "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -2282,6 +2282,7 @@ dependencies = [
  "anyhow",
  "csv",
  "file-io",
+ "rustix",
  "serde",
 ]
 
@@ -2323,7 +2324,6 @@ dependencies = [
  "phone",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
 ]
@@ -2413,7 +2413,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "file-io",
- "hex",
  "journal",
  "media",
  "message-crate-api-types",
@@ -2424,7 +2423,6 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -2506,14 +2504,12 @@ dependencies = [
  "anyhow",
  "file-io",
  "fs2",
- "hex",
  "media",
  "message-crate-core",
  "message-ir",
  "message-ir-format",
  "serde",
  "serde_json",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -3662,14 +3658,13 @@ dependencies = [
  "android-fields",
  "anyhow",
  "base64 0.23.1",
- "hex",
+ "file-io",
  "html-escape",
  "message-ir",
  "mms-parts",
  "phone",
  "quick-xml",
  "serde",
- "sha2 0.11.0",
 ]
 
 [[package]]
@@ -4089,6 +4084,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "csv",
+ "file-io",
  "hex",
  "mail",
  "mail-builder",

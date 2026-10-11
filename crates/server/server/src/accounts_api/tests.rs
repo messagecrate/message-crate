@@ -381,6 +381,31 @@ async fn a_closed_server_and_an_ordinary_session_are_both_refused() {
     expect_problem(status, &text, ProblemType::NotTheOwner);
 }
 
+/// #2231: a closed server refuses a stranger before it hashes the password,
+/// so a refused registration costs no Argon2 work. The password here is too
+/// long to hash, and hashing refuses it as a validation problem: a server
+/// that hashed first would answer that, not that registration is closed.
+#[tokio::test]
+async fn a_closed_server_refuses_before_it_hashes_the_password() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    {
+        let mut conn = state.db.acquire().await.unwrap();
+        server_settings::set_public_registration(&mut conn, false)
+            .await
+            .unwrap();
+    }
+
+    let too_long = "x".repeat(crate::credentials::MAX_PASSWORD_BYTES + 1);
+    let (status, text) = post_logged_out(
+        &state,
+        "/v1/accounts",
+        serde_json::json!({ "username": "stranger", "password": too_long }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
+}
+
 /// The username is the collection's key, taken once.
 #[tokio::test]
 async fn a_taken_username_is_a_conflict() {
@@ -1308,14 +1333,30 @@ async fn the_owner_changes_their_own_password_with_the_current_one() {
 
 /// The checks run in one order, and the first that fails is the only one
 /// reported: the current password, then the two new ones agreeing, then the
-/// new one differing from the current. Each sentence is one a screen shows
-/// as it is.
+/// new one differing from the current. Each sentence takes the form every
+/// `detail` takes (`docs/architecture/http-api.md`, "Failures").
 #[tokio::test]
 async fn a_password_change_is_checked_in_a_fixed_order() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let path = format!("{}/password", member(owner.account_id));
+
+    // No current password at all: the owner's own needs one.
+    let (status, text) = put_json_raw(
+        &state,
+        &path,
+        &owner.token,
+        serde_json::json!({ "password": "one", "password_confirmation": "two" }),
+    )
+    .await;
+    let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
+    assert_eq!(
+        problem.errors,
+        Some(vec![
+            "current password is required to change the owner's password".to_string()
+        ])
+    );
 
     // Wrong current password: the mismatched pair is not mentioned.
     let (status, text) = put_json_raw(
@@ -1332,7 +1373,7 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     let problem = expect_problem(status, &text, ProblemType::InvalidCredentials);
     assert_eq!(
         problem.detail.as_deref(),
-        Some("Current password is incorrect.")
+        Some("current password is incorrect")
     );
 
     // Right current password, pair differs.
@@ -1350,7 +1391,7 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
     assert_eq!(
         problem.errors,
-        Some(vec!["New passwords do not match.".to_string()])
+        Some(vec!["new passwords do not match".to_string()])
     );
 
     // Pair agrees, but it is the password already in place.
@@ -1369,7 +1410,7 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     assert_eq!(
         problem.errors,
         Some(vec![
-            "New password must be different from the current password.".to_string()
+            "new password must be different from the current password".to_string()
         ])
     );
 
@@ -1391,7 +1432,7 @@ async fn a_password_change_is_checked_in_a_fixed_order() {
     let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
     assert_eq!(
         problem.errors,
-        Some(vec!["New passwords do not match.".to_string()])
+        Some(vec!["new passwords do not match".to_string()])
     );
 }
 
@@ -2977,7 +3018,14 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
         &fixture.state,
         "/v1/imports",
         &alice.token,
-        serde_json::json!({ "source": "imessage", "stage": "write" }),
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let _: serde_json::Value = crate::test_support::patch_json(
+        &fixture.state,
+        &format!("/v1/imports/{}", import["id"]),
+        &alice.token,
+        serde_json::json!({ "stage": "write" }),
     )
     .await;
     // What the desktop app sends at the Staging Review: its staging summary.
