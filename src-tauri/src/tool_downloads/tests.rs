@@ -294,6 +294,30 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
     );
 }
 
+/// A gzipped file that ends partway through did not unpack, while a
+/// failure to read the file back, such as the disk under the Tools
+/// Directory, is the Tools Directory's fault, not the download's.
+#[test]
+fn only_bad_gzip_data_is_a_file_that_does_not_unpack() {
+    let whole = gzipped(b"ffmpeg");
+    let mut cut_short = &whole[..whole.len() / 2];
+    assert!(matches!(
+        super::fetch::unpack(&mut cut_short, &mut io::sink()),
+        Err(DownloadError::CouldNotUnpack(_))
+    ));
+
+    struct FailingDisk;
+    impl Read for FailingDisk {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("the disk failed"))
+        }
+    }
+    assert_eq!(
+        super::fetch::unpack(&mut FailingDisk, &mut io::sink()),
+        Err(DownloadError::CouldNotWrite("the disk failed".to_string()))
+    );
+}
+
 /// A program the app wrote from an older release stays in use while the
 /// newer one fails to download or does not match, and is replaced only by
 /// a download that passed.

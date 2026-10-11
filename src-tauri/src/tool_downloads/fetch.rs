@@ -75,21 +75,41 @@ impl Fetch for HttpFetch {
             return Err(DownloadError::Http(status.as_u16()));
         }
         let total = response.content_length();
-        let mut buffer = vec![0u8; 64 * 1024];
-        let mut received = 0u64;
-        progress(received, total);
-        loop {
-            let read = match response.read(&mut buffer) {
-                Ok(0) => return Ok(()),
-                Ok(read) => read,
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                Err(err) => return Err(DownloadError::NoNetwork(error_chain(&err))),
-            };
-            into.write_all(&buffer[..read])
-                .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
-            received += read as u64;
-            progress(received, total);
-        }
+        progress(0, total);
+        copy(
+            &mut response,
+            into,
+            &|err| DownloadError::NoNetwork(error_chain(&err)),
+            &|received| progress(received, total),
+        )
+    }
+}
+
+/// Copy `from` into `into`, telling `progress` the bytes copied so far after
+/// each chunk.
+///
+/// A failure to read `from` is the error `read_error` makes of it, since
+/// what that means depends on what is read; a failure to write `into` is
+/// [`DownloadError::CouldNotWrite`].
+fn copy(
+    from: &mut dyn Read,
+    into: &mut dyn Write,
+    read_error: &dyn Fn(io::Error) -> DownloadError,
+    progress: &dyn Fn(u64),
+) -> Result<(), DownloadError> {
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut copied = 0u64;
+    loop {
+        let read = match from.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(read) => read,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(read_error(err)),
+        };
+        into.write_all(&buffer[..read])
+            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
+        copied += read as u64;
+        progress(copied);
     }
 }
 
@@ -205,22 +225,23 @@ pub(super) fn install(
 
 /// Unpack the gzipped `packed` into `into`.
 ///
-/// A failure to read the gzip stream is [`DownloadError::CouldNotUnpack`],
-/// since the file that arrived is at fault; a failure to write `into` is
+/// Bad gzip data, which flate2 reports as invalid input or data or an early
+/// end, is [`DownloadError::CouldNotUnpack`], since the file that arrived
+/// is at fault. Any other failure to read `packed`, such as the disk under
+/// the Tools Directory, and a failure to write `into`, are
 /// [`DownloadError::CouldNotWrite`].
-fn unpack(packed: &mut File, into: &mut dyn Write) -> Result<(), DownloadError> {
-    let mut decoder = flate2::read::GzDecoder::new(packed);
-    let mut buffer = vec![0u8; 64 * 1024];
-    loop {
-        let read = match decoder.read(&mut buffer) {
-            Ok(0) => return Ok(()),
-            Ok(read) => read,
-            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-            Err(err) => return Err(DownloadError::CouldNotUnpack(err.to_string())),
-        };
-        into.write_all(&buffer[..read])
-            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
-    }
+pub(super) fn unpack(packed: &mut dyn Read, into: &mut dyn Write) -> Result<(), DownloadError> {
+    copy(
+        &mut flate2::read::GzDecoder::new(packed),
+        into,
+        &|err| match err.kind() {
+            io::ErrorKind::InvalidInput
+            | io::ErrorKind::InvalidData
+            | io::ErrorKind::UnexpectedEof => DownloadError::CouldNotUnpack(err.to_string()),
+            _ => DownloadError::CouldNotWrite(err.to_string()),
+        },
+        &|_| {},
+    )
 }
 
 /// Give the file at `path` its executable bits.
