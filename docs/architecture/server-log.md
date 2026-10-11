@@ -69,9 +69,9 @@ latency. A request the server refuses with a `4xx` leaves one more line,
 written where its problem document is built, with the problem type's slug
 and the status (`problem=invalid-credentials status=401`). It is at `WARN`
 for `401 Unauthorized`, `403 Forbidden` and `429 Too Many Requests`, and at
-`INFO` for every other refusal. Each problem type declares its level beside
-its status, in `crates/server/server/src/problem.rs`. The problem's `detail`
-is never written.
+`INFO` for every other refusal. The level follows from the status, in
+`crates/server/server/src/problem.rs`, where each problem type is declared.
+The problem's `detail` is never written.
 
 Why `WARN` for those three: a run of them is what a password guesser or an
 API token that lost its rights looks like, and the owner's Logs panel opens

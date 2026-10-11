@@ -799,14 +799,15 @@ impl ApiError {
 
 /// The line a refused request leaves: its problem type's slug and its status,
 /// under the request's span, which names the method, the path and the
-/// request id, at the level [`ProblemType::log_level`] gives. The problem's
+/// request id: at `WARN` when [`ProblemType::refusal_is_a_warning`], at
+/// `INFO` otherwise. The problem's
 /// `detail` is never written: it can repeat what a person typed, and a log
 /// line holds only ids, counts, routes and outcomes
 /// (`docs/architecture/server-log.md`).
 fn log_refusal(kind: ProblemType) {
     let status = kind.status();
     let problem = kind.slug();
-    if kind.log_level() == Level::WARN {
+    if kind.refusal_is_a_warning() {
         tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
     } else {
         tracing::info!(%problem, status = status.as_u16(), "The server refused a request");

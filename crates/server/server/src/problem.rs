@@ -157,39 +157,19 @@ impl ProblemType {
         }
     }
 
-    /// The level of the line a request refused with this type leaves in the
-    /// server's log (`docs/architecture/server-log.md`). `WARN` for the types
-    /// that answer `401 Unauthorized`, `403 Forbidden` and `429 Too Many
-    /// Requests`, because a run of them is what a password guesser or an API
-    /// token that lost its rights looks like, and the owner's Logs panel opens
-    /// at warnings and up. `INFO` for the rest.
+    /// Whether the line a request refused with this type leaves in the
+    /// server's log is a warning (`docs/architecture/server-log.md`): true
+    /// for the types that answer `401 Unauthorized`, `403 Forbidden` and
+    /// `429 Too Many Requests`, because a run of them is what a password
+    /// guesser or an API token that lost its rights looks like, and the
+    /// owner's Logs panel opens at warnings and up. Every other refusal is
+    /// logged at `INFO`.
     #[must_use]
-    pub const fn log_level(self) -> tracing::Level {
-        match self {
-            Self::InvalidCredentials
-            | Self::AuthenticationRequired
-            | Self::MediaLinkInvalid
-            | Self::RateLimited
-            | Self::DemoAccountProtected
-            | Self::NotTheOwner
-            | Self::RegistrationClosed
-            | Self::InsufficientScope
-            | Self::AccountDisabled => tracing::Level::WARN,
-            Self::ValidationFailed
-            | Self::SearchQueryInvalid
-            | Self::AssetUploadInvalid
-            | Self::MalformedBody
-            | Self::UnsupportedMediaType
-            | Self::PayloadTooLarge
-            | Self::UsernameTaken
-            | Self::NameTaken
-            | Self::StateConflict
-            | Self::IdentityExists
-            | Self::NotFound
-            | Self::MethodNotAllowed
-            | Self::NotAcceptable
-            | Self::RangeNotSatisfiable => tracing::Level::INFO,
-        }
+    pub fn refusal_is_a_warning(self) -> bool {
+        matches!(
+            self.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+        )
     }
 
     /// The fixed, human-readable name every problem of this type carries.
@@ -379,26 +359,6 @@ mod tests {
             assert!(!t.page().trim().is_empty(), "{} has no page text", t.slug());
             assert!(t.url().ends_with(t.slug()));
             assert!(t.status().is_client_error(), "{} is not a 4xx", t.slug());
-        }
-    }
-
-    /// A refusal is a warning when its type answers `401 Unauthorized`,
-    /// `403 Forbidden` or `429 Too Many Requests`, and only then, as
-    /// `docs/architecture/server-log.md` says, so a new type put in the wrong
-    /// arm of `log_level` fails here.
-    #[test]
-    fn a_refusal_is_a_warning_exactly_when_it_answers_401_403_or_429() {
-        for t in ProblemType::ALL {
-            let warns = matches!(
-                t.status(),
-                StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
-            );
-            let expected = if warns {
-                tracing::Level::WARN
-            } else {
-                tracing::Level::INFO
-            };
-            assert_eq!(t.log_level(), expected, "{}", t.slug());
         }
     }
 }
