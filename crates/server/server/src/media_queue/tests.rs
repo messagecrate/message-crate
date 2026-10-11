@@ -182,11 +182,14 @@ async fn queued(state: &AppState) -> i64 {
         .unwrap()
 }
 
-/// An instant one second after the newest row in the queue, or
-/// [`crate::test_support::fixed_instant`] when the queue is empty: a test
-/// that queues an Asset again passes it, so the row goes to the back as an
-/// Import Run that ends later puts it, whatever instant the import queued at.
-async fn after_the_queue(conn: &mut sqlx::SqliteConnection) -> chrono::DateTime<chrono::Utc> {
+/// One second after the newest row in the queue, or
+/// [`crate::test_support::fixed_instant`] when the queue is empty. A test
+/// that queues an Asset again passes this instant, so the new row sorts after
+/// every row already queued, as it does when a later Import Run ends. The
+/// fixture's import may have queued its rows at any instant.
+async fn instant_after_newest_queued(
+    conn: &mut sqlx::SqliteConnection,
+) -> chrono::DateTime<chrono::Utc> {
     let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(queued_at) FROM media_queue")
         .fetch_one(&mut *conn)
         .await
@@ -533,7 +536,7 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
         .await
         .unwrap();
     let mut conn = state.db.acquire().await.unwrap();
-    let later = after_the_queue(&mut conn).await;
+    let later = instant_after_newest_queued(&mut conn).await;
     crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
         .await
         .unwrap();
@@ -591,7 +594,7 @@ fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
     runtime
         .block_on(async {
             let mut conn = state.db.acquire().await.unwrap();
-            let later = after_the_queue(&mut conn).await;
+            let later = instant_after_newest_queued(&mut conn).await;
             crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later).await
         })
         .unwrap();
@@ -663,7 +666,7 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
         .unwrap()
         .unwrap();
 
-    let later = after_the_queue(&mut conn).await;
+    let later = instant_after_newest_queued(&mut conn).await;
     crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
         .await
         .unwrap();
