@@ -35,7 +35,7 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -104,7 +104,7 @@ async fn media_none_skips_attachment_copy() {
         &[path],
         &ImportOptions {
             assets_dir: &assets_dir,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Replace,
             source: "",
             account_id: TEST_ACCOUNT,
@@ -160,7 +160,7 @@ fn media_convert_stores_the_converted_file_not_the_original() {
             &[path],
             &ImportOptions {
                 assets_dir: &assets_dir,
-                asset_root: tmp.path(),
+                asset_root: Some(tmp.path()),
                 mode: ImportMode::Replace,
                 source: "",
                 account_id: TEST_ACCOUNT,
@@ -229,7 +229,7 @@ async fn persists_missing_reason_with_null_sha256() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -370,7 +370,7 @@ async fn claimed_import_rejects_corrupt_existing_asset() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,
@@ -419,7 +419,7 @@ async fn rejects_attachment_path_traversal() {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &export_dir,
+            asset_root: Some(&export_dir),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -463,7 +463,7 @@ async fn import_photo_stating(on_disk: &[u8], stated: &str) -> String {
         &[path],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &export_dir,
+            asset_root: Some(&export_dir),
             mode: ImportMode::Append,
             source: "imessage",
             account_id: TEST_ACCOUNT,

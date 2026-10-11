@@ -885,7 +885,7 @@ async fn import_demo_sources_with(
                     progress,
                     ..ImportOptions::fixed(FixedImportArgs {
                         assets_dir: &assets_dir,
-                        asset_root: export_dir,
+                        asset_root: Some(export_dir),
                         mode,
                         source: source.source,
                         account_id,

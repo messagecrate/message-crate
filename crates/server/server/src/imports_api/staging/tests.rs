@@ -56,7 +56,7 @@ async fn import_one(
 fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
-        asset_root: root,
+        asset_root: Some(root),
         mode: ImportMode::Append,
         source,
         account_id: TEST_ACCOUNT,
@@ -109,7 +109,7 @@ fn a_reused_asset_takes_the_export_mime_type_when_the_record_has_one() {
 
     let stored = store_claimed_or_path(
         &claimed(sha.as_str(), Some("image/jpeg")),
-        &export_dir,
+        Some(&export_dir),
         &assets_dir,
         &mut stats,
         2,
@@ -121,7 +121,7 @@ fn a_reused_asset_takes_the_export_mime_type_when_the_record_has_one() {
 
     let stored = store_claimed_or_path(
         &claimed(sha.as_str(), None),
-        &export_dir,
+        Some(&export_dir),
         &assets_dir,
         &mut stats,
         2,
@@ -157,7 +157,7 @@ fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerp
         };
         let mut stats = AssetStats::default();
 
-        let err = store_claimed_or_path(&att, &export_dir, &assets_dir, &mut stats, 2)
+        let err = store_claimed_or_path(&att, Some(&export_dir), &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
         assert!(
             matches!(
@@ -236,7 +236,7 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
 
     let err = store_claimed_or_path(
         &att,
-        &export_dir,
+        Some(&export_dir),
         &assets_dir,
         &mut AssetStats::default(),
         2,

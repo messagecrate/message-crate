@@ -196,7 +196,7 @@ async fn import_under_session(
 
     let import_opts = ImportOptions {
         assets_dir: &assets_dir,
-        asset_root: &opts.input_dir,
+        asset_root: Some(&opts.input_dir),
         mode: opts.mode,
         source: opts.source_override.as_deref().unwrap_or(""),
         account_id,

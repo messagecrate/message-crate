@@ -402,7 +402,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &dir,
+            asset_root: Some(&dir),
             mode: crate::imports_api::ImportMode::Append,
             source: "imessage",
             account_id,
@@ -488,7 +488,7 @@ async fn import_conversation_file(
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
             assets_dir: &assets,
-            asset_root: &dir,
+            asset_root: Some(&dir),
             mode: crate::imports_api::ImportMode::Append,
             source,
             account_id,

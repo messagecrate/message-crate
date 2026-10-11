@@ -63,8 +63,11 @@ use crate::text_caps::{
 pub struct ImportOptions<'a> {
     /// The account's content-addressed asset store, shared by every source.
     pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL.
-    pub asset_root: &'a Path,
+    /// Root for resolving relative attachment paths in JSONL. `None` when
+    /// the import carries no files, as an HTTP batch does: a path is then
+    /// only a label, still checked as safe, and only a stated SHA-256 finds
+    /// an Asset (#2259).
+    pub asset_root: Option<&'a Path>,
     /// Import mode: replace or append.
     pub mode: ImportMode,
     /// Fixed source id (HTTP / `--source` override). Ignored when
@@ -95,8 +98,11 @@ pub struct ImportOptions<'a> {
 pub struct FixedImportArgs<'a> {
     /// Content-addressed asset store directory.
     pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL.
-    pub asset_root: &'a Path,
+    /// Root for resolving relative attachment paths in JSONL. `None` when
+    /// the import carries no files, as an HTTP batch does: a path is then
+    /// only a label, still checked as safe, and only a stated SHA-256 finds
+    /// an Asset (#2259).
+    pub asset_root: Option<&'a Path>,
     /// Import mode: replace or append.
     pub mode: ImportMode,
     /// Fixed source id applied to every conversation.
@@ -1851,18 +1857,15 @@ async fn run_import_path(
 
     // The import body never carries files of its own: attachments are
     // uploaded first through `/v1/assets` and found by their SHA-256. An
-    // attachment's `path` is only a label, so it resolves inside an empty
-    // directory of its own, never the asset store, where it could name an
-    // upload in progress or a media type sidecar and store those bytes
-    // (#2259). The path check still refuses an unsafe path.
+    // attachment's `path` is only a label and resolves nowhere, never in the
+    // asset store, where it could name an upload in progress or a media type
+    // sidecar and store those bytes (#2259). The path check still refuses an
+    // unsafe path.
     let assets_dir = cfg.paths.assets_dir_for_account(account);
-    let no_files = TempDir::new()
-        .context("empty directory for a batch's attachment paths")
-        .map_err(ApiError::Internal)?;
 
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets_dir,
-        asset_root: no_files.path(),
+        asset_root: None,
         mode,
         source: &source_id,
         account_id: account,
