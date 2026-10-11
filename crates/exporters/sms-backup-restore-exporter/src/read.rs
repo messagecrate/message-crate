@@ -231,8 +231,8 @@ pub struct ReadOptions<'a> {
     pub cancel: &'a CancelFlag,
 }
 
-/// One attachment of a [`MessageInProgress`], its payload left in the spool
-/// under its digest.
+/// One attachment of a [`MessageInProgress`], named by the digest its
+/// payload is spooled under when the read has a spool.
 #[derive(Debug, Clone)]
 struct AttachmentInProgress {
     original_name: Option<String>,
