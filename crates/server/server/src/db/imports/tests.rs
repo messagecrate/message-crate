@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::{fixed_instant, fixed_start_instant};
 
 const ACCOUNT_ID: i64 = 7;
 
@@ -22,9 +23,13 @@ fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
 async fn complete_import_persists_timings_and_issues() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
 
     let row = complete_import(
         &mut conn,
@@ -49,7 +54,7 @@ async fn complete_import_persists_timings_and_issues() {
             }],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -77,15 +82,19 @@ async fn complete_import_persists_timings_and_issues() {
 async fn require_running_import_rejects_a_completed_import_and_returns_a_running_one() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     complete_import(
         &mut conn,
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::succeeded(1, 0),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -96,9 +105,13 @@ async fn require_running_import_rejects_a_completed_import_and_returns_a_running
         .to_string();
     assert!(err.contains("not running"), "{err}");
 
-    let running = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let running = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     let row = require_running_import(&mut conn, ACCOUNT_ID, running)
         .await
         .unwrap();
@@ -110,9 +123,13 @@ async fn require_running_import_rejects_a_completed_import_and_returns_a_running
 async fn list_import_issues_returns_them_oldest_first() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     complete_import(
         &mut conn,
         ACCOUNT_ID,
@@ -144,7 +161,7 @@ async fn list_import_issues_returns_them_oldest_first() {
             ],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -169,9 +186,13 @@ async fn list_import_issues_returns_them_oldest_first() {
 async fn list_imports_includes_duration_ms() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     complete_import(
         &mut conn,
         ACCOUNT_ID,
@@ -190,7 +211,7 @@ async fn list_imports_includes_duration_ms() {
             issues: vec![],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -218,16 +239,20 @@ async fn list_imports_includes_duration_ms() {
 async fn a_failed_import_is_recorded_as_failed() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let import_id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
 
     complete_import(
         &mut conn,
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::failed(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -242,17 +267,24 @@ async fn a_failed_import_is_recorded_as_failed() {
 async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
+    // Each run starts a minute before the one inserted ahead of it, so the
+    // order by start is the reverse of the order by id, and only a sort that
+    // reads `started_at` lists them oldest first.
     let mut started = Vec::new();
-    for _ in 0..2 {
-        let import_id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-            .await
-            .unwrap();
+    for minutes_earlier in 0..2 {
+        let import_id = start_import(
+            &mut conn,
+            &default_start_args(ACCOUNT_ID),
+            fixed_start_instant() - chrono::TimeDelta::minutes(minutes_earlier),
+        )
+        .await
+        .unwrap();
         complete_import(
             &mut conn,
             ACCOUNT_ID,
             import_id,
             &CompleteImportArgs::succeeded(1, 0),
-            crate::test_support::fixed_instant(),
+            fixed_instant(),
         )
         .await
         .unwrap();
@@ -268,7 +300,8 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
         .unwrap();
 
     let listed: Vec<i64> = imports.iter().map(|run| run.row.id).collect();
-    assert_eq!(listed, started);
+    let oldest_first_ids: Vec<i64> = started.iter().rev().copied().collect();
+    assert_eq!(listed, oldest_first_ids);
 }
 
 /// The account's running Import Run through the list, as the desktop app
@@ -298,7 +331,9 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
         source_fingerprint: Some(r#"{"path":"/b","size_bytes":10}"#),
         ..StartImportArgs::new(account, "imessage", "append", Some("message-crate"))
     };
-    let id = start_import(&mut conn, &args).await.unwrap();
+    let id = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
 
     let active = running_import(&mut conn, account)
         .await
@@ -314,7 +349,7 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
 
     assert!(
         matches!(
-            start_import(&mut conn, &args).await,
+            start_import(&mut conn, &args, fixed_start_instant()).await,
             Err(StartImportError::AlreadyActive)
         ),
         "a second running Import Run is refused by the index, not by a race-prone check"
@@ -327,7 +362,9 @@ async fn stage_advances_and_discard_frees_the_slot() {
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;
     let args = StartImportArgs::new(account, "imessage", "append", None);
-    let id = start_import(&mut conn, &args).await.unwrap();
+    let id = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
 
     for stage in [
         ImportStage::Write,
@@ -353,7 +390,7 @@ async fn stage_advances_and_discard_frees_the_slot() {
     assert!(row.finished_at.is_some(), "a discard closes the run");
 
     // The slot is genuinely free.
-    start_import(&mut conn, &args)
+    start_import(&mut conn, &args, fixed_start_instant())
         .await
         .expect("a new Import Run can start");
 }
@@ -373,17 +410,21 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
     );
 
     let args = StartImportArgs::new(account, "imessage", "append", None);
-    let finished = start_import(&mut conn, &args).await.unwrap();
+    let finished = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
     complete_import(
         &mut conn,
         account,
         finished,
         &CompleteImportArgs::succeeded(1, 0),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
-    let stranded = start_import(&mut conn, &args).await.unwrap();
+    let stranded = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
 
     let discarded = discard_running_import(&mut conn, account)
         .await
@@ -427,13 +468,15 @@ async fn completing_an_import_run_frees_the_slot_too() {
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;
     let args = StartImportArgs::new(account, "imessage", "append", None);
-    let id = start_import(&mut conn, &args).await.unwrap();
+    let id = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
     complete_import(
         &mut conn,
         account,
         id,
         &CompleteImportArgs::succeeded(10, 2),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -494,7 +537,9 @@ async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
         stage: ImportStage::Upload,
         ..default_start_args(ACCOUNT_ID)
     };
-    let id = start_import(&mut conn, &args).await.unwrap();
+    let id = start_import(&mut conn, &args, fixed_start_instant())
+        .await
+        .unwrap();
 
     let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Parse, Some("{}"))
         .await
@@ -532,7 +577,9 @@ async fn every_move_the_desktop_app_makes_is_accepted() {
             stage: from,
             ..default_start_args(ACCOUNT_ID)
         };
-        let id = start_import(&mut conn, &args).await.unwrap();
+        let id = start_import(&mut conn, &args, fixed_start_instant())
+            .await
+            .unwrap();
         for stage in [from, to, to] {
             set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
                 .await
@@ -571,9 +618,13 @@ async fn complete_import_refuses_a_run_that_has_finished() {
             .unwrap()
     };
 
-    let discarded = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let discarded = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     discard_import(&mut conn, ACCOUNT_ID, discarded, &[], &[])
         .await
         .unwrap();
@@ -582,7 +633,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
         ACCOUNT_ID,
         discarded,
         &with_issue(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap_err();
@@ -593,15 +644,19 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     assert_eq!(row.status.as_str(), "cancelled");
     assert_eq!(issue_count(&mut conn, discarded).await, 0);
 
-    let completed = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let completed = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
     complete_import(
         &mut conn,
         ACCOUNT_ID,
         completed,
         &with_issue(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -610,7 +665,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
         ACCOUNT_ID,
         completed,
         &CompleteImportArgs::failed(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap_err();
@@ -629,9 +684,13 @@ async fn complete_import_refuses_a_run_that_has_finished() {
 async fn a_discard_that_lands_after_the_run_completed_is_refused() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
 
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
@@ -658,9 +717,13 @@ async fn a_discard_that_lands_after_the_run_completed_is_refused() {
 async fn a_stage_change_that_lands_after_the_run_completed_is_refused() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
+    let id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
 
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();

@@ -29,6 +29,7 @@ async fn promote_stamps_messages_with_import_id() {
     let import_id = crate::db::imports::start_import(
         &mut conn,
         &crate::db::imports::StartImportArgs::new(TEST_ACCOUNT, "imessage", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();

@@ -53,6 +53,6 @@ pub use logs::{log_event, small_log_files, write_log_line};
 pub(crate) use seed::write_stored_original;
 pub use seed::{
     ConversationRow, MessageRow, SeedConversation, SeedMessage, attach_stored_file, fake_sha256,
-    fixed_instant, insert_account_with_id, link_identity, seed_conversation, seed_one_message,
-    store_asset_max_bytes, stored_time, unique_guid, with_trigger_lifted,
+    fixed_instant, fixed_start_instant, insert_account_with_id, link_identity, seed_conversation,
+    seed_one_message, store_asset_max_bytes, stored_time, unique_guid, with_trigger_lifted,
 };

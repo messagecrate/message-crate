@@ -430,7 +430,7 @@ pub enum StartImportError {
     Db(anyhow::Error),
 }
 
-/// Open a new Import Run.
+/// Open a new Import Run, started at `now`.
 ///
 /// # Errors
 ///
@@ -439,8 +439,9 @@ pub enum StartImportError {
 pub async fn start_import(
     conn: &mut SqliteConnection,
     args: &StartImportArgs<'_>,
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
-    let started_at = Utc::now().to_rfc3339();
+    let started_at = now.to_rfc3339();
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
         INSERT INTO imports (
