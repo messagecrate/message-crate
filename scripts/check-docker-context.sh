@@ -72,11 +72,11 @@ fi
 # lines until the first line that is not one. The key is in any case, and
 # spaces may sit around the "#", the key and the "=". BuildKit pulls only
 # the first word of the syntax value; the rest are frontend arguments.
-first=1
+on_first_line=1
 while IFS= read -r line || [[ -n "${line}" ]]; do
   line="${line%$'\r'}"
-  if [[ "${first}" -eq 1 ]]; then
-    first=0
+  if [[ "${on_first_line}" -eq 1 ]]; then
+    on_first_line=0
     line="${line#$'\xEF\xBB\xBF'}"
     [[ "${line}" == '#!'* ]] && continue
   fi

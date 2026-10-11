@@ -58,8 +58,8 @@ updates:
   # Base images of the release image (docker/Dockerfile). Each FROM is
   # pinned by tag and digest, so this entry is what moves the digests
   # when a publisher pushes a new image under the same tag (#2179).
-  # The digest on the Dockerfile's "# syntax=" line is not one of them: the
-  # comment under that line says how it is moved (#2670).
+  # Dependabot does not move the digest on the Dockerfile's "# syntax="
+  # line; the comment under that line says how it is moved (#2670).
   - package-ecosystem: docker
     directory: /docker
     schedule:
