@@ -6,7 +6,7 @@ use sqlx::SqliteConnection;
 
 use super::{CompileRequest, ListKind, QueryError, compile};
 use crate::db::sql::bind_args;
-use crate::test_support::stored_time;
+use crate::test_support::{ConversationRow, stored_time};
 
 pub(crate) const ACCOUNT: i64 = 7;
 pub(crate) const OTHER_ACCOUNT: i64 = 8;
@@ -127,17 +127,13 @@ pub(crate) async fn conversation(
     title: Option<&str>,
     participants: &[i64],
 ) -> i64 {
-    let id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, group_title, source_file)
-         VALUES ($1, $2, $3, $4, 'seed.jsonl') RETURNING id",
-    )
-    .bind(account)
-    .bind(chat)
-    .bind(kind)
-    .bind(title)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let id = ConversationRow {
+        conversation_type: kind,
+        group_title: title,
+        ..ConversationRow::new(account, chat)
+    }
+    .insert(conn)
+    .await;
     for h in participants {
         sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
             .bind(id)
@@ -301,12 +297,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     for (id, name) in [(ACCOUNT, "alice"), (OTHER_ACCOUNT, "bob")] {
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $2)")
-            .bind(id)
-            .bind(name)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, id, name).await;
     }
     let a = ACCOUNT;
     let mut f = Fixture {
@@ -1561,11 +1552,7 @@ mod index_characters {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-        sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-            .bind(ACCOUNT)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
         let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
         let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
         let mut ids = Vec::new();

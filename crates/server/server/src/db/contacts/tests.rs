@@ -7,11 +7,7 @@ async fn who_may_name_a_contact() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 't')")
-        .bind(TEST_ACCOUNT_ID)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT_ID, "t").await;
 
     let name_of = async |conn: &mut SqliteConnection, id: i64| -> String {
         sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")

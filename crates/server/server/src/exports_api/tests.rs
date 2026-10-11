@@ -4,9 +4,10 @@ use crate::db::exports::ExportCounts;
 use crate::paging::SortKey;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status,
-    expect_problem, fixture_with_account, get_json, get_raw, post_created_json, post_json,
-    post_json_raw, post_status, register_via_api, seed_conversation, stored_time, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture,
+    delete_status, expect_problem, fixture_with_account, get_json, get_raw, post_created_json,
+    post_json, post_json_raw, post_status, register_via_api, seed_conversation, stored_time,
+    test_fixture,
 };
 use axum::http::StatusCode;
 use message_crate_api_types::ExportQueryList;
@@ -395,14 +396,12 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (id, account_id, chat_handle_id, conversation_type, source_file)
-         VALUES (99, 102, $1, 'individual', 'bob.jsonl')",
-    )
-    .bind(bob_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(99),
+        ..ConversationRow::new(102, bob_handle)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         id: Some(99),
         source: "sms",
