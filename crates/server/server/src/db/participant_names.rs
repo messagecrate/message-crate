@@ -82,6 +82,22 @@ pub(crate) fn first_participant_name_sql(conv: &str) -> String {
     )
 }
 
+/// SQL that holds when conversation `conv` names its person from its chat
+/// handle, as [`load_for_conversations`] does: a one-to-one conversation
+/// with no participants rows that is not a conversation with yourself
+/// (`load_from_chat_handle` says why each). The one copy of the rule, so
+/// search (`search::emit`) finds such a conversation by the name the list
+/// shows it under (#2737). `conv` is the alias of a `conversations` row; the
+/// subquery's own alias is `nf_p`.
+pub(crate) fn named_from_chat_handle_sql(conv: &str) -> String {
+    format!(
+        "({conv}.conversation_type = 'individual' COLLATE NOCASE
+          AND NOT {with_yourself}
+          AND NOT EXISTS (SELECT 1 FROM participants nf_p WHERE nf_p.conversation_id = {conv}.id))",
+        with_yourself = crate::db::conversations::is_with_yourself_sql(conv)
+    )
+}
+
 /// Participants of each conversation in `conversation_ids`, ordered by
 /// participant id within a conversation.
 ///
@@ -187,10 +203,9 @@ async fn load_from_chat_handle(
                    ON c.id = ch.contact_id AND c.account_id = conv.account_id
                   AND {not_trashed}
                  WHERE conv.id IN ({placeholders})
-                   AND conv.conversation_type = 'individual' COLLATE NOCASE
-                   AND NOT {with_yourself}",
+                   AND {named_from_chat_handle}",
                 not_trashed = not_trashed("c"),
-                with_yourself = crate::db::conversations::is_with_yourself_sql("conv")
+                named_from_chat_handle = named_from_chat_handle_sql("conv")
             )
         },
         participant_row,
