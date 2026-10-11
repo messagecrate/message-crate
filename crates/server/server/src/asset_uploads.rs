@@ -348,16 +348,9 @@ fn upload_is_gone(session: &Path) -> bool {
 /// removal has not reached the manifest yet.
 fn gone_if_session_file_removed(session: &Path, err: AssetError) -> AssetError {
     match err {
-        AssetError::Internal(e) if is_not_found(&e) => AssetError::UploadNotFound,
+        AssetError::Internal(e) if assets_api::is_not_found(&e) => AssetError::UploadNotFound,
         err => gone_if_removed(session, err),
     }
-}
-
-/// Whether an I/O error somewhere in `err` is a file or directory not found.
-fn is_not_found(err: &anyhow::Error) -> bool {
-    err.chain()
-        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
-        .any(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// The directory of an upload in progress.

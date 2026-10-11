@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { desktopPathStat, PERMISSION_DENIED } from "../test/pathStats";
 import { accountRunDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
@@ -40,17 +41,34 @@ describe("accountRunDirectories", () => {
 describe("buildSourceFingerprint", () => {
   it("records the path, size, and mtime of the backup", () => {
     expect(
-      buildSourceFingerprint("/Users/u/Backup/abc", {
-        exists: true,
-        isFile: false,
-        isDirectory: true,
-        sizeBytes: 4096,
-        modifiedUnixMs: 1_756_512_000_000,
-      }),
+      buildSourceFingerprint(
+        "/Users/u/Backup/abc",
+        desktopPathStat({
+          isFile: false,
+          isDirectory: true,
+          sizeBytes: 4096,
+          modifiedUnixMs: 1_756_512_000_000,
+        }),
+      ),
     ).toEqual({
       path: "/Users/u/Backup/abc",
       size_bytes: 4096,
       modified_unix_ms: 1_756_512_000_000,
     });
+  });
+
+  it("records nothing for a backup the app may not read, so a later resume is not told it changed", () => {
+    expect(
+      buildSourceFingerprint(
+        "/Users/u/Library/Messages",
+        desktopPathStat({
+          exists: false,
+          isFile: false,
+          sizeBytes: 0,
+          modifiedUnixMs: null,
+          unreadable: PERMISSION_DENIED,
+        }),
+      ),
+    ).toBeNull();
   });
 });
