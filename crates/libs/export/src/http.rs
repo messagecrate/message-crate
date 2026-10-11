@@ -148,6 +148,12 @@ pub fn close_export(
     ok_json(&what, status, &text)
 }
 
+/// How long one Asset fetch may take, from the request to its last byte.
+/// An Asset can be a video of several hundred megabytes, so five minutes
+/// leaves a slow link room to finish one; the other calls here move one
+/// page of JSON and allow 120 seconds.
+const ASSET_READ_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Fetch one Asset by its SHA-256 fingerprint to `dest`.
 ///
 /// Bytes are written to the Asset's own temporary file beside `dest` first
@@ -186,7 +192,7 @@ pub fn fetch_asset(
 
     let mut response = http
         .request_url(Method::GET, url, token)
-        .timeout(Duration::from_secs(300))
+        .timeout(ASSET_READ_TIMEOUT)
         .send()
         .with_context(fetch_failed)?;
 

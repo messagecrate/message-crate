@@ -7,6 +7,12 @@ use chrono::{DateTime, Datelike, Days, Duration, NaiveDate, NaiveDateTime, Utc};
 /// Relative spans further back than this are refused.
 const MAX_LOOKBACK_DAYS: u64 = 3_650;
 
+/// The days one month counts for against [`MAX_LOOKBACK_DAYS`]. It is the
+/// longest month, so no `Nm` passes the limit and then reaches further back
+/// than it allows: `117m` is accepted and `118m` refused. The span itself
+/// goes back calendar months, not this many days.
+const DAYS_PER_MONTH: u64 = 31;
+
 /// A comparison or range on an ordered scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Cmp<T> {
@@ -157,7 +163,7 @@ pub(crate) fn parse_date_span(raw: &str, today: NaiveDate) -> Option<DateSpan> {
         let days = match unit {
             'd' => u64::from(n),
             'w' => u64::from(n) * 7,
-            'm' => u64::from(n) * 31,
+            'm' => u64::from(n) * DAYS_PER_MONTH,
             _ => u64::from(n) * 365,
         };
         if days > MAX_LOOKBACK_DAYS {
@@ -398,6 +404,14 @@ mod tests {
             parse_date_span("18m", TODAY()).unwrap().start,
             d(2025, 3, 2)
         );
+    }
+
+    /// A month counts as 31 days against the limit: 117 of them fit in
+    /// 3,650 days and 118 do not.
+    #[test]
+    fn a_month_counts_as_31_days_against_the_ten_year_limit() {
+        assert!(parse_date_span("117m", TODAY()).is_some());
+        assert!(parse_date_span("118m", TODAY()).is_none());
     }
 
     #[test]
