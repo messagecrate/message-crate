@@ -2,6 +2,28 @@ import type { ReactNode } from "react";
 import { Column, Group } from "react-aria-components";
 import { mutedClass, thClass, thLeftClass, thRightClass } from "./handleTableStyles";
 
+/** The classes a sortable column takes for each alignment: header cell, label row, its padding, and label text. */
+const COLUMN_ALIGN_CLASSES = {
+  left: {
+    headerClass: thLeftClass,
+    justifyClass: "justify-start",
+    padClass: "",
+    textAlignClass: "text-left",
+  },
+  center: {
+    headerClass: thClass,
+    justifyClass: "justify-center",
+    padClass: "px-4",
+    textAlignClass: "text-center",
+  },
+  right: {
+    headerClass: thRightClass,
+    justifyClass: "justify-end",
+    padClass: "pr-4",
+    textAlignClass: "text-right",
+  },
+};
+
 export function SortableColumn({
   id,
   widthClass = "",
@@ -15,26 +37,19 @@ export function SortableColumn({
   isRowHeader?: boolean;
   children: ReactNode;
 }) {
-  const justifyClass =
-    align === "right" ? "justify-end" : align === "left" ? "justify-start" : "justify-center";
-  const textAlignClass =
-    align === "right" ? "text-right" : align === "left" ? "text-left" : "text-center";
-  const headerAlignClass =
-    align === "right" ? thRightClass : align === "left" ? thLeftClass : thClass;
+  const { headerClass, justifyClass, padClass, textAlignClass } = COLUMN_ALIGN_CLASSES[align];
 
   return (
     <Column
       id={id}
       isRowHeader={isRowHeader}
       allowsSorting
-      className={`${headerAlignClass} ${widthClass}`.trim()}
+      className={`${headerClass} ${widthClass}`.trim()}
     >
       {({ sortDirection }) => (
         <div className="relative flex w-full min-w-0 items-center">
           <Group
-            className={`flex min-w-0 flex-1 items-center outline-none ${justifyClass} ${
-              align === "right" ? "pr-4" : align === "left" ? "" : "px-4"
-            }`}
+            className={`flex min-w-0 flex-1 items-center outline-none ${justifyClass} ${padClass}`}
           >
             <span
               className={`max-w-full leading-tight ${textAlignClass} ${
