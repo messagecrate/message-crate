@@ -6195,7 +6195,9 @@ export interface operations {
                 };
             };
             /**
-             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             * @description [`demo-account-protected`](https://messagecrate.app/docs/developer/reference/errors/demo-account-protected): The demo account refuses this operation, because it exists to be looked at and reset rather than changed.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
              *
              *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so a Session or API token it already has may not act.
              */
@@ -7240,6 +7242,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description The fingerprint, quoted */
                     ETag?: string;
                     [name: string]: unknown;
@@ -7253,6 +7257,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     /** @description The fingerprint, quoted */
@@ -7605,6 +7611,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7616,6 +7624,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;
@@ -7701,6 +7711,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     [name: string]: unknown;
                 };
                 content: {
@@ -7712,6 +7724,8 @@ export interface operations {
                 headers: {
                     /** @description `bytes` */
                     "Accept-Ranges"?: string;
+                    /** @description `private`, and `private, no-store` when a media link admitted the read */
+                    "Cache-Control"?: string;
                     /** @description `bytes <first>-<last>/<length>` */
                     "Content-Range"?: string;
                     [name: string]: unknown;

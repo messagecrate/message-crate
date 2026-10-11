@@ -346,16 +346,8 @@ mod tests {
     fn document_with_bytes() -> ConversationDocument {
         let mut doc = message_ir::testutil::sample_document("with a photo");
         doc.messages[0].attachments = vec![IrAttachment {
-            path: None,
-            original_name: Some("photo.jpg".into()),
-            mime_type: Some("image/jpeg".into()),
-            digest_sha256: None,
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
             bytes: Some(b"\xff\xd8\xffphoto".to_vec()),
+            ..message_ir::testutil::sample_attachment()
         }];
         doc
     }
