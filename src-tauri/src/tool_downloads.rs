@@ -708,6 +708,27 @@ fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
     }
 }
 
+/// Record `pin`'s program, adopted at `path` in `dir`, with the stamp of
+/// `path`, and write the record in `dir`. A failure goes to the process log
+/// and fails nothing: the program is in place either way, and without its
+/// entry the next start reads the file again.
+fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: &Pinned) {
+    let program = pin.program;
+    match Stamp::at(path) {
+        Ok(stamp) => {
+            manifest.insert(program, Written::of(pin, stamp));
+            write_manifest_or_log(dir, manifest, program);
+        }
+        Err(err) => {
+            let name = program.name();
+            eprintln!(
+                "{name} is in place in the Tools Directory, and was not recorded in {MANIFEST_FILE} \
+                 because {name}'s size and modified time could not be read: {err}"
+            );
+        }
+    }
+}
+
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
 /// another check holds it. The lock is let go when the file is closed.
 fn lock_check(dir: &Path) -> io::Result<Option<File>> {
@@ -909,10 +930,7 @@ fn check(
                         continue;
                     }
                 }
-                if let Ok(stamp) = Stamp::at(&path) {
-                    manifest.insert(program, Written::of(pin, stamp));
-                    write_manifest_or_log(dir, &manifest, program);
-                }
+                record_adopted_or_log(dir, &path, &mut manifest, pin);
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
             Need::Download => wanted.push(pin),
