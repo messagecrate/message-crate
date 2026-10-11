@@ -313,7 +313,7 @@ fn gone_if_session_file_removed(session: &Path, err: AssetError) -> AssetError {
 }
 
 /// Whether an I/O error somewhere in `err` is a file or directory not found.
-fn is_not_found(err: &anyhow::Error) -> bool {
+pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
     err.chain()
         .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
         .any(|io| io.kind() == std::io::ErrorKind::NotFound)
