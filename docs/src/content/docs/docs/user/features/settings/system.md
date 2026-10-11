@@ -73,7 +73,7 @@ One line per program reports the result:
   For wtsexporter, the reason is that it has no permission to run.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
-- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, or a program in the Tools Directory that doesn't run on this computer.
+- A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, a program in the Tools Directory that couldn't be marked as a program that runs, or one that doesn't run on this computer.
   When a download finds no connection, the app tries again after 5, 15, 30 and 60 seconds, and shows the download as in progress while it waits.
   The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
   A copy put in the Tools Directory by hand during those waits ends them, and the app uses it.

@@ -429,7 +429,8 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let discarded = crate::db::imports::discard_running_import(&mut conn, account).await?;
+    let discarded =
+        crate::db::imports::discard_running_import(&mut conn, account, chrono::Utc::now()).await?;
     drop(conn);
     if discarded.is_some() {
         crate::asset_store::sweep_after_run(&opened.db, &opened.cfg.paths, account).await;

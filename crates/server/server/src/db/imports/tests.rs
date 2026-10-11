@@ -378,7 +378,7 @@ async fn stage_advances_and_discard_frees_the_slot() {
     let active = running_import(&mut conn, account).await.unwrap();
     assert_eq!(active.stage, Some(ImportStage::Upload));
 
-    discard_import(&mut conn, account, id, &[], &[])
+    discard_import(&mut conn, account, id, &[], &[], fixed_instant())
         .await
         .unwrap();
     assert!(
@@ -395,6 +395,95 @@ async fn stage_advances_and_discard_frees_the_slot() {
         .expect("a new Import Run can start");
 }
 
+/// One issue and one note, for the tests that check when they are recorded.
+fn one_issue_and_one_note() -> (Vec<ImportIssueInput>, Vec<ImportNoteRow>) {
+    let issue = ImportIssueInput {
+        kind: RunIssueKind::Error,
+        stage: ImportIssueStage::Media,
+        item: "photo.heic".into(),
+        reason: "convert failed".into(),
+    };
+    let note = ImportNoteRow {
+        stage: ImportIssueStage::Media,
+        item: "clip.mov".into(),
+        text: "kept the original".into(),
+    };
+    (vec![issue], vec![note])
+}
+
+/// The `created_at` of every issue and every note recorded for `import_id`.
+async fn issue_and_note_stamps(conn: &mut SqliteConnection, import_id: i64) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT created_at FROM import_issues WHERE import_id = $1
+         UNION ALL
+         SELECT created_at FROM import_notes WHERE import_id = $1",
+    )
+    .bind(import_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// A discard closes the run, and records its issues and notes, at the
+/// instant its caller passes, not at the clock's.
+#[tokio::test]
+async fn discard_import_stamps_the_run_and_its_issues_and_notes_with_the_instant_passed() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
+    let (issues, notes) = one_issue_and_one_note();
+
+    discard_import(&mut conn, ACCOUNT_ID, id, &issues, &notes, fixed_instant())
+        .await
+        .unwrap();
+
+    let at = fixed_instant().to_rfc3339();
+    let row = get_owned_import(&mut conn, ACCOUNT_ID, id).await.unwrap();
+    assert_eq!(row.finished_at.as_deref(), Some(at.as_str()));
+    assert_eq!(
+        issue_and_note_stamps(&mut conn, id).await,
+        [at.as_str(), at.as_str()]
+    );
+}
+
+/// A completion records its issues and notes at the instant its caller
+/// passes, the instant the run finishes.
+#[tokio::test]
+async fn complete_import_stamps_its_issues_and_notes_with_the_instant_passed() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
+    let (issues, notes) = one_issue_and_one_note();
+    let args = CompleteImportArgs {
+        status: "completed_with_issues".into(),
+        issues,
+        notes,
+        ..Default::default()
+    };
+
+    complete_import(&mut conn, ACCOUNT_ID, id, &args, fixed_instant())
+        .await
+        .unwrap();
+
+    let at = fixed_instant().to_rfc3339();
+    assert_eq!(
+        issue_and_note_stamps(&mut conn, id).await,
+        [at.as_str(), at.as_str()]
+    );
+}
+
 #[tokio::test]
 async fn discard_running_import_finds_the_running_import_run_by_account_and_skips_finished_ones() {
     let (pool, _dir) = setup_accounts_only().await;
@@ -402,7 +491,7 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
     let account = ACCOUNT_ID;
 
     assert!(
-        discard_running_import(&mut conn, account)
+        discard_running_import(&mut conn, account, fixed_instant())
             .await
             .unwrap()
             .is_none(),
@@ -426,7 +515,7 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
         .await
         .unwrap();
 
-    let discarded = discard_running_import(&mut conn, account)
+    let discarded = discard_running_import(&mut conn, account, fixed_instant())
         .await
         .unwrap()
         .expect("the running Import Run is the one discarded");
@@ -454,7 +543,7 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
         "a finished Import Run is left alone"
     );
     assert!(
-        discard_running_import(&mut conn, account)
+        discard_running_import(&mut conn, account, fixed_instant())
             .await
             .unwrap()
             .is_none(),
@@ -587,7 +676,7 @@ async fn every_move_the_desktop_app_makes_is_accepted() {
         }
         let row = get_owned_import(&mut conn, ACCOUNT_ID, id).await.unwrap();
         assert_eq!(row.stage, Some(to));
-        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[])
+        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[], fixed_instant())
             .await
             .unwrap();
     }
@@ -625,7 +714,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     )
     .await
     .unwrap();
-    discard_import(&mut conn, ACCOUNT_ID, discarded, &[], &[])
+    discard_import(&mut conn, ACCOUNT_ID, discarded, &[], &[], fixed_instant())
         .await
         .unwrap();
     let err = complete_import(
@@ -697,7 +786,7 @@ async fn a_discard_that_lands_after_the_run_completed_is_refused() {
     complete_elsewhere(&mut other, id).await;
     let err = crate::db::write_tx::commit_during(
         other,
-        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[]),
+        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[], fixed_instant()),
     )
     .await
     .unwrap_err();
