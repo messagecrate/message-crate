@@ -30,7 +30,7 @@
 # -----------------------------------------------------------------------------
 # Stage 1: Vite SPA frontend
 # -----------------------------------------------------------------------------
-FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS frontend-builder
+FROM node:24-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS frontend-builder
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
