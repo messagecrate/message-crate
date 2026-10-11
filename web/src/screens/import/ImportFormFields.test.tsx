@@ -20,7 +20,8 @@ import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
-import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
+import type { ImportFormFieldsProps } from "./formSections/types";
+import ImportFormFields from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),

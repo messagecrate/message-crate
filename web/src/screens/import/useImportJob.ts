@@ -21,6 +21,7 @@ import {
 } from "../../lib/importRun";
 import { importRunCreateBody } from "../../lib/importSource";
 import { importSourceFor } from "../../lib/importSources";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { endsSession } from "../../lib/routeQuery";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
 import { registerRunningUpload } from "../../lib/runningUpload";
@@ -55,7 +56,6 @@ import {
 import { isTauri } from "../../lib/tauri-check";
 import { waitingLine } from "../../lib/toolStatusCopy";
 import type {
-  AttachmentChoices,
   AttachmentMediaMode,
   ConversationStatus,
   ImportFileDoneEvent,
@@ -251,45 +251,6 @@ function resumeSteps(attachmentMedia: AttachmentMediaMode, mediaDone: boolean): 
     return step;
   });
 }
-
-export type ImportJobFormValues = AttachmentChoices & {
-  source: string;
-  backupPath: string;
-  backupPassword: string;
-  ownerPhones: string[];
-  /** Owner email addresses; only SMS Backup+ reads them. */
-  ownerEmails: string[];
-  obfuscate: boolean;
-  /** The IANA zone iMazing dates are read in: the account's, or the one picked
-   * under Processing Options. Only the iMazing extract reads it, because its
-   * dates carry no zone of their own. */
-  timeZone: string;
-  /**
-   * The country of the phone the backup came from, as an ISO code (`GB`), or
-   * empty for none. The Import Run states it, and the server reads every
-   * number the run's files write without its `+` code as a number there
-   * (#1676).
-   */
-  phoneCountry: string;
-  attachmentRoot: string;
-  appleContacts: string;
-  whatsappKey: string;
-  whatsappWa: string;
-  whatsappMedia: string;
-  whatsappDb: string;
-  /** Whether an iPhone WhatsApp backup is from WhatsApp Business. */
-  isBusinessApp: boolean;
-  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
-  whatsappOwnerPhone: string;
-  /**
-   * The server's attachment size limit, in bytes, as this Import Run works
-   * to it. Not a field the person fills in: a new run reads it from
-   * `GET /v1/server` before Staging, and it is stored with the run in the
-   * form snapshot, so a resume uses the number the run was staged and
-   * reviewed against even when the owner has changed the limit since.
-   */
-  assetMaxBytes?: number;
-};
 
 /** An Import Run whose copy was interrupted, and the directory it was writing into. */
 export type ResumeWrite = {
