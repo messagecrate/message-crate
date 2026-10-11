@@ -674,7 +674,11 @@ impl<'a> AccountPass<'a> {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
-            browser_shows: decided.unwrap_or(false),
+            // With nothing known about the file, as for an original that
+            // cannot be read, its type decides: a missing JPEG is not given
+            // a Preview its type never needs.
+            browser_shows: decided
+                .unwrap_or_else(|| media::shown_as_is_by_type(media_type(row).as_deref())),
         };
         // The decision is stored whatever the options leave alone, so the
         // `/v1` Attachment answers it without running ffprobe on a read. A
@@ -1178,15 +1182,17 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
     if is_part_path(&row.assets_path) {
         return Plan::RemoveIncomplete;
     }
-    // A GIF is an animation, so it gets no still Preview, but it is an image
-    // and gets a Thumbnail like any other.
-    let preview_kind = media::kind_of(
+    // `kind_of` answers no kind for a GIF, but it is an image and gets a
+    // Thumbnail like any other. Whether it gets a Preview is `browser_shows`'s
+    // answer, as for every type: every browser shows a GIF, so it gets none,
+    // while a file called a GIF whose bytes are not one gets one.
+    let kind_by_type = media::kind_of(
         Path::new(&row.assets_path),
         row.mime_type.as_deref(),
         &row.name_hints(),
     );
     let is_gif = media_type(row).as_deref() == Some("image/gif");
-    let Some(kind) = preview_kind.or(is_gif.then_some(Kind::Image)) else {
+    let Some(kind) = kind_by_type.or(is_gif.then_some(Kind::Image)) else {
         return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {
@@ -1219,10 +1225,7 @@ fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> P
     Plan::Versions(Versions {
         kind,
         thumbnail: need(matches!(kind, Kind::Image | Kind::Video), on_disk.thumbnail),
-        preview: need(
-            preview_kind.is_some() && !on_disk.browser_shows,
-            on_disk.preview,
-        ),
+        preview: need(!on_disk.browser_shows, on_disk.preview),
     })
 }
 
