@@ -65,6 +65,7 @@ if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || ((10#${PORT} < 1 || 10#${PORT} > 65535))
   echo "$0: the host port must be a number from 1 to 65535, not ${PORT}" >&2
   usage
 fi
+# Drop a leading zero, so Compose publishes the port the login uses.
 PORT=$((10#${PORT}))
 PROJECT="message-crate-compose-check"
 BASE="http://127.0.0.1:${PORT}"
