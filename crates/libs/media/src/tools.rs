@@ -370,10 +370,8 @@ pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
 }
 
-/// Whether `path` is a file with an executable bit. Nothing is run: it is
-/// how `wtsexporter` in the Tools Directory is judged runnable, by the
-/// WhatsApp exporter that looks it up and by the desktop app that keeps it
-/// there, because a `pipx` shim is slow to start.
+/// Whether `path` is a regular file with an executable bit. The file is not
+/// run.
 #[cfg(unix)]
 pub fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
