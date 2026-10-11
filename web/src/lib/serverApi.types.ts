@@ -1933,6 +1933,12 @@ export interface components {
          */
         AuditEntry: {
             /**
+             * @description Whether the account the entry is about has since been deleted. `false`
+             *     for an entry about no account, and for a refused login as a username
+             *     no account holds.
+             */
+            account_deleted: boolean;
+            /**
              * Format: int64
              * @description The account the entry is about, or `null` when it is about none, or
              *     the account has been deleted.
@@ -3964,6 +3970,12 @@ export interface components {
         Page_AuditEntry: {
             /** @description The rows on this page. */
             items: {
+                /**
+                 * @description Whether the account the entry is about has since been deleted. `false`
+                 *     for an entry about no account, and for a refused login as a username
+                 *     no account holds.
+                 */
+                account_deleted: boolean;
                 /**
                  * Format: int64
                  * @description The account the entry is about, or `null` when it is about none, or

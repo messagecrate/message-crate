@@ -13513,6 +13513,7 @@
           "action",
           "at",
           "actor",
+          "account_deleted",
           "account_id",
           "api_token_hint",
           "api_token_label",
@@ -13541,6 +13542,10 @@
           "username"
         ],
         "properties": {
+          "account_deleted": {
+            "type": "boolean",
+            "description": "Whether the account the entry is about has since been deleted. `false`\nfor an entry about no account, and for a refused login as a username\nno account holds."
+          },
           "account_id": {
             "type": [
               "integer",
@@ -16847,6 +16852,7 @@
                 "action",
                 "at",
                 "actor",
+                "account_deleted",
                 "account_id",
                 "api_token_hint",
                 "api_token_label",
@@ -16875,6 +16881,10 @@
                 "username"
               ],
               "properties": {
+                "account_deleted": {
+                  "type": "boolean",
+                  "description": "Whether the account the entry is about has since been deleted. `false`\nfor an entry about no account, and for a refused login as a username\nno account holds."
+                },
                 "account_id": {
                   "type": [
                     "integer",
