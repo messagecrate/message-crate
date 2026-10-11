@@ -11,7 +11,9 @@ fn config_file(dir: &Path, text: &str) -> PathBuf {
 
 /// A `[paths] db` naming `db`, an absolute path. `/srv/...` is not
 /// absolute on Windows, which wants a drive, so the tests use the temporary
-/// directory's own path.
+/// directory's own path. A TOML literal string (single quotes) keeps a
+/// Windows path's backslashes as they are; in double quotes they would be
+/// escapes.
 fn db_config(db: &Path) -> String {
     format!("[paths]\ndb = '{}'\n", db.display())
 }
@@ -30,10 +32,8 @@ fn without_db_the_database_is_the_configured_file() {
 #[test]
 fn db_replaces_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(
-        dir.path(),
-        &db_config(&dir.path().join("srv/messagecrate.db")),
-    );
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
     let other = dir.path().join("elsewhere/other.db");
 
     let cfg = Config::load_with_db(&path, Some(other.clone())).unwrap();
