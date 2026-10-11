@@ -8558,7 +8558,7 @@
           "Import"
         ],
         "summary": "Move a running Import Run to another stage.",
-        "description": "A run moves to the next stage, from the Staging Review straight to\nUpload (the move made when the import converts nothing), or to the stage\nit is already at. Any other move is a state conflict naming both stages,\nand the run is left as it was.\n\nThe stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
+        "description": "A run moves to the next stage, from the Staging Review straight to\nUpload (the move made when the import has no Media Stage), or to the stage\nit is already at. Any other move is a state conflict naming both stages,\nand the run is left as it was.\n\nThe stage is a field of the run, so moving it is a `PATCH` of the run\nrather than a `POST` to a `stage` sub-resource: a path segment names a\nresource, and `stage` is not one (`docs/architecture/http-api.md`,\n\"Naming a route\"). The answer is the run itself, the same shape\n`GET /v1/imports/{id}` returns, so a caller reads one record wherever it\nasks.",
         "operationId": "update_import",
         "parameters": [
           {

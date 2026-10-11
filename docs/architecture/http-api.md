@@ -763,7 +763,7 @@ and `GET` already answers the question a retry is asking.
 A running Import Run's stage moves only to the next stage in the order a run
 passes through (`parse`, `write`, `staging_review`, `media`, `media_review`,
 `upload`), from `staging_review` straight to `upload` (the move a client makes
-when the import converts no media), or to the stage it is already at. Any
+when the import has no Media Stage), or to the stage it is already at. Any
 other change of stage, backwards or skipping a stage, answers
 `409` `state-conflict` naming both stages, and the run keeps its stage and
 summary. Why: the next visit resumes a run at the stage the server holds, so a

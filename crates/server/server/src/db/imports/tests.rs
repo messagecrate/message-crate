@@ -449,8 +449,8 @@ fn every_stage_round_trips_through_its_string() {
 
 /// The moves the desktop app makes: a review re-recorded after its write
 /// failed is a stage to itself, a resumed Staging writes `write` again, and
-/// approving moves forward. Media is skipped when the import converts
-/// nothing.
+/// approving moves to the next stage, or from the Staging Review straight to
+/// Upload when the import has no Media Stage.
 const DESKTOP_APP_MOVES: [(ImportStage, ImportStage); 6] = [
     (ImportStage::Parse, ImportStage::Write),
     (ImportStage::Write, ImportStage::StagingReview),
@@ -461,7 +461,7 @@ const DESKTOP_APP_MOVES: [(ImportStage, ImportStage); 6] = [
 ];
 
 #[test]
-fn a_stage_moves_only_along_the_order_a_run_passes_through() {
+fn a_stage_moves_only_to_itself_the_next_stage_or_from_staging_review_to_upload() {
     for from in ImportStage::ALL {
         for to in ImportStage::ALL {
             let expected = from == to || DESKTOP_APP_MOVES.contains(&(from, to));

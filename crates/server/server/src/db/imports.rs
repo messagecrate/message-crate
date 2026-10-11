@@ -69,7 +69,7 @@ impl ImportStage {
     /// more, and a Review whose first write failed is written again before
     /// it is approved. Otherwise a run moves to the next stage in
     /// [`Self::ALL`], and the Staging Review may also move straight to
-    /// Upload, the move made when the import converts nothing. A run never
+    /// Upload, the move made when the import has no Media Stage. A run never
     /// skips any other stage and never moves back: the next visit
     /// resumes it at the stage the server holds, so a backward move would
     /// resume it at work it has already done (#1227).
