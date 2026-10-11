@@ -32,7 +32,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
         &[first],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Replace,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -68,7 +68,7 @@ async fn append_skips_existing_guids_and_keeps_id_map() {
         &[second],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: tmp.path(),
+            asset_root: Some(tmp.path()),
             mode: ImportMode::Append,
             source: "sms-backup-restore",
             account_id: TEST_ACCOUNT,
@@ -303,7 +303,7 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
     };
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -520,7 +520,7 @@ async fn append_existing_guid_adds_missing_children() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
@@ -607,7 +607,7 @@ async fn append_with_a_found_file_fills_in_the_missing_attachment() {
     );
     let options = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,

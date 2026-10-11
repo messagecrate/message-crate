@@ -55,7 +55,7 @@ describe("ChangePasswordSection", () => {
   it("sends a differing confirmation to the server and shows its sentence", async () => {
     // The server checks the pair after the current password, so the screen
     // never judges it: the order of what a user hears is the server's.
-    changePassword.mockRejectedValue(new Error("New passwords do not match."));
+    changePassword.mockRejectedValue(new Error("new passwords do not match"));
     const user = setupUser();
     renderWithProviders(<ChangePasswordSection />);
 
@@ -63,7 +63,7 @@ describe("ChangePasswordSection", () => {
     await fill(user, screen.getByLabelText("Confirm new password"), "second");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
-    expect(await screen.findByText("New passwords do not match.")).toBeInTheDocument();
+    expect(await screen.findByText("New passwords do not match")).toBeInTheDocument();
     expect(changePassword).toHaveBeenCalledWith({
       password: "first",
       password_confirmation: "second",

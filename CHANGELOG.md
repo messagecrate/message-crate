@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+
 - 2026-10-11: The way the Demo Account's generator and the server agree on
   what a demo bundle holds was reworked inside, with nothing visible (#2265).
 
@@ -548,6 +552,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **A wtsexporter the app's account can't run no longer shows
+  as found.** The desktop app took a `wtsexporter` in its Tools Directory as
+  ready when the file had permission to run for any account, so a copy that
+  root owns and only root may run showed as found in Settings and on the
+  Import form, and the WhatsApp import failed only once it started the
+  program. Settings and the Import form now say `wtsexporter` isn't used
+  because it is not executable by this account, and how to fix that
+  (#2793).
+
 - 2026-10-11: **A downloaded program that does not unpack says so.** When
   ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
   Settings and a run waiting for it said the file could not be written to
@@ -632,6 +645,16 @@ released versions carry their date on the heading.
   nothing that would ever delete them. The app now asks Message Crate
   whether the import is still running, and deletes the files when it is
   not (#2807).
+
+- 2026-10-11: **An attachment's file name in an Upload never picks up a
+  file the server already holds.** An Upload sends each attachment's file
+  first and names it by its fingerprint. The server also looked up the file
+  name the message gave inside the account's own stored files, so a name
+  that matched a half-received file or one of the server's own notes beside
+  a stored file was saved as a new attachment. The server now finds an
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
 
 - 2026-10-11: **Discarding an import keeps its files when Message Crate
   does not take the discard.** When you discarded an import, or cancelled

@@ -60,7 +60,7 @@ describe("SessionQueryClientProvider", () => {
 
   it("does not end the session over a mistyped password", async () => {
     await failMutation(
-      new ApiError(401, "Current password is incorrect.", {
+      new ApiError(401, "current password is incorrect", {
         type: "https://messagecrate.app/problems/invalid-credentials",
         title: "Invalid credentials",
         status: 401,

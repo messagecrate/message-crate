@@ -39,7 +39,7 @@ async fn open_verify(db: &Path) -> (sqlx::SqlitePool, sqlx::pool::PoolConnection
 fn replace_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
-        asset_root: root,
+        asset_root: Some(root),
         mode: ImportMode::Replace,
         source,
         account_id: TEST_ACCOUNT,
@@ -90,7 +90,7 @@ fn edit_version(part: u32, text: &str, ms: i64) -> EarlierVersion {
 fn edit_options<'a>(assets: &'a Path, root: &'a Path) -> ImportOptions<'a> {
     ImportOptions::fixed(FixedImportArgs {
         assets_dir: assets,
-        asset_root: root,
+        asset_root: Some(root),
         mode: ImportMode::Append,
         source: "imessage",
         account_id: TEST_ACCOUNT,
