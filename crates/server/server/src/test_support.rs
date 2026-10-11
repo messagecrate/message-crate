@@ -1122,8 +1122,8 @@ pub async fn attach_stored_file(
     sha: &str,
 ) -> std::path::PathBuf {
     let assets_dir = state.cfg.paths.assets_dir_for_account(account_id);
-    let (sha, rel) = write_stored_original(&assets_dir, sha, "", Some("image/jpeg"), b"jpeg bytes");
-    let path = assets_dir.join(&rel);
+    let (sha, rel, path) =
+        write_stored_original(&assets_dir, sha, "", Some("image/jpeg"), b"jpeg bytes");
 
     let mut conn = state.db.acquire().await.unwrap();
     let message_id: i64 = sqlx::query_scalar(
@@ -1148,15 +1148,16 @@ pub async fn attach_stored_file(
 /// Write `bytes` in `assets_dir` where the store places the original of
 /// `sha`, with `suffix` after the file name, and its MIME sidecar when `mime`
 /// is given. Both paths come from the store's own rules (`shard_rel_path`,
-/// `sidecar_path`) for the parsed fingerprint. Returns that fingerprint and
-/// the original's path relative to `assets_dir`, for the attachment row.
+/// `sidecar_path`) for the parsed fingerprint. Returns that fingerprint, the
+/// original's path relative to `assets_dir` for the attachment row, and the
+/// path of the file written.
 pub(crate) fn write_stored_original(
     assets_dir: &std::path::Path,
     sha: &str,
     suffix: &str,
     mime: Option<&str>,
     bytes: &[u8],
-) -> (crate::assets_api::Sha256, String) {
+) -> (crate::assets_api::Sha256, String, std::path::PathBuf) {
     let sha = crate::assets_api::Sha256::parse(sha)
         .expect("write_stored_original needs a 64-hex fingerprint");
     let rel = crate::assets_api::shard_rel_path(&sha, suffix);
@@ -1166,7 +1167,7 @@ pub(crate) fn write_stored_original(
     if let Some(mime) = mime {
         std::fs::write(crate::asset_store::sidecar_path(assets_dir, &sha), mime).unwrap();
     }
-    (sha, rel)
+    (sha, rel, path)
 }
 
 /// 64 hex-looking characters, distinct per `tag`: the length of a SHA-256

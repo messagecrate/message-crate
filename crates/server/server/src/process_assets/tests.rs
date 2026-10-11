@@ -599,7 +599,7 @@ async fn attach_original_at(
     bytes: &[u8],
 ) -> i64 {
     let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
-    let (sha, rel) =
+    let (sha, rel, _) =
         crate::test_support::write_stored_original(&assets_dir, sha, suffix, mime, bytes);
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
