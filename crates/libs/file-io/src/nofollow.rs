@@ -58,7 +58,8 @@ pub fn open_nofollow(path: &Path) -> Result<File> {
 /// # Errors
 ///
 /// Returns an error when [`open_nofollow`] refuses or fails, or the file
-/// cannot be read.
+/// cannot be read. Unlike [`crate::file_sha256`], a read error does not name
+/// the file: the asset store's callers add their own context to it.
 pub fn file_sha256_nofollow(path: &Path) -> Result<String> {
     let file = open_nofollow(path)?;
     Ok(crate::sha256_of_reader(file)?)

@@ -44,8 +44,10 @@ pub fn file_sha256(path: &Path) -> io::Result<String> {
 }
 
 /// Stream `reader` through SHA-256 in 64 KB chunks, retrying an interrupted
-/// read, and return 64 lowercase hex digits. A read error is returned as it
-/// is, so each caller words it.
+/// read, and return 64 lowercase hex digits. A read error is returned
+/// unchanged: [`file_sha256`] names the file in it, and
+/// [`file_sha256_nofollow`] passes it on bare, as the asset store's hash
+/// always has.
 fn sha256_of_reader(mut reader: impl Read) -> io::Result<String> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 64 * 1024];
