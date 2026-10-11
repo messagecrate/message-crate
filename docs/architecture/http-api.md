@@ -530,13 +530,13 @@ security scheme with its scopes, so every route says which it accepts.
   for another asset, another account, a later expiry or an ended Session
   fails the same check. The server's log shows `media_link=[hidden]`,
   because a credential is never logged. Every answer the three asset
-  routes give once the credential is accepted, the bytes or a problem such
-  as `404` or `416`, carries `Cache-Control: private`, because the bytes are
-  one account's attachment, and one read with a Media Link carries
-  `private, no-store`: that request sends no `Authorization` header, so a
-  shared cache in front of the server would otherwise keep the answer under
-  the link's URL and serve it after the hour or the Session has ended. A
-  problem carries it too, because a cache may keep a `404` and hide a
+  routes give once the credential is accepted carries
+  `Cache-Control: private`, because the bytes are one account's
+  attachment, and one read with a Media Link carries `private, no-store`:
+  that request sends no `Authorization` header, so a shared cache in front
+  of the server would otherwise keep the answer under the link's URL and
+  serve it after the hour or the Session has ended. A problem such as `404`
+  or `416` carries it too, because a cache may keep a `404` and hide a
   Preview made later.
   Why an hour: a phone video is watched and sought in within minutes, and an
   hour leaves room for a long one; a link copied out of the page stops

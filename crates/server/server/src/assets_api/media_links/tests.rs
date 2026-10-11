@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use super::*;
 use crate::assets_api::tests::{
-    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, seed_attachment_with_preview,
+    ORIGINAL_BYTES, PREVIEW_BYTES, UNCONVERTED_BYTES, fetch, give_thumbnail_the_preview_file,
+    seed_attachment_with_preview,
 };
 use crate::problem::ProblemType;
 use crate::test_support::{RegisteredAccount, expect_problem, http_client};
@@ -101,36 +102,31 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     let state = &fixture.state;
     let seeded = seed_attachment_with_preview(state, user.account_id).await;
     let sha = &seeded.with_preview;
-    // The Thumbnail is the Preview's file here: only the header matters.
-    let mut conn = state.db.acquire().await.unwrap();
-    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query(
-        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
-            thumbnail_assets_path = derived_assets_path,
-            thumbnail_mime_type = derived_mime_type
-         WHERE sha256 = $1",
-    )
-    .bind(sha)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
-    drop(conn);
+    give_thumbnail_the_preview_file(state, sha).await;
     let link = minted(state, sha, &user).await;
 
     for url in ["url", "preview_url", "thumbnail_url"].map(|key| link[key].as_str().unwrap()) {
-        for (range, status) in [
-            (None, StatusCode::OK),
-            (Some("bytes=0-2"), StatusCode::PARTIAL_CONTENT),
-            (Some("bytes=999999-"), StatusCode::RANGE_NOT_SATISFIABLE),
-        ] {
-            let headers: Vec<(&str, &str)> = range.map(|r| ("range", r)).into_iter().collect();
-            let answer = fetch(state, url, None, &headers).await;
-            assert_eq!(answer.status, status, "{url} {range:?}: {}", answer.text());
+        let whole = fetch(state, url, None, &[]).await;
+        assert_eq!(whole.status, StatusCode::OK, "{url}: {}", whole.text());
+        let part = fetch(state, url, None, &[("range", "bytes=0-2")]).await;
+        assert_eq!(
+            part.status,
+            StatusCode::PARTIAL_CONTENT,
+            "{url}: {}",
+            part.text()
+        );
+        let past_end = fetch(state, url, None, &[("range", "bytes=999999-")]).await;
+        expect_problem(
+            past_end.status,
+            &past_end.text(),
+            ProblemType::RangeNotSatisfiable,
+        );
+        for answer in [&whole, &part, &past_end] {
             assert_eq!(
                 answer.header("cache-control"),
                 Some("private, no-store"),
-                "{url} {range:?}"
+                "{url} {}",
+                answer.status
             );
         }
     }
@@ -142,22 +138,19 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
         &[],
     )
     .await;
-    assert_eq!(answer.status, StatusCode::NOT_FOUND, "{}", answer.text());
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
     assert_eq!(answer.header("cache-control"), Some("private, no-store"));
 
-    for (path, status) in [
-        (format!("/v1/assets/{sha}"), StatusCode::OK),
-        (format!("/v1/assets/{sha}/preview"), StatusCode::OK),
-        (format!("/v1/assets/{sha}/thumbnail"), StatusCode::OK),
-        (
-            format!("/v1/assets/{}/preview", seeded.without_preview),
-            StatusCode::NOT_FOUND,
-        ),
-    ] {
+    for version in ["", "/preview", "/thumbnail"] {
+        let path = format!("/v1/assets/{sha}{version}");
         let answer = fetch(state, &path, Some(&user.token), &[]).await;
-        assert_eq!(answer.status, status, "{path}: {}", answer.text());
+        assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
         assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
     }
+    let path = format!("/v1/assets/{}/preview", seeded.without_preview);
+    let answer = fetch(state, &path, Some(&user.token), &[]).await;
+    expect_problem(answer.status, &answer.text(), ProblemType::NotFound);
+    assert_eq!(answer.header("cache-control"), Some("private"));
 }
 
 /// A media link names one asset. Put on another asset's address, even one
