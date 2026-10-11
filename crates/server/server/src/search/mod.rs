@@ -195,6 +195,22 @@ pub fn compile_messages_of_conversations(req: CompileRequest<'_>) -> Result<Filt
     })
 }
 
+/// Check `query` for what every list refuses alike: a query over
+/// [`lex::MAX_QUERY_BYTES`] bytes, a syntax error such as a parenthesis or
+/// quote that never closes, and too many words, parts or levels of nesting.
+/// No `word:` is looked up and no value is read, because each list has its
+/// own words, so a query this passes can still be refused by the list it
+/// runs on.
+///
+/// # Errors
+///
+/// The [`QueryError`] that [`compile`] gives for the same refusal on any list.
+pub fn check_for_every_list(query: &str) -> Result<(), QueryError> {
+    let tokens = lex::tokenize(query)?;
+    parse::parse_unchecked(&tokens)?;
+    Ok(())
+}
+
 /// Parse `query` and compile it for `list`. Pure: no database, no clock.
 ///
 /// # Errors

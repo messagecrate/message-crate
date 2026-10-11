@@ -102,6 +102,23 @@ text, which a line never holds (below).
 modules do not all name theirs yet
 ([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
 
+## A request's lines carry its id, spawned work included
+
+Every line written while the server answers a request carries the request's
+id, method and path, from the tracing span the request runs under. That
+holds for a line written by work the request runs in a task of its own or
+on the blocking pool, such as removing files or hashing an import's
+messages: the server starts that work with `request_id::spawn_in_current_span` or
+`request_id::spawn_blocking_in_current_span`, which run it under the span and subscriber of
+the code that started it. `crates/server/server/clippy.toml` refuses
+`tokio::spawn` and `tokio::task::spawn_blocking` in the server, so a new
+spawn cannot leave them out.
+
+Why: a tracing span does not cross a spawn on its own, and a warning that
+names no request cannot be matched to the request that caused it or to the
+error its client was shown
+([#2186](https://github.com/messagecrate/message-crate/issues/2186)).
+
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past
