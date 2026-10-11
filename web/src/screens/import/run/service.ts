@@ -7,7 +7,7 @@ import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { createRunCancel } from "../../../lib/runCancel";
 import { CLEARED_RUN, initialImportRunState } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
-import type { ImportRunDeps, RunContext } from "./context";
+import type { ImportRunDeps, OpenRun, RunContext } from "./context";
 import { summarizeStagingWithProgress } from "./desktopJob";
 import { type DiscardOutcome, discardRun } from "./finish";
 import { mediaToolsMissingFor, runMediaStage } from "./media";
@@ -22,7 +22,7 @@ import {
   waitAtReview,
 } from "./screen";
 import { accountLeft, moveStageAtReview } from "./serverCalls";
-import { type ResumeUpload, type ResumeWrite, runImport } from "./staging";
+import { type ResumeWrite, runImport } from "./staging";
 import { adoptRecordedMode, parseStoredStagingSummary, withRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
@@ -109,7 +109,7 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startImport(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: ResumeUpload,
+    resume?: OpenRun,
     resumeWrite?: ResumeWrite,
   ): Promise<void> {
     if (!ctx.desktop.isTauri()) return;
@@ -131,7 +131,7 @@ export function createImportRunService(deps: ImportRunDeps) {
   async function startRun(
     account: RunAccount,
     form: ImportJobFormValues,
-    resume?: ResumeUpload,
+    resume?: OpenRun,
     resumeWrite?: ResumeWrite,
   ): Promise<void> {
     let identities: string[] | null = null;
@@ -194,15 +194,16 @@ export function createImportRunService(deps: ImportRunDeps) {
     const {
       phase,
       importRunId: runId,
-      runDir: outputDir,
+      runDir,
       stagingSummary,
       mediaSummary,
       reviewError,
     } = store.get();
     // What the person is approving: the directory as Media left it at the
     // Media Review, as Staging left it at the Staging Review.
-    const approvedSummary = phase === "media_review" ? mediaSummary : stagingSummary;
-    if (!form || runId == null || outputDir == null || approvedSummary == null) return;
+    const approved = phase === "media_review" ? mediaSummary : stagingSummary;
+    if (!form || runId == null || runDir == null || approved == null) return;
+    const run: OpenRun = { runId, runDir, approved };
 
     ctx.scratch.reviewAction = true;
     ctx.scratch.runCancel = createRunCancel(ctx.desktop.invokeCancel);
@@ -219,9 +220,9 @@ export function createImportRunService(deps: ImportRunDeps) {
           if (recorded !== "recorded") return;
         }
         if (phase === "staging_review" && mediaJobVerb(form.attachmentMedia) !== null) {
-          await runMediaStage(ctx, form, runId, outputDir, approvedSummary);
+          await runMediaStage(ctx, form, run);
         } else {
-          await runUpload(ctx, account.token, runId, outputDir, approvedSummary);
+          await runUpload(ctx, account.token, run);
         }
       } finally {
         approving.reviewAction = false;
@@ -279,22 +280,25 @@ export function createImportRunService(deps: ImportRunDeps) {
     }
     if (!importRun.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
 
-    const runId = importRun.id;
-    const outputDir = importRun.run_dir;
-    const approved = parseStoredStagingSummary(importRun.summary);
+    const run: OpenRun = {
+      runId: importRun.id,
+      runDir: importRun.run_dir,
+      approved: parseStoredStagingSummary(importRun.summary),
+    };
+    const { runDir, approved } = run;
     // Staging has finished for every stage resumed here, so the mode comes
     // from the directory: through the plan approved at the Staging Review until
     // the summary below is recomputed from the directory itself.
     const known = withRecordedMode(resumedForm, approved);
 
     beginRun(ctx, known, importRun.stage === "media" ? "media" : "staging");
-    await loadCarriedRecord(ctx, outputDir);
+    await loadCarriedRecord(ctx, runDir);
     store.set({
       ...CLEARED_RUN,
       resumeError: null,
       form: known,
-      runDir: outputDir,
-      importRunId: runId,
+      runDir,
+      importRunId: run.runId,
       sourceIdentities: parseSourceIdentities(importRun.source_identities),
     });
 
@@ -310,7 +314,7 @@ export function createImportRunService(deps: ImportRunDeps) {
         running: true,
       });
       try {
-        const actual = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
+        const actual = await summarizeStagingWithProgress(ctx, { run_dir: runDir });
         const recorded = adoptRecordedMode(ctx, known, actual);
         store.set({ steps: resumeSteps(recorded.attachmentMedia, mediaDone) });
         if (review === "staging_review") {
@@ -356,7 +360,7 @@ export function createImportRunService(deps: ImportRunDeps) {
       return;
     }
     store.set({ steps: resumeSteps(known.attachmentMedia, false) });
-    await runMediaStage(ctx, known, runId, outputDir, approved);
+    await runMediaStage(ctx, known, run);
   }
 
   /**
@@ -368,8 +372,8 @@ export function createImportRunService(deps: ImportRunDeps) {
     if (ctx.scratch.reviewAction) return;
     ctx.scratch.reviewAction = true;
     try {
-      const { importRunId: runId, runDir: outputDir } = store.get();
-      const outcome = await discardRun(ctx, runId, outputDir);
+      const { importRunId: runId, runDir } = store.get();
+      const outcome = await discardRun(ctx, runId, runDir);
       if (outcome.kind === "not_closed") store.set({ resumeError: outcome.message });
     } finally {
       ctx.scratch.reviewAction = false;

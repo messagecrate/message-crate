@@ -12,6 +12,23 @@ import type { ImportRunStore } from "../importRunStore";
 import type { RecordWrite } from "./runRecordWrites";
 import type { RunScratch } from "./scratch";
 
+/**
+ * An Import Run open on the server, as its stages work on it: the run, its run
+ * directory, and the plan approved at the last Review it passed.
+ *
+ * On a resume, `approved` is parsed from the run's stored `summary`
+ * (`parseStoredStagingSummary`), and is undefined when the run recorded
+ * nothing usable. The stages tolerate that absence, so a resume is not
+ * blocked on a plan that can no longer be read; `importOutcome` just cannot
+ * diff a resumed Upload's expected omissions against it, which demotes an
+ * honest `completed` outcome to `completed_with_issues`.
+ */
+export type OpenRun = {
+  runId: number;
+  runDir: string;
+  approved?: tauri.StagingSummary;
+};
+
 /** The desktop side of a run: the Tauri commands and events it uses. */
 export type RunDesktop = {
   /** True inside the desktop app. A run does nothing anywhere else. */

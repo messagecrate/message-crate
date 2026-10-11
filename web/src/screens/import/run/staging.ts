@@ -5,7 +5,6 @@ import { importRunCreateBody } from "../../../lib/importSource";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
-import type { StagingSummary } from "../../../lib/tauri";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
@@ -15,7 +14,7 @@ import {
   UPLOAD_LABEL,
 } from "../importProgressState";
 import { CLEARED_RUN } from "../importRunStore";
-import type { RunContext } from "./context";
+import type { OpenRun, RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport } from "./finish";
 import { mediaToolsMissingFor } from "./media";
@@ -50,19 +49,6 @@ export type ResumeWrite = {
    * without re-probing the backup, so this is the only way that Review's identity
    * section gets a list to show. */
   identities?: string[] | null;
-};
-
-/** Pick up an Import Run whose run directory is already complete. */
-export type ResumeUpload = {
-  runId: number;
-  runDir: string;
-  /** The plan approved at the last Review the run left, parsed from
-   * its stored `summary` (`parseStoredStagingSummary`). Undefined when the
-   * run recorded nothing usable — `runUpload` and `importOutcome`
-   * tolerate that absence, they just can't diff a resumed Upload's expected
-   * omissions against it, which demotes an honest `completed` outcome to
-   * `completed_with_issues` for exactly the interrupted-and-resumed case. */
-  approved?: StagingSummary;
 };
 
 /**
@@ -126,7 +112,7 @@ export async function runImport(
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
-  resume?: ResumeUpload,
+  resume?: OpenRun,
   resumeWrite?: ResumeWrite,
 ): Promise<void> {
   if (!ctx.desktop.isTauri()) return;
@@ -166,14 +152,13 @@ export async function runImport(
       // last review, so there IS a plan from it: it rides along as
       // `resume.approved` (parsed from the run's stored summary) when it
       // parses. Straight to Upload.
-      const outputDir = resume.runDir;
       runId = resume.runId;
-      await loadCarriedRecord(ctx, outputDir);
+      await loadCarriedRecord(ctx, resume.runDir);
       // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
       form = adoptRecordedMode(ctx, form, resume.approved);
       store.set({
-        runDir: outputDir,
+        runDir: resume.runDir,
         importRunId: runId,
         steps: stepsFor(form.attachmentMedia).map((step) =>
           step.label === UPLOAD_LABEL
@@ -181,7 +166,7 @@ export async function runImport(
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runUpload(ctx, token, runId, outputDir, resume.approved);
+      await runUpload(ctx, token, resume);
       return;
     }
 

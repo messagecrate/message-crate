@@ -86,8 +86,8 @@ export async function leaveIfRefused(
 
 /**
  * Move a live run to another stage, carrying the summary the person just
- * approved when there is one. `approvedPlan` is simply forwarded, undefined
- * and all: `setImportStage` posts `{ stage, summary: approvedPlan }`, and
+ * approved when there is one. `approved` is simply forwarded, undefined
+ * and all: `setImportStage` posts `{ stage, summary: approved }`, and
  * `JSON.stringify` drops an `undefined`-valued property outright, so an
  * omitted plan and an explicit `undefined` reach the server identically —
  * no `summary` key at all, leaving whatever plan is already stored untouched.
@@ -101,10 +101,10 @@ export async function moveStage(
   ctx: RunContext,
   runId: number,
   stage: ImportStage,
-  approvedPlan?: StagingSummary,
+  approved?: StagingSummary,
 ): Promise<void> {
   try {
-    await endSessionIfRefused(ctx, () => ctx.server.setImportStage(runId, stage, approvedPlan));
+    await endSessionIfRefused(ctx, () => ctx.server.setImportStage(runId, stage, approved));
   } catch (e: unknown) {
     if (e instanceof SessionRefusedError) throw e;
     const reason = errorText(e);
@@ -124,10 +124,10 @@ export async function moveStageAtReview(
   ctx: RunContext,
   runId: number,
   stage: "staging_review" | "media_review",
-  approvedPlan?: StagingSummary,
+  approved?: StagingSummary,
 ): Promise<"recorded" | "failed" | "refused"> {
   try {
-    await moveStage(ctx, runId, stage, approvedPlan);
+    await moveStage(ctx, runId, stage, approved);
     ctx.store.set({ reviewError: null });
     return "recorded";
   } catch (e: unknown) {
