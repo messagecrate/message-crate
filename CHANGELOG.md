@@ -709,8 +709,9 @@ released versions carry their date on the heading.
   of an upload that was never finished stayed on disk for a day. Nothing
   limited how many such uploads one account could have open, so one account
   could leave enough of them to fill the disk that every account on the
-  server shares. An account may now have 128 uploads in progress at once;
-  the next is refused until one of them is finished or abandoned (#2176).
+  server shares. An account may now have 128 uploads in progress at once.
+  The next is refused until one of them is completed, is stopped by the
+  program that sent it, or has sat untouched for a day (#2176).
 - 2026-10-10: **A request too large for the server reads the same
   everywhere.** When the server refuses a request for being over its size
   limit, the message now always reads "the request body is too large". It
