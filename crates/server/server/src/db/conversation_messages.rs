@@ -1111,18 +1111,21 @@ mod tests {
     /// count, the first statement that reads messages.
     #[tokio::test]
     async fn a_failed_statement_names_what_it_was_reading() {
-        for (breaks, statement) in [
+        for (breaks, statement, cause) in [
             (
                 "DROP TABLE attachments",
                 "read the attachments of a page of messages",
+                "no such table: attachments",
             ),
             (
                 "DROP TABLE tapbacks",
                 "read the tapbacks of a page of messages",
+                "no such table: tapbacks",
             ),
             (
                 "CREATE TEMP TABLE messages (id INTEGER)",
                 "count a conversation's messages",
+                "no such column",
             ),
         ] {
             let (fixture, account) = fixture_with_account().await;
@@ -1159,7 +1162,7 @@ mod tests {
 
             let chain = error.to_string();
             assert!(
-                chain.starts_with(&format!("{statement}: ")),
+                chain.starts_with(&format!("{statement}: ")) && chain.contains(cause),
                 "{breaks}: {chain}"
             );
         }
