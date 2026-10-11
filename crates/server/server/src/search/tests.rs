@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 use sqlx::SqliteConnection;
 
-use super::{CompileRequest, ListKind, QueryError, compile};
+use super::{CompileRequest, ListKind, QueryError, compile, today_in};
 use crate::db::sql::bind_args;
 use crate::test_support::{ConversationRow, stored_time};
 
@@ -690,11 +690,22 @@ pub(crate) async fn run_in(
     q: &str,
     zone: chrono_tz::Tz,
 ) -> Vec<i64> {
+    run_on(conn, list, q, zone, today()).await
+}
+
+/// [`run_in`] on the day `today` in place of the fixed [`today`].
+pub(crate) async fn run_on(
+    conn: &mut SqliteConnection,
+    list: ListKind,
+    q: &str,
+    zone: chrono_tz::Tz,
+    today: NaiveDate,
+) -> Vec<i64> {
     let f = compile(CompileRequest {
         list,
         query: q,
         account_id: ACCOUNT,
-        today: today(),
+        today,
         zone,
     })
     .unwrap_or_else(|e| panic!("{q:?} on {list:?}: {}", e.message));
@@ -2670,6 +2681,82 @@ mod measure_words {
             .await
             .contains(&f.ana)
         );
+    }
+
+    /// `today` and `yesterday` are days on the account's clock, not in UTC.
+    /// Auckland is 12 hours ahead of UTC until 02:00 on 27 September 2026,
+    /// when daylight saving moves it to 13, so that day is 23 hours long: it
+    /// runs from 12:00 UTC on the 26th to 11:00 UTC on the 27th (#2216).
+    #[tokio::test]
+    async fn today_and_yesterday_are_days_in_the_accounts_zone() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let auckland = chrono_tz::Pacific::Auckland;
+        let today = NaiveDate::from_ymd_opt(2026, 9, 27).unwrap();
+        let a = ACCOUNT;
+        let c = f.ana_direct;
+        let h = Some(f.ana_handle);
+        // The last millisecond of the 25th in Auckland, and the first of the 28th.
+        message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-25T11:59:59.999Z", false, h, "a"),
+        )
+        .await;
+        message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-27T11:00:00.000Z", false, h, "f"),
+        )
+        .await;
+        let first_of_yesterday = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-25T12:00:00.000Z", false, h, "b"),
+        )
+        .await;
+        let last_of_yesterday = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-26T11:59:59.999Z", false, h, "c"),
+        )
+        .await;
+        let first_of_today = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-26T12:00:00.000Z", false, h, "d"),
+        )
+        .await;
+        let last_of_today = message(
+            &mut conn,
+            a,
+            msg(c, "2026-09-27T10:59:59.999Z", false, h, "e"),
+        )
+        .await;
+        let m = ListKind::Messages;
+        assert_eq!(
+            run_on(&mut conn, m, "date:today", auckland, today).await,
+            vec![first_of_today, last_of_today]
+        );
+        assert_eq!(
+            run_on(&mut conn, m, "date:yesterday", auckland, today).await,
+            vec![first_of_yesterday, last_of_yesterday]
+        );
+    }
+
+    /// Today turns over at midnight in the account's zone: 10:00 UTC on
+    /// Kiritimati, 14 hours ahead, while the same instant is still the
+    /// previous day in UTC (#2216).
+    #[test]
+    fn today_turns_over_at_midnight_in_the_zone() {
+        use chrono::TimeZone;
+        let kiritimati = chrono_tz::Pacific::Kiritimati;
+        let before = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 9, 59, 59).unwrap();
+        let at = chrono::Utc.with_ymd_and_hms(2026, 9, 1, 10, 0, 0).unwrap();
+        let d = |day| NaiveDate::from_ymd_opt(2026, 9, day).unwrap();
+        assert_eq!(today_in(kiritimati, before), d(1));
+        assert_eq!(today_in(kiritimati, at), d(2));
+        assert_eq!(today_in(chrono_tz::UTC, at), d(1));
     }
 
     /// A day begins at its first millisecond: a message sent then is on that

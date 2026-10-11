@@ -1737,15 +1737,14 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
     }
 }
 
-/// `date:today` means today on the account's clock, not UTC's. The account
-/// is on Kiritimati, 14 hours ahead of UTC, so the local day starts at 10:00
-/// UTC the day before. A message half an hour into the local day is today; one
-/// half an hour before it is not, whatever day it is in UTC. A message stamped
-/// now is today in every zone.
+/// A `date:` day is a day on the account's clock, not UTC's. The account is
+/// on Kiritimati, 14 hours ahead of UTC, so 2 September there starts at 10:00
+/// UTC on the 1st. A message half an hour into that day is on the 2nd; one
+/// half an hour before it is not, though both are on the 1st in UTC. The day
+/// is named, never `today`, so the test does not read the clock (#2216);
+/// `today` in a zone is tested where it is computed, in `search`.
 #[tokio::test]
-async fn date_today_is_the_day_on_the_accounts_clock() {
-    use chrono::TimeZone;
-
+async fn a_date_is_a_day_on_the_accounts_clock() {
     let (fixture, alice) = fixture_with_account().await;
     let zone = chrono_tz::Pacific::Kiritimati;
     let _: serde_json::Value = crate::test_support::patch_json(
@@ -1756,18 +1755,6 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
     )
     .await;
 
-    let today = chrono::Utc::now().with_timezone(&zone).date_naive();
-    let local = |day: chrono::NaiveDate, h: u32, m: u32| {
-        let instant = zone
-            .from_local_datetime(&day.and_hms_opt(h, m, 0).unwrap())
-            .single()
-            .unwrap()
-            .with_timezone(&chrono::Utc);
-        crate::models::utc_timestamp_text(instant)
-    };
-    let early_today = local(today, 0, 30);
-    let late_yesterday = local(today.pred_opt().unwrap(), 23, 30);
-    let now = crate::models::utc_timestamp_text(chrono::Utc::now());
     seed_conversation(
         &fixture.state,
         &SeedConversation {
@@ -1779,37 +1766,28 @@ async fn date_today_is_the_day_on_the_accounts_clock() {
             messages: &[
                 SeedMessage {
                     source: "imessage",
-                    timestamp: late_yesterday.clone(),
+                    timestamp: stored_time("2026-09-01T09:30:00.000Z"),
                     is_from_me: false,
-                    body: "late yesterday",
+                    body: "late on the 1st",
                 },
                 SeedMessage {
                     source: "imessage",
-                    timestamp: early_today.clone(),
+                    timestamp: stored_time("2026-09-01T10:30:00.000Z"),
                     is_from_me: false,
-                    body: "early today",
-                },
-                SeedMessage {
-                    source: "imessage",
-                    timestamp: now.clone(),
-                    is_from_me: true,
-                    body: "right now",
+                    body: "early on the 2nd",
                 },
             ],
         },
     )
     .await;
 
-    let page: serde_json::Value =
-        get_json(&fixture.state, "/v1/messages?q=date%3Atoday", &alice.token).await;
-    let mut bodies: Vec<&str> = page["items"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m["text"].as_str().unwrap())
-        .collect();
-    bodies.sort_unstable();
-    assert_eq!(bodies, ["early today", "right now"], "{page}");
+    let page: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=date%3A2026-09-02",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(texts(&page), ["early on the 2nd"], "{page}");
 }
 
 /// Bodies of a page's messages, in the order the page lists them.
