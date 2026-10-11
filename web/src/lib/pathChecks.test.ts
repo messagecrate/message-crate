@@ -12,7 +12,7 @@ import {
   type ImportPathStat,
   PATH_MISSING,
   type PathKind,
-  probeImportPath,
+  probePath,
 } from "./pathChecks";
 
 const invokePathStat = vi.hoisted(() => vi.fn());
@@ -61,7 +61,7 @@ describe("checkOptionalPath", () => {
 
 describe("a path the app could not read", () => {
   const denied =
-    "Message Crate isn't allowed to read this path. The system says: Operation not permitted (os error 1). On a Mac, give Message Crate Full Disk Access in System Settings, under Privacy & Security.";
+    "Message Crate isn't allowed to read this path. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.";
 
   it("says the app is not allowed to read it, with the reason and the fix, rather than that it is missing", () => {
     expect(check("/tmp/x", DENIED_STAT, "directory")).toEqual({ field: denied });
@@ -82,25 +82,25 @@ describe("a path the app could not read", () => {
   });
 });
 
-describe("probeImportPath", () => {
+describe("probePath", () => {
   beforeEach(() => {
     invokePathStat.mockReset();
   });
 
   it("does not check an empty path", async () => {
-    expect(await probeImportPath("  ")).toBeNull();
+    expect(await probePath("  ")).toBeNull();
     expect(invokePathStat).not.toHaveBeenCalled();
   });
 
   it("checks the trimmed path", async () => {
     invokePathStat.mockResolvedValue(FILE_STAT);
-    expect(await probeImportPath(" /tmp/chat.db ")).toEqual(FILE_STAT);
+    expect(await probePath(" /tmp/chat.db ")).toEqual(FILE_STAT);
     expect(invokePathStat).toHaveBeenCalledWith("/tmp/chat.db");
   });
 
   it("reads a failed check as a path it could not check, not as a missing or unreadable one", async () => {
     invokePathStat.mockRejectedValue(new Error("ipc down"));
-    const stat = await probeImportPath("/tmp/chat.db");
+    const stat = await probePath("/tmp/chat.db");
     expect(check("/tmp/chat.db", stat, "file")).toEqual({
       field: "Message Crate could not check this path. The check failed with: ipc down.",
     });

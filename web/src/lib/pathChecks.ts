@@ -34,7 +34,7 @@ function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
   const said = reason.trim().replace(/\.$/, "");
   switch (kind) {
     case "permission_denied":
-      return `Message Crate isn't allowed to read this path. The system says: ${said}. On a Mac, give Message Crate Full Disk Access in System Settings, under Privacy & Security.`;
+      return `Message Crate isn't allowed to read this path. The system says: ${said}. Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.`;
     case "other":
       return `Message Crate could not read this path. The system says: ${said}.`;
     case "check_failed":
@@ -43,11 +43,12 @@ function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
 }
 
 /**
- * Check a path the person typed or picked. Null for an empty path. A check
- * the desktop app could not run says nothing about the path, so it comes
- * back as `check_failed`, never as a path that is missing.
+ * Check a path on this computer: one the person typed or picked on the
+ * Import form, or an Import Run's own directory. Null for an empty path. A
+ * check the desktop app could not run says nothing about the path, so it
+ * comes back as `check_failed`, never as a path that is missing.
  */
-export async function probeImportPath(path: string): Promise<ImportPathStat | null> {
+export async function probePath(path: string): Promise<ImportPathStat | null> {
   const trimmed = path.trim();
   if (trimmed === "") return null;
   try {

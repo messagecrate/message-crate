@@ -92,8 +92,7 @@ pub struct PathStat {
     /// Why the operating system would not say what is at the path, when it
     /// would not; `None` when it answered, whether or not the path is there.
     /// `exists`, `is_file` and `is_directory` are `false` alongside it,
-    /// because nothing is known: [`path_stat_inner`] builds the refusal from
-    /// the absent stat and never sets both.
+    /// because nothing is known: the stat sets one or the other, never both.
     pub unreadable: Option<PathUnreadable>,
 }
 

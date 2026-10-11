@@ -16,7 +16,7 @@ import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
 import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
-import { probeImportPath } from "../lib/pathChecks";
+import { probePath } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
@@ -54,6 +54,7 @@ import RunDirDeleteFailureNotice from "./import/RunDirDeleteFailureNotice";
 import {
   checkSourceFingerprint,
   type DirectoryCheck,
+  type FingerprintCheck,
   type ResumeDecision,
   resumeDecisionFor,
   resumeReadsBackup,
@@ -81,7 +82,7 @@ const NO_RESUME: ResumeDecision = { kind: "none", run: null };
  * still be there.
  */
 async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
-  const stat = await probeImportPath(runDir);
+  const stat = await probePath(runDir);
   if (stat === null || stat.unreadable) return "unknown";
   return stat.exists && stat.isDirectory ? "present" : "missing";
 }
@@ -253,11 +254,17 @@ export default function ImportScreen() {
         const directory = run?.run_dir ? await runDirectoryCheck(run.run_dir) : "missing";
         // Only a resume of the copy consults this; every later stage works
         // from the staged directory rather than the backup. The desktop
-        // `PathStat`, not `probeImportPath`'s `ImportPathStat`: the comparison needs
-        // the size and modified time, which `ImportPathStat` leaves out.
-        const sourceStat = run?.source_fingerprint?.path
-          ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
-          : null;
+        // `PathStat`, not `probePath`'s `ImportPathStat`: the comparison needs
+        // the size and modified time, which `ImportPathStat` leaves out. A
+        // check that fails says nothing about the backup, so it is
+        // "unknown", never a backup that is gone.
+        const stored = run?.source_fingerprint ?? null;
+        const fingerprint: FingerprintCheck = stored?.path
+          ? await invokePathStat(stored.path).then(
+              (stat) => checkSourceFingerprint(stored, stat),
+              () => "unknown" as const,
+            )
+          : checkSourceFingerprint(stored, null);
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
         if (!cancelled && !resumingRef.current && !discardingRef.current) {
@@ -266,7 +273,7 @@ export default function ImportScreen() {
               run,
               deviceId: getDeviceId(),
               directory,
-              fingerprint: checkSourceFingerprint(run?.source_fingerprint ?? null, sourceStat),
+              fingerprint,
             }),
           );
         }
@@ -507,9 +514,9 @@ export default function ImportScreen() {
     const timer = window.setTimeout(() => {
       void (async () => {
         const [backup, attachment, contacts] = await Promise.all([
-          probeImportPath(backupPath),
-          probeImportPath(attachmentRoot),
-          probeImportPath(appleContacts),
+          probePath(backupPath),
+          probePath(attachmentRoot),
+          probePath(appleContacts),
         ]);
         let backupEncrypted: boolean | null = null;
         if (source === "imessage-ios" && backup?.exists && backup.isDirectory) {
@@ -543,14 +550,14 @@ export default function ImportScreen() {
       void (async () => {
         const root = backupPath.trim();
         const [backup, contactsDb, media, db, msgstore, cryptHits] = await Promise.all([
-          probeImportPath(backupPath),
-          probeImportPath(whatsappWa),
-          probeImportPath(whatsappMedia),
-          probeImportPath(whatsappDb),
-          probeImportPath(root ? `${root}/msgstore.db` : ""),
+          probePath(backupPath),
+          probePath(whatsappWa),
+          probePath(whatsappMedia),
+          probePath(whatsappDb),
+          probePath(root ? `${root}/msgstore.db` : ""),
           Promise.all(
             WHATSAPP_CRYPT_NAMES.map(async (name) => {
-              const stat = await probeImportPath(root ? `${root}/${name}` : "");
+              const stat = await probePath(root ? `${root}/${name}` : "");
               return stat?.exists && stat.isFile ? name : null;
             }),
           ),

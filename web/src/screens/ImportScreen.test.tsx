@@ -734,6 +734,26 @@ describe("ImportScreen entering Import", () => {
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("source_changed");
   });
 
+  it("resumes the copy, rather than calling the backup changed, when the backup check fails", async () => {
+    getActiveImportRunMock.mockResolvedValue(
+      activeImportRun({
+        stage: "write",
+        source_fingerprint: {
+          path: "/backups/iphone.tar",
+          size_bytes: 1000,
+          modified_unix_ms: 1_700_000_000_000,
+        },
+      }),
+    );
+    invokePathStatMock
+      .mockResolvedValueOnce({ exists: true, isFile: false, isDirectory: true, unreadable: null })
+      .mockRejectedValueOnce(new Error("ipc down"));
+    renderWithProviders(<ImportScreen />);
+
+    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
+  });
+
   it("re-checks for an open run when the screen returns to the form", async () => {
     // A swallowed final /complete, or a restart whose discard failed,
     // leaves a run open server-side that the screen has forgotten. If

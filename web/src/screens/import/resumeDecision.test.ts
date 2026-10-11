@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { activeImportRun } from "../../test/apiShapes";
-import { desktopPathStat } from "../../test/pathStats";
+import { desktopPathStat, PERMISSION_DENIED } from "../../test/pathStats";
 import { checkSourceFingerprint, resumeDecisionFor } from "./resumeDecision";
 
 describe("resumeDecisionFor", () => {
@@ -230,7 +230,7 @@ describe("checkSourceFingerprint", () => {
           isFile: false,
           sizeBytes: 0,
           modifiedUnixMs: null,
-          unreadable: { kind: "permission_denied", reason: "Operation not permitted (os error 1)" },
+          unreadable: PERMISSION_DENIED,
         }),
       ),
     ).toBe("unknown");
