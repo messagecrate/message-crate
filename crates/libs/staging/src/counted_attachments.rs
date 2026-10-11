@@ -37,7 +37,7 @@ impl PathSources {
     pub fn count(
         self,
         source: (AttachmentSource, Option<u64>),
-        log: Option<&LogSink>,
+        log: &LogSink,
     ) -> (AttachmentSource, Option<u64>) {
         let counted = counted_source(source);
         match self {
@@ -74,7 +74,7 @@ impl<'a> CountedAttachments<'a> {
         media: MediaConfig,
         paths: PathSources,
         mut source_for: impl FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
-        log: Option<&LogSink>,
+        log: &LogSink,
     ) -> Self {
         // With the media turned off nothing is read, so no path is checked.
         let paths = if media.mode == MediaMode::Disabled {
@@ -128,9 +128,9 @@ impl<'a> CountedAttachments<'a> {
         self,
         attachments_dir: &Path,
         mut load: impl FnMut(&mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError>,
-        log: Option<&LogSink>,
-        progress: Option<&ProgressSink>,
-        cancel: Option<&CancelFlag>,
+        log: &LogSink,
+        progress: &ProgressSink,
+        cancel: &CancelFlag,
     ) -> Result<u64, String> {
         let Self {
             jobs,
@@ -184,16 +184,16 @@ mod tests {
             MediaConfig::default(),
             paths,
             |att| (sources.next().unwrap(), att.size_bytes),
-            None,
+            &LogSink::none(),
         );
         let needed = counted.bytes_to_write(OutputFormat::Csv);
         counted
             .stage(
                 &out.path().join("attachments"),
                 load_attachment_source,
-                None,
-                Some(&progress),
-                None,
+                &LogSink::none(),
+                &progress,
+                &CancelFlag::default(),
             )
             .unwrap();
 

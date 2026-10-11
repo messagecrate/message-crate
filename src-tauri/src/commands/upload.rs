@@ -1,5 +1,6 @@
 //! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
+use message_crate_core::CancelFlag;
 use message_crate_import::ImportMode;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -98,7 +99,7 @@ pub fn upload(
     let run_log = RunLog::open(&logs, Path::new(&args.input_dir));
     spawn_job(app, job, move || {
         let mut cfg = upload_config(args, &logs).inspect_err(|error| run_log.error(error))?;
-        cfg.cancel = Some(cancel);
+        cfg.cancel = cancel;
         let mut progress = |event: ProgressEvent| forward_upload_event(&app_handle, event);
         let report =
             run_import(&cfg, Some(&mut progress)).inspect_err(|error| run_log.error(error))?;
@@ -153,7 +154,7 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<ImportConf
         // JSONL import batches use MAX_IMPORT_BODY_BYTES.
         asset_max_bytes: recorded.asset_max_bytes,
         log_path,
-        cancel: None,
+        cancel: CancelFlag::default(),
         import_id: args.import_id,
         // The web app creates the Import Run, with the form's phone country
         // on it, before the Upload starts, and the Upload posts into it.

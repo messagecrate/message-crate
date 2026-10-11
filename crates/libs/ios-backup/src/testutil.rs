@@ -15,6 +15,7 @@ use std::{
 use imessage_reader_protocol::Request;
 
 use crate::Helper;
+use message_crate_core::{LogSink, ProgressSink};
 
 /// Write `body` as an executable `/bin/sh` script in `dir`. The script
 /// reads the request line first, as the real program does.
@@ -37,7 +38,7 @@ pub fn fake_helper(dir: &Path, body: &str) -> PathBuf {
 /// Panics when the fake cannot be started.
 pub fn spawn_fake(path: &Path, request: &Request) -> Helper {
     for _ in 0..50 {
-        match Helper::spawn_at(path, request, None, None) {
+        match Helper::spawn_at(path, request, LogSink::none(), ProgressSink::none()) {
             Ok(helper) => return helper,
             Err(e)
                 if e.downcast_ref::<std::io::Error>()

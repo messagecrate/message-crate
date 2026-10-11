@@ -97,7 +97,9 @@ pub(crate) fn decrypt_if_encrypted(
     config: &ExporterConfig,
 ) -> Result<Option<DecryptedWhatsapp>> {
     decrypt_with(source, work, |backup, password, domain| {
-        config.emit_log("The iPhone backup is encrypted; decrypting WhatsApp's files...");
+        config
+            .log
+            .emit("The iPhone backup is encrypted; decrypting WhatsApp's files...");
         decrypt_ios_backup_domain(
             backup,
             password,

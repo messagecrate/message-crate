@@ -164,6 +164,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: The way an import passes its log, its progress and its cancel
+  around was reworked inside, with nothing visible (#2165).
+
 - 2026-10-10: **An import is never sent back to a stage it has passed.**
   Message Crate now refuses to move an import that is under way back to an
   earlier stage, so a mistake in the app can no longer make the next resume
@@ -430,6 +433,10 @@ released versions carry their date on the heading.
   Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
+
+- 2026-10-10: **An attachment an import could not save is named in the
+  Import Run's log.** It used to be written where no log of Message Crate
+  showed it (#2165).
 
 - 2026-10-10: **Converting or compressing attachments no longer follows a
   symlink.** When the Media Stage of an Import Run converts or compresses

@@ -1,11 +1,24 @@
 use super::*;
 use media::testutil::PNG_1X1_RGB;
 use media::{CompressOptions, MediaMode};
-use message_crate_core::LogSink;
+use message_crate_core::{CancelFlag, LogSink, ProgressSink};
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::read_conversation_jsonl;
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
+
+/// Sinks that drop what they get, with a cancel flag nobody sets, for a
+/// drain whose test reads only what it wrote.
+fn no_sinks() -> Sinks<'static> {
+    static LOG: LazyLock<LogSink> = LazyLock::new(LogSink::none);
+    static PROGRESS: LazyLock<ProgressSink> = LazyLock::new(ProgressSink::none);
+    static CANCEL: LazyLock<CancelFlag> = LazyLock::new(CancelFlag::default);
+    Sinks {
+        log: &LOG,
+        progress: &PROGRESS,
+        cancel: &CANCEL,
+    }
+}
 
 fn att(name: &str) -> IrAttachment {
     IrAttachment {
@@ -61,7 +74,7 @@ fn drain(
         units,
         options,
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
-        Sinks::default(),
+        no_sinks(),
     )
 }
 
@@ -138,7 +151,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
         build(),
         &options(MediaMode::Clone, true),
         &mut never,
-        Sinks::default(),
+        no_sinks(),
     )
     .unwrap();
 
@@ -271,6 +284,50 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
     assert!(atts[1].path.is_some(), "the readable one still landed");
 }
 
+/// An attachment the drain cannot stage is named in the drain's own log.
+/// It once went to standard error, where no Import Run's log shows it.
+///
+/// A directory sitting at the attachment's staged name makes its rename
+/// fail on every platform.
+#[test]
+fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
+    use sha2::{Digest, Sha256};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    let bytes = b"blocked".to_vec();
+    let doc = doc_with(&test_number(8), 1);
+    let staged = message_crate_core::attachment_dest_name(
+        doc.messages[0].timestamp_unix_ms.div_euclid(1000),
+        &hex::encode(Sha256::digest(&bytes)),
+        ".jpg",
+    );
+    fs::create_dir_all(out.join("attachments").join(staged).join("occupied")).unwrap();
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink_lines = Arc::clone(&lines);
+    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+
+    drain_write_queue_with_loader(
+        &out,
+        vec![unit_from(doc, vec![AttachmentSource::Bytes(bytes)])],
+        &options(MediaMode::Clone, false),
+        &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
+        Sinks {
+            log: &sink,
+            ..no_sinks()
+        },
+    )
+    .unwrap();
+
+    let lines = lines.lock().unwrap().clone();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("  attachment f0.jpg not staged: ")),
+        "{lines:?}"
+    );
+}
+
 #[test]
 fn progress_lines_cover_all_units_with_global_counts() {
     let tmp = tempfile::tempdir().unwrap();
@@ -296,8 +353,8 @@ fn progress_lines_cover_all_units_with_global_counts() {
         &options(MediaMode::Clone, false),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
-            log: Some(&sink),
-            ..Sinks::default()
+            log: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -339,7 +396,7 @@ fn parallel_drain_writes_every_unit() {
     let mut options = options(MediaMode::Clone, false);
     options.writer_count = 4;
 
-    let report = drain_write_queue(&out, units, &options, Sinks::default()).unwrap();
+    let report = drain_write_queue(&out, units, &options, no_sinks()).unwrap();
 
     assert_eq!(report.conversations_written, 12);
     assert_eq!(report.attachments_saved, 12);
@@ -374,7 +431,7 @@ fn parallel_drain_stops_on_the_first_error() {
     let mut options = options(MediaMode::Clone, false);
     options.writer_count = 2;
 
-    let err = drain_write_queue(&out, units, &options, Sinks::default()).unwrap_err();
+    let err = drain_write_queue(&out, units, &options, no_sinks()).unwrap_err();
     assert!(
         format!("{err:#}").contains(&blocked),
         "the error should name the conversation that failed: {err:#}"
@@ -440,8 +497,8 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
             &options,
             &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
             Sinks {
-                progress: Some(&sink),
-                ..Sinks::default()
+                progress: &sink,
+                ..no_sinks()
             },
         )
         .unwrap();
@@ -451,8 +508,8 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
             units,
             &options,
             Sinks {
-                progress: Some(&sink),
-                ..Sinks::default()
+                progress: &sink,
+                ..no_sinks()
             },
         )
         .unwrap();
@@ -595,8 +652,8 @@ fn parallel_progress_counts_are_snapshots_that_never_go_back() {
         units,
         &options,
         Sinks {
-            progress: Some(&sink),
-            ..Sinks::default()
+            progress: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -663,8 +720,8 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         units,
         &options,
         Sinks {
-            progress: Some(&sink),
-            ..Sinks::default()
+            progress: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -725,8 +782,8 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
         &options(MediaMode::Clone, true),
         &mut |_: &str, source: &mut AttachmentSource| load_attachment_source(source),
         Sinks {
-            progress: Some(&sink),
-            ..Sinks::default()
+            progress: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -757,8 +814,8 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
         units,
         &options(MediaMode::Clone, false),
         Sinks {
-            log: Some(&sink),
-            ..Sinks::default()
+            log: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -796,13 +853,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
             vec![AttachmentSource::Path(gone.clone())],
         )]
     };
-    drain_write_queue(
-        &out,
-        build(),
-        &options(MediaMode::Clone, false),
-        Sinks::default(),
-    )
-    .unwrap();
+    drain_write_queue(&out, build(), &options(MediaMode::Clone, false), no_sinks()).unwrap();
 
     let lines = Arc::new(Mutex::new(Vec::<String>::new()));
     let sink_lines = Arc::clone(&lines);
@@ -812,8 +863,8 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
         build(),
         &options(MediaMode::Clone, true),
         Sinks {
-            log: Some(&sink),
-            ..Sinks::default()
+            log: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -848,7 +899,7 @@ fn a_drain_the_disk_cannot_hold_is_refused_before_anything_is_written() {
         &out,
         hinted(),
         &options(MediaMode::Clone, false),
-        Sinks::default(),
+        no_sinks(),
     )
     .unwrap_err();
     assert!(err.to_string().contains("Not enough space"), "{err}");
@@ -1046,7 +1097,7 @@ fn media_disabled_is_not_refused_for_attachments_it_will_not_write() {
         &out,
         hinted(),
         &options(MediaMode::Disabled, false),
-        Sinks::default(),
+        no_sinks(),
     );
     assert!(result.is_ok(), "refused: {:?}", result.err());
 }
@@ -1131,8 +1182,8 @@ fn a_resumed_drain_names_each_conversation_file_it_writes_or_skips() {
         &options(MediaMode::Clone, true),
         &mut load,
         Sinks {
-            progress: Some(&sink),
-            ..Sinks::default()
+            progress: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();
@@ -1176,8 +1227,8 @@ fn a_parallel_drain_names_each_conversation_file_it_writes() {
         units,
         &options,
         Sinks {
-            progress: Some(&sink),
-            ..Sinks::default()
+            progress: &sink,
+            ..no_sinks()
         },
     )
     .unwrap();

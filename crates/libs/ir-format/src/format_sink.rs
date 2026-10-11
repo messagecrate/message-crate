@@ -243,18 +243,16 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 pub fn write_documents_through_sink(
     documents: Vec<message_ir::ConversationDocument>,
     mut sink: FormatSink,
-    log: Option<&message_crate_core::LogSink>,
-    progress: Option<&message_crate_core::ProgressSink>,
-    cancel: Option<&message_crate_core::CancelFlag>,
+    log: &message_crate_core::LogSink,
+    progress: &message_crate_core::ProgressSink,
+    cancel: &message_crate_core::CancelFlag,
     report: &mut ExportReport,
 ) -> anyhow::Result<()> {
-    use message_crate_core::{
-        CONVERSATION_FILES_PREPARING, ProgressEvent, emit_log, emit_progress,
-    };
+    use message_crate_core::{CONVERSATION_FILES_PREPARING, ProgressEvent};
     let total = documents.len();
-    emit_log(log, "");
-    emit_log(log, CONVERSATION_FILES_PREPARING.line(total as u64));
-    emit_progress(progress, ProgressEvent::Prepare { done: 0, total });
+    log.emit("");
+    log.emit(CONVERSATION_FILES_PREPARING.line(total as u64));
+    progress.emit(ProgressEvent::Prepare { done: 0, total });
     let mut written = 0usize;
     for doc in documents {
         message_crate_core::check_cancel(cancel)?;
@@ -262,14 +260,11 @@ pub fn write_documents_through_sink(
         sink.write_document(doc)?;
         report.conversations += 1;
         if written.is_multiple_of(100) || written == total {
-            emit_log(log, format!("  preparing {written}/{total}"));
-            emit_progress(
-                progress,
-                ProgressEvent::Prepare {
-                    done: written,
-                    total,
-                },
-            );
+            log.emit(format!("  preparing {written}/{total}"));
+            progress.emit(ProgressEvent::Prepare {
+                done: written,
+                total,
+            });
         }
     }
     sink.finish(report)
@@ -284,7 +279,7 @@ mod tests {
 
     #[test]
     fn write_documents_through_sink_reports_prepare_progress() {
-        use message_crate_core::{ProgressEvent, ProgressSink};
+        use message_crate_core::{CancelFlag, LogSink, ProgressEvent, ProgressSink};
         use std::sync::{Arc, Mutex};
 
         let tmp = crate::export_dir();
@@ -298,9 +293,9 @@ mod tests {
         write_documents_through_sink(
             vec![message_ir::testutil::sample_document("hello")],
             sink,
-            None,
-            Some(&progress),
-            None,
+            &LogSink::none(),
+            &progress,
+            &CancelFlag::default(),
             &mut report,
         )
         .unwrap();

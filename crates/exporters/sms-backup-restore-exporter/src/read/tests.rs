@@ -2,6 +2,13 @@ use super::*;
 use crate::write::SbrBackupSession;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
+
+/// Sinks that drop what they get, and a cancel flag nobody sets, for
+/// reader options a helper returns.
+static NO_LOG: LazyLock<LogSink> = LazyLock::new(LogSink::none);
+static NO_PROGRESS: LazyLock<ProgressSink> = LazyLock::new(ProgressSink::none);
+static NO_CANCEL: LazyLock<CancelFlag> = LazyLock::new(CancelFlag::default);
 
 fn opts<'a>(
     owner_phones: &'a [String],
@@ -18,9 +25,9 @@ fn opts<'a>(
             MediaMode::Disabled
         },
         compress: CompressOptions::default(),
-        log: None,
-        progress: None,
-        cancel: None,
+        log: &NO_LOG,
+        progress: &NO_PROGRESS,
+        cancel: &NO_CANCEL,
     }
 }
 
@@ -483,7 +490,7 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     stage_read_attachments(
         &mut docs,
         &ReadOptions {
-            progress: Some(&progress),
+            progress: &progress,
             ..opts(&[], Some(&stage), Some(&spool))
         },
     )

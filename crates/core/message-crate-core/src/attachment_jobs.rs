@@ -2,8 +2,8 @@
 
 use crate::attachments::attachment_dest_name;
 use crate::config::MediaConfig;
-use crate::process::{CancelFlag, LogSink, emit_log};
-use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
+use crate::process::{CancelFlag, LogSink};
+use crate::progress::{ProgressEvent, ProgressSink};
 use media::MediaMode;
 use message_ir::{ConversationDocument, IrAttachment, IrMessage};
 use sha2::{Digest, Sha256};
@@ -87,8 +87,8 @@ pub fn run_attachment_jobs(
     media: &MediaConfig,
     mut load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
     mut on_progress: impl FnMut(AttachmentProgress),
-    log: Option<&LogSink>,
-    cancel: Option<&AtomicBool>,
+    log: &LogSink,
+    cancel: &AtomicBool,
 ) -> Result<(), String> {
     let total = jobs.len();
     if total == 0 {
@@ -120,7 +120,7 @@ pub fn run_attachment_jobs(
         .map_err(|e| format!("create {}: {e}", attachments_dir.display()))?;
 
     for (i, job) in jobs.iter_mut().enumerate() {
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
         }
 
@@ -153,16 +153,13 @@ pub fn run_attachment_jobs(
         // A write the file system refuses is that attachment's problem, as
         // an unreadable source is: mark it missing and stage the rest.
         if let Err(err) = persist_clone(job, attachments_dir, &bytes) {
-            emit_log(
-                log,
-                format!(
-                    "  attachment {} not staged: {err}",
-                    job.attachment
-                        .original_name
-                        .as_deref()
-                        .unwrap_or("(no name)")
-                ),
-            );
+            log.emit(format!(
+                "  attachment {} not staged: {err}",
+                job.attachment
+                    .original_name
+                    .as_deref()
+                    .unwrap_or("(no name)")
+            ));
             job.attachment.missing_reason = Some("file_missing".into());
             bytes_total = bytes_total.saturating_sub(bytes.len() as u64);
             on_progress(AttachmentProgress {
@@ -183,7 +180,7 @@ pub fn run_attachment_jobs(
     }
 
     if matches!(media.mode, MediaMode::Convert | MediaMode::Compress) {
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        if cancel.load(Ordering::Relaxed) {
             return Err("cancelled".into());
         }
         apply_convert_or_compress(jobs, attachments_dir, media, log)?;
@@ -226,9 +223,9 @@ pub fn stage_attachment_jobs(
     attachments_dir: &Path,
     media: &MediaConfig,
     load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
+    log: &LogSink,
+    progress: &ProgressSink,
+    cancel: &CancelFlag,
 ) -> Result<u64, String> {
     run_attachment_jobs(
         &mut jobs,
@@ -237,7 +234,7 @@ pub fn stage_attachment_jobs(
         load,
         report_attachment_progress(log, progress),
         log,
-        cancel.map(|flag| flag.as_ref()),
+        cancel,
     )?;
 
     let mut written = HashSet::new();
@@ -292,18 +289,15 @@ pub fn attachment_jobs<'a>(
 /// of total, bytes done of total) for people, and a typed
 /// [`ProgressEvent::Attachments`] for the progress bar.
 pub fn report_attachment_progress<'a>(
-    log: Option<&'a LogSink>,
-    progress: Option<&'a ProgressSink>,
+    log: &'a LogSink,
+    progress: &'a ProgressSink,
 ) -> impl FnMut(AttachmentProgress) + 'a {
     move |counts| {
-        if emit_progress(progress, ProgressEvent::from(counts)) {
-            emit_log(
-                log,
-                format!(
-                    "  attachments {}/{} {}/{}",
-                    counts.done, counts.total, counts.bytes_done, counts.bytes_total
-                ),
-            );
+        if progress.emit(ProgressEvent::from(counts)) {
+            log.emit(format!(
+                "  attachments {}/{} {}/{}",
+                counts.done, counts.total, counts.bytes_done, counts.bytes_total
+            ));
         }
     }
 }
@@ -348,13 +342,13 @@ fn apply_convert_or_compress(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,
     media: &MediaConfig,
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) -> Result<(), String> {
     let Some(output_dir) = attachments_dir.parent() else {
         return Err("attachments directory has no parent".into());
     };
     let files = media::collect_media_files(attachments_dir).map_err(|e| format!("{e:#}"))?;
-    let mut emit = |line: &str| emit_log(log, line);
+    let mut emit = |line: &str| log.emit(line);
     let (report, remap) = media::process_attachment_files(
         output_dir,
         &files,

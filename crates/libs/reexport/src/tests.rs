@@ -1,5 +1,8 @@
 use super::*;
-use message_crate_core::{FormatConfig, LogSink, MediaConfig, ObfuscateConfig, SourceConfig};
+use message_crate_core::{
+    CancelFlag, FormatConfig, IssueSink, LogSink, MediaConfig, ObfuscateConfig, ProgressSink,
+    SourceConfig,
+};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
 use std::sync::{Arc, Mutex};
@@ -24,10 +27,10 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
         timezone: None,
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
+        cancel: CancelFlag::default(),
+        log: LogSink::none(),
+        progress: ProgressSink::none(),
+        issues: IssueSink::none(),
         output_format,
         resume: false,
         source: SourceConfig::Format(FormatConfig::default()),
@@ -410,9 +413,9 @@ fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<
     let lines = Arc::new(Mutex::new(Vec::new()));
     let sink_lines = Arc::clone(&lines);
     let mut config = config(input, output, OutputFormat::Csv);
-    config.log = Some(LogSink::new(move |line: &str| {
+    config.log = LogSink::new(move |line: &str| {
         sink_lines.lock().unwrap().push(line.to_string());
-    }));
+    });
     (config, lines)
 }
 
@@ -1761,7 +1764,7 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
     let output = tempfile::tempdir().unwrap();
     let (progress, totals) = message_crate_core::testutil::attachment_totals();
     let mut config = config(output.path(), output.path(), OutputFormat::Mbox);
-    config.progress = Some(progress);
+    config.progress = progress;
     let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| IrAttachment {
         size_bytes: Some(size),
         bytes: bytes.map(<[u8]>::to_vec),

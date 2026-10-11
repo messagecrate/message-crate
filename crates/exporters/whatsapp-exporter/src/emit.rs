@@ -44,7 +44,7 @@ pub(crate) struct ConvertRequest<'a> {
     /// When the backup was made, in Unix milliseconds, stamped on the export
     /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
-    pub convert_run: ConvertRun<'a>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
@@ -77,12 +77,12 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let store = load_chat_store(json_path)?;
     let writer = ExportWriter::open(output, output_format, transforms, resume)?;
     let copy_attachments = writer.copies_attachments();
-    let mut report = ExportReport::with_issues(issues.cloned());
+    let mut report = ExportReport::with_issues(issues.clone());
     let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
     let mut rosters: BTreeMap<String, Vec<IrParticipant>> = BTreeMap::new();
 
     for (jid, chat) in store {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         if jid.starts_with('_') {
             // Reserved / system keys if any.
             continue;
@@ -118,7 +118,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let mut documents = Vec::new();
     let mut media_sources: Vec<Option<PathBuf>> = Vec::new();
     for (chat_id, mut conversation) in conversations {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         let Some(doc) = project_conversation(&chat_id, &mut conversation, &hooks, &mut report)
         else {
             continue;
@@ -137,7 +137,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
                 None => (AttachmentSource::Missing, hint),
             }
         },
-        cancel,
+        &cancel,
         &mut report,
     )?;
 

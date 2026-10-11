@@ -278,8 +278,8 @@ pub fn transcode_staging(
         let outcome = message_staging::transcode_staged(
             &run_dir,
             &options,
-            Some(&cancel),
-            Some(&issues),
+            &cancel,
+            &issues,
             &mut |progress| {
                 events::emit(
                     &app_handle,

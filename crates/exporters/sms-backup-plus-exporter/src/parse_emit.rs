@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// not `.eml`, no `.eml` files are found, or the user cancels.
 pub(super) fn collect_eml_paths<P: AsRef<Path>>(
     inputs: &[P],
-    cancel: Option<&CancelFlag>,
+    cancel: &CancelFlag,
 ) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for input in inputs {

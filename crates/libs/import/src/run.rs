@@ -122,8 +122,9 @@ pub struct ImportConfig {
     pub log_path: Option<PathBuf>,
     /// Checked between files and uploads; set it to stop the run early.
     /// The run sets it itself when the server refuses the session, so a
-    /// refused session stops the run the way a cancel does.
-    pub cancel: Option<CancelFlag>,
+    /// refused session stops the run the way a cancel does, and a run after
+    /// it needs a flag of its own.
+    pub cancel: CancelFlag,
     /// Existing Import Run to post into when the caller already created one.
     pub import_id: Option<i64>,
     /// The country of the phone the backup came from, as an ISO 3166-1
@@ -254,19 +255,14 @@ impl RunPaths {
 /// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
 /// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
 pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<ImportReport> {
-    // A refused session stops the run through the cancel flag, so the run
-    // always has one.
-    let stop = cfg.cancel.clone().unwrap_or_default();
-    let cfg = &ImportConfig {
-        cancel: Some(stop.clone()),
-        ..cfg.clone()
-    };
+    // A refused session stops the run through the cancel flag.
+    let stop = cfg.cancel.clone();
     let run_started = Instant::now();
     let started_at = now_stamp();
     let paths = RunPaths::resolve(cfg)?;
     let mut out = Reporter::open(&paths.log, progress)?;
 
-    check_cancel(cfg.cancel.as_ref())?;
+    check_cancel(&cfg.cancel)?;
     let files = list_jsonl_files(&paths.input, &[&paths.log])?;
     if files.is_empty() {
         bail!(
@@ -547,7 +543,7 @@ fn drive(
 
         while next_consume < total {
             // Cancel must still join the in-flight import and write a report.
-            if check_cancel(ctx.cfg.cancel.as_ref()).is_err() {
+            if check_cancel(&ctx.cfg.cancel).is_err() {
                 aborted = true;
                 break;
             }
@@ -690,7 +686,7 @@ fn settle(
     halted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
-    let halted = halted || check_cancel(cfg.cancel.as_ref()).is_err();
+    let halted = halted || check_cancel(&cfg.cancel).is_err();
     if halted || !pipeline.flush_and_continue(true, out)? {
         let _ = pipeline.join_inflight(out);
     }
