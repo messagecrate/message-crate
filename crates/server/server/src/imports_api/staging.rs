@@ -58,7 +58,7 @@ struct PreparedAttachment {
     stored: Option<StoredAsset>,
 }
 
-/// Size on disk of a stored blob, or `None` when it is not there.
+/// Size on disk of a stored Asset's file, or `None` when it is not there.
 fn stored_size_bytes(assets_dir: &Path, assets_path: Option<&str>) -> Option<i64> {
     let rel = assets_path?;
     let meta = std::fs::metadata(assets_dir.join(rel)).ok()?;
@@ -112,8 +112,9 @@ fn try_store_converted(
     .map_err(StagingError::Internal)
 }
 
-/// Store an attachment by the sha256 the export claims (reusing an existing blob) or by
-/// hashing its file, counting the ones whose file is missing.
+/// Store an attachment by the sha256 the export claims (reusing an Asset the
+/// store already holds) or by hashing its file, counting the ones whose file
+/// is missing.
 fn store_claimed_or_path(
     att: &AttachmentRecord,
     export_dir: &Path,
@@ -1014,7 +1015,7 @@ async fn insert_message_rows(
     db_staging::insert_messages(tx, &rows).await
 }
 
-/// The row for one of a staged message's attachments: the stored blob's
+/// The row for one of a staged message's attachments: the stored Asset's
 /// digest, path, and type when the file was stored, the record's own
 /// type and missing reason when it was not.
 fn attachment_row(
