@@ -4,6 +4,8 @@ import type { UploadFinishedReport } from "../../lib/tauri";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  IMPORT_ERROR_TEXT_MAX_CHARS,
+  issueRequests,
   issuesToDiscard,
   notesToDiscard,
   parseRunRecord,
@@ -479,6 +481,30 @@ describe("the run's notes (#1626)", () => {
     const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [live] }));
     expect(notesToDiscard(carried)).toEqual([live]);
     expect(notesToDiscard(EMPTY_RUN_RECORD)).toEqual([]);
+  });
+});
+
+describe("issueRequests (#2183)", () => {
+  it("cuts an item or reason over the server's cap, so the completion is not refused", () => {
+    // ffmpeg's error output on a damaged video runs to 8 KiB.
+    const stderr = "error while decoding MB 12 34 \u{1F4F7}\n".repeat(400);
+    const [sent] = issueRequests([
+      { kind: "skip", stage: "media", item: ` ${"v".repeat(2500)} `, reason: stderr },
+    ]);
+    for (const text of [sent.item, sent.reason]) {
+      expect(Array.from(text)).toHaveLength(IMPORT_ERROR_TEXT_MAX_CHARS);
+      expect(text.endsWith("…")).toBe(true);
+    }
+    expect(sent.item.startsWith("v")).toBe(true);
+  });
+
+  it("sends text at or under the cap as it is, trimmed, without the conversation", () => {
+    const atCap = "r".repeat(IMPORT_ERROR_TEXT_MAX_CHARS);
+    expect(
+      issueRequests([
+        { kind: "error", stage: "upload", item: " a.jsonl ", reason: atCap, conversation: "c" },
+      ]),
+    ).toEqual([{ kind: "error", stage: "upload", item: "a.jsonl", reason: atCap }]);
   });
 });
 
