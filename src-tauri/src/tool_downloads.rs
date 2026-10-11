@@ -617,10 +617,11 @@ impl Drop for CheckRun {
 
 /// The waits before a download that found no network is tried again, one
 /// before each new try (#2200): about two minutes in all, long enough for a
-/// laptop opened before its Wi-Fi connects to come online. They are spent
-/// once per check, not once per program, so when the network never comes
-/// the check ends after one round of them, and an import waiting for a
-/// program hears it failed.
+/// laptop opened before its Wi-Fi connects to come online. The programs of
+/// one check share one round, which starts over only after a download
+/// reaches its server, so when the network never comes the check ends
+/// after one round, and an import waiting for a program hears it failed
+/// within about two minutes.
 const NO_NETWORK_WAITS: [Duration; 4] = [
     Duration::from_secs(5),
     Duration::from_secs(15),
@@ -1001,7 +1002,7 @@ fn check(
             downloads.set(program, DownloadState::Downloading { received, total });
         };
         let mut attempt = || download(&client, &pin.url(base), pin, dir, &progress);
-        let waiting = || {
+        let show_downloading = || {
             downloads.set(
                 program,
                 DownloadState::Downloading {
@@ -1010,7 +1011,37 @@ fn check(
                 },
             );
         };
-        match try_until_answered(&mut no_network_waits, wait, waiting, &mut attempt) {
+        // A file that appears or changes while the check waits was put
+        // there by someone else, such as a copy put in by hand.
+        let path = dir.join(program.file_name());
+        let stamp_before = Stamp::at(&path).ok();
+        let put_in_place = || {
+            Stamp::at(&path)
+                .ok()
+                .is_some_and(|now| Some(now) != stamp_before)
+                && runs(program, dir)
+        };
+        let tried = try_until_answered(
+            &mut no_network_waits,
+            wait,
+            show_downloading,
+            put_in_place,
+            &mut attempt,
+        );
+        let result = match tried {
+            Tried::Done(result) => result,
+            // The lookup finds it, so nothing waits for the download.
+            Tried::PutInPlace => {
+                downloads.clear(program);
+                continue;
+            }
+        };
+        if !matches!(result, Err(DownloadError::NoNetwork(_))) {
+            // The download reached its server, so the network is there:
+            // the next program that finds none gets the whole round again.
+            no_network_waits = NO_NETWORK_WAITS.iter();
+        }
+        match result {
             Ok(written) => {
                 manifest.insert(program, written);
                 if runs(program, dir) {
@@ -1038,31 +1069,41 @@ fn check(
     }
 }
 
+/// What [`try_until_answered`] came to.
+enum Tried<T> {
+    /// The last try's result: one that reached the server, a failure for
+    /// any other reason included, or [`DownloadError::NoNetwork`] once the
+    /// waits were spent.
+    Done(Result<T, DownloadError>),
+    /// During a wait the program was put in place by someone else, and it
+    /// runs, so no try is needed.
+    PutInPlace,
+}
+
 /// Run `attempt` until it gets past [`DownloadError::NoNetwork`], waiting
-/// the next of `waits` before each new try, and return its last result.
-/// `waiting` runs before each wait. Once `waits` is spent the
-/// [`DownloadError::NoNetwork`] is returned. A result that reached the
-/// server, a failure for any other reason included, is returned at once and
-/// starts `waits` over, because the network was there.
+/// the next of `waits` before each new try. `show_downloading` runs before
+/// each wait. After each wait `put_in_place` is asked whether the program
+/// is now there without the download, and when it is the tries end.
 fn try_until_answered<T>(
     waits: &mut std::slice::Iter<'static, Duration>,
     wait: &dyn Fn(Duration),
-    waiting: impl Fn(),
+    show_downloading: impl Fn(),
+    put_in_place: impl Fn() -> bool,
     attempt: &mut dyn FnMut() -> Result<T, DownloadError>,
-) -> Result<T, DownloadError> {
+) -> Tried<T> {
     loop {
         match attempt() {
             Err(DownloadError::NoNetwork(why)) => match waits.next() {
                 Some(&pause) => {
-                    waiting();
+                    show_downloading();
                     wait(pause);
+                    if put_in_place() {
+                        return Tried::PutInPlace;
+                    }
                 }
-                None => return Err(DownloadError::NoNetwork(why)),
+                None => return Tried::Done(Err(DownloadError::NoNetwork(why))),
             },
-            answered => {
-                *waits = NO_NETWORK_WAITS.iter();
-                return answered;
-            }
+            answered => return Tried::Done(answered),
         }
     }
 }

@@ -120,22 +120,21 @@ fn check_waiting(
     download_missing(dir, base, pinned, downloads.begin_check(), wait);
 }
 
-/// A server on this computer that closes each connection without an answer,
-/// as when the network is not there yet, until `answer` is set. From then
-/// on it answers every request with `body`.
-struct NoNetworkYet {
+/// A server on this computer that closes a connection without an answer, as
+/// when the network is not there, unless `answers` says to answer the
+/// request: it is given the request's number, counted from 0. A request it
+/// answers gets `body`, whatever its path.
+struct Flaky {
     base: String,
-    answer: Arc<std::sync::atomic::AtomicBool>,
     requests: Arc<AtomicUsize>,
 }
 
-fn no_network_yet(body: Vec<u8>) -> NoNetworkYet {
+fn flaky_server(body: Vec<u8>, answers: impl Fn(usize) -> bool + Send + 'static) -> Flaky {
     use std::io::BufRead;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let answer = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let requests = Arc::new(AtomicUsize::new(0));
-    let (answering, counting) = (answer.clone(), requests.clone());
+    let counting = requests.clone();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
             let Ok(mut stream) = stream else { continue };
@@ -145,8 +144,7 @@ fn no_network_yet(body: Vec<u8>) -> NoNetworkYet {
             while reader.read_line(&mut line).is_ok_and(|read| read > 0) && line != "\r\n" {
                 line.clear();
             }
-            counting.fetch_add(1, Ordering::SeqCst);
-            if answering.load(Ordering::SeqCst) {
+            if answers(counting.fetch_add(1, Ordering::SeqCst)) {
                 let head = format!(
                     "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
@@ -156,11 +154,7 @@ fn no_network_yet(body: Vec<u8>) -> NoNetworkYet {
             }
         }
     });
-    NoNetworkYet {
-        base,
-        answer,
-        requests,
-    }
+    Flaky { base, requests }
 }
 
 /// The names in `dir` other than `keep` and the lock file, to see that no
@@ -873,7 +867,8 @@ fn no_network_is_tried_again_after_a_growing_wait() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
-    let server = no_network_yet(published);
+    // The network comes during the second wait.
+    let server = flaky_server(published, |request| request >= 2);
     let downloads = ToolDownloads::default();
     let waits = std::cell::RefCell::new(Vec::new());
 
@@ -891,12 +886,7 @@ fn no_network_is_tried_again_after_a_growing_wait() {
                 }),
                 "the download was not shown as downloading while it waited"
             );
-            let mut waits = waits.borrow_mut();
-            waits.push(pause);
-            // The network comes during the second wait.
-            if waits.len() == 2 {
-                server.answer.store(true, Ordering::SeqCst);
-            }
+            waits.borrow_mut().push(pause);
         },
     );
 
@@ -911,6 +901,86 @@ fn no_network_is_tried_again_after_a_growing_wait() {
         std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
         b"wtsexporter"
     );
+}
+
+/// A download that reaches its server starts the waits over, so the next
+/// program that finds no network gets the whole round again, because the
+/// network was there a moment before.
+#[test]
+fn a_download_that_reaches_its_server_starts_the_waits_over() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (first, published) = pin(Program::Ffprobe, "r1", b"the same file", false);
+    let (second, _) = pin(Program::Wtsexporter, "r1", b"the same file", false);
+    // The first program's second try is answered, and nothing after it.
+    let server = flaky_server(published, |request| request == 1);
+    let downloads = ToolDownloads::default();
+
+    let waits = check_now(tools.path(), &server.base, &[first, second], &downloads);
+
+    let mut expected = vec![NO_NETWORK_WAITS[0]];
+    expected.extend(NO_NETWORK_WAITS);
+    assert_eq!(waits, expected);
+    assert!(tools.path().join(Program::Ffprobe.file_name()).exists());
+    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
+        panic!("the wtsexporter download did not fail");
+    };
+    assert!(reason.starts_with("No connection"), "{reason}");
+}
+
+/// A program put in the Tools Directory by hand while the check waits for
+/// the network, as Troubleshooting suggests, ends the tries: it is used,
+/// and an import waiting for it goes on instead of failing for a download
+/// it no longer needs.
+#[cfg(unix)]
+#[test]
+fn a_program_put_in_place_during_a_wait_ends_the_tries() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[pinned],
+        &downloads,
+        &|pause| {
+            waits.borrow_mut().push(pause);
+            write_runnable(&target);
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS[..1]);
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "#!/bin/sh\nexit 0\n"
+    );
+}
+
+/// A program that was already in place before the check and is not the
+/// pinned one does not end the tries: the check still wants the pinned
+/// release, and with no network it fails after the whole round.
+#[cfg(unix)]
+#[test]
+fn a_program_already_in_place_does_not_end_the_tries() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    write_runnable(&tools.path().join(Program::Wtsexporter.file_name()));
+    let downloads = ToolDownloads::default();
+
+    let waits = check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
+
+    assert_eq!(waits, NO_NETWORK_WAITS);
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed { .. })
+    ));
 }
 
 /// A download that reached its server and failed for another reason, such
