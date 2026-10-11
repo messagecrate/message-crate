@@ -101,6 +101,16 @@ pub fn stored_time(rfc3339: &str) -> crate::models::StoredTime {
     crate::models::utc_timestamp_text(instant)
 }
 
+/// Noon UTC on 14 March 2026: the instant a test passes where the code
+/// under test takes the time, so the test never reads the clock.
+pub fn fixed_instant() -> chrono::DateTime<chrono::Utc> {
+    chrono::NaiveDate::from_ymd_opt(2026, 3, 14)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_utc()
+}
+
 /// A message guid no earlier call returned. `messages.guid` is required and
 /// unique per account and source, so [`MessageRow::new`] takes a fresh one
 /// from here for every row; a test that names its message sets a literal.
