@@ -10,7 +10,7 @@
 //! key on drop unless another task is already waiting on the same mutex.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, MutexGuard, PoisonError};
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -19,8 +19,8 @@ type LockMap = HashMap<String, Arc<Mutex<()>>>;
 /// Per-key async mutexes. Cloning shares the same map.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeyedLocks {
-    /// A `std` mutex: it is only ever held for a map lookup, never across an
-    /// `.await`, and `Drop` cannot await.
+    /// A `std` mutex: it is only ever held for one map operation, never
+    /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
 }
 
@@ -35,13 +35,7 @@ pub(crate) struct KeyedLockGuard {
 impl KeyedLocks {
     /// Wait for and take the mutex for `key`.
     pub(crate) async fn lock(&self, key: String) -> KeyedLockGuard {
-        let mutex = self
-            .map
-            .lock()
-            .expect("keyed lock map poisoned")
-            .entry(key.clone())
-            .or_default()
-            .clone();
+        let mutex = self.map_guard().entry(key.clone()).or_default().clone();
         let guard = mutex.lock_owned().await;
         KeyedLockGuard {
             guard,
@@ -50,16 +44,25 @@ impl KeyedLocks {
         }
     }
 
+    /// Take the map, poisoned or not. A panic while it is held cannot leave
+    /// it half-changed: each holder does one `entry`, `remove` or `len`. So a
+    /// poisoned map is used as it is, rather than failing every later import
+    /// and upload completion until the server restarts, or aborting the
+    /// process when a guard drops during an unwind.
+    fn map_guard(&self) -> MutexGuard<'_, LockMap> {
+        self.map.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Number of keys currently known. Tests use it to show the map shrinks.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        self.map.lock().expect("keyed lock map poisoned").len()
+        self.map_guard().len()
     }
 }
 
 impl Drop for KeyedLockGuard {
     fn drop(&mut self) {
-        let mut map = self.locks.map.lock().expect("keyed lock map poisoned");
+        let mut map = self.locks.map_guard();
         // Two holders is the map's entry plus this guard. A task waiting on
         // the same key cloned the `Arc` before calling `lock_owned`, so it
         // shows as a third and the entry stays for it.
@@ -101,6 +104,34 @@ mod tests {
         drop(first);
         // The waiter held the entry, so it was still there when it ran.
         assert_eq!(waiter.await.unwrap(), 1);
+        assert_eq!(locks.len(), 0);
+    }
+
+    /// Poison the map's `std` mutex by panicking on another thread while
+    /// holding it.
+    fn poison(locks: &KeyedLocks) {
+        let map = Arc::clone(&locks.map);
+        let panicked = std::thread::spawn(move || {
+            let _held = map.lock().unwrap();
+            panic!("poisoning the keyed lock map on purpose");
+        })
+        .join();
+        assert!(panicked.is_err());
+        assert!(locks.map.is_poisoned());
+    }
+
+    #[tokio::test]
+    async fn a_poisoned_map_still_locks_and_releases() {
+        let locks = KeyedLocks::default();
+        // Taken before the poisoning, so its drop runs against a poisoned map.
+        let before = locks.lock("a:1".into()).await;
+        poison(&locks);
+        drop(before);
+        assert_eq!(locks.len(), 0);
+        {
+            let _after = locks.lock("a:2".into()).await;
+            assert_eq!(locks.len(), 1);
+        }
         assert_eq!(locks.len(), 0);
     }
 
