@@ -711,7 +711,6 @@ released versions carry their date on the heading.
   could leave enough of them to fill the disk that every account on the
   server shares. An account may now have 128 uploads in progress at once;
   the next is refused until one of them finishes or is cancelled (#2176).
-
 - 2026-10-10: **A request too large for the server reads the same
   everywhere.** When the server refuses a request for being over its size
   limit, the message now always reads "the request body is too large". It
