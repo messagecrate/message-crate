@@ -308,8 +308,9 @@ async fn a_warning_from_a_removal_carries_the_request_id() {
     // `info` span, and a filter that drops it drops the id with it.
     let _subscriber =
         tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
-    // Another test's thread, with no subscriber, reaches the warning first,
-    // as one can in a full run; this test still reads its line (#2824).
+    // A thread with no subscriber reaches the warning first, as another
+    // test's thread can in a full run. This test still reads its line
+    // (#2824).
     {
         let paths = paths.clone();
         std::thread::spawn(move || {
