@@ -13,7 +13,7 @@ import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
 import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
-import { probePath } from "../lib/pathChecks";
+import { probePath, toDesktopOs } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
@@ -561,13 +561,14 @@ export default function ImportScreen() {
       try {
         const home = await invokeHomeDir();
         if (gen !== sourceChangeGenRef.current) return;
-        if (home.os !== "macos") return;
+        const os = toDesktopOs(home.os);
+        if (os !== "macos") return;
         const chatDb = macMessagesDbPath(home.path);
         if (chatDb === "") return;
         const stat = await invokePathStat(chatDb);
         if (gen !== sourceChangeGenRef.current) return;
         const prefill = shouldPrefillMacMessagesDb({
-          os: home.os,
+          os,
           homeDir: home.path,
           chatDb: stat,
           rememberedPath: loadedBackup,

@@ -652,6 +652,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **A path the desktop app may not read says what to check on
+  your operating system.** The Import form, and the list of Import Run
+  directories left after an account is deleted, told people on Windows and
+  Linux to give Message Crate Full Disk Access, which is a Mac setting. The
+  message now names Full Disk Access only on a Mac. On Windows it says to
+  check that your Windows user may read the path, on the Security tab of its
+  Properties. On Linux it says to check that your Linux user may read it
+  (#2650).
+
 - 2026-10-11: **Cancelling an import at a Review deletes its files when
   the connection drops after Message Crate took the cancel.** The desktop
   app kept the import's staged files as if the cancel had failed, but no

@@ -4,6 +4,7 @@ import { accountRunDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
 const invokePathStat = vi.hoisted(() => vi.fn());
+const invokeHomeDir = vi.hoisted(() => vi.fn());
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),
@@ -13,6 +14,7 @@ vi.mock("./serverApi", async (importOriginal) => ({
 vi.mock("./tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./tauri")>()),
   invokePathStat: (...a: unknown[]) => invokePathStat(...a),
+  invokeHomeDir: (...a: unknown[]) => invokeHomeDir(...a),
 }));
 
 describe("accountRunDirectories", () => {
@@ -59,6 +61,7 @@ describe("accountRunDirectories", () => {
       }
       return desktopPathStat({ isFile: false, isDirectory: true });
     });
+    invokeHomeDir.mockResolvedValue({ path: "/Users/u", os: "macos" });
 
     expect(await accountRunDirectories()).toEqual({
       found: ["/staging/iphone"],
@@ -66,12 +69,56 @@ describe("accountRunDirectories", () => {
         {
           path: "/Users/u/Documents/staging",
           reason:
-            "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.",
+            "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings.",
         },
         {
           path: "/mnt/broken",
           reason:
             "Message Crate could not read it. The system says: Input/output error (os error 5).",
+        },
+      ],
+    });
+  });
+
+  it("asks the desktop app for the operating system once, however many directories it may not read", async () => {
+    listEveryImport.mockResolvedValue([
+      { id: 1, run_dir: "/home/u/a" },
+      { id: 0, run_dir: "/home/u/b" },
+    ]);
+    invokePathStat.mockResolvedValue(
+      desktopPathStat({ exists: false, isFile: false, unreadable: PERMISSION_DENIED }),
+    );
+    invokeHomeDir.mockReset();
+    invokeHomeDir.mockResolvedValue({ path: "/home/u", os: "linux" });
+
+    const { unreadable } = await accountRunDirectories();
+    expect(unreadable.map((d) => d.reason)).toEqual([
+      "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Check that your Linux user may read it.",
+      "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Check that your Linux user may read it.",
+    ]);
+    expect(invokeHomeDir).toHaveBeenCalledTimes(1);
+  });
+
+  // Full Disk Access is a Mac setting, so a run directory Windows refuses is
+  // named with what to check on Windows (#2650).
+  it("says how to give access on the operating system that refused", async () => {
+    listEveryImport.mockResolvedValue([{ id: 0, run_dir: "C:\\Users\\u\\staging" }]);
+    invokePathStat.mockResolvedValue(
+      desktopPathStat({
+        exists: false,
+        isFile: false,
+        unreadable: { kind: "permission_denied", reason: "Access is denied. (os error 5)" },
+      }),
+    );
+    invokeHomeDir.mockResolvedValue({ path: "C:\\Users\\u", os: "windows" });
+
+    expect(await accountRunDirectories()).toEqual({
+      found: [],
+      unreadable: [
+        {
+          path: "C:\\Users\\u\\staging",
+          reason:
+            "Message Crate isn't allowed to read it. The system says: Access is denied. (os error 5). Check that your Windows user may read it, on the Security tab of its Properties.",
         },
       ],
     });

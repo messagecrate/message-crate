@@ -2,11 +2,11 @@ import { errorText } from "../../../lib/apiErrorMessage";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import type { DesktopJobResult, StagingSummary } from "../../../lib/tauri";
+import type { DesktopJobResult } from "../../../lib/tauri";
 import { importOutcome } from "../importOutcome";
 import { UPLOAD_LABEL } from "../importProgressState";
 import { wholeRun } from "../runRecord";
-import type { RunContext } from "./context";
+import type { OpenRun, RunContext } from "./context";
 import { recordError, runJob } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { currentPart } from "./scratch";
@@ -23,14 +23,12 @@ import { moveStage } from "./serverCalls";
 export async function runUpload(
   ctx: RunContext,
   token: string | null,
-  runId: number,
-  outputDir: string,
-  approvedPlan?: StagingSummary,
+  run: OpenRun,
 ): Promise<void> {
   // Logging out pauses this Upload before it ends the session the Upload
   // sends (`lib/runningUpload.ts`), and waits until the pause is recorded.
   const runCancel = ctx.scratch.runCancel;
-  const upload = uploadAndFinish(ctx, token, runId, outputDir, approvedPlan);
+  const upload = uploadAndFinish(ctx, token, run);
   const pause = async () => {
     await runCancel.cancel();
     await upload;
@@ -54,15 +52,14 @@ export async function runUpload(
 async function uploadAndFinish(
   ctx: RunContext,
   token: string | null,
-  runId: number,
-  outputDir: string,
-  approvedPlan?: StagingSummary,
+  run: OpenRun,
 ): Promise<boolean> {
+  const { runId, runDir, approved } = run;
   movePhase(ctx, "upload_start", { running: true });
   ctx.scratch.activeStage = "upload";
   setRowByLabel(ctx, UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
   try {
-    await moveStage(ctx, runId, "upload", approvedPlan);
+    await moveStage(ctx, runId, "upload", approved);
   } catch (e: unknown) {
     await stopStageNotRecorded(ctx, e, runId, "upload");
     return false;
@@ -80,7 +77,7 @@ async function uploadAndFinish(
       ctx.desktop.invokeUpload({
         base_url: baseUrl,
         token,
-        input_dir: outputDir,
+        input_dir: runDir,
         mode: "append",
         import_id: runId,
       }),
@@ -107,7 +104,7 @@ async function uploadAndFinish(
         report: report ?? undefined,
         threw,
         issues: wholeRun(ctx.scratch.carried, currentPart(ctx, report, uploadMs)).issues,
-        approved: approvedPlan,
+        approved,
       });
   if (status === "paused") {
     setRowByLabel(ctx, UPLOAD_LABEL, { status: "error", detail: "Paused", durationMs: uploadMs });

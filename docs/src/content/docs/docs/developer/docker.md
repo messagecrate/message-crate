@@ -33,8 +33,14 @@ Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That 
 
 Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
 
-A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, so it catches a write at start and not one made later. CI's "Docker image builds" job and the nightly build run it.
-The stack runs under its own Compose project and volume, so it never touches a running Message Crate, and the script removes it on exit.
+A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, which catches a write at start.
+It then claims the Message Crate, creates an account, and imports one conversation with an HEVC video through `/v1`, because the Demo Account may not import.
+It waits for the media pass to make the video's Thumbnail and Preview, and runs an Export of everything the account holds, so a write made during an import, the media pass or an export fails it too.
+The conversation is `tests/fixtures/docker-compose-check/conversation.jsonl`, and the video is the server's test fixture `crates/server/server/tests/fixtures/media/hevc.mov`.
+CI's "Docker image builds" job and the nightly build run it.
+A pull request runs the job only when it changes what the image is built from (the Dockerfile, a Cargo manifest, the lockfile, the toolchain pin) or the check and its fixtures.
+A change to the server's code alone is caught by the nightly build on `main`, not on the pull request.
+The stack runs under its own Compose project, `message-crate-compose-check-<host-port>`, and its own volume, so it never touches a running Message Crate, and the script removes it on exit.
 
 `--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.
 It runs `scripts/check-served-website.sh`, which opens the website in headless Chromium inside the Playwright image, logs in to the Demo Account, searches the conversation list, and opens a conversation the search found.

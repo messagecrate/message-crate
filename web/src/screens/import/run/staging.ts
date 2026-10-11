@@ -5,7 +5,6 @@ import { importRunCreateBody } from "../../../lib/importSource";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
-import type { StagingSummary } from "../../../lib/tauri";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
@@ -15,7 +14,7 @@ import {
   UPLOAD_LABEL,
 } from "../importProgressState";
 import { CLEARED_RUN } from "../importRunStore";
-import type { RunContext } from "./context";
+import type { OpenRun, RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
 import { finishImport } from "./finish";
 import { mediaToolsMissingFor } from "./media";
@@ -41,28 +40,16 @@ import {
 import { adoptRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
-/** An Import Run whose copy was interrupted, and the directory it was writing into. */
-export type ResumeWrite = {
-  runId: number;
-  runDir: string;
+/**
+ * An Import Run whose Staging was interrupted, and the run directory it was
+ * writing into. It has passed no Review, so it has no approved plan.
+ */
+export type ResumeWrite = Omit<OpenRun, "approved"> & {
   /** The list recorded on the run at creation (`source_identities`,
    * parsed by the caller). A resumed write lands back on the Staging Review
    * without re-probing the backup, so this is the only way that Review's identity
    * section gets a list to show. */
   identities?: string[] | null;
-};
-
-/** Pick up an Import Run whose run directory is already complete. */
-export type ResumeUpload = {
-  runId: number;
-  runDir: string;
-  /** The plan approved at the last Review the run left, parsed from
-   * its stored `summary` (`parseStoredStagingSummary`). Undefined when the
-   * run recorded nothing usable — `runUpload` and `importOutcome`
-   * tolerate that absence, they just can't diff a resumed Upload's expected
-   * omissions against it, which demotes an honest `completed` outcome to
-   * `completed_with_issues` for exactly the interrupted-and-resumed case. */
-  approved?: StagingSummary;
 };
 
 /**
@@ -121,12 +108,19 @@ async function startRunLog(
   }
 }
 
+/**
+ * Run an Import Run from the start, or resume one. `resume` is a run whose
+ * run directory is already complete, and it goes straight to Upload.
+ * `resumeWrite` is a run whose Staging was interrupted. Its Staging resumes in
+ * the same run directory and skips the conversations already written. At most
+ * one of the two is given.
+ */
 export async function runImport(
   ctx: RunContext,
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
-  resume?: ResumeUpload,
+  resume?: OpenRun,
   resumeWrite?: ResumeWrite,
 ): Promise<void> {
   if (!ctx.desktop.isTauri()) return;
@@ -166,14 +160,13 @@ export async function runImport(
       // last review, so there IS a plan from it: it rides along as
       // `resume.approved` (parsed from the run's stored summary) when it
       // parses. Straight to Upload.
-      const outputDir = resume.runDir;
       runId = resume.runId;
-      await loadCarriedRecord(ctx, outputDir);
+      await loadCarriedRecord(ctx, resume.runDir);
       // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
       form = adoptRecordedMode(ctx, form, resume.approved);
       store.set({
-        runDir: outputDir,
+        runDir: resume.runDir,
         importRunId: runId,
         steps: stepsFor(form.attachmentMedia).map((step) =>
           step.label === UPLOAD_LABEL
@@ -181,7 +174,7 @@ export async function runImport(
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runUpload(ctx, token, runId, outputDir, resume.approved);
+      await runUpload(ctx, token, resume);
       return;
     }
 
@@ -189,20 +182,20 @@ export async function runImport(
     // built its own, so setting this first would be overwritten.
     store.set({ steps: initialSteps("active", form.attachmentMedia) });
 
-    let outputDir: string;
+    let runDir: string;
     if (resumeWrite) {
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
-      outputDir = resumeWrite.runDir;
+      runDir = resumeWrite.runDir;
       runId = resumeWrite.runId;
-      await loadCarriedRecord(ctx, outputDir);
-      store.set({ runDir: outputDir, importRunId: runId });
+      await loadCarriedRecord(ctx, runDir);
+      store.set({ runDir, importRunId: runId });
       setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(ctx, runId, "write");
     } else {
-      outputDir = await ctx.desktop.invokeCreateRunDir(form.source);
-      store.set({ runDir: outputDir });
+      runDir = await ctx.desktop.invokeCreateRunDir(form.source);
+      store.set({ runDir });
 
       const backupStat = await ctx.desktop.invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
@@ -212,7 +205,7 @@ export async function runImport(
           ...importRunCreateBody(form.source),
           phone_country: form.phoneCountry || null,
           stage: "parse",
-          run_dir: outputDir,
+          run_dir: runDir,
           device_id: getDeviceId(),
           form: formSnapshot(form),
           source_fingerprint: backupStat
@@ -223,7 +216,7 @@ export async function runImport(
       );
       runId = importRun.id;
       store.set({ importRunId: runId });
-      await startRunLog(ctx, outputDir, runId, messageCrateId);
+      await startRunLog(ctx, runDir, runId, messageCrateId);
       setRowByLabel(ctx, STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(ctx, runId, "write");
     }
@@ -233,7 +226,7 @@ export async function runImport(
       ctx.desktop.invokeExtract({
         source: form.source,
         path: form.backupPath,
-        output_dir: outputDir,
+        output_dir: runDir,
         ...(resumeWrite ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
         // The media fields go only to a source whose form shows them, as the
@@ -285,7 +278,7 @@ export async function runImport(
     // written above (`staging_review`) stays as it is: the next visit's
     // resume check finds the same run and offers this recompute again.
     try {
-      const summary = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
+      const summary = await summarizeStagingWithProgress(ctx, { run_dir: runDir });
       // Staging has finished, so the directory decides the stages from here.
       const recorded = adoptRecordedMode(ctx, form, summary);
       updateSteps(ctx, (steps) =>
