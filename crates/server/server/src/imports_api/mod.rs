@@ -244,18 +244,12 @@ impl OwnedImportRun {
     }
 }
 
-/// Record an Import Run's outcome, then make the run's Saved Search and
-/// Contact Group. Every path that completes a run calls this: the HTTP
-/// `complete_import`, the server's `import` command and the Demo Account
-/// build (through [`OwnedImportRun::finish`]), so each run gets the same
-/// shortcuts however it was made.
+/// [`complete_run_at`] at the current instant, for the server's `import`
+/// command and the Demo Account build (through [`OwnedImportRun::finish`]).
 ///
 /// # Errors
 ///
-/// Returns the error of recording the outcome ([`imports::complete_import`]):
-/// a run that is not found or not running, kept apart from a database fault
-/// so the handler maps each to its status. A shortcut that cannot be made is
-/// a warning, never an error.
+/// The errors of [`complete_run_at`].
 pub(crate) async fn complete_run(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -265,8 +259,19 @@ pub(crate) async fn complete_run(
     complete_run_at(conn, account_id, import_id, outcome, chrono::Utc::now()).await
 }
 
-/// [`complete_run`] finishing at the instant `now`, so a test names the day
-/// the run's Saved Search and Contact Group are named after.
+/// Record an Import Run's outcome at the instant `now`, then make the run's
+/// Saved Search and Contact Group, named after `now`'s day. Every path that
+/// completes a run reaches this: the HTTP `complete_import`, which queues the
+/// run's Assets at the same instant, and the server's `import` command and
+/// the Demo Account build through [`complete_run`]. So each run gets the
+/// same shortcuts however it was made.
+///
+/// # Errors
+///
+/// Returns the error of recording the outcome ([`imports::complete_import`]):
+/// a run that is not found or not running, kept apart from a database fault
+/// so the handler maps each to its status. A shortcut that cannot be made is
+/// a warning, never an error.
 async fn complete_run_at(
     conn: &mut SqliteConnection,
     account_id: i64,
