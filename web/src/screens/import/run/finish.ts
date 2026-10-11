@@ -3,6 +3,7 @@ import type {
   ImportNote,
   ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
+import { ApiError } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
 import type { UploadFinishedReport } from "../../../lib/tauri";
 import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
@@ -201,6 +202,28 @@ export async function stopStageNotRecorded(
 }
 
 /**
+ * How a `discardRun` went: the run is closed on the server, the server still
+ * holds it running (with the server's message, or why the close never
+ * reached it), or the server refused the session the close was sent with.
+ */
+export type DiscardOutcome =
+  | { kind: "discarded" }
+  | { kind: "not_closed"; message: string }
+  | { kind: "session_ended" };
+
+/**
+ * True when the server's answer to a discard says it holds no running run
+ * by that id for the account: `404 Not Found` (`not-found`), or
+ * `409 Conflict` (`state-conflict`), which this route gives only for a run
+ * that is no longer running. Another window, or a close whose answer was
+ * lost, may have closed it. Read by problem type, so a 404 from something
+ * in front of the server, which never reached it, is not taken for one.
+ */
+function runAlreadyClosed(e: unknown): boolean {
+  return e instanceof ApiError && (e.type === "not-found" || e.type === "state-conflict");
+}
+
+/**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
@@ -208,18 +231,21 @@ export async function stopStageNotRecorded(
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
- * delete then runs whatever the close's outcome, but one: a session the
- * server refused to the close. The run stays open for the account's next
- * login to offer again, so its directory stays with it. Otherwise a live run
- * with no directory blocks the next import, and a directory with no run is
- * litter nothing will ever clean up. `runDir` is null for a run whose
- * directory is not on this device. Never throws.
+ * directory goes only once the run is closed on the server (#2669): the
+ * close went through, or the server says the run is no longer running
+ * (`runAlreadyClosed`). Any other refusal, or a close that never reached the
+ * server, leaves the run open there, holding the account's import slot, so
+ * its directory stays with it for the next visit to Import to offer again,
+ * and the outcome carries the message for the caller to show. A session
+ * the server refused to the close is no fault of the run: the run stays for
+ * the account's next login, with its directory and no message. `runDir` is
+ * null for a run whose directory is not on this device. Never throws.
  */
 export async function discardRun(
   ctx: RunContext,
   runId: number | null,
   runDir: string | null,
-): Promise<void> {
+): Promise<DiscardOutcome> {
   let issues: ImportIssue[] = [];
   let notes: ImportNote[] = [];
   if (runDir != null) {
@@ -240,8 +266,10 @@ export async function discardRun(
         ctx.server.discardImportRun(runId, issueRequests(issues), notes),
       );
     } catch (e: unknown) {
-      if (e instanceof SessionRefusedError) return;
+      if (e instanceof SessionRefusedError) return { kind: "session_ended" };
+      if (!runAlreadyClosed(e)) return { kind: "not_closed", message: errorText(e) };
     }
   }
   if (runDir != null) await discardRunDirectory(ctx, runDir);
+  return { kind: "discarded" };
 }

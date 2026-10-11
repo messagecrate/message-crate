@@ -625,6 +625,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **Discarding an import keeps its files when Message Crate
+  does not take the discard.** When you discarded an import, or cancelled
+  one at a Review, and the server refused or could not be reached, the
+  desktop app deleted the import's staged files anyway, while Message Crate
+  still held the import as running. It could then be neither resumed nor
+  discarded cleanly. The files now go only once Message Crate has taken the
+  discard. Otherwise the import is offered again with what went wrong, and
+  **Discard this import** tries again (#2669).
+
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The
