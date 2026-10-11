@@ -69,6 +69,7 @@ async fn promote_stamps_messages_with_import_id() {
             bytes_uploaded: Some(0),
             ..Default::default()
         },
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

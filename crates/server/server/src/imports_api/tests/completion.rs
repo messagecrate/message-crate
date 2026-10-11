@@ -203,7 +203,7 @@ async fn completing_an_import_with_no_messages_creates_no_saved_search() {
 #[tokio::test]
 async fn two_import_runs_from_one_source_on_one_day_make_two_contact_groups() {
     let (state, _fixture, token) = importer().await;
-    let (first, first_date) = completed_run(
+    let first = completed_run_at_fixed_instant(
         &state,
         &token,
         "whatsapp",
@@ -212,7 +212,7 @@ async fn two_import_runs_from_one_source_on_one_day_make_two_contact_groups() {
     .await;
     // A different person, so the second run has a contact of its own to record.
     let second_body = wipe_test_batch("whatsapp", &["g-2"]).replace("+15555550107", "+15555550108");
-    let (second, second_date) = completed_run(&state, &token, "whatsapp", second_body).await;
+    let second = completed_run_at_fixed_instant(&state, &token, "whatsapp", second_body).await;
 
     let mut conn = state.db.acquire().await.unwrap();
     let first_touched = crate::db::import_contacts::contact_ids(&mut conn, first)
@@ -228,23 +228,21 @@ async fn two_import_runs_from_one_source_on_one_day_make_two_contact_groups() {
         "the runs must touch different contacts: {first_touched:?} {second_touched:?}"
     );
 
-    // The suffix appears when both runs finished on one UTC day, which is
-    // every run of this test except one that straddles midnight.
-    let second_name = if second_date == first_date {
-        format!("whatsapp import {second_date} 2")
-    } else {
-        format!("whatsapp import {second_date}")
-    };
+    let day = crate::test_support::fixed_instant().date_naive();
     let (_, groups) = shortcuts(&state, run_account(&state, first).await).await;
     assert_eq!(
         groups,
         [
             (
-                format!("whatsapp import {first_date}"),
+                format!("whatsapp import {day}"),
                 "import".to_string(),
                 first_touched
             ),
-            (second_name, "import".to_string(), second_touched),
+            (
+                format!("whatsapp import {day} 2"),
+                "import".to_string(),
+                second_touched
+            ),
         ]
     );
 }
@@ -273,8 +271,9 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     .await;
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");
 
-    // The hand-made groups are named for today and for tomorrow, so the
-    // test holds when the run finishes just past midnight UTC.
+    // The hand-made groups take the names a run finishing on `day` would
+    // use, and the run finishes on that day.
+    let day = crate::test_support::fixed_instant().date_naive();
     let spec = crate::db::named_membership::group_spec();
     let mut conn = state.db.acquire().await.unwrap();
     let friend = crate::db::contacts::create_contact(
@@ -285,31 +284,21 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     )
     .await
     .unwrap();
-    let today = chrono::Utc::now().date_naive();
-    for day in [today, today.succ_opt().unwrap()] {
-        for name in [
-            format!("whatsapp import {day}"),
-            format!("WHATSAPP IMPORT {day} 2"),
-        ] {
-            let (group, _) =
-                crate::db::named_membership::create_set(spec, &mut conn, account, &name)
-                    .await
-                    .unwrap();
-            crate::db::named_membership::patch_members(
-                spec,
-                &mut conn,
-                account,
-                group,
-                &[friend],
-                &[],
-            )
+    let hand_made_names = [
+        format!("whatsapp import {day}"),
+        format!("WHATSAPP IMPORT {day} 2"),
+    ];
+    for name in &hand_made_names {
+        let (group, _) = crate::db::named_membership::create_set(spec, &mut conn, account, name)
             .await
             .unwrap();
-        }
+        crate::db::named_membership::patch_members(spec, &mut conn, account, group, &[friend], &[])
+            .await
+            .unwrap();
     }
     drop(conn);
 
-    let date = complete_run(&state, &token, import_id).await;
+    complete_run_at_fixed_instant(&state, import_id).await;
 
     let mut conn = state.db.acquire().await.unwrap();
     let touched = crate::db::import_contacts::contact_ids(&mut conn, import_id)
@@ -318,13 +307,10 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     drop(conn);
     assert!(!touched.is_empty() && !touched.contains(&friend));
     let (_, groups) = shortcuts(&state, account).await;
-    for name in [
-        format!("whatsapp import {date}"),
-        format!("WHATSAPP IMPORT {date} 2"),
-    ] {
+    for name in &hand_made_names {
         let hand_made = groups
             .iter()
-            .find(|(group, _, _)| *group == name)
+            .find(|(group, _, _)| group == name)
             .expect("the hand-made group is still there");
         assert_eq!(
             (hand_made.1.as_str(), &hand_made.2),
@@ -339,7 +325,7 @@ async fn an_import_leaves_a_hand_made_contact_group_with_its_name_alone() {
     assert_eq!(
         imported,
         [&(
-            format!("whatsapp import {date} 3"),
+            format!("whatsapp import {day} 3"),
             "import".to_string(),
             touched
         )],
