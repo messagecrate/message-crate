@@ -12,7 +12,7 @@ use sqlx::SqliteConnection;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::{Participant, load_for_conversations};
 use crate::db::sql::{SqlParam, bind_args, fold_in_id_chunks, in_placeholders};
-use crate::paging::{Direction, Page, SortKey};
+use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::server::ApiError;
 
 /// The keys `GET /v1/conversations` accepts in `sort=`.
@@ -164,12 +164,7 @@ pub async fn list_conversations_sorted(
         order_by = conversation_order_by(order),
     );
     let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
-    Ok(Page {
-        items: out,
-        total,
-        limit,
-        offset,
-    })
+    Ok(page_from_rows(out, total, PageParams { limit, offset }))
 }
 
 /// One conversation by id, scoped to `account_id`. `None` when the id does

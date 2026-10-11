@@ -15,7 +15,7 @@ use crate::db::conversation_messages::{
     Message, MessageSort, conversation_join_sql, load_messages_from, messages_from_sql,
 };
 use crate::db::sql::{SqlParam, bind_all};
-use crate::paging::{Direction, Page, SortKey};
+use crate::paging::{Direction, Page, PageParams, SortKey, page_from_rows};
 use crate::server::ApiError;
 
 /// Which of the three forms an Export Run's scope took, without what it
@@ -510,12 +510,14 @@ pub async fn export_messages(
     )
     .await?;
 
-    Ok(Page {
-        items: messages,
-        total: opts.total,
-        limit: opts.limit,
-        offset: opts.offset,
-    })
+    Ok(page_from_rows(
+        messages,
+        opts.total,
+        PageParams {
+            limit: opts.limit,
+            offset: opts.offset,
+        },
+    ))
 }
 
 /// Ready the account's Export Runs to outlive it, just before the account is

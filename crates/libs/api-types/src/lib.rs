@@ -325,6 +325,20 @@ pub struct Page<T> {
     pub offset: usize,
 }
 
+impl<T> Page<T> {
+    /// The same page with each row turned into another type: the total,
+    /// limit and offset are unchanged.
+    #[must_use]
+    pub fn map<U>(self, f: impl FnMut(T) -> U) -> Page<U> {
+        Page {
+            items: self.items.into_iter().map(f).collect(),
+            total: self.total,
+            limit: self.limit,
+            offset: self.offset,
+        }
+    }
+}
+
 /// How an Export Run stands: the values `exports.status` holds, the values
 /// `GET /v1/exports?status=` accepts, and the word every Export Run carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

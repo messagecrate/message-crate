@@ -16,7 +16,9 @@ use serde::Deserialize;
 
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
 use crate::extract::{Json, Query};
-use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_params};
+use crate::paging::{
+    DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_from_rows, page_params,
+};
 use crate::server::{ApiError, AppState, Owner};
 
 /// Query string of `GET /v1/audit-trail`.
@@ -71,12 +73,7 @@ pub(crate) async fn audit_trail_page(
             item.api_token_hint = None;
         }
     }
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_from_rows(items, total, params)))
 }
 
 /// Every account's Audit Trail, newest first: logins, sessions ending,
@@ -143,12 +140,7 @@ pub(crate) async fn list_deleted_accounts(
     let mut conn = state.db.acquire().await?;
     let (items, total) =
         audit_trail::deleted_accounts_page(&mut conn, params.limit, params.offset).await?;
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_from_rows(items, total, params)))
 }
 
 #[cfg(test)]

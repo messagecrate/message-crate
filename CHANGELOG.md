@@ -164,6 +164,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: The Import Run and Export Run lists were reworked inside, with
+  nothing visible (#2155).
+
 - 2026-10-10: **SMS Backup & Restore and GO SMS Pro read a message's time
   the same way.** Both imports now share one check of which message times
   are readable, so they can no longer drift apart. Nothing changes on
