@@ -1,13 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { type QueryKey, useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
-import {
-  emptyImessagePathStats,
-  type ImessagePathStats,
-  imessageStatsForMethod,
-  isImessageMethod,
-} from "./imessageImport";
+import { emptyImessagePathStats, type ImessagePathStats, isImessageMethod } from "./imessageImport";
 import { probePath } from "./pathChecks";
-import { keys } from "./queryKeys";
+import { type ImessagePathsKey, keys, type WhatsappPathsKey } from "./queryKeys";
 import { invokeIosBackupEncrypted } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { useDebouncedValue } from "./useDebouncedValue";
@@ -34,11 +29,57 @@ async function backupEncrypted(root: string): Promise<boolean | null> {
 }
 
 /**
- * What the Apple Messages fields of the Import form point at, read from the
- * desktop process once the fields stop changing for
- * {@link PATH_PROBE_DEBOUNCE_MS}. While a path is typed the last answer for
- * the same method stays on screen; another method starts empty. The browser
- * has no desktop process to ask, so there it stays empty.
+ * The answer the desktop process gave for `paths`, once they stop changing
+ * for {@link PATH_PROBE_DEBOUNCE_MS}, or `empty` while there is none. The
+ * key is the settled paths, so each set is asked once and a set that comes
+ * back is shown from the cache while it is asked again: the files can change
+ * on disk between two asks, so no answer is fresh. The browser has no
+ * desktop process to ask, so there it is always `empty`.
+ */
+function useSettledPathProbe<P extends { source: string }, S>(
+  paths: P,
+  {
+    key,
+    isMethod,
+    probe,
+    empty,
+    keepWhileTyping,
+  }: {
+    key: (settled: P) => QueryKey;
+    isMethod: (source: string) => boolean;
+    probe: (settled: P) => Promise<S>;
+    empty: S;
+    /**
+     * Keep the last answer for the same method on screen while a path is
+     * typed. Off, any change empties the stats until the new paths are
+     * checked.
+     */
+    keepWhileTyping: boolean;
+  },
+): S {
+  // The fields as one string, so one timer settles them together: a source
+  // change and the paths it loads never reach the key apart.
+  const current = JSON.stringify(paths);
+  const settledText = useDebouncedValue(current, PATH_PROBE_DEBOUNCE_MS);
+  const settled = useMemo(() => JSON.parse(settledText) as P, [settledText]);
+  const query = useQuery({
+    queryKey: key(settled),
+    queryFn: async () => ({ source: settled.source, stats: await probe(settled) }),
+    enabled: isTauri() && isMethod(settled.source),
+    retry: false,
+    staleTime: 0,
+    // Another method's answer says nothing about this one's fields.
+    placeholderData: (previous) =>
+      keepWhileTyping && previous?.source === settled.source ? previous : undefined,
+  });
+  const shown = keepWhileTyping ? settled.source === paths.source : settledText === current;
+  return shown && query.data ? query.data.stats : empty;
+}
+
+/**
+ * What the Apple Messages fields of the Import form point at. While a path
+ * is typed the last answer for the same method stays on screen, so a
+ * finding does not blink out at each keystroke; another method starts empty.
  */
 export function useImessagePathStats(
   source: string,
@@ -46,55 +87,41 @@ export function useImessagePathStats(
   attachmentRoot: string,
   appleContacts: string,
 ): ImessagePathStats {
-  const current = useMemo(
-    () => ({ source, backupPath, attachmentRoot, appleContacts }),
-    [source, backupPath, attachmentRoot, appleContacts],
-  );
-  const settled = useDebouncedValue(current, PATH_PROBE_DEBOUNCE_MS);
-  const method = settled.source;
-  const query = useQuery({
-    queryKey: keys.desktopImessagePaths(
-      method,
-      settled.backupPath,
-      settled.attachmentRoot,
-      settled.appleContacts,
-    ),
-    queryFn: async () => {
-      if (!isImessageMethod(method)) return NO_IMESSAGE_STATS;
-      const [backup, attachment, contacts] = await Promise.all([
-        probePath(settled.backupPath),
-        probePath(settled.attachmentRoot),
-        probePath(settled.appleContacts),
-      ]);
-      const encrypted =
-        method === "imessage-ios" && backup?.exists && backup.isDirectory
-          ? await backupEncrypted(settled.backupPath.trim())
-          : null;
-      return imessageStatsForMethod(method, {
-        backup,
-        attachmentRoot: attachment,
-        appleContacts: contacts,
-        backupEncrypted: encrypted,
-      });
+  return useSettledPathProbe<ImessagePathsKey, ImessagePathStats>(
+    { source, backupPath, attachmentRoot, appleContacts },
+    {
+      key: keys.desktopImessagePaths.of,
+      isMethod: isImessageMethod,
+      probe: async (settled) => {
+        const [backup, attachment, contacts] = await Promise.all([
+          probePath(settled.backupPath),
+          probePath(settled.attachmentRoot),
+          probePath(settled.appleContacts),
+        ]);
+        // Only an iPhone backup is asked whether it is encrypted.
+        const encrypted =
+          settled.source === "imessage-ios" && backup?.exists && backup.isDirectory
+            ? await backupEncrypted(settled.backupPath.trim())
+            : null;
+        return {
+          backup,
+          attachmentRoot: attachment,
+          appleContacts: contacts,
+          backupEncrypted: encrypted,
+        };
+      },
+      empty: NO_IMESSAGE_STATS,
+      keepWhileTyping: true,
     },
-    enabled: isTauri() && isImessageMethod(method),
-    retry: false,
-    // The previous paths' answer, kept while the new ones are checked, but
-    // only for the same method: another method's answer says nothing here.
-    placeholderData: (previous, previousQuery) =>
-      previousQuery?.queryKey[2] === method ? previous : undefined,
-  });
-  return method === source && query.data ? query.data : NO_IMESSAGE_STATS;
+  );
 }
 
 /**
- * What the WhatsApp fields of the Import form point at, read from the
- * desktop process once the fields stop changing for
- * {@link PATH_PROBE_DEBOUNCE_MS}: the backup directory, the msgstore and
- * crypt files inside it, and the contacts, media and database paths. Any
- * change empties it until the new paths are checked, so a file found under
- * the old backup directory is never reported for the new one. The browser
- * has no desktop process to ask, so there it stays empty.
+ * What the WhatsApp fields of the Import form point at: the backup
+ * directory, the msgstore and crypt files inside it, and the contacts, media
+ * and database paths. Any change empties it until the new paths are checked,
+ * so a crypt file found under the old backup directory is never shown for
+ * the new one.
  */
 export function useWhatsappPathStats(
   source: string,
@@ -103,48 +130,40 @@ export function useWhatsappPathStats(
   media: string,
   db: string,
 ): WhatsappPathStats {
-  const current = useMemo(
-    () => ({ source, backupPath, contactsDb, media, db }),
-    [source, backupPath, contactsDb, media, db],
-  );
-  const settled = useDebouncedValue(current, PATH_PROBE_DEBOUNCE_MS);
-  const query = useQuery({
-    queryKey: keys.desktopWhatsappPaths(
-      settled.source,
-      settled.backupPath,
-      settled.contactsDb,
-      settled.media,
-      settled.db,
-    ),
-    queryFn: async (): Promise<WhatsappPathStats> => {
-      const root = settled.backupPath.trim();
-      const [backup, contactsStat, mediaStat, dbStat, msgstore, cryptHits] = await Promise.all([
-        probePath(settled.backupPath),
-        probePath(settled.contactsDb),
-        probePath(settled.media),
-        probePath(settled.db),
-        probePath(root ? `${root}/msgstore.db` : ""),
-        Promise.all(
-          WHATSAPP_CRYPT_NAMES.map(async (name) => {
-            const stat = await probePath(root ? `${root}/${name}` : "");
-            return stat?.exists && stat.isFile ? name : null;
-          }),
-        ),
-      ]);
-      const encrypted =
-        settled.source === "whatsapp-ios" && root !== "" ? await backupEncrypted(root) : null;
-      return {
-        backup,
-        contactsDb: contactsStat,
-        media: mediaStat,
-        db: dbStat,
-        hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
-        cryptName: cryptHits.find((name) => name !== null) ?? null,
-        backupEncrypted: encrypted,
-      };
+  return useSettledPathProbe<WhatsappPathsKey, WhatsappPathStats>(
+    { source, backupPath, contactsDb, media, db },
+    {
+      key: keys.desktopWhatsappPaths.of,
+      isMethod: isWhatsappMethod,
+      probe: async (settled) => {
+        const root = settled.backupPath.trim();
+        const [backup, contactsStat, mediaStat, dbStat, msgstore, cryptHits] = await Promise.all([
+          probePath(settled.backupPath),
+          probePath(settled.contactsDb),
+          probePath(settled.media),
+          probePath(settled.db),
+          probePath(root ? `${root}/msgstore.db` : ""),
+          Promise.all(
+            WHATSAPP_CRYPT_NAMES.map(async (name) => {
+              const stat = await probePath(root ? `${root}/${name}` : "");
+              return stat?.exists && stat.isFile ? name : null;
+            }),
+          ),
+        ]);
+        const encrypted =
+          settled.source === "whatsapp-ios" && root !== "" ? await backupEncrypted(root) : null;
+        return {
+          backup,
+          contactsDb: contactsStat,
+          media: mediaStat,
+          db: dbStat,
+          hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
+          cryptName: cryptHits.find((name) => name !== null) ?? null,
+          backupEncrypted: encrypted,
+        };
+      },
+      empty: NO_WHATSAPP_STATS,
+      keepWhileTyping: false,
     },
-    enabled: isTauri() && isWhatsappMethod(settled.source),
-    retry: false,
-  });
-  return settled === current && query.data ? query.data : NO_WHATSAPP_STATS;
+  );
 }

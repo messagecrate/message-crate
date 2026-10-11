@@ -70,16 +70,6 @@ export function emptyImessagePathStats(): ImessagePathStats {
   };
 }
 
-export function imessageStatsForMethod(
-  method: ImessageMethodId,
-  stats: ImessagePathStats,
-): ImessagePathStats {
-  return {
-    ...stats,
-    backupEncrypted: method === "imessage-ios" ? stats.backupEncrypted : null,
-  };
-}
-
 export const IMESSAGE_ERR_IPHONE_NOT_DIRECTORY = "Pick the backup directory.";
 export const IMESSAGE_ERR_MAC_NOT_FILE = "Pick chat.db.";
 export const IMESSAGE_ERR_JAILBREAK_NOT_FILE = "Pick sms.db.";

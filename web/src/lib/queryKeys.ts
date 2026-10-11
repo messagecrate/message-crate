@@ -28,6 +28,23 @@ export type AuditTrailKey = "all" | "own" | `account:${number}` | `deleted:${num
 /** What makes one page of the conversation list its own cache entry. */
 export type ConversationListKey = { q: string; sort: string; order: string };
 
+/** The Import form's Apple Messages method and paths, as one path check reads them. */
+export type ImessagePathsKey = {
+  source: string;
+  backupPath: string;
+  attachmentRoot: string;
+  appleContacts: string;
+};
+
+/** The Import form's WhatsApp method and paths, as one path check reads them. */
+export type WhatsappPathsKey = {
+  source: string;
+  backupPath: string;
+  contactsDb: string;
+  media: string;
+  db: string;
+};
+
 export const keys = {
   contacts: {
     /** Every contact list page and every open contact. */
@@ -184,20 +201,18 @@ export const keys = {
   /** The Export Directory, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
   /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
-  desktopImportRunLog: (runDir: string) => ["desktop", "import-run-log", runDir] as const,
-  /** What the Apple Messages fields of the Import form point at, for one method and its paths. */
-  desktopImessagePaths: (
-    method: string,
-    backupPath: string,
-    attachmentRoot: string,
-    appleContacts: string,
-  ) => ["desktop", "imessage-paths", method, backupPath, attachmentRoot, appleContacts] as const,
-  /** What the WhatsApp fields of the Import form point at, for one method and its paths. */
-  desktopWhatsappPaths: (
-    method: string,
-    backupPath: string,
-    contactsDb: string,
-    media: string,
-    db: string,
-  ) => ["desktop", "whatsapp-paths", method, backupPath, contactsDb, media, db] as const,
+  desktopImportRunLog: {
+    all: ["desktop", "import-run-log"] as const,
+    of: (runDir: string) => ["desktop", "import-run-log", runDir] as const,
+  },
+  /** What the Apple Messages fields of the Import form point at, one entry per method and paths. */
+  desktopImessagePaths: {
+    all: ["desktop", "imessage-paths"] as const,
+    of: (paths: ImessagePathsKey) => ["desktop", "imessage-paths", paths] as const,
+  },
+  /** What the WhatsApp fields of the Import form point at, one entry per method and paths. */
+  desktopWhatsappPaths: {
+    all: ["desktop", "whatsapp-paths"] as const,
+    of: (paths: WhatsappPathsKey) => ["desktop", "whatsapp-paths", paths] as const,
+  },
 };

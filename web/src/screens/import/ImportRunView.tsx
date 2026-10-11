@@ -219,7 +219,7 @@ function useImportRunLog(runDir: string | null, keep: boolean): string | null {
   const target = runDir ?? (keep ? named : null);
   if (target !== named) setNamed(target);
   const query = useQuery({
-    queryKey: keys.desktopImportRunLog(target ?? ""),
+    queryKey: keys.desktopImportRunLog.of(target ?? ""),
     queryFn: () =>
       invokeImportRunLog(target ?? "").catch((caught: unknown) => {
         // The run goes on without the link; the reason is worth a line.

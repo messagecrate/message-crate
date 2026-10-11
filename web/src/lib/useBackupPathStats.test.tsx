@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../test/providers";
 import {
@@ -135,6 +137,31 @@ describe("useWhatsappPathStats", () => {
     await settle();
     expect(view.result.current.backup).toEqual(MISSING);
     expect(view.result.current.cryptName).toBeNull();
+  });
+
+  it("asks again for paths that come back, since the files can change on disk", async () => {
+    // A client that keeps answers fresh for half a minute, as the app's does.
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    desktop.paths.set("/wa", "directory");
+    const view = renderHook(
+      ({ backupPath }: { backupPath: string }) =>
+        useWhatsappPathStats("whatsapp-android", backupPath, "", "", ""),
+      { initialProps: { backupPath: "/wa" }, wrapper },
+    );
+    await settle();
+    expect(view.result.current.cryptName).toBeNull();
+
+    view.rerender({ backupPath: "/wa/" });
+    await settle();
+    desktop.paths.set("/wa/msgstore.db.crypt15", "file");
+    view.rerender({ backupPath: "/wa" });
+    await settle();
+    expect(view.result.current.cryptName).toBe("msgstore.db.crypt15");
   });
 
   it("asks an iPhone backup whether it is encrypted", async () => {
