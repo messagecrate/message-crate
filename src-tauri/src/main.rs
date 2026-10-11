@@ -7,7 +7,7 @@
 // window appears.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-/// Start the desktop window and wait until the user quits.
+/// Calls [`message_crate_desktop_lib::run`].
 fn main() {
     message_crate_desktop_lib::run();
 }
