@@ -104,6 +104,20 @@ pub async fn link_identity(conn: &mut sqlx::SqliteConnection, account_id: i64, h
         .unwrap();
 }
 
+/// Insert an `accounts` row with a chosen id on `conn`, with no password
+/// and no preferred name, for a test that has a connection rather than a
+/// [`TestFixture`]. Returns the id it was given.
+pub async fn insert_account_with_id(
+    conn: &mut sqlx::SqliteConnection,
+    id: i64,
+    username: &str,
+) -> i64 {
+    crate::db::account_profile::insert_account_at(conn, id, username, None, None)
+        .await
+        .unwrap_or_else(|e| panic!("insert account {username} at id {id}: {e:#}"));
+    id
+}
+
 /// An empty database with schema applied and no accounts.
 ///
 /// Public registration is turned on, because most of the suite reaches the
@@ -170,10 +184,7 @@ impl TestFixture {
     /// result rather than repeat the literal.
     pub async fn account_with_id(&self, id: i64, username: &str) -> i64 {
         let mut conn = self.conn().await;
-        crate::db::account_profile::insert_account_at(&mut conn, id, username, None, None)
-            .await
-            .unwrap();
-        id
+        insert_account_with_id(&mut conn, id, username).await
     }
 
     /// Insert the Demo Account at its fixed id, with the schema's default row:

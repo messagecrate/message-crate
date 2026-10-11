@@ -474,9 +474,7 @@ mod tests {
     async fn lookup_rejects_expired_session() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
         // Force expiry into the past.
         sqlx::query("UPDATE account_session_tokens SET expires_at = '1'")
@@ -493,9 +491,7 @@ mod tests {
     async fn lookup_rejects_a_session_that_expired_an_hour_ago() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
         assert!(lookup_session(&mut conn, &token).await.unwrap().is_some());
 
@@ -519,9 +515,7 @@ mod tests {
         const THIRTY_DAYS_SECS: u64 = 2_592_000;
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let before = now_unix_secs();
         insert_account_session_token(&mut conn, 7).await.unwrap();
         let after = now_unix_secs();
@@ -544,9 +538,7 @@ mod tests {
     async fn insert_session_with_ttl_sets_expires_at() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let before = now_unix_secs();
         let token = insert_account_session_token_with_ttl(&mut conn, 7, 120)
             .await
@@ -567,9 +559,7 @@ mod tests {
     async fn revoke_session_token_removes_row() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 7, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 7, "alice").await;
         let token = insert_account_session_token(&mut conn, 7).await.unwrap();
         assert!(lookup_session(&mut conn, &token).await.unwrap().is_some());
         assert!(revoke_session_token(&mut conn, &token).await.unwrap());

@@ -211,9 +211,7 @@ mod tests {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, 1, "a", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, 1, "a").await;
         let alone = sqlx::query("INSERT INTO attachments (message_id) VALUES (1)")
             .execute(&mut *conn)
             .await;

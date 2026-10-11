@@ -193,9 +193,7 @@ const TEST_ACCOUNT_ID: i64 = 7;
 
 async fn setup_db(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    crate::db::account_profile::insert_account_at(conn, TEST_ACCOUNT_ID, "test", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, TEST_ACCOUNT_ID, "test").await;
     sqlx::query(
         r"
         INSERT INTO handles (account_id, raw, normalized, handle_type, service)
@@ -1076,9 +1074,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
 
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    crate::db::account_profile::insert_account_at(&mut other, 8, "another", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut other, 8, "another").await;
     let priority = ["go-sms-pro".into(), "sms-backup-plus".into()];
     let stats = crate::db::write_tx::commit_during(
         other,
@@ -1166,9 +1162,7 @@ async fn add_attachment(conn: &mut SqliteConnection, message_id: i64, sha: &str)
 
 async fn setup_account(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
-    crate::db::account_profile::insert_account_at(conn, TEST_ACCOUNT_ID, "test", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, TEST_ACCOUNT_ID, "test").await;
 }
 
 async fn duplicate_of(conn: &mut SqliteConnection, id: i64) -> Option<i64> {

@@ -517,9 +517,7 @@ async fn open_db() -> (OpenDb, tempfile::TempDir) {
 }
 
 async fn seed_account(conn: &mut SqliteConnection, id: i64) {
-    crate::db::account_profile::insert_account_at(conn, id, &format!("user{id}"), None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(conn, id, &format!("user{id}")).await;
 }
 
 /// One conversation with one message under `source` for [`ACCOUNT`],

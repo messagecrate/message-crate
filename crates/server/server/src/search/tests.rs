@@ -297,9 +297,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
     for (id, name) in [(ACCOUNT, "alice"), (OTHER_ACCOUNT, "bob")] {
-        crate::db::account_profile::insert_account_at(&mut conn, id, name, None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, id, name).await;
     }
     let a = ACCOUNT;
     let mut f = Fixture {
@@ -1554,9 +1552,7 @@ mod index_characters {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         crate::db::schema::ensure_schema(&mut conn).await.unwrap();
-        crate::db::account_profile::insert_account_at(&mut conn, ACCOUNT, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, ACCOUNT, "alice").await;
         let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
         let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
         let mut ids = Vec::new();

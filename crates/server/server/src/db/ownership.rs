@@ -126,15 +126,8 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
         for account in [ACCOUNT_A, ACCOUNT_B] {
-            crate::db::account_profile::insert_account_at(
-                &mut conn,
-                account,
-                &account.to_string(),
-                None,
-                None,
-            )
-            .await
-            .unwrap();
+            crate::test_support::insert_account_with_id(&mut conn, account, &account.to_string())
+                .await;
         }
         (pool, dir)
     }
