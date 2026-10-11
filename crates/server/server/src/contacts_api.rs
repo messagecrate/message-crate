@@ -31,9 +31,10 @@ pub struct AddContactIdentityRequest {
     /// The address to link. Over 320 characters after trimming is refused
     /// with `422 Unprocessable Entity`.
     pub address: String,
-    /// The service to link it on; the phone service when omitted. It never
-    /// decides the identity's type, which comes from the address. A new email
-    /// address on WhatsApp is refused.
+    /// The service to link it on; the phone service when omitted. The
+    /// address's shape picks the identity's type among those the service
+    /// carries: an address with an `@` is an email address on the phone
+    /// service, and `other` on WhatsApp.
     #[serde(default)]
     pub service: Option<ApiIdentityService>,
 }
@@ -50,8 +51,8 @@ pub struct UpdateContactIdentityRequest {
     /// its own service whatever this names: on the named service first when
     /// it is there under more than one, else the phone service, then
     /// WhatsApp. When omitted, the new address takes the service of the
-    /// previous one. It never decides the new identity's type, which comes
-    /// from the address, and a new email address on WhatsApp is refused.
+    /// previous one. The new address's shape picks its type among those the
+    /// service carries, so an address with an `@` is `other` on WhatsApp.
     #[serde(default)]
     pub service: Option<ApiIdentityService>,
 }

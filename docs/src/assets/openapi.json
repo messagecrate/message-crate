@@ -13228,7 +13228,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service to link it on; the phone service when omitted. It never\ndecides the identity's type, which comes from the address. A new email\naddress on WhatsApp is refused."
+            "description": "The service to link it on; the phone service when omitted. The\naddress's shape picks the identity's type among those the service\ncarries: an address with an `@` is an email address on the phone\nservice, and `other` on WhatsApp."
           }
         }
       },
@@ -15323,7 +15323,7 @@
       },
       "IdentityService": {
         "type": "string",
-        "description": "The service an identity is on, as a request names it and the profile\nreports it: `phone` or `whatsapp`. `phone` is Text Message, which carries\nSMS, MMS, iMessage and RCS, and reaches an email address through iMessage.\nThe service never decides the identity's type, which comes from the\naddress.",
+        "description": "The service an identity is on, as a request names it and the profile\nreports it: `phone` or `whatsapp`. `phone` is Text Message, which carries\nSMS, MMS, iMessage and RCS, and reaches an email address through iMessage.\nThe address's shape picks the identity's type among those the service\ncarries, so an address with an `@` is `other` on WhatsApp.",
         "enum": [
           "phone",
           "whatsapp"
@@ -15867,7 +15867,7 @@
           },
           "service": {
             "$ref": "#/components/schemas/IdentityService",
-            "description": "The service the address is on. It never decides the identity's type,\nwhich comes from the address: an email address is on the phone\nservice, and one on WhatsApp is refused."
+            "description": "The service the address is on. The address's shape picks the\nidentity's type among those the service carries: an address with an\n`@` is an email address on the phone service, and `other` on\nWhatsApp, such as an internal id `123456789012345@lid`."
           }
         }
       },
@@ -19582,7 +19582,7 @@
           },
           "service": {
             "$ref": "#/components/schemas/IdentityService",
-            "description": "The service the address is on. It never decides the identity's type,\nwhich comes from the address: an email address is on the phone\nservice."
+            "description": "The service the address is on. The identity is found as the type\nthe address takes there: an address with an `@` is an email address\non the phone service, and `other` on WhatsApp."
           }
         }
       },
@@ -19697,7 +19697,7 @@
                 "type": "null"
               }
             ],
-            "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
+            "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. The new address's shape picks its type among those the\nservice carries, so an address with an `@` is `other` on WhatsApp."
           }
         }
       },
