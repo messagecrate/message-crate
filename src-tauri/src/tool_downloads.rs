@@ -909,9 +909,18 @@ fn check(
                         continue;
                     }
                 }
-                if let Ok(stamp) = Stamp::at(&path) {
-                    manifest.insert(program, Written::of(pin, stamp));
-                    write_manifest_or_log(dir, &manifest, program);
+                // Without its entry the next start reads the file again and
+                // adopts it, so a stamp that can't be taken fails nothing.
+                match Stamp::at(&path) {
+                    Ok(stamp) => {
+                        manifest.insert(program, Written::of(pin, stamp));
+                        write_manifest_or_log(dir, &manifest, program);
+                    }
+                    Err(err) => eprintln!(
+                        "{} is in place in the Tools Directory, and {MANIFEST_FILE} was not written \
+                         because its size and modified time could not be read: {err}",
+                        program.name()
+                    ),
                 }
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
