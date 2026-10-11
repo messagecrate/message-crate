@@ -1941,7 +1941,7 @@ export interface components {
             /**
              * Format: int64
              * @description The account the entry is about, or `null` when it is about none, or
-             *     the account has been deleted.
+             *     the account has been deleted: `account_deleted` tells the two apart.
              */
             account_id: number | null;
             /** @description What happened. */
@@ -3979,7 +3979,7 @@ export interface components {
                 /**
                  * Format: int64
                  * @description The account the entry is about, or `null` when it is about none, or
-                 *     the account has been deleted.
+                 *     the account has been deleted: `account_deleted` tells the two apart.
                  */
                 account_id: number | null;
                 /** @description What happened. */

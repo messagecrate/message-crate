@@ -13565,7 +13565,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted."
+            "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted: `account_deleted` tells the two apart."
           },
           "action": {
             "$ref": "#/components/schemas/AuditAction",
@@ -16904,7 +16904,7 @@
                     "null"
                   ],
                   "format": "int64",
-                  "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted."
+                  "description": "The account the entry is about, or `null` when it is about none, or\nthe account has been deleted: `account_deleted` tells the two apart."
                 },
                 "action": {
                   "$ref": "#/components/schemas/AuditAction",
