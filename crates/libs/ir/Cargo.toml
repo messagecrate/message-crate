@@ -13,6 +13,7 @@ hex = { workspace = true }
 # crate is MIT OR Apache-2.0 and links nothing GPL. Why:
 # docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
 imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
+phone = { path = "../phone" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
