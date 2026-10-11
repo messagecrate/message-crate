@@ -1199,8 +1199,11 @@ pub async fn delete_account_messages(
     }))
 }
 
-/// How many of an account's largest attachments the Storage screen lists:
+/// How many of an account's largest attachments the Storage tab lists:
 /// enough to find what is taking the space, few enough to read in one list.
+/// The docs of [`AccountStorage::top_attachments`] and
+/// [`get_account_storage`] give the number too, because they are the
+/// OpenAPI reference; change them with it.
 const TOP_ATTACHMENTS: i64 = 100;
 
 /// What an account holds: counts, attachment bytes and the largest files.

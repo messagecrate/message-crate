@@ -9,8 +9,8 @@ const MAX_LOOKBACK_DAYS: u64 = 3_650;
 
 /// The days one month counts for against [`MAX_LOOKBACK_DAYS`]. It is the
 /// longest month, so no `Nm` passes the limit and then reaches further back
-/// than it allows: `117m` is accepted and `118m` refused. The span itself
-/// goes back calendar months, not this many days.
+/// than it allows: `n * DAYS_PER_MONTH` may not exceed the limit. The span
+/// itself goes back calendar months, not this many days.
 const DAYS_PER_MONTH: u64 = 31;
 
 /// A comparison or range on an ordered scalar.
