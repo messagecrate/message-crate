@@ -7,6 +7,8 @@ export const HEALTH_SUCCESS_RECHECK_MS = 30_000;
 export const HEALTH_URL_DEBOUNCE_MS = 400;
 /** Give up on a single /health request so a black-holed host cannot leave the light grey. */
 export const HEALTH_PROBE_TIMEOUT_MS = 8_000;
+/** How long `checkServerHealthTwice` waits after a failed probe before it asks again. */
+export const HEALTH_RECHECK_AFTER_FAILURE_MS = 1_000;
 
 /** Progressive backoff: 1s → 2s → 4s → … capped at 30s. */
 export function healthBackoffMs(failureIndex: number): number {
@@ -69,4 +71,43 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
   } finally {
     limit.dispose();
   }
+}
+
+/**
+ * Ask GET /health, and when it fails, ask once more
+ * `HEALTH_RECHECK_AFTER_FAILURE_MS` later. Returns false only when both fail,
+ * or when `signal` aborts.
+ *
+ * One failure is not enough to call a server unreachable: `/health` fails
+ * when it cannot take a database connection within 1.5 seconds, which
+ * happens while an import's write lock keeps every connection waiting,
+ * though a `/v1` read would wait and succeed (#2718). The desktop app's watch
+ * on its own server asks twice in a row for the same reason (#2204).
+ */
+export async function checkServerHealthTwice(
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  if (await checkServerHealth(baseUrl, signal)) return true;
+  if (!(await waitUnlessAborted(HEALTH_RECHECK_AFTER_FAILURE_MS, signal))) return false;
+  return checkServerHealth(baseUrl, signal);
+}
+
+/** Wait `ms`. Resolves false at once when `signal` aborts first. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
