@@ -164,6 +164,11 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **An import is never sent back to a stage it has passed.**
+  Message Crate now refuses to move an import that is under way back to an
+  earlier stage, so a mistake in the app can no longer make the next resume
+  start over at work already done. Nothing changes on screen (#2167).
+
 - 2026-10-10: **An SMS Backup+ import finishes the way the other imports
   do.** It now ends through the same steps as GO SMS Pro and the others.
   Nothing changes on screen (#2163).

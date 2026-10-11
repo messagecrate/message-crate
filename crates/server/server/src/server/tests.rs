@@ -786,7 +786,7 @@ async fn stage_endpoint_advances() {
         import_access(&state, &token).await,
         AxumPath(import_id),
         Json(UpdateImportRequest {
-            stage: crate::db::imports::ImportStage::Upload,
+            stage: crate::db::imports::ImportStage::Write,
             summary: None,
         }),
     )
@@ -794,7 +794,7 @@ async fn stage_endpoint_advances() {
     .unwrap();
     assert_eq!(
         running_import(&state, &token).await.unwrap().stage,
-        Some(crate::db::imports::ImportStage::Upload)
+        Some(crate::db::imports::ImportStage::Write)
     );
 }
 

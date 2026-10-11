@@ -61,6 +61,28 @@ impl ImportStage {
     pub fn parse(s: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
+
+    /// Whether a running run at `self` may be moved to `next`: the moves the
+    /// desktop app makes, and no other.
+    ///
+    /// A stage may be written again: a resumed Staging writes `write` once
+    /// more, and a Review whose first write failed is written again before
+    /// it is approved. Otherwise a run only moves forward, along
+    /// [`Self::ALL`], with the Media Stage and its Review skipped when the
+    /// import converts nothing. A run never moves back: the next visit
+    /// resumes it at the stage the server holds, so a backward move would
+    /// resume it at work it has already done (#1227).
+    pub fn may_move_to(self, next: Self) -> bool {
+        self == next
+            || matches!(
+                (self, next),
+                (Self::Parse, Self::Write)
+                    | (Self::Write, Self::StagingReview)
+                    | (Self::StagingReview, Self::Media | Self::Upload)
+                    | (Self::Media, Self::MediaReview)
+                    | (Self::MediaReview, Self::Upload)
+            )
+    }
 }
 
 /// How an Import Run stands: the values `imports.status` holds, the values
@@ -315,6 +337,21 @@ pub enum ImportLookupError {
     InvalidRun {
         /// Why the run cannot be reused.
         message: String,
+    },
+    /// The run is running, but the order of its stages does not allow the
+    /// move asked for ([`ImportStage::may_move_to`]).
+    #[error(
+        "import {import_id} is at stage {}, and a run cannot move from there to stage {}",
+        from.as_str(),
+        to.as_str()
+    )]
+    StageMove {
+        /// The run that was asked to move.
+        import_id: i64,
+        /// The stage the run is at.
+        from: ImportStage,
+        /// The stage the move asked for.
+        to: ImportStage,
     },
     /// Database failure. It holds a `sqlx::Error` and nothing else, so a
     /// refusal written as an `anyhow` error does not compile into a database
@@ -572,10 +609,15 @@ pub async fn require_running_import(
 /// stage changes carry no summary, and treating absent as null would erase
 /// the approved plan the outcome is later diffed against.
 ///
+/// The move must be one [`ImportStage::may_move_to`] allows from the stage
+/// the run is at.
+///
 /// # Errors
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
-/// [`ImportLookupError::InvalidRun`] when it is no longer running.
+/// [`ImportLookupError::InvalidRun`] when it is no longer running,
+/// [`ImportLookupError::StageMove`] when its stage cannot move to `stage`,
+/// and [`ImportLookupError::Db`] when a statement fails.
 pub async fn set_import_stage(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -583,22 +625,34 @@ pub async fn set_import_stage(
     stage: ImportStage,
     summary_json: Option<&str>,
 ) -> std::result::Result<(), ImportLookupError> {
-    // `COALESCE` keeps the stored summary when none is given. The status
-    // check is in the update, so a run that finished after the caller read it
-    // is never given a stage.
-    let updated = sqlx::query(
+    // The read and the update are one write transaction, so the stage the
+    // move is checked from is the stage it replaces, and a run that finished
+    // after the caller read it is never given a stage.
+    let mut tx = begin_write(conn).await?;
+    let run = require_running_import(&mut tx, account_id, import_id).await?;
+    // A running run always has a stage: `start_import` records one and only
+    // the writes that finish a run clear it.
+    if let Some(from) = run.stage
+        && !from.may_move_to(stage)
+    {
+        return Err(ImportLookupError::StageMove {
+            import_id,
+            from,
+            to: stage,
+        });
+    }
+    // `COALESCE` keeps the stored summary when none is given.
+    sqlx::query(
         "UPDATE imports SET stage = $1, summary_json = COALESCE($2, summary_json)
-         WHERE id = $3 AND account_id = $4 AND status = 'running'",
+         WHERE id = $3 AND account_id = $4",
     )
     .bind(stage.as_str())
     .bind(summary_json)
     .bind(import_id)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
-    if updated.rows_affected() == 0 {
-        return Err(not_running(conn, account_id, import_id).await);
-    }
+    tx.commit().await?;
     Ok(())
 }
 
