@@ -12,14 +12,17 @@ describe("createExternalStore", () => {
     expect(store.get()).toBe(2);
   });
 
-  it("tells every subscriber of each change, and stops once unsubscribed", () => {
+  it("tells every subscriber of each change, and stops telling one once it unsubscribes", () => {
     const store = createExternalStore("a");
-    const seen: string[] = [];
-    const unsubscribe = store.subscribe(() => seen.push(store.get()));
+    const first: string[] = [];
+    const second: string[] = [];
+    const unsubscribe = store.subscribe(() => first.push(store.get()));
+    store.subscribe(() => second.push(store.get()));
     store.set("b");
     unsubscribe();
     store.set("c");
-    expect(seen).toEqual(["b"]);
+    expect(first).toEqual(["b"]);
+    expect(second).toEqual(["b", "c"]);
   });
 
   it("tells no one when set is given the value it already holds", () => {

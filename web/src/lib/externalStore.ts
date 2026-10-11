@@ -3,10 +3,8 @@ import { useCallback, useSyncExternalStore } from "react";
 /**
  * A value kept outside React that tells its subscribers when it changes.
  *
- * It is for state that belongs to this window, not to the server: the
- * logged-in account id (`api.ts`), the desktop job holds (`desktopJob.ts`),
- * the Import Run (`importRunStore.ts`). Server data is read through TanStack
- * Query, never through a store (ADR 0002).
+ * It is for state that belongs to this window, not to the server. Server
+ * data is read through TanStack Query, never through a store (ADR 0002).
  */
 export type ExternalStore<T> = {
   get: () => T;
