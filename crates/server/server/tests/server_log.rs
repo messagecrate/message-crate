@@ -55,6 +55,38 @@ fn log_text(data_dir: &Path) -> (String, usize) {
     (text, files)
 }
 
+/// Two requests the server refuses, whose lines name their problem type:
+/// alice logging in with [`WRONG_PASSWORD`] (`401 Unauthorized`), and a
+/// search by `alice` (her Session token) for `date:` [`SEARCH_WORD`], whose
+/// `detail` repeats the word (`422 Unprocessable Entity`).
+async fn refuse_a_wrong_password_and_a_search(base: &str, alice: &str) {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let (status, answer) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
+        Some(alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
+    assert!(
+        answer["detail"].as_str().unwrap().contains(SEARCH_WORD),
+        "the detail repeats the word, so the check that the log leaves it out means something: {answer}"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     use reqwest::Method;
@@ -202,26 +234,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     assert_eq!(status, S::OK, "{changed}");
     let alice_next = changed["token"].as_str().unwrap().to_string();
 
-    // Two refusals, whose lines name the problem type: a wrong password, and
-    // a search whose detail repeats the word typed.
-    let (status, answer) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
-    let (status, answer) = call(
-        base,
-        Method::GET,
-        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
-        Some(&alice_next),
-        None,
-    )
-    .await;
-    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
+    refuse_a_wrong_password_and_a_search(base, &alice_next).await;
 
     // The owner reads the log back through its route.
     let (status, lines) = call(
@@ -369,7 +382,8 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
 }
 
 /// A refused request leaves a line with its problem type and status, at
-/// `WARN` when it is about who may do what (`401`, `403`, `429`) and at
+/// `WARN` when it is about who may do what (`401 Unauthorized`,
+/// `403 Forbidden`, `429 Too Many Requests`) and at
 /// `INFO` for the rest, so the owner's Logs panel, which opens at warnings
 /// and up, shows a password guesser or a token that lost its rights (#2168).
 /// The line never holds the problem's `detail`, which can repeat what a
@@ -390,17 +404,9 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
         ..
     } = claimed_with_account(base).await;
 
-    // A wrong password, an account reading the owner's log, and a search
-    // whose detail repeats the word typed.
-    let (status, answer) = call(
-        base,
-        Method::POST,
-        "/v1/session",
-        None,
-        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
-    )
-    .await;
-    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+    // A wrong password, a refused search, and an account reading the
+    // owner's log.
+    refuse_a_wrong_password_and_a_search(base, &alice).await;
     let (status, answer) = call(
         base,
         Method::GET,
@@ -410,19 +416,6 @@ async fn a_refused_request_leaves_a_line_with_its_problem_type() {
     )
     .await;
     assert_eq!(status, S::FORBIDDEN, "{answer}");
-    let (status, answer) = call(
-        base,
-        Method::GET,
-        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
-        Some(&alice),
-        None,
-    )
-    .await;
-    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
-    assert!(
-        answer["detail"].as_str().unwrap().contains(SEARCH_WORD),
-        "the detail repeats the word, so the check that the log leaves it out means something: {answer}"
-    );
 
     let (log, _) = log_text(&data_dir);
     let refusal = |level: &str, problem: &str, status: u16, path: &str| {

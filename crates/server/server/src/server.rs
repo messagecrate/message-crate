@@ -799,19 +799,14 @@ impl ApiError {
 
 /// The line a refused request leaves: its problem type's slug and its status,
 /// under the request's span, which names the method, the path and the
-/// request id. `401`, `403` and `429` are at `WARN`, because a run of them is
-/// what a password guesser or an API token that lost its rights looks like,
-/// and the owner's Logs panel opens at warnings and up. Every other refusal
-/// is at `INFO`. The problem's `detail` is never written: it can repeat what
-/// a person typed, and a log line holds only ids, counts, routes and outcomes
+/// request id, at the level [`ProblemType::log_level`] gives. The problem's
+/// `detail` is never written: it can repeat what a person typed, and a log
+/// line holds only ids, counts, routes and outcomes
 /// (`docs/architecture/server-log.md`).
 fn log_refusal(kind: ProblemType) {
     let status = kind.status();
     let problem = kind.slug();
-    if matches!(
-        status,
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
-    ) {
+    if kind.log_level() == Level::WARN {
         tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
     } else {
         tracing::info!(%problem, status = status.as_u16(), "The server refused a request");
@@ -1424,10 +1419,11 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // handlers'.
         .layer(axum::middleware::from_fn(no_store_unless_set))
         // One `info` line per response (method, path, status, latency), and an
-        // `error` line for a 5xx. A refused request's problem type is logged
-        // where the problem is built (`log_refusal`). Runs outside CORS so the status it logs is
-        // the one the client receives. The span carries method and path; its
-        // level must match the line's or the default `info` filter drops it.
+        // `error` line for a 5xx. A refused request's problem type is
+        // logged where the problem is built (`log_refusal`). Runs outside
+        // CORS so the status it logs is the one the client receives. The span
+        // carries method and path; its level must match the line's or the
+        // default `info` filter drops it.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::extract::Request| {

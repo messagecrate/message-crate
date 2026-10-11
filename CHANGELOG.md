@@ -294,15 +294,6 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-10: **The server's log says why it refused a request.** A wrong
-  password, a request without the right to what it asked for, and a client
-  that asked too often now each leave a warning in the server's log naming
-  which of those it was, so Owner Home's Logs shows them at its opening
-  filter. Before, they were in the log only as a status number, under
-  everything, and a person guessing passwords showed nothing among the
-  warnings. Other refused requests also name their reason now, among
-  everything. What the person typed is never written to the log (#2168).
-
 - 2026-10-10: **A screen the server refuses shows its error at once.**
   When the server refused to show something, because it was not found, not
   allowed, or asked too often, the website and the desktop app asked a second
@@ -725,6 +716,17 @@ released versions carry their date on the heading.
   contact. Messages are not changed (#1662).
 
 #### The server
+
+- 2026-10-11: **The server's log says why it refused a request.** A wrong
+  password, a request that did not log in or whose Session ended, a request
+  without the right to what it asked for, and a client that asked too often
+  now each leave a warning in the server's log naming which of those it was,
+  so Owner Home's Logs shows them at its opening filter. Before, they were
+  in the log only as a status number, shown only when the Logs panel showed
+  everything, and a person guessing passwords left nothing among the
+  warnings. Every other refused request also names its reason now, shown
+  when the Logs panel shows everything. What the person typed is never
+  written to the log (#2168).
 
 - 2026-10-10: **An attachment the server cannot read is written to its
   log.** Before it skips an upload because an attachment is already
