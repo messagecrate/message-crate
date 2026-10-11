@@ -183,6 +183,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the Demo Account's generator and the server agree on
+  what a demo bundle holds was reworked inside, with nothing visible (#2265).
+
 - 2026-10-11: The way an Upload and an Export remember what they already
   did for each server and account was reworked inside, with nothing visible
   (#2253).
