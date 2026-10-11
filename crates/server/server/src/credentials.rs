@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use sqlx::SqliteConnection;
+use tokio::sync::Semaphore;
 
 use crate::db::{account_profile, api_tokens, session_tokens};
 use crate::server::ApiError;
@@ -169,19 +170,86 @@ pub(crate) fn verify_password(hash: &str, password: &str) -> bool {
         .is_ok()
 }
 
+/// The permits for Argon2 runs, one per core the process may use.
+///
+/// Each run takes about 19 MiB, and the blocking thread pool allows 512
+/// threads. Without a limit, a few hundred logins at once, each as a
+/// different unknown username and so each in its own rate-limit bucket,
+/// would ask for gigabytes and could get the server killed. One run per core
+/// keeps every core busy, and the runs waiting for a permit take no Argon2
+/// memory.
+fn argon2_permits() -> &'static Arc<Semaphore> {
+    static PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    PERMITS.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+        Arc::new(Semaphore::new(cores))
+    })
+}
+
+/// Run `f`, an Argon2 hash or verify, on the blocking thread pool, once one
+/// of [`argon2_permits`] is free.
+///
+/// Argon2 is slow on purpose. If it ran on an async worker, each hash would
+/// hold that worker for its whole run, and a burst of logins or password
+/// changes would stall every other request scheduled on the workers. Callers
+/// hold no database connection or transaction across the await, so none
+/// waits on Argon2 either.
+///
+/// A caller gives its connection back to the pool before the run and takes
+/// one again after it. This function cannot do that for it, because callers
+/// hold connections differently. A login drops its connection and gets a new
+/// one. A password change gets one for each statement.
+async fn run_argon2<T: Send + 'static>(
+    task: &'static str,
+    f: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T, ApiError> {
+    run_argon2_under(argon2_permits(), task, f).await
+}
+
+/// [`run_argon2`] under the given permits, so a test can count them.
+///
+/// The permit moves into the blocking closure, so it is given back when the
+/// run ends, not when the request does: a client that disconnects mid-run
+/// cannot start another run while the first still uses its memory.
+async fn run_argon2_under<T: Send + 'static>(
+    permits: &Arc<Semaphore>,
+    task: &'static str,
+    f: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T, ApiError> {
+    let permit = Arc::clone(permits)
+        .acquire_owned()
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("{task}: {e}")))?;
+    crate::server::run_blocking(task, move || {
+        let result = f();
+        drop(permit);
+        result
+    })
+    .await
+}
+
 /// True when `password` matches the stored hash.
 ///
 /// A missing or empty hash means the account has no password, so only an empty
-/// password is accepted. Otherwise argon2 is used.
-pub(crate) fn passwords_match(password_hash: Option<&str>, password: &str) -> bool {
+/// password is accepted. Otherwise argon2 is used, on the blocking thread pool.
+pub(crate) async fn passwords_match(
+    password_hash: Option<&str>,
+    password: &str,
+) -> Result<bool, ApiError> {
     match password_hash {
-        None | Some("") => password.is_empty(),
-        Some(hash) => verify_password(hash, password),
+        None | Some("") => Ok(password.is_empty()),
+        Some(hash) => {
+            let (hash, password) = (hash.to_owned(), password.to_owned());
+            run_argon2("password check", move || {
+                Ok(verify_password(&hash, &password))
+            })
+            .await
+        }
     }
 }
 
 /// A real argon2 hash used only so missing-account logins take similar time.
-pub(crate) fn dummy_password_hash() -> &'static str {
+fn dummy_password_hash() -> &'static str {
     DUMMY_PASSWORD_HASH.get_or_init(|| {
         hash_password("timing-equalization-dummy-password").expect("dummy password hash")
     })
@@ -189,34 +257,45 @@ pub(crate) fn dummy_password_hash() -> &'static str {
 
 /// Always run Argon2 so missing accounts cost similar to wrong passwords.
 /// Passwordless accounts (NULL hash) still accept an empty password only.
-pub(crate) fn verify_login_password(password_hash: Option<&str>, password: &str) -> bool {
-    match password_hash {
-        None | Some("") => {
-            let _ = verify_password(dummy_password_hash(), password);
-            password.is_empty()
-        }
-        Some(hash) => verify_password(hash, password),
-    }
+/// A login as a username nobody holds calls this with no hash and ignores
+/// the answer. Argon2 runs on the blocking thread pool.
+pub(crate) async fn verify_login_password(
+    password_hash: Option<&str>,
+    password: &str,
+) -> Result<bool, ApiError> {
+    let (hash, password) = (password_hash.map(str::to_owned), password.to_owned());
+    run_argon2("password check", move || {
+        Ok(match hash.as_deref() {
+            None | Some("") => {
+                let _ = verify_password(dummy_password_hash(), &password);
+                password.is_empty()
+            }
+            Some(hash) => verify_password(hash, &password),
+        })
+    })
+    .await
 }
 
-/// Hash the owner's password. The owner must have one, so an empty
-/// password is refused; one character is enough.
-pub(crate) fn hash_owner_password(password: &str) -> Result<String, ApiError> {
+/// Hash the owner's password, on the blocking thread pool. The owner must
+/// have one, so an empty password is refused; one character is enough.
+pub(crate) async fn hash_owner_password(password: &str) -> Result<String, ApiError> {
     if password.is_empty() {
         return Err(ApiError::validation("the owner must have a password"));
     }
     require_hashable(password)?;
-    Ok(hash_password(password)?)
+    let password = password.to_owned();
+    run_argon2("password hash", move || hash_password(&password)).await
 }
 
-/// Hash a user account's password. There is no minimum length: an empty
-/// password is `None`, an account with no password.
-pub(crate) fn hash_user_password(password: &str) -> Result<Option<String>, ApiError> {
+/// Hash a user account's password, on the blocking thread pool. There is no
+/// minimum length: an empty password is `None`, an account with no password.
+pub(crate) async fn hash_user_password(password: &str) -> Result<Option<String>, ApiError> {
     if password.is_empty() {
         return Ok(None);
     }
     require_hashable(password)?;
-    Ok(Some(hash_password(password)?))
+    let password = password.to_owned();
+    run_argon2("password hash", move || hash_password(&password).map(Some)).await
 }
 
 /// Refuse a password longer than Argon2 should be asked to hash.

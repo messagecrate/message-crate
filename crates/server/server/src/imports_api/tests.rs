@@ -165,13 +165,27 @@ async fn import_one_batch(
     mode: &str,
     body: String,
 ) {
-    let (_, created): (String, serde_json::Value) = post_created_json(
+    import_one_batch_requesting(
         state,
-        "/v1/imports",
         token,
         serde_json::json!({ "source": source, "mode": mode }),
+        body,
     )
     .await;
+}
+
+/// Create an Import Run with `request` as the `POST /v1/imports` body,
+/// post `body` as its one batch, and complete the run so the account may
+/// start another. Every test in this module that imports one batch over
+/// HTTP and checks nothing before the run completes goes through here.
+async fn import_one_batch_requesting(
+    state: &crate::server::AppState,
+    token: &str,
+    request: serde_json::Value,
+    body: String,
+) {
+    let (_, created): (String, serde_json::Value) =
+        post_created_json(state, "/v1/imports", token, request).await;
     let id = created["id"].as_i64().unwrap();
     let (status, text) = crate::test_support::post_raw(
         state,
