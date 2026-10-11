@@ -1,5 +1,5 @@
 //! The desktop window's Content Security Policy runs only the app's own
-//! scripts, and the window puts no Tauri API on `window`.
+//! scripts, and the window gets no `window.__TAURI__`.
 //!
 //! Every command is open to any script in the window, so the policy in
 //! `tauri.conf.json` is what keeps a script the app did not ship from
@@ -50,7 +50,7 @@ fn the_window_runs_only_the_apps_own_scripts() {
 /// tells the desktop app by `__TAURI_INTERNALS__`, which Tauri adds whatever
 /// this setting says, so nothing needs the global (issue #2177).
 #[test]
-fn the_window_puts_no_tauri_api_on_window() {
+fn the_window_has_no_global_tauri_api() {
     let with_global_tauri = &app()["withGlobalTauri"];
     assert!(
         matches!(with_global_tauri, Value::Null | Value::Bool(false)),
