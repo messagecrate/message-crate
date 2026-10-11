@@ -182,6 +182,13 @@ released versions carry their date on the heading.
   minute shows them without asking the server. The names already shown stay
   up while the next ones load (#2181).
 
+- 2026-10-11: **The Docker image is built on fixed base images.** Each
+  image the Docker image is built from is now named by its exact content,
+  not only by a name its publisher can point at a newer image, so two builds
+  of the same Message Crate start from the same images. A new image under
+  the same name now arrives as a reviewed change instead of slipping into
+  a build unseen (#2179).
+
 - 2026-10-10: **The Docker Compose files take away what the server does not
   need.** The container they start keeps no Linux privileges, cannot gain
   any, and cannot change its own files: the server writes only to the data
@@ -750,6 +757,16 @@ released versions carry their date on the heading.
   that asked for it, left out the request's id, so it could not be matched
   to the request or to the error a person was shown. It now carries the id
   like every other line of the request (#2186).
+
+- 2026-10-11: **A database failure while reading a conversation or a search's
+  messages says what the server was reading.** The error in the server's
+  log used to give only the database's own message, such as that a table
+  was missing, so a request that reads messages, their attachments, their
+  reactions and their earlier versions gave no way to tell which read
+  failed. The error now starts with what was being read, such as "read the
+  attachments of a page of messages". The values the read was given, such as
+  the words of a search, are never written (#2172).
+
 - 2026-10-11: **The server's log says why it refused a request.** A wrong
   password, a request that did not log in or whose Session ended, a request
   without the right to what it asked for, and a client that asked too often
