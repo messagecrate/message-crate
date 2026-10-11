@@ -114,11 +114,42 @@ docker run --rm \
 `"$PWD"` is the current directory in a Linux or macOS shell.
 PowerShell on Windows takes `"${PWD}"` in its place.
 
-The file then goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
+### Encrypt the file before it leaves the computer
+
+`message-crate-data.tar.gz` holds every account's messages and attachments, unencrypted.
+Anyone who gets a copy of the file can read all of them.
+The accounts' passwords don't protect it, because a password guards the server's login and the file is read without the server.
+
+The file should be encrypted before it travels, because a USB drive can be lost and a network share or a copy left behind can be read by others.
+`age` and `gpg` both encrypt a file with a passphrase.
+Either command below writes an encrypted copy beside the file and asks for the passphrase twice:
+
+```bash title="On the old computer: encrypt the file with age or with gpg"
+# age writes message-crate-data.tar.gz.age
+age -p -o message-crate-data.tar.gz.age message-crate-data.tar.gz
+
+# gpg writes message-crate-data.tar.gz.gpg
+gpg -c message-crate-data.tar.gz
+```
+
+The unencrypted `message-crate-data.tar.gz` is then deleted from the old computer, so only the encrypted copy remains.
+The encrypted copy goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
+The passphrase should travel separately from the file, because a passphrase stored beside the file protects nothing.
 
 ### Restore the volume
 
-The first command makes an empty volume with the same name.
+The encrypted copy is decrypted first, with the tool that encrypted it, which asks for the passphrase:
+
+```bash title="On the new computer: decrypt the file with age or with gpg"
+# a file that age encrypted
+age -d -o message-crate-data.tar.gz message-crate-data.tar.gz.age
+
+# a file that gpg encrypted
+gpg -o message-crate-data.tar.gz -d message-crate-data.tar.gz.gpg
+```
+
+The next two commands restore the volume.
+The first makes an empty volume with the same name.
 The second unpacks the file into it, from the directory that holds `message-crate-data.tar.gz`.
 
 ```bash title="On the new computer: restore the volume"
@@ -140,3 +171,14 @@ The old computer's container stays stopped from here on.
 Two running copies would each take new imports, and nothing merges them afterwards.
 
 The old volume remains on the old computer until `docker volume rm message-crate-data` deletes it.
+
+Once the counts match, `message-crate-data.tar.gz` is deleted from the new computer, and the encrypted copy from the new computer, the old computer, and wherever it travelled through, such as the USB drive or the network share.
+The restored volume holds everything the file held, so neither file is needed any more, and each copy left behind is one more place the messages can be read from.
+
+### Encrypt the disk that holds the volume
+
+The volume itself is unencrypted too.
+The server stores the database and the attachment files on disk as they are, on the new computer and on the old one until its volume is deleted.
+The computer that runs the server should therefore use full-disk encryption, so a stolen computer or a disk taken out of it doesn't give up the messages.
+FileVault does that on macOS, BitLocker on Windows, and LUKS on Linux.
+On macOS and Windows, Docker Desktop keeps its volumes inside a disk image on the computer's own disk, so the computer's full-disk encryption covers them.
