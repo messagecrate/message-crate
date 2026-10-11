@@ -1636,8 +1636,9 @@ use crate::db::audit_trail::CredentialUsed;
 ///
 /// # Errors
 ///
-/// Unauthorized when the token matches nothing; forbidden when the account is
-/// disabled.
+/// Unauthorized when the token matches nothing, which includes an API token
+/// on the owner's account (`api_tokens::lookup_account_for_api_token` refuses
+/// it); forbidden when the account is disabled.
 pub async fn resolve_auth_on_conn(
     conn: &mut SqliteConnection,
     token: &str,
