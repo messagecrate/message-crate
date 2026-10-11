@@ -717,6 +717,13 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **An attachment the server cannot read is written to its
+  log.** Before it skips an upload because an attachment is already
+  stored, the server reads the stored copy to check it. When that read
+  failed, for example on a failing disk or after a permission change, the
+  server asked for the attachment again and said nothing about why. The
+  attachment is still sent again, and the server's log now names the file
+  it could not read and the error (#2171).
 - 2026-10-10: **A request too large for the server reads the same
   everywhere.** When the server refuses a request for being over its size
   limit, the message now always reads "the request body is too large". It
