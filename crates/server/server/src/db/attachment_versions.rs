@@ -33,6 +33,15 @@ impl Version {
         }
     }
 
+    /// The column that says why this version could not be made the last
+    /// time the media pass tried, `NULL` once it is made.
+    pub(crate) fn not_made_reason_column(self) -> &'static str {
+        match self {
+            Self::Preview => "derived_not_made_reason",
+            Self::Thumbnail => "thumbnail_not_made_reason",
+        }
+    }
+
     /// Whether `staging_attachments` has this version's columns. Staging
     /// copies the Preview columns from the import, and never names a
     /// Thumbnail.
@@ -245,6 +254,41 @@ pub async fn record_shown_as_is(
     tx.commit().await
 }
 
+/// Record on every one of `rows` why their `version` could not be made,
+/// the reason the `/v1` Attachment answers. A version made later clears it
+/// ([`record`], [`share`]). The update runs in a write transaction of its
+/// own, as [`record`] does.
+///
+/// # Errors
+///
+/// Returns a database error when the statement fails.
+pub async fn record_not_made(
+    conn: &mut SqliteConnection,
+    rows: OriginalRows<'_>,
+    version: Version,
+    reason: &str,
+) -> Result<(), sqlx::Error> {
+    let OriginalRows {
+        account_id,
+        original_sha,
+    } = rows;
+    let reason_column = version.not_made_reason_column();
+    let mut tx = begin_write(conn).await?;
+    sqlx::query(&format!(
+        "UPDATE attachments
+         SET {reason_column} = $1
+         WHERE sha256 = $2
+           AND {reason_column} IS NOT $1
+           AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
+    ))
+    .bind(reason)
+    .bind(original_sha)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await
+}
+
 /// Point the attachment rows `write` names that name no version of its
 /// kind at its file, and answer how many rows it pointed. Rows that already
 /// name one are left alone. 0 when no such row is left, such as when they
@@ -261,10 +305,11 @@ pub async fn share(
     point_rows(conn, write, true).await
 }
 
-/// Point the attachment rows `write` names at its file, and answer how many
-/// rows it pointed. When `only_unset` is true, rows that already name a
-/// version of its kind are left alone. [`record`] and [`share`] are this
-/// one statement, so a change to how a version is pointed at is made once.
+/// Point the attachment rows `write` names at its file, clear why the
+/// version could not be made on them, and answer how many rows it pointed.
+/// When `only_unset` is true, rows that already name a version of its kind
+/// are left alone. [`record`] and [`share`] are this one statement, so a
+/// change to how a version is pointed at is made once.
 async fn point_rows(
     conn: &mut SqliteConnection,
     write: VersionWrite<'_>,
@@ -279,6 +324,7 @@ async fn point_rows(
         file,
     } = write;
     let [sha_column, path_column, mime_column] = version.columns();
+    let reason_column = version.not_made_reason_column();
     let unset_filter = if only_unset {
         format!("AND COALESCE({path_column}, '') = ''")
     } else {
@@ -287,7 +333,8 @@ async fn point_rows(
     let mut tx = begin_write(conn).await?;
     let done = sqlx::query(&format!(
         "UPDATE attachments
-         SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
+         SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3,
+             {reason_column} = NULL
          WHERE sha256 = $4
            {unset_filter}
            AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"

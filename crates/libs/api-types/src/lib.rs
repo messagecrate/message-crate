@@ -684,10 +684,19 @@ api_shape! {
         /// MIME type of the attachment's preview, when it has one. The
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
         pub preview_mime_type: Option<String>,
+        /// Why the server could not make the attachment's preview the last
+        /// time it tried: what ffmpeg said about the file, or a phrase of the
+        /// server's when ffmpeg did not read it, such as when the original
+        /// file is missing. `null` once the preview is made, and until a try
+        /// has failed.
+        pub preview_not_made_reason: Option<String>,
         /// MIME type of the attachment's thumbnail, once the server has made
         /// it; `null` until then. The thumbnail's bytes are at
         /// `/v1/assets/{sha256}/thumbnail`.
         pub thumbnail_mime_type: Option<String>,
+        /// Why the server could not make the attachment's thumbnail the last
+        /// time it tried, as `preview_not_made_reason` says for the preview.
+        pub thumbnail_not_made_reason: Option<String>,
     }
 }
 
@@ -771,7 +780,9 @@ mod tests {
                 missing_reason: None,
                 shown_as_is: false,
                 preview_mime_type: None,
+                preview_not_made_reason: None,
                 thumbnail_mime_type: None,
+                thumbnail_not_made_reason: None,
             }],
             tapbacks: vec![Tapback {
                 part_index: 0,
@@ -828,7 +839,9 @@ mod tests {
                 "missing_reason": null,
                 "shown_as_is": false,
                 "preview_mime_type": null,
+                "preview_not_made_reason": null,
                 "thumbnail_mime_type": null,
+                "thumbnail_not_made_reason": null,
             }),
             "an attachment with nothing known about it writes every key: {json}"
         );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { attachment } from "../test/apiShapes";
-import { attachmentKind, fullVersion } from "./attachmentMedia";
+import { attachmentKind, fullVersion, noPreviewNote } from "./attachmentMedia";
 
 /**
  * The viewer's rule (`docs/architecture/media.md`, rule 2), as the server
@@ -37,6 +37,32 @@ describe("fullVersion", () => {
     expect(fullVersion(attachment({ mime_type: "image/heic" }))).toBe("none");
     expect(fullVersion(attachment({ mime_type: "image/jpeg" }))).toBe("none");
     expect(fullVersion(attachment({}))).toBe("none");
+  });
+});
+
+/**
+ * Why there is no Preview is said only where nothing opens: a reason beside a
+ * version that opens would tell the reader of a failure they never meet.
+ */
+describe("noPreviewNote", () => {
+  const reason = "Error opening input file ab/a.heic.";
+
+  it("says why the server could not make the Preview of an attachment that opens in nothing", () => {
+    expect(
+      noPreviewNote(attachment({ mime_type: "image/heic", preview_not_made_reason: reason })),
+    ).toBe(`No Preview could be made: ${reason}`);
+  });
+
+  it("says nothing while no try has failed, or when a version opens", () => {
+    expect(noPreviewNote(attachment({ mime_type: "image/heic" }))).toBeNull();
+    expect(
+      noPreviewNote(attachment({ shown_as_is: true, preview_not_made_reason: reason })),
+    ).toBeNull();
+    expect(
+      noPreviewNote(
+        attachment({ preview_mime_type: "image/jpeg", preview_not_made_reason: reason }),
+      ),
+    ).toBeNull();
   });
 });
 

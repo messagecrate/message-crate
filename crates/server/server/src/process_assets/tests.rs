@@ -1131,6 +1131,70 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
 }
 
+/// Why each version of one attachment row was not made: Preview, then
+/// Thumbnail.
+async fn not_made_reasons(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> (Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT derived_not_made_reason, thumbnail_not_made_reason
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// A version that could not be made keeps why on its rows, for the `/v1`
+/// Attachment, until a later pass makes it. A dry run records nothing.
+#[test]
+fn why_a_version_was_not_made_is_kept_until_it_is_made() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        let bytes = fs::read(&original).unwrap();
+        fs::remove_file(&original).unwrap();
+        let dry_run = ProcessAssetsOptions {
+            dry_run: true,
+            ..Default::default()
+        };
+
+        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap();
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+        let missing = Some("the original file is missing".to_string());
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (missing.clone(), missing)
+        );
+
+        fs::write(&original, bytes).unwrap();
+        assert_eq!(
+            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+                .await
+                .unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+    });
+}
+
 /// A damaged Preview whose original is missing cannot be converted again.
 /// The run drops it rather than leave the rows naming it, so the server
 /// stops serving it as if whole: every row that names it, from every
