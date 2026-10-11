@@ -524,7 +524,12 @@ security scheme with its scopes, so every route says which it accepts.
   signing the same terms with the Session the account holds now, so a link
   for another asset, another account, a later expiry or an ended Session
   fails the same check. The server's log shows `media_link=[hidden]`,
-  because a credential is never logged.
+  because a credential is never logged. Every answer of the three asset
+  routes carries `Cache-Control: private`, and one read with a Media Link
+  carries `private, no-store`: that request sends no `Authorization`
+  header, so a shared cache in front of the server would otherwise keep the
+  answer under the link's URL and serve it after the hour or the Session
+  has ended.
   Why an hour: a phone video is watched and sought in within minutes, and an
   hour leaves room for a long one; a link copied out of the page stops
   working soon after. The web app makes a new link whenever it opens an

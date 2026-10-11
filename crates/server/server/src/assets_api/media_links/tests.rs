@@ -88,6 +88,45 @@ async fn a_media_link_opens_its_asset_and_preview_with_no_header() {
     assert_eq!(part.body, &ORIGINAL_BYTES[ORIGINAL_BYTES.len() - 3..]);
 }
 
+/// A request made with a media link sends no `Authorization` header, so a
+/// shared cache in front of the server may store the answer under its URL
+/// and serve it again after the link has expired or its Session has ended.
+/// Every asset answer is `private`, and one read with a media link is
+/// `no-store` as well, whole or in part.
+#[tokio::test]
+async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let link = minted(state, sha, &user).await;
+
+    for url in [
+        link["url"].as_str().unwrap(),
+        link["preview_url"].as_str().unwrap(),
+    ] {
+        for range in [None, Some("bytes=0-2")] {
+            let headers: Vec<(&str, &str)> = range.map(|r| ("range", r)).into_iter().collect();
+            let answer = fetch(state, url, None, &headers).await;
+            assert!(answer.status.is_success(), "{url}: {}", answer.text());
+            assert_eq!(
+                answer.header("cache-control"),
+                Some("private, no-store"),
+                "{url} {range:?}"
+            );
+        }
+    }
+
+    for path in [
+        format!("/v1/assets/{sha}"),
+        format!("/v1/assets/{sha}/preview"),
+    ] {
+        let answer = fetch(state, &path, Some(&user.token), &[]).await;
+        assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
+        assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
+    }
+}
+
 /// A media link names one asset. Put on another asset's address, even one
 /// the same account holds, it opens nothing.
 #[tokio::test]

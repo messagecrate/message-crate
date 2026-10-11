@@ -698,6 +698,7 @@ pub(crate) async fn head_asset(
             content_type = "*/*",
             headers(
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -708,6 +709,7 @@ pub(crate) async fn head_asset(
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
                 ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read"),
                 ("ETag" = String, description = "The fingerprint, quoted")
             )
         ),
@@ -731,6 +733,7 @@ pub(crate) async fn get_asset(
         stored.mime_type,
         &headers,
         Some(format!("\"{sha256}\"")),
+        reader.cache_control(),
     )
     .await
 }
@@ -759,7 +762,10 @@ pub(crate) async fn get_asset(
             status = 200,
             description = "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -767,7 +773,8 @@ pub(crate) async fn get_asset(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
@@ -808,7 +815,10 @@ pub(crate) async fn get_asset_preview(
             status = 200,
             description = "The thumbnail's bytes, in the thumbnail's own media type",
             content_type = "*/*",
-            headers(("Accept-Ranges" = String, description = "`bytes`"))
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
+            )
         ),
         (
             status = 206,
@@ -816,7 +826,8 @@ pub(crate) async fn get_asset_preview(
             content_type = "*/*",
             headers(
                 ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
-                ("Accept-Ranges" = String, description = "`bytes`")
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("Cache-Control" = String, description = "`private`, and `private, no-store` when a media link admitted the read")
             )
         ),
         crate::problem::openapi::RangeNotSatisfiable
@@ -861,7 +872,14 @@ async fn stream_version(
         )));
     };
     let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(&converted_dir.join(path), mime_type, headers, None).await
+    stream_file(
+        &converted_dir.join(path),
+        mime_type,
+        headers,
+        None,
+        reader.cache_control(),
+    )
+    .await
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read
@@ -886,12 +904,14 @@ pub(crate) async fn lookup_for_read(
 /// when none is known: the whole file, or the one byte range the request's
 /// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
 /// tag when it has one, which an `If-Range` must name for a range to be
-/// served.
+/// served. `cache_control` is the reader's
+/// ([`AssetReadAccess::cache_control`]).
 async fn stream_file(
     path: &Path,
     mime_type: Option<String>,
     request_headers: &HeaderMap,
     etag: Option<String>,
+    cache_control: header::HeaderValue,
 ) -> Result<Response, ApiError> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -978,6 +998,7 @@ async fn stream_file(
         header::ACCEPT_RANGES,
         header::HeaderValue::from_static("bytes"),
     );
+    headers_mut.insert(header::CACHE_CONTROL, cache_control);
     if let Some(value) = etag.and_then(|etag| header::HeaderValue::from_str(&etag).ok()) {
         headers_mut.insert(header::ETAG, value);
     }

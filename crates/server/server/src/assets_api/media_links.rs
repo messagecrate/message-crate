@@ -156,6 +156,25 @@ fn now_unix() -> i64 {
 pub(crate) struct AssetReadAccess {
     /// The account whose asset store the read looks in.
     pub(crate) account_id: i64,
+    /// Whether a media link, not the `Authorization` header, admitted the
+    /// read.
+    by_media_link: bool,
+}
+
+impl AssetReadAccess {
+    /// The `Cache-Control` of the answer: `private` always, because the
+    /// bytes are one account's attachment, and `no-store` as well when a
+    /// media link admitted the read. That request sends no `Authorization`
+    /// header, so a shared cache would otherwise store the answer under the
+    /// link's URL and serve it again after the link expired or its Session
+    /// ended, and the browser would keep the bytes on disk past the hour.
+    pub(crate) fn cache_control(&self) -> header::HeaderValue {
+        if self.by_media_link {
+            header::HeaderValue::from_static("private, no-store")
+        } else {
+            header::HeaderValue::from_static("private")
+        }
+    }
 }
 
 impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
@@ -170,6 +189,7 @@ impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
             require_asset_read_access(&auth)?;
             return Ok(Self {
                 account_id: auth.account_id,
+                by_media_link: false,
             });
         }
         let Some(link) = media_link_in(parts.uri.query()) else {
@@ -183,7 +203,10 @@ impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
             )
             .await?;
         let account_id = open_media_link(state, &link, &sha256).await?;
-        Ok(Self { account_id })
+        Ok(Self {
+            account_id,
+            by_media_link: true,
+        })
     }
 }
 
