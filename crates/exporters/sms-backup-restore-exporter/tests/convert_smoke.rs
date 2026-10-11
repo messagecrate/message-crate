@@ -3,7 +3,7 @@ use anyhow::Result;
 use message_crate_core::testutil::{
     assert_csv_export, assert_csv_row, assert_jsonl_resumes, csv_files,
 };
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,11 +19,10 @@ fn convert(
         output_dir: output,
         scratch_dir: cache.path(),
         owner_phones,
-        transforms: ExportTransforms::none(),
-        output_format,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            output_format,
+            ..ConvertRun::default()
+        },
     })
 }
 
@@ -192,11 +191,12 @@ fn cancel_during_the_write_phase_stops_the_export() {
         output_dir: &out,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        transforms,
-        output_format: OutputFormat::Csv,
-        cancel: Some(&cancel),
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            transforms,
+            output_format: OutputFormat::Csv,
+            cancel: Some(&cancel),
+            ..ConvertRun::default()
+        },
     })
     .expect_err("cancel must be honored during the write phase");
     assert!(
@@ -364,11 +364,11 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_dir: tmp.path(),
             scratch_dir: cache.path(),
             owner_phones: &[],
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            resume,
-            issues: None,
+            convert_run: ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
 }

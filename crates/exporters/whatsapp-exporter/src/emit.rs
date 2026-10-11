@@ -10,10 +10,7 @@ use crate::parse::{
     media_path, message_text, timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
-use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
-    project_conversation,
-};
+use message_crate_core::{ConvertRun, Counter, ExportReport, project_conversation};
 use message_csv::format_local_ts;
 use message_ir::{
     ExportMeta, IdentityType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
@@ -35,7 +32,6 @@ pub(crate) const EXPORT_TOOL_VERSION: &str = "0.13.0";
 pub(crate) struct ConvertRequest<'a> {
     pub json_path: &'a Path,
     pub output: &'a Path,
-    pub transforms: ExportTransforms,
     /// Directories tried when resolving relative media paths. For a ready-made
     /// `result.json`: the backup input, when given, and the JSON's directory.
     /// Otherwise: the wtsexporter working directory and the backup input, which
@@ -48,12 +44,7 @@ pub(crate) struct ConvertRequest<'a> {
     /// When the backup was made, in Unix milliseconds, stamped on the export
     /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
     pub backup_taken_at_unix_ms: Option<i64>,
-    pub output_format: OutputFormat,
-    /// Checked between chats (cooperative cancellation).
-    pub cancel: Option<&'a CancelFlag>,
-    pub resume: bool,
-    /// Where each note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
@@ -67,14 +58,17 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let ConvertRequest {
         json_path,
         output,
-        transforms,
         media_search_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run:
+            ConvertRun {
+                transforms,
+                output_format,
+                cancel,
+                resume,
+                issues,
+            },
     } = request;
     fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
     // Load the chat store BEFORE cleaning the output directory. The JSON may live

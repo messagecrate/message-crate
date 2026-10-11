@@ -25,9 +25,9 @@ pub use attachment_jobs::{
 };
 pub use attachments::{attachment_date_prefix, attachment_dest_name, digest_prefix};
 pub use config::{
-    AppleConfig, ExporterConfig, FormatConfig, GoSmsProConfig, ImazingConfig, MediaConfig,
-    ObfuscateConfig, OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig,
-    SourceConfig, WhatsappConfig,
+    AppleConfig, ConvertRun, ExporterConfig, FormatConfig, GoSmsProConfig, ImazingConfig,
+    MediaConfig, ObfuscateConfig, OpenExtractConfig, OutputFormat, SmsBackupPlusConfig,
+    SmsBackupRestoreConfig, SourceConfig, WhatsappConfig,
 };
 pub use counter::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,

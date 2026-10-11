@@ -1,12 +1,12 @@
 //! The shared exporter run skeleton and tail.
 
-use crate::config::ExporterConfig;
+use crate::config::{ConvertRun, ExporterConfig};
 use crate::pipeline::{ExportReport, RunResult};
 use crate::process::check_cancel;
-use crate::transforms::ExportTransforms;
 
-/// The shared exporter run skeleton: cancel check, transforms, conversion,
-/// media-failure bail, and result assembly.
+/// The shared exporter run skeleton: cancel check, the run-wide settings
+/// ([`ExporterConfig::convert_run`]), conversion, media-failure bail, and
+/// result assembly.
 ///
 /// Exporters no longer resolve names from a contacts file. A backup that
 /// carries its own contact data (Apple's address book, WhatsApp's contacts
@@ -19,10 +19,10 @@ use crate::transforms::ExportTransforms;
 /// processing fails for every candidate file.
 pub fn run_pipeline(
     config: &ExporterConfig,
-    convert: impl FnOnce(ExportTransforms) -> anyhow::Result<ExportReport>,
+    convert: impl FnOnce(ConvertRun<'_>) -> anyhow::Result<ExportReport>,
 ) -> anyhow::Result<RunResult> {
     check_cancel(config.cancel.as_ref())?;
-    let report = convert(ExportTransforms::from_config(config))?;
+    let report = convert(config.convert_run())?;
     finish_run(config, &report, config.media.mode.needs_tools())
 }
 
@@ -47,6 +47,8 @@ pub fn finish_run(
 mod tests {
     use super::*;
     use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
+    use crate::pipeline::IssueSink;
+    use crate::process::CancelFlag;
     use media::{CompressOptions, MediaMode};
     use std::path::PathBuf;
 
@@ -74,9 +76,37 @@ mod tests {
         }
     }
 
+    /// A run-wide setting the config holds and the convert step never sees
+    /// is a setting the run ignores: a resumed run that cleans its output,
+    /// or a cancel the reader never checks.
+    #[test]
+    fn run_pipeline_hands_convert_every_run_wide_setting_of_the_config() {
+        let mut config = config(MediaMode::Clone, false);
+        config.cancel = Some(CancelFlag::default());
+        config.issues = Some(IssueSink::new(|_| {}));
+        config.output_format = OutputFormat::Csv;
+        config.resume = true;
+
+        run_pipeline(&config, |run| {
+            assert!(std::ptr::eq(
+                run.cancel.unwrap(),
+                config.cancel.as_ref().unwrap()
+            ));
+            assert!(std::ptr::eq(
+                run.issues.unwrap(),
+                config.issues.as_ref().unwrap()
+            ));
+            assert_eq!(run.output_format, OutputFormat::Csv);
+            assert!(run.resume);
+            Ok(ExportReport::default())
+        })
+        .unwrap();
+    }
+
     #[test]
     fn run_pipeline_hands_the_config_transforms_to_convert_and_returns_the_summary() {
-        let result = run_pipeline(&config(MediaMode::Convert, true), |t| {
+        let result = run_pipeline(&config(MediaMode::Convert, true), |run| {
+            let t = run.transforms;
             assert!(t.obfuscate);
             assert_eq!(t.media, MediaMode::Convert);
             Ok(ExportReport {
