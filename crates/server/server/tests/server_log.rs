@@ -13,8 +13,8 @@ mod common;
 
 use std::path::Path;
 
+use file_io::sha256_hex;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 use common::claim::{
     ALICE_PASSWORD, Claimed, OWNER_PASSWORD, call, claimed_with_account, json_body,
@@ -35,13 +35,6 @@ const CONTACT_PHONE: &str = "+15555550177";
 const CONTACT_EMAIL: &str = "zebediah.quixote@example.com";
 /// The attachment's bytes.
 const ATTACHMENT: &[u8] = b"Attachment-Bytes-Pelican-Orchard-41";
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
 
 /// Everything in the server's log files, and how many files there are.
 fn log_text(data_dir: &Path) -> (String, usize) {

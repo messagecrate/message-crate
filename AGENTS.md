@@ -13,7 +13,27 @@ vocabulary. Read it before writing any of those.
 - Every change goes on a branch or worktree. `main` takes pull requests only:
   its ruleset requires one, plus the ten `ci.yml` checks.
 - Before pushing, run `git fetch`, then read the pull request's real state
-  with `gh pr list`, `gh pr view <number>`, and `gh pr checks <number>`.
+  with `gh pr list`, `gh pr view <number> --json <fields>`, and
+  `gh pr checks <number>`.
+- Older `gh` asks GitHub for classic Projects, and GitHub has turned them
+  off. So `gh issue view` without `--json` and `gh issue edit` fail before
+  `gh` 2.71.0, and `gh pr view` without `--json` and `gh pr edit` fail
+  before 2.73.0. Each fails with "Projects (classic) is being deprecated".
+  Read with `--json`. Change an issue or a pull request through `gh api`,
+  whose `issues/<N>` routes take either number:
+
+  ```bash
+  # Set the body from a file
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -F body=@<file>
+  # Set the title
+  gh api -X PATCH repos/{owner}/{repo}/issues/<N> -f title='<title>'
+  # Add a label
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/labels -f 'labels[]=<label>'
+  # Remove a label
+  gh api -X DELETE repos/{owner}/{repo}/issues/<N>/labels/<label>
+  # Assign the logged-in gh user
+  gh api -X POST repos/{owner}/{repo}/issues/<N>/assignees -f "assignees[]=$(gh api user -q .login)"
+  ```
 - Merge a pull request as "Merging" below says.
 
 ### Submitting Work

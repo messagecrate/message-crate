@@ -1434,7 +1434,7 @@ impl DigestBuilder {
         use sha2::Digest;
         TableDigest {
             rows: self.rows,
-            sha256: crate::assets_api::hex_encode(&self.hasher.finalize()),
+            sha256: hex::encode(self.hasher.finalize()),
         }
     }
 }

@@ -48,7 +48,7 @@ async fn a_file_two_messages_name_counts_once_in_storage() {
 
     let (_pool, mut conn) = open_verify(&db).await;
     let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM attachments WHERE sha256 = $1")
-        .bind(assets_api::sha256_hex(bytes))
+        .bind(file_io::sha256_hex(bytes))
         .fetch_one(&mut *conn)
         .await
         .unwrap();

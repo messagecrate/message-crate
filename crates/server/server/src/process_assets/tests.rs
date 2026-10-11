@@ -340,7 +340,7 @@ fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
 fn preview_file_hashes_the_preview_against_its_name() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = b"jpeg-bytes";
-    let sha = crate::assets_api::sha256_hex(bytes);
+    let sha = file_io::sha256_hex(bytes);
     let rel = format!("{}/{sha}.jpg", &sha[..2]);
     let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
@@ -450,7 +450,7 @@ fn a_work_file_is_stored_content_addressed_and_then_removed() {
         .unwrap();
 
     let expected = VersionFile {
-        sha256: crate::assets_api::sha256_hex(b"jpeg-bytes"),
+        sha256: file_io::sha256_hex(b"jpeg-bytes"),
         assets_path: derived_rel_path(&crate::assets_api::Sha256::of_bytes(b"jpeg-bytes"), ".jpg"),
         mime_type: "image/jpeg".to_string(),
     };
@@ -773,7 +773,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
             .join(&rel);
         let bytes = fs::read(&preview).expect("the preview is under assets_converted/");
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
         assert_eq!(
             rel,
             derived_rel_path(&crate::assets_api::Sha256::parse(&sha).unwrap(), ".jpg")
@@ -855,7 +855,7 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
 
         let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
         let bytes = fs::read(&preview_after).unwrap();
-        assert_eq!(crate::assets_api::sha256_hex(&bytes), sha_after);
+        assert_eq!(file_io::sha256_hex(&bytes), sha_after);
         assert_eq!(
             (sha_after, preview_after),
             (sha, preview),
@@ -968,7 +968,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         )
         .unwrap();
         assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
-        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+        assert_eq!(sha, file_io::sha256_hex(&bytes));
     });
 }
 

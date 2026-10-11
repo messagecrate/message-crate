@@ -183,6 +183,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way Message Crate fingerprints attachments, sessions and API
+  tokens was reworked inside, with nothing visible (#2227).
+
 - 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
   into the Tools Directory was reworked inside. The one change you could see:
   on the rare computer where the app cannot set up its downloads at all,
@@ -347,6 +350,13 @@ released versions carry their date on the heading.
 ### Fixes
 
 #### Accounts, Settings and screens
+
+- 2026-10-11: **No account is created after the owner closes registration.**
+  A stranger's registration that arrived just as the owner closed
+  registration could still create an account. Whether registration is open
+  is now decided at the moment the account is written. A Message Crate with
+  registration closed also turns a stranger away at once, without first
+  working on the password they sent (#2231, #2232).
 
 - 2026-10-11: **A new username can no longer hold letters from other
   scripts.** A username could hold letters from any script,
@@ -792,6 +802,12 @@ released versions carry their date on the heading.
   too.
 
 #### Browsing and search
+
+- 2026-10-11: **Search finds a conversation by the name it is listed
+  under.** A one-to-one conversation whose backup recorded only the
+  address is listed under the name of the Contact that address is on, but
+  searching that name on the Conversations list found nothing; only the
+  address found it. Searching the name now finds it (#2737).
 
 - 2026-10-11: **A Saved Search no list could ever run is not saved.** A
   search longer than 2,048 bytes, with a parenthesis or quote that never

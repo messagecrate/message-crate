@@ -236,7 +236,7 @@ async fn an_attachment_keeps_a_copy_that_still_matches_hidden() {
     let before = key(state.clone()).await;
 
     let bytes = b"photo-bytes".to_vec();
-    let sha = assets_api::sha256_hex(&bytes);
+    let sha = file_io::sha256_hex(&bytes);
     let (status, text) = crate::test_support::put_raw(
         &state,
         &format!("/v1/assets/{sha}"),

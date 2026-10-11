@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{http_client, stored_time};
+use file_io::sha256_hex;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
