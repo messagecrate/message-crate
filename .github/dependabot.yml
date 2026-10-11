@@ -55,12 +55,16 @@ updates:
       interval: weekly
     ignore:
       # The Rust minor follows rust-toolchain.toml, which is bumped by hand
-      # in its own pull request; scripts/check-docker-context.sh fails a
+      # in its own pull request. scripts/check-docker-context.sh fails a
       # base image on another minor.
       - dependency-name: rust
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # A new Node.js major is a decision about the image, not a refresh of
-      # it, so only the digest under the current tag moves here.
+      # it, so only the digest under the current tag moves here. A stage is
+      # moved to the next major by hand, before its Node.js reaches end of
+      # life (node:22 does in April 2027). A tag whose Node.js has ended
+      # gets no new image, so its digest stops moving. The runtime stage's
+      # node:20 is such a tag, and #2065 replaces it.
       - dependency-name: node
         update-types: ["version-update:semver-major"]
 

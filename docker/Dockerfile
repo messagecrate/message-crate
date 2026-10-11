@@ -16,8 +16,8 @@
 # the release job does, they report the Product Version alone.
 #
 # Each FROM names its base image by tag and digest. The tag is for the
-# reader, and scripts/check-docker-context.sh reads the Rust minor from it;
-# the digest fixes the image, so two builds of one commit start from the
+# reader, and scripts/check-docker-context.sh reads the Rust minor from it.
+# The digest fixes the image, so two builds of one commit start from the
 # same bases. Dependabot's docker entry in .github/dependabot.yml moves the
 # digests by pull request, and scripts/check-docker-context.sh fails a FROM
 # without one.
