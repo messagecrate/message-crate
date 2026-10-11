@@ -102,7 +102,7 @@ export function useSearchSuggestions(value: string, list: SearchList | null): Su
 
   const typed = lastToken(value);
   const typedToken = typed.text;
-  const { completingValue, word, valuePart } = readToken(typedToken);
+  const { completingValue, word } = readToken(typedToken);
   const personOp = completingValue && isPersonWord(fields.find((f) => f.word === word));
   // Which term is being typed: where it starts, and its word.
   const term = `${typed.start}:${word}`;
@@ -139,8 +139,7 @@ export function useSearchSuggestions(value: string, list: SearchList | null): Su
   }, [forThisTerm, personOp, data, isPlaceholderData, term]);
 
   const contacts = useMemo<ContactName[]>(
-    () =>
-      forThisTerm ? (data?.items ?? []).map((c) => ({ id: String(c.id), name: c.name })) : [],
+    () => (forThisTerm ? (data?.items ?? []).map((c) => ({ id: String(c.id), name: c.name })) : []),
     [forThisTerm, data],
   );
 
