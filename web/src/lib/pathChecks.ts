@@ -5,6 +5,9 @@ import {
   type PathUnreadable,
 } from "./tauri";
 
+/** An operating system the desktop app ships for, as the app names it. */
+export type DesktopOs = "macos" | "windows" | "linux";
+
 /**
  * Why the Import form knows nothing about a path: the operating system would
  * not let the app read it (`permission_denied`, with the operating system,
@@ -16,8 +19,8 @@ export type ImportPathUnknown =
   | {
       kind: "permission_denied";
       reason: string;
-      /** The operating system as the desktop app names it (`macos`, `windows`, `linux`); null when the app could not say. */
-      os: string | null;
+      /** The operating system that refused; null when the desktop app could not say. */
+      os: DesktopOs | null;
     }
   | { kind: "other" | "check_failed"; reason: string };
 
@@ -45,7 +48,7 @@ export const PATH_MISSING = "This path does not exist.";
  * Disk Access; on Windows and Linux the app reads as the person's own user,
  * so it is that user's permission that counts.
  */
-function accessSentence(os: string | null): string {
+function accessSentence(os: DesktopOs | null): string {
   switch (os) {
     case "macos":
       return " Give Message Crate access to it, such as Full Disk Access in System Settings.";
@@ -53,28 +56,41 @@ function accessSentence(os: string | null): string {
       return " Check that your Windows user may read it, on the Security tab of its Properties.";
     case "linux":
       return " Check that your Linux user may read it.";
-    default:
+    case null:
       return "";
   }
 }
 
 /**
- * Add the operating system to a refusal from the desktop app's `path_stat`
- * when it is a permission refusal, so its message can say how to give
- * Message Crate access there. The desktop app names the system in its answer
- * to `home_dir`; when that fails, the message says nothing about access.
+ * The operating system this desktop app runs on, from its answer to
+ * `home_dir`. Null on any other system, and when `home_dir` fails, which it
+ * does only when the system reports no home directory for the person's user.
+ * A message built with a null system says nothing about access.
  */
-export async function describeUnreadable(unreadable: PathUnreadable): Promise<ImportPathUnknown> {
-  if (unreadable.kind !== "permission_denied") {
-    return { kind: unreadable.kind, reason: unreadable.reason };
-  }
-  let os: string | null;
+export async function desktopOs(): Promise<DesktopOs | null> {
+  let os: string;
   try {
     os = (await invokeHomeDir()).os;
   } catch {
-    os = null;
+    return null;
   }
-  return { kind: "permission_denied", reason: unreadable.reason, os };
+  return os === "macos" || os === "windows" || os === "linux" ? os : null;
+}
+
+/**
+ * Add the operating system to a refusal from the desktop app's `path_stat`
+ * when it is a permission refusal, so its message can say how to give
+ * Message Crate access there. `os` is asked only for a permission refusal;
+ * a caller describing several refusals passes one that asks the app once.
+ */
+export async function describeUnreadable(
+  unreadable: PathUnreadable,
+  os: () => Promise<DesktopOs | null> = desktopOs,
+): Promise<ImportPathUnknown> {
+  if (unreadable.kind !== "permission_denied") {
+    return { kind: unreadable.kind, reason: unreadable.reason };
+  }
+  return { kind: "permission_denied", reason: unreadable.reason, os: await os() };
 }
 
 /**

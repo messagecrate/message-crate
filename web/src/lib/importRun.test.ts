@@ -80,6 +80,25 @@ describe("accountRunDirectories", () => {
     });
   });
 
+  it("asks the desktop app for the operating system once for every directory it may not read", async () => {
+    listEveryImport.mockResolvedValue([
+      { id: 1, run_dir: "/home/u/a" },
+      { id: 0, run_dir: "/home/u/b" },
+    ]);
+    invokePathStat.mockResolvedValue(
+      desktopPathStat({ exists: false, isFile: false, unreadable: PERMISSION_DENIED }),
+    );
+    invokeHomeDir.mockReset();
+    invokeHomeDir.mockResolvedValue({ path: "/home/u", os: "linux" });
+
+    const { unreadable } = await accountRunDirectories();
+    expect(unreadable.map((d) => d.reason)).toEqual([
+      "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Check that your Linux user may read it.",
+      "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Check that your Linux user may read it.",
+    ]);
+    expect(invokeHomeDir).toHaveBeenCalledTimes(1);
+  });
+
   // Full Disk Access is a Mac setting, so a run directory Windows refuses is
   // named with what to check on Windows (#2650).
   it("says how to give access on the operating system that refused", async () => {

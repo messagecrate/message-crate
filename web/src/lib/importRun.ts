@@ -1,5 +1,5 @@
 import { errorText } from "./apiErrorMessage";
-import { describeUnreadable, unknownPathMessage } from "./pathChecks";
+import { type DesktopOs, describeUnreadable, desktopOs, unknownPathMessage } from "./pathChecks";
 import {
   discardImport,
   listEveryImport,
@@ -87,11 +87,17 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<Accou
     paths.map(async (path) => ({ path, stat: await invokePathStat(path) })),
   );
   const directories: AccountRunDirectories = { found: [], unreadable: [] };
+  // The operating system is the same for every directory, so it is asked once.
+  let asked: Promise<DesktopOs | null> | undefined;
+  const os = () => {
+    asked ??= desktopOs();
+    return asked;
+  };
   for (const { path, stat } of stats) {
     if (stat.unreadable) {
       directories.unreadable.push({
         path,
-        reason: unknownPathMessage(await describeUnreadable(stat.unreadable), "it"),
+        reason: unknownPathMessage(await describeUnreadable(stat.unreadable, os), "it"),
       });
     } else if (stat.exists && stat.isDirectory) {
       directories.found.push(path);

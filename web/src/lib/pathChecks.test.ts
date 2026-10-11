@@ -11,6 +11,7 @@ import {
 import {
   checkOptionalPath,
   checkRequiredPath,
+  type DesktopOs,
   describeUnreadable,
   type ImportPathStat,
   PATH_MISSING,
@@ -90,7 +91,7 @@ describe("a path the app could not read", () => {
 
 // Full Disk Access is a Mac setting, so only a Mac is sent to it (#2650).
 describe("a permission refusal on each operating system", () => {
-  const refusal = (os: string | null) =>
+  const refusal = (os: DesktopOs | null) =>
     unknownPathMessage({ kind: "permission_denied", reason: "Access is denied.", os });
   const said = "Message Crate isn't allowed to read this path. The system says: Access is denied.";
 
@@ -110,12 +111,11 @@ describe("a permission refusal on each operating system", () => {
     expect(refusal("linux")).toBe(`${said} Check that your Linux user may read it.`);
   });
 
-  it("says nothing about access on a system it does not know", () => {
-    expect(refusal("freebsd")).toBe(said);
+  it("says nothing about access when the operating system is not known", () => {
     expect(refusal(null)).toBe(said);
   });
 
-  it("names the path as it after the path itself", () => {
+  it("uses it as the subject when the path is already named", () => {
     expect(
       unknownPathMessage(
         { kind: "permission_denied", reason: "Permission denied (os error 13)", os: "linux" },
@@ -142,6 +142,11 @@ describe("describeUnreadable", () => {
 
   it("leaves the operating system unknown when the desktop app cannot say", async () => {
     invokeHomeDir.mockRejectedValue(new Error("Could not determine the user home directory"));
+    expect(await describeUnreadable(PERMISSION_DENIED)).toEqual({ ...PERMISSION_DENIED, os: null });
+  });
+
+  it("leaves an operating system the app does not ship for unknown", async () => {
+    invokeHomeDir.mockResolvedValue({ path: "/home/sam", os: "freebsd" });
     expect(await describeUnreadable(PERMISSION_DENIED)).toEqual({ ...PERMISSION_DENIED, os: null });
   });
 
