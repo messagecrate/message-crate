@@ -183,6 +183,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
+  into the Tools Directory was reworked inside. The one change you could see:
+  on the rare computer where the app cannot set up its downloads at all,
+  Settings, and an import waiting for the download, now say the download
+  could not be started, instead of saying there is no connection to the
+  download's server (#2213).
+
 - 2026-10-11: The way logging out works in the app was reworked inside, with
   nothing visible (#2214).
 
