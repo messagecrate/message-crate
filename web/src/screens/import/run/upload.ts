@@ -10,7 +10,7 @@ import type { RunContext } from "./context";
 import { recordError, runJob } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
 import { currentPart } from "./scratch";
-import { failActiveStep, setRowByLabel } from "./screen";
+import { failActiveStep, movePhase, setRowByLabel } from "./screen";
 import { moveStage } from "./serverCalls";
 
 /**
@@ -58,7 +58,7 @@ async function uploadAndFinish(
   outputDir: string,
   approvedPlan?: StagingSummary,
 ): Promise<boolean> {
-  ctx.store.set({ running: true, phase: "running" });
+  movePhase(ctx, "upload_start", { running: true });
   ctx.scratch.activeStage = "upload";
   setRowByLabel(ctx, UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
   try {
