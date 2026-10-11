@@ -676,13 +676,14 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-10: **A log opened in a terminal no longer acts on what it
-  holds.** A file name in a backup or a tool's output can carry a terminal
-  control character, such as the escape that clears the screen. The server's
-  log and each Import Run's log wrote it as it was, so opening the file with
-  `cat`, `less -r` or `tail` could clear the screen or rewrite what it
-  showed. Both logs now write each control character as `\x` and two hex
-  digits, such as `\x1b`, and the Logs panel shows it the same way (#2275).
+- 2026-10-10: **The server's log and the desktop app's Import Run logs no
+  longer act on a terminal that shows them.** A file name in a backup or a
+  tool's output can carry a terminal control character, such as the escape
+  that clears the screen. Both logs wrote it as it was, so opening the file
+  with `cat`, `less -r` or `tail` could clear the screen or rewrite what it
+  showed. Both now write each control character escaped, such as `\x1b`,
+  and the **Logs** panel and a run's row in Settings → Storage show it the
+  same way (#2275).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front
