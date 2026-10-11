@@ -17,7 +17,7 @@ use crate::db::api_tokens;
 use crate::db::audit_trail::{self, AuditAction, Details};
 use crate::db::permissions::Permissions;
 use crate::db::{account_profile, schema};
-use crate::server::{ApiError, AppState, Created, FullAccess, LoggedIn};
+use crate::server::{ApiError, AppState, Created, FullAccess, LoggedIn, refuse_for_demo_account};
 
 /// Admit only the account whose tokens the path names, for making and
 /// renaming. The refusal reads the same whether or not the other account
@@ -244,6 +244,7 @@ pub async fn get_api_token(
             body = CreateApiTokenResponse,
             headers(("Location" = String, description = "Path of the new token"))
         ),
+        crate::problem::openapi::DemoAccountProtected,
     )
 )]
 pub async fn create_api_token(
@@ -254,6 +255,9 @@ pub async fn create_api_token(
 ) -> Result<Created<CreateApiTokenResponse>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, account_id, HOLDER_ONLY).await?;
+    // Every visitor is the Demo Account, so a token it made would outlive the
+    // visit, and every later visitor would see its hint and could revoke it.
+    refuse_for_demo_account(account_id, "API tokens cannot be made")?;
     let label = req.label;
     // A token can narrow its account's permissions, never widen them, so
     // what it stores is what the request asked and the account holds.
@@ -492,6 +496,41 @@ mod tests {
         let rows: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
                 .bind(account.account_id)
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(rows, 0, "a refused create stores no token");
+    }
+
+    /// The Demo Account makes no API token, with or without an expiry: every
+    /// visitor is the same account, so a token would outlive the visit and
+    /// be seen and revoked by every other visitor (ADR 0016).
+    #[tokio::test]
+    async fn the_demo_account_makes_no_api_token() {
+        let fixture = crate::test_support::test_fixture().await;
+        let state = fixture.state.clone();
+        let (demo, demo_token) = fixture.demo_account_session().await;
+
+        let collection = format!("/v1/accounts/{demo}/api-tokens");
+        for expires_in_days in [0, 30] {
+            let (status, text) = crate::test_support::post_json_raw(
+                &state,
+                &collection,
+                &demo_token,
+                serde_json::json!({ "label": "visitor", "expires_in_days": expires_in_days }),
+            )
+            .await;
+            crate::test_support::expect_problem(
+                status,
+                &text,
+                crate::problem::ProblemType::DemoAccountProtected,
+            );
+        }
+
+        let mut conn = state.db.acquire().await.unwrap();
+        let rows: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
+                .bind(demo)
                 .fetch_one(&mut *conn)
                 .await
                 .unwrap();

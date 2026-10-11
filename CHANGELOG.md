@@ -256,6 +256,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The Demo Account can no longer make API Tokens.** Anyone
+  who entered the Demo Account could make one, even one that never expires,
+  and walk away with a way back in that outlived the visit. Every visitor
+  shares the Demo Account, so each one also saw the tokens the others made
+  and could revoke them. Its Settings now say it makes no API Tokens, and the
+  server refuses one (#2148).
 - 2026-10-10: **Logging in to a disabled account no longer tells a guesser
   the password was right.** A disabled account's login used to say the
   account was disabled only when the password was right. A wrong password got

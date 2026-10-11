@@ -184,7 +184,7 @@ password and can never be given one, so anyone who reaches the Message Crate
 can enter it. It may export, and move things to the trash and restore them; it
 may not import, delete for good, or load an address book, so a person's own
 messages and contacts never land in it and one visitor cannot empty it for the
-next. Its status, its permissions, its own identities, its display name and its
+next. It may not make an API token, which would outlive the visit. Its status, its permissions, its own identities, its display name and its
 time zone are fixed; the names, groups, tags and searches a visitor makes in it
 stay until it is reset. The owner can delete it, or reset it to
 how it started, and change nothing else about it.
