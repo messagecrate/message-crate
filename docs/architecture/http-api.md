@@ -706,6 +706,21 @@ The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account
 inside its signed value and is not a parameter of that kind.
 
+No `/v1` route answers with a redirect, and the web app refuses to follow
+one: every call it makes with the `Authorization` header passes
+`redirect: "error"` to `fetch`, so a redirect fails as a network error and
+reads as an unreachable server. Its probe of `/health` refuses one too,
+though it sends no credential, so the server status reads Disconnected
+beside a login that fails, never Connected. Why: a redirect on `/v1` can
+only come from something in front of the server, such as a misconfigured
+reverse proxy, and following it to another host could carry the Session
+token there. Current browsers drop `Authorization` on a cross-origin
+redirect, but the Fetch standard gained that rule only in November 2022
+([whatwg/fetch#1544](https://github.com/whatwg/fetch/pull/1544)), and the
+desktop app runs in whichever WebView the system has (WebKitGTK, WKWebView,
+WebView2). A visible failure is better than a token sent somewhere else. The desktop app's own Rust client drops the
+header on a change of host already.
+
 Rate limiting guards the three routes that take no credential and make one,
 over a 60-second window; the limit is documented in the developer reference.
 `POST /v1/session` counts per account, because it guards one account's
