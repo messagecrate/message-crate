@@ -1,4 +1,5 @@
 use super::*;
+use crate::write_queue::conversation_file;
 use media::CompressOptions;
 use message_ir::{IrAttachment, IrParticipant};
 use message_ir_format::write_conversation_jsonl_to;
@@ -50,7 +51,7 @@ fn staged_fixture() -> tempfile::TempDir {
     doc_a.messages.push(second);
     doc_a.messages.push(third);
     doc_a.finalize_stats();
-    let jsonl_a = dir.path().join(format!("{}.jsonl", doc_a.filename_stem()));
+    let jsonl_a = conversation_file(dir.path(), &doc_a);
     write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
 
     let mut doc_b = message_ir::testutil::sample_document("hi from conversation B");
@@ -70,7 +71,7 @@ fn staged_fixture() -> tempfile::TempDir {
     second_b.timestamp_unix_ms += 1000;
     doc_b.messages.push(second_b);
     doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
+    let jsonl_b = conversation_file(dir.path(), &doc_b);
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
 
     dir
@@ -97,7 +98,7 @@ fn staged_fixture_with_missing_reason(reason: &str) -> tempfile::TempDir {
         ..message_ir::testutil::sample_attachment()
     }];
     doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     dir
 }
@@ -127,7 +128,7 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
         })
         .collect();
     doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     dir
 }
@@ -156,14 +157,14 @@ fn staged_fixture_with_aliased_attachment(size: u64) -> tempfile::TempDir {
     doc_a.conversation.chat_identifier = "+15550100".into();
     doc_a.messages[0].attachments = vec![shared_attachment()];
     doc_a.finalize_stats();
-    let jsonl_a = dir.path().join(format!("{}.jsonl", doc_a.filename_stem()));
+    let jsonl_a = conversation_file(dir.path(), &doc_a);
     write_conversation_jsonl_to(&jsonl_a, &doc_a).unwrap();
 
     let mut doc_b = message_ir::testutil::sample_document("conversation B, same photo");
     doc_b.conversation.chat_identifier = "+15550199".into();
     doc_b.messages[0].attachments = vec![shared_attachment()];
     doc_b.finalize_stats();
-    let jsonl_b = dir.path().join(format!("{}.jsonl", doc_b.filename_stem()));
+    let jsonl_b = conversation_file(dir.path(), &doc_b);
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
 
     dir
@@ -194,7 +195,7 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
         })
         .collect();
     doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     dir
 }
@@ -379,7 +380,7 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
     second.attachments = vec![shared_attachment()];
     doc.messages.push(second);
     doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
 
     let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
@@ -469,7 +470,7 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
         message("in-2", Incoming, None, Some("other@example.com")),
     ]);
     doc.finalize_stats();
-    let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
+    let jsonl = conversation_file(dir.path(), &doc);
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
 
     let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();

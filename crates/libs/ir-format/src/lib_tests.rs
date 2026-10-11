@@ -405,6 +405,20 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     }
 }
 
+/// EML and mbox output are named by [`filename_stem`], packaging suffix
+/// and all, as JSON Lines and CSV are.
+#[test]
+fn eml_and_mbox_are_named_by_the_conversation_stem() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut doc = message_ir::testutil::sample_document("hello ir");
+    doc.packaging_stem_suffix = Some("__whatsapp".into());
+
+    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
+    assert_eq!(eml_dir, tmp.path().join("+15555550101__whatsapp"));
+    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc).unwrap();
+    assert_eq!(mbox_path, tmp.path().join("+15555550101__whatsapp.mbox"));
+}
+
 #[test]
 fn roundtrip_eml_and_mbox() {
     for doc in [

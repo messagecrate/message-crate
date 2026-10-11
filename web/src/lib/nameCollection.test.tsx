@@ -27,7 +27,7 @@ import {
 } from "./nameCollection";
 import { keys } from "./queryKeys";
 
-vi.mock("./auth", () => ({
+vi.mock("./authContext", () => ({
   useAuth: () => ({ accountId: 7 }),
 }));
 

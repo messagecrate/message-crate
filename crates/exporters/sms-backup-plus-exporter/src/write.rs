@@ -19,9 +19,11 @@ use mail_builder::mime::MimePart;
 use message_crate_core::{ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
     ConversationDocument, IdentityType, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    give_each_document_its_own_file, trimmed,
+    trimmed,
 };
-use message_ir_format::{MergedArchive, load_attachment_bytes};
+use message_ir_format::{
+    MergedArchive, filename_stem, give_each_document_its_own_file, load_attachment_bytes,
+};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::Path;
@@ -117,7 +119,7 @@ fn conversation_directories(documents: &[ConversationDocument]) -> Result<Vec<Op
     give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
     let mut directories = vec![None; documents.len()];
     for (index, doc) in written {
-        directories[index] = Some(doc.filename_stem());
+        directories[index] = Some(filename_stem(&doc));
     }
     Ok(directories)
 }

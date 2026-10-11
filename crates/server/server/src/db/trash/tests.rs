@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::audit_trail::AuditActor;
-use crate::test_support::stored_time;
+use crate::test_support::{ConversationRow, stored_time};
 const ACCOUNT_A: i64 = 7;
 const ACCOUNT_B: i64 = 8;
 
@@ -23,21 +23,9 @@ async fn insert_conversation(conn: &mut SqliteConnection, account_id: i64) -> i6
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'c.jsonl')",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    sqlx::query_scalar("SELECT id FROM conversations WHERE chat_handle_id = $1")
-        .bind(handle_id)
-        .fetch_one(&mut *conn)
+    ConversationRow::new(account_id, handle_id)
+        .insert(conn)
         .await
-        .unwrap()
 }
 
 /// Insert a contact owned by `account_id`, returning its id.
@@ -326,16 +314,9 @@ async fn insert_conversation_on(conn: &mut SqliteConnection, account_id: i64, ra
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'c.jsonl') RETURNING id",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
+    ConversationRow::new(account_id, handle_id)
+        .insert(conn)
+        .await
 }
 
 /// Insert one `imessage` message into `conversation_id`, returning its id.

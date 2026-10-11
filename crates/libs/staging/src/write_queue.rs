@@ -37,7 +37,8 @@ use message_crate_core::{
     IssueSink, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
     WriteStatus, attachment_size_hint, run_attachment_jobs,
 };
-use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
+use message_ir::{ConversationDocument, IrAttachment};
+use message_ir_format::{filename_stem, give_each_document_its_own_file};
 
 use crate::headroom::{Disk, bytes_to_copy, check_headroom};
 use crate::transcode::{TranscodeOptions, transcode_staged};
@@ -446,7 +447,7 @@ pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> S
 }
 
 /// The conversation file a unit is written to.
-fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
+pub(crate) fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
     output_dir.join(conversation_file_name(doc))
 }
 
@@ -454,7 +455,7 @@ fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
 /// directory: the name the Upload gives the file, and the one
 /// [`ProgressEvent::FileWritten`] and a loader's rows name it by.
 fn conversation_file_name(doc: &ConversationDocument) -> String {
-    format!("{}.jsonl", doc.filename_stem())
+    format!("{}.jsonl", filename_stem(doc))
 }
 
 /// Whether a resumed run skips this conversation: an earlier run wrote its

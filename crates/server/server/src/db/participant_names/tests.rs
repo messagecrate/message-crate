@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::schema;
+use crate::test_support::ConversationRow;
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -23,16 +24,9 @@ async fn seed(
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations
-             (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'c.jsonl') RETURNING id",
-    )
-    .bind(TEST_ACCOUNT)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow::new(TEST_ACCOUNT, handle_id)
+        .insert(conn)
+        .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES ($1, $2, $3)",

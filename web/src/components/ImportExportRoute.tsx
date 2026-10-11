@@ -1,6 +1,6 @@
 import { type ReactNode, Suspense } from "react";
 import { Navigate } from "react-router-dom";
-import { useAuth } from "../lib/auth";
+import { useAuth } from "../lib/authContext";
 import {
   type ImportExportBlock,
   type ImportExportFeature,

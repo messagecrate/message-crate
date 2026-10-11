@@ -104,6 +104,20 @@ pub async fn link_identity(conn: &mut sqlx::SqliteConnection, account_id: i64, h
         .unwrap();
 }
 
+/// Insert an `accounts` row with a chosen id on `conn`, with no password
+/// and no preferred name, for a test that has a connection rather than a
+/// [`TestFixture`]. Returns the id it was given.
+pub async fn insert_account_with_id(
+    conn: &mut sqlx::SqliteConnection,
+    id: i64,
+    username: &str,
+) -> i64 {
+    crate::db::account_profile::insert_account_at(conn, id, username, None, None)
+        .await
+        .unwrap_or_else(|e| panic!("insert account {username} at id {id}: {e:#}"));
+    id
+}
+
 /// An empty database with schema applied and no accounts.
 ///
 /// Public registration is turned on, because most of the suite reaches the
@@ -170,10 +184,7 @@ impl TestFixture {
     /// result rather than repeat the literal.
     pub async fn account_with_id(&self, id: i64, username: &str) -> i64 {
         let mut conn = self.conn().await;
-        crate::db::account_profile::insert_account_at(&mut conn, id, username, None, None)
-            .await
-            .unwrap();
-        id
+        insert_account_with_id(&mut conn, id, username).await
     }
 
     /// Insert the Demo Account at its fixed id, with the schema's default row:
@@ -1056,6 +1067,79 @@ impl MessageRow<'_> {
     }
 }
 
+/// One `conversations` row for a test to insert: the one place the server's
+/// tests write a conversation by hand, so a new required column is one edit
+/// here.
+///
+/// [`ConversationRow::new`] fills every required column: an `individual`
+/// conversation from `test.jsonl` with no group title. A test sets what it
+/// cares about with struct update syntax:
+///
+/// ```ignore
+/// ConversationRow { id: Some(2), ..ConversationRow::new(account_id, chat_handle_id) }
+///     .insert(&mut conn)
+///     .await;
+/// ```
+#[derive(Debug, Clone)]
+pub struct ConversationRow<'a> {
+    /// `conversations.id`; `None` lets SQLite choose it.
+    pub id: Option<i64>,
+    /// `conversations.account_id`.
+    pub account_id: i64,
+    /// `conversations.chat_handle_id`: the peer's handle for a 1:1
+    /// conversation, the group chat's handle for a group.
+    pub chat_handle_id: i64,
+    /// `conversations.conversation_type`: `individual` or `group`.
+    pub conversation_type: &'a str,
+    /// `conversations.group_title`.
+    pub group_title: Option<&'a str>,
+    /// `conversations.source_file`.
+    pub source_file: &'a str,
+}
+
+impl<'a> ConversationRow<'a> {
+    /// An `individual` conversation of `account_id` whose chat handle is
+    /// `chat_handle_id`, from `test.jsonl`, with no group title.
+    pub fn new(account_id: i64, chat_handle_id: i64) -> Self {
+        Self {
+            id: None,
+            account_id,
+            chat_handle_id,
+            conversation_type: "individual",
+            group_title: None,
+            source_file: "test.jsonl",
+        }
+    }
+
+    /// A `group` conversation of `account_id` titled `title`, whose chat
+    /// handle is `chat_handle_id`.
+    pub fn group(account_id: i64, chat_handle_id: i64, title: &'a str) -> Self {
+        Self {
+            conversation_type: "group",
+            group_title: Some(title),
+            ..Self::new(account_id, chat_handle_id)
+        }
+    }
+
+    /// Insert the row on `conn`, and answer its `conversations.id`.
+    pub async fn insert(&self, conn: &mut sqlx::SqliteConnection) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO conversations (
+                id, account_id, chat_handle_id, conversation_type, group_title, source_file
+             ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+        )
+        .bind(self.id)
+        .bind(self.account_id)
+        .bind(self.chat_handle_id)
+        .bind(self.conversation_type)
+        .bind(self.group_title)
+        .bind(self.source_file)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or_else(|e| panic!("insert conversation {self:?}: {e}"))
+    }
+}
+
 /// Seed one conversation and its messages, returning the new
 /// `conversations.id`.
 ///
@@ -1074,19 +1158,14 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
     .await
     .unwrap();
 
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-    )
-    .bind(c.account_id)
-    .bind(handle_id)
-    .bind(c.conversation_type)
-    .bind(c.group_title)
-    .bind(c.source_file)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow {
+        conversation_type: c.conversation_type,
+        group_title: c.group_title,
+        source_file: c.source_file,
+        ..ConversationRow::new(c.account_id, handle_id)
+    }
+    .insert(&mut conn)
+    .await;
 
     for (index, message) in c.messages.iter().enumerate() {
         MessageRow {

@@ -1,17 +1,10 @@
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import LogoutDialog, { type LogoutDialogState } from "../components/LogoutDialog";
 import PathList from "../components/PathList";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
 import { errorText } from "./apiErrorMessage";
+import { AuthContext, type AuthState } from "./authContext";
 import { parsePersistedAuth } from "./authGuards";
 import { createQueryClient } from "./routeQuery";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
@@ -21,47 +14,6 @@ import { readPref, removePref, writePref } from "./storage";
 import { destroyWindow, invokeDeleteRunDir, onWindowCloseRequested } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
-
-interface AuthState {
-  serverUrl: string;
-  token: string | null;
-  accountId: number | null;
-  isAuthenticated: boolean;
-}
-
-interface AuthContextValue extends AuthState {
-  login: (serverUrl: string, token: string, accountId: number) => Promise<void>;
-  /** Save a new session token after the user changes their password. */
-  updateToken: (token: string) => void;
-  /**
-   * Revoke the server session (best-effort) and clear the saved login.
-   *
-   * An Upload that is running is paused first, and the session is revoked
-   * once the pause is recorded: the Upload sends this session's token. Unless
-   * `ask` is false, logout first asks whether to pause it, and does nothing
-   * when the person goes back. It waits at most {@link UPLOAD_PAUSE_LIMIT_MS}
-   * for the pause, less when the person presses **Log out now**, and then
-   * revokes the session anyway and says the Upload resumes from what it sent.
-   *
-   * `deletedAccountDirectories` is given when the account has just been deleted:
-   * the directories of its Import Runs on this computer, deleted once the session is
-   * revoked. One that cannot be deleted is named in a notice.
-   */
-  logout: (options?: {
-    ask?: boolean;
-    deletedAccountDirectories?: readonly string[];
-  }) => Promise<void>;
-  setServer: (url: string) => void;
-  /**
-   * Check the saved login again, after a startup check the server never
-   * answered. `serverUrl` is the address just found reachable: a login saved
-   * for any other address is left alone, so a token only ever goes to the
-   * server that issued it. Does nothing when no login is saved.
-   */
-  retrySavedLogin: (serverUrl: string) => void;
-}
-
-const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = "message-crate-auth";
 
@@ -547,11 +499,4 @@ function UndeletedDirectories({ directories }: { directories: readonly Undeleted
       <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
     </>
   );
-}
-
-/** Current login state. Must be called under AuthProvider. */
-export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
-  return ctx;
 }

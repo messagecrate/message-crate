@@ -21,8 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use media::{CompressOptions, MaxResolution};
 use message_crate_core::{
-    ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, OutputFormat, RunResult,
-    SourceConfig, WhatsappPlatform,
+    ApplePlatform, AttachmentMedia, Exporter, ExporterConfig, Form, FormContext, OutputFormat,
+    RunResult, SourceConfig, WhatsappPlatform,
 };
 use message_staging::TranscodeOptions;
 
@@ -404,7 +404,10 @@ fn run_staging(
 /// the form (missing input path, missing owner phones, …). Multiple
 /// validation problems are joined with `; `. The compress fields are not
 /// checked here: `Form` sees Clone for a real Compress choice, and
-/// [`media_settings_for`] checks them against the real one.
+/// [`media_settings_for`] checks them against the real one. For the same
+/// reason the form's ffmpeg check never refuses here: the form carries only
+/// Clone or Disabled, so [`media::ffmpeg_available`] is not asked. The Media
+/// stage checks ffmpeg against the real choice.
 fn build_exporter_config(
     scratch_dir: &Path,
     source: &str,
@@ -502,7 +505,11 @@ fn build_exporter_config(
         _ => return Err(format!("unsupported source '{source}'")),
     };
 
-    form.to_config(exporter, scratch_dir)
+    let ctx = FormContext {
+        scratch_dir,
+        ffmpeg_available: form.attachment_media.needs_ffmpeg() && media::ffmpeg_available(),
+    };
+    form.to_config(exporter, ctx)
         .map_err(|errors| errors.join("; "))
 }
 

@@ -68,9 +68,7 @@ async fn test_conn() -> (TempDir, sqlx::pool::PoolConnection<sqlx::Sqlite>) {
 #[tokio::test]
 async fn api_token_cannot_exceed_its_owner() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     sqlx::query("UPDATE accounts SET can_import = 0 WHERE id = $1")
         .bind(TEST_ACCOUNT)
         .execute(&mut *conn)
@@ -95,9 +93,7 @@ async fn api_token_cannot_exceed_its_owner() {
 #[tokio::test]
 async fn disabling_an_account_kills_its_live_session() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -123,9 +119,7 @@ async fn disabling_an_account_kills_its_live_session() {
 #[tokio::test]
 async fn disabling_an_account_kills_its_live_api_token() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let created =
         api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
             .await
@@ -1561,9 +1555,7 @@ fn a_request_that_names_no_app_or_names_it_badly_records_nothing() {
 #[tokio::test]
 async fn a_session_records_the_app_it_connects_with() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -1612,9 +1604,7 @@ async fn a_session_records_the_app_it_connects_with() {
 #[tokio::test]
 async fn an_api_token_records_no_app() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -1655,9 +1645,7 @@ async fn fail_updates_of(conn: &mut SqliteConnection, table: &str) {
 #[tokio::test]
 async fn an_api_token_works_when_its_last_used_time_cannot_be_written() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let created =
         api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
             .await
@@ -1675,9 +1663,7 @@ async fn an_api_token_works_when_its_last_used_time_cannot_be_written() {
 #[tokio::test]
 async fn a_session_works_when_its_connecting_app_cannot_be_written() {
     let (_dir, mut conn) = test_conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();

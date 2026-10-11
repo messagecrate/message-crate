@@ -53,7 +53,7 @@ fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
 
 /// Write `doc` as a JSON Lines file under `dir`.
 fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
-    let stem = doc.filename_stem();
+    let stem = message_ir_format::filename_stem(doc);
     let path = dir.join(format!("{stem}.jsonl"));
     let mut f = fs::File::create(&path).unwrap();
     let header = json!({
@@ -875,7 +875,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
     let mut later = second.messages[0].clone();
     later.guid = "guid-3".into();
     second.messages.push(later);
-    let second_name = format!("{}.jsonl", second.filename_stem());
+    let second_name = format!("{}.jsonl", message_ir_format::filename_stem(&second));
     let header = json!({
         "schema_version": second.schema_version,
         "export": second.export,
@@ -912,7 +912,7 @@ fn directory_with_a_bad_middle_file(dir: &Path) {
     write_jsonl(dir, &sample_doc());
     let bad = sample_doc_for("+15555550102", "guid-2");
     fs::write(
-        dir.join(format!("{}.jsonl", bad.filename_stem())),
+        dir.join(format!("{}.jsonl", message_ir_format::filename_stem(&bad))),
         "not a conversation\n",
     )
     .unwrap();
@@ -1713,7 +1713,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert_eq!(put.calls(), 2);
 
     let log = read_log(dir.path());
-    let name = format!("{}.jsonl", doc.filename_stem());
+    let name = format!("{}.jsonl", message_ir_format::filename_stem(&doc));
     assert!(
         log.contains(&format!(
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \

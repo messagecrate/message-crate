@@ -154,7 +154,7 @@ fn each_conversation_is_one_directory_of_one_eml_per_message() {
     let before = import(&fixture(), first.path());
     let stems: Vec<String> = before
         .iter()
-        .map(ConversationDocument::filename_stem)
+        .map(message_ir_format::filename_stem)
         .collect();
 
     export(before, first.path(), exported.path());

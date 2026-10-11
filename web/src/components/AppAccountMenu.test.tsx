@@ -15,7 +15,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: profileState.profile, loading: false, error: "" }),
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({ accountId: 7, token: "t", isAuthenticated: true, logout: authState.logout }),
 }));
 

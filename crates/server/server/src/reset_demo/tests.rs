@@ -2,7 +2,9 @@ use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
 use crate::progress::Progress;
-use crate::test_support::{MessageRow, conversation_header, message_line, stored_time};
+use crate::test_support::{
+    ConversationRow, MessageRow, conversation_header, message_line, stored_time,
+};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -182,9 +184,7 @@ async fn a_build_refused_by_another_account_named_demo_names_that_account() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let (pool, mut conn) = test_db(&db).await;
-    account_profile::insert_account_at(&mut conn, 7, "Demo", None, None)
-        .await
-        .expect("an account holds the name");
+    crate::test_support::insert_account_with_id(&mut conn, 7, "Demo").await;
     let seed = DemoSeed {
         owner: DemoOwner {
             display_name: "Demo User".into(),
@@ -1128,17 +1128,9 @@ async fn seed_reset_test_account(conn: &mut SqliteConnection, account_id: i64, g
     .fetch_one(&mut *conn)
     .await
     .expect("insert reset test handle");
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'existing.jsonl')
-         RETURNING id",
-    )
-    .bind(account_id)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .expect("insert reset test conversation");
+    let conversation_id = ConversationRow::new(account_id, handle_id)
+        .insert(conn)
+        .await;
     MessageRow {
         guid: Some(guid.into()),
         timestamp: stored_time("2026-01-01T00:00:00.000Z"),
@@ -1896,17 +1888,12 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     .fetch_one(&mut *conn)
     .await
     .expect("insert previous handle");
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, 'individual', 'previous.jsonl')
-         RETURNING id",
-    )
-    .bind(DEMO_ACCOUNT_ID)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .expect("insert previous conversation");
+    let conversation_id = ConversationRow {
+        source_file: "previous.jsonl",
+        ..ConversationRow::new(DEMO_ACCOUNT_ID, handle_id)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         source: "whatsapp",
         guid: Some("previous-demo-message".into()),
@@ -2703,16 +2690,9 @@ async fn seed_bulky_demo(db: &Path) {
     .fetch_one(&mut *conn)
     .await
     .expect("insert the previous handle");
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'previous.jsonl')
-         RETURNING id",
-    )
-    .bind(DEMO_ACCOUNT_ID)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .expect("insert the previous conversation");
+    let conversation_id = ConversationRow::new(DEMO_ACCOUNT_ID, handle_id)
+        .insert(&mut conn)
+        .await;
     let body = "x".repeat(1000);
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for i in 1..=2000 {
@@ -2852,16 +2832,9 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     .fetch_one(&mut *conn)
     .await
     .expect("insert a handle");
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'a.jsonl')
-         RETURNING id",
-    )
-    .bind(DEMO_ACCOUNT_ID)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .expect("insert a conversation");
+    let conversation_id = ConversationRow::new(DEMO_ACCOUNT_ID, handle_id)
+        .insert(&mut conn)
+        .await;
     let mut insert_message = async |guid: &str, duplicate_of: Option<i64>| -> i64 {
         MessageRow {
             source: "sms",

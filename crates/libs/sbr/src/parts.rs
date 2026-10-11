@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
 
-use message_ir::valid_filename;
+use android_fields::valid_filename;
 
 use crate::xml::{btree, decode_body, get};
 

@@ -164,6 +164,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: The check that ffmpeg is there before an import converts or
+  compresses attachments was reworked inside, with nothing visible (#2166).
+
 - 2026-10-10: **An SMS Backup+ import finishes the way the other imports
   do.** It now ends through the same steps as GO SMS Pro and the others.
   Nothing changes on screen (#2163).
@@ -415,6 +418,15 @@ released versions carry their date on the heading.
   Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
+
+- 2026-10-10: **Converting or compressing attachments no longer follows a
+  symlink.** When the Media Stage of an Import Run converts or compresses
+  attachments, a symlink among the staged attachments used to be followed:
+  the files of a linked directory elsewhere were converted and replaced
+  where they lay, and a link back to a directory above it made the Media
+  Stage repeat its walk until it failed. A symlink there is now skipped, so a
+  linked directory is no longer converted, and only the attachments that
+  are really in the Import Run's directory change (#2262).
 
 - 2026-10-10: **The Import form refuses a socket, a device file or a pipe
   in any of its path fields.** An Apple Messages or WhatsApp backup path,

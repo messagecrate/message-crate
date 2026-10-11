@@ -1020,6 +1020,62 @@ fn collect_media_files_keeps_media_and_leaves_everything_else() {
     );
 }
 
+/// A symlink under the attachments directory is never followed: a linked
+/// directory elsewhere is not listed for conversion, not swept of temp files,
+/// and not counted, and a link back to a parent does not loop (#2262).
+#[cfg(unix)]
+#[test]
+fn the_attachment_walks_never_follow_a_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().unwrap();
+    let att = dir.path().join("attachments");
+    fs::create_dir_all(&att).unwrap();
+    fs::write(att.join("photo.png"), vec![0u8; 100]).unwrap();
+
+    let elsewhere = dir.path().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::write(elsewhere.join("clip.mp4"), vec![0u8; 5000]).unwrap();
+    let foreign_temp = elsewhere.join("clip.msgmedia.tmp.mp4");
+    fs::write(&foreign_temp, b"not ours").unwrap();
+
+    symlink(&elsewhere, att.join("linked")).unwrap();
+    symlink(elsewhere.join("clip.mp4"), att.join("linked-clip.mp4")).unwrap();
+    symlink(&att, att.join("loop")).unwrap();
+
+    assert_eq!(
+        collect_media_files(&att).unwrap(),
+        vec![att.join("photo.png")],
+        "only the real file is listed; nothing through a link"
+    );
+
+    remove_msgmedia_temps(&att).unwrap();
+    assert!(
+        foreign_temp.exists(),
+        "a temp-named file in a linked directory is not ours to delete"
+    );
+
+    assert_eq!(attachments_dir_bytes(&att).unwrap(), 100);
+}
+
+/// A socket named like media is not listed for conversion: only regular
+/// files are, because a conversion that opened a socket or pipe could block
+/// on it.
+#[cfg(unix)]
+#[test]
+fn the_attachment_walks_list_only_regular_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let att = dir.path().join("attachments");
+    fs::create_dir_all(&att).unwrap();
+    fs::write(att.join("photo.png"), b"png").unwrap();
+    let _socket = std::os::unix::net::UnixListener::bind(att.join("socket.mp4")).unwrap();
+
+    assert_eq!(
+        collect_media_files(&att).unwrap(),
+        vec![att.join("photo.png")]
+    );
+}
+
 /// The line that starts a pass words its file count singular for one, so a
 /// single attachment reads `1 file` (#1815).
 #[test]

@@ -37,7 +37,7 @@ pub use counter::{
     import_error_lines, item_line, item_reason,
 };
 pub use exporters::{
-    ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form,
+    ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form, FormContext,
     WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{

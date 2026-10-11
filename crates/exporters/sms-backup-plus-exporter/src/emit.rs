@@ -9,6 +9,7 @@ use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
+use android_fields::android_source;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink, RunIssue,
@@ -16,7 +17,7 @@ use message_crate_core::{
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
-    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks, android_source,
+    PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};

@@ -5,13 +5,13 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
 import { type ImportStep, stepsFor } from "./importProgressState";
 import { attachmentsAsked, runHeading, sourceDisplayName } from "./importRunCopy";
-import type { ImportJobFormValues } from "./useImportJob";
 
 const openPathInExplorer = vi.fn();
 /** Names a run's log as the desktop does, from the run's directory. */
@@ -50,7 +50,7 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokeRetryToolDownloads: () => desktop.retry(),
 }));
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ accountId: 7, token: "test-token", isAuthenticated: true }),
 }));
 
