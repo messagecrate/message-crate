@@ -324,6 +324,17 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **A screen stops waiting for a server that never answers.**
+  When the server takes a request and then never answers, such as a stalled
+  container, a screen now gives up after 30 seconds and says the server
+  didn't answer within that time. Before, it kept loading until the
+  browser's own limit, which can be minutes, and then tried again for as
+  long. An attachment gives up the same way when its download never starts,
+  and a large one that has started takes as long as it needs. Work that
+  takes longer on a large account, such as an import's steps, deleting
+  messages or an account for good, or loading an address book, waits up to
+  10 minutes (#2199).
+
 - 2026-10-11: **The Audit Trail records the attachment size limit and adding
   or resetting the Demo Account.** When the owner changes the attachment size
   limit in Server Settings, the Audit Trail now says so and names the new

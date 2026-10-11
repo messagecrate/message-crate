@@ -14,9 +14,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { apiClient } from "./api";
 import {
   changePassword,
+  completeImport,
   createAccount,
   createApiToken,
   createContactGroup,
+  createImport,
   createMediaLink,
   createMessageTag,
   deleteAccount,
@@ -25,8 +27,11 @@ import {
   deleteAllMessages,
   deleteApiToken,
   deleteContactGroup,
+  deleteConversation,
   deleteMessageTag,
   discardImport,
+  emptyTrash,
+  exportAddressBook,
   fetchAsset,
   getAccountProfile,
   getAccountStorage,
@@ -34,6 +39,8 @@ import {
   getConversation,
   getConversationSources,
   getImport,
+  getServerLogFile,
+  LONG_REQUEST_TIMEOUT_MS,
   listAccountExports,
   listAccountImports,
   listAccounts,
@@ -47,6 +54,7 @@ import {
   listMessageTags,
   listSavedSearches,
   listSearchFields,
+  loadAddressBook,
   setAccountPassword,
   setImportStage,
   updateAccount,
@@ -67,13 +75,14 @@ vi.mock("./api", () => ({
     put: vi.fn().mockResolvedValue({}),
     patch: vi.fn().mockResolvedValue({}),
     delete: vi.fn().mockResolvedValue({}),
+    postRaw: vi.fn().mockResolvedValue({}),
+    postText: vi.fn().mockResolvedValue(""),
+    getText: vi.fn().mockResolvedValue(""),
+    getBlob: vi.fn().mockResolvedValue(new Blob()),
   },
   // The logged-in account, as `auth.tsx` records it after login.
   getAccountId: () => 7,
   getBaseUrl: () => "http://127.0.0.1:8080",
-  getToken: () => "mc-user-test",
-  NEVER_FOLLOW: "error",
-  problemFromBody: (status: number, text: string) => new Error(`${status}: ${text}`),
 }));
 
 const get = vi.mocked(apiClient.get);
@@ -81,6 +90,13 @@ const post = vi.mocked(apiClient.post);
 const put = vi.mocked(apiClient.put);
 const patch = vi.mocked(apiClient.patch);
 const del = vi.mocked(apiClient.delete);
+const postRaw = vi.mocked(apiClient.postRaw);
+const postText = vi.mocked(apiClient.postText);
+const getText = vi.mocked(apiClient.getText);
+const getBlob = vi.mocked(apiClient.getBlob);
+
+/** The longer time limit a call whose server work grows with an account passes. */
+const LONG = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -190,7 +206,7 @@ describe("verbs", () => {
 describe("Import Run routes", () => {
   it("patches the run to move its stage", async () => {
     await setImportStage(9, { stage: "parse" });
-    expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" });
+    expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" }, LONG);
   });
 
   it("addresses a discard by session id, with the Import Errors it carries", async () => {
@@ -198,12 +214,58 @@ describe("Import Run routes", () => {
       { kind: "skip" as const, stage: "staging" as const, item: "a.jsonl", reason: "empty" },
     ];
     await discardImport(9, { issues, notes: [] });
-    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues, notes: [] });
+    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues, notes: [] }, LONG);
   });
 
   it("addresses one past run by id", async () => {
     await getImport(12);
     expect(lastPath(get)).toBe("/v1/imports/12");
+  });
+
+  it("starts and completes a run with the longer time limit", async () => {
+    const start = { source: "imessage" } as Parameters<typeof createImport>[0];
+    await createImport(start);
+    expect(post).toHaveBeenCalledWith("/v1/imports", start, LONG);
+    const outcome = { status: "complete" } as Parameters<typeof completeImport>[1];
+    await completeImport(9, outcome);
+    expect(post).toHaveBeenCalledWith("/v1/imports/9/complete", outcome, LONG);
+  });
+});
+
+/**
+ * Calls whose work on the server grows with what an account holds wait the
+ * longer limit, so a large account's delete or file is not cut off at the
+ * default.
+ */
+describe("the longer time limit", () => {
+  it("deletes a conversation and empties the trash with it", async () => {
+    await deleteConversation(4);
+    expect(del).toHaveBeenCalledWith("/v1/conversations/4", undefined, LONG);
+    await emptyTrash();
+    expect(del).toHaveBeenCalledWith("/v1/trash", undefined, LONG);
+  });
+
+  it("loads and exports an address book with it", async () => {
+    await loadAddressBook("name\nAda\n", "append");
+    expect(postRaw).toHaveBeenCalledWith(
+      "/v1/contacts?mode=append",
+      "name\nAda\n",
+      "text/csv",
+      LONG,
+    );
+    await exportAddressBook({});
+    expect(postText).toHaveBeenCalledWith("/v1/contacts/address-book", {}, LONG);
+  });
+
+  it("reads a server log file with it, unless the caller asks for its own", async () => {
+    const controller = new AbortController();
+    await getServerLogFile(3, { signal: controller.signal });
+    expect(getText).toHaveBeenCalledWith("/v1/server/log-files/3", {
+      ...LONG,
+      signal: controller.signal,
+    });
+    await getServerLogFile(3, { timeoutMs: 5_000 });
+    expect(getText).toHaveBeenLastCalledWith("/v1/server/log-files/3", { timeoutMs: 5_000 });
   });
 });
 
@@ -281,9 +343,13 @@ describe("accounts are one collection", () => {
       password_confirmation: "newer-one",
     });
     await deleteAccount({ confirm: true, current_password: "old" });
-    expect(del).toHaveBeenCalledWith("/v1/accounts/7", { confirm: true, current_password: "old" });
+    expect(del).toHaveBeenCalledWith(
+      "/v1/accounts/7",
+      { confirm: true, current_password: "old" },
+      LONG,
+    );
     await deleteAllMessages({ confirm: true });
-    expect(del).toHaveBeenCalledWith("/v1/accounts/7/messages", { confirm: true });
+    expect(del).toHaveBeenCalledWith("/v1/accounts/7/messages", { confirm: true }, LONG);
     await getAccountStorage();
     expect(lastPath(get)).toBe("/v1/accounts/7/storage");
   });
@@ -309,9 +375,9 @@ describe("accounts are one collection", () => {
       password_confirmation: "resetbytheowner",
     });
     await deleteAccountMessages(12);
-    expect(del).toHaveBeenCalledWith("/v1/accounts/12/messages");
+    expect(del).toHaveBeenCalledWith("/v1/accounts/12/messages", undefined, LONG);
     await deleteAccountById(12);
-    expect(del).toHaveBeenCalledWith("/v1/accounts/12");
+    expect(del).toHaveBeenCalledWith("/v1/accounts/12", undefined, LONG);
   });
 
   it("keeps API tokens under the logged-in account", async () => {
@@ -336,25 +402,16 @@ describe("accounts are one collection", () => {
  * hundreds of them.
  */
 describe("attachments", () => {
-  it("asks for each version at its own address, with the Session's header", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response("bytes"));
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      await fetchAsset("abc");
-      await fetchAsset("abc", { version: "preview" });
-      await fetchAsset("abc", { version: "thumbnail" });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:8080/v1/assets/abc",
-      "http://127.0.0.1:8080/v1/assets/abc/preview",
-      "http://127.0.0.1:8080/v1/assets/abc/thumbnail",
+  it("asks for each version at its own address", async () => {
+    const controller = new AbortController();
+    await fetchAsset("abc", { signal: controller.signal });
+    await fetchAsset("abc", { version: "preview" });
+    await fetchAsset("abc", { version: "thumbnail" });
+    expect(getBlob.mock.calls).toEqual([
+      ["/v1/assets/abc", { signal: controller.signal }],
+      ["/v1/assets/abc/preview", { signal: undefined }],
+      ["/v1/assets/abc/thumbnail", { signal: undefined }],
     ]);
-    expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer mc-user-test" });
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(init.redirect).toBe("error");
-    }
   });
 
   it("makes a Media Link and hands back URLs a media element can load from the server", async () => {

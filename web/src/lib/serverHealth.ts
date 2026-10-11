@@ -1,4 +1,5 @@
 import { NEVER_FOLLOW } from "./api";
+import { startTimeLimit } from "./timeLimit";
 
 /** How long to wait after failure attempt `failureIndex` (0-based) before the next probe. */
 export const HEALTH_BACKOFF_CAP_MS = 30_000;
@@ -49,15 +50,12 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
   if (!url) return false;
   if (signal?.aborted) return false;
 
-  const timeoutController = new AbortController();
-  const timer = setTimeout(() => timeoutController.abort(), HEALTH_PROBE_TIMEOUT_MS);
-  const onParentAbort = () => timeoutController.abort();
-  signal?.addEventListener("abort", onParentAbort, { once: true });
+  const limit = startTimeLimit(HEALTH_PROBE_TIMEOUT_MS, signal);
 
   try {
     const res = await fetch(url, {
       method: "GET",
-      signal: timeoutController.signal,
+      signal: limit.signal,
       cache: "no-store",
       // The probe sends no credential, but it must agree with the calls that
       // do, so an address that redirects reads Disconnected here too, not
@@ -68,7 +66,6 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
   } catch {
     return false;
   } finally {
-    clearTimeout(timer);
-    signal?.removeEventListener("abort", onParentAbort);
+    limit.dispose();
   }
 }
