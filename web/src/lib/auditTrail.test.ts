@@ -77,4 +77,25 @@ describe("describeAuditEntry", () => {
       ),
     ).toBe("Permissions changed: allowed import; removed export and delete");
   });
+
+  it("names the attachment size limit the owner set", () => {
+    expect(
+      describeAuditEntry(
+        auditEntry({ action: "asset_limit_changed", actor: "owner", asset_max_bytes: 104857600 }),
+      ),
+    ).toBe("Attachment size limit set to 100 MB");
+  });
+
+  it("names the size of Demo Data the owner built the Demo Account with", () => {
+    expect(
+      describeAuditEntry(
+        auditEntry({
+          action: "demo_account_rebuilt",
+          actor: "owner",
+          username: "demo",
+          demo_data_size: "large",
+        }),
+      ),
+    ).toBe("Demo Account built with large Demo Data");
+  });
 });
