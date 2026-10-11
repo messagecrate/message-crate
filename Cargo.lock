@@ -1956,7 +1956,6 @@ dependencies = [
  "phone",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
 ]
@@ -2049,8 +2048,10 @@ dependencies = [
  "clap-markdown",
  "csv",
  "demo-seed",
+ "file-io",
  "fs2",
  "futures-util",
+ "hex",
  "hmac 0.13.0",
  "http-body-util",
  "libc",

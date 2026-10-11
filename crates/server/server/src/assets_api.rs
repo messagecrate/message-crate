@@ -130,7 +130,7 @@ impl Sha256 {
 
     /// The fingerprint of `data`.
     pub fn of_bytes(data: &[u8]) -> Self {
-        Self(sha256_hex(data))
+        Self(file_io::sha256_hex(data))
     }
 
     /// The fingerprint as 64 lower-case hex digits.
@@ -157,18 +157,6 @@ impl<'de> Deserialize<'de> for Sha256 {
         let value = String::deserialize(deserializer)?;
         Self::parse(&value).map_err(serde::de::Error::custom)
     }
-}
-
-/// Encode bytes as lowercase hex.
-pub fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// SHA-256 fingerprint of `data` as 64 lowercase hex digits.
-///
-/// SHA-256 is a short fingerprint of the file contents.
-pub fn sha256_hex(data: &[u8]) -> String {
-    hex_encode(&Sha256Hasher::digest(data))
 }
 
 /// Relative path under the assets root: first two hex digits as a directory, then
@@ -431,7 +419,7 @@ fn copy_to_verified_temp(
         .flush()
         .and_then(|()| temporary.as_file().sync_all())
         .with_context(|| format!("flush temporary asset for {}", source.display()))?;
-    let actual = hex_encode(&hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
     if actual != claimed_sha256.as_str() {
         return Err(AssetError::Mismatch {
             claimed: claimed_sha256.clone(),
@@ -478,6 +466,9 @@ pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
 
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.
 ///
+/// Not `file_io::file_sha256`: this opens the file without following a
+/// symlink, so a symlink at `path` is refused rather than followed.
+///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or read.
@@ -495,7 +486,7 @@ pub(crate) fn hash_file(path: &Path) -> Result<String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(hex_encode(&hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Every path [`hash_file`] was asked to read, so a test can show that a

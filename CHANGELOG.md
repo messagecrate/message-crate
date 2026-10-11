@@ -183,6 +183,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way Message Crate fingerprints attachments, sessions and API
+  tokens was reworked inside, with nothing visible (#2227).
+
 - 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
   into the Tools Directory was reworked inside. The one change you could see:
   on the rare computer where the app cannot set up its downloads at all,

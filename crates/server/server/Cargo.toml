@@ -18,9 +18,11 @@ clap = { workspace = true }
 clap-markdown = "0.1.5"
 csv = { workspace = true }
 demo-seed = { path = "../demo-seed" }
+file-io = { workspace = true }
 fs2 = "0.4.3"
 hmac = "0.13.0"
 futures-util = { version = "0.3.31", default-features = false }
+hex = { workspace = true }
 libc = "0.2"
 # The bindings sqlx-sqlite already links (VENDORING.md pins the version), for
 # the Unicode lower() the server registers on every SQLite connection.

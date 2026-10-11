@@ -816,7 +816,7 @@ fn convert_points_each_attachment_at_its_converted_file() {
     assert_eq!(photo.missing_reason, None);
     let converted = std::fs::read(dir.path().join(path)).unwrap();
     assert!(converted.starts_with(&[0xff, 0xd8]), "the file is a JPEG");
-    assert_eq!(photo.digest_sha256, Some(hex_sha256(&converted)));
+    assert_eq!(photo.digest_sha256, Some(sha256_hex(&converted)));
     assert_eq!(photo.size_bytes, Some(converted.len() as u64));
 
     let reason = broken.missing_reason.as_deref().unwrap_or("");
@@ -969,7 +969,7 @@ fn a_failed_write_marks_only_that_attachment_missing() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
     let blocked_bytes = b"blocked".to_vec();
-    let blocked_name = attachment_dest_name(1_609_459_200, &hex_sha256(&blocked_bytes), ".jpg");
+    let blocked_name = attachment_dest_name(1_609_459_200, &sha256_hex(&blocked_bytes), ".jpg");
     std::fs::create_dir_all(att_dir.join(&blocked_name).join("occupied")).unwrap();
 
     let mut blocked = empty_att("blocked.jpg");

@@ -62,7 +62,7 @@ fn token_char(byte: u8) -> Option<char> {
 
 /// SHA-256 hex fingerprint of a plaintext token (stored in DB; used for Bearer lookup).
 pub fn hash_api_token(token: &str) -> String {
-    crate::assets_api::sha256_hex(token.as_bytes())
+    file_io::sha256_hex(token.as_bytes())
 }
 
 /// Fill `buf` from the OS random source, refusing an all-zero result.

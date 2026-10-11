@@ -23,7 +23,7 @@ use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
 
-use crate::assets_api::{Sha256, hex_encode, lookup_for_read};
+use crate::assets_api::{Sha256, lookup_for_read};
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
 use crate::server::{
@@ -83,7 +83,7 @@ impl MediaLinkKey {
             "{}.{}.{}",
             terms.account_id,
             terms.expires,
-            hex_encode(&signature)
+            hex::encode(signature)
         )
     }
 
