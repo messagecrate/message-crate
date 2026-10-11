@@ -14,10 +14,10 @@ export interface paths {
         /**
          * Report whether the server can answer.
          * @description Answers `ok` when the server can take a database connection and run a
-         *     statement on it within a short time limit, under two seconds. A server
-         *     whose connections are all taken, or whose database cannot be opened, fails
-         *     the way a `/v1` call it cannot answer fails, with `500 Internal Server
-         *     Error`, so a health check agrees with those calls.
+         *     statement on it within 1.5 seconds. A server whose connections are all
+         *     taken, or whose database cannot be opened, fails the way a `/v1` call it
+         *     cannot answer fails, with `500 Internal Server Error`, so a health check
+         *     agrees with those calls.
          */
         get: operations["get_health"];
         put?: never;

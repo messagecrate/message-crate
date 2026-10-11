@@ -455,25 +455,31 @@ the sentence.
 Rejected: a request id on `5xx` only. A body whose members vary by status is
 the drift the one-shape rule exists to stop.
 
-`/health` answers `ok` only when the server can take a database connection and
-run `SELECT 1` on it within a short limit (`HEALTH_DATABASE_LIMIT`, 1.5
-seconds). When it cannot, it fails as a `/v1` call fails, with a `500` problem
-document. Why: the web app's login card and the release image's Docker health
-check ask `/health` whether a server can answer, and a server whose pool is
-exhausted or whose database cannot be opened answers no `/v1` call, so `ok`
-from the process alone told them it was up while every page failed. The
-desktop app's watch on its own server asks `GET /v1/server`, which reads the
-database, so the two disagreed
-([#2202](https://github.com/messagecrate/message-crate/issues/2202)). Why
-`SELECT 1` and a short limit: it reads no table, so it never waits on an
-import's write lock, and the imports hold at most two of the pool's four
-connections, so a busy import still leaves two for the check and the pages.
-The limit stays under the two seconds the Docker health check gives each
-address.
+`/health` answers `ok` only when the server can take a database connection
+and run `SELECT 1` on it within 1.5 seconds (`HEALTH_DATABASE_LIMIT` in
+`crates/server/server/src/server.rs`). When it cannot, it fails as a `/v1`
+call fails, with a `500 Internal Server Error` problem document. Why: the web
+app's login card and the release image's Docker health check ask `/health`
+whether a server can answer, and a server whose pool is exhausted or whose
+database cannot be opened answers no `/v1` call, so `ok` from the process
+alone told them it was up while every page failed. The desktop app's watch
+on its own server asks `GET /v1/server`, which reads the database, so the two
+disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
+
+Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
+waits on an import's write lock, and the limit stays under the two seconds
+`docker/healthcheck.cjs` gives each address it asks, so a failure arrives as
+the server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+(`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
+requests that write wait on SQLite's busy timeout while an import holds the
+write lock, and enough of them can take every connection for that long. The
+check fails then, though a `/v1` read would wait for a connection and get
+one. One failure flips neither the Docker health check, which needs three in
+a row 30 seconds apart, nor the login card, which asks again.
 
 Rejected: `503 Service Unavailable`. Every registered problem type is a `4xx`
 whose remedy a client can act on, and a server that cannot reach its own
-database is the `500` no page could help with.
+database is the `500 Internal Server Error` no page could help with.
 
 ## Content negotiation
 

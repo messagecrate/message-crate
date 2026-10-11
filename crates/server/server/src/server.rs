@@ -1645,20 +1645,24 @@ pub(crate) async fn stop_requested() {
 ///
 /// Short, so a probe gets the answer before its own time runs out: the
 /// release image's health check gives each address it asks two seconds
-/// (`docker/healthcheck.cjs`). An import holds at most
-/// `imports_api::MAX_CONCURRENT_IMPORTS` of the pool's connections, so a busy
-/// import leaves connections free, and `SELECT 1` reads no table, so it never
-/// waits on a writer's lock.
+/// (`docker/healthcheck.cjs`). `SELECT 1` reads no table, so it never waits
+/// on a writer's lock. The connection can wait: HTTP imports hold at most
+/// `imports_api::MAX_CONCURRENT_IMPORTS` of the pool's connections, but
+/// requests that write wait on SQLite's busy timeout while an import holds
+/// the write lock, and enough of them can take every connection for that
+/// long. The check then fails, though a `/v1` read would wait for a
+/// connection and get one. A single failure flips neither the Docker health
+/// check, which needs three in a row 30 seconds apart, nor the login card,
+/// which asks again.
 const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// Report whether the server can answer.
 ///
 /// Answers `ok` when the server can take a database connection and run a
-/// statement on it within a short time limit, under two seconds. A server
-/// whose connections are all taken, or whose database cannot be opened, fails
-/// the way a `/v1` call it cannot answer fails, with `500 Internal Server
-/// Error`, so a health check agrees with those calls.
-// The limit is `HEALTH_DATABASE_LIMIT` (#2202).
+/// statement on it within 1.5 seconds. A server whose connections are all
+/// taken, or whose database cannot be opened, fails the way a `/v1` call it
+/// cannot answer fails, with `500 Internal Server Error`, so a health check
+/// agrees with those calls.
 #[utoipa::path(
     get,
     path = "/health",
@@ -1675,7 +1679,7 @@ pub(crate) async fn get_health(
             anyhow::Error::new(e).context("run the health check's statement on the database"),
         )),
         Err(_) => Err(ApiError::Internal(anyhow::anyhow!(
-            "the health check took no database connection within {} ms",
+            "the health check could not take a database connection and run SELECT 1 within {} ms",
             HEALTH_DATABASE_LIMIT.as_millis()
         ))),
     }

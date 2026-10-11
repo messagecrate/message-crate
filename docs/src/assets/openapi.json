@@ -16,7 +16,7 @@
           "Health"
         ],
         "summary": "Report whether the server can answer.",
-        "description": "Answers `ok` when the server can take a database connection and run a\nstatement on it within a short time limit, under two seconds. A server\nwhose connections are all taken, or whose database cannot be opened, fails\nthe way a `/v1` call it cannot answer fails, with `500 Internal Server\nError`, so a health check agrees with those calls.",
+        "description": "Answers `ok` when the server can take a database connection and run a\nstatement on it within 1.5 seconds. A server whose connections are all\ntaken, or whose database cannot be opened, fails the way a `/v1` call it\ncannot answer fails, with `500 Internal Server Error`, so a health check\nagrees with those calls.",
         "operationId": "get_health",
         "responses": {
           "200": {
