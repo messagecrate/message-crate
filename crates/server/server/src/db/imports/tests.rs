@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::fixed_start_instant;
+use crate::test_support::{fixed_instant, fixed_start_instant};
 
 const ACCOUNT_ID: i64 = 7;
 
@@ -54,7 +54,7 @@ async fn complete_import_persists_timings_and_issues() {
             }],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -94,7 +94,7 @@ async fn require_running_import_rejects_a_completed_import_and_returns_a_running
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::succeeded(1, 0),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -161,7 +161,7 @@ async fn list_import_issues_returns_them_oldest_first() {
             ],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -211,7 +211,7 @@ async fn list_imports_includes_duration_ms() {
             issues: vec![],
             notes: Vec::new(),
         },
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -252,7 +252,7 @@ async fn a_failed_import_is_recorded_as_failed() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::failed(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -267,12 +267,15 @@ async fn a_failed_import_is_recorded_as_failed() {
 async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
+    // Each run starts a minute before the one inserted ahead of it, so the
+    // order by start is the reverse of the order by id, and only a sort that
+    // reads `started_at` lists them oldest first.
     let mut started = Vec::new();
-    for _ in 0..2 {
+    for minutes_earlier in 0..2 {
         let import_id = start_import(
             &mut conn,
             &default_start_args(ACCOUNT_ID),
-            fixed_start_instant(),
+            fixed_start_instant() - chrono::TimeDelta::minutes(minutes_earlier),
         )
         .await
         .unwrap();
@@ -281,7 +284,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
             ACCOUNT_ID,
             import_id,
             &CompleteImportArgs::succeeded(1, 0),
-            crate::test_support::fixed_instant(),
+            fixed_instant(),
         )
         .await
         .unwrap();
@@ -297,6 +300,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
         .unwrap();
 
     let listed: Vec<i64> = imports.iter().map(|run| run.row.id).collect();
+    started.reverse();
     assert_eq!(listed, started);
 }
 
@@ -414,7 +418,7 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
         account,
         finished,
         &CompleteImportArgs::succeeded(1, 0),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -472,7 +476,7 @@ async fn completing_an_import_run_frees_the_slot_too() {
         account,
         id,
         &CompleteImportArgs::succeeded(10, 2),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -629,7 +633,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
         ACCOUNT_ID,
         discarded,
         &with_issue(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap_err();
@@ -652,7 +656,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
         ACCOUNT_ID,
         completed,
         &with_issue(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap();
@@ -661,7 +665,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
         ACCOUNT_ID,
         completed,
         &CompleteImportArgs::failed(),
-        crate::test_support::fixed_instant(),
+        fixed_instant(),
     )
     .await
     .unwrap_err();
