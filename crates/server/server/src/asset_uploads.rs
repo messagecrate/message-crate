@@ -843,10 +843,13 @@ mod tests {
     fn holding_an_upload_lock_opens_no_descriptor_a_started_process_could_copy() {
         let (_dir, _sha, _upload_id, session) = started_upload();
         let _held = lock_session(&session).unwrap();
+        // `/proc/self/fd` gives each target as an absolute path with every
+        // symlink resolved, so the directory is compared in that form too.
+        let resolved = fs::canonicalize(&session).unwrap();
         let open_in_session: Vec<PathBuf> = fs::read_dir("/proc/self/fd")
             .unwrap()
             .filter_map(|entry| fs::read_link(entry.ok()?.path()).ok())
-            .filter(|target| target.starts_with(&session))
+            .filter(|target| target.starts_with(&resolved))
             .collect();
         assert!(open_in_session.is_empty(), "{open_in_session:?}");
     }
