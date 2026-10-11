@@ -548,6 +548,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **A wtsexporter the app's account can't run no longer shows
+  as found.** The desktop app took a `wtsexporter` in its Tools Directory as
+  ready when the file had permission to run for any account, so a copy that
+  root owns and only root may run showed as found in Settings and on the
+  Import form, and the WhatsApp import failed only once it started the
+  program. Settings and the Import form now say `wtsexporter` isn't used
+  because it is not executable by this account, and how to fix that
+  (#2793).
+
 - 2026-10-11: **A downloaded program that does not unpack says so.** When
   ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
   Settings and a run waiting for it said the file could not be written to

@@ -86,7 +86,8 @@ pub fn wtsexporter_file_name() -> &'static str {
 ///
 /// # Errors
 ///
-/// Returns an error when the file is there but is not executable.
+/// Returns an error when the file is there but is not executable by this
+/// account.
 pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
     find_wtsexporter(media::tools_dir().as_deref())
 }
@@ -105,15 +106,17 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// own copy, so neither `PATH` nor an environment variable is read (#1053).
 /// `Ok(None)` when there is no Tools Directory or no file in it.
 ///
-/// On Unix the file must have an executable bit. It is not run here: a
-/// `pipx` shim is slow to start. A shim is what is linked there on a
-/// computer the app has no download for, such as Linux on ARM. So a link
-/// to a `pipx` shim whose Python has gone is found, and fails only when it
-/// is run, with the hint [`run_wtsexporter`] gives (`docs/adr/0019`).
+/// On Unix the file must have an executable bit this account may run. It
+/// is not run here: a `pipx` shim is slow to start. A shim is what is
+/// linked there on a computer the app has no download for, such as Linux
+/// on ARM. So a link to a `pipx` shim whose Python has gone is found, and
+/// fails only when it is run, with the hint [`run_wtsexporter`] gives
+/// (`docs/adr/0019`).
 ///
 /// # Errors
 ///
-/// Returns an error when the file is there but is not executable.
+/// Returns an error when the file is there but is not executable by this
+/// account.
 fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
     let Some(tools_dir) = tools_dir else {
         return Ok(None);
@@ -124,7 +127,10 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
     }
     if !media::is_executable(&candidate) {
         bail!(
-            "{} is not executable. It must be {RELEASE_FILE_HINT}.",
+            "{} is not executable by this account. It must be {RELEASE_FILE_HINT}. \
+             A copy another account owns needs that account to run chmod +x on it, \
+             or to give this account ownership of it. On a disk mounted noexec no \
+             program runs, whoever owns it.",
             candidate.display()
         );
     }
