@@ -16,9 +16,6 @@ export type Participant = Schema["Participant"];
 /** One conversation in the browse list. */
 export type Conversation = Schema["ConversationSummary"];
 
-/** One participant on a message. */
-export type MessageParticipant = Schema["Participant"];
-
 /** The conversation a message belongs to, as a message carries it. */
 export type MessageConversation = Schema["MessageConversation"];
 
