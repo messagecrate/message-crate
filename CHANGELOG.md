@@ -186,8 +186,9 @@ released versions carry their date on the heading.
 - 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
   into the Tools Directory was reworked inside. The one change you could see:
   on the rare computer where the app cannot set up its downloads at all,
-  Settings now says the download could not be started, instead of saying
-  there is no connection to the download's server (#2213).
+  Settings, and an import waiting for the download, now say the download
+  could not be started, instead of saying there is no connection to the
+  download's server (#2213).
 
 - 2026-10-11: The way attachments are converted and compressed, and their
   Thumbnails and Previews made, was reworked inside, with nothing visible

@@ -280,10 +280,15 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
         Vec::<String>::new()
     );
     // The unpack's own failure, not the program's checksum after it.
+    let unpack_error = io::copy(
+        &mut flate2::read::GzDecoder::new(&not_gzip[..]),
+        &mut io::sink(),
+    )
+    .expect_err("the bytes unpacked");
     assert_eq!(
         downloads.get(Program::Wtsexporter),
         Some(DownloadState::Failed {
-            reason: DownloadError::CouldNotWrite("invalid gzip header".into()).to_string(),
+            reason: DownloadError::CouldNotWrite(unpack_error.to_string()).to_string(),
         })
     );
 }
