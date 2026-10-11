@@ -229,6 +229,37 @@ describe("Each route under the app layout", () => {
     expect((await screen.findByTestId(list)).textContent).toBe(filter);
   });
 
+  // #2480: the route says which item it is on, so a new route needs no
+  // entry in a table of the navigation panel's own.
+  it.each([
+    ["/", "Messages"],
+    ["/tag/Holiday", "Messages"],
+    ["/no-tag", "Messages"],
+    ["/messages/6", "Messages"],
+    ["/contacts", "Contacts"],
+    ["/group/Family", "Contacts"],
+    ["/no-group", "Contacts"],
+    ["/unknown", "Contacts"],
+    ["/trash", "Trash"],
+    ["/import", "Import"],
+    ["/export", "Export"],
+  ])("highlights its navigation item on %s", async (entry, item) => {
+    desktop.on = true;
+    sets.tags = ["Holiday"];
+    sets.groups = ["Family"];
+    renderLayout(entry);
+    const current = () =>
+      Array.from(document.querySelectorAll('button[aria-current="page"]'), (b) => b.textContent);
+    await vi.waitFor(() => expect(current()).toEqual([item]));
+  });
+
+  it("highlights no navigation item on Settings", async () => {
+    desktop.on = true;
+    renderLayout("/settings");
+    await act(async () => {});
+    expect(document.querySelector('button[aria-current="page"]')).toBeNull();
+  });
+
   it("shows the Trash screen beside the trashed conversations", async () => {
     renderLayout("/trash");
     expect(await screen.findByTestId("trash-screen")).toBeTruthy();

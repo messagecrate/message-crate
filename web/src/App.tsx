@@ -79,7 +79,8 @@ export function AppRoutes() {
           }
         >
           {/* Each route's element renders the columns beside the navigation
-              panel and tells the layout what the header searches. */}
+              panel and tells the layout what the header searches and
+              which navigation item to highlight. */}
           <Route index element={<ConversationsRoute />} />
           <Route path="tag/:slug" element={<ConversationsRoute />} />
           <Route path="no-tag" element={<ConversationsRoute tag="none" />} />
@@ -100,7 +101,7 @@ export function AppRoutes() {
           <Route
             path="import"
             element={
-              <NoListRoute>
+              <NoListRoute navItem="import">
                 <ImportExportRoute feature="import">
                   <ImportScreen />
                 </ImportExportRoute>
@@ -110,7 +111,7 @@ export function AppRoutes() {
           <Route
             path="export"
             element={
-              <NoListRoute>
+              <NoListRoute navItem="export">
                 <ImportExportRoute feature="export">
                   <ExportScreen />
                 </ImportExportRoute>

@@ -6,6 +6,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
+import type { NavItem } from "./appLayoutContext";
 import LeftPanel from "./LeftPanel";
 import { LEFT_PANEL_STORAGE_KEY, LEFT_PANEL_WIDTH_VAR } from "./leftPanelWidth";
 
@@ -75,11 +76,11 @@ function LocationProbe() {
   return <output data-testid="location">{location.pathname + location.search}</output>;
 }
 
-function renderPanel(initialEntries?: string[], browseQuery = "") {
+function renderPanel(initialEntries?: string[], browseQuery = "", navItem: NavItem | null = null) {
   return render(
     <Providers>
       <MemoryRouter initialEntries={initialEntries}>
-        <LeftPanel browseQuery={browseQuery} />
+        <LeftPanel browseQuery={browseQuery} navItem={navItem} />
         <LocationProbe />
       </MemoryRouter>
     </Providers>,
@@ -101,7 +102,7 @@ describe("LeftPanel", () => {
     render(
       <Providers>
         <MemoryRouter>
-          <LeftPanel browseQuery="" />
+          <LeftPanel browseQuery="" navItem={null} />
           <PaintProbe />
         </MemoryRouter>
       </Providers>,
@@ -238,10 +239,14 @@ describe("LeftPanel", () => {
       expect(heading.querySelector('[class*="motion-reduce:transition-none"]')).not.toBeNull();
     });
 
-    it("highlights the Messages heading when Import is the current route", () => {
-      renderPanel(["/import"]);
+    it("highlights the Messages heading when the route is on Import", () => {
+      renderPanel(["/import"], "", "import");
       const heading = screen.getByRole("button", { name: "Messages", expanded: true });
       expect(heading.className).toMatch(/bg-hover/);
+      expect(screen.getByRole("button", { name: "Import" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
     });
 
     it("indents Import and Export like nested group rows", () => {
