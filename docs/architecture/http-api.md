@@ -488,8 +488,8 @@ Every registered problem type is a `4xx` but one: `server-stopping`, a
 `503 Service Unavailable`. A server told to stop closes its import slots
 (`AppState::on_stop_signal` in `crates/server/server/src/server.rs`), so an
 import batch still waiting for a slot is refused with it and stores nothing.
-The Upload retries it as it retries any `5xx`, and a batch it gives up on is
-sent again by the next Upload. A batch that already holds a slot is not
+The Upload retries it as it retries any `5xx`; if the server is not back in
+time, the Upload pauses, and resuming the run sends the batch. A batch that already holds a slot is not
 refused. Why: a waiting batch used to take a slot once an earlier
 batch ended and import in full, so the stop waited for a whole batch more
 ([#2203](https://github.com/messagecrate/message-crate/issues/2203)). It is

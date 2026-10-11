@@ -468,8 +468,8 @@ impl AppState {
     /// batch still waiting for one is refused with `server-stopping`, which
     /// the Upload retries, rather than taking a slot when an earlier batch
     /// ends and making the stop wait for a whole batch more (#2203). A batch
-    /// that already holds a slot is not refused; how long the stop waits for
-    /// it is #2122.
+    /// that already holds a slot is not refused, and the stop waits for it
+    /// to finish (#2122 is about bounding that wait).
     pub(crate) fn on_stop_signal(&self) -> impl FnOnce() + Send + 'static {
         let media_queue = self.media_queue.clone();
         let demo_build = self.demo_build.clone();
