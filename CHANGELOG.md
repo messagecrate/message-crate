@@ -543,6 +543,12 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-10: **The left panel highlights Contacts on a Contact Group page.**
+  A Contact Group page, **No Contact Group** and **Unknown** list contacts,
+  but the left panel highlighted no Browse row on them, where a Message Tag
+  page highlights Messages. Each now highlights Contacts. A screen reader
+  also hears which row of Messages, Contacts, Trash, Import and Export is the
+  current page (#2480).
 - 2026-10-09: **The left panel's rows are one size, and its sections one gap
   apart.** A named Contact Group, Saved Search, or Message Tag was drawn
   smaller than the rows around it, such as **Unknown** and **No Contact

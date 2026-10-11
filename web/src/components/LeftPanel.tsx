@@ -10,6 +10,7 @@ import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import { useWindowWidth } from "../lib/useWindowWidth";
 import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
+import type { NavItem } from "./appLayoutContext";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { COLUMN_DIVIDER_CLASS } from "./columnDivider";
 import { useReportColumnResizing } from "./columnResizeState";
@@ -62,6 +63,7 @@ function browseLinkClass(active: boolean): string {
 
 export default function LeftPanel({
   browseQuery,
+  navItem,
   besideMinWidth,
 }: {
   /**
@@ -71,6 +73,11 @@ export default function LeftPanel({
    * is one click and the file holds the conversations that list showed.
    */
   browseQuery: string;
+  /**
+   * The item the route is on, which the panel highlights, as the route
+   * declared it to the layout; null on a route with none, such as Settings.
+   */
+  navItem: NavItem | null;
   /**
    * The width the columns beside the panel need, dividers included, on a
    * screen with a list; not given on a screen without one. A narrow window
@@ -111,17 +118,9 @@ export default function LeftPanel({
     };
   }, []);
 
-  function isActive(path: string): boolean {
-    if (path === "/") {
-      return (
-        location.pathname === "/" ||
-        location.pathname.startsWith("/messages/") ||
-        location.pathname.startsWith("/tag/") ||
-        location.pathname === "/no-tag"
-      );
-    }
-    return location.pathname.startsWith(path);
-  }
+  /** Whether `item` is the one the route is on; `aria-current` marks it for a screen reader. */
+  const current = (item: NavItem) => navItem === item;
+  const ariaCurrent = (item: NavItem) => (current(item) ? "page" : undefined);
 
   const { savedSearches: groups } = useSavedSearches();
   const savedSearchActions = useSavedSearchActions();
@@ -172,14 +171,19 @@ export default function LeftPanel({
       <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}>
         {/* Browse */}
         <div className="px-3 py-2">
-          <PlainButton className={browseLinkClass(isActive("/"))} onPress={() => navigate("/")}>
+          <PlainButton
+            className={browseLinkClass(current("messages"))}
+            aria-current={ariaCurrent("messages")}
+            onPress={() => navigate("/")}
+          >
             <span className={NAV_LEADING_GLYPH_CLASS}>
               <ConversationsIcon size={15} />
             </span>
             Messages
           </PlainButton>
           <PlainButton
-            className={browseLinkClass(isActive("/contacts"))}
+            className={browseLinkClass(current("contacts"))}
+            aria-current={ariaCurrent("contacts")}
             onPress={() => navigate("/contacts")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
@@ -188,7 +192,8 @@ export default function LeftPanel({
             Contacts
           </PlainButton>
           <PlainButton
-            className={browseLinkClass(isActive("/trash"))}
+            className={browseLinkClass(current("trash"))}
+            aria-current={ariaCurrent("trash")}
             onPress={() => navigate("/trash")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
@@ -203,11 +208,12 @@ export default function LeftPanel({
           <NavCollapsibleSection
             id="messages-import-export"
             title="Messages"
-            headingActive={isActive("/import") || isActive("/export")}
+            headingActive={current("import") || current("export")}
           >
             <PlainButton
               onPress={() => navigate("/import")}
-              className={`${navGlyphRowClass(isActive("/import"))} cursor-pointer`}
+              aria-current={ariaCurrent("import")}
+              className={`${navGlyphRowClass(current("import"))} cursor-pointer`}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
@@ -236,7 +242,8 @@ export default function LeftPanel({
                     : "/export",
                 )
               }
-              className={`${navGlyphRowClass(isActive("/export"))} cursor-pointer`}
+              aria-current={ariaCurrent("export")}
+              className={`${navGlyphRowClass(current("export"))} cursor-pointer`}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>

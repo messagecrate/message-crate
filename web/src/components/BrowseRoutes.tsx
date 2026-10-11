@@ -1,7 +1,8 @@
 /**
  * The elements of the routes under the app layout, one per kind of page. Each
  * reads its own address, renders the columns beside the navigation panel, and
- * declares to the layout what the header searches (`useLayoutSection`).
+ * declares to the layout what the header searches and which navigation item
+ * it is on (`useLayoutSection`, `useLayoutNavItem`).
  */
 
 import { type ReactNode, useCallback, useState } from "react";
@@ -25,7 +26,7 @@ import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
-import { useAppLayout, useLayoutSection } from "./appLayoutContext";
+import { type NavItem, useAppLayout, useLayoutNavItem, useLayoutSection } from "./appLayoutContext";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import ContactDrawer from "./ContactDrawer";
 import {
@@ -139,6 +140,7 @@ function useConversationsSection({
     },
     onSearch,
     browseQuery: hasList ? (exportQuery.ready ? exportQuery.listQuery : listQuery) : "",
+    navItem: "messages",
   });
 }
 
@@ -262,6 +264,7 @@ export function ContactsRoute({ group }: { group?: "none" | "unknown" }) {
     onSearchChange: (q) => replaceSearchParams({ cq: q }),
     onSearch: (q) => navigate(searchedAddress(location.pathname, "cq", q)),
     browseQuery: "",
+    navItem: "contacts",
   });
 
   const [checkedContacts, setCheckedContacts] = useState<ContactPreview[]>([]);
@@ -345,6 +348,7 @@ export function TrashRoute({ children }: { children: ReactNode }) {
     onSearchChange: (q) => replaceSearchParams({ tq: q, tsel: "" }),
     onSearch: (q) => navigate(searchedAddress(location.pathname, "tq", q)),
     browseQuery: "",
+    navItem: "trash",
   });
 
   return (
@@ -367,8 +371,16 @@ export function TrashRoute({ children }: { children: ReactNode }) {
  * A screen with no list, such as Settings: it takes the whole width beside
  * the navigation panel, and declares no section, so the header offers no
  * search. Export carries `?q=` for its own scope box, which typing in the
- * header must never change (#1568).
+ * header must never change (#1568). `navItem` is the navigation panel's item
+ * the screen is on, such as Import; Settings has none.
  */
-export function NoListRoute({ children }: { children: ReactNode }) {
+export function NoListRoute({
+  navItem = null,
+  children,
+}: {
+  navItem?: NavItem | null;
+  children: ReactNode;
+}) {
+  useLayoutNavItem(navItem);
   return <main className={mainPaneClass}>{children}</main>;
 }
