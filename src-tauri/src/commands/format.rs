@@ -1,11 +1,11 @@
 //! `format` command — convert an existing extract directory to another format.
 
+use message_crate_core::{
+    ExporterConfig, FormatConfig, IssueSink, LogSink, MediaConfig, OutputFormat, ProgressSink,
+    SourceConfig,
+};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-
-use message_crate_core::{
-    ExporterConfig, FormatConfig, LogSink, MediaConfig, OutputFormat, SourceConfig,
-};
 
 use super::events;
 use super::jobs::{spawn_job, start_job};
@@ -67,13 +67,13 @@ pub fn format(
             timezone: None,
             obfuscate: Default::default(),
             media: MediaConfig::default(),
-            cancel: Some(cancel),
-            log: Some(LogSink::new(move |line: &str| {
+            cancel,
+            log: LogSink::new(move |line: &str| {
                 events::emit(&log_app, events::LOG, line.to_string());
-            })),
+            }),
             // Settings → Convert shows a log, not a progress bar.
-            progress: None,
-            issues: None,
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
             output_format: fmt,
             resume: false,
             source: SourceConfig::Format(FormatConfig { run_started }),

@@ -729,7 +729,7 @@ impl<'a> ImportPipeline<'a> {
 
     /// True once the caller asked the run to stop.
     fn is_cancelled(&self) -> bool {
-        check_cancel(self.cfg.cancel.as_ref()).is_err()
+        check_cancel(&self.cfg.cancel).is_err()
     }
 
     /// Lock the shared journal (panics only if another thread panicked while holding it).

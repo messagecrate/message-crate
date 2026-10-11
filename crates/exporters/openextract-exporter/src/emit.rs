@@ -29,7 +29,7 @@ const VENDOR_KEY: &str = "vendor_key";
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
-    pub convert_run: ConvertRun<'a>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert OpenExtract CSV(s) under `input`.
@@ -60,14 +60,14 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 
     let mut ingest = Ingest {
         conversations: BTreeMap::new(),
-        report: ExportReport::with_issues(issues.cloned()),
+        report: ExportReport::with_issues(issues.clone()),
     };
     let csv_files = discover_csv_files(input)?;
     for path in &csv_files {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         ingest.ingest_file(path);
     }
-    message_crate_core::check_cancel(cancel)?;
+    message_crate_core::check_cancel(&cancel)?;
     let Ingest {
         conversations,
         mut report,
@@ -103,7 +103,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     writer.finish(
         documents,
         &mut |att| (AttachmentSource::Missing, att.size_bytes),
-        cancel,
+        &cancel,
         &mut report,
     )?;
 

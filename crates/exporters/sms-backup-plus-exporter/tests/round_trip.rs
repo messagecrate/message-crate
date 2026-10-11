@@ -4,7 +4,7 @@
 use crate::SmsBackupPlusArchive;
 use crate::emit::{ConvertExportArgs, convert_export};
 use chrono::{TimeZone, Utc};
-use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, ExportTransforms, LogSink, OutputFormat};
 use message_ir::{ConversationDocument, IrDirection};
 use message_ir_format::{FormatSink, mark_export_directory, read_conversation_jsonl};
 use std::fs;
@@ -28,7 +28,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
-        log: None,
+        log: &LogSink::none(),
         phone_country: phone::country("US"),
         convert_run: ConvertRun {
             output_format: OutputFormat::Jsonl,

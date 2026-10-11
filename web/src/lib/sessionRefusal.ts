@@ -9,8 +9,8 @@
  * (#1491), and for the run's own calls (#1677).
  *
  * `auth.tsx` registers how to end the session here, and the run in
- * `screens/import/useImportJob.ts` calls it, without either depending on the
- * other.
+ * `screens/import/run/` (`serverCalls.ts`, `upload.ts`) calls it, without
+ * either depending on the other.
  */
 
 let endSession: (token: string) => void = () => {};

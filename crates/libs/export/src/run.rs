@@ -56,7 +56,7 @@ pub struct ExportConfig {
     /// `1..=MAX_PAGE_LIMIT`.
     pub page_limit: usize,
     /// Checked between pages and Asset fetches; set it to stop the run early.
-    pub cancel: Option<CancelFlag>,
+    pub cancel: CancelFlag,
     /// Number of workers that fetch Assets in parallel (default 8).
     pub asset_fetch_workers: usize,
 }
@@ -195,7 +195,7 @@ pub fn run(
     }
 
     // Nothing is recorded for a run the caller already gave up on.
-    check_cancel(cfg.cancel.as_ref())?;
+    check_cancel(&cfg.cancel)?;
     let export = exporter.start_export(&mut on_progress)?;
     let outcome = exporter.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
@@ -465,7 +465,7 @@ impl<'a> Export<'a> {
         let limit = cfg.page_limit.clamp(1, MAX_PAGE_LIMIT);
         let mut offset = 0usize;
         loop {
-            check_cancel(cfg.cancel.as_ref())?;
+            check_cancel(&cfg.cancel)?;
             let page = with_retries(MAX_RETRIES, || {
                 crate::http::export_messages(
                     &self.session,
@@ -552,7 +552,7 @@ impl<'a> Export<'a> {
                 assets: &to_fetch,
                 out_dir: &cfg.out_dir,
                 workers: cfg.asset_fetch_workers,
-                cancel: cfg.cancel.as_ref(),
+                cancel: &cfg.cancel,
             })?;
             emit(
                 out,
@@ -815,7 +815,7 @@ struct FetchAssetsParallelArgs<'a> {
     assets: &'a HashMap<String, String>, // sha256 -> rel_path
     out_dir: &'a Path,
     workers: usize,
-    cancel: Option<&'a CancelFlag>,
+    cancel: &'a CancelFlag,
 }
 
 /// Fetch each Asset in `assets` on `workers` threads and return the counts and
@@ -1179,7 +1179,7 @@ mod asset_fetch_tests {
             assets: &assets,
             out_dir: dir.path(),
             workers: 2,
-            cancel: None,
+            cancel: &CancelFlag::default(),
         })
         .unwrap();
 

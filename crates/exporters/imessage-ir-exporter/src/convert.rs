@@ -154,8 +154,8 @@ pub(crate) fn export(
     output: ExportWriterParts,
 ) -> Result<ExportReport> {
     let format = options.convert_run.output_format;
-    options.emit_log("");
-    options.emit_log(format!(
+    options.log.emit("");
+    options.log.emit(format!(
         "Preparing {} messages in {}",
         format.as_str(),
         options.export_path.display(),
@@ -168,7 +168,7 @@ pub(crate) fn export(
     } = output;
 
     let mut collected = collect(helper, options)?;
-    options.check_cancel()?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
     let failures = collected.failures;
     // Both arms below write every message collected: a conversation with no
     // messages adds none here and is not written.
@@ -184,7 +184,7 @@ pub(crate) fn export(
     // `attachments/`.
     let embeds = format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed;
     if !use_queue && embeds {
-        count_loads(&mut collected, options.log.as_ref());
+        count_loads(&mut collected, &options.log);
         check_headroom(
             &options.export_path,
             embedded_bytes(&collected),
@@ -234,7 +234,7 @@ pub(crate) fn export(
 /// for nothing (#1744) and is embedded as `file_missing`. A path in an
 /// encrypted backup names a file only the Apple Messages Reader can read,
 /// so it keeps its hint.
-fn count_loads(collected: &mut Collected, log: Option<&LogSink>) {
+fn count_loads(collected: &mut Collected, log: &LogSink) {
     let paths = if collected.encrypted {
         PathSources::ReadByLoader
     } else {
@@ -294,7 +294,7 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
     let stages_files = stages_attachment_files(options);
     let embed = options.attachment_embed;
     loop {
-        options.check_cancel()?;
+        message_crate_core::check_cancel(&options.convert_run.cancel)?;
         match helper.next_event()? {
             Event::Source {
                 encrypted: flag, ..
@@ -561,8 +561,8 @@ impl NotDecrypted {
     ) {
         let item = path.display().to_string();
         let line = item_line(ItemKind::Attachment, &item, &what_happened);
-        options.emit_log(line.clone());
-        options.emit_issue(RunIssue {
+        options.log.emit(line.clone());
+        options.convert_run.issues.emit(RunIssue {
             kind: RunIssueKind::Error,
             step: "attachments".into(),
             item,
@@ -617,7 +617,7 @@ fn read_attachment(
         };
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
-            options.emit_log(format!(
+            options.log.emit(format!(
                 "The decrypted copy of attachment {} at {} could not be removed: {why}",
                 path.display(),
                 temp.display()
@@ -642,7 +642,9 @@ fn read_attachment(
     match fs::read(path) {
         Ok(bytes) => Ok(bytes),
         Err(e) => {
-            options.emit_log(message_staging::unreadable_attachment_line(path, e));
+            options
+                .log
+                .emit(message_staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
@@ -661,7 +663,7 @@ fn embed_attachment_bytes(
         let mut loads = std::mem::take(&mut conversation.attachment_loads).into_iter();
         for message in &mut conversation.messages {
             for attachment in &mut message.attachments {
-                options.check_cancel()?;
+                message_crate_core::check_cancel(&options.convert_run.cancel)?;
                 let bytes = match loads.next() {
                     Some(AttachmentLoad::Path { path, .. }) => {
                         read_attachment(helper, options, encrypted, None, &path, not_decrypted)?
@@ -690,14 +692,18 @@ fn write_conversations(
 ) -> Result<u64> {
     let format = options.convert_run.output_format;
     let total = conversations.len();
-    options.emit_log("");
-    options.emit_log(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
-    options.emit_progress(ProgressEvent::Prepare { done: 0, total });
+    options.log.emit("");
+    options
+        .log
+        .emit(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
+    options
+        .progress
+        .emit(ProgressEvent::Prepare { done: 0, total });
     let backup_taken_at_unix_ms = options.backup_taken_at_unix_ms();
     let mut written = 0usize;
     let mut kept = 0u64;
     for (chat_identifier, conversation) in conversations {
-        options.check_cancel()?;
+        message_crate_core::check_cancel(&options.convert_run.cancel)?;
         written += 1;
         if conversation.messages.is_empty() {
             continue;
@@ -713,8 +719,8 @@ fn write_conversations(
         sink.write_document(doc)
             .map_err(|e| anyhow!("write {} for {}: {e:#}", format.as_str(), document_id))?;
         if written.is_multiple_of(CONVERSATION_PROGRESS_EVERY) || written == total {
-            options.emit_log(format!("  preparing {written}/{total}"));
-            options.emit_progress(ProgressEvent::Prepare {
+            options.log.emit(format!("  preparing {written}/{total}"));
+            options.progress.emit(ProgressEvent::Prepare {
                 done: written,
                 total,
             });
@@ -831,9 +837,9 @@ fn drain_conversations(
         writer_count: 0,
     };
     let sinks = message_staging::Sinks {
-        log: options.log.as_ref(),
-        progress: options.progress.as_ref(),
-        cancel: options.convert_run.cancel,
+        log: &options.log,
+        progress: &options.progress,
+        cancel: &options.convert_run.cancel,
     };
 
     let queue_report = if collected.encrypted {
@@ -907,7 +913,7 @@ fn stage_attachments(
             PathSources::OnDisk
         },
         |att| attachment_source(loads.next(), att),
-        options.log.as_ref(),
+        &options.log,
     );
     if stages_attachment_files(options) {
         check_headroom(
@@ -937,9 +943,9 @@ fn stage_attachments(
                 }
                 other => load_attachment_source(other),
             },
-            options.log.as_ref(),
-            options.progress.as_ref(),
-            options.convert_run.cancel,
+            &options.log,
+            &options.progress,
+            &options.convert_run.cancel,
         )
         .map_err(|e| anyhow!(e))
         .context("stage attachments")?;
@@ -949,6 +955,7 @@ fn stage_attachments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::ProgressSink;
     use message_ir::TimePrecision;
     use message_ir::testutil::sample_attachment;
 
@@ -970,7 +977,7 @@ mod tests {
         }
     }
 
-    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions<'static> {
+    fn options(output_format: OutputFormat, obfuscate: bool) -> ExportOptions {
         ExportOptions {
             source: imessage_reader_protocol::Source {
                 db_path: PathBuf::from("/nowhere/chat.db"),
@@ -983,8 +990,8 @@ mod tests {
             export_path: PathBuf::from("/nowhere/out"),
             scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
-            log: None,
-            progress: None,
+            log: LogSink::none(),
+            progress: ProgressSink::none(),
             convert_run: message_crate_core::ConvertRun {
                 transforms: message_crate_core::ExportTransforms {
                     obfuscate,
@@ -1003,9 +1010,9 @@ mod tests {
         let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let sink_lines = std::sync::Arc::clone(&lines);
         let mut options = options(OutputFormat::Jsonl, false);
-        options.log = Some(LogSink::new(move |l: &str| {
+        options.log = LogSink::new(move |l: &str| {
             sink_lines.lock().unwrap().push(l.to_string());
-        }));
+        });
 
         let mut not_decrypted = NotDecrypted::default();
         not_decrypted.record(
@@ -1299,7 +1306,7 @@ mod tests {
             encrypted,
             failures: 0,
         };
-        count_loads(&mut collected, None);
+        count_loads(&mut collected, &LogSink::none());
         embedded_bytes(&collected)
     }
 

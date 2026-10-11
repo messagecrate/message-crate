@@ -432,7 +432,7 @@ fn a_full_scratch_disk_is_reported_as_the_free_space_sentence() {
         &bin,
         &android_run_args(&input, &work),
         &work.join("result.json"),
-        None,
+        &LogSink::none(),
     )
     .unwrap_err()
     .to_string();
@@ -477,7 +477,7 @@ fn a_failed_runs_output_goes_to_the_log_as_a_warning() {
         &bin,
         &android_run_args(&input, &work),
         &work.join("result.json"),
-        Some(&log),
+        &log,
     )
     .unwrap_err()
     .to_string();
@@ -518,7 +518,7 @@ fn any_other_wtsexporter_failure_is_reported_as_it_is() {
         &bin,
         &android_run_args(&input, &work),
         &work.join("result.json"),
-        None,
+        &LogSink::none(),
     )
     .unwrap_err()
     .to_string();
@@ -551,7 +551,7 @@ fn the_partial_database_goes_with_the_work_directory() {
         &bin,
         &android_run_args(&input, work.path()),
         &work.path().join("result.json"),
-        None,
+        &LogSink::none(),
     )
     .unwrap_err();
     let partial = work.path().join("msgstore.db");

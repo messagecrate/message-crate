@@ -1312,10 +1312,7 @@ fn every_api_error_answers_the_status_its_problem_type_declares() {
             ApiError::UnsupportedMediaType("x".into()),
             StatusCode::UNSUPPORTED_MEDIA_TYPE,
         ),
-        (
-            ApiError::PayloadTooLarge("x".into()),
-            StatusCode::PAYLOAD_TOO_LARGE,
-        ),
+        (ApiError::PayloadTooLarge, StatusCode::PAYLOAD_TOO_LARGE),
         (
             ApiError::InvalidCredentials("x".into()),
             StatusCode::UNAUTHORIZED,
@@ -1428,7 +1425,6 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
     let variants: Vec<fn(String) -> ApiError> = vec![
         ApiError::MalformedBody,
         ApiError::UnsupportedMediaType,
-        ApiError::PayloadTooLarge,
         ApiError::InvalidCredentials,
         ApiError::AuthenticationRequired,
         ApiError::UsernameTaken,
@@ -1484,7 +1480,7 @@ async fn discard_body_refuses_a_body_over_the_cap() {
     let error = discard_body(body, 1024).await.unwrap_err();
 
     assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
-    assert_eq!(error.to_string(), "request body too large");
+    assert_eq!(error.to_string(), "the request body is too large");
 }
 
 #[tokio::test]
@@ -2023,7 +2019,10 @@ async fn put_chunked(base: &str, path: &str, token: &str, body: &[u8]) -> (Statu
 }
 
 /// An attachment upload with no `Content-Length` and a body over the
-/// attachment size limit answers 413, as one with a `Content-Length` does.
+/// attachment size limit answers 413, as one with a `Content-Length` does,
+/// and with the same `detail`: the limit layer refuses the sized body and the
+/// upload route the chunked one, and a client must not see two sentences for
+/// one condition.
 #[tokio::test]
 async fn a_chunked_attachment_upload_over_the_limit_is_413() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
@@ -2038,8 +2037,24 @@ async fn a_chunked_attachment_upload_over_the_limit_is_413() {
         &[b'x'; 4096],
     )
     .await;
+    let sized = http_client()
+        .put(format!("{}/v1/assets/{sha}", server.base()))
+        .bearer_auth(&user.token)
+        .header(header::CONTENT_TYPE, "image/png")
+        .body(vec![b'x'; 4096])
+        .send()
+        .await
+        .unwrap();
+    let sized_status = sized.status();
+    let sized_text = sized.text().await.unwrap();
 
-    expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    let chunked = expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    let sized = expect_problem(sized_status, &sized_text, ProblemType::PayloadTooLarge);
+    assert_eq!(
+        chunked.detail.as_deref(),
+        Some("the request body is too large")
+    );
+    assert_eq!(sized.detail, chunked.detail);
 }
 
 /// A part of a multipart upload with no `Content-Length` and a body over the
@@ -2072,7 +2087,12 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
 
     let (status, text) = put_chunked(server.base(), &path, &user.token, &[b'x'; 17]).await;
 
-    expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    let problem = expect_problem(status, &text, ProblemType::PayloadTooLarge);
+    assert_eq!(
+        problem.detail.as_deref(),
+        Some("the request body is too large"),
+        "a chunked part reads as a sized one does: {text}"
+    );
 }
 
 /// The server's log names every request, and a media link in a URL is a

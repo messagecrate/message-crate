@@ -508,13 +508,45 @@ fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
     if status.success() {
         return Ok(());
     }
-    let said = String::from_utf8_lossy(&tail);
-    let said = said.trim();
-    if said.is_empty() {
-        bail!("ffmpeg failed ({status})")
+    Err(FfmpegFailed {
+        status,
+        said: String::from_utf8_lossy(&tail).trim().to_string(),
     }
-    bail!("ffmpeg failed ({status}): {said}")
+    .into())
 }
+
+/// ffmpeg ran and exited with a failure: its exit status and the end of
+/// what it wrote to stderr, which says what it found wrong with the file.
+/// A caller that keeps the reason finds this in the error's chain
+/// (`anyhow::Error::downcast_ref`), apart from the errors this crate writes
+/// itself, such as ffmpeg not being found.
+#[derive(Debug)]
+pub struct FfmpegFailed {
+    status: ExitStatus,
+    said: String,
+}
+
+impl FfmpegFailed {
+    /// The last lines ffmpeg wrote to stderr, trimmed, at most
+    /// [`STDERR_TAIL_BYTES`]; empty when it said nothing. It names each file
+    /// as it was passed to ffmpeg, so it can carry full paths.
+    #[must_use]
+    pub fn said(&self) -> &str {
+        &self.said
+    }
+}
+
+impl std::fmt::Display for FfmpegFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ffmpeg failed ({})", self.status)?;
+        if !self.said.is_empty() {
+            write!(f, ": {}", self.said)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for FfmpegFailed {}
 
 /// Read `source` to its end and return its last `limit` bytes, starting at a
 /// line when the start was dropped.

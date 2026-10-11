@@ -58,7 +58,10 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
           </PlainButton>
         ) : null}
         {media.note ? (
-          <span className="mx-3 rounded bg-media-control px-2 py-1 text-center text-[0.75rem] text-lightbox-text">
+          <span
+            title={media.note}
+            className="mx-3 line-clamp-3 break-words rounded bg-media-control px-2 py-1 text-center text-[0.75rem] text-lightbox-text"
+          >
             {media.note}
           </span>
         ) : null}

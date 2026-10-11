@@ -104,6 +104,30 @@ pub async fn link_identity(conn: &mut sqlx::SqliteConnection, account_id: i64, h
         .unwrap();
 }
 
+/// Run `edit` on `conn` with the schema's trigger `trigger` lifted, then put
+/// it back as the schema wrote it. For a test that makes a write the schema
+/// refuses, such as standing an Audit Trail entry in the past
+/// (`audit_entries_never_edited`), which the server never does.
+pub async fn with_trigger_lifted<T>(
+    conn: &mut sqlx::SqliteConnection,
+    trigger: &str,
+    edit: impl AsyncFnOnce(&mut sqlx::SqliteConnection) -> T,
+) -> T {
+    let sql: String =
+        sqlx::query_scalar("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = $1")
+            .bind(trigger)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap_or_else(|e| panic!("read trigger {trigger}: {e:#}"));
+    sqlx::raw_sql(&format!("DROP TRIGGER {trigger}"))
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    let result = edit(&mut *conn).await;
+    sqlx::raw_sql(&sql).execute(&mut *conn).await.unwrap();
+    result
+}
+
 /// Insert an `accounts` row with a chosen id on `conn`, with no password
 /// and no preferred name, for a test that has a connection rather than a
 /// [`TestFixture`]. Returns the id it was given.

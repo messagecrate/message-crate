@@ -152,7 +152,9 @@ vi.mock("../../lib/importRun", async (importOriginal) => {
 });
 
 // Imported after the mocks above so useImportJob picks up the mocked modules.
-const { useImportJob, parseStoredStagingSummary, resetImportRun } = await import("./useImportJob");
+const { useImportJob } = await import("./useImportJob");
+const { resetImportRun } = await import("./run/scratch");
+const { parseStoredStagingSummary } = await import("./run/stagingSummary");
 const { ConvertSection } = await import("../settings/ConvertSection");
 
 /**

@@ -28,7 +28,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let SourceConfig::Whatsapp(source) = &config.source else {
         bail!("whatsapp-exporter requires SourceConfig::Whatsapp");
     };
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+    message_crate_core::check_cancel(&config.cancel)?;
     let mut messages = Vec::new();
 
     let platform = match source.platform {
@@ -95,14 +95,14 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             None => env::current_dir().context("resolve current working directory")?,
         };
 
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+        message_crate_core::check_cancel(&config.cancel)?;
         let bin = resolve_wtsexporter()?;
         let work = mark_output_and_make_work_directory(config)?;
         let json_out = work.path().join("result.json");
 
         // Cooperative only: cancel is checked before and after the external process.
         // Killing wtsexporter mid-run is not implemented.
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+        message_crate_core::check_cancel(&config.cancel)?;
         let mut args = WtsexporterArgs {
             platform,
             input: input.clone(),
@@ -131,9 +131,9 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
                 check_headroom(work.path(), bytes, Disk::Scratch)?;
             }
         }
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
-        let log = run_wtsexporter(&bin, &args, &json_out, config.log.as_ref())?;
-        message_crate_core::check_cancel(config.cancel.as_ref())?;
+        message_crate_core::check_cancel(&config.cancel)?;
+        let log = run_wtsexporter(&bin, &args, &json_out, &config.log)?;
+        message_crate_core::check_cancel(&config.cancel)?;
 
         if !log.trim().is_empty() {
             let trimmed = log.trim_end_matches('\n');
@@ -182,7 +182,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         bail!("JSON not found: {}", json_path.display());
     }
 
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+    message_crate_core::check_cancel(&config.cancel)?;
     let convert_run = config.convert_run();
     let needs_media_tools = convert_run.transforms.needs_media_tools();
     let report = convert_json(ConvertRequest {
@@ -279,8 +279,9 @@ fn mark_output_and_make_work_directory(config: &ExporterConfig) -> Result<Scratc
 #[cfg(test)]
 mod tests {
     use crate::wtsexporter::WtsexporterArgs;
-    use message_crate_core::testutil::jsonl_run_config;
-    use message_crate_core::{ExporterConfig, SourceConfig, WhatsappConfig};
+    use message_crate_core::{
+        ExporterConfig, SourceConfig, WhatsappConfig, testutil::jsonl_run_config,
+    };
     use std::fs;
     use std::path::{Path, PathBuf};
 

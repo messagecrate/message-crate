@@ -1131,6 +1131,179 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
 }
 
+/// Why each version of one attachment row was not made: Preview, then
+/// Thumbnail.
+async fn not_made_reasons(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> (Option<String>, Option<String>) {
+    sqlx::query_as(
+        "SELECT preview_not_made_reason, thumbnail_not_made_reason
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// A version that could not be made keeps why on its rows, for the `/v1`
+/// Attachment, until a later pass makes it. A dry run records nothing.
+#[test]
+fn why_a_version_was_not_made_is_kept_until_it_is_made() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        let bytes = fs::read(&original).unwrap();
+        fs::remove_file(&original).unwrap();
+        let dry_run = ProcessAssetsOptions {
+            dry_run: true,
+            ..Default::default()
+        };
+
+        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap();
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+        let missing = Some("the original file is missing".to_string());
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (missing.clone(), missing)
+        );
+
+        fs::write(&original, bytes).unwrap();
+        assert_eq!(
+            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+                .await
+                .unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+    });
+}
+
+/// A remake under `--force` that fails leaves the working versions the rows
+/// name, so the `/v1` Attachment must not answer a reason beside them.
+#[test]
+fn a_failed_remake_of_a_working_version_records_no_reason() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+        let made = derived_of(&mut conn, attachment_id).await;
+        assert!(made.is_some(), "the first run makes the Preview");
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::write(&original, b"not a picture at all").unwrap();
+        let force = ProcessAssetsOptions {
+            force: true,
+            ..Default::default()
+        };
+
+        let stats = run(&opened, &force, &NOT_STOPPED).await.unwrap();
+
+        assert_eq!(stats.not_made, 1, "{stats:?}");
+        assert_eq!(derived_of(&mut conn, attachment_id).await, made);
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+    });
+}
+
+/// A Preview the rows name but whose file is gone works no better than none,
+/// so when its original is missing too, the rows that name it say why it
+/// could not be made.
+#[tokio::test]
+async fn a_named_preview_whose_file_is_gone_gets_the_reason_with_its_original_missing() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let preview = name_version(
+        &opened,
+        &mut conn,
+        attachment_id,
+        Version::Preview,
+        &"c".repeat(64),
+        b"x",
+    )
+    .await;
+    fs::remove_file(&preview).unwrap();
+    let original = opened
+        .cfg
+        .paths
+        .assets_dir_for_account(ACCOUNT)
+        .join(format!("ab/{SHA}"));
+    fs::remove_file(&original).unwrap();
+
+    run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+        .await
+        .unwrap();
+
+    let missing = Some("the original file is missing".to_string());
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (missing.clone(), missing)
+    );
+}
+
+/// An original decided to be shown as it is needs no Preview, so why an
+/// earlier Preview could not be made goes with that decision.
+#[tokio::test]
+async fn deciding_an_original_is_shown_as_it_is_clears_why_its_preview_was_not_made() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let rows = OriginalRows {
+        account_id: ACCOUNT,
+        original_sha: SHA,
+    };
+    for version in Version::ALL {
+        let not_made = versions_db::NotMade {
+            rows,
+            version,
+            named: None,
+            reason: "bad file",
+        };
+        versions_db::record_not_made(&mut conn, not_made)
+            .await
+            .unwrap();
+    }
+
+    versions_db::record_shown_as_is(&mut conn, rows, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (Some("bad file".into()), Some("bad file".into()))
+    );
+
+    versions_db::record_shown_as_is(&mut conn, rows, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (None, Some("bad file".into())),
+        "only the Preview's reason goes: a Thumbnail is still made"
+    );
+}
+
 /// A damaged Preview whose original is missing cannot be converted again.
 /// The run drops it rather than leave the rows naming it, so the server
 /// stops serving it as if whole: every row that names it, from every

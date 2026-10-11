@@ -64,7 +64,7 @@ pub fn export(
             list: args.list,
             skip_attachments: args.skip_attachments,
             page_limit: DEFAULT_PAGE_LIMIT,
-            cancel: Some(cancel),
+            cancel,
             asset_fetch_workers: DEFAULT_ASSET_FETCH_WORKERS,
         };
 

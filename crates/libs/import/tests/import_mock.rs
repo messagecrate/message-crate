@@ -4,7 +4,7 @@
 //! `.import-state.jsonl`, a local log of which conversations and files
 //! were already uploaded.
 
-use message_crate_core::RunIssueKind;
+use message_crate_core::{CancelFlag, RunIssueKind};
 use message_crate_import::ImportMode;
 use std::fs;
 use std::io::Write;
@@ -120,7 +120,7 @@ fn mock_server_config(dir: &Path, base_url: String) -> ImportConfig {
         asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
         asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(dir.join("message-crate-import.log")),
-        cancel: None,
+        cancel: CancelFlag::default(),
         import_id: None,
         phone_country: None,
     }
@@ -533,7 +533,7 @@ fn run_paused_upload(
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        cancel: Some(cancel.clone()),
+        cancel: cancel.clone(),
         ..mock_server_config(dir, server.base_url())
     };
     let mut finished = None;
@@ -1131,7 +1131,7 @@ fn profiles_attachment_upload_phases() {
         asset_multipart_threshold: message_crate_import::MAX_PROXY_BODY_BYTES,
         asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
         log_path: Some(log_path.clone()),
-        cancel: None,
+        cancel: CancelFlag::default(),
         import_id: None,
         phone_country: None,
     };
@@ -2607,7 +2607,7 @@ fn a_cancelled_import_sends_no_further_batch_and_resumes_later() {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        cancel: Some(cancel.clone()),
+        cancel: cancel.clone(),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -2682,7 +2682,7 @@ fn a_cancelled_import_reports_every_conversation_in_one_category() {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        cancel: Some(cancel.clone()),
+        cancel: cancel.clone(),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -2760,7 +2760,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
         batch_size: 1,
         prepare_ahead: 1,
         prepare_workers: 1,
-        cancel: Some(cancel.clone()),
+        cancel: cancel.clone(),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -2824,7 +2824,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     let cancel = Arc::new(AtomicBool::new(false));
     let cfg = ImportConfig {
         batch_size: 1,
-        cancel: Some(cancel.clone()),
+        cancel: cancel.clone(),
         ..mock_server_config(dir.path(), server.base_url())
     };
 
@@ -3396,7 +3396,16 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
             "conversations": 1
         }));
     });
-    let resumed = run(&cfg, None).unwrap();
+    // The refusal set the first run's cancel flag, so the next Upload starts
+    // with a flag of its own, as the desktop app's does.
+    let resumed = run(
+        &ImportConfig {
+            cancel: CancelFlag::default(),
+            ..cfg.clone()
+        },
+        None,
+    )
+    .unwrap();
 
     assert!(resumed.ok, "{:?}", resumed.results);
     assert!(!resumed.session_refused);

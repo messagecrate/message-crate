@@ -111,6 +111,7 @@ mod faults {
     };
 
     use crate::testutil::{fake_helper, source_line, spawn_fake};
+    use message_crate_core::ProgressSink;
 
     /// A request that expects a `source` event first.
     fn identities_request() -> Request {
@@ -261,8 +262,12 @@ mod faults {
         // open for writing (`ETXTBSY`), as `spawn_fake` does.
         let mut helper = (0..50)
             .find_map(|_| {
-                match crate::Helper::spawn_at(&path, &identities_request(), Some(log.clone()), None)
-                {
+                match crate::Helper::spawn_at(
+                    &path,
+                    &identities_request(),
+                    log.clone(),
+                    ProgressSink::none(),
+                ) {
                     Ok(helper) => Some(helper),
                     Err(_) => {
                         std::thread::sleep(std::time::Duration::from_millis(20));

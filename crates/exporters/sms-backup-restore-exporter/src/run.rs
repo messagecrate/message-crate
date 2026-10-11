@@ -15,7 +15,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let SourceConfig::SmsBackupRestore(source) = &config.source else {
         bail!("sms-backup-restore-exporter requires SourceConfig::SmsBackupRestore");
     };
-    message_crate_core::check_cancel(config.cancel.as_ref())?;
+    message_crate_core::check_cancel(&config.cancel)?;
     let input = config.require_input().map_err(anyhow::Error::msg)?;
     let (inputs, output_dir) = prepare_outputs(&[input.to_path_buf()], &config.output)?;
     message_crate_core::run_pipeline(config, |convert_run| {
@@ -31,8 +31,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 
 #[cfg(test)]
 mod tests {
-    use message_crate_core::testutil::jsonl_run_config;
-    use message_crate_core::{SmsBackupRestoreConfig, SourceConfig};
+    use message_crate_core::{SmsBackupRestoreConfig, SourceConfig, testutil::jsonl_run_config};
     use std::fs;
     use std::path::Path;
 
