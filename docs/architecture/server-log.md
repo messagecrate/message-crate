@@ -62,6 +62,25 @@ written with `%`, so the file writer escapes them all. A terminal that
 decodes UTF-8 can act on U+0080 to U+009F as well, and U+009B alone starts a
 sequence as ESC `[` does.
 
+## A refused request names its problem type
+
+Every request leaves an `INFO` line with its method, path, status and
+latency. A request the server refuses with a `4xx` leaves one more line,
+written where its problem document is built, with the problem type's slug
+and the status (`problem=invalid-credentials status=401`). It is at `WARN`
+for `401 Unauthorized`, `403 Forbidden` and `429 Too Many Requests`, and at
+`INFO` for every other refusal. The problem's `detail` is never written.
+
+Why `WARN` for those three: a run of them is what a password guesser or an
+API token that lost its rights looks like, and the owner's Logs panel opens
+at warnings and up. A `404` or a refused search is a client asking for
+something that is not there, which the owner has nothing to do about.
+
+Why not `detail`: it can repeat what a person typed, such as a search word or
+a value that broke a rule, and a line holds only outcomes (below). The slug
+says which problem it was, and the request id joins the line to the answer
+the client received.
+
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past
@@ -147,7 +166,8 @@ rule by whoever writes it.
 `crates/server/server/tests/server_log.rs` checks it: it runs `serve` at
 `RUST_LOG=trace`, has an owner, an account and an API token log in, import a
 conversation with a named contact and an attachment, search, open the
-attachment through a media link and change a password, and then fails if any
-of those passwords, tokens (or their hashes), the message's words, the
+attachment through a media link, change a password, log in with a wrong
+password and send a search the server refuses, and then fails if any of
+those passwords, tokens (or their hashes), the message's words, the
 attachment's bytes, or the contact's name, phone number or email address is in
 any file of the log.

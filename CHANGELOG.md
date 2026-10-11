@@ -294,6 +294,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The server's log says why it refused a request.** A wrong
+  password, a request without the right to what it asked for, and a client
+  that asked too often now each leave a warning in the server's log naming
+  which of those it was, so Owner Home's Logs shows them at its opening
+  filter. Before, they were in the log only as a status number, under
+  everything, and a person guessing passwords showed nothing among the
+  warnings. Other refused requests also name their reason now, among
+  everything. What the person typed is never written to the log (#2168).
+
 - 2026-10-10: **A screen the server refuses shows its error at once.**
   When the server refused to show something, because it was not found, not
   allowed, or asked too often, the website and the desktop app asked a second

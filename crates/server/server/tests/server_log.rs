@@ -1,6 +1,7 @@
 //! What the server's log holds after a real `serve` process has handled an
 //! owner, an account, an API token, an Import Run, an attachment, a media
-//! link and searches: the requests, and never a password, a session or API
+//! link, searches and refused requests: the requests and the problem types
+//! they were refused with, and never a password, a session or API
 //! token (hashed or not), message text, attachment bytes, or a contact's
 //! name or identities (`docs/architecture/server-log.md`, ADR 0008).
 //!
@@ -23,6 +24,8 @@ use common::{empty_message_crate, listen, serve};
 
 /// The account's new password.
 const ALICE_NEW_PASSWORD: &str = "Alice-Pw-Next-5Hd2Qm";
+/// A password that is not the account's, which a refused login sends.
+const WRONG_PASSWORD: &str = "Wrong-Pw-8Tc4Jy6n";
 /// What the imported message says, and the word a search looks for.
 const MESSAGE_TEXT: &str = "Meet me by the Tangerine Lighthouse at nine";
 const SEARCH_WORD: &str = "Tangerine";
@@ -199,6 +202,27 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     assert_eq!(status, S::OK, "{changed}");
     let alice_next = changed["token"].as_str().unwrap().to_string();
 
+    // Two refusals, whose lines name the problem type: a wrong password, and
+    // a search whose detail repeats the word typed.
+    let (status, answer) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
+        Some(&alice_next),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
+
     // The owner reads the log back through its route.
     let (status, lines) = call(
         base,
@@ -226,6 +250,8 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         "/v1/imports",
         "/v1/messages?q=",
         "media_link=",
+        "problem=invalid-credentials",
+        "problem=search-query-invalid",
     ] {
         assert!(log.contains(expected), "the log names {expected}");
     }
@@ -236,6 +262,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
         ("the owner's password", OWNER_PASSWORD.to_string()),
         ("the account's password", ALICE_PASSWORD.to_string()),
         ("the account's new password", ALICE_NEW_PASSWORD.to_string()),
+        ("a wrong password", WRONG_PASSWORD.to_string()),
         ("a password hash", "$argon2".to_string()),
         ("the message text", MESSAGE_TEXT.to_string()),
         ("a word of the message", SEARCH_WORD.to_string()),
@@ -339,4 +366,116 @@ async fn an_import_under_serve_says_its_progress_in_the_log_and_nothing_on_stand
             "the log has an info line with {expected:?}:\n{log}"
         );
     }
+}
+
+/// A refused request leaves a line with its problem type and status, at
+/// `WARN` when it is about who may do what (`401`, `403`, `429`) and at
+/// `INFO` for the rest, so the owner's Logs panel, which opens at warnings
+/// and up, shows a password guesser or a token that lost its rights (#2168).
+/// The line never holds the problem's `detail`, which can repeat what a
+/// person typed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_request_leaves_a_line_with_its_problem_type() {
+    use reqwest::Method;
+    use reqwest::StatusCode as S;
+
+    let root = tempfile::tempdir().unwrap();
+    let (data_dir, static_dir) = empty_message_crate(root.path());
+    let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "info"));
+    let base = format!("http://{address}");
+    let base = base.as_str();
+    let Claimed {
+        owner_token: owner,
+        alice_token: alice,
+        ..
+    } = claimed_with_account(base).await;
+
+    // A wrong password, an account reading the owner's log, and a search
+    // whose detail repeats the word typed.
+    let (status, answer) = call(
+        base,
+        Method::POST,
+        "/v1/session",
+        None,
+        json_body(&json!({ "username": "alice", "password": WRONG_PASSWORD })),
+    )
+    .await;
+    assert_eq!(status, S::UNAUTHORIZED, "{answer}");
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        "/v1/server/log-lines",
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::FORBIDDEN, "{answer}");
+    let (status, answer) = call(
+        base,
+        Method::GET,
+        &format!("/v1/messages?q=date:{SEARCH_WORD}"),
+        Some(&alice),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::UNPROCESSABLE_ENTITY, "{answer}");
+    assert!(
+        answer["detail"].as_str().unwrap().contains(SEARCH_WORD),
+        "the detail repeats the word, so the check that the log leaves it out means something: {answer}"
+    );
+
+    let (log, _) = log_text(&data_dir);
+    let refusal = |level: &str, problem: &str, status: u16, path: &str| {
+        log.lines().any(|line| {
+            line.contains(&format!(" {level} "))
+                && line.contains(path)
+                && line.contains(&format!("problem={problem}"))
+                && line.contains(&format!("status={status}"))
+        })
+    };
+    assert!(
+        refusal("WARN", "invalid-credentials", 401, "/v1/session"),
+        "the wrong password is a warning with its problem type:\n{log}"
+    );
+    assert!(
+        refusal("WARN", "not-the-owner", 403, "/v1/server/log-lines"),
+        "the account refused the owner's log is a warning with its problem type:\n{log}"
+    );
+    assert!(
+        refusal("INFO", "search-query-invalid", 422, "/v1/messages"),
+        "the refused search is an info line with its problem type:\n{log}"
+    );
+    for (what, needle) in [
+        ("the wrong password", WRONG_PASSWORD),
+        ("the word the search typed", SEARCH_WORD),
+    ] {
+        let lines: Vec<&str> = log.lines().filter(|line| line.contains(needle)).collect();
+        assert!(
+            lines.is_empty(),
+            "the log holds {what}:\n{}",
+            lines.join("\n")
+        );
+    }
+
+    // The owner's Logs panel opens at warnings and up, and shows the two.
+    let (status, lines) = call(
+        base,
+        Method::GET,
+        "/v1/server/log-lines?level=warn&limit=500",
+        Some(&owner),
+        None,
+    )
+    .await;
+    assert_eq!(status, S::OK, "{lines}");
+    let warnings = lines["items"].to_string();
+    for problem in ["invalid-credentials", "not-the-owner"] {
+        assert!(
+            warnings.contains(problem),
+            "the warnings hold {problem}: {lines}"
+        );
+    }
+    assert!(
+        !warnings.contains("search-query-invalid"),
+        "a refused search is not a warning: {lines}"
+    );
 }
