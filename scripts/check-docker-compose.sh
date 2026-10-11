@@ -30,8 +30,10 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
 WEBSITE=false
+served="the Demo Account"
 if [[ "${1:-}" == "--website" ]]; then
   WEBSITE=true
+  served="the Demo Account and its website"
   shift
 fi
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -118,8 +120,4 @@ if [[ ${failures} -gt 0 ]]; then
   echo "Docker Compose check failed (${failures} failure(s))." >&2
   exit 1
 fi
-if [[ "${WEBSITE}" == "true" ]]; then
-  echo "The release Compose stack runs with its privileges dropped and serves the Demo Account and its website."
-else
-  echo "The release Compose stack runs with its privileges dropped and serves the Demo Account."
-fi
+echo "The release Compose stack runs with its privileges dropped and serves ${served}."
