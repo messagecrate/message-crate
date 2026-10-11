@@ -189,7 +189,7 @@ pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAss
         Ok(actual) if actual == stored.sha256 => Some(stored),
         Ok(_) => None,
         Err(error) => {
-            if !asset_uploads::is_not_found(&error) {
+            if !is_not_found(&error) {
                 tracing::warn!(
                     path = %path.display(),
                     error = format!("{error:#}"),
@@ -459,6 +459,13 @@ pub fn hash_and_store(
         stats.copied += 1;
     }
     Ok(Some(stored))
+}
+
+/// Whether an I/O error somewhere in `err` is a file or directory not found.
+pub(crate) fn is_not_found(err: &anyhow::Error) -> bool {
+    err.chain()
+        .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
+        .any(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// SHA-256 fingerprint of the file at `path`, as 64 lowercase hex digits.

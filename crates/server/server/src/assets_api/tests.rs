@@ -371,21 +371,26 @@ fn verified_lookup_logs_a_stored_asset_it_cannot_read() {
 }
 
 /// A stored Asset removed between the lookup and the hash is simply gone,
-/// not a fault to log; a symlink put in its place is refused, not gone
-/// (#2171).
-#[cfg(unix)]
+/// not a fault to log (#2171).
 #[test]
-fn hashing_a_missing_file_is_not_found_and_hashing_a_symlink_is_not() {
+fn hashing_a_missing_file_is_not_found() {
     let dir = tempdir().unwrap();
     let missing = hash_file(&dir.path().join("gone")).unwrap_err();
-    assert!(asset_uploads::is_not_found(&missing), "{missing:#}");
+    assert!(is_not_found(&missing), "{missing:#}");
+}
 
+/// A symlink put in a stored Asset's place is refused, not gone, so it is
+/// logged (#2171).
+#[cfg(unix)]
+#[test]
+fn hashing_a_symlink_is_not_not_found() {
+    let dir = tempdir().unwrap();
     let target = dir.path().join("target");
     fs::write(&target, b"bytes").unwrap();
     let link = dir.path().join("link");
     std::os::unix::fs::symlink(&target, &link).unwrap();
     let refused = hash_file(&link).unwrap_err();
-    assert!(!asset_uploads::is_not_found(&refused), "{refused:#}");
+    assert!(!is_not_found(&refused), "{refused:#}");
 }
 
 #[test]
