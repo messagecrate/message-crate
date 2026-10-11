@@ -129,6 +129,8 @@ The screen has three tabs: **Account**, **Profile**, and **Storage**.
 
 **Status** is **Active** or **Disabled**.
 The server refuses a disabled account's login, and refuses every request from a Session the account already has open.
+The login answers a disabled account the same way it answers a wrong password.
+The Owner tells the account's holder that the account is disabled.
 The account's messages stay where they are.
 
 **Message Permissions** has three checkboxes: **Import**, **Export**, and **Delete**.

@@ -256,6 +256,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Logging in to a disabled account no longer tells a guesser
+  the password was right.** A disabled account's login used to say the
+  account was disabled only when the password was right. A wrong password got
+  the usual "invalid username or password". So someone guessing learned which
+  guess worked. That password works again once the owner enables the
+  account. Every refused login now gets the same answer. The
+  Audit Trail still records that the login was refused because the account
+  is disabled (#2145).
 - 2026-10-10: **A password typed into the username field no longer reaches
   the Audit Trail.** A refused login for a username that matches no account
   kept the text exactly as typed for 90 days, so a password typed into the wrong
@@ -599,6 +607,17 @@ released versions carry their date on the heading.
   identity again lists you as before, with the name the backup gave, and a
   conversation that is no longer with yourself gets its person back, with a
   contact. Messages are not changed (#1662).
+
+#### The server
+
+- 2026-10-10: **The Docker image no longer lets pages on port 5173 call its
+  server.** The image's settings allowed web pages from port 5173 on the
+  viewer's computer, the port a Message Crate developer's tools use, to call
+  the server. Nothing in a release uses that port, so the only effect was
+  that any page served on it could call a Message Crate in Docker, though it
+  still needed a login to read anything. The image now allows only the
+  desktop app and the website the server serves itself, as a Message Crate
+  started by the desktop app does (#2144).
 
 ### Upgrading
 
