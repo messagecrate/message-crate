@@ -7,6 +7,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
+import { importForm } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -65,30 +66,16 @@ vi.mock("react-router-dom", async (importOriginal) => ({
   useNavigate: () => navigateMock,
 }));
 
+/** The run this file shows: an iPhone backup whose attachments are converted. */
 function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues {
-  return {
-    source: "imessage-ios",
+  return importForm({
     backupPath: "/backups/iphone",
-    backupPassword: "",
     attachmentMedia: "convert",
     maxResolution: "720p",
     maxFps: "30",
     minSizeMb: "20",
-    ownerPhones: [],
-    ownerEmails: [],
-    obfuscate: false,
-    attachmentRoot: "",
-    appleContacts: "",
-    whatsappKey: "",
-    whatsappWa: "",
-    whatsappMedia: "",
-    whatsappDb: "",
-    isBusinessApp: false,
-    whatsappOwnerPhone: "",
-    timeZone: "America/New_York",
-    phoneCountry: "",
     ...overrides,
-  };
+  });
 }
 
 function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
