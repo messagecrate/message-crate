@@ -182,11 +182,15 @@ fn attachments_dir_bytes(attachments: &Path) -> Result<u64> {
 }
 
 /// Every regular file under `root`, recursively, reading each entry's type
-/// without following a symlink: only real directories are descended into, a
-/// symlink is skipped whatever it points at, and so is a socket, pipe or
-/// device file, which a conversion could block on. A link under `root` therefore
-/// never brings files from elsewhere into a media pass, and a link to a
-/// parent directory cannot make the walk loop (#2262).
+/// without following a symlink.
+///
+/// Only real directories are descended into, and a symlink is skipped
+/// whatever it points at. A link under `root` therefore never brings files
+/// from elsewhere into a media pass, and a link to a parent directory cannot
+/// make the walk loop (#2262).
+///
+/// A socket, pipe or device file is skipped too, because a conversion that
+/// opened one could block on it.
 ///
 /// # Errors
 ///

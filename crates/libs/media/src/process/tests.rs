@@ -1042,12 +1042,11 @@ fn the_attachment_walks_never_follow_a_symlink() {
     symlink(&elsewhere, att.join("linked")).unwrap();
     symlink(elsewhere.join("clip.mp4"), att.join("linked-clip.mp4")).unwrap();
     symlink(&att, att.join("loop")).unwrap();
-    let _socket = std::os::unix::net::UnixListener::bind(att.join("socket.mp4")).unwrap();
 
     assert_eq!(
         collect_media_files(&att).unwrap(),
         vec![att.join("photo.png")],
-        "only the regular file is listed; nothing through a link, and no socket"
+        "only the real file is listed; nothing through a link"
     );
 
     remove_msgmedia_temps(&att).unwrap();
@@ -1057,6 +1056,24 @@ fn the_attachment_walks_never_follow_a_symlink() {
     );
 
     assert_eq!(attachments_dir_bytes(&att).unwrap(), 100);
+}
+
+/// A socket named like media is not listed for conversion: only regular
+/// files are, because a conversion that opened a socket or pipe could block
+/// on it.
+#[cfg(unix)]
+#[test]
+fn the_attachment_walks_list_only_regular_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let att = dir.path().join("attachments");
+    fs::create_dir_all(&att).unwrap();
+    fs::write(att.join("photo.png"), b"png").unwrap();
+    let _socket = std::os::unix::net::UnixListener::bind(att.join("socket.mp4")).unwrap();
+
+    assert_eq!(
+        collect_media_files(&att).unwrap(),
+        vec![att.join("photo.png")]
+    );
 }
 
 /// The line that starts a pass words its file count singular for one, so a
