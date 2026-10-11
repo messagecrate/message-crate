@@ -29,13 +29,14 @@ const TOKEN_SUFFIX_LEN: usize = 32;
 /// byte holds, so each character stands for exactly four byte values.
 const ACCEPTED_BYTES: usize = 256 / TOKEN_ALPHANUM.len() * TOKEN_ALPHANUM.len();
 
-/// A random 32-character token after `prefix`, from the OS random source.
+/// A random token of `TOKEN_SUFFIX_LEN` characters after `prefix`, from the
+/// OS random source.
 pub(crate) fn generate_prefixed_token(prefix: &str) -> Result<String> {
     prefixed_token_from(prefix, fill_random)
 }
 
-/// A 32-character token after `prefix`, reading bytes from `fill` and
-/// drawing again for every byte `token_char` refuses, so each character is
+/// A token of `TOKEN_SUFFIX_LEN` characters after `prefix`, reading bytes
+/// from `fill` and drawing again for every byte `token_char` refuses, so each character is
 /// equally likely.
 fn prefixed_token_from(
     prefix: &str,
@@ -492,7 +493,7 @@ mod tests {
         let a = generate_prefixed_token("mc-user-").unwrap();
         let b = generate_prefixed_token("mc-user-").unwrap();
         assert!(a.starts_with("mc-user-"));
-        assert_eq!(a.len(), "mc-user-".len() + 32);
+        assert_eq!(a.len(), "mc-user-".len() + TOKEN_SUFFIX_LEN);
         assert_ne!(a, b);
     }
 
@@ -512,13 +513,13 @@ mod tests {
         for &symbol in TOKEN_ALPHANUM {
             assert_eq!(counts[&char::from(symbol)], 4, "{}", char::from(symbol));
         }
-        for byte in 248..=u8::MAX {
+        for byte in (0..=u8::MAX).filter(|&b| usize::from(b) >= ACCEPTED_BYTES) {
             assert_eq!(token_char(byte), None, "byte {byte} must be drawn again");
         }
     }
 
     /// Refused bytes are skipped, never mapped, and the source is read
-    /// again until the token has its 32 characters.
+    /// again until the token has all its characters.
     #[test]
     fn refused_bytes_are_drawn_again() {
         let mut batches = [
@@ -532,7 +533,7 @@ mod tests {
             Ok(())
         })
         .unwrap();
-        let expected: String = TOKEN_ALPHANUM[..32]
+        let expected: String = TOKEN_ALPHANUM[..TOKEN_SUFFIX_LEN]
             .iter()
             .map(|&b| char::from(b))
             .collect();

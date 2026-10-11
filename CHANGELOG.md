@@ -348,8 +348,8 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-11: **Every letter and digit is equally likely in a login or API
-  token.** The random part of a Session's token and of an API Token favoured
+- 2026-10-11: **Every letter and digit is equally likely in a Session's or
+  an API Token's secret.** The random part of a Session's token and of an API Token favoured
   the letters A to H, which came up a quarter more often than the other
   letters and digits. Each now comes up equally often. The tokens were never
   close to guessable, and they keep the same length and form (#2220).
