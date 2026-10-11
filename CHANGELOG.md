@@ -824,6 +824,14 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **An attachment is opened as it is only when its contents
+  match its type.** A file an import called a JPEG, PNG, GIF, WebP or MP3
+  was opened in the browser as one without anyone checking, so a file
+  named wrongly the first time, such as a PNG called a JPEG or a text file
+  called a photo, was handed to the browser as something it was not, for
+  good. The server now reads the first bytes of such a file, and one that
+  is not what it was called gets a Preview instead (#2257).
+
 - 2026-10-11: **Search finds a conversation by the name it is listed
   under.** A one-to-one conversation whose backup recorded only the
   address is listed under the name of the Contact that address is on, but
