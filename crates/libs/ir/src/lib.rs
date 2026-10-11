@@ -40,6 +40,10 @@ pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
 };
 
+/// Kind of a participant identity. Defined in `phone`, which classifies an
+/// address, so that crate does not depend on the conversation model.
+pub use phone::IdentityType;
+
 /// One reaction on a message, the same shape for every source.
 ///
 /// It is defined in `imessage-reader-protocol`, the one crate the GPL Apple
@@ -228,42 +232,6 @@ impl IrConversationType {
             "group" => Self::Group,
             ORPHANED_CONVERSATION_TYPE => Self::Orphaned,
             _ => Self::Individual,
-        }
-    }
-}
-
-/// Kind of a participant identity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IdentityType {
-    /// Telephone number.
-    Phone,
-    /// Email address.
-    Email,
-    /// App username (e.g. Telegram `@user`).
-    Username,
-    /// Any identity that is not phone, email, or username.
-    Other,
-}
-
-impl IdentityType {
-    /// Lowercase storage id (`phone` / `email` / `username` / `other`).
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Phone => "phone",
-            Self::Email => "email",
-            Self::Username => "username",
-            Self::Other => "other",
-        }
-    }
-
-    /// Parse a storage id; unknown values map to `Other`.
-    pub fn parse(s: &str) -> Self {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "phone" => Self::Phone,
-            "email" => Self::Email,
-            "username" => Self::Username,
-            _ => Self::Other,
         }
     }
 }
