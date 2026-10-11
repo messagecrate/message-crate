@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 import Checkbox from "../../components/Checkbox";
 import PhoneTokenField from "../../components/PhoneTokenField";
-import { fieldClass, hintClass, StackedField } from "../../screens/import/ImportFormUi";
+import { textInputClass } from "../../components/TextField";
+import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
 import { accentLinkClass } from "../uiStyles";
 import type { ImportFormSectionProps } from "./types";
 
@@ -67,7 +68,7 @@ export default function AndroidSmsFormSection(props: ImportFormSectionProps) {
             value={props.ownerEmails}
             onChange={(e) => props.onOwnerEmailsChange(e.target.value)}
             placeholder="you@example.com"
-            className={fieldClass}
+            className={textInputClass}
           />
           <p className={hintClass}>
             Pre-filled from your profile. The Gmail or IMAP account SMS Backup+ synced to; separate
