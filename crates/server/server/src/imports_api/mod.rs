@@ -1849,13 +1849,20 @@ async fn run_import_path(
         ImportMode::Append
     };
 
-    // Attachment paths resolve only through assets already uploaded by
-    // SHA-256; the import body never carries files of its own.
+    // The import body never carries files of its own: attachments are
+    // uploaded first through `/v1/assets` and found by their SHA-256. An
+    // attachment's `path` is only a label, so it resolves inside an empty
+    // directory of its own, never the asset store, where it could name an
+    // upload in progress or a media type sidecar and store those bytes
+    // (#2259). The path check still refuses an unsafe path.
     let assets_dir = cfg.paths.assets_dir_for_account(account);
+    let no_files = TempDir::new()
+        .context("empty directory for a batch's attachment paths")
+        .map_err(ApiError::Internal)?;
 
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets_dir,
-        asset_root: &assets_dir,
+        asset_root: no_files.path(),
         mode,
         source: &source_id,
         account_id: account,
