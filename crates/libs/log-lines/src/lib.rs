@@ -299,7 +299,10 @@ mod tests {
             text,
             format!("{TIME}  WARN a.jpg\\x1b[2J\\x08\\x07\\x09\\x7f\\x0ddone\n")
         );
-        assert!(matches!(escape_controls("plain é"), Cow::Borrowed("plain é")));
+        assert!(matches!(
+            escape_controls("plain é"),
+            Cow::Borrowed("plain é")
+        ));
     }
 
     /// Every line the writer writes, whatever control characters its text
@@ -307,7 +310,8 @@ mod tests {
     /// no control character left in its text.
     #[test]
     fn a_line_holding_control_characters_reads_back_whole() {
-        let said = "wtsexporter: \x1b[31mfailed\x1b[0m\x00 on \x1b]0;title\x07 \x0b\x0cnext\r\nlast\x1b";
+        let said =
+            "wtsexporter: \x1b[31mfailed\x1b[0m\x00 on \x1b]0;title\x07 \x0b\x0cnext\r\nlast\x1b";
         let written = format_lines(TIME, LogLevel::Warn, said);
         let mut read = Vec::new();
         lines_backward(
@@ -337,7 +341,10 @@ mod tests {
             ]
         );
         // Writing a line read back writes it again unchanged.
-        assert_eq!(format_lines(TIME, LogLevel::Warn, &texts.join("\n")), written);
+        assert_eq!(
+            format_lines(TIME, LogLevel::Warn, &texts.join("\n")),
+            written
+        );
     }
 
     #[test]
