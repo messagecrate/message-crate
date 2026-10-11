@@ -122,26 +122,13 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
     if !candidate.is_file() {
         return Ok(None);
     }
-    if !is_executable(&candidate) {
+    if !media::is_executable(&candidate) {
         bail!(
             "{} is not executable. It must be {RELEASE_FILE_HINT}.",
             candidate.display()
         );
     }
     Ok(Some(candidate))
-}
-
-/// Whether `path` has an executable bit.
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
-}
-
-/// Windows runs any `.exe`, so there is no bit to check.
-#[cfg(not(unix))]
-fn is_executable(_path: &Path) -> bool {
-    true
 }
 
 /// [`find_wtsexporter`], with a missing file as an error.

@@ -370,6 +370,22 @@ pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
 }
 
+/// Whether `path` is a regular file with an executable bit. The file is not
+/// run.
+#[cfg(unix)]
+pub fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+}
+
+/// Whether `path` is a file. Windows runs any `.exe`, so there is no bit to
+/// check.
+#[cfg(not(unix))]
+pub fn is_executable(path: &Path) -> bool {
+    path.is_file()
+}
+
 /// True when `candidate`, as `file` describes it, answers `-version`. An
 /// answer is kept in [`ToolsState::answered`], so the same file is run once
 /// until it changes or the lookup is forgotten; a failure is not kept, so

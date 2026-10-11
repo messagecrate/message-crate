@@ -291,15 +291,13 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
 /// fail on every platform.
 #[test]
 fn an_attachment_the_drain_cannot_stage_is_named_in_its_log() {
-    use sha2::{Digest, Sha256};
-
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     let bytes = b"blocked".to_vec();
     let doc = doc_with(&test_number(8), 1);
     let staged = message_crate_core::attachment_dest_name(
         doc.messages[0].timestamp_unix_ms.div_euclid(1000),
-        &hex::encode(Sha256::digest(&bytes)),
+        &file_io::sha256_hex(&bytes),
         ".jpg",
     );
     fs::create_dir_all(out.join("attachments").join(staged).join("occupied")).unwrap();
