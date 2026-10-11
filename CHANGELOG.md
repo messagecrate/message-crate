@@ -168,6 +168,9 @@ released versions carry their date on the heading.
   do.** It now ends through the same steps as GO SMS Pro and the others.
   Nothing changes on screen (#2163).
 
+- 2026-10-10: The Import Run and Export Run lists were reworked inside, with
+  nothing visible (#2155).
+
 - 2026-10-10: **SMS Backup & Restore and GO SMS Pro read a message's time
   the same way.** Both imports now share one check of which message times
   are readable, so they can no longer drift apart. Nothing changes on
@@ -668,6 +671,14 @@ released versions carry their date on the heading.
   link after the hour or the logout. The server now tells every cache and
   browser not to store an attachment read through such a link, and tells
   shared caches not to keep any attachment at all (#2149).
+- 2026-10-10: **The guide to moving a Message Crate says to encrypt the
+  copy.** The copy of the Docker volume that the guide makes holds every
+  account's messages and attachments unencrypted, and the guide sent it on
+  by USB drive, network share or `scp` without saying that it was
+  unencrypted. It now encrypts the copy with `age` or `gpg` before it leaves
+  the old computer, deletes every copy once the new computer's Message Crate
+  is checked, and says the computer that runs the server should use
+  full-disk encryption, such as FileVault, BitLocker or LUKS (#2161).
 - 2026-10-10: **The Docker image no longer lets pages on port 5173 call its
   server.** The image's settings allowed web pages from port 5173 on the
   viewer's computer, the port a Message Crate developer's tools use, to call

@@ -48,7 +48,7 @@ use staging::StagingInserts;
 use crate::dedupe;
 use crate::imports_api::{self};
 use crate::paging::{
-    DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageQuery, page_params, parse_sort,
+    DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_params, parse_status, sorted_page,
 };
 use crate::server::{
     ApiError, AppState, Created, ImportAccess, content_type_base, is_jsonl_content_type,
@@ -1145,20 +1145,7 @@ pub(crate) async fn list_imports(
 ) -> Result<Json<Page<ImportRunSummary>>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let rows = import_rows_page(&mut conn, resolve_import_account(&auth), query).await?;
-    Ok(Json(runs_page(rows)))
-}
-
-/// A page of listed runs as a page of one run type: [`ImportRunSummary`]
-/// for the account, [`OwnerImportRun`] for the owner. It reads nothing.
-pub(crate) fn runs_page<T: From<crate::db::imports::ListedImport>>(
-    rows: Page<crate::db::imports::ListedImport>,
-) -> Page<T> {
-    Page {
-        items: rows.items.into_iter().map(T::from).collect(),
-        total: rows.total,
-        limit: rows.limit,
-        offset: rows.offset,
-    }
+    Ok(Json(rows.map(ImportRunSummary::from)))
 }
 
 /// One account's Import Runs as a page of rows, each with its issue count
@@ -1171,32 +1158,17 @@ pub(crate) async fn import_rows_page(
     account: i64,
     query: ListImportsQuery,
 ) -> Result<Page<crate::db::imports::ListedImport>, ApiError> {
-    let page = page_params(
+    let (page, order) = sorted_page(
         query.limit,
         query.offset,
-        DEFAULT_LIST_LIMIT,
-        Some(MAX_LIST_OFFSET),
-    )?;
-    let order = parse_sort(
         query.sort.as_deref(),
         &crate::db::imports::IMPORT_SORT_KEYS,
         &crate::db::imports::DEFAULT_IMPORT_SORT,
     )?;
-    let status = query
-        .status
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    if let Some(status) = status
-        && crate::db::imports::ImportStatus::parse(status).is_none()
-    {
-        return Err(ApiError::validation(format!(
-            "status: unknown value '{status}'; accepted values are {}",
-            crate::db::imports::ImportStatus::ALL
-                .map(crate::db::imports::ImportStatus::as_str)
-                .join(", ")
-        )));
-    }
+    let status = parse_status(
+        query.status.as_deref(),
+        &crate::db::imports::ImportStatus::ALL.map(crate::db::imports::ImportStatus::as_str),
+    )?;
 
     let (items, total) = crate::db::imports::list_imports_page(
         conn,
@@ -1207,12 +1179,7 @@ pub(crate) async fn import_rows_page(
         i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     )
     .await?;
-    Ok(Page {
-        items,
-        total,
-        limit: page.limit,
-        offset: page.offset,
-    })
+    Ok(page_from_rows(items, total, page))
 }
 
 /// Status, timings, and issues for one Import Run.
@@ -1458,12 +1425,7 @@ pub(crate) async fn list_import_contacts(
         crate::db::import_contacts::page(&mut conn, import_id, params.limit, params.offset)
             .await
             .map_err(ApiError::Internal)?;
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_from_rows(items, total, params)))
 }
 
 /// Create the Contact Group naming the contacts an import run touched.

@@ -12,7 +12,6 @@ import {
   whatsappShowsPassword,
 } from "../whatsappImport";
 import type { ImportSourceDescriptor } from "./types";
-import WhatsappFormSection from "./WhatsappFormSection";
 
 const WHATSAPP_DIRECTORY_HINT_ANDROID =
   "Directory that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
@@ -69,5 +68,4 @@ export const WHATSAPP_SOURCE: ImportSourceDescriptor<WhatsappMethodId> = {
       ownerPhone: input.whatsappOwnerPhone,
       stats: input.whatsappStats,
     }),
-  FormSection: WhatsappFormSection,
 };
