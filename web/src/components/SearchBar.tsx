@@ -34,7 +34,7 @@ import {
   useMarkedWords,
 } from "../lib/searchFields";
 import { removeToken } from "../lib/searchQuery";
-import { focusRing, popupShadow } from "../lib/uiStyles";
+import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import {
   applySuggestionToQuery,
@@ -74,7 +74,7 @@ type Option = {
  * The box's padding and type. The layer that marks words behind the text
  * takes the same, so each mark sits under its word.
  */
-const boxText = "px-2 py-2.5 text-[0.875rem]";
+const boxTextClass = "px-2 py-2.5 text-[0.875rem]";
 
 /**
  * What a marked word's note and the box's description say about it: the
@@ -319,7 +319,7 @@ export default function SearchBar({
               <div
                 ref={layerRef}
                 data-testid="search-marks"
-                className={`${boxText} w-max whitespace-pre text-transparent`}
+                className={`${boxTextClass} w-max whitespace-pre text-transparent`}
               >
                 {markedText(text, marked, (start, span) => {
                   if (span) markRefs.current.set(start, span);
@@ -346,7 +346,7 @@ export default function SearchBar({
               }}
               // The bar has a Clear search button of its own, so the one the browser
               // draws inside a search input is hidden; otherwise there are two.
-              className={`relative w-full min-w-0 border-none bg-transparent ${boxText} text-text outline-none [&::-webkit-search-cancel-button]:appearance-none`}
+              className={`relative w-full min-w-0 border-none bg-transparent ${boxTextClass} text-text outline-none [&::-webkit-search-cancel-button]:appearance-none`}
             />
           </div>
           {text ? (
@@ -359,7 +359,7 @@ export default function SearchBar({
                 onSubmit("");
                 inputRef.current?.focus();
               }}
-              className={`mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted hover:text-text ${focusRing}`}
+              className={`mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted hover:text-text ${focusRingClass}`}
             >
               ×
             </PlainButton>
@@ -378,7 +378,7 @@ export default function SearchBar({
           placement="bottom start"
           offset={4}
           data-mc-overlay=""
-          className={`w-[var(--trigger-width)] overflow-hidden rounded-md border border-border bg-popover outline-none ${Z_POPOVER} ${popupShadow}`}
+          className={`w-[var(--trigger-width)] overflow-hidden rounded-md border border-border bg-popover outline-none ${Z_POPOVER} ${popupShadowClass}`}
         >
           {!completing && recents.length > 0 ? (
             <div className="flex items-center justify-between px-3 pb-1 pt-2">
@@ -391,7 +391,7 @@ export default function SearchBar({
                   setRecents([]);
                   inputRef.current?.focus();
                 }}
-                className={`cursor-pointer border-none bg-transparent text-[0.688rem] text-muted hover:text-text ${focusRing}`}
+                className={`cursor-pointer border-none bg-transparent text-[0.688rem] text-muted hover:text-text ${focusRingClass}`}
               >
                 Clear all
               </PlainButton>
@@ -439,7 +439,7 @@ export default function SearchBar({
         placement="bottom start"
         offset={6}
         data-mc-overlay=""
-        className={`max-w-xs rounded-md border border-border bg-popover p-3 outline-none ${Z_POPOVER} ${popupShadow}`}
+        className={`max-w-xs rounded-md border border-border bg-popover p-3 outline-none ${Z_POPOVER} ${popupShadowClass}`}
       >
         <Dialog aria-label="Marked search word" className="outline-none">
           {note ? (

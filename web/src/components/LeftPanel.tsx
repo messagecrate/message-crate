@@ -4,7 +4,7 @@ import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { canUseImportExportWithProfile } from "../lib/desktopFeatures";
 import { type SavedSearch, useSavedSearchActions, useSavedSearches } from "../lib/savedSearches";
 import { isTauri } from "../lib/tauri-check";
-import { resizeHandleGutter } from "../lib/tw";
+import { resizeHandleGutterClass } from "../lib/tw";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
@@ -169,7 +169,7 @@ export default function LeftPanel({
       className={`relative flex h-full shrink-0 flex-col overflow-hidden ${COLUMN_DIVIDER_CLASS} bg-panel text-text`}
     >
       <div className={LIST_TOOLBAR_CLASS} aria-hidden />
-      <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}>
+      <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}>
         {/* Browse */}
         <div className="px-3 py-2">
           <PlainButton className={browseLinkClass(isActive("/"))} onPress={() => navigate("/")}>

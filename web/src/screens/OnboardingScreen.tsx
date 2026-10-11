@@ -24,7 +24,13 @@ import { useRouteQuery } from "../lib/routeQuery";
 import { parseSelectKey } from "../lib/selectKey";
 import { listAccountIdentities, updateAccountProfile } from "../lib/serverApi";
 import { browserTimeZone } from "../lib/timeZone";
-import { authCard, authCardBody, authCardFooter, authTitle, pageCenter } from "../lib/uiStyles";
+import {
+  authCardBodyClass,
+  authCardClass,
+  authCardFooterClass,
+  authTitleClass,
+  pageCenterClass,
+} from "../lib/uiStyles";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useAsyncAction } from "../lib/useAsyncAction";
 
@@ -292,10 +298,10 @@ export default function OnboardingScreen() {
   const canAddHandle = Boolean(handles[handles.length - 1]?.handle.trim());
 
   return (
-    <div className={pageCenter}>
-      <div className={authCard}>
-        <div className={authCardBody}>
-          <h1 className={`${authTitle} !mb-2`}>Profile Setup</h1>
+    <div className={pageCenterClass}>
+      <div className={authCardClass}>
+        <div className={authCardBodyClass}>
+          <h1 className={`${authTitleClass} !mb-2`}>Profile Setup</h1>
           <p className="mt-0 mb-4 text-[0.875rem] text-muted">
             So we can match imported messages to you.
           </p>
@@ -375,7 +381,7 @@ export default function OnboardingScreen() {
           )}
         </div>
 
-        <div className={authCardFooter}>
+        <div className={authCardFooterClass}>
           {/* A value that does not read as an account is reported in the same
               place as anything the server sends back, so there is one line on
               this card that carries what is wrong. */}

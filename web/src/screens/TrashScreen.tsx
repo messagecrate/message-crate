@@ -70,13 +70,13 @@ type PendingDelete =
   | { kind: "contact"; id: number; name: string }
   | { kind: "empty" };
 
-const sectionHeading =
+const sectionHeadingClass =
   "m-0 mb-2 text-[0.75rem] font-semibold uppercase tracking-[0.04em] text-muted";
 
-const errorBox =
+const errorBoxClass =
   "mb-3 rounded border border-danger-soft-border bg-danger-soft-bg px-3 py-2 text-[0.813rem] text-danger";
 
-const noteBox =
+const noteBoxClass =
   "mb-3 rounded border border-border bg-elevated px-3 py-2 text-[0.813rem] text-muted";
 
 /** Hover text on a disabled Delete when the account may not delete. */
@@ -278,11 +278,11 @@ export default function TrashScreen() {
         )}
       </div>
       {fieldsError ? (
-        <div className={errorBox}>
+        <div className={errorBoxClass}>
           Could not load the search words. {apiErrorMessage(fieldsError, "")}
         </div>
       ) : unknownWords.length > 0 ? (
-        <div className={noteBox} role="status">
+        <div className={noteBoxClass} role="status">
           {notSearchWords(unknownWords)}
         </div>
       ) : nothingInTrash ? (
@@ -292,9 +292,9 @@ export default function TrashScreen() {
       ) : (
         <>
           <section className="mb-8">
-            <h3 className={sectionHeading}>Conversations</h3>
+            <h3 className={sectionHeadingClass}>Conversations</h3>
             {error && (
-              <div className={errorBox}>{apiErrorMessage(error, "Could not load Trash.")}</div>
+              <div className={errorBoxClass}>{apiErrorMessage(error, "Could not load Trash.")}</div>
             )}
             {selectedId !== null ? (
               selectedLoading ? (
@@ -324,7 +324,7 @@ export default function TrashScreen() {
                 </div>
               )
             ) : contactsOnlyWords.length > 0 ? (
-              <div className={noteBox} role="status">
+              <div className={noteBoxClass} role="status">
                 {appliesOnlyTo(contactsOnlyWords, "contacts")}
               </div>
             ) : error ? null : total === 0 ? (
@@ -341,19 +341,19 @@ export default function TrashScreen() {
           </section>
 
           <section>
-            <h3 className={sectionHeading}>Contacts</h3>
+            <h3 className={sectionHeadingClass}>Contacts</h3>
             {contactsError && (
-              <div className={errorBox}>
+              <div className={errorBoxClass}>
                 {apiErrorMessage(contactsError, "Could not load trashed contacts.")}
               </div>
             )}
             {restoreContact.error && (
-              <div className={errorBox}>
+              <div className={errorBoxClass}>
                 {apiErrorMessage(restoreContact.error, "Could not restore this contact.")}
               </div>
             )}
             {conversationsOnlyWords.length > 0 ? (
-              <div className={noteBox} role="status">
+              <div className={noteBoxClass} role="status">
                 {appliesOnlyTo(conversationsOnlyWords, "conversations")}
               </div>
             ) : contactsError ? null : contacts.length === 0 ? (
@@ -504,7 +504,7 @@ function SelectedConversation({
         {countOf(conversation.message_count, "message")}
       </div>
       {restoreConversation.error && (
-        <div className={errorBox}>
+        <div className={errorBoxClass}>
           {apiErrorMessage(restoreConversation.error, "Could not restore this conversation.")}
         </div>
       )}

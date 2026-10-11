@@ -6,7 +6,7 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useRouteCache } from "../../lib/routeQuery";
 import { type AddressBookLoadMode, loadAddressBook } from "../../lib/serverApi";
 import type { components } from "../../lib/serverApi.types";
-import { focusOutline } from "../../lib/uiStyles";
+import { focusOutlineClass } from "../../lib/uiStyles";
 import { sectionTitleClass } from "./profileStyles";
 
 /** Largest file the server accepts, mirrored here so the refusal is immediate. */
@@ -124,7 +124,7 @@ export function AddressBookSection() {
                   aria-hidden
                   className={`mt-0.5 flex size-3.5 shrink-0 items-center justify-center rounded-full border ${
                     isSelected ? "border-accent" : "border-border"
-                  } ${isFocusVisible ? focusOutline : ""}`}
+                  } ${isFocusVisible ? focusOutlineClass : ""}`}
                 >
                   {isSelected ? <span className="size-2 rounded-full bg-accent" /> : null}
                 </span>

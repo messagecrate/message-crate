@@ -8,7 +8,7 @@ import {
   Popover,
   Select as RACSelect,
 } from "react-aria-components";
-import { popupShadow } from "../../lib/uiStyles";
+import { popupShadowClass } from "../../lib/uiStyles";
 import { Z_POPOVER } from "../../lib/zLayers";
 import { SelectChevronIcon } from "../icons";
 import { compactSelectItemClassName, labelClass } from "./advancedSearchStyles";
@@ -95,7 +95,7 @@ export default function ChoiceMultiSelect({
         ref={popoverRef}
         data-mc-overlay=""
         isNonModal
-        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadow}`}
+        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadowClass}`}
       >
         <ListBox className="outline-none">
           {items.map((item) => (

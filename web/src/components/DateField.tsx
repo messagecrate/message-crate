@@ -18,7 +18,7 @@ import {
   Popover,
 } from "react-aria-components";
 
-import { focusRing, popupShadow } from "../lib/uiStyles";
+import { focusRingClass, popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
 import { CalendarIcon } from "./icons";
 
@@ -71,28 +71,28 @@ export default function DateField({
           </DateInput>
           <Button
             aria-label={`Pick ${pickLabel}`}
-            className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRing}`}
+            className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRingClass}`}
           >
             <CalendarIcon size={15} className="" />
           </Button>
         </Group>
         <Popover
           data-mc-overlay=""
-          className={`rounded-md border border-border bg-popover p-2 outline-none ${Z_POPOVER} ${popupShadow}`}
+          className={`rounded-md border border-border bg-popover p-2 outline-none ${Z_POPOVER} ${popupShadowClass}`}
         >
           <Dialog className="outline-none">
             <Calendar className="outline-none">
               <div className="flex items-center justify-between pb-2">
                 <Button
                   slot="previous"
-                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRingClass}`}
                 >
                   ‹
                 </Button>
                 <CalendarHeading className="text-[0.875rem] font-medium text-text" />
                 <Button
                   slot="next"
-                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRingClass}`}
                 >
                   ›
                 </Button>
