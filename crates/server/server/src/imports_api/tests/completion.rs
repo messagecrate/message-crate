@@ -13,7 +13,7 @@ async fn run_account(state: &crate::server::AppState, import_id: i64) -> i64 {
         .unwrap()
 }
 
-/// Every saved search the account owns as `(name, query, kind)`, and every
+/// Every Saved Search the account owns as `(name, query, kind)`, and every
 /// Contact Group as `(name, kind, member contact ids ascending)`.
 async fn shortcuts(
     state: &crate::server::AppState,
