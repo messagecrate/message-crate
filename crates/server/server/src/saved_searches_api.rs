@@ -365,23 +365,40 @@ mod tests {
     async fn a_word_some_list_lacks_is_saved_and_refused_only_where_it_runs() {
         let (fixture, user) = fixture_with_account().await;
         let state = fixture.state.clone();
+        let mut stored = Vec::new();
         for (name, query) in [("From me", "from:me"), ("Typo", "grup:Family")] {
-            let (_, created): (String, serde_json::Value) = post_created_json(
+            let (location, _): (String, serde_json::Value) = post_created_json(
                 &state,
                 "/v1/saved-searches",
                 &user.token,
                 serde_json::json!({ "name": name, "query": query }),
             )
             .await;
-            assert_eq!(created["query"], query);
+            let read: serde_json::Value = get_json(&state, &location, &user.token).await;
+            assert_eq!(read["query"], query);
+            stored.push(read["query"].as_str().unwrap().to_string());
         }
+        let [from_me, typo] = &stored[..] else {
+            unreachable!("two Saved Searches were stored")
+        };
 
-        // A Saved Search runs on the conversation list, which has no `from:`.
-        let (status, text) = get_raw(&state, "/v1/conversations?q=from:me", &user.token).await;
+        // `from:` is a Messages word: the conversation list refuses it.
+        let (status, text) = get_raw(
+            &state,
+            &format!("/v1/conversations?q={from_me}"),
+            &user.token,
+        )
+        .await;
         expect_problem(status, &text, ProblemType::SearchQueryInvalid);
         assert_eq!(
-            get_status(&state, "/v1/messages?q=from:me", &user.token).await,
+            get_status(&state, &format!("/v1/messages?q={from_me}"), &user.token).await,
             StatusCode::OK
         );
+        // `grup:` is no list's word: every list refuses it.
+        for list in ["conversations", "messages"] {
+            let (status, text) =
+                get_raw(&state, &format!("/v1/{list}?q={typo}"), &user.token).await;
+            expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        }
     }
 }

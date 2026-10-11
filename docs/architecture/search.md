@@ -63,12 +63,13 @@ Each rule holds on every list, and each has its reason.
   else.** Saving or editing one reads its query without a list
   (`search::check_for_every_list`): a query over 2,048 bytes, a syntax error
   such as a parenthesis or quote that never closes, more than 32 free-text
-  words, more than 64 parts, or nesting deeper than 32 is refused with the
-  sentence a list gives (#2184). No `word:` is looked up and no value is
-  read, so a word one list lacks, or a word no list has, is stored as written
-  and refused when it runs. Why: a Saved Search runs on more than one list,
-  and the words differ between them, but the limits and the grammar do not,
-  so a query that breaks them could never run anywhere.
+  words, more than 64 parts, or more than 32 levels of parentheses and `not`
+  is refused with the sentence a list gives (#2184). No `word:` is looked up
+  and no value is read. A word one list lacks, a word no list has, or a value
+  no word understands is stored as written and refused when it runs. Why: a
+  Saved Search runs on more than one list, and the words differ between
+  lists. The limits and the grammar are the same on every list, so a query
+  that breaks them could never run anywhere.
 - **Relevance ranks by the positive free-text words.** The Messages list's
   `sort=relevance` orders by the full-text index's `bm25()` over the query's
   free-text words that are not behind `-` or `not`; field words never rank.
