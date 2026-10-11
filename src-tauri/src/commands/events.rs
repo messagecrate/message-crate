@@ -83,7 +83,8 @@ pub enum WindowEvent {
     FileWritten(ImportFileWrittenEvent),
 }
 
-/// The pipeline stage a progress event counts, sent as its lowercase word.
+/// Which part of an Import Run a progress event counts: a step inside
+/// Staging, or the Media or Upload Stage. Sent as its lowercase word.
 /// The words are the `step` union of `ImportProgressEvent` in
 /// `web/src/lib/types.ts`; the window drops an event on any other.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -109,7 +110,7 @@ pub enum Step {
 /// Progress numbers the UI uses to update the progress bar.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ImportProgressEvent {
-    /// Current pipeline stage.
+    /// Which part of the Import Run the event counts.
     pub step: Step,
     /// Number of items finished so far.
     pub done: usize,
@@ -147,7 +148,7 @@ impl ImportProgressEvent {
     }
 
     /// The Upload's count: `done` of `total` conversation files sent.
-    pub(crate) fn upload_file(done: usize, total: usize) -> Self {
+    pub(crate) fn upload_count(done: usize, total: usize) -> Self {
         Self::counts(Step::Upload, done, total)
     }
 
@@ -447,7 +448,7 @@ mod tests {
         );
     }
 
-    /// The staging summary counts on `check`, the Media stage on `media`,
+    /// The staging summary counts on `check`, the Media Stage on `media`,
     /// and the Upload on `upload`, each with counts alone.
     #[test]
     fn the_staging_summary_media_stage_and_upload_count_on_their_steps() {
@@ -466,7 +467,7 @@ mod tests {
             serde_json::json!({ "step": "media", "done": 1, "total": 4 })
         );
         assert_eq!(
-            serde_json::to_value(ImportProgressEvent::upload_file(3, 7)).unwrap(),
+            serde_json::to_value(ImportProgressEvent::upload_count(3, 7)).unwrap(),
             serde_json::json!({ "step": "upload", "done": 3, "total": 7 })
         );
     }

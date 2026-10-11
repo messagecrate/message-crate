@@ -23,7 +23,7 @@ fn finished_upload_events(
     report: &message_crate_import::ImportReport,
 ) -> (ImportProgressEvent, serde_json::Value) {
     let total = as_usize(report.conversations_total);
-    let progress = ImportProgressEvent::upload_file(total, total);
+    let progress = ImportProgressEvent::upload_count(total, total);
     let summary = serde_json::json!({
         "summary": format!(
             "Upload complete: {} new, {} deduped, {} failed of {} attempted; {}/{} conversations ok; {} assets uploaded",
@@ -190,7 +190,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::PROGRESS,
-                ImportProgressEvent::upload_file(index.saturating_sub(1), total),
+                ImportProgressEvent::upload_count(index.saturating_sub(1), total),
             );
         }
         ProgressEvent::FileDone { file, status } => {
