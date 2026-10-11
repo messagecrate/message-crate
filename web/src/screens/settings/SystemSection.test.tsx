@@ -7,6 +7,7 @@ import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { renderWithProviders as render } from "../../test/providers";
+import { MIB } from "../../test/units";
 import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
@@ -382,7 +383,7 @@ describe("SystemSection", () => {
     toolsStatus.mockResolvedValueOnce({
       toolsDir: "/home/demo/message-crate/tools",
       checking: false,
-      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 29 * 1024 * 1024 },
+      ffmpeg: { state: "downloading", received: 12 * MIB, total: 29 * MIB },
       ffprobe: { state: "downloading", received: 0, total: null },
       wtsexporter: { state: "found", path: "/home/demo/message-crate/tools/wtsexporter" },
     });

@@ -6,9 +6,7 @@
  */
 
 import type { ImportJobFormValues } from "../lib/importSources/types";
-
-/** One mebibyte, the unit the form's `assetMaxBytes` is written in. */
-export const MIB = 1024 * 1024;
+import { MIB } from "./units";
 
 /** An iPhone backup Import with attachments copied, with `overrides` on top. */
 export function importForm(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues {
