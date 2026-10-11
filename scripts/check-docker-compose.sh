@@ -58,10 +58,14 @@ if [[ ${#positional[@]} -lt 1 || ${#positional[@]} -gt 2 ]]; then
 fi
 IMAGE="${positional[0]}"
 PORT="${positional[1]:-18080}"
-if [[ ! "${PORT}" =~ ^[0-9]+$ ]]; then
-  echo "$0: the host port must be a number, not ${PORT}" >&2
+# A mistyped option without its dashes, such as "website", would otherwise
+# reach Compose as the port, and port 0 or one above 65535 would fail later
+# with a message that blames the image or the server instead.
+if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || ((10#${PORT} < 1 || 10#${PORT} > 65535)); then
+  echo "$0: the host port must be a number from 1 to 65535, not ${PORT}" >&2
   usage
 fi
+PORT=$((10#${PORT}))
 PROJECT="message-crate-compose-check"
 BASE="http://127.0.0.1:${PORT}"
 
