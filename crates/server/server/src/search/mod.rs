@@ -77,9 +77,11 @@ pub struct CompileRequest<'a> {
     pub zone: chrono_tz::Tz,
 }
 
-/// Today's date in `zone`, for the relative date forms (`today`, `7d`, `1y`).
-pub fn today_in(zone: chrono_tz::Tz) -> NaiveDate {
-    chrono::Utc::now().with_timezone(&zone).date_naive()
+/// The date in `zone` at the instant `now`, which is the `today` the relative
+/// date forms (`today`, `7d`, `1y`) resolve against. The caller reads the
+/// clock, so a test can name the instant.
+pub fn today_in(zone: chrono_tz::Tz, now: chrono::DateTime<chrono::Utc>) -> NaiveDate {
+    now.with_timezone(&zone).date_naive()
 }
 
 /// One parenthesised boolean expression plus the values it binds.
