@@ -22,7 +22,7 @@ pub(crate) fn recover_stem_suffix(doc: &mut ConversationDocument, file_stem: Opt
     let Some(file_stem) = file_stem.and_then(OsStr::to_str) else {
         return;
     };
-    let base = doc.filename_stem();
+    let base = crate::filename_stem(doc);
     if base.is_empty() {
         return;
     }

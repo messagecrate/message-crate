@@ -1199,6 +1199,13 @@ pub async fn delete_account_messages(
     }))
 }
 
+/// How many of an account's largest attachments the Storage tab lists:
+/// enough to find what is taking the space, few enough to read in one list.
+/// The docs of [`AccountStorage::top_attachments`] and
+/// [`get_account_storage`] give the number too, because they are the
+/// OpenAPI reference, and a test holds them to it.
+const TOP_ATTACHMENTS: i64 = 100;
+
 /// What an account holds: counts, attachment bytes and the largest files.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct AccountStorage {
@@ -1244,7 +1251,8 @@ pub(crate) async fn get_account_storage(
     let attachment_count = storage::attachment_count(&mut conn, scope).await?;
     let conversation_count = storage::conversation_count(&mut conn, scope).await?;
     let contact_count = storage::contact_count(&mut conn, scope).await?;
-    let mut top_attachments = imports::top_attachments_by_size(&mut conn, target, 100).await?;
+    let mut top_attachments =
+        imports::top_attachments_by_size(&mut conn, target, TOP_ATTACHMENTS).await?;
     if matches!(reach, Reach::Owner) {
         top_attachments = top_attachments
             .into_iter()

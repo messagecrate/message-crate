@@ -148,7 +148,7 @@ pub(crate) async fn refuse_undeclared_query(
     let (Some(matched), Some(query)) = (matched, request.uri().query()) else {
         return next.run(request).await;
     };
-    if !matched.as_str().starts_with("/v1/") {
+    if !crate::server::is_api_path(matched.as_str()) {
         return next.run(request).await;
     }
     let Some(names) = declared.declared(request.method(), matched.as_str()) else {

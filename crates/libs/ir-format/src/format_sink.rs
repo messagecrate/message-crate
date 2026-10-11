@@ -214,7 +214,7 @@ impl FormatSink {
             archive.write(&self.output_dir, &self.docs, report)?;
         } else {
             let mut docs: Vec<&mut ConversationDocument> = self.docs.iter_mut().collect();
-            message_ir::give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
+            crate::give_each_document_its_own_file(&mut docs).map_err(anyhow::Error::msg)?;
             for doc in self.docs {
                 write_format(&self.output_dir, self.format, doc)?;
             }

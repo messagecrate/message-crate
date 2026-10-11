@@ -33,7 +33,7 @@ output/
     ...
 ```
 
-- **Conversation stem:** same rules as CSV filenames from [`message_ir::conversation_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/src/lib.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
+- **Conversation stem:** same rules as CSV filenames from [`message_ir_format::filename_stem`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/naming.rs), without the `.csv` suffix (e.g. `+15555550101`, `Family_Chat`, `group_+A_+B`).
 - **Sequence prefix:** zero-padded decimal in chronological emit order so file browsers sort stably.
 - **Timestamp in name:** local wall-clock of the message for skimming (authoritative time is still `Date` / `X-ME-Timestamp-Unix-Ms`).
 - **`guid8`:** first 8 hex chars of `X-ME-Guid` (or Message-ID local-part hash) to avoid collisions when two messages share a second.
