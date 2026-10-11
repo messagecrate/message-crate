@@ -9,8 +9,9 @@
 # make the root filesystem read-only (#2178). This script checks that both
 # carry the same settings, that the container Compose starts has them, and
 # that the server still starts under them: the health check passes and the
-# Demo Account logs in. A server that writes outside /app/data or /tmp fails
-# here rather than in a self-hoster's container.
+# Demo Account logs in. A server that writes outside /app/data or /tmp at
+# start fails here rather than in a self-hoster's container. It runs no
+# import or export, so a write outside them made only then passes.
 #
 # The stack runs under its own project name, on its own volume, published on
 # 127.0.0.1:<host-port> (18080 unless given), so it never touches a running

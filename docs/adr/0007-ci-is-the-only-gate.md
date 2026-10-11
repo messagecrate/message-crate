@@ -28,8 +28,8 @@ booleans — `rust`, `web`, `docs`, `docker` — and the heavy jobs read them:
 Three classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
 `scripts/openapi-typescript/`, set `web`, not `rust`, because the `web` job is
-the one that runs them; `scripts/check-docker-compose.sh` sets `docker` as
-well as `rust`, because the `docker-build` job runs it; every other path under
+the one that runs them. `scripts/check-docker-compose.sh` sets `docker` as
+well as `rust`, because the `docker-build` job runs it. Every other path under
 `scripts/` falls to `rust`.
 `docker` is true for `docker/`, the root and per-crate Cargo manifests,
 `Cargo.lock`, `rust-toolchain.toml` and `config/config.docker.toml`: the
@@ -67,11 +67,11 @@ shards because a full run takes well over a day on one machine, and a missed
 mutant never fails anything.
 
 The nightly run lives in `nightly.yml` for the same reason. It builds the
-release Dockerfile from `main` once a night and starts it the way
-`docker-build` does, because that job sees only pull requests that change the
-Dockerfile, a Cargo manifest or the lockfile, and a change elsewhere can still
-break the image, or make the server write outside `/app/data` so that it no
-longer starts under the Compose files' read-only root filesystem. It gates
+release Dockerfile from `main` once a night and starts the image the way
+`docker-build` does. That job sees only pull requests that change the
+Dockerfile, a Cargo manifest or the lockfile. A change elsewhere can still
+break the image, or make the server write outside `/app/data` at start, so
+that it no longer starts under the Compose files' read-only root filesystem. It gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports

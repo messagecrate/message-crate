@@ -362,8 +362,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       # The Compose files make the root filesystem read-only and drop every
-      # privilege, so an image that writes outside /app/data builds and then
-      # fails to start. This starts it the way Compose does.
+      # privilege, so an image that writes outside /app/data at start builds
+      # and then fails to start. This starts it the way Compose does.
       - name: Start the release Compose stack and log in to the Demo Account
         run: ./scripts/check-docker-compose.sh message-crate-server:check
 

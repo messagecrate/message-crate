@@ -117,9 +117,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # A change to the server that makes it write outside /app/data builds
-      # and then fails to start under the Compose files' read-only root
-      # filesystem. Pull requests that change only server code skip the
+      # A change to the server that makes it write outside /app/data at start
+      # builds and then fails to start under the Compose files' read-only
+      # root filesystem. Pull requests that change only server code skip the
       # step in ci.yml, so this run is where such a change shows.
       - name: Start the release Compose stack and log in to the Demo Account
         run: ./scripts/check-docker-compose.sh message-crate-server:check
