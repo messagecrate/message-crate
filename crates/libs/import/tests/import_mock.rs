@@ -3395,16 +3395,13 @@ fn a_refused_session_stops_the_import_as_a_pause_and_fails_no_conversation() {
             "conversations": 1
         }));
     });
-    // The refusal set the first run's cancel flag, so the next Upload starts
-    // with a flag of its own, as the desktop app's does.
-    let resumed = run(
-        &ImportConfig {
-            cancel: CancelFlag::default(),
-            ..cfg.clone()
-        },
-        None,
-    )
-    .unwrap();
+    // The refusal stopped the run without setting the caller's cancel flag,
+    // so the same config runs the next Upload (#2646).
+    assert!(
+        !cfg.cancel.load(Ordering::SeqCst),
+        "a refused session leaves the caller's cancel flag alone"
+    );
+    let resumed = run(&cfg, None).unwrap();
 
     assert!(resumed.ok, "{:?}", resumed.results);
     assert!(!resumed.session_refused);
@@ -3488,6 +3485,10 @@ fn a_session_refused_at_login_stops_the_import_as_a_pause() {
     assert_eq!(report.conversations_cancelled, 2);
     assert_eq!(report.conversations_total, 2);
     assert_eq!(batches.calls(), 0);
+    assert!(
+        !cfg.cancel.load(Ordering::SeqCst),
+        "a session refused at login leaves the caller's cancel flag alone"
+    );
 }
 
 /// The phone country the Upload is given reaches the Import Run it starts,
