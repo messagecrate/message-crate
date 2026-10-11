@@ -20,6 +20,8 @@ cd "${REPO_ROOT}"
 DOCKERFILE="docker/Dockerfile"
 failures=0
 saw_patch=0
+# An image pinned by tag and digest: <image>:<tag>@sha256:<digest>.
+pinned_image_re='^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$'
 
 if [[ ! -f "${DOCKERFILE}" ]]; then
   echo "${DOCKERFILE}: missing" >&2
@@ -60,19 +62,28 @@ if [[ "${in_patch}" -eq 1 && "${saw_patch}" -eq 0 ]]; then
 fi
 
 # The frontend. A "# syntax=" parser directive makes BuildKit pull that
-# image and parse the Dockerfile with it, so it runs at build time with the
-# reach of a base image and is pinned the same way (#2670). Dependabot reads
-# only FROM lines, so this digest is moved by hand.
+# image and parse the Dockerfile with it, so it is pinned like a base image
+# (#2670). The comment under the Dockerfile's syntax line says how its
+# digest is moved.
 #
-# Docker reads parser directives only at the top of the file, before any
-# blank line, other comment or instruction. The key is in any case, and
-# spaces may sit around the "#", the key and the "=".
+# This reads the directives as BuildKit's parser does
+# (frontend/dockerfile/parser/directives.go): it drops a byte order mark
+# and skips a first line that starts with "#!", then reads "# key=value"
+# lines until the first line that is not one. The key is in any case, and
+# spaces may sit around the "#", the key and the "=". BuildKit pulls only
+# the first word of the syntax value; the rest are frontend arguments.
+first=1
 while IFS= read -r line || [[ -n "${line}" ]]; do
   line="${line%$'\r'}"
-  [[ "${line}" =~ ^#[[:space:]]*([A-Za-z]+)[[:space:]]*=[[:space:]]*([^[:space:]]*)[[:space:]]*$ ]] || break
+  if [[ "${first}" -eq 1 ]]; then
+    first=0
+    line="${line#$'\xEF\xBB\xBF'}"
+    [[ "${line}" == '#!'* ]] && continue
+  fi
+  [[ "${line}" =~ ^#[[:space:]]*([A-Za-z][A-Za-z0-9]*)[[:space:]]*=[[:space:]]*(.*[^[:space:]])[[:space:]]*$ ]] || break
   [[ "${BASH_REMATCH[1],,}" == "syntax" ]] || continue
-  frontend="${BASH_REMATCH[2]}"
-  if [[ ! "${frontend}" =~ ^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+  frontend="${BASH_REMATCH[2]%%[[:space:]]*}"
+  if [[ ! "${frontend}" =~ ${pinned_image_re} ]]; then
     echo "${DOCKERFILE}: pin the BuildKit frontend by tag and digest (# syntax=<image>:<tag>@sha256:<digest>): ${line}" >&2
     failures=$((failures + 1))
   fi
@@ -127,7 +138,7 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   for name in "${stages[@]}"; do
     [[ "${image,,}" == "${name}" ]] && names_no_image=1
   done
-  if [[ "${names_no_image}" -eq 0 && ! "${image}" =~ ^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+  if [[ "${names_no_image}" -eq 0 && ! "${image}" =~ ${pinned_image_re} ]]; then
     echo "${DOCKERFILE}: pin the base image by tag and digest (FROM <image>:<tag>@sha256:<digest>): ${line}" >&2
     failures=$((failures + 1))
   fi
