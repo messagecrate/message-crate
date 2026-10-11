@@ -586,7 +586,8 @@ pub(crate) async fn attach_incomplete_original(
 }
 
 /// Write `bytes` at `<aa>/<sha><suffix>` in the account's assets directory,
-/// with a MIME sidecar when `mime` is given, and insert an attachment row of
+/// placed by the store's own shard rule (`shard_rel_path`) for the parsed
+/// fingerprint, with a MIME sidecar when `mime` is given, and insert an attachment row of
 /// `message_id` naming the file. Returns the attachment id.
 async fn attach_original_at(
     opened: &OpenDb,
@@ -597,13 +598,15 @@ async fn attach_original_at(
     mime: Option<&str>,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}{suffix}", &sha[..2]);
+    let sha = crate::assets_api::Sha256::parse(sha)
+        .expect("attach_original_at needs a 64-hex fingerprint");
+    let rel = crate::assets_api::shard_rel_path(&sha, suffix);
     let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
     let path = assets_dir.join(&rel);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, bytes).unwrap();
     if let Some(mime) = mime {
-        let sidecar = crate::asset_store::stored_sidecar_path(&assets_dir, sha).unwrap();
+        let sidecar = crate::asset_store::sidecar_path(&assets_dir, &sha);
         fs::write(sidecar, mime).unwrap();
     }
     let mut tx = crate::db::begin_write(conn).await.unwrap();
@@ -612,7 +615,7 @@ async fn attach_original_at(
          VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(message_id)
-    .bind(sha)
+    .bind(sha.as_str())
     .bind(rel)
     .bind(mime)
     .fetch_one(&mut *tx)
