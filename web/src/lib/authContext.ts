@@ -14,7 +14,7 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
-export interface AuthContextValue extends AuthState {
+interface AuthContextValue extends AuthState {
   login: (serverUrl: string, token: string, accountId: number) => Promise<void>;
   /** Save a new session token after the user changes their password. */
   updateToken: (token: string) => void;
