@@ -669,7 +669,7 @@ pub async fn account_clock(
     account_id: i64,
 ) -> Result<(chrono_tz::Tz, chrono::NaiveDate)> {
     let zone = load_time_zone(conn, account_id).await?;
-    Ok((zone, crate::search::today_in(zone)))
+    Ok((zone, crate::search::today_in(zone, chrono::Utc::now())))
 }
 
 /// Load the `preferred_name` for an account, if set.
