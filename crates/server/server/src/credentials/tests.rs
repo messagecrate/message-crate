@@ -353,10 +353,7 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         assert!(!is_valid_username(bad), "{bad:?} must be refused");
     }
 
-    // Only ASCII letters and digits, because the account lookup
-    // (`COLLATE NOCASE`) and the rate-limit bucket fold ASCII letters only.
-    // A letter from another script would make a second account whose name
-    // looks like an existing one: `аdmin` with a Cyrillic `а` beside `admin`.
+    // Letters from other scripts are refused; `is_valid_username` says why.
     for other_script in ["аdmin", "mätt", "матт", "ｍatt", "matt\u{0301}", "٣"] {
         assert!(
             !is_valid_username(other_script),
