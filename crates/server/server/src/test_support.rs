@@ -1112,7 +1112,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
 /// named by `sha` alone, with no extension, as the store names an Asset.
 ///
 /// `sha` stands in for the content hash; the store never reads the bytes
-/// back here, so it only has to be 64 characters long the way a real digest
+/// back here, so it only has to be 64 hex characters the way a real digest
 /// is. The file goes in the account's one assets directory, the directory
 /// every source of the account shares, which is where a delete looks for it.
 pub async fn attach_stored_file(
@@ -1121,15 +1121,13 @@ pub async fn attach_stored_file(
     conversation_id: i64,
     sha: &str,
 ) -> std::path::PathBuf {
-    let shard = state
-        .cfg
-        .paths
-        .assets_dir_for_account(account_id)
-        .join(&sha[..2]);
+    let assets_dir = state.cfg.paths.assets_dir_for_account(account_id);
+    let shard = assets_dir.join(&sha[..2]);
     std::fs::create_dir_all(&shard).unwrap();
     let path = shard.join(sha);
     std::fs::write(&path, b"jpeg bytes").unwrap();
-    std::fs::write(shard.join(format!(".{sha}.mime")), "image/jpeg").unwrap();
+    let sidecar = crate::asset_store::stored_sidecar_path(&assets_dir, sha).unwrap();
+    std::fs::write(sidecar, "image/jpeg").unwrap();
 
     let mut conn = state.db.acquire().await.unwrap();
     let message_id: i64 = sqlx::query_scalar(
