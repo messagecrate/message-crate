@@ -19,3 +19,8 @@ export function navGlyphRowClass(active: boolean): string {
     active ? "bg-hover font-semibold" : "bg-transparent font-normal"
   }`;
 }
+
+/** A row shell that is itself the button, such as Import or **No Contact Group**. */
+export function navGlyphButtonRowClass(active: boolean): string {
+  return `${navGlyphRowClass(active)} cursor-pointer`;
+}

@@ -9,7 +9,8 @@ import type { ContactBrowseTarget, ContactPreview } from "./contactDrawer/contac
 /**
  * The navigation panel's item a route is on, which the panel highlights: one
  * of its Browse rows, or Import or Export. The route declares it, so the
- * panel needs no route table of its own to find these rows' current one.
+ * panel needs no route table of its own to know which of these rows to
+ * highlight.
  */
 export type NavItem = "messages" | "contacts" | "trash" | "import" | "export";
 

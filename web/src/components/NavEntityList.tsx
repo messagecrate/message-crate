@@ -11,6 +11,7 @@ import NavGlyphButton from "./NavGlyphButton";
 import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
 import PlainButton from "./PlainButton";
@@ -142,7 +143,7 @@ export default function NavEntityList({
         {copy.permanentRoute && copy.permanentLabel ? (
           <PlainButton
             onPress={() => navigate(copy.permanentRoute as string)}
-            className={`${navGlyphRowClass(location.pathname === copy.permanentRoute)} cursor-pointer`}
+            className={navGlyphButtonRowClass(location.pathname === copy.permanentRoute)}
           >
             <span className={NAV_NESTED_ROW_CLASS}>
               <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>
@@ -203,7 +204,7 @@ export default function NavEntityList({
 
         <PlainButton
           onPress={() => navigate(copy.emptyRoute)}
-          className={`${navGlyphRowClass(location.pathname === copy.emptyRoute)} cursor-pointer`}
+          className={navGlyphButtonRowClass(location.pathname === copy.emptyRoute)}
         >
           <span className={NAV_NESTED_ROW_CLASS}>
             <span className={NAV_LEADING_GLYPH_CLASS}>{emptyIcon}</span>

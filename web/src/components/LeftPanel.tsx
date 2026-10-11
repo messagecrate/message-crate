@@ -40,6 +40,7 @@ import {
   NAV_LEADING_GLYPH_CLASS,
   NAV_LEADING_ROW_CLASS,
   NAV_NESTED_ROW_CLASS,
+  navGlyphButtonRowClass,
   navGlyphRowClass,
 } from "./navSectionLayout";
 import PlainButton from "./PlainButton";
@@ -122,11 +123,10 @@ export default function LeftPanel({
    * The props of `item`'s row: its look from `rowClass`, highlighted when the
    * route is on it, and `aria-current` to mark it for a screen reader.
    */
-  const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => ({
-    className: rowClass(navItem === item),
-    "aria-current": navItem === item ? ("page" as const) : undefined,
-  });
-  const nestedRowClass = (active: boolean) => `${navGlyphRowClass(active)} cursor-pointer`;
+  const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => {
+    const active = navItem === item;
+    return { className: rowClass(active), "aria-current": active ? ("page" as const) : undefined };
+  };
 
   const { savedSearches: groups } = useSavedSearches();
   const savedSearchActions = useSavedSearchActions();
@@ -207,7 +207,10 @@ export default function LeftPanel({
             title="Messages"
             headingActive={navItem === "import" || navItem === "export"}
           >
-            <PlainButton onPress={() => navigate("/import")} {...itemRow("import", nestedRowClass)}>
+            <PlainButton
+              onPress={() => navigate("/import")}
+              {...itemRow("import", navGlyphButtonRowClass)}
+            >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
                   <ImportIcon size={15} />
@@ -235,7 +238,7 @@ export default function LeftPanel({
                     : "/export",
                 )
               }
-              {...itemRow("export", nestedRowClass)}
+              {...itemRow("export", navGlyphButtonRowClass)}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
