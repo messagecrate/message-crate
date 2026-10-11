@@ -44,7 +44,7 @@ import { runUpload } from "./upload";
  * An Import Run whose Staging was interrupted, and the run directory it was
  * writing into. It has passed no Review, so it has no approved plan.
  */
-export type ResumeWrite = Omit<OpenRun, "approved"> & {
+type ResumeWrite = Omit<OpenRun, "approved"> & {
   /** The list recorded on the run at creation (`source_identities`,
    * parsed by the caller). A resumed write lands back on the Staging Review
    * without re-probing the backup, so this is the only way that Review's identity
@@ -53,13 +53,13 @@ export type ResumeWrite = Omit<OpenRun, "approved"> & {
 };
 
 /**
- * An existing Import Run to pick up, and the stage it picks up at. `upload`
+ * An existing Import Run to resume, and the stage it resumes at. `upload`
  * is a run whose run directory is already complete: it goes straight to
  * Upload. `staging` is a run whose Staging was interrupted: its Staging
  * resumes in the same run directory and skips the conversations already
  * written.
  */
-export type PickUp = { at: "upload"; run: OpenRun } | { at: "staging"; run: ResumeWrite };
+export type Resume = { at: "upload"; run: OpenRun } | { at: "staging"; run: ResumeWrite };
 
 /**
  * The form an Import Run is started with, its attachment mode as the form
@@ -118,7 +118,7 @@ async function startRunLog(
 }
 
 /**
- * Run an Import Run from the start, or pick one up at the stage `pickUp`
+ * Run an Import Run from the start, or resume one at the stage `resume`
  * names.
  */
 export async function runImport(
@@ -126,7 +126,7 @@ export async function runImport(
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
-  pickUp?: PickUp,
+  resume?: Resume,
 ): Promise<void> {
   if (!ctx.desktop.isTauri()) return;
   const { store } = ctx;
@@ -147,7 +147,7 @@ export async function runImport(
   try {
     if (!token) throw new Error("Not authenticated");
 
-    if (!pickUp) {
+    if (!resume) {
       // A new Import Run works to the server's attachment size limit as it is
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
@@ -158,8 +158,8 @@ export async function runImport(
       store.set({ form });
     }
 
-    if (pickUp?.at === "upload") {
-      const { run } = pickUp;
+    if (resume?.at === "upload") {
+      const { run } = resume;
       // The run directory is already complete, so there is nothing to
       // resolve, no new run to create (the account already has this one),
       // and no extract to run. resume_upload is only ever offered after the
@@ -184,13 +184,16 @@ export async function runImport(
       return;
     }
 
-    // Only a run that extracts starts from the fresh list; an Upload picked up above
+    // Only a run that extracts starts from the fresh list; an Upload resumed above
     // built its own, so setting this first would be overwritten.
     store.set({ steps: initialSteps("active", form.attachmentMedia) });
 
     let runDir: string;
-    if (pickUp?.at === "staging") {
-      const { run } = pickUp;
+    // Whether the extract resumes a Staging that was interrupted.
+    let resumesStaging = false;
+    if (resume?.at === "staging") {
+      const { run } = resume;
+      resumesStaging = true;
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
@@ -234,7 +237,7 @@ export async function runImport(
         source: form.source,
         path: form.backupPath,
         output_dir: runDir,
-        ...(pickUp?.at === "staging" ? { resume: true } : {}),
+        ...(resumesStaging ? { resume: true } : {}),
         asset_max_bytes: assetLimitOf(form),
         // The media fields go only to a source whose form shows them, as the
         // person chose them: extract checks them before anything is staged

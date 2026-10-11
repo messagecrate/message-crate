@@ -31,7 +31,7 @@ import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";
 import type { ImportRunDeps } from "./run/context";
 import { createImportRunService, type ImportRunService, type RunAccount } from "./run/service";
-import type { PickUp } from "./run/staging";
+import type { Resume } from "./run/staging";
 
 export type { ImportPhase, ImportStep } from "./importProgressState";
 
@@ -126,8 +126,8 @@ export function useImportJob(service: ImportRunService = importRunService) {
     runDirDeleteFailure: state.runDirDeleteFailure,
     discardRun: service.discardRun,
     dismissRunDirDeleteFailure: service.dismissRunDirDeleteFailure,
-    startImport: (form: ImportJobFormValues, pickUp?: PickUp) =>
-      service.startImport(account, form, pickUp),
+    startImport: (form: ImportJobFormValues, resume?: Resume) =>
+      service.startImport(account, form, resume),
     continueAfterIdentityStop: () => service.continueAfterIdentityStop(account),
     cancelIdentityStop: () => service.cancelIdentityStop(account),
     approve: () => service.approve(account),
