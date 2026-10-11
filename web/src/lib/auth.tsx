@@ -1,17 +1,16 @@
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import LogoutDialog, { type LogoutDialogState } from "../components/LogoutDialog";
-import PathList from "../components/PathList";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
-import { errorText } from "./apiErrorMessage";
 import { AuthContext, type AuthState } from "./authContext";
 import { parsePersistedAuth } from "./authGuards";
+import { deleteRunDirectories } from "./importRun";
+import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
 import { createQueryClient } from "./routeQuery";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import { getSession, logout as serverLogout } from "./serverApi";
 import { onSessionRefused } from "./sessionRefusal";
 import { readPref, removePref, writePref } from "./storage";
-import { destroyWindow, invokeDeleteRunDir, onWindowCloseRequested } from "./tauri";
+import { destroyWindow, onWindowCloseRequested } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 
@@ -32,9 +31,6 @@ const SERVER_ADDRESS_KEY = "message-crate-server-address";
  * logged in; the Upload then resumes from what its journal recorded as sent.
  */
 export const UPLOAD_PAUSE_LIMIT_MS = 15_000;
-
-const UPLOAD_NOT_PAUSED =
-  "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
 
 /** Max time to wait for the server logout request before clearing local state. */
 const LOGOUT_TIMEOUT_MS = 2000;
@@ -94,6 +90,9 @@ function clearPersisted() {
 
 /**
  * Holds login state for the app and restores a saved session on startup.
+ *
+ * It also holds what logging out has to show, for `LogoutDialog` to read
+ * from `useLogoutPrompt`; the app places that dialog, not this provider.
  *
  * It also builds the query client every screen fetches through. A query or
  * mutation the server refuses because the session has ended has to log the
@@ -315,7 +314,7 @@ function SessionProvider({
   // What logout shows: the question it asks while an Upload runs, the wait
   // while that Upload pauses, and a notice once logged out. `answer` settles
   // the logout waiting on the question; `logOutNow` ends the wait.
-  const [dialog, setDialog] = useState<LogoutDialogState | null>(null);
+  const [dialog, setDialog] = useState<LogoutPromptState | null>(null);
   const answer = useRef<(logOut: boolean) => void>(() => {});
   const logOutNow = useRef<() => void>(() => {});
 
@@ -376,14 +375,10 @@ function SessionProvider({
         await pause.ended;
         const undeleted = await deleteRunDirectories(deletedAccountDirectories);
         if (undeleted.length > 0) {
-          setDialog({
-            kind: "notice",
-            title: "Directories of Import Runs left on this computer",
-            body: <UndeletedDirectories directories={undeleted} />,
-          });
+          setDialog({ kind: "undeletedDirectories", directories: undeleted });
         }
       } else if (!paused) {
-        setDialog({ kind: "notice", title: "Logged out", body: UPLOAD_NOT_PAUSED_BODY });
+        setDialog({ kind: "notPaused" });
       }
     },
     [revokeSession, pauseWithinLimit],
@@ -449,54 +444,25 @@ function SessionProvider({
     };
   }, [revokeSession]);
 
+  const logoutPrompt = useMemo(
+    () => ({
+      state: dialog,
+      logOut: () => answer.current(true),
+      goBack: () => {
+        setDialog(null);
+        answer.current(false);
+      },
+      logOutNow: () => logOutNow.current(),
+      dismiss: () => setDialog(null),
+    }),
+    [dialog],
+  );
+
   return (
     <AuthContext.Provider
       value={{ ...state, login, logout, updateToken, setServer, retrySavedLogin }}
     >
-      {children}
-      <LogoutDialog
-        state={dialog}
-        onLogOut={() => answer.current(true)}
-        onGoBack={() => {
-          setDialog(null);
-          answer.current(false);
-        }}
-        onLogOutNow={() => logOutNow.current()}
-        onDismiss={() => setDialog(null)}
-      />
+      <LogoutPromptContext.Provider value={logoutPrompt}>{children}</LogoutPromptContext.Provider>
     </AuthContext.Provider>
-  );
-}
-
-const UPLOAD_NOT_PAUSED_BODY = (
-  <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{UPLOAD_NOT_PAUSED}</p>
-);
-
-/** An Import Run's directory that could not be deleted, and why. */
-type UndeletedDirectory = { path: string; reason: string };
-
-/** Delete each directory, and return the ones that could not be deleted. */
-async function deleteRunDirectories(directories: readonly string[]): Promise<UndeletedDirectory[]> {
-  const undeleted: UndeletedDirectory[] = [];
-  for (const path of directories) {
-    try {
-      await invokeDeleteRunDir({ run_dir: path });
-    } catch (e) {
-      undeleted.push({ path, reason: errorText(e) });
-    }
-  }
-  return undeleted;
-}
-
-/** Names each Import Run's directory a deleted account left behind, and why. */
-function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
-  return (
-    <>
-      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-        Message Crate could not delete these directories of the deleted account's Import Runs.
-        Delete them by hand to free the space they take:
-      </p>
-      <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
-    </>
   );
 }

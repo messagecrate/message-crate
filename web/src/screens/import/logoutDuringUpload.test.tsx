@@ -11,6 +11,7 @@
 // it for the next login (#1491 for the Upload, #1677 for the run's own calls).
 
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, getToken } from "../../lib/api";
 import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
@@ -83,6 +84,7 @@ vi.mock("../../lib/tauri-check", () => ({
 }));
 
 const { AuthProvider } = await import("../../lib/auth");
+const { default: LogoutDialog } = await import("../../components/LogoutDialog");
 const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
 const { importRunService, useImportJob } = await import("./useImportJob");
@@ -145,10 +147,18 @@ type Screen = {
   auth: ReturnType<typeof useAuth>;
 };
 
-/** The Import screen's hook beside the login state, under the real AuthProvider. */
+/**
+ * The Import screen's hook beside the login state, under the real AuthProvider,
+ * with the logout dialog placed beside it as `App.tsx` places it.
+ */
 async function logIn(): Promise<{ current: Screen }> {
   const { result } = renderHook((): Screen => ({ job: useImportJob(), auth: useAuth() }), {
-    wrapper: AuthProvider,
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <AuthProvider>
+        {children}
+        <LogoutDialog />
+      </AuthProvider>
+    ),
   });
   await act(() => result.current.auth.login("http://127.0.0.1:8080", "session-token", 7));
   return result;

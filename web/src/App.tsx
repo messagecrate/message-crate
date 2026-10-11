@@ -11,6 +11,7 @@ import {
   TrashRoute,
 } from "./components/BrowseRoutes";
 import ImportExportRoute from "./components/ImportExportRoute";
+import LogoutDialog from "./components/LogoutDialog";
 import { useMouseHistoryNavigation } from "./hooks/useMouseHistoryNavigation";
 import { AuthProvider } from "./lib/auth";
 import { useAuth } from "./lib/authContext";
@@ -144,6 +145,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <AppRoutes />
+        <LogoutDialog />
       </AuthProvider>
     </ThemeProvider>
   );
