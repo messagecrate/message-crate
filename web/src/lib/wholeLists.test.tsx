@@ -26,7 +26,7 @@ import {
 } from "./serverApi";
 import { useContactGroups } from "./useContactGroups";
 
-vi.mock("./auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("./authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("./api", () => ({
   apiClient: {

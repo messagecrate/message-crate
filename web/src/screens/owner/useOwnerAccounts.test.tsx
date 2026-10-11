@@ -18,7 +18,7 @@ import { testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { useDeleteAccount, useDeleteAccountMessages } from "./useOwnerAccounts";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

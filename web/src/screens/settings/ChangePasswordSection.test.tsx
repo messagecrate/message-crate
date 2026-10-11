@@ -12,7 +12,7 @@ import { ChangePasswordSection } from "./ChangePasswordSection";
 const changePassword = vi.hoisted(() => vi.fn());
 const updateToken = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ accountId: 101, updateToken }),
 }));
 

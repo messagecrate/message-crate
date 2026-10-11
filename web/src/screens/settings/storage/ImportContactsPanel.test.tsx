@@ -10,7 +10,7 @@ vi.mock("../../../lib/serverApi", () => ({
   getImportContacts: vi.fn(),
 }));
 
-vi.mock("../../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 const get = vi.mocked(getImportContacts);
 

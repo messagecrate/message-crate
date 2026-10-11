@@ -10,7 +10,7 @@ import { DemoAccountCard } from "./DemoAccountCard";
 const getDemoAccount = vi.hoisted(() => vi.fn());
 const replaceDemoAccount = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ accountId: 1 }),
 }));
 

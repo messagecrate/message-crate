@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../test/providers";
 import SourcesPanel from "./SourcesPanel";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
 
 const getSources = vi.fn();
 

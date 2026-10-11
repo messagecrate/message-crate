@@ -1,9 +1,9 @@
 /**
  * How a cache entry is named.
  *
- * Its own module, importing nothing, because both `routeQuery` and `auth` need
- * it: `routeQuery` reads the logged-in account from `auth`, so `auth` importing
- * `routeQuery` back would be a cycle.
+ * Its own module, importing nothing, so a key can be named without loading
+ * `routeQuery`. `routeQuery` reads the logged-in account from `authContext`,
+ * never from `auth`, so `auth` can import `routeQuery` without a cycle.
  */
 
 /** Key parts, before the account is put in front of them. */

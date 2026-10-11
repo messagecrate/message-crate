@@ -17,7 +17,7 @@ import type { OffsetPage } from "./routeQuery";
 import { useRouteCache, useRoutePagedList, useRouteQuery } from "./routeQuery";
 
 const account = { current: 7 };
-vi.mock("./auth", () => ({
+vi.mock("./authContext", () => ({
   useAuth: () => ({ accountId: account.current }),
 }));
 
