@@ -332,6 +332,22 @@ describe("ImportScreen entering Import", () => {
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
   });
 
+  it("says the run directory could not be checked, not that it is gone, when the app may not read it", async () => {
+    getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
+    invokePathStatMock.mockResolvedValue({
+      exists: false,
+      isFile: false,
+      isDirectory: false,
+      sizeBytes: 0,
+      modifiedUnixMs: null,
+      unreadable: { kind: "permission_denied", reason: "Permission denied (os error 13)" },
+    });
+    renderWithProviders(<ImportScreen />);
+
+    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
+  });
+
   it("discards the run and drops through to the form", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(activeImportRun({ stage: "upload" }));
@@ -716,6 +732,26 @@ describe("ImportScreen entering Import", () => {
 
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("source_changed");
+  });
+
+  it("resumes the copy, rather than calling the backup changed, when the backup check fails", async () => {
+    getActiveImportRunMock.mockResolvedValue(
+      activeImportRun({
+        stage: "write",
+        source_fingerprint: {
+          path: "/backups/iphone.tar",
+          size_bytes: 1000,
+          modified_unix_ms: 1_700_000_000_000,
+        },
+      }),
+    );
+    invokePathStatMock
+      .mockResolvedValueOnce({ exists: true, isFile: false, isDirectory: true, unreadable: null })
+      .mockRejectedValueOnce(new Error("ipc down"));
+    renderWithProviders(<ImportScreen />);
+
+    expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_write");
   });
 
   it("re-checks for an open run when the screen returns to the form", async () => {

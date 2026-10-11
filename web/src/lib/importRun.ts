@@ -108,8 +108,13 @@ export async function discardImportRun(
  * describe the directory entry rather than its contents, and neither moves
  * when a file inside it grows. `checkSourceFingerprint` reads this
  * fingerprint back on resume, so a change inside a directory goes unseen there.
+ *
+ * Null for a backup the operating system would not describe: its size and
+ * modified time are unknown, and recording zeros would read as a changed
+ * backup once the app may read it.
  */
-export function buildSourceFingerprint(path: string, stat: PathStat): SourceFingerprint {
+export function buildSourceFingerprint(path: string, stat: PathStat): SourceFingerprint | null {
+  if (stat.unreadable) return null;
   return {
     path,
     size_bytes: stat.sizeBytes,

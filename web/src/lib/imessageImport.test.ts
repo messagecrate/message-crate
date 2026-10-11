@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
+import {
+  DENIED_STAT,
+  DIRECTORY_STAT,
+  FILE_STAT,
+  MISSING_STAT,
+  NEITHER_STAT,
+} from "../test/pathStats";
 import {
   IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
   IMESSAGE_ERR_CONTACTS_NOT_FILE,
@@ -422,7 +428,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "",
       }),
     ).toBe("/Users/sam/Library/Messages/chat.db");
@@ -430,7 +436,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "linux",
         homeDir: "/home/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "",
       }),
     ).toBe("");
@@ -438,7 +444,7 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: false,
+        chatDb: MISSING_STAT,
         rememberedPath: "",
       }),
     ).toBe("");
@@ -446,9 +452,20 @@ describe("Mac Messages pre-fill", () => {
       shouldPrefillMacMessagesDb({
         os: "macos",
         homeDir: "/Users/sam",
-        chatDbExists: true,
+        chatDb: FILE_STAT,
         rememberedPath: "/copied/chat.db",
       }),
     ).toBe("/copied/chat.db");
+  });
+
+  it("pre-fills a chat.db macOS will not let the app read, so the form can say why", () => {
+    expect(
+      shouldPrefillMacMessagesDb({
+        os: "macos",
+        homeDir: "/Users/sam",
+        chatDb: DENIED_STAT,
+        rememberedPath: "",
+      }),
+    ).toBe("/Users/sam/Library/Messages/chat.db");
   });
 });

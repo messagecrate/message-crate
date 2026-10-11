@@ -449,6 +449,19 @@ released versions carry their date on the heading.
   Import Run's log.** It used to be written where no log of Message Crate
   showed it (#2165).
 
+- 2026-10-10: **The Import form tells a path it may not read from one that
+  is not there.** A backup path the desktop app is not allowed to read, such
+  as a directory macOS protects until the app has Full Disk Access, used to be
+  reported as "This path does not exist.", which sent people looking for a
+  different path when the fix was a permission. The form now says Message
+  Crate isn't allowed to read the path, gives the reason the system gave, and
+  says that on a Mac, Full Disk Access lets it read the path. On a Mac
+  without Full Disk Access, Apple Messages on this Mac now fills in the
+  Messages database anyway, so that message shows at once. When the app
+  could not check a path at all, the form says so rather than calling it
+  missing. A stopped Import Run whose directory or backup the app may not
+  read is no longer offered for discarding as if it were gone or changed
+  (#2173).
 - 2026-10-10: **Converting or compressing attachments no longer follows a
   symlink.** When the Media Stage of an Import Run converts or compresses
   attachments, a symlink among the staged attachments used to be followed:
@@ -706,6 +719,13 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **An attachment the server cannot read is written to its
+  log.** Before it skips an upload because an attachment is already
+  stored, the server reads the stored copy to check it. When that read
+  failed, for example on a failing disk or after a permission change, the
+  server asked for the attachment again and said nothing about why. The
+  attachment is still sent again, and the server's log now names the file
+  it could not read and the error (#2171).
 - 2026-10-10: **A request too large for the server reads the same
   everywhere.** When the server refuses a request for being over its size
   limit, the message now always reads "the request body is too large". It

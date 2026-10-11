@@ -16,7 +16,7 @@ import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
 import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
-import type { ImportPathStat } from "../lib/pathChecks";
+import { probePath } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
@@ -54,6 +54,7 @@ import RunDirDeleteFailureNotice from "./import/RunDirDeleteFailureNotice";
 import {
   checkSourceFingerprint,
   type DirectoryCheck,
+  type FingerprintCheck,
   type ResumeDecision,
   resumeDecisionFor,
   resumeReadsBackup,
@@ -74,29 +75,17 @@ const NO_IDENTIFIERS: readonly string[] = [];
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
-async function probePath(path: string): Promise<ImportPathStat | null> {
-  const trimmed = path.trim();
-  if (trimmed === "") return null;
-  try {
-    return await invokePathStat(trimmed);
-  } catch {
-    return { exists: false, isFile: false, isDirectory: false };
-  }
-}
-
 /**
- * Whether a run's directory is still on disk. A stat that fails
- * outright is "unknown", not "missing": an IPC error says nothing about the
- * directory, and reading it as gone would offer to discard staged work that
- * may well still be there.
+ * Whether a run's directory is still on disk. A check that fails outright,
+ * or a directory the operating system will not describe, is "unknown", not
+ * "missing": neither says anything about whether the directory is there,
+ * and reading it as gone would offer to discard staged work that may well
+ * still be there.
  */
 async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
-  try {
-    const stat = await invokePathStat(runDir);
-    return stat.exists && stat.isDirectory ? "present" : "missing";
-  } catch {
-    return "unknown";
-  }
+  const stat = await probePath(runDir);
+  if (stat === null || stat.unreadable) return "unknown";
+  return stat.exists && stat.isDirectory ? "present" : "missing";
 }
 
 export default function ImportScreen() {
@@ -267,10 +256,16 @@ export default function ImportScreen() {
         // Only a resume of the copy consults this; every later stage works
         // from the staged directory rather than the backup. The desktop
         // `PathStat`, not `probePath`'s `ImportPathStat`: the comparison needs
-        // the size and modified time, which `ImportPathStat` leaves out.
-        const sourceStat = run?.source_fingerprint?.path
-          ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
-          : null;
+        // the size and modified time, which `ImportPathStat` leaves out. A
+        // check that fails says nothing about the backup, so it is
+        // "unknown", never a backup that is gone.
+        const stored = run?.source_fingerprint ?? null;
+        const fingerprint: FingerprintCheck = stored?.path
+          ? await invokePathStat(stored.path).then(
+              (stat) => checkSourceFingerprint(stored, stat),
+              () => "unknown" as const,
+            )
+          : checkSourceFingerprint(stored, null);
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
         if (!cancelled && !resumingRef.current && !discardingRef.current) {
@@ -279,7 +274,7 @@ export default function ImportScreen() {
               run,
               deviceId: getDeviceId(),
               directory,
-              fingerprint: checkSourceFingerprint(run?.source_fingerprint ?? null, sourceStat),
+              fingerprint,
             }),
           );
         }
@@ -636,7 +631,7 @@ export default function ImportScreen() {
         const prefill = shouldPrefillMacMessagesDb({
           os: home.os,
           homeDir: home.path,
-          chatDbExists: stat.exists && stat.isFile,
+          chatDb: stat,
           rememberedPath: loadedBackup,
         });
         if (prefill === "") return;
