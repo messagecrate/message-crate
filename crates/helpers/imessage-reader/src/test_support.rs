@@ -69,7 +69,8 @@ impl FixtureDb {
     pub(crate) fn messages(session: &MailSession) -> Vec<Message> {
         let db = session.data_source.db();
         let mut statement =
-            Message::stream_rows(db, &session.options.query_context).expect("the message query");
+            Message::stream_rows(db, &session.capabilities, &session.options.query_context)
+                .expect("the message query");
         let mut out: Vec<Message> = Message::rows(&mut statement, [])
             .expect("message rows")
             .map(|row| row.expect("a message row"))
