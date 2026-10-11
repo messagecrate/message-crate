@@ -69,6 +69,7 @@ An Import Run already under way keeps the limit it started with, so its Staging 
 
 The Demo Account holds made-up conversations.
 Anyone who reaches the server opens it with **Explore Demo Account** on the login screen, and it has no password.
+On a server [published on the network](/docs/user/features/owner/run-on-another-machine/#only-on-a-trusted-network), that means every device on the network.
 Every new Message Crate starts with it.
 
 - **Add Demo Account** shows when there is none. It builds the account with the size chosen beside it.
@@ -79,7 +80,9 @@ Medium takes a few seconds. Large takes about a minute.
 The card shows **Building the Demo Account** until the build ends, and the server keeps working meanwhile.
 Nobody can be in the Demo Account during a build: the build logs out anyone already in it, and the login screen offers **Explore Demo Account** again once the build ends.
 
-The Demo Account is removed under **User Accounts**, as any account is.
+The Demo Account is removed under **User Accounts**, as any account is, with **Delete account** in its **Danger zone**.
+That is how an Owner closes it to the network, because no setting does.
+A restart does not bring it back: the server builds it only for a new Message Crate, and **Add Demo Account** builds it again.
 Its page there shows its status, permissions, and identities, and none of them can be changed.
 
 Below the Demo Account:
