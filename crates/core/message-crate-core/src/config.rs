@@ -281,8 +281,6 @@ pub struct SmsBackupPlusConfig {
     pub phone_country: Option<&'static phone::Country>,
     /// Whether to emit verbose log lines.
     pub verbose: bool,
-    /// Whether to print the end-of-run summary.
-    pub include_summary: bool,
 }
 
 #[derive(Debug, Clone, Default)]

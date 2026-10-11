@@ -540,7 +540,6 @@ impl Form {
                 owner_emails,
                 phone_country: self.phone_country(),
                 verbose: true,
-                include_summary: true,
             }),
         )
     }

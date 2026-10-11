@@ -164,6 +164,11 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **An SMS Backup+ import finishes the way the other imports
+  do.** It now ends through the same steps as GO SMS Pro and the others,
+  instead of a copy of them kept for a setting no import could change.
+  Nothing changes on screen (#2163).
+
 - 2026-10-10: **SMS Backup & Restore and GO SMS Pro read a message's time
   the same way.** Both imports now share one check of which message times
   are readable, so they can no longer drift apart. Nothing changes on
