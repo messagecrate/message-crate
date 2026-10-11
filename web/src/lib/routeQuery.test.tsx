@@ -112,11 +112,16 @@ describe("createQueryClient", () => {
     return fetchGroups.mock.calls.length;
   }
 
-  it.each([403, 404, 422, 429])("asks once when the server answers %i", async (status) => {
-    expect(await callsUntilError(new ApiError(status, "refused"))).toBe(1);
+  it.each([
+    [403, "Forbidden"],
+    [404, "Not Found"],
+    [422, "Unprocessable Entity"],
+    [429, "Too Many Requests"],
+  ])("asks once when the server answers %i %s", async (status, reason) => {
+    expect(await callsUntilError(new ApiError(status, reason))).toBe(1);
   });
 
-  it("asks again once when the server answers 500", async () => {
+  it("asks again once when the server answers 500 Internal Server Error", async () => {
     expect(await callsUntilError(new ApiError(500, "server error"))).toBe(2);
   });
 

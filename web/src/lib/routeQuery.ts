@@ -95,7 +95,8 @@ export function createQueryClient({
         // request that never reached the server, or a `5xx`. A `4xx` answers
         // the same request the same way again, so asking again only delays
         // the error on screen (or the login screen, for an ended session),
-        // and a `429` adds a request to a client already over the limit.
+        // and a `429 Too Many Requests` adds a request to a client already
+        // over the limit.
         retry: (failureCount, error) => failureCount < 1 && !refusedRequest(error),
         refetchOnWindowFocus: true,
       },
