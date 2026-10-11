@@ -77,9 +77,11 @@ updates:
       # 2028. Before that day, the stage moves to whichever Node.js release
       # is LTS then, and so does every other Node.js 24 pin with it: the
       # node-version of the web, docs and release jobs in ci.yml and of the
-      # docs job in docs.yml, and the Node.js version AGENTS.md and the
-      # developer docs tell a contributor to install. A tag whose Node.js
-      # has ended gets no new image, so its digest stops moving. The runtime
+      # build job in docs.yml, the Node row and First time setup in
+      # AGENTS.md, and docs/src/content/docs/docs/developer/contributing.md
+      # and docker.md beside it. The npm-audit job in audit.yml builds
+      # nothing and keeps its own version. A tag whose Node.js has ended
+      # gets no new image, so its digest stops moving. The runtime
       # stage's node:20 is such a tag, and #2065 replaces it.
       - dependency-name: node
         update-types: ["version-update:semver-major"]
