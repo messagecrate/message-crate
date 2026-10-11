@@ -147,6 +147,7 @@ export default function ContactList({
   const groupActive = Boolean(groupFilter);
   const advancedActive = hasFieldToken(filter);
   const combined = groupListQuery(groupFilter, filter);
+  const groupPageOnly = groupActive && !filter.trim();
   // The query the list wants from the server, and whether it waits for typing to stop.
   let wantedQ = combined;
   let waitForTyping = false;
@@ -156,15 +157,15 @@ export default function ContactList({
   } else if (haveFullCatalog && !advancedActive) {
     // The full catalog is already in memory, so filter it in the browser.
     wantedQ = "";
-  } else if (!(groupActive && !filter.trim())) {
-    // A Contact Group page opens at once; a search waits for the last key.
+  } else if (groupPageOnly) {
+    // A Contact Group page opens at once.
+  } else {
+    // A search waits for the last key.
     waitForTyping = true;
   }
-  // `settledQ` follows every wanted query, at once for those that do not wait,
-  // so a search typed next keeps the query in use until it settles. It starts
-  // empty: a list opened on a search loads the full catalog first.
-  const settledQ = useDebouncedValue(wantedQ, waitForTyping ? FILTER_DEBOUNCE_MS : 0, "");
-  const serverQ = waitForTyping ? settledQ : wantedQ;
+  // A search keeps the query in use until it settles. The query starts empty,
+  // so a list opened on a search loads the full catalog first.
+  const serverQ = useDebouncedValue(wantedQ, waitForTyping ? FILTER_DEBOUNCE_MS : 0, "");
 
   const onSortChange = (next: ContactSortState) => {
     setSortState(next);

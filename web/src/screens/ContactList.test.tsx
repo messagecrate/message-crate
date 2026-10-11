@@ -389,6 +389,22 @@ describe("ContactList", () => {
       expect(asked()).toEqual(["", "name:a", "", "name:b"]);
     });
 
+    it("keeps the full list when the next search is typed before any timer runs", async () => {
+      const { rerender } = render(page(""));
+      await wait(0);
+      rerender(page("name:a"));
+      await wait(FILTER_DEBOUNCE_MS);
+
+      // Cleared, then a new search typed with no timer run in between.
+      rerender(page(""));
+      rerender(page("name:b"));
+      await wait(FILTER_DEBOUNCE_MS - 1);
+      expect(asked()).toEqual(["", "name:a", ""]);
+
+      await wait(1);
+      expect(asked()).toEqual(["", "name:a", "", "name:b"]);
+    });
+
     it("asks for a Contact Group's page without waiting", async () => {
       render(page("", "Family"));
       await wait(0);
