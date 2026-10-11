@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Assert docker/Dockerfile copies every [patch.crates-io] path crate and
-# rust-toolchain.toml, and that its rust base image is on the pinned minor.
+# rust-toolchain.toml, that its rust base image is on the pinned minor, and
+# that every base image is pinned by tag and digest.
 #
 #   ./scripts/check-docker-context.sh
 #
@@ -81,7 +82,18 @@ else
   fi
 fi
 
+# The base images. A tag names whatever its publisher pushed last, so a
+# FROM by tag alone can start two builds of one commit from different
+# images. Each FROM names its digest after the tag, and Dependabot's docker
+# entry moves the digests by pull request (#2179).
+while IFS= read -r from; do
+  if [[ ! "${from}" =~ ^FROM[[:space:]]+[^[:space:]]+:[^[:space:]@]+@sha256:[0-9a-f]{64}([[:space:]]|$) ]]; then
+    echo "${DOCKERFILE}: pin the base image by tag and digest (FROM <image>:<tag>@sha256:<digest>): ${from}" >&2
+    failures=$((failures + 1))
+  fi
+done < <(grep -E '^FROM[[:space:]]' "${DOCKERFILE}")
+
 if [[ ${failures} -gt 0 ]]; then
-  echo "Docker rust-builder context check failed (${failures} failure(s))." >&2
+  echo "Docker context check failed (${failures} failure(s))." >&2
   exit 1
 fi

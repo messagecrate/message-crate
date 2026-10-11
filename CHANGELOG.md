@@ -173,6 +173,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: **The Docker image is built on fixed base images.** Each
+  image the Docker image is built from is now named by its exact content,
+  not only by a name its publisher can point at a newer image, so two builds
+  of the same Message Crate start from the same images. Updates to those
+  images now arrive as reviewed changes instead of slipping into a build
+  unseen (#2179).
+
 - 2026-10-10: **The Docker Compose files take away what the server does not
   need.** The container they start keeps no Linux privileges, cannot gain
   any, and cannot change its own files: the server writes only to the data
