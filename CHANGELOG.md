@@ -348,8 +348,8 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-11: **A new account can no longer take a username that looks
-  like another account's.** A username could hold letters from any script,
+- 2026-10-11: **A new username can no longer hold letters from other
+  scripts.** A username could hold letters from any script,
   so `аdmin` written with a Cyrillic `а` made a second account that read
   the same as `admin` in User Accounts, in the Audit Trail and on the login
   card. A username now holds only the letters A to Z, digits, `_`, `-` and
