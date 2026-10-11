@@ -108,7 +108,7 @@ describe("SortableColumn", () => {
       <Table aria-label="Checked contacts">
         <TableHeader>
           <SortableColumn id="conversations" align="right">
-            Threads
+            Conversations
           </SortableColumn>
         </TableHeader>
         <TableBody>
@@ -118,7 +118,7 @@ describe("SortableColumn", () => {
         </TableBody>
       </Table>,
     );
-    const header = screen.getByRole("columnheader", { name: /Threads/i });
+    const header = screen.getByRole("columnheader", { name: /Conversations/i });
     const group = header.querySelector(".flex-1");
     expect(group?.className).toMatch(/pr-4/);
     expect(group?.className).not.toMatch(/px-4/);

@@ -1378,9 +1378,9 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
 
             let assets = state.cfg.paths.assets_dir_for_account(other);
             let sha = crate::test_support::fake_sha256('c');
-            let blob = assets.join(&sha[..2]).join(format!("{sha}.png"));
-            std::fs::create_dir_all(blob.parent().unwrap()).unwrap();
-            std::fs::write(&blob, media::testutil::PNG_1X1_RGB).unwrap();
+            let asset_file = assets.join(&sha[..2]).join(format!("{sha}.png"));
+            std::fs::create_dir_all(asset_file.parent().unwrap()).unwrap();
+            std::fs::write(&asset_file, media::testutil::PNG_1X1_RGB).unwrap();
             let part = assets.join(".incoming").join(format!("{sha}-upload.part"));
             std::fs::create_dir_all(part.parent().unwrap()).unwrap();
             std::fs::write(&part, b"half an attachment").unwrap();

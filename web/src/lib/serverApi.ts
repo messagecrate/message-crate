@@ -587,7 +587,7 @@ export type MessagesListParams = {
 /**
  * One row per message matching `q`, across every conversation the account
  * has. A read route, not Export: the Messages list on the Messages screen
- * reads it, and the thread's find box uses it with `in:#id`.
+ * reads it, and the conversation's find box uses it with `in:#id`.
  */
 export function listMessages(
   params: MessagesListParams,

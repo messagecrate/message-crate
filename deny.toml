@@ -12,13 +12,11 @@ all-features = false
 [advisories]
 # In cargo-deny >= 0.18 vulnerability advisories always fail the check and
 # unmaintained/unsound are scopes (default: check all), so specific findings
-# can only be silenced with `ignore`. Each entry below is deliberate; a new
-# advisory still fails the gate until it is fixed or ignored here.
+# can only be silenced with `ignore`. Every entry in `ignore` must be
+# deliberate and carry its reason; a new advisory still fails the gate until
+# it is fixed or added to `ignore`.
 
-ignore = [
-    { id = "RUSTSEC-2026-0194", reason = "quick-xml quadratic duplicate-attribute scan: pinned by imessage-database =4.2.0 -> plist =1.9.0 -> quick-xml 0.39.4; parses the user's own local macOS/iOS data, never network input. Revisit when imessage-database releases." },
-    { id = "RUSTSEC-2026-0195", reason = "quick-xml unbounded namespace allocation: same chain and exposure as RUSTSEC-2026-0194." },
-]
+ignore = []
 
 [licenses]
 # One file serves two graphs (the workspace and src-tauri), and the desktop

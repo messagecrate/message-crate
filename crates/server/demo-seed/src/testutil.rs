@@ -12,7 +12,7 @@ use crate::SeedConfig;
 /// `demo_seed_large.toml` shrunk to a dozen contacts. Every section keeps the shape
 /// of the checked-in file, so every writer still runs: iMessage-only,
 /// Android-only, overlap, WhatsApp, groups, unassigned handles, orphans, and
-/// both empty threads. Conversations stay long enough (about a hundred
+/// both empty conversations. Conversations stay long enough (about a hundred
 /// messages) to reach the photo, other-attachment, tapback, and reply strides.
 const SMALL_SEED_TOML: &str = r#"
 seed = 7

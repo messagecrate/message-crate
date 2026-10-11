@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PATH_MISSING } from "./pathChecks";
 import {
   isWhatsappMethod,
   WHATSAPP_ERR_CRYPT_KEY,
@@ -7,7 +8,6 @@ import {
   WHATSAPP_ERR_MUST_BE_DIRECTORY,
   WHATSAPP_ERR_MUST_BE_FILE,
   WHATSAPP_ERR_OWNER_PHONE,
-  WHATSAPP_ERR_PATH_MISSING,
   whatsappCanImport,
   whatsappCryptRequired,
   whatsappShowsBusiness,
@@ -50,7 +50,7 @@ describe("whatsappImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPath).toBe(WHATSAPP_ERR_PATH_MISSING);
+    expect(result.errors.backupPath).toBe(PATH_MISSING);
   });
 
   it("rejects an optional contacts path that does not exist", () => {
@@ -75,7 +75,7 @@ describe("whatsappImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.contactsDb).toBe(WHATSAPP_ERR_PATH_MISSING);
+    expect(result.errors.contactsDb).toBe(PATH_MISSING);
   });
 
   it("requires a key only when a crypt file is used", () => {

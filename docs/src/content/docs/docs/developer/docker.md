@@ -49,7 +49,7 @@ The file has three stages. Each stage is a temporary image. Only the last stage 
 
 1. **Website.** Node 22 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
 2. **Server binary.** Rust 1.98.1, the version `rust-toolchain.toml` pins, compiles `message-crate-server` in release mode. The binary carries what it needs to generate Demo Data: the `demo-seed` crate, its two size settings, the Pride and Prejudice text, and the name lists.
-3. **Runtime.** A slim Node 20 image gets ffmpeg, the server binary, `config/config.docker.toml`, and the website files copied to `static/`.
+3. **Runtime.** A slim Node 20 image gets ffmpeg, the server binary, `config/config.docker.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` asks `http://127.0.0.1:8080/health` every 30 seconds with Node's `fetch`, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The probe assumes port 8080, the port `config/config.docker.toml` binds.
 
 The build context is the **repository root**. `.dockerignore` decides what Docker sends into that context. It must ignore the live data directory at the repo root (`/data`) so a personal database is not copied into the image. It must not ignore `crates/server/demo-seed/data/`. That directory holds the Pride and Prejudice text and the name lists the server compiles in.
 

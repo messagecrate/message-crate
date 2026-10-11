@@ -17,7 +17,7 @@ vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
-  // The sidebar list `MessageRoute` renders alongside the thread.
+  // The sidebar list `MessageRoute` renders alongside the conversation.
   listConversations: vi.fn().mockResolvedValue({ items: [], total: 0, limit: 40, offset: 0 }),
   listContactGroups: vi.fn().mockResolvedValue([]),
   listMessageTags: vi.fn().mockResolvedValue([]),
@@ -149,7 +149,7 @@ function renderAt(path: string, state?: unknown) {
 
   /**
    * Opens conversation 8 as a click on its row in the list column does: the row
-   * rides along as `location.state`, so the thread pane never shows "Loading".
+   * rides along as `location.state`, so the conversation pane never shows "Loading".
    */
   function OpenEight() {
     const navigate = useNavigate();
@@ -182,7 +182,7 @@ function renderAt(path: string, state?: unknown) {
 }
 
 describe("MessageRoute", () => {
-  it("renders the thread for a conversation id in the URL", async () => {
+  it("renders the conversation for its id in the URL", async () => {
     getConversationMock.mockResolvedValue(conv(5, "Chat 5"));
 
     renderAt("/messages/5");
