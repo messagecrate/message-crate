@@ -1121,12 +1121,14 @@ pub async fn attach_stored_file(
     conversation_id: i64,
     sha: &str,
 ) -> std::path::PathBuf {
+    let sha = crate::assets_api::Sha256::parse(sha)
+        .expect("attach_stored_file needs a 64-hex fingerprint");
     let assets_dir = state.cfg.paths.assets_dir_for_account(account_id);
-    let shard = assets_dir.join(&sha[..2]);
+    let shard = assets_dir.join(sha.shard());
     std::fs::create_dir_all(&shard).unwrap();
-    let path = shard.join(sha);
+    let path = shard.join(sha.as_str());
     std::fs::write(&path, b"jpeg bytes").unwrap();
-    let sidecar = crate::asset_store::stored_sidecar_path(&assets_dir, sha).unwrap();
+    let sidecar = crate::asset_store::sidecar_path(&assets_dir, &sha);
     std::fs::write(sidecar, "image/jpeg").unwrap();
 
     let mut conn = state.db.acquire().await.unwrap();
@@ -1140,8 +1142,8 @@ pub async fn attach_stored_file(
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3)")
         .bind(message_id)
-        .bind(sha)
-        .bind(format!("{}/{sha}", &sha[..2]))
+        .bind(sha.as_str())
+        .bind(format!("{}/{sha}", sha.shard()))
         .execute(&mut *tx)
         .await
         .unwrap();
