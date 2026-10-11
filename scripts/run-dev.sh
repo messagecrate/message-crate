@@ -47,7 +47,7 @@ Usage: $(basename "$0") [--reset | --reset-demo [--large]] [--owner] [--sqlweb] 
                 for an empty claimed Message Crate; without it, --reset
                 or --reset-demo leaves it unclaimed so the Create Owner
                 screen is reachable. Refused unless ${CONFIG} binds
-                127.0.0.1, localhost or ::1.
+                127.0.0.1, localhost or [::1].
   --sqlweb      Start sqlite-web on http://127.0.0.1:8081 (needs sqlite_web on PATH)
   --release     Build and run the optimized binary (seed and serve)
   -h, --help
@@ -123,7 +123,8 @@ write_host_dev_config() {
     "${CONFIG_EXAMPLE}" >"${CONFIG}"
 }
 
-# The [server] bind of ${CONFIG}, or the server's default when the key is absent.
+# The value of `bind = "..."` under a plain [server] header in ${CONFIG}, or
+# nothing when no such line exists or its value spans lines.
 config_bind() {
   local value
   value="$(awk '
@@ -136,14 +137,28 @@ config_bind() {
       exit
     }
   ' "${CONFIG}")"
-  echo "${value:-127.0.0.1:8080}"
+  echo "${value}"
 }
 
 # --owner sets a password everyone knows, so it is refused when the server
-# would listen on an address other machines can reach.
+# would listen on an address other machines can reach. TOML can spell the
+# key in ways config_bind does not read (a dotted key, an inline table, a
+# quoted header), so a config that mentions bind anywhere outside a comment
+# without config_bind finding it is refused rather than guessed at.
 require_loopback_bind_for_owner() {
   local bind host
   bind="$(config_bind)"
+  if [[ -z "${bind}" ]]; then
+    if grep -Eq '^[^#]*bind' "${CONFIG}"; then
+      echo "error: --owner sets the password admin/admin, but the bind in ${CONFIG}" >&2
+      echo "       could not be read. Write it as bind = \"127.0.0.1:<port>\" on one line" >&2
+      echo "       under [server], or leave out --owner and create the owner in the web UI." >&2
+      exit 1
+    fi
+    # The server's default when [server] bind is absent: default_server_bind
+    # in crates/server/server/src/config.rs. Change the two together.
+    bind="127.0.0.1:8080"
+  fi
   if [[ "${bind}" == \[* ]]; then
     host="${bind#\[}"
     host="${host%%\]*}"
@@ -154,8 +169,9 @@ require_loopback_bind_for_owner() {
     127.0.0.1 | localhost | ::1) ;;
     *)
       echo "error: --owner sets the password admin/admin, but ${CONFIG} binds ${bind}," >&2
-      echo "       which other machines can reach. Set [server] bind to 127.0.0.1, localhost" >&2
-      echo "       or [::1], or leave out --owner and create the owner in the web UI." >&2
+      echo "       which other machines can reach. Set [server] bind to exactly" >&2
+      echo "       127.0.0.1:<port>, localhost:<port> or [::1]:<port>, or leave out --owner" >&2
+      echo "       and create the owner in the web UI." >&2
       exit 1
       ;;
   esac
