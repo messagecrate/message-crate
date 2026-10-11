@@ -585,9 +585,10 @@ pub(crate) async fn attach_incomplete_original(
     attach_original_at(opened, conn, message_id, sha, ".part", None, bytes).await
 }
 
-/// Write `bytes` at `<aa>/<sha><suffix>` in the account's assets directory,
-/// with a MIME sidecar when `mime` is given, and insert an attachment row of
-/// `message_id` naming the file. Returns the attachment id.
+/// Write `bytes` where the store places the original of `sha`, plus
+/// `suffix`, in the account's assets directory, with a MIME sidecar when
+/// `mime` is given, and insert an attachment row of `message_id` naming the
+/// file. Returns the attachment id.
 async fn attach_original_at(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
@@ -597,22 +598,16 @@ async fn attach_original_at(
     mime: Option<&str>,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}{suffix}", &sha[..2]);
     let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
-    let path = assets_dir.join(&rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(&path, bytes).unwrap();
-    if let Some(mime) = mime {
-        let sidecar = crate::asset_store::stored_sidecar_path(&assets_dir, sha).unwrap();
-        fs::write(sidecar, mime).unwrap();
-    }
+    let (sha, rel, _) =
+        crate::test_support::write_stored_original(&assets_dir, sha, suffix, mime, bytes);
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
         "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
          VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(message_id)
-    .bind(sha)
+    .bind(sha.as_str())
     .bind(rel)
     .bind(mime)
     .fetch_one(&mut *tx)

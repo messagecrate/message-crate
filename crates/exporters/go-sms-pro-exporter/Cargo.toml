@@ -6,6 +6,7 @@ license = "LicenseRef-FCL-1.0-ALv2"
 autotests = false
 
 [dependencies]
+android-fields = { path = "../../libs/android-fields" }
 anyhow = { workspace = true }
 csv = { workspace = true }
 hex = { workspace = true }

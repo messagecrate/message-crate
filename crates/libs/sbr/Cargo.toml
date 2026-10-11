@@ -6,6 +6,7 @@ description = "SMS Backup & Restore (SyncTech) XML codec"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
+android-fields = { path = "../android-fields" }
 message-ir = { workspace = true }
 mms-parts = { path = "../mms-parts" }
 anyhow = { workspace = true }
