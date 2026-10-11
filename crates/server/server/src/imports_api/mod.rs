@@ -1797,7 +1797,7 @@ async fn run_import_path(
     // lock order (slot → account → pool) is consistent everywhere. The
     // slots close when the server is told to stop
     // (`AppState::on_stop_signal`), so a batch still waiting here is refused
-    // and the Upload sends it again, rather than making the stop wait for it.
+    // and the Upload retries it, rather than making the stop wait for it.
     let _import_permit = state.import_slots.acquire().await.map_err(|_| {
         ApiError::ServerStopping(
             "the server is stopping, so it did not start this batch; send it again once the server is running".into(),

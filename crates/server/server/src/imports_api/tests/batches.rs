@@ -27,7 +27,7 @@ async fn import_slots_belong_to_one_server() {
 }
 
 /// A batch still waiting for an import slot when the server is told to stop
-/// is refused with `server-stopping`, which the Upload sends again, and
+/// is refused with `server-stopping`, which the Upload retries, and
 /// stores nothing. Before #2203 nothing closed the slots, so the batch took
 /// one when an earlier batch ended and imported in full while the server
 /// drained, making the stop wait for it.

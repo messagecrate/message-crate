@@ -465,10 +465,11 @@ impl AppState {
     /// they run as well, and a conversion not yet told to stop would read
     /// that ffmpeg's exit as a failure, take the Asset off the queue, and
     /// start the next one (#1729). It closes the import slots, so an import
-    /// batch still waiting for one is refused with `server-stopping` and
-    /// sent again by the Upload, rather than taking a slot when an earlier
-    /// batch ends and making the stop wait for a whole batch more (#2203).
-    /// A batch that already holds a slot finishes.
+    /// batch still waiting for one is refused with `server-stopping`, which
+    /// the Upload retries, rather than taking a slot when an earlier batch
+    /// ends and making the stop wait for a whole batch more (#2203). A batch
+    /// that already holds a slot is not refused; how long the stop waits for
+    /// it is #2122.
     pub(crate) fn on_stop_signal(&self) -> impl FnOnce() + Send + 'static {
         let media_queue = self.media_queue.clone();
         let demo_build = self.demo_build.clone();

@@ -249,7 +249,7 @@ For an import batch, `line` carries the line of the request body that could not 
                 crate::assets_api::media_links::MEDIA_LINK_TTL.as_secs() / 60
             ),
             Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
-            Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn answers this: nothing in it was stored. The work the server had already started finishes first. Send the same request again once the server is running again.".to_string(),
+            Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn answers this: nothing in it was stored. Send the same request once the server is running again.".to_string(),
         }
     }
 }
