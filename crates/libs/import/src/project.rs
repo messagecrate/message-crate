@@ -135,9 +135,7 @@ mod tests {
     fn projects_missing_reason_and_clears_digest() {
         let mut msg = sample_document("with attachment").messages.remove(0);
         msg.attachments = vec![IrAttachment {
-            path: Some("attachments/big.bin".into()),
             original_name: Some("big.bin".into()),
-            mime_type: Some("application/octet-stream".into()),
             digest_sha256: Some("deadbeef".into()),
             size_bytes: Some(99),
             ..sample_attachment()
