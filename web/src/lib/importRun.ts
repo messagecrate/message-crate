@@ -1,3 +1,4 @@
+import { errorText } from "./apiErrorMessage";
 import {
   discardImport,
   listEveryImport,
@@ -5,7 +6,7 @@ import {
   setImportStage as setStage,
 } from "./serverApi";
 import type { components } from "./serverApi.types";
-import { invokePathStat, type PathStat } from "./tauri";
+import { invokeDeleteRunDir, invokePathStat, type PathStat } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
@@ -70,6 +71,27 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<strin
     }),
   );
   return found.filter((path): path is string => path !== null);
+}
+
+/** An Import Run's directory that could not be deleted, and why. */
+export type UndeletedDirectory = { path: string; reason: string };
+
+/**
+ * Delete the directories of a deleted account's Import Runs, one at a time,
+ * and return the ones that could not be deleted. Desktop app only.
+ */
+export async function deleteRunDirectories(
+  directories: readonly string[],
+): Promise<UndeletedDirectory[]> {
+  const undeleted: UndeletedDirectory[] = [];
+  for (const path of directories) {
+    try {
+      await invokeDeleteRunDir({ run_dir: path });
+    } catch (e) {
+      undeleted.push({ path, reason: errorText(e) });
+    }
+  }
+  return undeleted;
 }
 
 /**
