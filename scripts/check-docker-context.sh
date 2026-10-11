@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Assert docker/Dockerfile copies every [patch.crates-io] path crate and
 # rust-toolchain.toml, that its rust base image is on the pinned minor, and
-# that every base image is pinned by tag and digest.
+# that every base image, and the BuildKit frontend its syntax line names, is
+# pinned by tag and digest.
 #
 #   ./scripts/check-docker-context.sh
 #
@@ -57,6 +58,25 @@ fi
 if [[ "${in_patch}" -eq 1 && "${saw_patch}" -eq 0 ]]; then
   echo "Cargo.toml [patch.crates-io] has no path = crates; nothing to check." >&2
 fi
+
+# The frontend. A "# syntax=" parser directive makes BuildKit pull that
+# image and parse the Dockerfile with it, so it runs at build time with the
+# reach of a base image and is pinned the same way (#2670). Dependabot reads
+# only FROM lines, so this digest is moved by hand.
+#
+# Docker reads parser directives only at the top of the file, before any
+# blank line, other comment or instruction. The key is in any case, and
+# spaces may sit around the "#", the key and the "=".
+while IFS= read -r line || [[ -n "${line}" ]]; do
+  line="${line%$'\r'}"
+  [[ "${line}" =~ ^#[[:space:]]*([A-Za-z]+)[[:space:]]*=[[:space:]]*([^[:space:]]*)[[:space:]]*$ ]] || break
+  [[ "${BASH_REMATCH[1],,}" == "syntax" ]] || continue
+  frontend="${BASH_REMATCH[2]}"
+  if [[ ! "${frontend}" =~ ^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
+    echo "${DOCKERFILE}: pin the BuildKit frontend by tag and digest (# syntax=<image>:<tag>@sha256:<digest>): ${line}" >&2
+    failures=$((failures + 1))
+  fi
+done <"${DOCKERFILE}"
 
 # The base images. A tag names whatever its publisher pushed last, so a
 # FROM by tag alone can start two builds of one commit from different
