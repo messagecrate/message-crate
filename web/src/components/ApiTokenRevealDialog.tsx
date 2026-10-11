@@ -81,7 +81,7 @@ export default function ApiTokenRevealDialog({
           onClick={() => void copy()}
           className="!inline-flex !shrink-0 !items-center !gap-1.5 !rounded-xl !px-3 !py-2 !text-[0.813rem]"
         >
-          <CopyIcon size={14} className="" />
+          <CopyIcon size={14} />
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>

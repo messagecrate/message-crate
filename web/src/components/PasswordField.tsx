@@ -32,11 +32,7 @@ export default function PasswordField(
           className="!absolute top-1/2 right-1.5 !-translate-y-1/2 !border-none !p-1.5 text-muted hover:text-text"
           aria-label={showPassword ? "Hide password" : "Show password"}
         >
-          {showPassword ? (
-            <EyeOffIcon size={16} className="" />
-          ) : (
-            <EyeIcon size={16} className="" />
-          )}
+          {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
         </Button>
       </div>
     </TextField>

@@ -375,7 +375,7 @@ function OneContactDrawer({
                 disabled={!detailMatches}
                 onClick={() => setEditingName(true)}
               >
-                <PencilIcon />
+                <PencilIcon className="shrink-0" />
               </Button>
             </div>
           )

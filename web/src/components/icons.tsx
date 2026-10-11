@@ -5,10 +5,7 @@ type IconProps = {
   className?: string;
 } & Omit<SVGProps<SVGSVGElement>, "width" | "height" | "children">;
 
-/**
- * The svg every icon is drawn in. With no `className` the icon gets
- * `shrink-0`; pass `className=""` for an svg with no class at all.
- */
+/** The svg every icon is drawn in. It adds no class of its own. */
 function IconShell({
   size = 13,
   className,
@@ -26,7 +23,7 @@ function IconShell({
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
-      className={className ?? "shrink-0"}
+      className={className}
       {...rest}
     >
       {children}
