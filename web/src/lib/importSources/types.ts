@@ -121,6 +121,7 @@ export type ReadinessInput = {
   ownerPhones: string[];
   /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
   ownerEmails: string;
+  /** True once the account's phones have been read. */
   profilePhonesReady: boolean;
   ownerPhoneEntry: OwnerPhoneState;
 };
