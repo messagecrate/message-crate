@@ -127,7 +127,7 @@ pub fn load(
         "journal",
         path,
         target,
-        &mut |i, e| on_unreadable(unreadable_line_sentence(path, i, e)),
+        &mut |line, error| on_unreadable(unreadable_line_sentence(path, line, error)),
         |state: &mut JournalState, event| match event {
             JournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
