@@ -654,6 +654,13 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **A Saved Search no list could ever run is not saved.** A
+  search longer than 2,048 bytes, with a parenthesis or quote that never
+  closes, with more than 32 words, or too many parts or levels of nesting is
+  refused on every list, but a Saved Search holding one was saved anyway,
+  and the mistake showed only when it was selected. **Save** now refuses it
+  with the same message the search box gives. A word that works on some
+  lists and not others is still saved as typed (#2184).
 - 2026-10-10: **The left panel highlights Contacts on a Contact Group page.**
   A Contact Group page, **No Contact Group** and **Unknown** list contacts,
   but the left panel highlighted no Browse row on them, where a Message Tag

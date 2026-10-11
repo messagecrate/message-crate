@@ -22,10 +22,16 @@ pub(crate) struct CreateSavedSearchRequest {
     /// Entity`. A name another of the account's Saved Searches has, in any
     /// letter case, is refused with `409 Conflict`.
     name: String,
-    /// The query in the search language, trimmed and stored as written. The
-    /// server does not check it when storing it, so a query a list cannot
-    /// run is refused when it runs. A blank query is refused with `422
-    /// Unprocessable Entity`.
+    /// The query in the search language, trimmed and stored as written. A
+    /// blank query is refused with `422 Unprocessable Entity`
+    /// (`validation-failed`). A query that every list refuses, one over
+    /// 2,048 bytes, with a syntax error such as a parenthesis or quote that
+    /// never closes, with more than 32 words, more than 64 parts, or nesting
+    /// deeper than 32, is refused with `422 Unprocessable Entity`
+    /// (`search-query-invalid`) and the search language's own sentence. A
+    /// `word:` is not checked against any list, because a Saved Search runs
+    /// on more than one: a word or value the list cannot use is refused when
+    /// it runs there.
     query: String,
 }
 
@@ -84,7 +90,8 @@ pub(crate) async fn list_saved_searches(
             body = SavedSearch,
             headers(("Location" = String, description = "Path of the new saved search"))
         ),
-        crate::problem::openapi::NameTaken
+        crate::problem::openapi::NameTaken,
+        crate::problem::openapi::SearchQueryInvalid
     )
 )]
 pub(crate) async fn create_saved_search(
@@ -140,7 +147,8 @@ pub(crate) async fn get_saved_search(
     request_body = UpdateSavedSearchRequest,
     responses(
         (status = 200, body = SavedSearch),
-        crate::problem::openapi::NameTaken
+        crate::problem::openapi::NameTaken,
+        crate::problem::openapi::SearchQueryInvalid
     )
 )]
 pub(crate) async fn update_saved_search(
@@ -187,7 +195,7 @@ mod tests {
     use crate::problem::ProblemType;
     use crate::test_support::{
         delete_status, expect_problem, fixture_with_account, get_json, get_raw, get_status,
-        patch_json, post_created_json, register_via_api,
+        patch_failure, patch_json, post_created_json, post_json_raw, register_via_api,
     };
 
     #[tokio::test]
@@ -301,5 +309,71 @@ mod tests {
             get_status(&state, &location, &bob.token).await,
             StatusCode::OK
         );
+    }
+
+    #[tokio::test]
+    async fn a_query_over_the_search_languages_length_limit_is_refused_when_saved() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let too_long = "a".repeat(2_049);
+
+        let (status, text) = post_json_raw(
+            &state,
+            "/v1/saved-searches",
+            &user.token,
+            serde_json::json!({ "name": "Long", "query": too_long }),
+        )
+        .await;
+
+        let problem = expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            problem.sentence().contains("2048"),
+            "the parser's own sentence: {text}"
+        );
+        let list: serde_json::Value = get_json(&state, "/v1/saved-searches", &user.token).await;
+        assert_eq!(list["items"].as_array().unwrap().len(), 0, "nothing stored");
+    }
+
+    #[tokio::test]
+    async fn an_edit_to_a_query_no_list_can_parse_is_refused_and_the_row_kept() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let (location, _): (String, serde_json::Value) = post_created_json(
+            &state,
+            "/v1/saved-searches",
+            &user.token,
+            serde_json::json!({ "name": "Family", "query": "group:Family" }),
+        )
+        .await;
+
+        let sentence = patch_failure(
+            &state,
+            &location,
+            &user.token,
+            serde_json::json!({ "name": "Family", "query": "(group:Family" }),
+            ProblemType::SearchQueryInvalid,
+        )
+        .await;
+
+        assert_eq!(sentence, "A parenthesis never closes.");
+        let read: serde_json::Value = get_json(&state, &location, &user.token).await;
+        assert_eq!(read["query"], "group:Family");
+    }
+
+    #[tokio::test]
+    async fn a_word_some_list_lacks_is_saved_and_refused_only_where_it_runs() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        for (name, query) in [("From me", "from:me"), ("Typo", "grup:Family")] {
+            let (_, created): (String, serde_json::Value) = post_created_json(
+                &state,
+                "/v1/saved-searches",
+                &user.token,
+                serde_json::json!({ "name": name, "query": query }),
+            )
+            .await;
+            assert_eq!(created["query"], query);
+        }
     }
 }

@@ -29,13 +29,40 @@ pub(crate) struct FieldTerm {
     pub span: Range<usize>,
 }
 
-/// The parsed query.
+/// A `word:value` term read without a list: the word is not looked up, so
+/// only the number of comma values is known.
 #[derive(Debug)]
-pub(crate) enum Expr {
-    And(Vec<Expr>),
-    Or(Vec<Expr>),
-    Not(Box<Expr>),
-    Field(FieldTerm),
+pub(crate) struct UncheckedField {
+    values: usize,
+}
+
+/// What a `word:value` term counts toward the limit on parts.
+pub(crate) trait FieldNodes {
+    /// The term's parts: one for each comma value.
+    fn nodes(&self) -> usize;
+}
+
+impl FieldNodes for FieldTerm {
+    fn nodes(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl FieldNodes for UncheckedField {
+    fn nodes(&self) -> usize {
+        self.values
+    }
+}
+
+/// The parsed query. `F` is what a `word:value` term became: a
+/// [`FieldTerm`] resolved for a list, or an [`UncheckedField`] when the
+/// query was read without one.
+#[derive(Debug)]
+pub(crate) enum Expr<F = FieldTerm> {
+    And(Vec<Expr<F>>),
+    Or(Vec<Expr<F>>),
+    Not(Box<Expr<F>>),
+    Field(F),
     Text(TextTerm),
 }
 
@@ -77,7 +104,9 @@ impl Expr {
             Self::Not(_) | Self::Field(_) => {}
         }
     }
+}
 
+impl<F: FieldNodes> Expr<F> {
     /// Total nodes in the tree, for the complexity limit. Each comma value of
     /// a field counts as one node, because each becomes one more `OR` in the
     /// SQL and SQLite refuses an expression tree deeper than 1,000.
@@ -85,7 +114,7 @@ impl Expr {
         match self {
             Self::And(v) | Self::Or(v) => 1 + v.iter().map(Expr::nodes).sum::<usize>(),
             Self::Not(e) => 1 + e.nodes(),
-            Self::Field(t) => t.values.len(),
+            Self::Field(t) => t.nodes(),
             Self::Text(_) => 1,
         }
     }
@@ -257,23 +286,39 @@ fn field_term(
     Ok(FieldTerm { spec, values, span })
 }
 
-struct Parser<'t> {
-    list: ListKind,
-    tokens: &'t [Token],
-    i: usize,
-    today: NaiveDate,
-    end: usize,
+/// An unbalanced-syntax error at `span`.
+fn unbalanced(span: Range<usize>, msg: &str) -> QueryError {
+    QueryError::new(QueryErrorKind::Unbalanced, span, msg)
 }
 
-impl Parser<'_> {
+/// The comma values of an unchecked `word:value`, counted as
+/// [`field_term`] splits them, so a query read without a list counts its
+/// parts as every list would.
+fn unchecked_field(raw: &str, quoted: bool) -> UncheckedField {
+    let values = if quoted {
+        1
+    } else {
+        raw.split(',').filter(|p| !p.trim().is_empty()).count()
+    };
+    UncheckedField { values }
+}
+
+/// Reads tokens into an [`Expr`]; `field` turns each `word:value` into the
+/// tree's field leaf, or refuses it.
+struct Parser<'t, R> {
+    tokens: &'t [Token],
+    i: usize,
+    end: usize,
+    field: R,
+}
+
+impl<F, R> Parser<'_, R>
+where
+    R: FnMut(&str, &str, bool, Range<usize>) -> Result<F, QueryError>,
+{
     /// The next token without consuming it.
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.i)
-    }
-
-    /// An unbalanced-syntax error at `span`.
-    fn unbalanced(span: Range<usize>, msg: &str) -> QueryError {
-        QueryError::new(QueryErrorKind::Unbalanced, span, msg)
     }
 
     /// True when the next token cannot start an operand.
@@ -285,16 +330,13 @@ impl Parser<'_> {
     }
 
     /// `a or b or c`: the lowest-precedence level.
-    fn parse_or(&mut self, depth: usize) -> Result<Expr, QueryError> {
+    fn parse_or(&mut self, depth: usize) -> Result<Expr<F>, QueryError> {
         let mut parts = vec![self.parse_and(depth)?];
         while matches!(self.peek().map(|t| &t.kind), Some(TokenKind::Or)) {
             let or_span = self.peek().unwrap().span.clone();
             self.i += 1;
             if self.at_operand_end() {
-                return Err(Self::unbalanced(
-                    or_span,
-                    "or needs something on both sides.",
-                ));
+                return Err(unbalanced(or_span, "or needs something on both sides."));
             }
             parts.push(self.parse_and(depth)?);
         }
@@ -306,7 +348,7 @@ impl Parser<'_> {
     }
 
     /// `a b c` or `a and b`: adjacent terms are an implicit and.
-    fn parse_and(&mut self, depth: usize) -> Result<Expr, QueryError> {
+    fn parse_and(&mut self, depth: usize) -> Result<Expr<F>, QueryError> {
         let mut parts = vec![self.parse_unary(depth)?];
         loop {
             match self.peek().map(|t| &t.kind) {
@@ -315,10 +357,7 @@ impl Parser<'_> {
                     let and_span = self.peek().unwrap().span.clone();
                     self.i += 1;
                     if self.at_operand_end() {
-                        return Err(Self::unbalanced(
-                            and_span,
-                            "and needs something on both sides.",
-                        ));
+                        return Err(unbalanced(and_span, "and needs something on both sides."));
                     }
                     parts.push(self.parse_unary(depth)?);
                 }
@@ -333,7 +372,7 @@ impl Parser<'_> {
     }
 
     /// `not x` and `-x`, with the nesting-depth check.
-    fn parse_unary(&mut self, depth: usize) -> Result<Expr, QueryError> {
+    fn parse_unary(&mut self, depth: usize) -> Result<Expr<F>, QueryError> {
         if depth > MAX_DEPTH {
             return Err(QueryError::new(
                 QueryErrorKind::TooComplex,
@@ -342,7 +381,7 @@ impl Parser<'_> {
             ));
         }
         let Some(tok) = self.peek() else {
-            return Err(Self::unbalanced(
+            return Err(unbalanced(
                 self.end..self.end,
                 "The search ends where a word was expected.",
             ));
@@ -351,7 +390,7 @@ impl Parser<'_> {
             let span = tok.span.clone();
             self.i += 1;
             if self.at_operand_end() {
-                return Err(Self::unbalanced(span, "not needs something after it."));
+                return Err(unbalanced(span, "not needs something after it."));
             }
             return Ok(Expr::Not(Box::new(self.parse_unary(depth + 1)?)));
         }
@@ -365,7 +404,7 @@ impl Parser<'_> {
     }
 
     /// A parenthesised group, a `field:value` term, or a free-text term.
-    fn parse_primary(&mut self, depth: usize) -> Result<Expr, QueryError> {
+    fn parse_primary(&mut self, depth: usize) -> Result<Expr<F>, QueryError> {
         let tok = self
             .peek()
             .expect("parse_unary checked for a token")
@@ -374,10 +413,7 @@ impl Parser<'_> {
             TokenKind::LParen => {
                 self.i += 1;
                 if matches!(self.peek().map(|t| &t.kind), None | Some(TokenKind::RParen)) {
-                    return Err(Self::unbalanced(
-                        tok.span,
-                        "A parenthesis has nothing inside it.",
-                    ));
+                    return Err(unbalanced(tok.span, "A parenthesis has nothing inside it."));
                 }
                 let inner = self.parse_or(depth + 1)?;
                 match self.peek().map(|t| &t.kind) {
@@ -385,27 +421,25 @@ impl Parser<'_> {
                         self.i += 1;
                         Ok(inner)
                     }
-                    _ => Err(Self::unbalanced(tok.span, "A parenthesis never closes.")),
+                    _ => Err(unbalanced(tok.span, "A parenthesis never closes.")),
                 }
             }
-            TokenKind::RParen => Err(Self::unbalanced(
+            TokenKind::RParen => Err(unbalanced(
                 tok.span,
                 "A closing parenthesis has no opening one.",
             )),
-            TokenKind::Or | TokenKind::And => Err(Self::unbalanced(
+            TokenKind::Or | TokenKind::And => Err(unbalanced(
                 tok.span,
                 "or and and need something on both sides.",
             )),
-            TokenKind::Not => Err(Self::unbalanced(tok.span, "not needs something after it.")),
+            TokenKind::Not => Err(unbalanced(tok.span, "not needs something after it.")),
             TokenKind::Field {
                 word,
                 value,
                 quoted,
             } => {
                 self.i += 1;
-                Ok(Expr::Field(field_term(
-                    self.list, &word, &value, quoted, tok.span, self.today,
-                )?))
+                Ok(Expr::Field((self.field)(&word, &value, quoted, tok.span)?))
             }
             TokenKind::Word { text, prefix } => {
                 self.i += 1;
@@ -434,20 +468,40 @@ pub(crate) fn parse(
     tokens: &[Token],
     today: NaiveDate,
 ) -> Result<Option<Expr>, QueryError> {
+    parse_with(tokens, |word, raw, quoted, span| {
+        field_term(list, word, raw, quoted, span, today)
+    })
+}
+
+/// Parse tokens without a list: the syntax and the limits every list
+/// shares, with no `word:` looked up and no value read. `Ok(None)` is an
+/// empty query.
+pub(crate) fn parse_unchecked(
+    tokens: &[Token],
+) -> Result<Option<Expr<UncheckedField>>, QueryError> {
+    parse_with(tokens, |_, raw, quoted, _| Ok(unchecked_field(raw, quoted)))
+}
+
+/// Parse tokens, making each `word:value` with `field`, and check the
+/// limits on words and parts.
+fn parse_with<F, R>(tokens: &[Token], field: R) -> Result<Option<Expr<F>>, QueryError>
+where
+    F: FieldNodes,
+    R: FnMut(&str, &str, bool, Range<usize>) -> Result<F, QueryError>,
+{
     if tokens.is_empty() {
         return Ok(None);
     }
     let end = tokens.last().map_or(0, |t| t.span.end);
     let mut p = Parser {
-        list,
         tokens,
         i: 0,
-        today,
         end,
+        field,
     };
     let expr = p.parse_or(0)?;
     if let Some(extra) = p.peek() {
-        return Err(Parser::unbalanced(
+        return Err(unbalanced(
             extra.span.clone(),
             "A closing parenthesis has no opening one.",
         ));
@@ -533,6 +587,51 @@ mod tests {
         let e = parse_err(ListKind::Messages, &format!("service:{}", values(65)));
         assert_eq!(e.kind, QueryErrorKind::TooComplex);
         assert_eq!(e.message, "The search has too many parts.");
+    }
+
+    /// Read without a list, a query is held to the limits every list holds it
+    /// to, at the same edges: one a list would run is never refused, and one
+    /// over a limit is refused with the sentence the list gives.
+    #[test]
+    fn a_query_read_without_a_list_meets_the_same_limits_at_the_same_edges() {
+        let unchecked = |q: &str| parse_unchecked(&tokenize(q).unwrap());
+        let refusal = |q: &str| unchecked(q).unwrap_err().message;
+        let nested = |depth: usize| format!("{}a{}", "(".repeat(depth), ")".repeat(depth));
+        let values = |n: usize| vec!["sms"; n].join(",");
+        let words = |n: usize| vec!["w"; n].join(" ");
+
+        for at_the_limit in [
+            nested(32),
+            format!("{}service:sms", "-service:sms ".repeat(31)),
+            format!("service:{}", values(64)),
+            format!("service:\"{}\" {}", values(70), words(32)),
+        ] {
+            assert!(unchecked(&at_the_limit).is_ok(), "{at_the_limit}");
+        }
+        for (one_over, list) in [
+            (nested(33), ListKind::Messages),
+            ("-service:sms ".repeat(32), ListKind::Messages),
+            (format!("service:{}", values(65)), ListKind::Messages),
+            (words(33), ListKind::Messages),
+        ] {
+            assert_eq!(
+                refusal(&one_over),
+                parse_err(list, &one_over).message,
+                "{one_over}"
+            );
+        }
+    }
+
+    /// A `word:` is not looked up without a list, so neither a word one list
+    /// lacks nor a word no list has is refused; the syntax around it still is.
+    #[test]
+    fn a_query_read_without_a_list_looks_up_no_word() {
+        let unchecked = |q: &str| parse_unchecked(&tokenize(q).unwrap());
+        assert!(unchecked("from:me grup:Family date:soon").is_ok());
+        assert_eq!(
+            unchecked("(from:me").unwrap_err().message,
+            "A parenthesis never closes."
+        );
     }
 
     #[test]
