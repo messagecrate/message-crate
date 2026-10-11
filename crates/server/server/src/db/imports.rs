@@ -62,6 +62,16 @@ impl ImportStage {
         Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
 
+    /// Whether a new run may open at `self`: only [`Self::Parse`].
+    ///
+    /// The desktop app opens every run at `parse`, before Staging reads the
+    /// backup, and resumes an interrupted run by moving the run it already
+    /// has; the importer library sends no stage and so opens at `parse` too.
+    /// A run opened at any later stage would be resumed at work nobody did.
+    pub fn opens_a_run(self) -> bool {
+        self == Self::Parse
+    }
+
     /// Whether a running run at `self` may be moved to `next`: the moves the
     /// desktop app makes, and no other.
     ///
@@ -425,6 +435,13 @@ pub enum StartImportError {
         "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
+    /// The run asked to open at a stage that does not open a run
+    /// ([`ImportStage::opens_a_run`]).
+    #[error("an Import Run opens at stage parse, not at stage {}", stage.as_str())]
+    OpeningStage {
+        /// The stage the request asked for.
+        stage: ImportStage,
+    },
     /// Anything else.
     #[error(transparent)]
     Db(anyhow::Error),
@@ -434,13 +451,18 @@ pub enum StartImportError {
 ///
 /// # Errors
 ///
-/// [`StartImportError::AlreadyActive`] when a running Import Run already exists
-/// for this account; [`StartImportError::Db`] for any other failure.
+/// [`StartImportError::OpeningStage`] when `args.stage` is not one a run
+/// may open at, [`StartImportError::AlreadyActive`] when a running Import Run
+/// already exists for this account; [`StartImportError::Db`] for any other
+/// failure.
 pub async fn start_import(
     conn: &mut SqliteConnection,
     args: &StartImportArgs<'_>,
     now: chrono::DateTime<Utc>,
 ) -> std::result::Result<i64, StartImportError> {
+    if !args.stage.opens_a_run() {
+        return Err(StartImportError::OpeningStage { stage: args.stage });
+    }
     let started_at = now.to_rfc3339();
     let inserted: std::result::Result<i64, sqlx::Error> = sqlx::query_scalar(
         r"
@@ -633,10 +655,12 @@ pub async fn set_import_stage(
     let mut tx = begin_write(conn).await?;
     let run = require_running_import(&mut tx, account_id, import_id).await?;
     // A running run always has a stage: `start_import` records one and only
-    // the writes that finish a run clear it.
-    if let Some(from) = run.stage
-        && !from.may_move_to(stage)
-    {
+    // the writes that finish a run clear it. A running run without one is a
+    // row the server did not write, and its move cannot be checked.
+    let from = run.stage.ok_or_else(|| {
+        sqlx::Error::Decode(format!("running import {import_id} has no imports.stage").into())
+    })?;
+    if !from.may_move_to(stage) {
         return Err(ImportLookupError::StageMove {
             import_id,
             from,

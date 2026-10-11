@@ -19,6 +19,22 @@ fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
     StartImportArgs::new(account_id, "ios", "append", Some("message-crate"))
 }
 
+/// Open a run at `parse` and move it through the stages in order to
+/// `stage`, the only way a run reaches a later stage.
+async fn open_run_at(conn: &mut SqliteConnection, stage: ImportStage) -> i64 {
+    let id = start_import(conn, &default_start_args(ACCOUNT_ID), fixed_start_instant())
+        .await
+        .unwrap();
+    let last = ImportStage::ALL.iter().position(|s| *s == stage).unwrap();
+    // `ALL[0]` is `parse`, where the run opened.
+    for next in &ImportStage::ALL[1..=last] {
+        set_import_stage(conn, ACCOUNT_ID, id, *next, None)
+            .await
+            .unwrap();
+    }
+    id
+}
+
 #[tokio::test]
 async fn complete_import_persists_timings_and_issues() {
     let (pool, _dir) = setup_accounts_only().await;
@@ -616,19 +632,70 @@ fn a_stage_moves_only_to_itself_the_next_stage_or_from_staging_review_to_upload(
     }
 }
 
+/// A run opened at a later stage would be resumed at work nobody did, so
+/// every stage but `parse` is refused and no run is written (#2638).
+#[tokio::test]
+async fn a_run_opens_only_at_parse() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    for stage in ImportStage::ALL {
+        let args = StartImportArgs {
+            stage,
+            ..default_start_args(ACCOUNT_ID)
+        };
+        let result = start_import(&mut conn, &args, fixed_start_instant()).await;
+        if stage == ImportStage::Parse {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            assert!(
+                matches!(result, Err(StartImportError::OpeningStage { stage: s }) if s == stage),
+                "{} -> {result:?}",
+                stage.as_str()
+            );
+        }
+    }
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM imports")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "only the run opened at parse was written");
+}
+
+/// A running run with no stored stage has no stage to check a move from, so
+/// the move is an error rather than passing unchecked (#2638).
+#[tokio::test]
+async fn a_running_run_without_a_stage_refuses_a_move() {
+    let (pool, _dir) = setup_accounts_only().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let id = start_import(
+        &mut conn,
+        &default_start_args(ACCOUNT_ID),
+        fixed_start_instant(),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE imports SET stage = NULL WHERE id = $1")
+        .bind(id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Upload, None)
+        .await
+        .unwrap_err();
+
+    assert!(matches!(err, ImportLookupError::Db(_)), "{err:?}");
+    let row = get_owned_import(&mut conn, ACCOUNT_ID, id).await.unwrap();
+    assert_eq!(row.stage, None, "the refused move wrote no stage");
+}
+
 /// A run moved backwards is resumed at the wrong stage on the next visit
 /// (#1227, #2167), so the server refuses the move and keeps the stage.
 #[tokio::test]
 async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let args = StartImportArgs {
-        stage: ImportStage::Upload,
-        ..default_start_args(ACCOUNT_ID)
-    };
-    let id = start_import(&mut conn, &args, fixed_start_instant())
-        .await
-        .unwrap();
+    let id = open_run_at(&mut conn, ImportStage::Upload).await;
 
     let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Parse, Some("{}"))
         .await
@@ -662,14 +729,8 @@ async fn every_move_the_desktop_app_makes_is_accepted() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     for (from, to) in DESKTOP_APP_MOVES {
-        let args = StartImportArgs {
-            stage: from,
-            ..default_start_args(ACCOUNT_ID)
-        };
-        let id = start_import(&mut conn, &args, fixed_start_instant())
-            .await
-            .unwrap();
-        for stage in [from, to, to] {
+        let id = open_run_at(&mut conn, from).await;
+        for stage in [to, to] {
             set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
                 .await
                 .unwrap_or_else(|e| panic!("{} -> {}: {e}", from.as_str(), to.as_str()));

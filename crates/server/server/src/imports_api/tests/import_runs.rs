@@ -13,11 +13,20 @@ async fn run_with_summary(summary: serde_json::Value) -> (TestFixture, Registere
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage", "stage": "write" }),
+        serde_json::json!({ "source": "imessage" }),
     )
     .await;
     let import_id = created["id"].as_i64().expect("created run has an id");
     let mut conn = fixture.state.db.acquire().await.unwrap();
+    crate::db::imports::set_import_stage(
+        &mut conn,
+        account.account_id,
+        import_id,
+        crate::db::imports::ImportStage::Write,
+        None,
+    )
+    .await
+    .unwrap();
     crate::db::imports::set_import_stage(
         &mut conn,
         account.account_id,
@@ -52,12 +61,19 @@ async fn a_stage_change_with_a_summary_stores_it() {
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage", "stage": "write" }),
+        serde_json::json!({ "source": "imessage" }),
     )
     .await;
     let import_id = created["id"].as_i64().unwrap();
     assert_eq!(location, format!("/v1/imports/{import_id}"));
 
+    patch_json::<serde_json::Value>(
+        &fixture.state,
+        &format!("/v1/imports/{import_id}"),
+        &account.token,
+        serde_json::json!({"stage": "write"}),
+    )
+    .await;
     patch_json::<serde_json::Value>(
         &fixture.state,
         &format!("/v1/imports/{import_id}"),
@@ -160,7 +176,7 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
         &fixture.state,
         "/v1/imports",
         &account.token,
-        serde_json::json!({ "source": "imessage", "stage": "write" }),
+        serde_json::json!({ "source": "imessage" }),
     )
     .await;
     let path = format!("/v1/imports/{}", created["id"]);
@@ -189,10 +205,40 @@ async fn a_stage_answers_by_the_words_of_context_md_only() {
         &fixture.state,
         &path,
         &account.token,
-        serde_json::json!({"stage": "staging_review"}),
+        serde_json::json!({"stage": "write"}),
     )
     .await;
     assert_eq!(run["id"], created["id"]);
+}
+
+/// A run opened at a later stage would be resumed at work nobody did: the
+/// opening stage is a body field that broke a rule, and no run is opened
+/// (#2638).
+#[tokio::test]
+async fn a_run_opened_past_parse_is_refused() {
+    let (fixture, account) = fixture_with_account().await;
+
+    let (status, text) = crate::test_support::post_json_raw(
+        &fixture.state,
+        "/v1/imports",
+        &account.token,
+        serde_json::json!({ "source": "imessage", "stage": "upload" }),
+    )
+    .await;
+    let sentence = crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    )
+    .sentence();
+    assert!(
+        sentence.contains("parse") && sentence.contains("upload"),
+        "the refusal names the stage asked for and the one allowed: {sentence}"
+    );
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/imports?status=running", &account.token).await;
+    assert_eq!(page["items"], serde_json::json!([]), "no run was opened");
 }
 
 #[tokio::test]

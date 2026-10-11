@@ -14622,7 +14622,7 @@
                 "type": "null"
               }
             ],
-            "description": "Stage the run opens at. Defaults to `parse`."
+            "description": "Stage the run opens at, `parse` when the request leaves it out. A run\nopens only at `parse`; any other stage is refused with\n`422 Unprocessable Entity`."
           },
           "tool": {
             "type": [
