@@ -507,7 +507,7 @@ pub async fn build_demo_account(
         // and comes back with its result: when the build is dropped while
         // the task runs, the directory is removed once the generator has
         // returned, never while it is still writing into it.
-        let (work, generated) = tokio::task::spawn_blocking(move || {
+        let (work, generated) = crate::request_id::spawn_blocking(move || {
             let generated = generate(size, &work.path().join("bundle"), &cancel);
             (work, generated)
         })

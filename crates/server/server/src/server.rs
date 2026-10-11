@@ -480,7 +480,7 @@ where
     T: Send + 'static,
     E: Into<ApiError> + Send + 'static,
 {
-    tokio::task::spawn_blocking(f)
+    crate::request_id::spawn_blocking(f)
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{task} task: {e}")))?
         .map_err(Into::into)
