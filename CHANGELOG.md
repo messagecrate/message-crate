@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-11: **Owner Home says when the database runs without write-ahead
+  logging.** The server turns write-ahead logging on each time it starts, so
+  pages load while an import writes. When it cannot, most often because
+  another program holds the database file, every page waits for each import
+  batch instead, and the only sign was a warning in the server's log. Owner
+  Home now says so above every section, with where to read what went wrong
+  and what to do: close any other program that has the database file open,
+  then restart the server. Server Settings shows the journal mode beside
+  the version (#2201).
+
 - 2026-10-10: **An attachment says why it has no copy a browser can show.**
   When the server tries to make the Preview of a photo, video or recording
   and cannot, opening it now says **No Preview could be made** and what

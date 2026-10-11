@@ -1371,8 +1371,8 @@ export interface paths {
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
-         *     Fingerprint, whether the Demo Account exists, and the attachment size
-         *     limit.
+         *     Fingerprint, the database's journal mode, whether the Demo Account
+         *     exists, and the attachment size limit.
          */
         get: operations["get_server"];
         put?: never;
@@ -3344,6 +3344,16 @@ export interface components {
          * @enum {string}
          */
         ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        /**
+         * @description The journal mode SQLite runs a database in, as `PRAGMA journal_mode`
+         *     names it.
+         *
+         *     The server asks for `wal` on every open. In any other mode a reader waits
+         *     for a writer, so every page load waits while an import batch holds its
+         *     write transaction.
+         * @enum {string}
+         */
+        JournalMode: "delete" | "truncate" | "persist" | "memory" | "wal" | "off";
         /** @description One identity to link onto the account, with its platform service. */
         LinkAccountIdentityRequest: {
             /**
@@ -5262,6 +5272,16 @@ export interface components {
              *     the same numbers.
              */
             id: string;
+            /**
+             * @description The journal mode SQLite runs the database in now. The server asks for
+             *     `wal` on every start. Any other mode means it could not have it, as
+             *     when another program held the database file, and then every page
+             *     waits while an import writes. Owner Home says so, and the server's
+             *     log holds what SQLite answered. `null` when the
+             *     mode could not be read. The route still answers, because the entry
+             *     screen reads it before anyone can log in.
+             */
+            journal_mode: components["schemas"]["JournalMode"] | null;
             /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.

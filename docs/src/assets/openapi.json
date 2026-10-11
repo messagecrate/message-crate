@@ -11555,7 +11555,7 @@
           "Server"
         ],
         "summary": "Report whether this Message Crate is unclaimed, closed, or open.",
-        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, whether the Demo Account exists, and the attachment size\nlimit.",
+        "description": "Also reports this Message Crate's id, the server's Build, its Schema\nFingerprint, the database's journal mode, whether the Demo Account\nexists, and the attachment size limit.",
         "operationId": "get_server",
         "responses": {
           "200": {
@@ -15840,6 +15840,18 @@
           "cancelled"
         ]
       },
+      "JournalMode": {
+        "type": "string",
+        "description": "The journal mode SQLite runs a database in, as `PRAGMA journal_mode`\nnames it.\n\nThe server asks for `wal` on every open. In any other mode a reader waits\nfor a writer, so every page load waits while an import batch holds its\nwrite transaction.",
+        "enum": [
+          "delete",
+          "truncate",
+          "persist",
+          "memory",
+          "wal",
+          "off"
+        ]
+      },
       "LinkAccountIdentityRequest": {
         "type": "object",
         "description": "One identity to link onto the account, with its platform service.",
@@ -19249,7 +19261,8 @@
           "demo_account",
           "version",
           "schema_fingerprint",
-          "asset_max_bytes"
+          "asset_max_bytes",
+          "journal_mode"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -19265,6 +19278,17 @@
           "id": {
             "type": "string",
             "description": "This Message Crate's id: 32 random hexadecimal digits written when\nits database is made, and never changed. An app tells two Message\nCrates at one address apart by it, such as one rebuilt with\n`create-database`, whose account and Import Run ids start again at\nthe same numbers."
+          },
+          "journal_mode": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JournalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The journal mode SQLite runs the database in now. The server asks for\n`wal` on every start. Any other mode means it could not have it, as\nwhen another program held the database file, and then every page\nwaits while an import writes. Owner Home says so, and the server's\nlog holds what SQLite answered. `null` when the\nmode could not be read. The route still answers, because the entry\nscreen reads it before anyone can log in."
           },
           "schema_fingerprint": {
             "type": "integer",
