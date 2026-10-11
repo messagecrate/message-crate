@@ -1782,9 +1782,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service to link it on; the phone service when omitted. It never
-             *     decides the identity's type, which comes from the address. A new email
-             *     address on WhatsApp is refused.
+             * @description The service to link it on; the phone service when omitted. The
+             *     address's shape picks the identity's type among those the service
+             *     carries: an address with an `@` is an email address on the phone
+             *     service, and `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -3026,8 +3027,8 @@ export interface components {
          * @description The service an identity is on, as a request names it and the profile
          *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
          *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
-         *     The service never decides the identity's type, which comes from the
-         *     address.
+         *     The address's shape picks the identity's type among those the service
+         *     carries, so an address with an `@` is `other` on WhatsApp.
          * @enum {string}
          */
         IdentityService: "phone" | "whatsapp";
@@ -3370,9 +3371,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service, and one on WhatsApp is refused.
+             * @description The service the address is on. The address's shape picks the
+             *     identity's type among those the service carries: an address with an
+             *     `@` is an email address on the phone service, and `other` on
+             *     WhatsApp, such as an internal id `123456789012345@lid`.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5467,9 +5469,9 @@ export interface components {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service.
+             * @description The service the address is on. The identity is found as the type
+             *     the address takes there: an address with an `@` is an email address
+             *     on the phone service, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5532,8 +5534,8 @@ export interface components {
              *     its own service whatever this names: on the named service first when
              *     it is there under more than one, else the phone service, then
              *     WhatsApp. When omitted, the new address takes the service of the
-             *     previous one. It never decides the new identity's type, which comes
-             *     from the address, and a new email address on WhatsApp is refused.
+             *     previous one. The new address's shape picks its type among those the
+             *     service carries, so an address with an `@` is `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -11474,6 +11476,15 @@ export interface operations {
             };
             /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`server-stopping`](https://messagecrate.app/docs/developer/reference/errors/server-stopping): The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
