@@ -74,7 +74,9 @@ One line per program reports the result:
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
 - A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, or a program in the Tools Directory that doesn't run on this computer.
-  A download that finds no connection is tried again a few times over about two minutes before it fails, and shows as downloading while it waits.
+  When a download finds no connection, the app tries again after 5, 15, 30 and 60 seconds, and shows the download as in progress while it waits.
+  The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
+  A copy put in the Tools Directory by hand during those waits ends them, and the app uses it.
   A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
   The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.
