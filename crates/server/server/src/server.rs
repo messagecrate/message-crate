@@ -1641,15 +1641,40 @@ pub(crate) async fn stop_requested() {
     }
 }
 
-/// Report process liveness.
+/// How long `/health` waits for a pool connection and its `SELECT 1`. It
+/// stays under the time `docker/healthcheck.cjs` gives each address it asks,
+/// and `SELECT 1` reads no table, so it never waits on a writer's lock. Why a
+/// pool that writers fill reads as down, and why that is accepted:
+/// `docs/architecture/http-api.md`, "Failures".
+const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// Report whether the server can answer.
+///
+/// Answers `ok` when the server can take a database connection and run a
+/// statement on it within 1.5 seconds. A server whose connections are all
+/// taken, or whose database cannot be opened, fails the way a `/v1` call it
+/// cannot answer fails, with `500 Internal Server Error`, so a health check
+/// agrees with those calls.
 #[utoipa::path(
     get,
     path = "/health",
     tag = "Health",
-    responses((status = 200, description = "Process is up", body = String))
+    responses((status = 200, description = "The server is up and can reach its database", body = String))
 )]
-pub(crate) async fn get_health() -> (StatusCode, &'static str) {
-    (StatusCode::OK, "ok\n")
+pub(crate) async fn get_health(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<(StatusCode, &'static str), ApiError> {
+    let probe = sqlx::query("SELECT 1").execute(&state.db);
+    match tokio::time::timeout(HEALTH_DATABASE_LIMIT, probe).await {
+        Ok(Ok(_)) => Ok((StatusCode::OK, "ok\n")),
+        Ok(Err(e)) => Err(ApiError::Internal(
+            anyhow::Error::new(e).context("run the health check's statement on the database"),
+        )),
+        Err(_) => Err(ApiError::Internal(anyhow::anyhow!(
+            "the health check could not take a database connection and run SELECT 1 within {} ms",
+            HEALTH_DATABASE_LIMIT.as_millis()
+        ))),
+    }
 }
 
 /// Read the Bearer token from `Authorization`.

@@ -29,7 +29,7 @@ use crate::server::AppState;
         crate::exports_api::OwnerExportRun
     )),
     tags(
-        (name = "Health", description = "Process liveness"),
+        (name = "Health", description = "Whether the server is up and can reach its database"),
         (name = "Session", description = "The logged-in credential: log in, check it, log out"),
         (name = "Accounts", description = "The accounts: the owner manages them, and each account reads and writes its own, API tokens included"),
         (name = "Audit Trail", description = "What each user did on this Message Crate, and when: the owner reads every account's, and each account its own"),

@@ -183,6 +183,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
+  into the Tools Directory was reworked inside. The one change you could see:
+  on the rare computer where the app cannot set up its downloads at all,
+  Settings, and an import waiting for the download, now say the download
+  could not be started, instead of saying there is no connection to the
+  download's server (#2213).
+
 - 2026-10-11: The way logging out works in the app was reworked inside, with
   nothing visible (#2214).
 
@@ -340,6 +347,13 @@ released versions carry their date on the heading.
 ### Fixes
 
 #### Accounts, Settings and screens
+
+- 2026-10-11: **The login screen reads Disconnected when the server cannot
+  reach its database.** Before, it read Connected as long as the server was
+  running, even when every page failed because the database could not be
+  read or every connection to it was taken. Docker's health check of
+  the Message Crate container asks the same question, so a container whose
+  server cannot reach its database now reads unhealthy too (#2202).
 
 - 2026-10-11: **A screen stops waiting for a server that never answers.**
   When the server takes a request and then never answers, such as a stalled

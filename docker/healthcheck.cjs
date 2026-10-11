@@ -2,8 +2,11 @@
 //
 // It asks /health at the address the container's server listens on, read from
 // /proc, so the check follows the server wherever `[server] bind` or
-// `serve --bind` puts it and needs no edit when the port changes. It runs on
-// the node the base image already carries, so the image needs no curl.
+// `serve --bind` puts it and needs no edit when the port changes. /health
+// answers ok only while the server can take a database connection and run a
+// statement on it, so a server that runs but cannot reach its database reads
+// unhealthy. It runs on the node the base image already carries, so the image
+// needs no curl.
 //
 // The container's command is the oldest message-crate-server process. When
 // that command is not `serve` (`docker compose run --rm server reset-demo`,
@@ -29,6 +32,10 @@ const SERVER = "message-crate-server";
 const TCP_STATE_LISTEN = "0A";
 // The hosts asked share this time between them. It stays under HEALTHCHECK
 // --timeout=5s in docker/Dockerfile, with a second left for node to start.
+// The server gives up on its database within HEALTH_DATABASE_LIMIT
+// (crates/server/server/src/server.rs), 1.5 seconds, which stays under the
+// two seconds each host gets when two are asked, so a failure arrives as the
+// server's answer rather than as this check's own time running out.
 const PROBE_BUDGET_MS = 4000;
 
 function argsOf(pid) {

@@ -1300,6 +1300,51 @@ async fn health_answers_a_probe_that_accepts_only_text() {
     assert_eq!(response.text().await.unwrap(), "ok\n");
 }
 
+/// `/health` fails as a `/v1` call does when the database cannot be
+/// reached, so a probe does not read a server as up while every `/v1` call
+/// fails (#2202).
+#[tokio::test]
+async fn health_fails_when_the_database_cannot_be_reached() {
+    let fixture = crate::test_support::test_fixture().await;
+    let server = crate::test_support::serve(&fixture.state).await;
+    fixture.state.db.close().await;
+
+    let response = http_client()
+        .get(format!("{}/health", server.base()))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        response.headers()[header::CONTENT_TYPE],
+        "application/problem+json"
+    );
+}
+
+/// `/health` fails within its time limit when every pool connection is held,
+/// rather than waiting for one as long as a `/v1` call would (#2202). No
+/// connection is given back while it waits, so the answer does not depend on
+/// how fast the machine is.
+#[tokio::test]
+async fn health_fails_when_every_pool_connection_is_held() {
+    let fixture = crate::test_support::test_fixture().await;
+    let server = crate::test_support::serve(&fixture.state).await;
+    let mut held = Vec::new();
+    for _ in 0..fixture.state.db.options().get_max_connections() {
+        held.push(fixture.state.db.acquire().await.unwrap());
+    }
+
+    let response = http_client()
+        .get(format!("{}/health", server.base()))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    drop(held);
+}
+
 #[test]
 fn every_api_error_answers_the_status_its_problem_type_declares() {
     let cases: Vec<(ApiError, StatusCode)> = vec![
