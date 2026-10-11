@@ -34,7 +34,7 @@ import {
   useTrashConversation,
 } from "./trash";
 
-vi.mock("./auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
+vi.mock("./authContext", () => ({ useAuth: () => ({ accountId: 7 }) }));
 
 vi.mock("./serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./serverApi")>()),

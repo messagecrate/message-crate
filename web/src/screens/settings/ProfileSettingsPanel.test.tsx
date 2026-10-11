@@ -9,7 +9,7 @@ import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
 const updateAccountProfile = vi.hoisted(() => vi.fn());
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   getAccountProfile: (...a: unknown[]) => getAccountProfile(...a),

@@ -1,6 +1,6 @@
 import Button from "../../components/Button";
 import { setBaseUrl } from "../../lib/api";
-import { useAuth } from "../../lib/auth";
+import { useAuth } from "../../lib/authContext";
 import { login as serverLogin } from "../../lib/serverApi";
 import { useAsyncAction } from "../../lib/useAsyncAction";
 

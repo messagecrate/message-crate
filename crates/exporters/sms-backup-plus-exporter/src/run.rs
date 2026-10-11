@@ -4,11 +4,8 @@ use crate::emit::{ConvertExportArgs, convert_export};
 use anyhow::{Result, bail};
 use message_crate_core::{ExporterConfig, RunResult, SourceConfig};
 
-/// Check the required inputs, then convert.
-///
-/// The shared `run_pipeline` cannot apply `SmsBackupPlusConfig::include_summary`
-/// (it appends the summary lines unconditionally), so the SMS Backup+ specifics
-/// stay here and only the shared `finish_run` tail is reused.
+/// Check the owner's phone number and email address, then run the shared
+/// pipeline.
 ///
 /// # Errors
 ///
@@ -28,24 +25,19 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         bail!("SMS Backup+ needs the backup device's email address");
     }
 
-    let report = convert_export(ConvertExportArgs {
-        inputs: &config.inputs,
-        output_dir: &config.output,
-        scratch_dir: &config.scratch_dir,
-        owner_phones: &source.owner_phones,
-        owner_emails: &source.owner_emails,
-        phone_country: source.phone_country,
-        verbose: source.verbose,
-        log: config.log.as_ref(),
-        convert_run: config.convert_run(),
-    })?;
-    if source.include_summary {
-        return message_crate_core::finish_run(config, &report, config.media.mode.needs_tools());
-    }
-    // No summary wanted: the shared tail appends the summary unconditionally, so
-    // keep only the media lines.
-    report.check_media(config.media.mode.needs_tools())?;
-    Ok(RunResult::new(report.media_lines(), &report))
+    message_crate_core::run_pipeline(config, |convert_run| {
+        convert_export(ConvertExportArgs {
+            inputs: &config.inputs,
+            output_dir: &config.output,
+            scratch_dir: &config.scratch_dir,
+            owner_phones: &source.owner_phones,
+            owner_emails: &source.owner_emails,
+            phone_country: source.phone_country,
+            verbose: source.verbose,
+            log: config.log.as_ref(),
+            convert_run,
+        })
+    })
 }
 
 #[cfg(test)]
@@ -61,7 +53,6 @@ mod tests {
             owner_phones: phones.iter().map(|p| (*p).to_string()).collect(),
             owner_emails: emails.iter().map(|e| (*e).to_string()).collect(),
             verbose: false,
-            include_summary: false,
             phone_country: None,
         })
     }

@@ -26,7 +26,7 @@ vi.mock("../lib/useAccountProfile", () => ({
   }),
 }));
 
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => authState,
 }));
 

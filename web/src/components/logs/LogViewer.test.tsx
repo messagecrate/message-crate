@@ -10,7 +10,7 @@ import { fill, setupUser } from "../../test/user";
 import LogViewer, { LOG_PAGE_SIZE } from "./LogViewer";
 import type { LinesRequest, LogSource } from "./logSource";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => ({ accountId: 1 }) }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => ({ accountId: 1 }) }));
 vi.mock("../../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const saveMock = vi.mocked(saveFile);

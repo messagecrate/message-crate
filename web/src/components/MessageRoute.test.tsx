@@ -13,7 +13,7 @@ import { setupUser } from "../test/user";
 import MessageRoute from "./MessageRoute";
 import { RightToolbarProvider } from "./RightToolbarContext";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),

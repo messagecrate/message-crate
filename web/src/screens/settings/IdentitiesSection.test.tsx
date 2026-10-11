@@ -14,7 +14,7 @@ const listAccountIdentities = vi.hoisted(() => vi.fn());
 vi.mock("../../lib/useSettingsAccount", () => ({
   useUpdateSettingsProfile: () => ({ mutateAsync, isPending: false }),
 }));
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),
   listAccountIdentities: (...a: unknown[]) => listAccountIdentities(...a),

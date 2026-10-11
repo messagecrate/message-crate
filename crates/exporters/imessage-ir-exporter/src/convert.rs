@@ -950,6 +950,7 @@ fn stage_attachments(
 mod tests {
     use super::*;
     use message_ir::TimePrecision;
+    use message_ir::testutil::sample_attachment;
 
     fn record_with_attachment(source: SourceRecord) -> AttachmentRecord {
         AttachmentRecord {
@@ -1338,16 +1339,9 @@ mod tests {
             text: "hi".into(),
             attachments: (0..count)
                 .map(|i| IrAttachment {
-                    path: None,
                     original_name: Some(format!("a{i}.jpg")),
                     mime_type: None,
-                    digest_sha256: None,
-                    is_sticker: false,
-                    transcription: None,
-                    sticker_effect: None,
-                    size_bytes: None,
-                    missing_reason: None,
-                    bytes: None,
+                    ..sample_attachment()
                 })
                 .collect(),
             reactions: Vec::new(),

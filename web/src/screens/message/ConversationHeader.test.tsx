@@ -16,7 +16,7 @@ import { mockedAuth, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

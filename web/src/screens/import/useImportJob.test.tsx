@@ -134,7 +134,7 @@ let auth: { token: string | null; accountId: number | null } = {
   token: "test-token",
   accountId: 1,
 };
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => auth,
 }));
 
