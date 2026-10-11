@@ -268,12 +268,13 @@ async fn names_over_max_len_are_rejected() {
 }
 
 #[tokio::test]
-async fn any_query_string_is_stored_verbatim() {
+async fn a_value_no_list_understands_is_stored_verbatim() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    // Nonsense in the search language. The server stores it anyway: each
-    // list accepts its own subset of the language, so nothing validates here.
+    // `discord` is not one of `service:`'s choices, so every list refuses
+    // this query. Only the length, the syntax and the limits are checked
+    // here: no `word:` is looked up and no value is read.
     let made = create(
         &mut conn,
         account,

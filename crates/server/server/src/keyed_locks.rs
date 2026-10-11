@@ -90,7 +90,7 @@ mod tests {
         let first = locks.lock("a:1".into()).await;
         let waiter = {
             let locks = locks.clone();
-            tokio::spawn(async move {
+            crate::request_id::spawn_in_current_span(async move {
                 let _guard = locks.lock("a:1".into()).await;
                 locks.len()
             })
