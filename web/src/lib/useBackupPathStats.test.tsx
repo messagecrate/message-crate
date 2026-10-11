@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../test/providers";
+import { createQueryClient } from "./routeQuery";
 import {
   PATH_PROBE_DEBOUNCE_MS,
   useImessagePathStats,
@@ -60,7 +61,8 @@ type ImessageProps = { source: string; backupPath: string };
 
 function renderImessage(initial: ImessageProps) {
   return renderHook(
-    ({ source, backupPath }: ImessageProps) => useImessagePathStats(source, backupPath, "", ""),
+    ({ source, backupPath }: ImessageProps) =>
+      useImessagePathStats({ source, backupPath, attachmentRoot: "", appleContacts: "" }),
     { initialProps: initial, wrapper: Providers },
   );
 }
@@ -116,7 +118,8 @@ type WhatsappProps = { source: string; backupPath: string };
 
 function renderWhatsapp(initial: WhatsappProps) {
   return renderHook(
-    ({ source, backupPath }: WhatsappProps) => useWhatsappPathStats(source, backupPath, "", "", ""),
+    ({ source, backupPath }: WhatsappProps) =>
+      useWhatsappPathStats({ source, backupPath, contactsDb: "", media: "", db: "" }),
     { initialProps: initial, wrapper: Providers },
   );
 }
@@ -140,17 +143,21 @@ describe("useWhatsappPathStats", () => {
   });
 
   it("asks again for paths that come back, since the files can change on disk", async () => {
-    // A client that keeps answers fresh for half a minute, as the app's does.
-    const client = new QueryClient({
-      defaultOptions: { queries: { staleTime: 30_000, refetchOnWindowFocus: false } },
-    });
+    // The app's own client, which keeps other answers fresh for a while.
+    const client = createQueryClient();
     const wrapper = ({ children }: { children: ReactNode }) => (
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     );
     desktop.paths.set("/wa", "directory");
     const view = renderHook(
       ({ backupPath }: { backupPath: string }) =>
-        useWhatsappPathStats("whatsapp-android", backupPath, "", "", ""),
+        useWhatsappPathStats({
+          source: "whatsapp-android",
+          backupPath,
+          contactsDb: "",
+          media: "",
+          db: "",
+        }),
       { initialProps: { backupPath: "/wa" }, wrapper },
     );
     await settle();

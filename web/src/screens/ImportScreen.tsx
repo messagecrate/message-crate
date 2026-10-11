@@ -186,14 +186,14 @@ export default function ImportScreen() {
   const [isBusinessApp, setIsBusinessApp] = useState(false);
   /** The holder's WhatsApp number; seeded from the profile's first phone. */
   const [whatsappOwnerPhone, setWhatsappOwnerPhone] = useState("");
-  const pathStats = useImessagePathStats(source, backupPath, attachmentRoot, appleContacts);
-  const whatsappStats = useWhatsappPathStats(
+  const pathStats = useImessagePathStats({ source, backupPath, attachmentRoot, appleContacts });
+  const whatsappStats = useWhatsappPathStats({
     source,
     backupPath,
-    whatsappWa,
-    whatsappMedia,
-    whatsappDb,
-  );
+    contactsDb: whatsappWa,
+    media: whatsappMedia,
+    db: whatsappDb,
+  });
   const [backupPassword, setBackupPassword] = useState("");
   const [showBackupPassword, setShowBackupPassword] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);

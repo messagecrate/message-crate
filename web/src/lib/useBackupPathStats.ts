@@ -36,7 +36,7 @@ async function backupEncrypted(root: string): Promise<boolean | null> {
  * on disk between two asks, so no answer is fresh. The browser has no
  * desktop process to ask, so there it is always `empty`.
  */
-function useSettledPathProbe<P extends { source: string }, S>(
+function useSettledPathProbe<P extends Record<string, string> & { source: string }, S>(
   paths: P,
   {
     key,
@@ -58,7 +58,8 @@ function useSettledPathProbe<P extends { source: string }, S>(
   },
 ): S {
   // The fields as one string, so one timer settles them together: a source
-  // change and the paths it loads never reach the key apart.
+  // change and the paths it loads never reach the key apart. Every field is
+  // a string, so the round trip through JSON gives back the same fields.
   const current = JSON.stringify(paths);
   const settledText = useDebouncedValue(current, PATH_PROBE_DEBOUNCE_MS);
   const settled = useMemo(() => JSON.parse(settledText) as P, [settledText]);
@@ -81,39 +82,31 @@ function useSettledPathProbe<P extends { source: string }, S>(
  * is typed the last answer for the same method stays on screen, so a
  * finding does not blink out at each keystroke; another method starts empty.
  */
-export function useImessagePathStats(
-  source: string,
-  backupPath: string,
-  attachmentRoot: string,
-  appleContacts: string,
-): ImessagePathStats {
-  return useSettledPathProbe<ImessagePathsKey, ImessagePathStats>(
-    { source, backupPath, attachmentRoot, appleContacts },
-    {
-      key: keys.desktopImessagePaths.of,
-      isMethod: isImessageMethod,
-      probe: async (settled) => {
-        const [backup, attachment, contacts] = await Promise.all([
-          probePath(settled.backupPath),
-          probePath(settled.attachmentRoot),
-          probePath(settled.appleContacts),
-        ]);
-        // Only an iPhone backup is asked whether it is encrypted.
-        const encrypted =
-          settled.source === "imessage-ios" && backup?.exists && backup.isDirectory
-            ? await backupEncrypted(settled.backupPath.trim())
-            : null;
-        return {
-          backup,
-          attachmentRoot: attachment,
-          appleContacts: contacts,
-          backupEncrypted: encrypted,
-        };
-      },
-      empty: NO_IMESSAGE_STATS,
-      keepWhileTyping: true,
+export function useImessagePathStats(paths: ImessagePathsKey): ImessagePathStats {
+  return useSettledPathProbe<ImessagePathsKey, ImessagePathStats>(paths, {
+    key: keys.desktopImessagePaths.of,
+    isMethod: isImessageMethod,
+    probe: async (settled) => {
+      const [backup, attachment, contacts] = await Promise.all([
+        probePath(settled.backupPath),
+        probePath(settled.attachmentRoot),
+        probePath(settled.appleContacts),
+      ]);
+      // Only an iPhone backup is asked whether it is encrypted.
+      const encrypted =
+        settled.source === "imessage-ios" && backup?.exists && backup.isDirectory
+          ? await backupEncrypted(settled.backupPath.trim())
+          : null;
+      return {
+        backup,
+        attachmentRoot: attachment,
+        appleContacts: contacts,
+        backupEncrypted: encrypted,
+      };
     },
-  );
+    empty: NO_IMESSAGE_STATS,
+    keepWhileTyping: true,
+  });
 }
 
 /**
@@ -123,47 +116,38 @@ export function useImessagePathStats(
  * so a crypt file found under the old backup directory is never shown for
  * the new one.
  */
-export function useWhatsappPathStats(
-  source: string,
-  backupPath: string,
-  contactsDb: string,
-  media: string,
-  db: string,
-): WhatsappPathStats {
-  return useSettledPathProbe<WhatsappPathsKey, WhatsappPathStats>(
-    { source, backupPath, contactsDb, media, db },
-    {
-      key: keys.desktopWhatsappPaths.of,
-      isMethod: isWhatsappMethod,
-      probe: async (settled) => {
-        const root = settled.backupPath.trim();
-        const [backup, contactsStat, mediaStat, dbStat, msgstore, cryptHits] = await Promise.all([
-          probePath(settled.backupPath),
-          probePath(settled.contactsDb),
-          probePath(settled.media),
-          probePath(settled.db),
-          probePath(root ? `${root}/msgstore.db` : ""),
-          Promise.all(
-            WHATSAPP_CRYPT_NAMES.map(async (name) => {
-              const stat = await probePath(root ? `${root}/${name}` : "");
-              return stat?.exists && stat.isFile ? name : null;
-            }),
-          ),
-        ]);
-        const encrypted =
-          settled.source === "whatsapp-ios" && root !== "" ? await backupEncrypted(root) : null;
-        return {
-          backup,
-          contactsDb: contactsStat,
-          media: mediaStat,
-          db: dbStat,
-          hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
-          cryptName: cryptHits.find((name) => name !== null) ?? null,
-          backupEncrypted: encrypted,
-        };
-      },
-      empty: NO_WHATSAPP_STATS,
-      keepWhileTyping: false,
+export function useWhatsappPathStats(paths: WhatsappPathsKey): WhatsappPathStats {
+  return useSettledPathProbe<WhatsappPathsKey, WhatsappPathStats>(paths, {
+    key: keys.desktopWhatsappPaths.of,
+    isMethod: isWhatsappMethod,
+    probe: async (settled) => {
+      const root = settled.backupPath.trim();
+      const [backup, contactsStat, mediaStat, dbStat, msgstore, cryptHits] = await Promise.all([
+        probePath(settled.backupPath),
+        probePath(settled.contactsDb),
+        probePath(settled.media),
+        probePath(settled.db),
+        probePath(root ? `${root}/msgstore.db` : ""),
+        Promise.all(
+          WHATSAPP_CRYPT_NAMES.map(async (name) => {
+            const stat = await probePath(root ? `${root}/${name}` : "");
+            return stat?.exists && stat.isFile ? name : null;
+          }),
+        ),
+      ]);
+      const encrypted =
+        settled.source === "whatsapp-ios" && root !== "" ? await backupEncrypted(root) : null;
+      return {
+        backup,
+        contactsDb: contactsStat,
+        media: mediaStat,
+        db: dbStat,
+        hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
+        cryptName: cryptHits.find((name) => name !== null) ?? null,
+        backupEncrypted: encrypted,
+      };
     },
-  );
+    empty: NO_WHATSAPP_STATS,
+    keepWhileTyping: false,
+  });
 }
