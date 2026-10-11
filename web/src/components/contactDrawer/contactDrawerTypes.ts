@@ -35,6 +35,13 @@ export type ContactListPreviewSource = {
 /** Same three ways a set of conversations narrows by kind, named for this drawer. */
 export type ContactBrowseKind = ConversationKind;
 
+/** The contact, or the one handle of it, whose conversations to open. */
+export interface ContactBrowseTarget {
+  contactId: string;
+  kind: ContactBrowseKind;
+  handle?: string;
+}
+
 export function contactPreviewFromListRow(c: ContactListPreviewSource): ContactPreview {
   return {
     id: c.id,

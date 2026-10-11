@@ -12,6 +12,7 @@ import ContactLabel from "./ContactLabel";
 import { ContactDrawerHandles } from "./contactDrawer/ContactDrawerHandles";
 import {
   type ContactBrowseKind,
+  type ContactBrowseTarget,
   type ContactPreview,
   contactConversations,
   previewHandleStubRows,
@@ -120,11 +121,7 @@ type ContactDrawerProps = {
   contactId: string | null;
   preview?: ContactPreview | null;
   onClose: () => void;
-  onBrowseConversations?: (args: {
-    contactId: string;
-    kind: ContactBrowseKind;
-    handle?: string;
-  }) => void;
+  onBrowseConversations?: (target: ContactBrowseTarget) => void;
   /** `docked` = flex sibling (contacts page). `overlay` = fixed panel (e.g. from messages). */
   variant?: "docked" | "overlay";
 };
