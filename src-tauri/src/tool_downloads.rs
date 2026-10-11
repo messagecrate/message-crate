@@ -652,6 +652,26 @@ fn does_not_run(program: Program) -> DownloadState {
     }
 }
 
+/// The state of `program` adopted in place, given whether it could be made
+/// executable and whether it `runs` after that: none when it runs, failed
+/// with the reason it could not be made executable when that failed, and
+/// failed as not running otherwise.
+fn adopted_state(
+    program: Program,
+    made_executable: io::Result<()>,
+    runs: bool,
+) -> Option<DownloadState> {
+    if runs {
+        return None;
+    }
+    Some(match made_executable {
+        Ok(()) => does_not_run(program),
+        Err(err) => DownloadState::Failed {
+            reason: DownloadError::CouldNotWrite(err.to_string()).to_string(),
+        },
+    })
+}
+
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
 /// another check holds it. The lock is let go when the file is closed.
 fn lock_check(dir: &Path) -> io::Result<Option<File>> {
@@ -825,15 +845,22 @@ fn check(
             Need::Keep => downloads.clear(pin.program),
             Need::Adopt => {
                 let path = dir.join(pin.program.file_name());
-                let _ = make_executable(&path);
+                let made_executable = make_executable(&path);
                 if let Ok(stamp) = Stamp::at(&path) {
                     manifest.insert(pin.program, Written::of(pin, stamp));
-                    let _ = write_manifest(dir, &manifest);
+                    if let Err(err) = write_manifest(dir, &manifest) {
+                        // The program stays in place either way. Without
+                        // the record the next start reads the file again
+                        // and adopts it again.
+                        eprintln!(
+                            "{} in the Tools Directory is kept, and {MANIFEST_FILE} could not be written: {err}",
+                            pin.program.name()
+                        );
+                    }
                 }
-                if runs(pin.program, dir) {
-                    downloads.clear(pin.program);
-                } else {
-                    downloads.set(pin.program, does_not_run(pin.program));
+                match adopted_state(pin.program, made_executable, runs(pin.program, dir)) {
+                    None => downloads.clear(pin.program),
+                    Some(state) => downloads.set(pin.program, state),
                 }
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),

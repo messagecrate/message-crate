@@ -726,6 +726,37 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
     );
 }
 
+/// An adopted program that could not be made executable, and so does not
+/// run, fails with the reason it could not be, not the generic text, so
+/// Settings says what to fix.
+#[test]
+fn an_adopted_program_that_could_not_be_made_executable_says_why() {
+    let denied = io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
+
+    let state = adopted_state(Program::Wtsexporter, Err(denied), false);
+
+    assert_eq!(
+        state,
+        Some(DownloadState::Failed {
+            reason: DownloadError::CouldNotWrite("Operation not permitted".to_string()).to_string(),
+        })
+    );
+}
+
+/// An adopted program that runs is in place, whether or not its bits could
+/// be set, and one made executable that does not run says it does not run.
+#[test]
+fn an_adopted_program_is_failed_only_when_it_does_not_run() {
+    let denied = || io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
+
+    assert_eq!(adopted_state(Program::Ffmpeg, Ok(()), true), None);
+    assert_eq!(adopted_state(Program::Ffmpeg, Err(denied()), true), None);
+    assert_eq!(
+        adopted_state(Program::Ffmpeg, Ok(()), false),
+        Some(does_not_run(Program::Ffmpeg))
+    );
+}
+
 /// The app's own file whose stamp stopped matching, as after a sync or a
 /// remount, is recorded again with its new stamp and not downloaded, because
 /// its content is still the pinned program.
