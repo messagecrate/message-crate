@@ -521,10 +521,12 @@ async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
     };
     let import_only = token(true, false).await;
     let may_export = token(false, true).await;
-    assert_eq!(
-        crate::test_support::get_status(&state, &path, &import_only).await,
-        StatusCode::FORBIDDEN,
-        "a token that may not export must not fetch attachment bytes"
+    let (status, text) = crate::test_support::get_raw(&state, &path, &import_only).await;
+    crate::test_support::expect_problem_for(
+        "a token that may not export fetching attachment bytes",
+        status,
+        &text,
+        crate::problem::ProblemType::InsufficientScope,
     );
     assert_eq!(
         crate::test_support::get_status(&state, &path, &may_export).await,
@@ -546,10 +548,12 @@ async fn a_session_reads_an_attachment_without_export_and_a_token_needs_it() {
         StatusCode::OK,
         "an account with export off still sees its own attachments"
     );
-    assert_eq!(
-        crate::test_support::get_status(&state, "/v1/exports", &user.token).await,
-        StatusCode::FORBIDDEN,
-        "the export permission still decides Export Runs"
+    let (status, text) = crate::test_support::get_raw(&state, "/v1/exports", &user.token).await;
+    crate::test_support::expect_problem_for(
+        "an account with export off listing Export Runs",
+        status,
+        &text,
+        crate::problem::ProblemType::InsufficientScope,
     );
 }
 
@@ -580,12 +584,11 @@ async fn an_upload_part_over_the_part_size_is_a_json_413() {
     state.asset_part_size = 16;
 
     let sha = "0".repeat(64);
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/assets/{sha}/uploads"),
         &user.token,
-        "application/json",
-        serde_json::json!({ "bytes": 40 }).to_string(),
+        serde_json::json!({ "bytes": 40 }),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "{text}");
@@ -734,12 +737,11 @@ async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
         "reading, writing a part of and ending an upload read the stored file"
     );
 
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/assets/{sha}/uploads"),
         &user.token,
-        "application/json",
-        serde_json::to_vec(&serde_json::json!({ "bytes": 40 })).unwrap(),
+        serde_json::json!({ "bytes": 40 }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{text}");
@@ -779,14 +781,8 @@ async fn an_upload_over_the_limit_the_owner_just_set_is_refused() {
     )
     .await;
 
-    let (status, text) = crate::test_support::post_raw(
-        &state,
-        &start,
-        &user.token,
-        "application/json",
-        declared.to_string(),
-    )
-    .await;
+    let (status, text) =
+        crate::test_support::post_json_raw(&state, &start, &user.token, declared).await;
     let problem = crate::test_support::expect_problem(
         status,
         &text,
@@ -844,12 +840,11 @@ async fn a_multipart_upload_works_under_a_limit_below_the_configured_part_size()
 
     // One byte over the limit is refused when the upload is opened.
     let over: Vec<u8> = (0u8..41).collect();
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &state,
         &format!("/v1/assets/{}/uploads", sha256_hex(&over)),
         &user.token,
-        "application/json",
-        serde_json::json!({ "bytes": over.len() }).to_string(),
+        serde_json::json!({ "bytes": over.len() }),
     )
     .await;
     crate::test_support::expect_problem(
@@ -1710,10 +1705,12 @@ async fn a_preview_is_read_under_the_same_rule_as_the_original() {
 
     let (status, text) = crate::test_support::get_raw(&state, &path, &other.token).await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
-    assert_eq!(
-        crate::test_support::get_status(&state, &path, &owner.token).await,
-        StatusCode::FORBIDDEN,
-        "the owner never reads an attachment's bytes, a preview included"
+    let (status, text) = crate::test_support::get_raw(&state, &path, &owner.token).await;
+    crate::test_support::expect_problem_for(
+        "the owner reading a preview",
+        status,
+        &text,
+        crate::problem::ProblemType::InsufficientScope,
     );
 
     let tokens_path = format!("/v1/accounts/{}/api-tokens", user.account_id);
@@ -1733,10 +1730,12 @@ async fn a_preview_is_read_under_the_same_rule_as_the_original() {
             .await;
         tokens.push(created["token"].as_str().unwrap().to_string());
     }
-    assert_eq!(
-        crate::test_support::get_status(&state, &path, &tokens[0]).await,
-        StatusCode::FORBIDDEN,
-        "a token that may not export must not fetch a preview"
+    let (status, text) = crate::test_support::get_raw(&state, &path, &tokens[0]).await;
+    crate::test_support::expect_problem_for(
+        "a token that may not export fetching a preview",
+        status,
+        &text,
+        crate::problem::ProblemType::InsufficientScope,
     );
     assert_eq!(
         crate::test_support::get_status(&state, &path, &tokens[1]).await,
@@ -1794,11 +1793,7 @@ async fn c1_1_a_put_the_server_cannot_store_is_not_a_422() {
         bytes,
     )
     .await;
-    assert_eq!(
-        status,
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "a storage failure answered {status}: {text}"
-    );
+    crate::test_support::expect_internal_problem(status, &text);
 }
 
 /// An upload id that names no upload names nothing, so a part or a
@@ -1818,12 +1813,11 @@ async fn a_part_or_completion_for_an_unknown_upload_is_not_found() {
     .await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         &format!("/v1/assets/{sha}/uploads/abcdef01/complete"),
         &user.token,
-        "application/json",
-        "{}",
+        serde_json::json!({}),
     )
     .await;
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);

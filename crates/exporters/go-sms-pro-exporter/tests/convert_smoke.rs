@@ -4,7 +4,7 @@ use go_sms_mms::testutil::PduBuilder;
 use message_crate_core::testutil::{
     assert_csv_export, assert_csv_row, assert_jsonl_resumes, csv_files,
 };
-use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{ConvertRun, ExportReport, OutputFormat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -28,11 +28,10 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
         output_dir,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Csv,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            output_format: OutputFormat::Csv,
+            ..ConvertRun::default()
+        },
     })
 }
 
@@ -120,11 +119,11 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_dir: &output,
             scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Jsonl,
-            cancel: None,
-            resume,
-            issues: None,
+            convert_run: ConvertRun {
+                output_format: OutputFormat::Jsonl,
+                resume,
+                ..ConvertRun::default()
+            },
         })
     });
 }
@@ -154,11 +153,10 @@ fn the_backup_date_is_the_newest_files_modification_time() {
         output_dir: &output,
         scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
-        transforms: ExportTransforms::none(),
-        output_format: OutputFormat::Jsonl,
-        cancel: None,
-        resume: false,
-        issues: None,
+        convert_run: ConvertRun {
+            output_format: OutputFormat::Jsonl,
+            ..ConvertRun::default()
+        },
     })
     .expect("convert");
     assert_eq!(

@@ -13,9 +13,9 @@ use anyhow::{Result, anyhow, bail};
 use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
-    AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig,
-    IMESSAGE_READER_DIRECTORY, IssueSink, LogSink, OutputFormat, ProgressEvent, ProgressSink,
-    RunIssue, RunResult, ScratchDir, SourceConfig, emit_progress, prepare_outputs,
+    AppleConfig, ApplePlatform, ConvertRun, ExporterConfig, IMESSAGE_READER_DIRECTORY, LogSink,
+    ProgressEvent, ProgressSink, RunIssue, RunResult, ScratchDir, SourceConfig, emit_progress,
+    prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
@@ -72,7 +72,7 @@ fn attachment_embed_from_copy_method(copy_method: &str) -> Result<AttachmentEmbe
 
 /// Everything one export run needs, checked and ready to send.
 #[derive(Debug)]
-pub(crate) struct ExportOptions {
+pub(crate) struct ExportOptions<'a> {
     /// The Messages data the `imessage-reader` program reads.
     pub source: Source,
     /// [`ExportRequest::attachment_root`].
@@ -85,24 +85,16 @@ pub(crate) struct ExportOptions {
     /// the Scratch Directory; the program decrypts into a directory under it.
     pub scratch_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
-    /// Media / obfuscate transforms applied by [`message_ir_format::FormatSink`].
-    pub transforms: ExportTransforms,
-    /// CSV, EML, MBOX, JSON, or JSON Lines (one JSON object per line).
-    pub output_format: OutputFormat,
     /// Human-readable mid-run notes and warnings (desktop sink or stderr).
     pub log: Option<LogSink>,
     /// Typed progress events for the desktop's progress bar.
     pub progress: Option<ProgressSink>,
-    /// Rows for the Import Run's record, sent as they are recorded.
-    pub issues: Option<IssueSink>,
-    /// Cooperative cancel flag, checked between events and before every write.
-    pub cancel: Option<CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
+    /// The run-wide settings ([`ConvertRun`]). This exporter checks the
+    /// cancel flag between events and before every write.
+    pub convert_run: ConvertRun<'a>,
 }
 
-impl ExportOptions {
+impl ExportOptions<'_> {
     /// The request for the program, which decrypts into `scratch_dir`.
     pub fn export_request(&self, scratch_dir: &Path) -> Request {
         Request::Export(ExportRequest {
@@ -127,12 +119,12 @@ impl ExportOptions {
     /// Send one row for the Import Run's record when an issue sink is
     /// configured.
     pub fn emit_issue(&self, issue: RunIssue) {
-        message_crate_core::emit_issue(self.issues.as_ref(), issue);
+        message_crate_core::emit_issue(self.convert_run.issues, issue);
     }
 
     /// The shared cancel check.
     pub fn check_cancel(&self) -> Result<()> {
-        message_crate_core::check_cancel(self.cancel.as_ref()).map_err(|e| anyhow!(e))
+        message_crate_core::check_cancel(self.convert_run.cancel).map_err(|e| anyhow!(e))
     }
 
     /// When the Messages data was backed up, in Unix milliseconds: an
@@ -217,7 +209,7 @@ fn run_with(
 }
 
 /// Translate the shared exporter config into this exporter's options, rejecting non-Apple sources.
-fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> {
+fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions<'_>> {
     let SourceConfig::Apple(source) = &config.source else {
         bail!("imessage-ir-exporter requires SourceConfig::Apple");
     };
@@ -269,13 +261,9 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         export_path: config.output.clone(),
         scratch_dir: config.scratch_dir.clone(),
         attachment_embed,
-        transforms: ExportTransforms::from_config(config),
-        output_format: config.output_format,
         log: config.log.clone(),
         progress: config.progress.clone(),
-        issues: config.issues.clone(),
-        cancel: config.cancel.clone(),
-        resume: config.resume,
+        convert_run: config.convert_run(),
     })
 }
 

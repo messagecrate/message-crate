@@ -1,4 +1,3 @@
-import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/auth";
 import { canReadImportRunLogs } from "../../lib/desktopFeatures";
 import { useRouteQuery } from "../../lib/routeQuery";
@@ -129,12 +128,4 @@ export function useRunLogs(reader: RunLogReader | null): {
     loading: reader !== null && listing.isPending,
     error: listing.error,
   };
-}
-
-/**
- * What went wrong reading a log, in a sentence: the server's own for its log,
- * and the desktop app's for a run log, which it rejects with as a string.
- */
-export function logErrorMessage(err: unknown, fallback: string): string {
-  return typeof err === "string" && err ? err : apiErrorMessage(err, fallback);
 }

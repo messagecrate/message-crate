@@ -118,7 +118,11 @@ mod tests {
     use axum::http::StatusCode;
 
     use super::*;
-    use crate::test_support::{claim_as_owner, get_status, login_status, test_fixture};
+    use crate::problem::ProblemType;
+    use crate::test_support::{
+        claim_as_owner, expect_problem, expect_problem_for, get_raw, get_status, log_in_raw,
+        login_status, test_fixture,
+    };
 
     /// A session opened before the reset is refused after it, so whoever
     /// held the old password is signed out; the new password logs in and the
@@ -142,15 +146,15 @@ mod tests {
             .unwrap();
         assert_eq!(username, "keeper");
 
-        assert_eq!(
-            get_status(&state, "/v1/session", &owner.token).await,
-            StatusCode::UNAUTHORIZED,
-            "the session the old password opened is gone"
+        let (status, text) = get_raw(&state, "/v1/session", &owner.token).await;
+        expect_problem_for(
+            "the session the old password opened",
+            status,
+            &text,
+            ProblemType::AuthenticationRequired,
         );
-        assert_eq!(
-            login_status(&state, "keeper", "hunter2hunter2").await,
-            StatusCode::UNAUTHORIZED
-        );
+        let (status, text) = log_in_raw(&state, "keeper", "hunter2hunter2").await;
+        expect_problem(status, &text, ProblemType::InvalidCredentials);
         assert_eq!(
             login_status(&state, "keeper", "a new owner password").await,
             StatusCode::CREATED

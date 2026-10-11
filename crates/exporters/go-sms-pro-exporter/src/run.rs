@@ -16,17 +16,13 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     };
     message_crate_core::check_cancel(config.cancel.as_ref())?;
     let input = config.require_input().map_err(anyhow::Error::msg)?;
-    message_crate_core::run_pipeline(config, |transforms| {
+    message_crate_core::run_pipeline(config, |convert_run| {
         convert_export(ConvertExportArgs {
             input_dir: input,
             output_dir: &config.output,
             scratch_dir: &config.scratch_dir,
             owner_phones: &source.owner_phones,
-            transforms,
-            output_format: config.output_format,
-            cancel: config.cancel.as_ref(),
-            resume: config.resume,
-            issues: config.issues.as_ref(),
+            convert_run,
         })
     })
 }

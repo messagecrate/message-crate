@@ -4,10 +4,7 @@
 use crate::parse::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
-use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
-    project_conversation,
-};
+use message_crate_core::{ConvertRun, ExportReport, prepare_outputs, project_conversation};
 use message_ir::{
     ConversationKey, ExportMeta, IdentityType, IrConversationType, IrParticipant, IrService,
     IrSource, NAMELESS_CHAT_ID, PendingConversation, PendingMessage, ProjectionHooks,
@@ -32,14 +29,7 @@ const VENDOR_KEY: &str = "vendor_key";
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert OpenExtract CSV(s) under `input`.
@@ -55,11 +45,14 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input,
         output,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run:
+            ConvertRun {
+                transforms,
+                output_format,
+                cancel,
+                resume,
+                issues,
+            },
     } = args;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
@@ -632,6 +625,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::OutputFormat;
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::PathBuf;
@@ -647,11 +641,10 @@ mod tests {
         convert_export(ConvertExportArgs {
             input,
             output,
-            transforms: ExportTransforms::none(),
-            output_format: OutputFormat::Csv,
-            cancel: None,
-            resume: false,
-            issues: None,
+            convert_run: ConvertRun {
+                output_format: OutputFormat::Csv,
+                ..ConvertRun::default()
+            },
         })
     }
 

@@ -155,14 +155,14 @@ fn an_unencrypted_backup_with_its_messages_database_is_accepted() {
     let hashed = dir.path().join(MESSAGES_DB_IN_IOS_BACKUP);
     fs::create_dir_all(hashed.parent().unwrap()).unwrap();
     fs::write(&hashed, b"sqlite").unwrap();
-    let options = options_from_export_config(&apple_cfg(
+    let config = apple_cfg(
         dir.path(),
         AppleConfig {
             platform: Some(ApplePlatform::Ios),
             ..AppleConfig::default()
         },
-    ))
-    .unwrap();
+    );
+    let options = options_from_export_config(&config).unwrap();
     assert_eq!(options.source.platform, Platform::Ios);
     assert_eq!(options.source.db_path, dir.path());
 }
@@ -236,7 +236,7 @@ fn options_carry_the_request_the_program_receives() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
-    let options = options_from_export_config(&apple_cfg(
+    let config = apple_cfg(
         &chat,
         AppleConfig {
             platform: None,
@@ -244,8 +244,8 @@ fn options_carry_the_request_the_program_receives() {
             use_caller_id: false,
             ..AppleConfig::default()
         },
-    ))
-    .unwrap();
+    );
+    let options = options_from_export_config(&config).unwrap();
     assert_eq!(options.source.platform, Platform::MacOs);
     assert_eq!(options.source.db_path, chat);
     assert!(!options.use_caller_id);

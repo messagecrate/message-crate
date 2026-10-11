@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::problem::ProblemType;
-use crate::test_support::{expect_problem, patch_raw};
+use crate::test_support::{expect_problem, patch_json_raw};
 use message_crate_api_types::IdentityHolder;
 
 /// One person's UK mobile, written in national form and with its `+` code.
@@ -171,12 +171,11 @@ async fn an_unknown_phone_country_is_refused() {
     let fixture = crate::test_support::test_fixture().await;
     let account =
         crate::test_support::register_via_api(&fixture.state, "zz", "hunter2hunter2").await;
-    let (status, text) = crate::test_support::post_raw(
+    let (status, text) = crate::test_support::post_json_raw(
         &fixture.state,
         "/v1/imports",
         &account.token,
-        "application/json",
-        serde_json::json!({ "source": "imessage", "phone_country": "ZZ" }).to_string(),
+        serde_json::json!({ "source": "imessage", "phone_country": "ZZ" }),
     )
     .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
@@ -214,7 +213,7 @@ async fn picking_the_country_on_the_contacts_screen_merges_the_two() {
             "address": "07700900123", "country": "GB", "merge": merge,
         }})
     };
-    let (status, text) = patch_raw(state, &path, &account.token, pick(false)).await;
+    let (status, text) = patch_json_raw(state, &path, &account.token, pick(false)).await;
     let problem = expect_problem(status, &text, ProblemType::IdentityExists);
     assert!(
         problem.sentence().contains(FULL),
@@ -303,7 +302,7 @@ async fn a_short_code_has_no_country_to_pick() {
     );
     import_with_country(state, &account.token, None, body).await;
     let contact = contact_of(state, "73737").await;
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         state,
         &format!("/v1/contacts/{contact}"),
         &account.token,
@@ -443,7 +442,7 @@ async fn a_contact_s_number_joins_an_own_identity_on_my_identities_only() {
     import_with_country(state, &account.token, None, one_to_one(NATIONAL, "m1")).await;
     let contact = contact_of(state, "07700900123").await;
 
-    let (status, text) = patch_raw(
+    let (status, text) = patch_json_raw(
         state,
         &format!("/v1/contacts/{contact}"),
         &account.token,
