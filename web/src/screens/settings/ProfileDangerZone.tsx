@@ -16,7 +16,7 @@ import { dangerButtonClass } from "./profileStyles";
 
 const CANNOT_DELETE = "Deleting is not permitted for this account. The owner can delete it.";
 
-const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] !whitespace-nowrap !border-transparent !px-3 !py-2 !text-[0.813rem] !shadow-[inset_0_0_0_1px_var(--danger-soft-border)]`;
+const dangerZoneButtonClass = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] !whitespace-nowrap !border-transparent !px-3 !py-2 !text-[0.813rem] !shadow-[inset_0_0_0_1px_var(--danger-soft-border)]`;
 
 /**
  * Delete an account's messages, or the account.
@@ -176,7 +176,7 @@ export function ProfileDangerZone({
                   variant="danger"
                   disabled={busy || messagesFixed || notPermitted}
                   onClick={() => setConfirmDeleteMessagesOpen(true)}
-                  className={dangerButton}
+                  className={dangerZoneButtonClass}
                   title={
                     messagesFixed
                       ? "Unavailable on the Demo Account"
@@ -206,7 +206,7 @@ export function ProfileDangerZone({
                     setDangerError("");
                     setDeleteDialogOpen(true);
                   }}
-                  className={dangerButton}
+                  className={dangerZoneButtonClass}
                   title={
                     accountLocked
                       ? "Unavailable on the Demo Account"

@@ -16,11 +16,11 @@ export type RemoveIdentityTarget = {
 
 export function removeIdentityConfirmBody(target: RemoveIdentityTarget): ReactNode {
   const { address, serviceLabel, conversationCount } = target;
-  const emphasize = "font-medium text-accent";
+  const emphasisClass = "font-medium text-accent";
   const serviceId = (
     <>
-      <span className={emphasize}>{serviceLabel}</span>{" "}
-      <span className={`${emphasize} break-all`}>{address}</span>
+      <span className={emphasisClass}>{serviceLabel}</span>{" "}
+      <span className={`${emphasisClass} break-all`}>{address}</span>
     </>
   );
   if (conversationCount <= 0) {

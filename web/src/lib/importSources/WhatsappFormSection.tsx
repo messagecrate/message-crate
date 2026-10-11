@@ -1,7 +1,8 @@
 import Checkbox from "../../components/Checkbox";
 import PasswordField from "../../components/PasswordField";
 import PathPicker from "../../components/PathPicker";
-import { fieldClass, hintClass, StackedField } from "../../screens/import/ImportFormUi";
+import { textInputClass } from "../../components/TextField";
+import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
 import {
   isWhatsappMethod,
   whatsappCryptRequired,
@@ -95,7 +96,7 @@ export default function WhatsappFormSection(props: ImportFormSectionProps) {
             value={props.whatsappOwnerPhone}
             onChange={(e) => props.onWhatsappOwnerPhoneChange(e.target.value)}
             placeholder="+1 555 555 0100"
-            className={fieldClass}
+            className={textInputClass}
           />
           <p className={hintClass}>{WHATSAPP_OWNER_PHONE_HINT_ANDROID}</p>
           <FieldStatus message={errors.ownerPhone} />
@@ -174,7 +175,7 @@ export function WhatsappFallbackPhoneField(props: {
         value={props.value}
         onChange={(e) => props.onChange(e.target.value)}
         placeholder="+1 555 555 0100"
-        className={fieldClass}
+        className={textInputClass}
       />
       <p className={hintClass}>{WHATSAPP_OWNER_PHONE_HINT_IPHONE}</p>
     </StackedField>

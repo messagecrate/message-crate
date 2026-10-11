@@ -1,6 +1,6 @@
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { type CSSProperties, type ReactNode, useEffect, useReducer, useRef } from "react";
-import { resizeHandleGutter } from "../lib/tw";
+import { resizeHandleGutterClass } from "../lib/tw";
 import { useColumnResizing } from "./columnResizeState";
 
 /** How often the x–y of z label may update while scrolling. */
@@ -218,7 +218,7 @@ export default function VirtualList({
     return (
       <div
         ref={parentRef}
-        className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}
+        className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}
         style={style}
       >
         {empty}
@@ -229,7 +229,7 @@ export default function VirtualList({
   return (
     <div
       ref={parentRef}
-      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}
+      className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}
       style={style}
     >
       <div

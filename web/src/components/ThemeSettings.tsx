@@ -3,7 +3,7 @@ import { Checkbox, Radio, RadioGroup, ToggleButton } from "react-aria-components
 import { parseSelectKey } from "../lib/selectKey";
 import { useTheme } from "../lib/ThemeProvider";
 import type { ThemeSeeds } from "../lib/theme";
-import { focusOutline, focusRing } from "../lib/uiStyles";
+import { focusOutlineClass, focusRingClass } from "../lib/uiStyles";
 import { ToggleCheckIcon } from "./icons";
 import PlainButton from "./PlainButton";
 import { ColorRow, formatCompare } from "./theme/ThemeColorRow";
@@ -80,7 +80,7 @@ export default function ThemeSettings() {
             value={opt.value}
             className={({ isSelected, isFocusVisible }) =>
               `cursor-pointer overflow-hidden rounded-lg border text-left
-               ${isFocusVisible ? focusOutline : ""}
+               ${isFocusVisible ? focusOutlineClass : ""}
                ${isSelected ? "border-accent" : "border-border"}`
             }
           >
@@ -127,7 +127,7 @@ export default function ThemeSettings() {
         }}
         className={({ isFocusVisible }) =>
           `mt-4 flex cursor-pointer items-center gap-2.5 text-[0.875rem] text-text ${
-            isFocusVisible ? focusOutline : ""
+            isFocusVisible ? focusOutlineClass : ""
           }`
         }
       >
@@ -226,7 +226,7 @@ export default function ThemeSettings() {
                   if (el && el.title !== preset.label) el.title = preset.label;
                 }}
                 className={({ isSelected }) =>
-                  `relative h-10 w-10 cursor-pointer rounded-full border-2 ${focusRing}
+                  `relative h-10 w-10 cursor-pointer rounded-full border-2 ${focusRingClass}
                    ${isSelected ? "border-accent" : "border-transparent"}`
                 }
                 style={{

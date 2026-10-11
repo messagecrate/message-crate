@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Input, Label, TextField, type TextFieldProps } from "react-aria-components";
 import Button from "./Button";
 import { EyeIcon, EyeOffIcon } from "./icons";
-import { leadingIconClassName, textInputClassName } from "./TextField";
+import { leadingIconClass, textInputClass } from "./TextField";
 
 /** Masked password input matching shared form chrome, with show/hide toggle. */
 export default function PasswordField(
@@ -21,10 +21,10 @@ export default function PasswordField(
         <Label className="mb-1 block text-[0.875rem] font-medium text-text">{label}</Label>
       ) : null}
       <div className="relative">
-        {leadingIcon ? <span className={leadingIconClassName}>{leadingIcon}</span> : null}
+        {leadingIcon ? <span className={leadingIconClass}>{leadingIcon}</span> : null}
         <Input
           type={showPassword ? "text" : "password"}
-          className={`${textInputClassName} pr-11 ${leadingIcon ? "pl-10" : ""}`}
+          className={`${textInputClass} pr-11 ${leadingIcon ? "pl-10" : ""}`}
         />
         <Button
           variant="ghost"
