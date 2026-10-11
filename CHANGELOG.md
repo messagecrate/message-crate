@@ -262,6 +262,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **The website and the desktop app no longer follow a
+  redirect with your Session.** If a misconfigured proxy in front of the
+  server answered with a redirect to another address, the website or the
+  desktop app followed it and, in some older browsers and system web views,
+  sent your Session along. The server never redirects, so both now refuse
+  any redirect: the server shows as unreachable, and its status light agrees,
+  which points at the proxy instead of sending your Session somewhere else
+  (#2294).
 - 2026-10-10: **The Demo Account can no longer make API Tokens.** Anyone
   who entered the Demo Account could make one, even one that never expires,
   and walk away with a way back in that outlived the visit. Every visitor
@@ -643,13 +651,6 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-10: **The app no longer follows a redirect with your login.** If
-  a misconfigured proxy in front of the server answered the app with a
-  redirect to another address, the app followed it and, in some older
-  browsers and system web views, sent your login along. The server never
-  redirects, so the app now refuses any redirect: the request fails as if
-  the server could not be reached, which points at the proxy instead of
-  sending your login somewhere else (#2294).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front
