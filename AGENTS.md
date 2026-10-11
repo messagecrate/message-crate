@@ -327,9 +327,9 @@ The product has two pieces:
 | Database               | SQLite file at `data/messagecrate.db`. Table SQL lives in `schema/sql/`. The server fingerprints those files at compile time (`SCHEMA_FINGERPRINT` in `db/schema.rs`) and rebuilds a database stamped with any other fingerprint empty, so a schema change is only a change to the SQL: nothing to bump. The rebuilt database needs a fresh import. |
 | Desktop app            | Tauri 2 native window. Vite 8 + React 19 + TypeScript SPA in `web/`. React Router 7, React Aria, Tailwind CSS 4. Vitest + Biome.  |
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
-| Node                   | Node.js 22+ for `web/`, `docs/`, and Docker frontend builds.                                                                      |
+| Node                   | Node.js 24 for `web/`, `docs/`, their CI jobs, and the Docker frontend build. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
-| Packaging              | Docker (Node 22 + Rust image). GitHub Actions on `v*` tags builds the image and Tauri installers.                                 |
+| Packaging              | Docker (Node.js 24 frontend build, Rust build, Node.js 20 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
 | Not the product path   | Restored Next.js 16 browse app (`web-next/`), an HTTP client of the server's `/v1` API for evaluating its screens. Kept on purpose; see CLAUDE.md before proposing its removal. |
 
@@ -408,13 +408,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install tauri-cli --version "^2"
 ```
 
-**3. Node.js 22+**. Distro Node is usually too old. nvm example:
+**3. Node.js 24**. Distro Node is usually too old. nvm example:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 # new shell, then:
-nvm install 22
-nvm use 22
+nvm install 24
+nvm use 24
 ```
 
 **4. Optional helpers**
