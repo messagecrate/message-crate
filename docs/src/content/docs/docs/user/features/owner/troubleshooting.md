@@ -15,7 +15,7 @@ For the Message Crate the desktop app starts, the card says what went wrong in p
 
 For a Message Crate in Docker:
 
-1. `docker ps` lists the running containers. `message-crate` must be among them, and its status must read `(healthy)`. `(health: starting)` means Docker hasn't yet seen the server answer since the container started, which takes longest on the first start, while the server builds the Demo Account. On Docker Engine older than 25 it lasts at least 30 seconds after every start, because those versions ask the server only every 30 seconds. `(unhealthy)` means the process runs but the server has stopped answering, and `docker restart message-crate` starts it again.
+1. `docker ps` lists the running containers. `message-crate` must be among them, and its status must read `(healthy)`. `(health: starting)` means Docker hasn't yet seen the server answer since the container started, which takes longest on the first start, while the server builds the Demo Account. On Docker Engine older than 25 it lasts at least 30 seconds after every start, because those versions ask the server only every 30 seconds. `(unhealthy)` means the process runs but the server has stopped answering, and `docker restart message-crate` starts it again. A container started for one command, such as `docker compose run --rm server reset-demo`, reads `(healthy)` while the command runs.
 2. `docker logs message-crate` shows what the server printed, including why it stopped.
 3. In the desktop app, **Server Address** must hold the server's address, and **Test** checks it. The app keeps the address after logging out and opens on the login card for it at the next start. It starts its own Message Crate only when the address is its own, `http://127.0.0.1:8080`.
 
@@ -40,9 +40,15 @@ The new release changed the database layout, and the server rebuilt the database
 
 ## Logging in
 
+### "invalid username or password" with the right password
+
+The Owner may have set the account's **Status** to **Disabled**.
+A disabled account's login gets the same answer as a wrong password, so someone guessing passwords can't tell which guess was right.
+The Owner checks the **Status** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account), and sets it back to **Active**.
+
 ### "this account is disabled"
 
-The Owner has set the account's **Status** to **Disabled**.
+The Owner set the account's **Status** to **Disabled** while the account was logged in.
 The Owner sets it back to **Active** under **User Accounts**, in the account's [User Settings](/docs/user/features/owner/owner-home/#account).
 
 ### An account's password is forgotten

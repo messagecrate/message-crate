@@ -141,7 +141,6 @@ fn invalid_login() -> ApiError {
             headers(("Location" = String, description = "`/v1/session`"))
         ),
         crate::problem::openapi::InvalidCredentials,
-        crate::problem::openapi::AccountDisabled,
         crate::problem::openapi::RateLimited
     )
 )]
@@ -223,6 +222,10 @@ pub async fn create_session(
     let auth = account_profile::load_account_auth(&mut conn, account_id)
         .await?
         .ok_or_else(invalid_login)?;
+    // A disabled account gets the answer every refused login gets. Its own
+    // answer would come only after the right password, so a guesser would
+    // learn which guess was right, and that password works again once the
+    // owner enables the account. The Audit Trail still says why.
     if auth.disabled {
         audit_trail::record_refused_login(
             &mut conn,
@@ -232,7 +235,7 @@ pub async fn create_session(
             app,
         )
         .await?;
-        return Err(ApiError::AccountDisabled("this account is disabled".into()));
+        return Err(invalid_login());
     }
 
     let body =
