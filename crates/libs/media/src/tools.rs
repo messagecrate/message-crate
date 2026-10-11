@@ -233,7 +233,7 @@ pub fn require_ffmpeg() -> Result<()> {
 }
 
 /// ffmpeg and ffprobe, as the code that decides what to do with a file uses
-/// them: the Media stage's convert and compress passes ([`crate::process`])
+/// them: the Media Stage's convert and compress passes ([`crate::process`])
 /// and the Thumbnail and Preview the server makes ([`crate::versions`]).
 ///
 /// That code only decides which file to re-encode, with which arguments,

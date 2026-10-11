@@ -12,7 +12,7 @@
 //! not overlap. One lock serializes them: tests that only read the location
 //! share it, and a test that changes the location holds it alone.
 //!
-//! A test in this crate of what the Media stage or a Thumbnail or Preview
+//! A test in this crate of what the Media Stage or a Thumbnail or Preview
 //! decides, rather than of what ffmpeg makes of it, passes
 //! `fake_tools::FakeTools` instead and needs neither the real tools nor the
 //! lock.

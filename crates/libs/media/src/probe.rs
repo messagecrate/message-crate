@@ -1,5 +1,5 @@
 //! Read one media file's shape with ffprobe: for the size forecast, the
-//! Media stage's compression, and the check whether a browser plays an MP4.
+//! Media Stage's compression, and the check whether a browser plays an MP4.
 //! [`probe_media`] is the only place ffprobe runs, so all three judge a file
 //! the same way.
 

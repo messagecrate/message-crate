@@ -1,4 +1,4 @@
-//! A stand-in for ffmpeg and ffprobe, for tests of what the Media stage and
+//! A stand-in for ffmpeg and ffprobe, for tests of what the Media Stage and
 //! the server's Thumbnail and Preview decide: which file is re-encoded, with
 //! which arguments, and what is kept.
 //!
