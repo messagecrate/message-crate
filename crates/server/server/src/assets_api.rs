@@ -47,6 +47,9 @@ pub struct AssetStats {
     pub deduped: u64,
     /// Source files not found on disk.
     pub missing: u64,
+    /// Why HEVC failed, from the first video the pass compressed as H.264
+    /// instead; the server logs it as a warning once per pass.
+    pub hevc_fallback: media::HevcFallback,
 }
 
 /// One stored attachment: fingerprint, relative path, and MIME type.

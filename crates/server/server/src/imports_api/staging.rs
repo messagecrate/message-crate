@@ -100,6 +100,9 @@ fn try_store_converted(
     else {
         return Ok(None);
     };
+    if let Some(line) = asset_stats.hevc_fallback.record(resolved.hevc_failure) {
+        tracing::warn!("{line}");
+    }
     // Bytes may have changed; drop any claimed SHA-256 fingerprint from the export.
     att.sha256 = None;
     att.mime_type = resolved.mime_type.or(att.mime_type.take());

@@ -280,6 +280,7 @@ pub fn transcode_staging(
             &options,
             &cancel,
             &issues,
+            &events::run_log_sink(&app_handle, &run_log),
             &mut |progress| {
                 events::emit(
                     &app_handle,
@@ -296,9 +297,6 @@ pub fn transcode_staging(
         // special case was removed.
         let report = outcome.inspect_err(|error| run_log.error(error))?;
 
-        if let Some(reason) = &report.hevc_failure {
-            events::run_log_sink(&app_handle, &run_log).warn(media::hevc_fallback_line(reason));
-        }
         let summary = transcode_summary(&report);
         run_log.line(&summary);
         if report.failed > 0 || report.too_large > 0 {

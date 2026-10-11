@@ -604,64 +604,44 @@ fn two_large_videos(dir: &Path) -> (Vec<PathBuf>, CompressOptions) {
     (files, opts)
 }
 
-/// When H.264 stands in for a failed HEVC run, the log says why HEVC
-/// failed, once for the pass however many videos fell back (#2256).
+/// When H.264 stands in for a failed HEVC run, the report says why HEVC
+/// failed, for its caller to log as a warning (#2256).
 #[test]
-fn compress_logs_why_hevc_failed_once_when_h264_stands_in() {
+fn compress_reports_why_hevc_failed_when_h264_stands_in() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
     let tools = FakeTools::new()
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265");
-    let mut lines = Vec::new();
-    let mut log = |line: &str| lines.push(line.to_string());
 
-    let (report, _) = process_attachment_files_with(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &opts,
-        Some(&mut log),
-    )
-    .unwrap();
+    let (report, _) =
+        process_attachment_files_with(&tools, dir.path(), &files, MediaMode::Compress, &opts, None)
+            .unwrap();
 
     assert_eq!(report.processed, 2, "{:?}", report.errors);
-    let fallback: Vec<&String> = lines
-        .iter()
-        .filter(|line| line.contains("HEVC encoding failed"))
-        .collect();
-    assert_eq!(fallback.len(), 1, "{lines:?}");
+    let line = report.hevc_fallback.line().expect("a fallback reason");
     assert!(
-        fallback[0].contains("ffmpeg failed (fake)") && fallback[0].contains("libx265"),
-        "the line carries ffmpeg's HEVC error: {lines:?}"
+        line.contains("ffmpeg failed (fake)") && line.contains("libx265"),
+        "the line carries ffmpeg's HEVC error: {line}"
     );
 }
 
-/// A pass where HEVC works says nothing about a fallback.
+/// A pass where HEVC works reports no fallback.
 #[test]
-fn compress_logs_no_fallback_when_hevc_works() {
+fn compress_reports_no_fallback_when_hevc_works() {
     let dir = tempfile::tempdir().unwrap();
     let (files, opts) = two_large_videos(dir.path());
     let tools = FakeTools::new().probing(video_probe("h264", 30.0));
-    let mut lines = Vec::new();
-    let mut log = |line: &str| lines.push(line.to_string());
 
-    process_attachment_files_with(
-        &tools,
-        dir.path(),
-        &files,
-        MediaMode::Compress,
-        &opts,
-        Some(&mut log),
-    )
-    .unwrap();
+    let (report, _) =
+        process_attachment_files_with(&tools, dir.path(), &files, MediaMode::Compress, &opts, None)
+            .unwrap();
 
-    assert!(!lines.iter().any(|line| line.contains("HEVC")), "{lines:?}");
+    assert_eq!(report.hevc_fallback.line(), None);
 }
 
 /// When H.264 fails after HEVC, the error names both failures, and no
-/// fallback line claims a video was compressed as H.264.
+/// fallback is reported, since no video was compressed as H.264.
 #[test]
 fn compress_reports_both_errors_when_h264_fails_after_hevc() {
     let dir = tempfile::tempdir().unwrap();
@@ -670,8 +650,6 @@ fn compress_reports_both_errors_when_h264_fails_after_hevc() {
         .probing(video_probe("h264", 30.0))
         .failing_on("libx265")
         .failing_on("libx264");
-    let mut lines = Vec::new();
-    let mut log = |line: &str| lines.push(line.to_string());
 
     let (report, _) = process_attachment_files_with(
         &tools,
@@ -679,7 +657,7 @@ fn compress_reports_both_errors_when_h264_fails_after_hevc() {
         &files[..1],
         MediaMode::Compress,
         &opts,
-        Some(&mut log),
+        None,
     )
     .unwrap();
 
@@ -688,12 +666,24 @@ fn compress_reports_both_errors_when_h264_fails_after_hevc() {
     assert!(error.contains("HEVC failed"), "{error}");
     assert!(error.contains("libx265"), "HEVC's reason is kept: {error}");
     assert!(error.contains("libx264"), "H.264's reason is kept: {error}");
-    assert!(
-        !lines
-            .iter()
-            .any(|line| line.contains("HEVC encoding failed")),
-        "{lines:?}"
+    assert_eq!(report.hevc_fallback.line(), None);
+}
+
+/// A run's [`HevcFallback`] hands back a warning for its first reason only,
+/// so a caller that logs what it returns logs once per run.
+#[test]
+fn hevc_fallback_returns_a_warning_for_the_first_reason_only() {
+    let mut fallback = HevcFallback::default();
+
+    assert_eq!(fallback.record(None), None, "no fallback, no warning");
+    let first = fallback.record(Some("no libx265".into()));
+    assert_eq!(
+        first.as_deref(),
+        Some("HEVC encoding failed, so videos were compressed as H.264 instead: no libx265")
     );
+    assert_eq!(fallback.record(Some("another reason".into())), None);
+    assert_eq!(fallback.record(None), None);
+    assert_eq!(fallback.line(), first, "the first reason is kept");
 }
 
 /// [`transcode_file`] hands why HEVC failed to its caller, which logs it.
@@ -1362,6 +1352,7 @@ fn the_done_line_counts_one_file_and_many_files() {
         bytes_before: 2_000,
         bytes_after: 500,
         errors: vec!["a.heic: ffmpeg failed".into()],
+        ..MediaReport::default()
     };
     assert_eq!(
         done_line_with_failures(MediaMode::Convert, &one),
@@ -1374,6 +1365,7 @@ fn the_done_line_counts_one_file_and_many_files() {
         bytes_before: 2_000,
         bytes_after: 2_000,
         errors: Vec::new(),
+        ..MediaReport::default()
     };
     assert_eq!(
         done_line_with_failures(MediaMode::Compress, &many),

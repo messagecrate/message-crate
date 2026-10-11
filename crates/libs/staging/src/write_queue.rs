@@ -657,6 +657,7 @@ fn run_media_post_pass(
         &transcode_options,
         cancel,
         &IssueSink::none(),
+        log,
         &mut |p| {
             let due = progress.emit(ProgressEvent::Media {
                 done: p.done,
@@ -674,10 +675,8 @@ fn run_media_post_pass(
         bytes_before: report.bytes_before,
         bytes_after: report.bytes_after,
         errors: Vec::new(),
+        ..media::MediaReport::default()
     };
-    if let Some(reason) = &report.hevc_failure {
-        log.warn(media::hevc_fallback_line(reason));
-    }
     if report.failed > 0 {
         // The per-file reasons are already on the attachments themselves.
         media.errors.push(NOT_CONVERTED.line(report.failed as u64));

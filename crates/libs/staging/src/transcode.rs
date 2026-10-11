@@ -94,9 +94,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, MediaMode, TranscodeOutcome};
+use media::{CompressOptions, HevcFallback, MediaMode, TranscodeOutcome};
 use message_crate_core::{
-    CancelFlag, IssueSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
+    CancelFlag, IssueSink, LogSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 
@@ -175,11 +175,6 @@ pub struct TranscodeReport {
     pub bytes_before: u64,
     /// Total bytes of the derivatives it wrote.
     pub bytes_after: u64,
-    /// Why HEVC failed, from the first video the Media stage compressed as
-    /// H.264 instead. The caller logs it once with
-    /// [`media::hevc_fallback_line`], so a person can see why videos came out
-    /// larger than expected.
-    pub hevc_failure: Option<String>,
 }
 
 /// Convert or compress every original still staged under `run_dir`.
@@ -194,11 +189,17 @@ pub struct TranscodeReport {
 /// be parsed or written. A single attachment ffmpeg cannot process is an
 /// item-level issue, counted in the report and sent to `issues` as it
 /// happens, never an error.
+///
+/// The first video it compresses as H.264 because HEVC failed sends why to
+/// `log` as a warning, once for the whole Media stage, at the moment it is
+/// found: a stop or an error later in the stage cannot lose it, and a resume
+/// never re-encodes that video to find it again.
 pub fn transcode_staged(
     run_dir: &Path,
     options: &TranscodeOptions,
     cancel: &CancelFlag,
     issues: &IssueSink,
+    log: &LogSink,
     on_progress: &mut dyn FnMut(TranscodeProgress),
 ) -> Result<TranscodeReport> {
     if matches!(options.mode, MediaMode::Clone | MediaMode::Disabled) {
@@ -219,6 +220,7 @@ pub fn transcode_staged(
     on_progress(TranscodeProgress { done: 0, total });
 
     let mut report = TranscodeReport::default();
+    let mut hevc_fallback = HevcFallback::default();
     let mut done = 0usize;
     for jsonl in &files {
         check_cancel(cancel)?;
@@ -253,7 +255,11 @@ pub fn transcode_staged(
                         src: &src,
                         is_heal,
                     };
-                    apply_transcode(&target, &mut doc, options, issues, &mut report)?;
+                    let hevc_failure =
+                        apply_transcode(&target, &mut doc, options, issues, &mut report)?;
+                    if let Some(line) = hevc_fallback.record(hevc_failure) {
+                        log.warn(line);
+                    }
                 }
                 PendingWork::Repoint {
                     recorded_rel,
@@ -656,13 +662,15 @@ struct TranscodeTarget<'a> {
 /// written, conversation file patched, derivative renamed into its final
 /// name, original deleted. Reversing any pair leaves the directory lying about
 /// itself.
+///
+/// Returns why HEVC failed when the video was compressed as H.264 instead.
 fn apply_transcode(
     target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,
     options: &TranscodeOptions,
     issues: &IssueSink,
     report: &mut TranscodeReport,
-) -> Result<()> {
+) -> Result<Option<String>> {
     let &TranscodeTarget {
         run_dir,
         jsonl,
@@ -672,7 +680,7 @@ fn apply_transcode(
     } = target;
     let Some(name) = final_derivative_name(src, options.mode) else {
         report.skipped += 1;
-        return Ok(());
+        return Ok(None);
     };
     let attachments_dir = run_dir.join("attachments");
     let final_path = attachments_dir.join(&name);
@@ -726,7 +734,7 @@ fn apply_transcode(
             }
             write_conversation_jsonl_to(jsonl, doc)?;
             report.failed += 1;
-            Ok(())
+            Ok(None)
         }
         Ok(TranscodeOutcome::Skipped) => {
             if is_heal {
@@ -745,12 +753,9 @@ fn apply_transcode(
                 write_conversation_jsonl_to(jsonl, doc)?;
             }
             report.skipped += 1;
-            Ok(())
+            Ok(None)
         }
         Ok(TranscodeOutcome::Produced { hevc_failure }) => {
-            if report.hevc_failure.is_none() {
-                report.hevc_failure = hevc_failure;
-            }
             let produced_len = std::fs::metadata(&marker)
                 .with_context(|| format!("stat {}", marker.display()))?
                 .len();
@@ -776,7 +781,7 @@ fn apply_transcode(
                 )?;
                 let _ = std::fs::remove_file(&marker);
                 let _ = std::fs::remove_file(src);
-                return Ok(());
+                return Ok(hevc_failure);
             }
             // Read the file on disk. A replayed digest can be
             // stale, and the server dedupes assets by sha256.
@@ -812,7 +817,7 @@ fn apply_transcode(
             report.converted += 1;
             report.bytes_before += original_len;
             report.bytes_after += produced_len;
-            Ok(())
+            Ok(hevc_failure)
         }
     }
 }

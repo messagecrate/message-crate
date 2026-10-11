@@ -20,6 +20,10 @@ pub struct ResolvedMedia {
     pub path: PathBuf,
     /// MIME type of the attachment, when known.
     pub mime_type: Option<String>,
+    /// Why HEVC failed, when a compressed video was written as H.264
+    /// instead. The import keeps it in a [`media::HevcFallback`] and logs it
+    /// once.
+    pub hevc_failure: Option<String>,
 }
 
 impl ResolvedMedia {
@@ -28,6 +32,7 @@ impl ResolvedMedia {
         Self {
             path: source_path.to_path_buf(),
             mime_type: mime.map(str::to_string),
+            hevc_failure: None,
         }
     }
 }
@@ -77,9 +82,10 @@ fn transform(
         media::transcode_file_as(source_path, kind, &out, mode, &server_compress_options())
             .with_context(|| format!("convert {}", source_path.display()))?;
     Ok(Some(match outcome {
-        TranscodeOutcome::Produced { .. } => ResolvedMedia {
+        TranscodeOutcome::Produced { hevc_failure } => ResolvedMedia {
             path: out,
             mime_type: media::mime_for_ext(target).map(str::to_string),
+            hevc_failure,
         },
         TranscodeOutcome::Skipped => ResolvedMedia {
             path: source_path.to_path_buf(),
@@ -90,6 +96,7 @@ fn transform(
                     .and_then(media::mime_for_ext)
                     .map(str::to_string)
             }),
+            hevc_failure: None,
         },
     }))
 }

@@ -27,6 +27,39 @@ pub struct MediaReport {
     /// puts one sentence counting the files it could not convert instead,
     /// since each one's conversation entry already says why.
     pub errors: Vec<String>,
+    /// Why HEVC failed, when the pass compressed a video as H.264 instead.
+    /// The caller logs it as a warning with [`HevcFallback::line`].
+    pub hevc_fallback: HevcFallback,
+}
+
+/// Why HEVC failed, kept from the first video in a run that was compressed
+/// as H.264 instead, so the run says it once, however many videos fell back,
+/// and a person can see why the videos came out larger than expected.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HevcFallback {
+    reason: Option<String>,
+}
+
+impl HevcFallback {
+    /// Keep `hevc_failure`, one file's reason from
+    /// [`TranscodeOutcome::Produced`], unless a reason is already kept.
+    /// Returns the warning to log when this is the run's first reason, and
+    /// `None` otherwise, so a caller that logs what this returns logs once.
+    pub fn record(&mut self, hevc_failure: Option<String>) -> Option<String> {
+        if self.reason.is_some() {
+            return None;
+        }
+        self.reason = hevc_failure;
+        self.line()
+    }
+
+    /// The warning saying why HEVC failed, or `None` when no video fell back.
+    #[must_use]
+    pub fn line(&self) -> Option<String> {
+        self.reason.as_ref().map(|reason| {
+            format!("HEVC encoding failed, so videos were compressed as H.264 instead: {reason}")
+        })
+    }
 }
 
 /// How often to write `…n/total` progress lines during convert/compress.
@@ -100,9 +133,11 @@ pub(crate) fn process_attachment_files_with(
     emit(&mut log, &starting_line(verb, total, report.bytes_before));
 
     let mut done = 0usize;
-    let mut hevc_failure = None;
     for path in files {
-        match process_one(tools, output_dir, path, mode, compress, &mut hevc_failure) {
+        let mut hevc_failure = None;
+        let outcome = process_one(tools, output_dir, path, mode, compress, &mut hevc_failure);
+        report.hevc_fallback.record(hevc_failure);
+        match outcome {
             Ok(Outcome::Changed { old_rel, new_rel }) => {
                 report.processed += 1;
                 remap.insert(old_rel, new_rel);
@@ -120,9 +155,6 @@ pub(crate) fn process_attachment_files_with(
     remove_msgmedia_temps(&attachments)?;
     report.bytes_after = attachments_dir_bytes(&attachments)?;
 
-    if let Some(reason) = &hevc_failure {
-        emit(&mut log, &format!("  {}", hevc_fallback_line(reason)));
-    }
     emit(&mut log, &done_line_with_failures(mode, &report));
 
     Ok((report, remap))
@@ -171,14 +203,6 @@ fn done_line_with_failures(mode: MediaMode, report: &MediaReport) -> String {
         let _ = write!(line, ", {} failed", files(report.errors.len()));
     }
     line
-}
-
-/// The log line saying that HEVC failed and H.264 stood in, with ffmpeg's
-/// `reason`, so a person can see why compressed videos came out larger than
-/// expected. Each pass writes it once, whatever the number of videos.
-#[must_use]
-pub fn hevc_fallback_line(reason: &str) -> String {
-    format!("HEVC encoding failed, so videos were compressed as H.264 instead: {reason}")
 }
 
 /// Send one line to the log callback, if there is one.
@@ -502,9 +526,8 @@ pub enum TranscodeOutcome {
     /// A derivative was written to the destination the caller named.
     Produced {
         /// Why HEVC failed, when a compressed video was written as H.264
-        /// instead. A caller logs it once per run with
-        /// [`hevc_fallback_line`], so a person can see why videos came out
-        /// larger than expected.
+        /// instead. A caller keeps it in a [`HevcFallback`] for the run and
+        /// logs what that returns, so the run says it once.
         hevc_failure: Option<String>,
     },
 }
@@ -986,8 +1009,7 @@ fn keep_or_remux(
 /// Re-encode a video under the resolution, frame-rate, and quality caps; `None` when it is already within them.
 ///
 /// HEVC is tried first and H.264 when it fails. When H.264 then succeeds,
-/// why HEVC failed goes into `hevc_failure`, unless an earlier video in the
-/// same run already put a reason there; when H.264 fails too, the error
+/// why HEVC failed goes into `hevc_failure`; when H.264 fails too, the error
 /// carries both reasons.
 fn compress_video(
     tools: &dyn MediaTools,
@@ -1061,7 +1083,7 @@ fn compress_video(
                 .transcode(&avc_args, &tmp, None)
                 .with_context(|| format!("HEVC failed ({hevc_err:#}), and then H.264 failed"))
                 .with_context(|| format!("compress video {}", path.display()))?;
-            hevc_failure.get_or_insert_with(|| format!("{hevc_err:#}"));
+            *hevc_failure = Some(format!("{hevc_err:#}"));
         }
         Ok(Some(commit_produced(commit, path, &tmp)?))
     })
