@@ -514,6 +514,13 @@ pub struct AccountAuth {
 }
 
 /// Load one account's authorization row. `None` when the account is gone.
+///
+/// The owner's permissions and the Demo Account's are known from their ids
+/// and never read from their rows: the owner holds none
+/// (`docs/adr/0008-the-owner-holds-no-messages.md`), and the Demo Account
+/// holds [`DEMO_ACCOUNT_PERMISSIONS`]. The owner's row keeps the columns'
+/// defaults, which are on, so reading it would report permissions no guard
+/// lets the owner use.
 pub async fn load_account_auth(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -530,7 +537,9 @@ pub async fn load_account_auth(
         |(disabled, must_set_up, import, export, delete)| AccountAuth {
             disabled: disabled != 0,
             must_set_up_profile: must_set_up != 0,
-            permissions: if is_demo_account(account_id) {
+            permissions: if is_server_owner(account_id) {
+                crate::db::permissions::Permissions::none()
+            } else if is_demo_account(account_id) {
                 DEMO_ACCOUNT_PERMISSIONS
             } else {
                 crate::db::permissions::Permissions::from_ints(import, export, delete)

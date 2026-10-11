@@ -1673,6 +1673,15 @@ pub async fn resolve_auth_on_conn(
             })
     };
 
+    // No API token acts as the owner
+    // (`docs/adr/0008-the-owner-holds-no-messages.md`). The route that
+    // issues tokens refuses the owner, but a token row on the owner's account
+    // written by hand or restored with a database is refused here as well,
+    // as if the server had never issued it.
+    let resolved = resolved.filter(|(account_id, credential, _)| {
+        !matches!(credential, Credential::ApiToken(_))
+            || !account_profile::is_server_owner(*account_id)
+    });
     let Some((account_id, credential, used)) = resolved else {
         return Err(ApiError::AuthenticationRequired("invalid API token".into()));
     };

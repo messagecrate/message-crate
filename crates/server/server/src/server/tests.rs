@@ -1779,6 +1779,44 @@ async fn a_valid_token_under_another_scheme_answers_401() {
     assert_eq!(response.status().as_u16(), 401);
 }
 
+/// No API token acts as the owner (ADR 0008). The route that issues tokens
+/// refuses the owner, but a token row on the owner's account can still
+/// exist: written by hand, or carried over in a restored database. A request
+/// with it answers the same `401` as a token the server never issued, on a
+/// route the owner's session reaches and on one an import reaches.
+#[tokio::test]
+async fn an_api_token_on_the_owners_account_answers_401_like_an_unknown_token() {
+    let fixture = crate::test_support::test_fixture().await;
+    let state = fixture.state.clone();
+    crate::test_support::claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let created = {
+        let mut conn = fixture.conn().await;
+        api_tokens::create_api_token(
+            &mut conn,
+            account_profile::OWNER_ACCOUNT_ID,
+            "by hand",
+            Permissions::all(),
+            None,
+        )
+        .await
+        .unwrap()
+    };
+
+    for path in ["/v1/session", "/v1/accounts", "/v1/imports"] {
+        let (status, text) = crate::test_support::get_raw(&state, path, &created.token).await;
+        let owners = expect_problem_for(
+            &format!("GET {path} with a token on the owner's account"),
+            status,
+            &text,
+            ProblemType::AuthenticationRequired,
+        );
+        let (status, text) =
+            crate::test_support::get_raw(&state, path, "mc-api-never-issued").await;
+        let unknown = expect_problem(status, &text, ProblemType::AuthenticationRequired);
+        assert_eq!(owners.detail, unknown.detail, "GET {path}");
+    }
+}
+
 /// `docker stop` and a service manager send SIGTERM. The server must drain a
 /// request in flight and then exit, as it does on Ctrl-C (#1218).
 #[cfg(unix)]

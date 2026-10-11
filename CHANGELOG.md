@@ -256,6 +256,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **No API token works on the owner's account.** The owner
+  cannot make an API token, but a token on the owner's account that got
+  there another way, such as in a restored database, used to import into
+  and export from the owner's account. The server now refuses it as if it
+  had never issued it. The owner's entry in User Accounts also used to
+  claim import, export and delete, which the owner never holds; it now
+  reports none (#2147).
 - 2026-10-10: **A password typed into the username field no longer reaches
   the Audit Trail.** A refused login for a username that matches no account
   kept the text exactly as typed for 90 days, so a password typed into the wrong
