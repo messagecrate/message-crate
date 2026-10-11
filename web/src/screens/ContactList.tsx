@@ -157,11 +157,9 @@ export default function ContactList({
   } else if (haveFullCatalog && !advancedActive) {
     // The full catalog is already in memory, so filter it in the browser.
     wantedQ = "";
-  } else if (groupPageOnly) {
-    // A Contact Group page opens at once.
   } else {
-    // A search waits for the last key.
-    waitForTyping = true;
+    // A search waits for the last key. A Contact Group page opens at once.
+    waitForTyping = !groupPageOnly;
   }
   // A search keeps the query in use until it settles. The query starts empty,
   // so a list opened on a search loads the full catalog first.
