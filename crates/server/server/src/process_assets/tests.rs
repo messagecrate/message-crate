@@ -555,8 +555,9 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
 /// an import leaves it: the Asset at `<aa>/<sha>`, with no extension, in the
-/// account's assets directory, and a row pointing at it with `mime` as its
-/// MIME type. Returns the attachment id.
+/// account's assets directory, its MIME sidecar `<aa>/.<sha>.mime` holding
+/// `mime`, and a row pointing at it with `mime` as its MIME type. Returns the
+/// attachment id.
 pub(crate) async fn attach_stored_original(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
@@ -565,15 +566,15 @@ pub(crate) async fn attach_stored_original(
     mime: &str,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}", &sha[..2]);
-    attach_original_at(opened, conn, message_id, sha, &rel, Some(mime), bytes).await
+    attach_original_at(opened, conn, message_id, sha, "", Some(mime), bytes).await
 }
 
 /// Store `bytes` as an incomplete original for an attachment of
 /// `message_id`: a file at `<aa>/<sha>.part` and a row pointing at it, with
-/// no MIME type. The store never writes this name; it is what
-/// `process-assets` treats as an interrupted transfer and removes. Returns
-/// the attachment id.
+/// no MIME type. The store never writes a `.part` file inside a shard
+/// directory (its uploads in progress go under `.incoming/`);
+/// `process-assets` treats one as an interrupted transfer and removes it.
+/// Returns the attachment id.
 pub(crate) async fn attach_incomplete_original(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
@@ -581,24 +582,29 @@ pub(crate) async fn attach_incomplete_original(
     sha: &str,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}.part", &sha[..2]);
-    attach_original_at(opened, conn, message_id, sha, &rel, None, bytes).await
+    attach_original_at(opened, conn, message_id, sha, ".part", None, bytes).await
 }
 
-/// Write `bytes` at `rel` in the account's assets directory and insert an
-/// attachment row of `message_id` naming it. Returns the attachment id.
+/// Write `bytes` at `<aa>/<sha><suffix>` in the account's assets directory,
+/// with a MIME sidecar when `mime` is given, and insert an attachment row of
+/// `message_id` naming the file. Returns the attachment id.
 async fn attach_original_at(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
     message_id: i64,
     sha: &str,
-    rel: &str,
+    suffix: &str,
     mime: Option<&str>,
     bytes: &[u8],
 ) -> i64 {
-    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(rel);
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let rel = format!("{}/{sha}{suffix}", &sha[..2]);
+    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
+    let shard = path.parent().unwrap();
+    fs::create_dir_all(shard).unwrap();
     fs::write(&path, bytes).unwrap();
+    if let Some(mime) = mime {
+        fs::write(shard.join(format!(".{sha}.mime")), mime).unwrap();
+    }
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
         "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)

@@ -8,7 +8,9 @@
 //! - `<assets_dir>/<aa>/<sha256>` is an original, named by its SHA-256 with
 //!   no extension and sharded by the fingerprint's first two characters.
 //! - `<assets_dir>/<aa>/.<sha256>.mime` is the MIME sidecar beside an
-//!   original, written when the store is told the original's MIME type.
+//!   original, written when the store knows the original's MIME type,
+//!   from the export's claim or guessed from the source file's name, and
+//!   never rewritten once there.
 //! - `<assets_dir>/.incoming/` holds uploads in progress: `{sha256}-*.part`
 //!   files and multipart directories `{sha256}/{upload_id}/`.
 //! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview or a
