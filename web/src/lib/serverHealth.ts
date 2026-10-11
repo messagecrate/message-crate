@@ -7,6 +7,13 @@ export const HEALTH_SUCCESS_RECHECK_MS = 30_000;
 export const HEALTH_URL_DEBOUNCE_MS = 400;
 /** Give up on a single /health request so a black-holed host cannot leave the light grey. */
 export const HEALTH_PROBE_TIMEOUT_MS = 8_000;
+/**
+ * How long `checkServerHealthWithRetry` waits after a server's error before
+ * it asks again: twice the server's 1.5-second database limit, so the second
+ * ask meets the pool at a later moment, and short enough that a server truly
+ * unable to reach its database reads Disconnected within a few seconds.
+ */
+export const HEALTH_RECHECK_AFTER_FAILURE_MS = 3_000;
 
 /** Progressive backoff: 1s → 2s → 4s → … capped at 30s. */
 export function healthBackoffMs(failureIndex: number): number {
@@ -47,9 +54,20 @@ export function healthProbeUrl(baseUrl: string): string | null {
  * `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
  */
 export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): Promise<boolean> {
+  return (await probeHealth(baseUrl, signal)) === "ok";
+}
+
+/**
+ * What one GET /health found: `ok`; `failed`, a server that answered with an
+ * error; or `unreachable`, no answer at all (refused, redirected, timed out,
+ * aborted, or an address that is not an http(s) URL).
+ */
+type HealthProbe = "ok" | "failed" | "unreachable";
+
+async function probeHealth(baseUrl: string, signal?: AbortSignal): Promise<HealthProbe> {
   const url = healthProbeUrl(baseUrl);
-  if (!url) return false;
-  if (signal?.aborted) return false;
+  if (!url) return "unreachable";
+  if (signal?.aborted) return "unreachable";
 
   const limit = startTimeLimit(HEALTH_PROBE_TIMEOUT_MS, signal);
 
@@ -63,10 +81,52 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
       // Connected beside a login that fails.
       redirect: NEVER_FOLLOW,
     });
-    return res.ok;
+    return res.ok ? "ok" : "failed";
   } catch {
-    return false;
+    return "unreachable";
   } finally {
     limit.dispose();
   }
+}
+
+/**
+ * Ask GET /health, and when the server answers with an error, ask once more
+ * `HEALTH_RECHECK_AFTER_FAILURE_MS` later. Returns true when either ask finds
+ * the server healthy.
+ *
+ * One error is not enough to call a server unreachable: `/health` fails
+ * when it cannot take a database connection within 1.5 seconds, which
+ * happens while an import's write lock keeps every connection waiting,
+ * though a `/v1` read would wait and succeed (#2718). The desktop app's watch
+ * on its own server asks twice in a row for the same reason (#2204). An
+ * address where nothing answers is not asked again: a busy server still
+ * answers, so a second ask could only delay the same result.
+ */
+export async function checkServerHealthWithRetry(
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const first = await probeHealth(baseUrl, signal);
+  if (first !== "failed") return first === "ok";
+  if (!(await waitUnlessAborted(HEALTH_RECHECK_AFTER_FAILURE_MS, signal))) return false;
+  return checkServerHealth(baseUrl, signal);
+}
+
+/** Wait `ms`. Resolves false at once when `signal` aborts first. */
+function waitUnlessAborted(ms: number, signal?: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
