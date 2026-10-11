@@ -598,12 +598,13 @@ async fn attach_original_at(
     bytes: &[u8],
 ) -> i64 {
     let rel = format!("{}/{sha}{suffix}", &sha[..2]);
-    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
-    let shard = path.parent().unwrap();
-    fs::create_dir_all(shard).unwrap();
+    let assets_dir = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
+    let path = assets_dir.join(&rel);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, bytes).unwrap();
     if let Some(mime) = mime {
-        fs::write(shard.join(format!(".{sha}.mime")), mime).unwrap();
+        let sidecar = crate::asset_store::stored_sidecar_path(&assets_dir, sha).unwrap();
+        fs::write(sidecar, mime).unwrap();
     }
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
