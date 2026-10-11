@@ -16,6 +16,7 @@ import {
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
+import { DIRECTORY_STAT, FILE_STAT } from "../../test/pathStats";
 import { renderWithProviders as render } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import { SLOW_STATE_WAIT } from "../../test/waits";
@@ -49,9 +50,6 @@ afterEach(() => {
   desktop.retry.mockReset();
 });
 
-const presentFile = { exists: true, isFile: true, isDirectory: false };
-const presentDir = { exists: true, isFile: false, isDirectory: true };
-
 const copyAttachments: AttachmentChoices = {
   attachmentMedia: "copy",
   maxResolution: "720p",
@@ -74,7 +72,7 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
     appleContacts: "",
     onAppleContactsChange: vi.fn(),
     pathStats: {
-      backup: presentDir,
+      backup: DIRECTORY_STAT,
       attachmentRoot: null,
       appleContacts: null,
       backupEncrypted: false,
@@ -158,8 +156,8 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "/mnt/iphone/Library/SMS",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentDir,
+        backup: FILE_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -178,7 +176,7 @@ describe("ImportFormFields iMessage methods", () => {
   it("marks encryption password required when the backup is encrypted", () => {
     renderForm({
       pathStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: true,
@@ -236,7 +234,7 @@ describe("ImportFormFields iMessage methods", () => {
       source: "imessage-macos",
       backupPath: "/Users/sam/Library/Messages/chat.db",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -264,7 +262,7 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
         appleContacts: null,
         backupEncrypted: null,
@@ -281,8 +279,8 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/mnt/iphone/sms.db",
       attachmentRoot: "/mnt/iphone/Library/SMS",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentDir,
+        backup: FILE_STAT,
+        attachmentRoot: DIRECTORY_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -296,8 +294,8 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/tmp/chat.db",
       attachmentRoot: "/tmp/chat.db",
       pathStats: {
-        backup: presentFile,
-        attachmentRoot: presentFile,
+        backup: FILE_STAT,
+        attachmentRoot: FILE_STAT,
         appleContacts: null,
         backupEncrypted: null,
       },
@@ -334,9 +332,9 @@ describe("ImportFormFields iMessage methods", () => {
       backupPath: "/tmp/chat.db",
       appleContacts: "/tmp/AddressBook",
       pathStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         attachmentRoot: null,
-        appleContacts: presentDir,
+        appleContacts: DIRECTORY_STAT,
         backupEncrypted: null,
       },
     });
@@ -373,7 +371,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       backupPath: "/tmp/wa",
       whatsappKey: "",
       whatsappStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -390,7 +388,7 @@ describe("ImportFormFields WhatsApp methods", () => {
   // beside the other required fields and refuses an import without it.
   it("requires the owner's WhatsApp number on Android", () => {
     const stats = {
-      backup: presentDir,
+      backup: DIRECTORY_STAT,
       contactsDb: null,
       media: null,
       db: null,
@@ -430,7 +428,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       backupPath: "/backups/iphone",
       whatsappOwnerPhone: "",
       whatsappStats: {
-        backup: presentDir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -454,7 +452,7 @@ describe("ImportFormFields WhatsApp methods", () => {
       source: "whatsapp-android",
       backupPath: "/tmp/msgstore.db",
       whatsappStats: {
-        backup: presentFile,
+        backup: FILE_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -645,10 +643,10 @@ type FormCase = {
 };
 
 const filledWhatsappStats = {
-  backup: presentDir,
-  contactsDb: presentFile,
-  media: presentDir,
-  db: presentFile,
+  backup: DIRECTORY_STAT,
+  contactsDb: FILE_STAT,
+  media: DIRECTORY_STAT,
+  db: FILE_STAT,
   hasMsgstoreDb: true,
   cryptName: null,
   backupEncrypted: null,
@@ -687,7 +685,7 @@ const whatsappIphoneFields: FormCase["fields"] = [
   { label: "WhatsApp phone number", empty: { whatsappOwnerPhone: "" } },
 ];
 const iphoneBackupStats = {
-  backup: presentDir,
+  backup: DIRECTORY_STAT,
   attachmentRoot: null,
   appleContacts: null,
   backupEncrypted: false,
@@ -701,9 +699,9 @@ const messagesDbProps: Partial<ImportFormFieldsProps> = {
   attachmentRoot: "/mnt/attachments",
   appleContacts: "/mnt/AddressBook.sqlitedb",
   pathStats: {
-    backup: presentFile,
-    attachmentRoot: presentDir,
-    appleContacts: presentFile,
+    backup: FILE_STAT,
+    attachmentRoot: DIRECTORY_STAT,
+    appleContacts: FILE_STAT,
     backupEncrypted: null,
   },
 };
@@ -874,7 +872,7 @@ describe("ImportFormFields programs the import needs", () => {
     backupPath: "/tmp/wa",
     whatsappOwnerPhone: "+15555550100",
     whatsappStats: {
-      backup: presentDir,
+      backup: DIRECTORY_STAT,
       contactsDb: null,
       media: null,
       db: null,
