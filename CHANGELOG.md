@@ -719,6 +719,14 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **One account can no longer fill the server's disk with
+  unfinished uploads.** A large attachment is sent in parts, and the parts
+  of an upload that was never finished stayed on disk for a day. Nothing
+  limited how many such uploads one account could have open, so one account
+  could leave enough of them to fill the disk that every account on the
+  server shares. An account may now have 128 uploads in progress at once.
+  The next is refused until one of them is completed, is stopped by the
+  program that sent it, or has sat untouched for a day (#2176).
 - 2026-10-10: **An attachment the server cannot read is written to its
   log.** Before it skips an upload because an attachment is already
   stored, the server reads the stored copy to check it. When that read

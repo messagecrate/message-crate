@@ -86,6 +86,14 @@ pub enum AssetError {
         "another request to this upload holds its lock; send this request again when that one finishes"
     )]
     Locked,
+    /// The account already has as many uploads in progress as it may have
+    /// open at once: its state refuses one more, and no rewrite of the
+    /// request gets past that until one of them ends.
+    #[error(
+        "this account already has {} uploads in progress, the most it may have open at once. Complete or abort one of them before starting another",
+        crate::asset_uploads::MAX_OPEN_UPLOADS
+    )]
+    TooManyUploads,
     /// The server could not store the file: its own I/O, or a state of its
     /// store it refuses to write over. Nothing the caller can change.
     #[error(transparent)]
@@ -1213,7 +1221,8 @@ pub(crate) struct ReplaceAssetUploadPartResponse {
             body = CreateAssetUploadResponse,
             description = "The asset is already stored; nothing was created"
         ),
-        crate::problem::openapi::AssetUploadInvalid
+        crate::problem::openapi::AssetUploadInvalid,
+        crate::problem::openapi::StateConflict
     )
 )]
 pub(crate) async fn create_asset_upload(
