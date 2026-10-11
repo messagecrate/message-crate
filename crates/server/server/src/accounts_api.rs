@@ -372,17 +372,18 @@ pub async fn create_account(
         .transpose()?
         .and_then(message_ir::nonempty);
 
-    let mut conn = state.db.acquire().await?;
     // A stranger is refused on a closed server before the password is hashed,
     // so a refusal costs no Argon2 work. This read takes no lock, so the
     // owner may close registration before the write transaction below
     // begins: the check inside that transaction is the one that decides.
     if !by_owner {
-        require_registration_open(&mut conn).await?;
+        require_registration_open(&mut *state.db.acquire().await?).await?;
     }
-    // Hashed before the write transaction, so the write lock is not held for
-    // the length of an Argon2 hash.
+    // Hashed before a connection is taken for the write, so neither a pooled
+    // connection nor the write lock is held for the length of an Argon2 hash.
     let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
+
+    let mut conn = state.db.acquire().await?;
 
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup

@@ -349,10 +349,10 @@ released versions carry their date on the heading.
 #### Accounts, Settings and screens
 
 - 2026-10-11: **No account is created after the owner closes registration.**
-  A visitor's registration that arrived just as the owner closed
+  A stranger's registration that arrived just as the owner closed
   registration could still create an account. Whether registration is open
   is now decided at the moment the account is written. A Message Crate with
-  registration closed also turns a visitor away at once, without first
+  registration closed also turns a stranger away at once, without first
   working on the password they sent (#2231, #2232).
 
 - 2026-10-11: **Every letter and digit is equally likely in the secret of a
