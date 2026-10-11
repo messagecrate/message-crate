@@ -127,13 +127,13 @@ resolves it.
    ```
 
    Repeat the three `comments[]` fields for each finding, every one with
-   `-F`: `gh` builds each `comments[]` object only from fields passed with
-   the same flag, so mixing `-f` and `-F` splits a comment in two and GitHub
-   answers `422`. The marker starts the summary file and each finding file,
-   because the finding's comment opens the thread. A finding with no line in
-   the diff goes in a top-level comment instead, with the marker on its first
-   line. It has no thread, so it is answered by a new marked top-level
-   comment that quotes it:
+   `-F`. `gh` adds every `-f` field before every `-F` field, so with mixed
+   flags a second finding's line lands in the wrong `comments[]` object and
+   GitHub answers `422`. The marker starts the summary file and each finding
+   file, because the finding's comment opens the thread. A finding with no
+   line in the diff goes in a top-level comment instead, with the marker on
+   its first line. It has no thread, so it is answered by a new marked
+   top-level comment that quotes it:
 
    ```bash
    bash <gh-as-reviewer> pr comment <N> --body-file <file>
