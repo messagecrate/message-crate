@@ -7,13 +7,18 @@ name: Nightly
 # with docker/compose.release.yml, and never publishes it: publishing stays
 # with a v* tag in ci.yml.
 #
+# It also loads the website the image serves in a headless browser, logs in
+# to the Demo Account, searches and opens a conversation (#2217). The web
+# app's tests mock the server and the server's tests never load the website,
+# so this is the only run of the two together.
+#
 # It is a report, not a gate: it has no pull_request trigger and nothing
 # here is in the ruleset's required list, so it lives outside ci.yml, whose
 # every job the ruleset on main requires. A failed night opens an issue
 # labelled bug instead. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # No job installs a package: the build happens inside the Dockerfile's own
-# stages.
+# stages, and the browser runs inside the Playwright image.
 
 on:
   schedule:
@@ -93,6 +98,8 @@ jobs:
 
   # ── The release Dockerfile builds and starts ──────────────────────────
   # The same steps as "Docker image builds" in ci.yml; keep the two alike.
+  # The one difference is --website, which ci.yml leaves out to keep a pull
+  # request's run short.
   # push: false, and no Docker Hub login: nothing is published.
   docker-build:
     name: Nightly Docker image build
@@ -121,8 +128,11 @@ jobs:
       # builds and then fails to start under the Compose files' read-only
       # root filesystem. Pull requests that change only server code skip the
       # step in ci.yml, so this run is where such a change shows.
-      - name: Start the release Compose stack and log in to the Demo Account
-        run: ./scripts/check-docker-compose.sh message-crate-server:check
+      # --website then uses the website it serves in a headless browser: a
+      # static/ bundle that fails to load, a console error, or a 5xx from the
+      # server fails the step.
+      - name: Start the release Compose stack and use its website as the Demo Account
+        run: ./scripts/check-docker-compose.sh --website message-crate-server:check
 
   # ── A failed night opens an issue ─────────────────────────────────────
   # One open issue holds every failed night: the first failure opens it and

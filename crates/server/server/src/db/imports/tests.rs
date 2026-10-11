@@ -49,6 +49,7 @@ async fn complete_import_persists_timings_and_issues() {
             }],
             notes: Vec::new(),
         },
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -84,6 +85,7 @@ async fn require_running_import_rejects_a_completed_import_and_returns_a_running
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::succeeded(1, 0),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -142,6 +144,7 @@ async fn list_import_issues_returns_them_oldest_first() {
             ],
             notes: Vec::new(),
         },
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -187,6 +190,7 @@ async fn list_imports_includes_duration_ms() {
             issues: vec![],
             notes: Vec::new(),
         },
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -223,6 +227,7 @@ async fn a_failed_import_is_recorded_as_failed() {
         ACCOUNT_ID,
         import_id,
         &CompleteImportArgs::failed(),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -247,6 +252,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
             ACCOUNT_ID,
             import_id,
             &CompleteImportArgs::succeeded(1, 0),
+            crate::test_support::fixed_instant(),
         )
         .await
         .unwrap();
@@ -373,6 +379,7 @@ async fn discard_running_import_finds_the_running_import_run_by_account_and_skip
         account,
         finished,
         &CompleteImportArgs::succeeded(1, 0),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -426,6 +433,7 @@ async fn completing_an_import_run_frees_the_slot_too() {
         account,
         id,
         &CompleteImportArgs::succeeded(10, 2),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -569,9 +577,15 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     discard_import(&mut conn, ACCOUNT_ID, discarded, &[], &[])
         .await
         .unwrap();
-    let err = complete_import(&mut conn, ACCOUNT_ID, discarded, &with_issue())
-        .await
-        .unwrap_err();
+    let err = complete_import(
+        &mut conn,
+        ACCOUNT_ID,
+        discarded,
+        &with_issue(),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(err, ImportLookupError::InvalidRun { .. }));
     let row = get_owned_import(&mut conn, ACCOUNT_ID, discarded)
         .await
@@ -582,14 +596,21 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let completed = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
         .await
         .unwrap();
-    complete_import(&mut conn, ACCOUNT_ID, completed, &with_issue())
-        .await
-        .unwrap();
+    complete_import(
+        &mut conn,
+        ACCOUNT_ID,
+        completed,
+        &with_issue(),
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     let err = complete_import(
         &mut conn,
         ACCOUNT_ID,
         completed,
         &CompleteImportArgs::failed(),
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap_err();

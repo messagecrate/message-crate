@@ -60,19 +60,42 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
 vi.mock("../lib/serverHealth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverHealth")>()),
   checkServerHealth: vi.fn(),
+  checkServerHealthWithRetry: vi.fn(),
 }));
 
 import { getBaseUrl } from "../lib/api";
 import { getServerState, login as serverLogin } from "../lib/serverApi";
-import { checkServerHealth } from "../lib/serverHealth";
+import {
+  checkServerHealth,
+  checkServerHealthWithRetry,
+  HEALTH_RECHECK_AFTER_FAILURE_MS,
+} from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);
+const checkServerHealthWithRetryMock = vi.mocked(checkServerHealthWithRetry);
 const getServerStateMock = vi.mocked(getServerState);
 const serverLoginMock = vi.mocked(serverLogin);
+
+/**
+ * The card's connect asks again after a server's error before it says
+ * Disconnected. Most tests are about what the card shows once it has its
+ * answer, so by default connect makes one ask of the faked probe; the tests
+ * of the retry put the real one back over a faked `fetch`.
+ */
+function skipRetry() {
+  checkServerHealthWithRetryMock.mockImplementation((address, signal) =>
+    checkServerHealthMock(address, signal),
+  );
+}
+
+async function retryForReal() {
+  const actual = await vi.importActual<typeof import("../lib/serverHealth")>("../lib/serverHealth");
+  checkServerHealthWithRetryMock.mockImplementation(actual.checkServerHealthWithRetry);
+}
 
 /**
  * What a Message Crate at one address does: answers with its state, refuses
@@ -154,12 +177,16 @@ describe("LoginScreen", () => {
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
+    checkServerHealthWithRetryMock.mockReset();
+    skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
   });
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("logs in without a server-selection step", async () => {
@@ -283,6 +310,47 @@ describe("LoginScreen", () => {
     expect(await screen.findByText(/^Disconnected from /)).toBeInTheDocument();
     // The address field belongs to the settings screen now, not the card.
     expect(screen.queryByRole("textbox", { name: "Address" })).not.toBeInTheDocument();
+  });
+
+  it("asks once more before it says Disconnected, so one missed probe does not show it", async () => {
+    // A server whose database an import keeps busy can fail one /health and
+    // answer the next (#2718).
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    stubServer();
+    await retryForReal();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 500 })
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal("fetch", fetchMock);
+    renderScreen();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS - 1);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connecting to /);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Connected to /);
+  });
+
+  it("says Disconnected once the second probe in a row fails too", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    stubNoServer();
+    await retryForReal();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+    renderScreen();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(HEALTH_RECHECK_AFTER_FAILURE_MS);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status")).toHaveTextContent(/^Disconnected from /);
   });
 
   it("shows the login form, disabled, when nothing answers", async () => {
