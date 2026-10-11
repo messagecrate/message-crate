@@ -26,7 +26,7 @@ Real messages never go into the Demo Account. It can't import, so that no backup
 The app opens **Owner Home** on **User Accounts**, which lists the Owner and **demo**, the Demo Account.
 The first screen now shows **Login** in place of **Create Owner**, and keeps **Explore Demo Account**.
 
-The Owner's password is the only thing between the network and every account on this Message Crate, so it must be one that isn't used anywhere else.
+The Owner's password is the only thing between the network and every account on this Message Crate but the Demo Account, so it must be one that isn't used anywhere else.
 
 ## Add an account
 

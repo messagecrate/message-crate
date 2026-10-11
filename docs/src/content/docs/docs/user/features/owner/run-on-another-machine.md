@@ -41,10 +41,15 @@ That is acceptable on a home network where every device is trusted.
 Anything beyond that, such as reaching the Message Crate from the internet, needs a reverse proxy with TLS in front of the server.
 Setting one up is outside this guide.
 
-Two settings matter more once other computers can reach the server:
+Three things matter more once other computers can reach the server:
 
-- The Owner's password is the only thing between the network and every account.
+- The Owner's password is the only thing between the network and every account but the Demo Account.
 - **Let anyone who can reach this server create their own account**, under [Server Settings](/docs/user/features/owner/owner-home/#server-settings), should stay off, because "anyone" now means every device on the network.
+- The Demo Account has no password, so every device on the network can open it with **Explore Demo Account**.
+  It holds made-up conversations and can't import, so no real messages reach it.
+  It can't delete messages for good either, so no message a visitor removes is lost.
+  A conversation one visitor moves to the Trash stays there for the next to restore.
+  An Owner who doesn't want it open deletes it, as [Demo Account](/docs/user/features/owner/owner-home/#demo-account) on Owner Home describes.
 
 ## Open it in a browser
 
