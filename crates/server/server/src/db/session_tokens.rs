@@ -22,15 +22,41 @@ pub fn generate_session_token() -> Result<String> {
     generate_prefixed_token("mc-user-")
 }
 
+/// Characters after a token's prefix.
+const TOKEN_SUFFIX_LEN: usize = 32;
+
+/// Bytes below this map to a character: 248, the largest multiple of 62 a
+/// byte holds, so each character stands for exactly four byte values.
+const ACCEPTED_BYTES: usize = 256 / TOKEN_ALPHANUM.len() * TOKEN_ALPHANUM.len();
+
 /// A random 32-character token after `prefix`, from the OS random source.
 pub(crate) fn generate_prefixed_token(prefix: &str) -> Result<String> {
-    let mut buf = [0u8; 32];
-    fill_random(&mut buf)?;
-    let mut suffix = String::with_capacity(32);
-    for b in buf {
-        suffix.push(TOKEN_ALPHANUM[(b as usize) % TOKEN_ALPHANUM.len()] as char);
+    prefixed_token_from(prefix, fill_random)
+}
+
+/// A 32-character token after `prefix`, reading bytes from `fill` and
+/// drawing again for every byte `token_char` refuses, so each character is
+/// equally likely.
+fn prefixed_token_from(
+    prefix: &str,
+    mut fill: impl FnMut(&mut [u8]) -> Result<()>,
+) -> Result<String> {
+    let mut suffix = String::with_capacity(TOKEN_SUFFIX_LEN);
+    let mut buf = [0u8; TOKEN_SUFFIX_LEN];
+    while suffix.len() < TOKEN_SUFFIX_LEN {
+        fill(&mut buf)?;
+        let wanted = TOKEN_SUFFIX_LEN - suffix.len();
+        suffix.extend(buf.iter().filter_map(|&b| token_char(b)).take(wanted));
     }
     Ok(format!("{prefix}{suffix}"))
+}
+
+/// The character `byte` stands for, or `None` for a byte of 248 or more,
+/// which is drawn again. Taking `% 62` of every byte would give the first
+/// eight characters five byte values each and the rest four.
+fn token_char(byte: u8) -> Option<char> {
+    let byte = usize::from(byte);
+    (byte < ACCEPTED_BYTES).then(|| char::from(TOKEN_ALPHANUM[byte % TOKEN_ALPHANUM.len()]))
 }
 
 /// SHA-256 hex fingerprint of a plaintext token (stored in DB; used for Bearer lookup).
@@ -468,6 +494,49 @@ mod tests {
         assert!(a.starts_with("mc-user-"));
         assert_eq!(a.len(), "mc-user-".len() + 32);
         assert_ne!(a, b);
+    }
+
+    /// Every letter and digit stands for the same number of byte values, and
+    /// the bytes left over are refused. Mapping all 256 with `% 62` gave
+    /// `A` to `H` five bytes each and the rest four, so those eight came up
+    /// a quarter more often in every Session and API Token.
+    #[test]
+    fn every_token_character_stands_for_four_byte_values() {
+        let mut counts = std::collections::HashMap::<char, usize>::new();
+        for byte in 0..=u8::MAX {
+            if let Some(c) = token_char(byte) {
+                *counts.entry(c).or_default() += 1;
+            }
+        }
+        assert_eq!(counts.len(), TOKEN_ALPHANUM.len());
+        for &symbol in TOKEN_ALPHANUM {
+            assert_eq!(counts[&char::from(symbol)], 4, "{}", char::from(symbol));
+        }
+        for byte in 248..=u8::MAX {
+            assert_eq!(token_char(byte), None, "byte {byte} must be drawn again");
+        }
+    }
+
+    /// Refused bytes are skipped, never mapped, and the source is read
+    /// again until the token has its 32 characters.
+    #[test]
+    fn refused_bytes_are_drawn_again() {
+        let mut batches = [
+            // 30 refused bytes, then the first two characters.
+            [vec![255u8; 30], vec![0, 1]].concat(),
+            (2u8..34).collect::<Vec<u8>>(),
+        ]
+        .into_iter();
+        let token = prefixed_token_from("mc-user-", |buf| {
+            buf.copy_from_slice(&batches.next().expect("a third read"));
+            Ok(())
+        })
+        .unwrap();
+        let expected: String = TOKEN_ALPHANUM[..32]
+            .iter()
+            .map(|&b| char::from(b))
+            .collect();
+        assert_eq!(token, format!("mc-user-{expected}"));
     }
 
     #[tokio::test]
