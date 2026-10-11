@@ -282,7 +282,9 @@ enum Need {
     /// The file there is the pinned one and runs: it stays.
     Keep,
     /// The file there is the pinned one and does not run: it stays, and
-    /// Settings says so, since downloading it again gives the same file.
+    /// Settings says so. Downloading it again gives the same file, and a
+    /// file this account may not run, such as one another account took
+    /// ownership of, is left for that account to fix, as an adopted one is.
     DoesNotRun,
     /// The file there is the pinned program with no entry, or with a stamp
     /// that changed: it stays and goes into the record.
@@ -317,8 +319,10 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
 
 /// Whether `program` in `dir` runs, as the lookup that uses it decides:
 /// ffmpeg and ffprobe answer `-version` (an answer `media` keeps until the
-/// file changes), and wtsexporter is a file with an executable bit, which
-/// is all its lookup asks because a `pipx` shim is slow to start.
+/// file changes), and wtsexporter is a file with an executable bit this
+/// account may run, which is all its lookup asks because a `pipx` shim is
+/// slow to start. A bit alone is not enough: a root-owned `0o744` file has
+/// one, and the app can't run it (#2793).
 fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),

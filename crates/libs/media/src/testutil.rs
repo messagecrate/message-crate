@@ -156,6 +156,20 @@ impl Drop for ToolsHidden {
     }
 }
 
+/// Whether this account may read a file whose mode allows no one to, tried
+/// on a file written in `dir`. Root, or an account with the capability to
+/// skip permission checks, may, and may also run any file with an
+/// executable bit, so a test of a file this account may not run skips when
+/// this is true.
+#[cfg(unix)]
+pub fn may_read_any_file(dir: &Path) -> bool {
+    let probe = dir.join("may-read-any-file");
+    write_with_mode(&probe, 0o000);
+    let read = std::fs::read(&probe).is_ok();
+    let _ = std::fs::remove_file(&probe);
+    read
+}
+
 /// Write an empty file at `path` with the Unix permission bits `mode`, as a
 /// program put in the Tools Directory for a test: `0o755` for one that may
 /// run, `0o644` for one copied in without `chmod +x`. Off Unix the mode is

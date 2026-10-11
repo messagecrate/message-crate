@@ -370,13 +370,16 @@ pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
     candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
 }
 
-/// Whether `path` is a regular file with an executable bit. The file is not
-/// run.
+/// Whether `path` is a regular file with an executable bit that this
+/// account may run. The file is not run. A bit alone is not enough: a file
+/// another account owns with only the owner's bit, such as a root-owned
+/// `0o744`, has one and can't be run from here.
 #[cfg(unix)]
 pub fn is_executable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path)
         .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+        && rustix::fs::access(path, rustix::fs::Access::EXEC_OK).is_ok()
 }
 
 /// Whether `path` is a file. Windows runs any `.exe`, so there is no bit to
