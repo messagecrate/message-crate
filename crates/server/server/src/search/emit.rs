@@ -6,6 +6,7 @@ use chrono::NaiveDate;
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
 use crate::db::conversation_messages::{duplicate_chain_sql, earlier_versions_holder_sql};
 use crate::db::conversations::{is_with_yourself_sql, shown_title_sql};
+use crate::db::participant_names::named_from_chat_handle_sql;
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
 use super::error::{QueryError, QueryErrorKind};
@@ -261,27 +262,30 @@ fn participants_with_contact(trash: TrashScope) -> String {
     )
 }
 
-/// FROM and WHERE binding `chct` to the Contact the chat handle of
-/// conversation `c` is on, for a one-to-one conversation with no
-/// participants rows: the person the list names from the chat handle
-/// (`db::participant_names`, `load_from_chat_handle`), so plain text finds
-/// the conversation by the name it is shown under (#2737). The same
-/// conditions as that query: only a one-to-one conversation's chat handle is
-/// a person, and a conversation with yourself has no participants. A Contact
-/// in the trash is left out unless the query carries `trashed:`, as in
-/// [`participants_with_contact`]. The caller appends ` AND ` and the match.
+/// FROM and WHERE binding `chh` to the chat handle of conversation `c` and
+/// `chct` to the Contact it is on (NULL when none), when the list names the
+/// conversation's person from its chat handle (`named_from_chat_handle_sql`),
+/// so plain text and `name:` find the conversation by the name it is shown
+/// under (#2737). That person's name is [`CHAT_HANDLE_PERSON_NAME`]. A
+/// Contact in the trash is left out unless the query carries `trashed:`, as
+/// in [`participants_with_contact`] (#724). The caller appends ` AND ` and
+/// the match.
 fn chat_handle_contact(trash: TrashScope) -> String {
     format!(
-        "contact_handles chch \
-         JOIN contacts chct ON chct.id = chch.contact_id AND chct.account_id = c.account_id{} \
-         WHERE chch.handle_id = c.chat_handle_id AND chch.account_id = c.account_id \
-         AND c.conversation_type = 'individual' COLLATE NOCASE \
-         AND NOT {} \
-         AND NOT EXISTS (SELECT 1 FROM participants chp WHERE chp.conversation_id = c.id)",
+        "handles chh \
+         LEFT JOIN contact_handles chch ON chch.handle_id = chh.id AND chch.account_id = c.account_id \
+         LEFT JOIN contacts chct ON chct.id = chch.contact_id AND chct.account_id = c.account_id{} \
+         WHERE chh.id = c.chat_handle_id AND {}",
         trash.contact_clause("chct"),
-        is_with_yourself_sql("c")
+        named_from_chat_handle_sql("c")
     )
 }
+
+/// The name of the person [`chat_handle_contact`] binds: the Contact's name,
+/// else `''`, as [`PARTICIPANT_NAME`] is for a participant. There is no
+/// per-conversation backup name to fall back on, since the conversation has
+/// no participants rows.
+const CHAT_HANDLE_PERSON_NAME: &str = "coalesce(NULLIF(chct.preferred_name, ''), '')";
 
 /// Free text: the row's own text, one meaning applied per row type.
 fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
@@ -306,7 +310,7 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
                 " OR EXISTS (SELECT 1 FROM {} AND ",
                 chat_handle_contact(ctx.trash)
             ));
-            free_text_match(out, "chct.preferred_name", term);
+            free_text_match(out, CHAT_HANDLE_PERSON_NAME, term);
             out.push(")");
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
@@ -510,11 +514,18 @@ fn emit_text_word(
         }
         ("name", _) => ctx.conversation(out, |o| {
             o.push(&format!(
-                "EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND ",
+                "(EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND ",
                 participants_with_contact(ctx.trash)
             ));
             result = text_match(o, PARTICIPANT_NAME, term, v);
-            o.push(")");
+            o.push(&format!(
+                ") OR EXISTS (SELECT 1 FROM {} AND ",
+                chat_handle_contact(ctx.trash)
+            ));
+            if result.is_ok() {
+                result = text_match(o, CHAT_HANDLE_PERSON_NAME, term, v);
+            }
+            o.push("))");
         }),
         // `none` and `any` ask about addresses. An identity of type `other`
         // holds a name the backup gave with no address, so it is not one,
