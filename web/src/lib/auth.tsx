@@ -85,8 +85,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     const validate = async () => {
-      applyApiSession(state);
-      const check = await checkSavedLogin();
+      const check = await checkSavedLogin(state);
       if (cancelled) return;
       if (check === "valid") {
         // Warm the profile before the app renders. Whether this account still

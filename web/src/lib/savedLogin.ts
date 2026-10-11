@@ -5,6 +5,7 @@
  * and the server address on its own. Passwords are never stored.
  */
 import { ApiError } from "./api";
+import { type ApiSession, applyApiSession } from "./apiSession";
 import type { AuthState } from "./authContext";
 import { type ParsedPersistedAuth, parsePersistedAuth } from "./authGuards";
 import { getSession } from "./serverApi";
@@ -80,13 +81,15 @@ export function startingAuthState(): AuthState {
 export type SavedLoginCheck = "valid" | "refused" | "unanswered";
 
 /**
- * Ask the server whether the session `api.ts` now sends still works.
+ * Point `api.ts` at `login` and ask the server whether that session still
+ * works.
  *
  * Only the server can say a token is no longer valid, and it says so with a
  * 401. A request nothing answered, or a 502 from a proxy, says nothing about
  * the token.
  */
-export async function checkSavedLogin(): Promise<SavedLoginCheck> {
+export async function checkSavedLogin(login: ApiSession): Promise<SavedLoginCheck> {
+  applyApiSession(login);
   try {
     await getSession();
     return "valid";

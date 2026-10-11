@@ -13,6 +13,12 @@ import {
 } from "./savedLogin";
 
 const getSession = vi.fn();
+const setToken = vi.fn();
+
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
+  setToken: (token: string | null) => setToken(token),
+}));
 
 vi.mock("./serverApi", () => ({
   getSession: () => getSession(),
@@ -82,27 +88,39 @@ describe("saved login", () => {
 });
 
 describe("checkSavedLogin", () => {
+  const LOGIN = { serverUrl: HERE, token: "session-token", accountId: 7 };
+
   beforeEach(() => {
     getSession.mockReset();
+    setToken.mockReset();
+  });
+
+  it("asks with the login it checks", async () => {
+    getSession.mockImplementation(async () => {
+      expect(setToken).toHaveBeenLastCalledWith("session-token");
+      return { account_id: 7 };
+    });
+    expect(await checkSavedLogin(LOGIN)).toBe("valid");
+    expect(getSession).toHaveBeenCalledTimes(1);
   });
 
   it("is valid when the server accepts the session", async () => {
     getSession.mockResolvedValue({ account_id: 7 });
-    expect(await checkSavedLogin()).toBe("valid");
+    expect(await checkSavedLogin(LOGIN)).toBe("valid");
   });
 
   it("is refused when the server answers 401", async () => {
     getSession.mockRejectedValue(new ApiError(401, "Unauthorized"));
-    expect(await checkSavedLogin()).toBe("refused");
+    expect(await checkSavedLogin(LOGIN)).toBe("refused");
   });
 
   it("is unanswered when something other than the server answers", async () => {
     getSession.mockRejectedValue(new ApiError(502, "Bad Gateway"));
-    expect(await checkSavedLogin()).toBe("unanswered");
+    expect(await checkSavedLogin(LOGIN)).toBe("unanswered");
   });
 
   it("is unanswered when nothing answers", async () => {
     getSession.mockRejectedValue(new TypeError("Failed to fetch"));
-    expect(await checkSavedLogin()).toBe("unanswered");
+    expect(await checkSavedLogin(LOGIN)).toBe("unanswered");
   });
 });
