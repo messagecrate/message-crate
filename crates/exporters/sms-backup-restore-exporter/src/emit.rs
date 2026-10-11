@@ -16,7 +16,7 @@ use std::path::Path;
 /// order Convert's log gives them, and send each error to `issues` as an
 /// Import Error and each message kept with something left out of it as a
 /// note naming the file and the message.
-fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
+fn to_core_report(report: ReadReport, issues: &IssueSink) -> ExportReport {
     let mut out = ExportReport {
         conversations: report.conversations,
         // Every message in a produced document is either sent or received.
@@ -25,7 +25,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         received: report.received,
         skipped_invalid_date: report.skipped_invalid_date,
         duplicates_dropped: report.duplicates_dropped,
-        ..ExportReport::with_issues(issues.cloned())
+        ..ExportReport::with_issues(issues.clone())
     };
     for error in &report.errors {
         out.error(ItemKind::File, &error.file, &error.what_happened());
@@ -77,7 +77,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub convert_run: ConvertRun<'a>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
@@ -115,19 +115,19 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             compress,
             log: writer.log(),
             progress: writer.progress(),
-            cancel,
+            cancel: &cancel,
         },
     )?;
 
     // The reader already counted conversations; zero the conversation
     // counter so the shared write tail's fold counts only the documents it
     // actually writes.
-    let mut core = to_core_report(report, issues);
+    let mut core = to_core_report(report, &issues);
     core.conversations = 0;
     writer.finish(
         documents,
         &mut AttachmentSource::take_bytes,
-        cancel,
+        &cancel,
         &mut core,
     )?;
     Ok(core)

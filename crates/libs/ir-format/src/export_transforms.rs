@@ -4,7 +4,7 @@
 use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
 use media::MediaMode;
-use message_crate_core::{ExportTransforms, emit_log};
+use message_crate_core::ExportTransforms;
 use message_ir::{
     ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
     MessageIdentity, Reaction,
@@ -268,7 +268,7 @@ pub(crate) fn apply_transforms(
         return Ok(TransformOutcome { obfuscated_docs: 0 });
     }
     materialize_placeholders(output_dir)?;
-    let log_fn = |line: &str| emit_log(transforms.log.as_ref(), line);
+    let log_fn = |line: &str| transforms.log.emit(line);
     let mut anon =
         resolve_obfuscator_with_log(transforms.obfuscate_seed.as_deref(), Some(&log_fn))?;
     obfuscate_documents(docs, &mut anon);

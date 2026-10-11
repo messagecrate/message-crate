@@ -2,7 +2,7 @@
 
 use crate::ios_backup::DecryptedWhatsapp;
 use anyhow::{Context, Result, bail};
-use message_crate_core::{LogSink, emit_warning};
+use message_crate_core::LogSink;
 use message_staging::scratch_disk_full;
 use std::env;
 use std::io::Write;
@@ -187,7 +187,7 @@ pub(crate) fn run_wtsexporter(
     bin: &Path,
     args: &WtsexporterArgs,
     json_out: &Path,
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) -> Result<String> {
     if !args.work_dir.is_dir() {
         bail!("work directory does not exist: {}", args.work_dir.display());
@@ -217,14 +217,11 @@ pub(crate) fn run_wtsexporter(
     );
     if !output.status.success() {
         if !combined.trim().is_empty() {
-            emit_warning(
-                log,
-                format!(
-                    "wtsexporter failed ({}). Its output:\n{}",
-                    output.status,
-                    combined.trim_end()
-                ),
-            );
+            log.warn(format!(
+                "wtsexporter failed ({}). Its output:\n{}",
+                output.status,
+                combined.trim_end()
+            ));
         }
         // wtsexporter writes everything into the work directory, under the
         // Scratch Directory: the decrypted msgstore.db, the extract and the

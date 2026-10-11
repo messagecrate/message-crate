@@ -90,7 +90,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output: &'a Path,
     pub timezone: Option<&'a str>,
-    pub convert_run: ConvertRun<'a>,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -131,11 +131,11 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         claims: Vec::new(),
         directory_texts: BTreeMap::new(),
         whatsapp_directories: HashSet::new(),
-        report: ExportReport::with_issues(issues.cloned()),
+        report: ExportReport::with_issues(issues.clone()),
     };
     let discovered_files = discover_csv_files(input)?;
     for (csv_index, discovered) in discovered_files.iter().enumerate() {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         ingest.ingest_file(csv_index, discovered)?;
     }
     // An iMazing export records no date inside it, so the backup is as new
@@ -202,7 +202,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             }
             None => (AttachmentSource::Missing, att.size_bytes),
         },
-        cancel,
+        &cancel,
         &mut report,
     )?;
 

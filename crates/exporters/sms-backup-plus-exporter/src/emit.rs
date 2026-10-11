@@ -13,7 +13,7 @@ use android_fields::android_source;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink, RunIssue,
-    RunIssueKind, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
+    RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
@@ -338,7 +338,7 @@ fn project_and_count(
         }
         if is_group && msg.direction == IrDirection::Incoming && msg.sender_identity.is_none() {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
-            emit_issue(report.issues.as_ref(), RunIssue {
+            report.issues.emit(RunIssue {
                 kind: RunIssueKind::Skip,
                 step: "parse".into(),
                 item: format!("{eml_path} (sender)"),
@@ -357,14 +357,14 @@ const EML_PROGRESS_EVERY: u64 = 5000;
 #[derive(Clone, Copy)]
 struct Verbose<'a> {
     enabled: bool,
-    log: Option<&'a LogSink>,
+    log: &'a LogSink,
 }
 
 impl Verbose<'_> {
     /// Write one line when verbose.
     fn line(self, msg: impl AsRef<str>) {
         if self.enabled {
-            emit_log(self.log, msg);
+            self.log.emit(msg);
         }
     }
 
@@ -374,7 +374,7 @@ impl Verbose<'_> {
             return;
         }
         if processed == total || processed.is_multiple_of(EML_PROGRESS_EVERY) {
-            emit_log(self.log, format!("{label}: {processed} / {total}"));
+            self.log.emit(format!("{label}: {processed} / {total}"));
         }
     }
 
@@ -383,21 +383,16 @@ impl Verbose<'_> {
         if !self.enabled || report.errors.is_empty() {
             return;
         }
-        emit_log(
-            self.log,
-            format!(
-                "{}:",
-                count_of(report.errors.len() as u64, "Import Error", "Import Errors")
-            ),
-        );
+        self.log.emit(format!(
+            "{}:",
+            count_of(report.errors.len() as u64, "Import Error", "Import Errors")
+        ));
         for err in report.errors.iter().take(20) {
-            emit_log(self.log, format!("  {err}"));
+            self.log.emit(format!("  {err}"));
         }
         if report.errors.len() > 20 {
-            emit_log(
-                self.log,
-                format!("  … and {} more", report.errors.len() - 20),
-            );
+            self.log
+                .emit(format!("  … and {} more", report.errors.len() - 20));
         }
     }
 }
@@ -414,8 +409,8 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     /// states it: a number written without its `+` code is keyed in it.
     pub phone_country: Option<&'static phone::Country>,
     pub verbose: bool,
-    pub log: Option<&'a LogSink>,
-    pub convert_run: ConvertRun<'a>,
+    pub log: &'a LogSink,
+    pub convert_run: ConvertRun,
 }
 
 /// Convert SMS Backup+ EML trees into the shared conversation structure, then
@@ -484,20 +479,20 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let writer =
         ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
 
-    let eml_paths = collect_eml_paths(&inputs, cancel)?;
+    let eml_paths = collect_eml_paths(&inputs, &cancel)?;
     verbose.line(format!(
         "Reading {}",
         count_of(eml_paths.len() as u64, ".eml file", ".eml files")
     ));
-    message_crate_core::check_cancel(cancel)?;
+    message_crate_core::check_cancel(&cancel)?;
 
     let parse = ParseInputs {
         file_inputs: inputs.iter().filter(|p| p.is_file()).cloned().collect(),
         input_roots: inputs,
         owner,
     };
-    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), issues);
-    parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
+    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), &issues);
+    parse_all_emls(&eml_paths, &parse, &cancel, verbose, &mut ingest)?;
     ingest.add_members_by_number(verbose);
     let EmlIngest {
         conversations,
@@ -522,7 +517,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     };
     let mut documents = Vec::new();
     for (chat_id, mut conversation) in conversations {
-        message_crate_core::check_cancel(cancel)?;
+        message_crate_core::check_cancel(&cancel)?;
         if let Some(doc) =
             project_and_count(&chat_id, &mut conversation, &hooks, &caveats, &mut report)
         {
@@ -543,7 +538,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     writer.finish(
         documents,
         &mut AttachmentSource::take_bytes,
-        cancel,
+        &cancel,
         &mut report,
     )?;
 
@@ -574,7 +569,7 @@ const EML_PARSE_CHUNK: usize = 256;
 fn parse_all_emls(
     eml_paths: &[PathBuf],
     inputs: &ParseInputs,
-    cancel: Option<&CancelFlag>,
+    cancel: &CancelFlag,
     verbose: Verbose<'_>,
     ingest: &mut EmlIngest<'_>,
 ) -> Result<()> {
@@ -598,11 +593,7 @@ fn parse_all_emls(
 
 /// Parse one EML on a worker thread. Checks cancel first so a cancelled run
 /// stops reading files promptly.
-fn parse_eml_path(
-    eml_path: &Path,
-    inputs: &ParseInputs,
-    cancel: Option<&CancelFlag>,
-) -> ParsedEmlKind {
+fn parse_eml_path(eml_path: &Path, inputs: &ParseInputs, cancel: &CancelFlag) -> ParsedEmlKind {
     if message_crate_core::is_cancelled(cancel) {
         return ParsedEmlKind::Cancelled;
     }
@@ -632,15 +623,11 @@ struct EmlIngest<'a> {
 impl<'a> EmlIngest<'a> {
     /// Empty state, pre-sized for the typical ratio of chats to EML files,
     /// whose report sends its rows to `issues`.
-    fn new(
-        spool: Option<&'a AttachmentSpool>,
-        eml_count: usize,
-        issues: Option<&IssueSink>,
-    ) -> Self {
+    fn new(spool: Option<&'a AttachmentSpool>, eml_count: usize, issues: &IssueSink) -> Self {
         Self {
             spool,
             conversations: HashMap::with_capacity((eml_count / 4).min(50_000)),
-            report: ExportReport::with_issues(issues.cloned()),
+            report: ExportReport::with_issues(issues.clone()),
             caveats: Caveats::default(),
             email_numbers: EmailNumbers::default(),
             by_email: Vec::new(),
@@ -761,6 +748,7 @@ impl<'a> EmlIngest<'a> {
 mod tests {
     use super::*;
     use crate::types::AttachmentBytes;
+    use message_crate_core::ProgressSink;
     use message_ir::{
         ConversationMeta, ConversationStats, IrMessage, IrMessageKind, SCHEMA_VERSION,
     };
@@ -866,14 +854,14 @@ mod tests {
                     .source(att)
                     .unwrap_or((AttachmentSource::Missing, None))
             },
-            None,
+            &LogSink::none(),
         )
         .stage(
             &att_dir,
             message_staging::load_attachment_source,
-            None,
-            None,
-            None,
+            &LogSink::none(),
+            &ProgressSink::none(),
+            &CancelFlag::default(),
         )
         .unwrap();
         // The missing source stays on the message; the good one is staged.
@@ -890,7 +878,7 @@ mod tests {
     /// The messages of every conversation as the shared projection writes
     /// them, with the copies of one message reduced to one.
     fn project(parsed: Vec<ParsedMessage>) -> (Vec<IrMessage>, ExportReport) {
-        let mut ingest = EmlIngest::new(None, parsed.len(), None);
+        let mut ingest = EmlIngest::new(None, parsed.len(), &IssueSink::none());
         for msg in parsed {
             ingest.add_parsed(msg).unwrap();
         }
@@ -945,7 +933,7 @@ mod tests {
     /// A MIME part that could not be decoded reaches the run's report by name.
     #[test]
     fn unreadable_parts_are_counted_in_the_report() {
-        let mut ingest = EmlIngest::new(None, 2, None);
+        let mut ingest = EmlIngest::new(None, 2, &IssueSink::none());
         for unreadable_parts in [2, 1] {
             let msg = ParsedMessage {
                 unreadable_parts,

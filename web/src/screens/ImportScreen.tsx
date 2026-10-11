@@ -59,7 +59,8 @@ import {
   resumeDecisionFor,
   resumeReadsBackup,
 } from "./import/resumeDecision";
-import { parseStoredStagingSummary, useImportJob } from "./import/useImportJob";
+import { parseStoredStagingSummary } from "./import/run/stagingSummary";
+import { useImportJob } from "./import/useImportJob";
 
 const DEFAULT_SOURCE = IMESSAGE_DEFAULT_METHOD;
 const PATH_PROBE_DEBOUNCE_MS = 200;

@@ -26,7 +26,7 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::counts::words;
 use crate::db::attachment_versions::{
-    self as versions_db, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
+    self as versions_db, NotMade, OriginalRows, StoredOriginal, Version, VersionFile, VersionWrite,
 };
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -460,7 +460,9 @@ struct Outcome {
     /// Existing versions given to rows that named none, or that would be in
     /// a dry run.
     shared: u64,
-    /// Why a Preview or Thumbnail that was wanted was not made.
+    /// Why a Preview or Thumbnail that was wanted was not made. Each
+    /// version's reason is also recorded on the original's rows
+    /// ([`AccountPass::record_not_made`]).
     not_made: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
@@ -713,10 +715,11 @@ impl<'a> AccountPass<'a> {
             (Version::Thumbnail, versions.thumbnail),
             (Version::Preview, versions.preview),
         ] {
-            let damaged = match version {
+            let state = match version {
                 Version::Preview => on_disk.preview,
                 Version::Thumbnail => on_disk.thumbnail,
-            } == PreviewFile::Damaged;
+            };
+            let damaged = state == PreviewFile::Damaged;
             let done = match need {
                 Need::Nothing => Ok(false),
                 Need::Share => self.share_existing(db, row, version).await.map(|shared| {
@@ -731,7 +734,7 @@ impl<'a> AccountPass<'a> {
                     if damaged {
                         outcome.count_drop(version, self.drop_damaged(db, row, version).await);
                     }
-                    Err(anyhow::anyhow!("missing original"))
+                    Err(MissingOriginal.into())
                 }
                 Need::Make => {
                     self.make(db, row, version, versions.kind, &source_path, damaged)
@@ -741,7 +744,15 @@ impl<'a> AccountPass<'a> {
             match (done, version) {
                 (Ok(written), Version::Thumbnail) => outcome.thumbnail = written,
                 (Ok(written), Version::Preview) => outcome.preview = written,
-                (Err(err), _) => not_made.push(format!("{version}: {err:#}")),
+                (Err(err), _) => {
+                    let mut said = format!("{version}: {err:#}");
+                    if let Err(not_recorded) =
+                        self.record_not_made(db, row, version, state, &err).await
+                    {
+                        said.push_str(&format!(" (why could not be recorded: {not_recorded:#})"));
+                    }
+                    not_made.push(said);
+                }
             }
         }
         if !not_made.is_empty() {
@@ -799,6 +810,44 @@ impl<'a> AccountPass<'a> {
             version_file.assets_path
         ));
         Ok(true)
+    }
+
+    /// Record on the rows of `row`'s original why `version` was not made,
+    /// as [`not_made_reason`] words `err`. `state` is the version the rows
+    /// named when the pass read them: an intact one still works, as after a
+    /// failed remake under `--force`, so nothing is recorded beside it. A
+    /// missing or damaged one does not, so the rows that still name it get
+    /// the reason, as do the rows that name none. A dry run writes nothing,
+    /// and neither does a pass being stopped: the stop failed the
+    /// conversion, not the file, and the next pass makes it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the rows cannot be written.
+    async fn record_not_made(
+        &self,
+        db: &SqlitePool,
+        row: &StoredOriginal,
+        version: Version,
+        state: PreviewFile,
+        err: &anyhow::Error,
+    ) -> Result<()> {
+        if self.opts.dry_run || self.stop.load(Ordering::Relaxed) || state == PreviewFile::Intact {
+            return Ok(());
+        }
+        let reason = not_made_reason(err, &[&self.assets_dir, self.work_dir]);
+        let named = row.named(version).assets_path;
+        versions_db::record_not_made(
+            &mut *db.acquire().await?,
+            NotMade {
+                rows: self.rows(row),
+                version,
+                named: named.as_deref(),
+                reason: &reason,
+            },
+        )
+        .await
+        .context("record why it was not made")
     }
 
     /// Point the rows of `row`'s original that name no `version` at the one
@@ -1006,6 +1055,39 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
         ids.sort_unstable();
     }
     Ok(ids)
+}
+
+/// The failure of a version that must be made while its original is not on
+/// disk.
+#[derive(Debug, thiserror::Error)]
+#[error("missing original")]
+struct MissingOriginal;
+
+/// Why a version was not made, from `err`, the failure of making it, as the
+/// `/v1` Attachment answers it: what ffmpeg said about the file, with each
+/// path under one of `dirs` made relative to it, or a phrase of the server's
+/// when ffmpeg did not read the file. Nothing else of `err` is kept: its
+/// context names the original by its full path, and a missing ffmpeg's
+/// error names every directory the server looked in. The `dirs` are the
+/// account's originals directory and the pass's work directory, both under
+/// the data directory, so what is left names no file outside it.
+fn not_made_reason(err: &anyhow::Error, dirs: &[&Path]) -> String {
+    if let Some(failed) = err.downcast_ref::<media::FfmpegFailed>() {
+        let said = dirs.iter().fold(failed.said().to_string(), |said, dir| {
+            said.replace(
+                &format!("{}{}", dir.display(), std::path::MAIN_SEPARATOR),
+                "",
+            )
+        });
+        if said.is_empty() {
+            return "ffmpeg could not read the file and said nothing about it".to_string();
+        }
+        return said;
+    }
+    if err.downcast_ref::<MissingOriginal>().is_some() {
+        return "the original file is missing".to_string();
+    }
+    "the server ran into a problem making it".to_string()
 }
 
 /// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.

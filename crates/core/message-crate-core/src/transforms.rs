@@ -17,10 +17,10 @@ pub struct ExportTransforms {
     pub obfuscate: bool,
     /// Seed for deterministic obfuscation; `None` generates one.
     pub obfuscate_seed: Option<String>,
-    /// Mid-run notes (e.g. generated obfuscate seed). `None` → stderr.
-    pub log: Option<LogSink>,
-    /// Typed progress events for the write tail. `None` reports nothing.
-    pub progress: Option<ProgressSink>,
+    /// Mid-run notes (e.g. generated obfuscate seed).
+    pub log: LogSink,
+    /// Typed progress events for the write tail.
+    pub progress: ProgressSink,
 }
 
 impl Default for ExportTransforms {
@@ -30,8 +30,8 @@ impl Default for ExportTransforms {
             compress: CompressOptions::default(),
             obfuscate: false,
             obfuscate_seed: None,
-            log: None,
-            progress: None,
+            log: LogSink::none(),
+            progress: ProgressSink::none(),
         }
     }
 }
@@ -52,7 +52,8 @@ impl ExportTransforms {
         }
     }
 
-    /// All-defaults transform set (clone, no obfuscation, no log).
+    /// All-defaults transform set (clone, no obfuscation, sinks that drop
+    /// what they get).
     pub fn none() -> Self {
         Self::default()
     }
@@ -76,8 +77,12 @@ impl ExportTransforms {
 mod tests {
     use super::*;
     use crate::config::{FormatConfig, MediaConfig, ObfuscateConfig, OutputFormat, SourceConfig};
+    use crate::pipeline::IssueSink;
+    use crate::process::CancelFlag;
+    use crate::progress::ProgressEvent;
     use media::MaxResolution;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
     fn config(obfuscate: ObfuscateConfig, media: MediaConfig) -> ExporterConfig {
         ExporterConfig {
@@ -87,10 +92,10 @@ mod tests {
             timezone: None,
             obfuscate,
             media,
-            cancel: None,
-            log: None,
-            progress: None,
-            issues: None,
+            cancel: CancelFlag::default(),
+            log: LogSink::none(),
+            progress: ProgressSink::none(),
+            issues: IssueSink::none(),
             output_format: OutputFormat::Json,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),
@@ -147,15 +152,21 @@ mod tests {
                 compress: compress.clone(),
             },
         );
-        cfg.log = Some(LogSink::new(|_| {}));
-        cfg.progress = Some(ProgressSink::new(|_| {}));
+        let lines = Arc::new(Mutex::new(Vec::new()));
+        let lines_seen = Arc::clone(&lines);
+        cfg.log = LogSink::new(move |line| lines_seen.lock().unwrap().push(line.to_string()));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let events_seen = Arc::clone(&events);
+        cfg.progress = ProgressSink::unpaced(move |event| events_seen.lock().unwrap().push(event));
 
         let t = ExportTransforms::from_config(&cfg);
+        t.log.emit("a line");
+        t.progress.emit(ProgressEvent::Parse { done: 1, total: 2 });
 
         assert_eq!(t.media, MediaMode::Compress);
         assert_eq!(t.compress, compress);
-        assert!(t.log.is_some());
-        assert!(t.progress.is_some());
+        assert_eq!(lines.lock().unwrap().as_slice(), ["a line"]);
+        assert_eq!(events.lock().unwrap().len(), 1);
         assert!(t.needs_media_tools());
     }
 

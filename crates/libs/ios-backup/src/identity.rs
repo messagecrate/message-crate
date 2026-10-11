@@ -15,7 +15,7 @@ use std::{collections::HashSet, fs::File, path::Path};
 
 use anyhow::bail;
 use imessage_reader_protocol::{Event, IdentitiesRequest, Platform, Request, Source};
-use message_crate_core::ScratchDir;
+use message_crate_core::{LogSink, ProgressSink, ScratchDir};
 
 use crate::helper::Helper;
 
@@ -55,7 +55,7 @@ pub fn backup_identities(
     scratch_root: &Path,
 ) -> anyhow::Result<Vec<String>> {
     identities_with(db_path, ios, backup_password, scratch_root, |request| {
-        Helper::spawn(request, None, None)
+        Helper::spawn(request, LogSink::none(), ProgressSink::none())
     })
 }
 

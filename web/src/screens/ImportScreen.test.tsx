@@ -50,10 +50,10 @@ const apiGetMock = vi.hoisted(() => vi.fn());
 const listImportsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./import/useImportJob", async (importOriginal) => {
-  // Only useImportJob itself is replaced; parseStoredStagingSummary stays
-  // real. restoreFormFromSnapshot now lives in formSnapshot.ts, which is not
-  // mocked at all, so the screen runs the same validation it does in
-  // production.
+  // Only useImportJob itself is replaced. parseStoredStagingSummary
+  // (run/stagingSummary.ts) and restoreFormFromSnapshot (formSnapshot.ts)
+  // are not mocked at all, so the screen runs the same validation it does
+  // in production.
   const actual = await importOriginal<typeof import("./import/useImportJob")>();
   return {
     ...actual,

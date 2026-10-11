@@ -44,8 +44,8 @@ pub fn decrypt_ios_backup_domain(
     domain: &str,
     out_dir: &Path,
     check: impl FnOnce(u64) -> Result<()>,
-    log: Option<LogSink>,
-    progress: Option<ProgressSink>,
+    log: LogSink,
+    progress: ProgressSink,
 ) -> Result<DecryptedDomain> {
     let request = Request::BackupDomain(BackupDomainRequest {
         backup_path: backup_root.to_path_buf(),

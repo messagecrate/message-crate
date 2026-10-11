@@ -96,7 +96,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode, TranscodeOutcome};
 use message_crate_core::{
-    CancelFlag, IssueSink, RunIssue, RunIssueKind, check_cancel, emit_issue, mime_for_rel,
+    CancelFlag, IssueSink, RunIssue, RunIssueKind, check_cancel, mime_for_rel,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 
@@ -192,8 +192,8 @@ pub struct TranscodeReport {
 pub fn transcode_staged(
     run_dir: &Path,
     options: &TranscodeOptions,
-    cancel: Option<&CancelFlag>,
-    issues: Option<&IssueSink>,
+    cancel: &CancelFlag,
+    issues: &IssueSink,
     on_progress: &mut dyn FnMut(TranscodeProgress),
 ) -> Result<TranscodeReport> {
     if matches!(options.mode, MediaMode::Clone | MediaMode::Disabled) {
@@ -226,17 +226,14 @@ pub fn transcode_staged(
             // new failure sends a fresh row after this one.
             let recorded_rel = item.recorded_rel();
             if had_convert_failure(&doc, recorded_rel) {
-                emit_issue(
-                    issues,
-                    media_issue(
-                        jsonl,
-                        &doc,
-                        recorded_rel,
-                        recorded_rel,
-                        RunIssueKind::Resolved,
-                        "is tried again",
-                    ),
-                );
+                issues.emit(media_issue(
+                    jsonl,
+                    &doc,
+                    recorded_rel,
+                    recorded_rel,
+                    RunIssueKind::Resolved,
+                    "is tried again",
+                ));
             }
             match item {
                 PendingWork::Transcode {
@@ -658,7 +655,7 @@ fn apply_transcode(
     target: &TranscodeTarget<'_>,
     doc: &mut ConversationDocument,
     options: &TranscodeOptions,
-    issues: Option<&IssueSink>,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
     let &TranscodeTarget {
@@ -686,17 +683,14 @@ fn apply_transcode(
 
     match media::transcode_file(src, &marker, options.mode, &options.compress) {
         Err(err) => {
-            emit_issue(
-                issues,
-                media_issue(
-                    jsonl,
-                    doc,
-                    recorded_rel,
-                    &item_rel,
-                    RunIssueKind::Skip,
-                    &format!("could not be converted, so the original file is kept: {err:#}"),
-                ),
-            );
+            issues.emit(media_issue(
+                jsonl,
+                doc,
+                recorded_rel,
+                &item_rel,
+                RunIssueKind::Skip,
+                &format!("could not be converted, so the original file is kept: {err:#}"),
+            ));
             let reason = format!("convert_failed: {err}");
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
@@ -918,13 +912,10 @@ fn apply_too_large(
     recorded_rel: &str,
     item_rel: &str,
     size: u64,
-    issues: Option<&IssueSink>,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    emit_issue(
-        issues,
-        too_large_issue(jsonl, doc, recorded_rel, item_rel, size),
-    );
+    issues.emit(too_large_issue(jsonl, doc, recorded_rel, item_rel, size));
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
@@ -943,20 +934,17 @@ fn apply_unrecoverable(
     jsonl: &Path,
     doc: &mut ConversationDocument,
     recorded_rel: &str,
-    issues: Option<&IssueSink>,
+    issues: &IssueSink,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    emit_issue(
-        issues,
-        media_issue(
-            jsonl,
-            doc,
-            recorded_rel,
-            recorded_rel,
-            RunIssueKind::Skip,
-            "was lost when an earlier Media Stage stopped partway, so it was left out",
-        ),
-    );
+    issues.emit(media_issue(
+        jsonl,
+        doc,
+        recorded_rel,
+        recorded_rel,
+        RunIssueKind::Skip,
+        "was lost when an earlier Media Stage stopped partway, so it was left out",
+    ));
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;

@@ -179,11 +179,11 @@ fn cancel_during_the_write_phase_stops_the_export() {
     let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
     let trip = Arc::clone(&cancel);
     let mut transforms = ExportTransforms::none();
-    transforms.log = Some(LogSink::new(move |line| {
+    transforms.log = LogSink::new(move |line| {
         if line.starts_with("Preparing ") {
             trip.store(true, Ordering::Relaxed);
         }
-    }));
+    });
 
     let cache = tempfile::tempdir().unwrap();
     let err = convert_export(ConvertExportArgs {
@@ -194,7 +194,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
         convert_run: ConvertRun {
             transforms,
             output_format: OutputFormat::Csv,
-            cancel: Some(&cancel),
+            cancel: cancel.clone(),
             ..ConvertRun::default()
         },
     })

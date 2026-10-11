@@ -70,7 +70,7 @@ fn json_rejection(rejection: JsonRejection) -> ApiError {
         JsonRejection::JsonSyntaxError(e) => ApiError::MalformedBody(e.body_text()),
         JsonRejection::MissingJsonContentType(e) => ApiError::UnsupportedMediaType(e.body_text()),
         rejection if rejection.status() == StatusCode::PAYLOAD_TOO_LARGE => {
-            ApiError::PayloadTooLarge(rejection.body_text())
+            ApiError::PayloadTooLarge
         }
         rejection => ApiError::MalformedBody(rejection.body_text()),
     }
@@ -279,10 +279,11 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            matches!(error, ApiError::PayloadTooLarge(_)),
+            matches!(error, ApiError::PayloadTooLarge),
             "a body over the limit is payload-too-large, got {error:?}"
         );
         assert_eq!(error.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        assert_eq!(error.to_string(), "the request body is too large");
     }
 
     /// A body that fails while being read is the other rejection on the

@@ -9,6 +9,7 @@
 
 mod common;
 
+use message_crate_core::{ExporterConfig, IssueSink, LogSink, ProgressSink};
 use std::{
     path::Path,
     process::Command,
@@ -22,7 +23,6 @@ use std::{
 
 use chat_db_fixture::write_chat_db;
 use common::{config, helper_binary};
-use message_crate_core::{ExporterConfig, LogSink, ProgressSink};
 
 /// How long a cancelled run may take to return. The fixture exports in well
 /// under a second, so a run still going after this is stuck.
@@ -78,10 +78,10 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
     let on_log = cancel_on_first_event.clone();
     let on_progress = cancel_on_first_event;
     let config = ExporterConfig {
-        log: Some(LogSink::new(move |_| on_log())),
-        progress: Some(ProgressSink::unpaced(move |_| on_progress())),
-        issues: None,
-        ..config(&db_path, &output, Some(Arc::clone(&cancel)))
+        log: LogSink::new(move |_| on_log()),
+        progress: ProgressSink::unpaced(move |_| on_progress()),
+        issues: IssueSink::none(),
+        ..config(&db_path, &output, Arc::clone(&cancel))
     };
 
     // The run goes on its own thread so a run that never returns fails the

@@ -149,8 +149,9 @@ const READ_STEP: &str = "parse";
 /// The desktop app sets one and sends each row on to its window, which
 /// writes it into the Import Run's record at once: an app that closes
 /// mid-run keeps every row that had arrived. A row's `kind` says what it
-/// is, so a new kind of row travels through the same sink. A run without a
-/// sink reports its rows nowhere but the log lines it writes beside them.
+/// is, so a new kind of row travels through the same sink. A run given
+/// [`IssueSink::none`] reports its rows nowhere but the log lines it writes
+/// beside them.
 #[derive(Clone)]
 pub struct IssueSink(Arc<dyn Fn(RunIssue) + Send + Sync>);
 
@@ -163,22 +164,26 @@ impl IssueSink {
         Self(Arc::new(f))
     }
 
+    /// A sink that drops every row.
+    pub fn none() -> Self {
+        Self::new(|_| {})
+    }
+
     /// Send one row to the callback.
     pub fn emit(&self, issue: RunIssue) {
         (self.0)(issue);
     }
 }
 
-impl fmt::Debug for IssueSink {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("IssueSink")
+impl Default for IssueSink {
+    fn default() -> Self {
+        Self::none()
     }
 }
 
-/// Send `issue` to `sink` when one is set.
-pub fn emit_issue(sink: Option<&IssueSink>, issue: RunIssue) {
-    if let Some(sink) = sink {
-        sink.emit(issue);
+impl fmt::Debug for IssueSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IssueSink")
     }
 }
 
@@ -225,14 +230,14 @@ pub struct ExportReport {
     pub extra: Vec<(Counter, u64)>,
     /// Where [`ExportReport::error`], [`ExportReport::note`] and
     /// [`ExportReport::caveat`] send each row the moment the run records it.
-    /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
-    /// are all that is kept.
-    pub issues: Option<IssueSink>,
+    /// With [`IssueSink::none`], the default, the lines in `errors` and
+    /// `notes` are all that is kept.
+    pub issues: IssueSink,
 }
 
 impl ExportReport {
     /// An empty report that sends its rows to `issues`.
-    pub fn with_issues(issues: Option<IssueSink>) -> Self {
+    pub fn with_issues(issues: IssueSink) -> Self {
         Self {
             issues,
             ..Self::default()
@@ -281,16 +286,13 @@ impl ExportReport {
 
     /// Send one row about an item of the backup to `issues`.
     fn send(&self, kind: RunIssueKind, item: String, reason: String) {
-        emit_issue(
-            self.issues.as_ref(),
-            RunIssue {
-                kind,
-                step: READ_STEP.into(),
-                item,
-                reason,
-                conversation: None,
-            },
-        );
+        self.issues.emit(RunIssue {
+            kind,
+            step: READ_STEP.into(),
+            item,
+            reason,
+            conversation: None,
+        });
     }
 
     /// The run's log line for [`NOT_SMS_OR_MMS_LEFT_OUT`]: how many messages
@@ -554,9 +556,9 @@ mod tests {
     fn summary_lines_print_notes_apart_from_errors() {
         let rows = Arc::new(std::sync::Mutex::new(Vec::new()));
         let sink = Arc::clone(&rows);
-        let mut report = ExportReport::with_issues(Some(IssueSink::new(move |issue| {
+        let mut report = ExportReport::with_issues(IssueSink::new(move |issue| {
             sink.lock().unwrap().push(issue);
-        })));
+        }));
         report.note(ItemKind::Picture, "a.jpg", "is named by 2 rows");
         report.error(
             ItemKind::Csv,

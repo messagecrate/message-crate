@@ -9,6 +9,7 @@
 //! `docs/src/assets/openapi.json`). Every request derives from
 //! `ExportConfig::base_url`, so the mock's address is the only seam.
 
+use message_crate_core::CancelFlag;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -257,7 +258,7 @@ fn config(out_dir: &Path, base_url: String) -> ExportConfig {
         list: ExportQueryList::Messages,
         skip_attachments: false,
         page_limit: 2,
-        cancel: None,
+        cancel: CancelFlag::default(),
         asset_fetch_workers: 1,
     }
 }
@@ -744,7 +745,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     let dir = tempdir().unwrap();
     let out = dir.path().join("exported");
     let cfg = ExportConfig {
-        cancel: Some(Arc::new(AtomicBool::new(true))),
+        cancel: Arc::new(AtomicBool::new(true)),
         ..config(&out, server.base_url())
     };
 

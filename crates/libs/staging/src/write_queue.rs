@@ -34,8 +34,8 @@ use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
-    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink, WriteStatus,
-    attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
+    IssueSink, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
+    WriteStatus, attachment_size_hint, check_cancel, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment};
 use message_ir_format::{filename_stem, give_each_document_its_own_file};
@@ -236,12 +236,7 @@ impl AttachmentTotals {
 
     /// Fold in what one attachment changed, then report the new counts: a
     /// log line for people and a [`ProgressEvent::Attachments`] for the bar.
-    fn add_and_report(
-        &mut self,
-        p: UnitProgress,
-        log: Option<&LogSink>,
-        progress: Option<&ProgressSink>,
-    ) {
+    fn add_and_report(&mut self, p: UnitProgress, log: &LogSink, progress: &ProgressSink) {
         self.done += p.done;
         self.bytes_done += p.bytes_done;
         self.bytes_total = self.bytes_total.saturating_add_signed(p.bytes_total_change);
@@ -251,20 +246,16 @@ impl AttachmentTotals {
             bytes_done,
             bytes_total,
         } = *self;
-        let due = emit_progress(
-            progress,
-            ProgressEvent::Attachments {
-                done,
-                total,
-                bytes_done,
-                bytes_total,
-            },
-        );
+        let due = progress.emit(ProgressEvent::Attachments {
+            done,
+            total,
+            bytes_done,
+            bytes_total,
+        });
         if due {
-            emit_log(
-                log,
-                format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
-            );
+            log.emit(format!(
+                "  attachments {done}/{total} {bytes_done}/{bytes_total}"
+            ));
         }
     }
 }
@@ -281,18 +272,15 @@ struct UnitOutcome {
 impl UnitOutcome {
     /// Say that the drain finished with this unit's conversation file
     /// ([`ProgressEvent::FileWritten`]).
-    fn announce(&self, progress: Option<&ProgressSink>) {
-        emit_progress(
-            progress,
-            ProgressEvent::FileWritten {
-                file: self.file.clone(),
-                status: if self.written {
-                    WriteStatus::Written
-                } else {
-                    WriteStatus::Skipped
-                },
+    fn announce(&self, progress: &ProgressSink) {
+        progress.emit(ProgressEvent::FileWritten {
+            file: self.file.clone(),
+            status: if self.written {
+                WriteStatus::Written
+            } else {
+                WriteStatus::Skipped
             },
-        );
+        });
     }
 }
 
@@ -310,15 +298,17 @@ pub type AttachmentLoader<'a> =
     dyn FnMut(&str, &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
 /// Where a drain reports and what stops it: the log, the progress events,
-/// and the cancel flag. Each is optional, and [`Sinks::default`] has none.
-#[derive(Clone, Copy, Default)]
+/// and the cancel flag. A caller with no log, no progress bar or no cancel
+/// passes [`LogSink::none`], [`ProgressSink::none`] or a
+/// `CancelFlag::default()`.
+#[derive(Clone, Copy)]
 pub struct Sinks<'a> {
     /// Where the drain writes its log lines.
-    pub log: Option<&'a LogSink>,
+    pub log: &'a LogSink,
     /// Where the drain sends its progress events.
-    pub progress: Option<&'a ProgressSink>,
+    pub progress: &'a ProgressSink,
     /// Set to stop the drain. The drain then fails with `"cancelled"`.
-    pub cancel: Option<&'a CancelFlag>,
+    pub cancel: &'a CancelFlag,
 }
 
 /// Drain `units` with a caller-supplied loader.
@@ -338,11 +328,7 @@ pub fn drain_write_queue_with_loader(
     load: &mut AttachmentLoader<'_>,
     sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
-    let Sinks {
-        log,
-        progress,
-        cancel,
-    } = sinks;
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     check_units_headroom(output_dir, &units, options.media)?;
     let mut report = WriteQueueReport::default();
@@ -357,7 +343,7 @@ pub fn drain_write_queue_with_loader(
     };
 
     for unit in units {
-        let outcome = write_one_unit(output_dir, unit, options, load, &report_progress, cancel)?;
+        let outcome = write_one_unit(output_dir, unit, options, load, &report_progress, sinks)?;
         report.attachments_saved += outcome.attachments_saved;
         if outcome.written {
             report.conversations_written += 1;
@@ -365,13 +351,10 @@ pub fn drain_write_queue_with_loader(
             report.conversations_skipped += 1;
         }
         outcome.announce(progress);
-        emit_progress(
-            progress,
-            ProgressEvent::Prepare {
-                done: report.conversations_written + report.conversations_skipped,
-                total: unit_count,
-            },
-        );
+        progress.emit(ProgressEvent::Prepare {
+            done: report.conversations_written + report.conversations_skipped,
+            total: unit_count,
+        });
     }
 
     report.media = run_media_post_pass(output_dir, options, sinks)?;
@@ -395,7 +378,7 @@ fn leave_out_files_that_are_gone(
     output_dir: &Path,
     units: &mut [ConversationUnit],
     resume: bool,
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) {
     for unit in units {
         if written_by_an_earlier_run(output_dir, &unit.doc, resume) {
@@ -433,11 +416,11 @@ pub(crate) fn counted_source(
 /// [`load_attachment_source`] does.
 pub(crate) fn missing_if_no_file(
     (source, size_hint): (AttachmentSource, Option<u64>),
-    log: Option<&LogSink>,
+    log: &LogSink,
 ) -> (AttachmentSource, Option<u64>) {
     match source {
         AttachmentSource::Path(path) if !path.is_file() => {
-            emit_log(log, unreadable_attachment_line(&path, "no file there"));
+            log.emit(unreadable_attachment_line(&path, "no file there"));
             (AttachmentSource::Missing, None)
         }
         found => (found, size_hint),
@@ -514,11 +497,7 @@ pub fn drain_write_queue(
     options: &WriteQueueOptions,
     sinks: Sinks<'_>,
 ) -> Result<WriteQueueReport> {
-    let Sinks {
-        log,
-        progress,
-        cancel,
-    } = sinks;
+    let Sinks { log, progress, .. } = sinks;
     give_each_unit_its_own_file(&mut units)?;
     if options.media != MediaMode::Disabled {
         leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
@@ -581,7 +560,7 @@ pub fn drain_write_queue(
                         };
                         load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                emit_log(log, unreadable_attachment_line(&path, e));
+                                log.emit(unreadable_attachment_line(&path, e));
                             }
                         })
                     };
@@ -591,7 +570,7 @@ pub fn drain_write_queue(
                         options,
                         &mut load,
                         &report_progress,
-                        cancel,
+                        sinks,
                     ) {
                         Ok(outcome) => {
                             attachments_saved
@@ -604,13 +583,10 @@ pub fn drain_write_queue(
                             outcome.announce(progress);
                             let mut finished = units_done.lock().expect("write queue units done");
                             *finished += 1;
-                            emit_progress(
-                                progress,
-                                ProgressEvent::Prepare {
-                                    done: *finished,
-                                    total: unit_count,
-                                },
-                            );
+                            progress.emit(ProgressEvent::Prepare {
+                                done: *finished,
+                                total: unit_count,
+                            });
                         }
                         Err(err) => {
                             let mut slot = first_error.lock().expect("write queue error slot");
@@ -672,18 +648,21 @@ fn run_media_post_pass(
     };
     // The desktop never runs this branch (it stages with Clone and converts
     // on its own after the Staging Review); the events are for any other consumer.
-    let report = transcode_staged(output_dir, &transcode_options, cancel, None, &mut |p| {
-        let due = emit_progress(
-            progress,
-            ProgressEvent::Media {
+    let report = transcode_staged(
+        output_dir,
+        &transcode_options,
+        cancel,
+        &IssueSink::none(),
+        &mut |p| {
+            let due = progress.emit(ProgressEvent::Media {
                 done: p.done,
                 total: p.total,
-            },
-        );
-        if due {
-            emit_log(log, format!("  media {}/{}", p.done, p.total));
-        }
-    })?;
+            });
+            if due {
+                log.emit(format!("  media {}/{}", p.done, p.total));
+            }
+        },
+    )?;
 
     let mut media = media::MediaReport {
         processed: report.converted,
@@ -696,7 +675,7 @@ fn run_media_post_pass(
         // The per-file reasons are already on the attachments themselves.
         media.errors.push(NOT_CONVERTED.line(report.failed as u64));
     }
-    emit_log(log, media::done_line(options.media, &media));
+    log.emit(media::done_line(options.media, &media));
     Ok(media)
 }
 
@@ -748,26 +727,20 @@ const NOT_CONVERTED: Counter = Counter::new(
 
 /// Say that the write queue is starting on `units` conversations: a log
 /// line for people and a zero-of-`units` prepare event for the bar.
-fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units: usize) {
-    emit_log(log, "");
-    emit_log(log, CONVERSATION_FILES_PREPARING.line(units as u64));
-    emit_progress(
-        progress,
-        ProgressEvent::Prepare {
-            done: 0,
-            total: units,
-        },
-    );
+fn announce_start(log: &LogSink, progress: &ProgressSink, units: usize) {
+    log.emit("");
+    log.emit(CONVERSATION_FILES_PREPARING.line(units as u64));
+    progress.emit(ProgressEvent::Prepare {
+        done: 0,
+        total: units,
+    });
 }
 
 /// Log the write queue's totals, noting resumed work.
-fn announce_finish(log: Option<&LogSink>, report: &WriteQueueReport, resume: bool) {
-    emit_log(log, PREPARED.line(report.conversations_written as u64));
+fn announce_finish(log: &LogSink, report: &WriteQueueReport, resume: bool) {
+    log.emit(PREPARED.line(report.conversations_written as u64));
     if resume && report.conversations_skipped > 0 {
-        emit_log(
-            log,
-            CONVERSATIONS_RESUMED.line(report.conversations_skipped as u64),
-        );
+        log.emit(CONVERSATIONS_RESUMED.line(report.conversations_skipped as u64));
     }
 }
 
@@ -781,11 +754,9 @@ fn write_one_unit(
     options: &WriteQueueOptions,
     load: &mut AttachmentLoader<'_>,
     on_progress: &dyn Fn(UnitProgress),
-    cancel: Option<&CancelFlag>,
+    sinks: Sinks<'_>,
 ) -> Result<UnitOutcome> {
-    if cancel.is_some_and(|f| f.load(Ordering::Relaxed)) {
-        anyhow::bail!("cancelled");
-    }
+    check_cancel(sinks.cancel)?;
 
     let ConversationUnit {
         mut doc,
@@ -872,8 +843,8 @@ fn write_one_unit(
                 unit_bytes_done = p.bytes_done;
                 unit_total_change = total_change;
             },
-            None,
-            cancel.map(|flag| flag.as_ref()),
+            sinks.log,
+            sinks.cancel,
         )
         .map_err(anyhow::Error::msg)?;
     }

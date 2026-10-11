@@ -17,9 +17,9 @@ use std::sync::{Arc, Mutex};
 pub fn collect_issues(config: &mut ExporterConfig) -> Arc<Mutex<Vec<RunIssue>>> {
     let issues = Arc::new(Mutex::new(Vec::new()));
     let sink = Arc::clone(&issues);
-    config.issues = Some(IssueSink::new(move |issue| {
+    config.issues = IssueSink::new(move |issue| {
         sink.lock().unwrap().push(issue);
-    }));
+    });
     issues
 }
 
@@ -353,10 +353,10 @@ pub fn jsonl_run_config(
             mode: media::MediaMode::Disabled,
             compress: media::CompressOptions::default(),
         },
-        cancel: None,
-        log: None,
-        progress: None,
-        issues: None,
+        cancel: crate::CancelFlag::default(),
+        log: crate::LogSink::none(),
+        progress: ProgressSink::none(),
+        issues: IssueSink::none(),
         output_format: crate::OutputFormat::Jsonl,
         resume: false,
         source,

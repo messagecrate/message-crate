@@ -61,7 +61,7 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
         asset_multipart_threshold: 5 * 1024 * 1024,
         asset_max_bytes: message_crate_import::DEFAULT_ASSET_MAX_BYTES,
         log_path: None,
-        cancel: None,
+        cancel: Default::default(),
         import_id: None,
         phone_country: None,
     };
