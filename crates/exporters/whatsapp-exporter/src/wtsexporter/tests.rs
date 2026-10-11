@@ -1,6 +1,8 @@
 use super::*;
 use crate::ios_backup::DecryptedWhatsapp;
 use media::testutil::write_with_mode;
+#[cfg(unix)]
+use media::testutil::{RUNNABLE, write_program, write_runnable};
 use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
@@ -599,26 +601,13 @@ fn a_full_disk_before_wtsexporter_starts_is_the_free_space_error() {
     assert_eq!(denied.to_string(), "create work/decryption.key");
 }
 
-/// A whole stand-in for wtsexporter: it answers `--help`, as the real one
-/// does, by exiting successfully.
-#[cfg(unix)]
-const WHOLE_STAND_IN: &str = "#!/bin/sh\nexit 0\n";
-
-/// `contents` at `path`, executable by everyone.
-#[cfg(unix)]
-fn write_program(path: &Path, contents: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    fs::write(path, contents).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-}
-
 /// wtsexporter is always the app's own copy in the Tools Directory.
 #[cfg(unix)]
 #[test]
 fn wtsexporter_is_found_in_the_tools_directory() {
     let tools = tempfile::tempdir().unwrap();
     let program = tools.path().join(wtsexporter_file_name());
-    write_program(&program, WHOLE_STAND_IN);
+    write_runnable(&program);
 
     assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
     assert!(wtsexporter_runs(tools.path()));
@@ -633,7 +622,7 @@ fn wtsexporter_is_found_in_the_tools_directory() {
 fn a_wtsexporter_cut_short_is_refused() {
     let tools = tempfile::tempdir().unwrap();
     let program = tools.path().join(wtsexporter_file_name());
-    write_program(&program, &WHOLE_STAND_IN[..8]);
+    write_program(&program, &RUNNABLE[..8]);
 
     let err = wtsexporter_in(Some(tools.path())).expect_err("cut short");
     let message = err.to_string();
@@ -647,7 +636,7 @@ fn a_wtsexporter_cut_short_is_refused() {
     assert!(!wtsexporter_runs(tools.path()), "the check refuses it too");
 
     // The copy ends, and the whole file is used at once.
-    write_program(&program, WHOLE_STAND_IN);
+    write_runnable(&program);
     assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
 }
 
@@ -658,7 +647,7 @@ fn a_wtsexporter_cut_short_is_refused() {
 fn a_wtsexporter_still_being_written_is_refused() {
     let tools = tempfile::tempdir().unwrap();
     let program = tools.path().join(wtsexporter_file_name());
-    write_program(&program, WHOLE_STAND_IN);
+    write_runnable(&program);
     let writer = fs::File::options().write(true).open(&program).unwrap();
 
     assert!(wtsexporter_in(Some(tools.path())).is_err());

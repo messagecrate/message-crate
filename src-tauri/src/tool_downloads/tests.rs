@@ -441,25 +441,19 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     assert!(reason.contains(&sha256_hex(b"ffmpeg")), "{reason}");
 }
 
-/// A program that answers `-version` and `--help`, as the check asks
-/// ffmpeg and wtsexporter to before it counts them in place. A file that
-/// does not run would read as one that does not run, or as one still being
-/// copied in (#2692).
-const RUNNABLE: &[u8] = b"#!/bin/sh\nexit 0\n";
+// A program the check counts in place must answer `-version` (ffmpeg) or
+// `--help` (wtsexporter): a file that does not run reads as one that does
+// not run, or as one still being copied in (#2692).
+#[cfg(unix)]
+use media::testutil::{RUNNABLE, write_program, write_runnable};
 
 /// A program from an older release, which runs.
+#[cfg(unix)]
 const OLD_RELEASE: &[u8] = b"#!/bin/sh\n# old release\nexit 0\n";
 
 /// A program from a newer release, which runs.
-const NEW_RELEASE: &[u8] = b"#!/bin/sh\n# new release\nexit 0\n";
-
-/// Write a program at `path` that answers `-version`.
 #[cfg(unix)]
-fn write_runnable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::write(path, RUNNABLE).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-}
+const NEW_RELEASE: &[u8] = b"#!/bin/sh\n# new release\nexit 0\n";
 
 /// ffmpeg and ffprobe on `PATH` are used as they are, and neither is
 /// downloaded; wtsexporter still is.
@@ -1173,7 +1167,6 @@ fn a_program_put_in_place_during_a_wait_ends_the_tries() {
 #[cfg(unix)]
 #[test]
 fn a_program_cut_short_during_a_wait_does_not_end_the_tries() {
-    use std::os::unix::fs::PermissionsExt;
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
@@ -1189,8 +1182,7 @@ fn a_program_cut_short_during_a_wait_does_not_end_the_tries() {
         &downloads,
         &|pause| {
             waits.borrow_mut().push(pause);
-            std::fs::write(&target, &RUNNABLE[..8]).unwrap();
-            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+            write_program(&target, &RUNNABLE[..8]);
         },
     );
 

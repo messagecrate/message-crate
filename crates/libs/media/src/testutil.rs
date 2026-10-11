@@ -184,3 +184,23 @@ pub fn write_with_mode(path: &Path, mode: u32) {
     #[cfg(not(unix))]
     let _ = mode;
 }
+
+/// A shell script that exits successfully whatever it is asked, as a whole
+/// program answers `-version` or `--help`.
+#[cfg(unix)]
+pub const RUNNABLE: &[u8] = b"#!/bin/sh\nexit 0\n";
+
+/// Write `contents` at `path`, executable by everyone, as a program put in
+/// the Tools Directory for a test.
+#[cfg(unix)]
+pub fn write_program(path: &Path, contents: &[u8]) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, contents).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// Write [`RUNNABLE`] at `path`, executable by everyone: a program that runs.
+#[cfg(unix)]
+pub fn write_runnable(path: &Path) {
+    write_program(path, RUNNABLE);
+}

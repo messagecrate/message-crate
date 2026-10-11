@@ -10,9 +10,9 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context, Result, bail};
 
 /// Where this process looks for ffmpeg and ffprobe, and which programs
-/// answered the question they are asked: `-version` for ffmpeg and ffprobe,
-/// and the arguments [`tool_in_dir`] is given for another program, such as
-/// `--help` for wtsexporter.
+/// answered the arguments they were run with: `-version` for ffmpeg and
+/// ffprobe, and the arguments [`tool_in_dir`] is given for another program,
+/// such as `--help` for wtsexporter.
 struct ToolsState {
     /// The Tools Directory, searched after `PATH`. The desktop app sets it
     /// for itself and passes it to the server it starts (`serve
@@ -23,12 +23,13 @@ struct ToolsState {
     /// not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     generation: u64,
-    /// The files that answered, by path, each beside the file as it was
-    /// when it answered. A path is always asked the same question, because
-    /// its file name says which program it is. Every lookup searches `PATH` and the Tools
-    /// Directory again, which only reads file metadata, and a lookup runs
-    /// once per file staged and once per Asset shown; the answer kept here
-    /// means a file that answered is not run again until it changes.
+    /// The files that answered, by path and the arguments they were run
+    /// with, each beside the file as it was when it answered. Every lookup
+    /// searches `PATH` and the Tools Directory again, which only reads file
+    /// metadata, and a lookup runs once per file staged and once per Asset
+    /// shown; the answer kept here means a file that answered is not run
+    /// again until it changes. The arguments are part of the key, so an
+    /// answer to one question never stands for another.
     ///
     /// Only an answer is kept, never a failure. A file Gatekeeper blocks, one
     /// missing a shared library, or one that failed to start for a passing
@@ -36,7 +37,7 @@ struct ToolsState {
     /// approval in System Settings, an installed library, the passing cause
     /// going away) leaves the file's modified time, size and permissions as
     /// they were, and a kept failure would hide the fix until a restart.
-    answered: HashMap<PathBuf, FileStamp>,
+    answered: HashMap<(PathBuf, Vec<String>), FileStamp>,
 }
 
 /// What tells one version of a file from another without reading it: a
@@ -404,14 +405,21 @@ pub fn is_executable(path: &Path) -> bool {
 }
 
 /// True when `candidate`, as `file` describes it, exits successfully run
-/// with `args`, which is `-version` for ffmpeg and ffprobe. An
-/// answer is kept in [`ToolsState::answered`], so the same file is run once
-/// until it changes or the lookup is forgotten; a failure is not kept, so
+/// with `args`, which is `-version` for ffmpeg and ffprobe. An answer is
+/// kept in [`ToolsState::answered`] under the file and `args`, so the same
+/// file asked the same question is run once until it changes or the lookup
+/// is forgotten; a failure is not kept, so
 /// the file is run again on the next lookup. No lock is held while it runs.
 fn candidate_runs(candidate: &Path, file: FileStamp, args: &[&str]) -> bool {
+    let key = (
+        candidate.to_path_buf(),
+        args.iter()
+            .map(|arg| (*arg).to_string())
+            .collect::<Vec<_>>(),
+    );
     let generation = {
         let state = tools_state().lock().expect("tools state lock");
-        if state.answered.get(candidate) == Some(&file) {
+        if state.answered.get(&key) == Some(&file) {
             return true;
         }
         state.generation
@@ -420,7 +428,7 @@ fn candidate_runs(candidate: &Path, file: FileStamp, args: &[&str]) -> bool {
     if runs {
         let mut state = tools_state().lock().expect("tools state lock");
         if state.generation == generation {
-            state.answered.insert(candidate.to_path_buf(), file);
+            state.answered.insert(key, file);
         }
     }
     runs
