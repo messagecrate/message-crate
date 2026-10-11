@@ -184,9 +184,7 @@ async fn a_build_refused_by_another_account_named_demo_names_that_account() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let (pool, mut conn) = test_db(&db).await;
-    account_profile::insert_account_at(&mut conn, 7, "Demo", None, None)
-        .await
-        .expect("an account holds the name");
+    crate::test_support::insert_account_with_id(&mut conn, 7, "Demo").await;
     let seed = DemoSeed {
         owner: DemoOwner {
             display_name: "Demo User".into(),
