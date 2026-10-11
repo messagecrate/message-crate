@@ -6,7 +6,6 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use image::{ImageBuffer, Rgb};
-use sha2::{Digest, Sha256};
 
 /// Demo JPEG photos (path relative to export dir, display name, base color).
 pub struct JpgPhoto {
@@ -122,7 +121,7 @@ pub fn write_attachment_files(dir: &Path) -> Result<HashMap<String, (String, u64
 
 /// Store the content fingerprint and byte length for `relative_path`.
 fn record_digest(digests: &mut HashMap<String, (String, u64)>, relative_path: &str, bytes: &[u8]) {
-    let sha = hex::encode(Sha256::digest(bytes));
+    let sha = file_io::sha256_hex(bytes);
     digests.insert(relative_path.into(), (sha, bytes.len() as u64));
 }
 

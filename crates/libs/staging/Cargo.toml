@@ -8,7 +8,6 @@ license = "LicenseRef-FCL-1.0-ALv2"
 [dependencies]
 anyhow = { workspace = true }
 fs2 = "0.4.3"
-hex = { workspace = true }
 media = { path = "../media" }
 file-io = { workspace = true }
 message-ir = { path = "../ir" }
@@ -16,7 +15,6 @@ message-ir-format = { path = "../ir-format" }
 message-crate-core = { path = "../../core/message-crate-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }

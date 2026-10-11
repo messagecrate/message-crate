@@ -10,6 +10,7 @@ android-fields = { path = "../../libs/android-fields" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
+file-io = { workspace = true }
 hex = { workspace = true }
 mail = { path = "../../libs/mail" }
 mail-builder = { workspace = true }
