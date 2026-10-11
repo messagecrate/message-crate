@@ -10,8 +10,8 @@ import type { ToolStatus, ToolsStatus } from "../../lib/tauri";
 import type { AttachmentChoices } from "../../lib/types";
 import {
   emptyWhatsappPathStats,
+  WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
   WHATSAPP_ERR_CRYPT_KEY,
-  WHATSAPP_ERR_DIRECTORY_IS_FILE,
   WHATSAPP_ERR_OWNER_PHONE,
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
@@ -463,7 +463,7 @@ describe("ImportFormFields WhatsApp methods", () => {
         backupEncrypted: null,
       },
     });
-    expect(screen.getByText(WHATSAPP_ERR_DIRECTORY_IS_FILE)).toBeTruthy();
+    expect(screen.getByText(WHATSAPP_ERR_BACKUP_NOT_DIRECTORY)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 });

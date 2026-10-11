@@ -1,4 +1,4 @@
-import { checkOptionalPath, type ImportPathStat, PATH_MISSING } from "./pathChecks";
+import { checkOptionalPath, checkRequiredPath, type ImportPathStat } from "./pathChecks";
 
 export const WHATSAPP_SOURCE_ID = "whatsapp";
 
@@ -75,7 +75,7 @@ export function emptyWhatsappPathStats(): WhatsappPathStats {
   };
 }
 
-export const WHATSAPP_ERR_DIRECTORY_IS_FILE = "Pick the backup directory.";
+export const WHATSAPP_ERR_BACKUP_NOT_DIRECTORY = "Pick the backup directory.";
 export const WHATSAPP_ERR_CRYPT_KEY = "Decryption key is required for an encrypted backup.";
 export const WHATSAPP_ERR_ENCRYPTED_PASSWORD =
   "The backup is encrypted — fill Encryption password.";
@@ -129,12 +129,13 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
     return { enabled: false, errors: {} };
   }
 
-  const backupStat = args.stats.backup;
-  if (!backupStat.exists) {
-    errors.backupPath = PATH_MISSING;
-  } else if (!backupStat.isDirectory) {
-    errors.backupPath = WHATSAPP_ERR_DIRECTORY_IS_FILE;
-  }
+  checkRequiredPath(
+    args.stats.backup,
+    errors,
+    "backupPath",
+    WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
+    "directory",
+  );
 
   if (
     args.method === "whatsapp-android" &&

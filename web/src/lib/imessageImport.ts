@@ -1,4 +1,9 @@
-import { checkOptionalPath, type ImportPathStat, PATH_MISSING } from "./pathChecks";
+import {
+  checkOptionalPath,
+  checkRequiredPath,
+  type ImportPathStat,
+  type PathKind,
+} from "./pathChecks";
 
 export const IMESSAGE_SOURCE_ID = "imessage";
 
@@ -74,14 +79,22 @@ export function imessageStatsForMethod(
   };
 }
 
-export const IMESSAGE_ERR_IPHONE_PATH_IS_FILE = "Pick the backup directory.";
-export const IMESSAGE_ERR_MAC_PATH_IS_DIR = "Pick chat.db.";
-export const IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR = "Pick sms.db.";
-export const IMESSAGE_ERR_ATTACHMENT_IS_FILE =
+export const IMESSAGE_ERR_IPHONE_NOT_DIRECTORY = "Pick the backup directory.";
+export const IMESSAGE_ERR_MAC_NOT_FILE = "Pick chat.db.";
+export const IMESSAGE_ERR_JAILBREAK_NOT_FILE = "Pick sms.db.";
+export const IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY =
   "Pick the directory that contains Attachments and StickerCache.";
-export const IMESSAGE_ERR_CONTACTS_IS_DIR = "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
+export const IMESSAGE_ERR_CONTACTS_NOT_FILE =
+  "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
 export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
   "The backup is encrypted — fill Encryption password.";
+
+/** The kind of path each method's backup path field takes, and its message for any other. */
+const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, { expected: PathKind; kindError: string }> = {
+  "imessage-ios": { expected: "directory", kindError: IMESSAGE_ERR_IPHONE_NOT_DIRECTORY },
+  "imessage-macos": { expected: "file", kindError: IMESSAGE_ERR_MAC_NOT_FILE },
+  "imessage-jailbreak": { expected: "file", kindError: IMESSAGE_ERR_JAILBREAK_NOT_FILE },
+};
 
 type ImessageCanImportArgs = {
   method: ImessageMethodId;
@@ -109,28 +122,8 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
     return { enabled: false, errors: {} };
   }
 
-  const backupStat = args.stats.backup;
-  if (!backupStat.exists) {
-    errors.backupPath = PATH_MISSING;
-  } else {
-    switch (args.method) {
-      case "imessage-ios":
-        if (!backupStat.isDirectory) {
-          errors.backupPath = IMESSAGE_ERR_IPHONE_PATH_IS_FILE;
-        }
-        break;
-      case "imessage-macos":
-        if (!backupStat.isFile) {
-          errors.backupPath = IMESSAGE_ERR_MAC_PATH_IS_DIR;
-        }
-        break;
-      case "imessage-jailbreak":
-        if (!backupStat.isFile) {
-          errors.backupPath = IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR;
-        }
-        break;
-    }
-  }
+  const backup = IMESSAGE_BACKUP_PATH[args.method];
+  checkRequiredPath(args.stats.backup, errors, "backupPath", backup.kindError, backup.expected);
 
   const attachmentRoot = args.attachmentRoot.trim();
 
@@ -140,7 +133,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
       args.stats.attachmentRoot,
       errors,
       "attachmentRoot",
-      IMESSAGE_ERR_ATTACHMENT_IS_FILE,
+      IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
       "directory",
     );
   }
@@ -151,7 +144,7 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
       args.stats.appleContacts,
       errors,
       "appleContacts",
-      IMESSAGE_ERR_CONTACTS_IS_DIR,
+      IMESSAGE_ERR_CONTACTS_NOT_FILE,
       "file",
     );
   }

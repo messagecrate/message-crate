@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
 import { PATH_MISSING } from "./pathChecks";
 import {
   isWhatsappMethod,
+  WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,
   WHATSAPP_ERR_CRYPT_KEY,
-  WHATSAPP_ERR_DIRECTORY_IS_FILE,
   WHATSAPP_ERR_ENCRYPTED_PASSWORD,
   WHATSAPP_ERR_MUST_BE_DIRECTORY,
   WHATSAPP_ERR_MUST_BE_FILE,
@@ -13,9 +14,6 @@ import {
   whatsappShowsBusiness,
   whatsappShowsKey,
 } from "./whatsappImport";
-
-const dir = { exists: true, isFile: false, isDirectory: true };
-const file = { exists: true, isFile: true, isDirectory: false };
 
 describe("whatsappImport", () => {
   it("knows its two methods and the fields each shows", () => {
@@ -29,7 +27,6 @@ describe("whatsappImport", () => {
   });
 
   it("disables Import when the backup directory does not exist", () => {
-    const missing = { exists: false, isFile: false, isDirectory: false };
     const result = whatsappCanImport({
       method: "whatsapp-android",
       backupPath: "/tmp/missing-wa",
@@ -40,7 +37,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: missing,
+        backup: MISSING_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -54,7 +51,6 @@ describe("whatsappImport", () => {
   });
 
   it("rejects an optional contacts path that does not exist", () => {
-    const missing = { exists: false, isFile: false, isDirectory: false };
     const result = whatsappCanImport({
       method: "whatsapp-android",
       backupPath: "/tmp/wa",
@@ -65,8 +61,8 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
-        contactsDb: missing,
+        backup: DIRECTORY_STAT,
+        contactsDb: MISSING_STAT,
         media: null,
         db: null,
         hasMsgstoreDb: true,
@@ -119,7 +115,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: file,
+        backup: FILE_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -129,12 +125,10 @@ describe("whatsappImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPath).toBe(WHATSAPP_ERR_DIRECTORY_IS_FILE);
+    expect(result.errors.backupPath).toBe(WHATSAPP_ERR_BACKUP_NOT_DIRECTORY);
   });
 
   it("disables Import when the backup path is neither a file nor a directory, for every method", () => {
-    // A socket, a device file, or a pipe: it exists but is neither.
-    const neither = { exists: true, isFile: false, isDirectory: false };
     for (const method of ["whatsapp-android", "whatsapp-ios"] as const) {
       const result = whatsappCanImport({
         method,
@@ -146,7 +140,7 @@ describe("whatsappImport", () => {
         db: "",
         ownerPhone: "+15555550100",
         stats: {
-          backup: neither,
+          backup: NEITHER_STAT,
           contactsDb: null,
           media: null,
           db: null,
@@ -156,7 +150,7 @@ describe("whatsappImport", () => {
         },
       });
       expect(result.enabled, method).toBe(false);
-      expect(result.errors.backupPath, method).toBe(WHATSAPP_ERR_DIRECTORY_IS_FILE);
+      expect(result.errors.backupPath, method).toBe(WHATSAPP_ERR_BACKUP_NOT_DIRECTORY);
     }
   });
 
@@ -171,7 +165,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -195,7 +189,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -219,8 +213,8 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
-        contactsDb: dir,
+        backup: DIRECTORY_STAT,
+        contactsDb: DIRECTORY_STAT,
         media: null,
         db: null,
         hasMsgstoreDb: true,
@@ -243,9 +237,9 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
-        media: file,
+        media: FILE_STAT,
         db: null,
         hasMsgstoreDb: true,
         cryptName: null,
@@ -267,7 +261,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -292,7 +286,7 @@ describe("whatsappImport", () => {
       db: "",
       ownerPhone: "+15555550100",
       stats: {
-        backup: dir,
+        backup: DIRECTORY_STAT,
         contactsDb: null,
         media: null,
         db: null,
@@ -318,7 +312,7 @@ describe("whatsappImport", () => {
   // preferences, so the field is a fallback and may stay empty.
   it("requires the owner's number on Android and not on iPhone", () => {
     const stats = {
-      backup: dir,
+      backup: DIRECTORY_STAT,
       contactsDb: null,
       media: null,
       db: null,
