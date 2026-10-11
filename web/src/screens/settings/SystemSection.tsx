@@ -411,7 +411,7 @@ export function SystemSection() {
   const stagingId = useId();
   /** The Staging Directory the desktop process holds now. */
   const stagingQuery = useQuery({
-    queryKey: keys.desktopStagingRoot.all,
+    queryKey: keys.desktopStagingDirectory.all,
     queryFn: invokeStagingRoot,
     enabled: isTauri(),
     retry: false,
@@ -447,7 +447,7 @@ export function SystemSection() {
       () => {
         // Read again rather than keep this answer: answers can arrive out of
         // order, and the read after the last one is what the process holds.
-        void queryClient.invalidateQueries({ queryKey: keys.desktopStagingRoot.all });
+        void queryClient.invalidateQueries({ queryKey: keys.desktopStagingDirectory.all });
         if (gen !== stagingSaveGen.current) return;
         setSaveError(null);
       },
@@ -461,23 +461,18 @@ export function SystemSection() {
   // A value the desktop process refused stays in the field until it is left.
   // The field then shows the directory the desktop process holds, read once the
   // last save has answered, so a value accepted after the refusal is never
-  // hidden behind the one shown before it.
+  // hidden behind the one shown before it. What it reads goes into the
+  // query's cache, which the field shows once the typed value is dropped.
   const onStagingPathBlur = () => {
     if (stagingError === null) return;
     const gen = ++stagingSaveGen.current;
     setSaveError(null);
     lastStagingSave.current
       .catch(() => undefined)
-      .then(() =>
-        queryClient.fetchQuery({
-          queryKey: keys.desktopStagingRoot.all,
-          queryFn: invokeStagingRoot,
-          staleTime: 0,
-          retry: false,
-        }),
-      )
+      .then(() => invokeStagingRoot())
       .then(
-        () => {
+        (staging) => {
+          queryClient.setQueryData(keys.desktopStagingDirectory.all, staging);
           if (gen !== stagingSaveGen.current) return;
           setTypedStagingPath(null);
         },
