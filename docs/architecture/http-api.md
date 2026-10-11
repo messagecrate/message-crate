@@ -455,6 +455,26 @@ the sentence.
 Rejected: a request id on `5xx` only. A body whose members vary by status is
 the drift the one-shape rule exists to stop.
 
+`/health` answers `ok` only when the server can take a database connection and
+run `SELECT 1` on it within a short limit (`HEALTH_DATABASE_LIMIT`, 1.5
+seconds). When it cannot, it fails as a `/v1` call fails, with a `500` problem
+document. Why: the web app's login card and the release image's Docker health
+check ask `/health` whether a server can answer, and a server whose pool is
+exhausted or whose database cannot be opened answers no `/v1` call, so `ok`
+from the process alone told them it was up while every page failed. The
+desktop app's watch on its own server asks `GET /v1/server`, which reads the
+database, so the two disagreed
+([#2202](https://github.com/messagecrate/message-crate/issues/2202)). Why
+`SELECT 1` and a short limit: it reads no table, so it never waits on an
+import's write lock, and the imports hold at most two of the pool's four
+connections, so a busy import still leaves two for the check and the pages.
+The limit stays under the two seconds the Docker health check gives each
+address.
+
+Rejected: `503 Service Unavailable`. Every registered problem type is a `4xx`
+whose remedy a client can act on, and a server that cannot reach its own
+database is the `500` no page could help with.
+
 ## Content negotiation
 
 `406 Not Acceptable` is answered only when an `Accept` header is present and no
