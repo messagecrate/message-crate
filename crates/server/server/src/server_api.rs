@@ -9,6 +9,9 @@
 //!
 //! It also reports the attachment size limit, because a program that uploads
 //! has to know it before it starts and only the owner reads the settings.
+//! And it reports the journal mode SQLite runs the database in, so Owner Home
+//! can say so when the server could not turn on write-ahead logging, rather
+//! than leave it to a warning in the server's log.
 //!
 //! These are the server's only unauthenticated routes besides logging in and
 //! a stranger's `POST /v1/accounts`, and the first read routes that do not
@@ -77,6 +80,12 @@ pub struct Server {
     pub version: String,
     /// The Schema Fingerprint, the number this server stamps into its database.
     pub schema_fingerprint: i64,
+    /// The journal mode SQLite runs the database in now. The server asks for
+    /// `wal` on every start; any other mode means it could not have it, as
+    /// when another program held the database file or a rollback journal was
+    /// left behind, and then every page waits while an import writes. Owner
+    /// Home says so, and the server's log holds the reason.
+    pub journal_mode: crate::db::engine::JournalMode,
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts, as one `PUT` or as the declared total of a multipart upload.
     /// The owner sets it in the server settings. An app reads it here before
@@ -109,8 +118,8 @@ async fn state_on_conn(conn: &mut sqlx::SqliteConnection) -> Result<ServerState,
 /// Report whether this Message Crate is unclaimed, closed, or open.
 ///
 /// Also reports this Message Crate's id, the server's Build, its Schema
-/// Fingerprint, whether the Demo Account exists, and the attachment size
-/// limit.
+/// Fingerprint, the database's journal mode, whether the Demo Account
+/// exists, and the attachment size limit.
 #[utoipa::path(
     get,
     path = "/v1/server",
@@ -128,6 +137,7 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
                 .is_some(),
         version: crate::BUILD.to_string(),
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
+        journal_mode: crate::db::engine::journal_mode(&mut *conn).await?,
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
     }))
 }

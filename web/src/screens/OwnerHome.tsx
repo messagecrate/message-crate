@@ -14,6 +14,7 @@ import PlainButton from "../components/PlainButton";
 import { useAuth } from "../lib/authContext";
 import { parseSelectKey } from "../lib/selectKey";
 import { useWindowWidth } from "../lib/useWindowWidth";
+import { JournalModeNotice } from "./owner/JournalModeNotice";
 import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";
 import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
 import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
@@ -114,6 +115,7 @@ export default function OwnerHome() {
         onSearchChange={handleSearchChange}
         onSearch={handleSearchChange}
       />
+      <JournalModeNotice />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <nav
           aria-label="Owner Home sections"

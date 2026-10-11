@@ -127,6 +127,39 @@ async fn the_state_route_carries_the_build_and_the_schema_fingerprint() {
     );
 }
 
+/// The route reports the journal mode the database runs in when it is read,
+/// so a server that could not have write-ahead logging says so beside its
+/// Build, where Owner Home reads it.
+#[tokio::test]
+async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
+    use crate::db::engine::JournalMode;
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+
+    let fixture = test_fixture().await;
+    let body: Server = get_json(&fixture.state, "/v1/server", "").await;
+    assert_eq!(body.journal_mode, JournalMode::Wal);
+
+    // A database left in a rollback journal, as one is when the server could
+    // not turn write-ahead logging on.
+    let dir = tempfile::tempdir().unwrap();
+    let pool = SqlitePoolOptions::new()
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(dir.path().join("messagecrate.db"))
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Delete),
+        )
+        .await
+        .unwrap();
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    }
+    let state = crate::server::test_app_state(pool, dir.path());
+    let body: Server = get_json(&state, "/v1/server", "").await;
+    assert_eq!(body.journal_mode, JournalMode::Delete);
+}
+
 /// Two Message Crates have different ids, though both start their account
 /// and Import Run ids at the same numbers, and one Message Crate keeps its id
 /// across reads: the desktop app tells their Import Run logs apart by it.

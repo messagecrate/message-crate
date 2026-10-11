@@ -777,6 +777,15 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **Owner Home says when the database runs without write-ahead
+  logging.** The server turns write-ahead logging on each time it starts, so
+  pages load while an import writes. When it cannot, because another program
+  holds the database file or a journal was left behind, every page waits for
+  each import batch instead, and the only sign was a warning in the server's
+  log. Owner Home now says so above every section, with the cause to look for
+  and what to do: stop the other program, then restart the server. Server
+  Settings shows the journal mode beside the version (#2201).
+
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can
   reach it, without a login. A config that put the Data Directory or the
