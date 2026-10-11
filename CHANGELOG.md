@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way an Upload and an Export remember what they already
+  did for each server and account was reworked inside, with nothing visible
+  (#2253).
+
 - 2026-10-11: The way the Import screen moves between the form, a running
   import and its reviews was reworked inside, with nothing visible (#2252).
 

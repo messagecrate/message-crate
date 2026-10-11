@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 pub use jsonl_journal::ServerTarget;
+use jsonl_journal::TargetedEvent;
 use serde::{Deserialize, Serialize};
 
 /// Filename of the journal, written in the output directory.
@@ -84,20 +85,18 @@ pub fn load(
     target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
 ) -> Result<ExportJournalState> {
-    let mut state = ExportJournalState::default();
-    let events: Vec<ExportJournalEvent> =
-        jsonl_journal::load_events("export journal", path, &mut |line, error| {
-            on_unreadable(unreadable_line_sentence(path, line, error));
-        })?;
-    for event in events.into_iter().filter(|event| event.target() == target) {
-        match event {
+    jsonl_journal::load_for_target(
+        "export journal",
+        path,
+        target,
+        &mut |line, error| on_unreadable(unreadable_line_sentence(path, line, error)),
+        |state: &mut ExportJournalState, event| match event {
             ExportJournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
             ExportJournalEvent::ExportComplete { .. } => state.export_complete = true,
-        }
-    }
-    Ok(state)
+        },
+    )
 }
 
 /// Append one event as a JSON Lines row and flush it to disk.
@@ -121,35 +120,29 @@ pub fn append(path: &Path, event: &ExportJournalEvent) -> Result<()> {
 ///
 /// Returns an error when the temporary file cannot be written or the rename fails.
 pub fn compact(path: &Path, target: &ServerTarget, state: &ExportJournalState) -> Result<()> {
-    jsonl_journal::compact_with::<ExportJournalEvent, _>("export journal", path, |read| {
-        let mut events: Vec<ExportJournalEvent> = read
-            .into_iter()
-            .filter(|event| event.target() != target)
-            .collect();
-        let mut assets: Vec<_> = state.assets.iter().collect();
-        assets.sort_unstable();
-        for sha in assets {
-            events.push(ExportJournalEvent::AssetOk {
-                target: target.clone(),
-                sha256: sha.clone(),
-            });
-        }
-        if state.export_complete {
-            // A later Export Run ignores the counts; an `export_complete` row
-            // only means the last Export Run finished.
-            events.push(ExportJournalEvent::ExportComplete {
-                target: target.clone(),
-                conversations: 0,
-                messages: 0,
-                assets: 0,
-            });
-        }
-        events
-    })
+    let mut events = Vec::new();
+    let mut assets: Vec<_> = state.assets.iter().collect();
+    assets.sort_unstable();
+    for sha in assets {
+        events.push(ExportJournalEvent::AssetOk {
+            target: target.clone(),
+            sha256: sha.clone(),
+        });
+    }
+    if state.export_complete {
+        // A later Export Run ignores the counts; an `export_complete` row
+        // only means the last Export Run finished.
+        events.push(ExportJournalEvent::ExportComplete {
+            target: target.clone(),
+            conversations: 0,
+            messages: 0,
+            assets: 0,
+        });
+    }
+    jsonl_journal::compact_for_target("export journal", path, target, events)
 }
 
-impl ExportJournalEvent {
-    /// The server and account of the run that wrote this line.
+impl TargetedEvent for ExportJournalEvent {
     fn target(&self) -> &ServerTarget {
         match self {
             Self::AssetOk { target, .. } | Self::ExportComplete { target, .. } => target,
