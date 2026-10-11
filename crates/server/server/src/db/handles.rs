@@ -142,8 +142,8 @@ pub fn check_service_carries(
 /// The service an identity is on, as a request names it and the profile
 /// reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
 /// SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
-/// The service never decides the identity's type, which comes from the
-/// address.
+/// The address's shape picks the identity's type among those the service
+/// carries, so an address with an `@` is `other` on WhatsApp.
 //
 // Any other word is refused, naming the two. Read as `phone`, a misspelt
 // `whatsap` put an identity on Text Message without a word (#1630), and

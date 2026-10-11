@@ -484,9 +484,9 @@ pub struct LinkAccountIdentityRequest {
 pub struct UnlinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// The service the address is on. It never decides the identity's type,
-    /// which comes from the address: an email address is on the phone
-    /// service.
+    /// The service the address is on. The identity is found as the type
+    /// the address takes there: an address with an `@` is an email address
+    /// on the phone service, and `other` on WhatsApp.
     pub service: ApiIdentityService,
 }
 

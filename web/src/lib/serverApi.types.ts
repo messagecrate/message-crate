@@ -3027,8 +3027,8 @@ export interface components {
          * @description The service an identity is on, as a request names it and the profile
          *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
          *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
-         *     The service never decides the identity's type, which comes from the
-         *     address.
+         *     The address's shape picks the identity's type among those the service
+         *     carries, so an address with an `@` is `other` on WhatsApp.
          * @enum {string}
          */
         IdentityService: "phone" | "whatsapp";
@@ -5469,9 +5469,9 @@ export interface components {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service.
+             * @description The service the address is on. The identity is found as the type
+             *     the address takes there: an address with an `@` is an email address
+             *     on the phone service, and `other` on WhatsApp.
              */
             service: components["schemas"]["IdentityService"];
         };
