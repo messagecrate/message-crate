@@ -161,7 +161,7 @@ resolves it.
 
    ```bash
    bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
-       -F body=@<reply-file>   # <!-- pr-review -->, then Fixed in <sha>: <what changed>.
+       -F body=@<reply-file>   # first line <!-- pr-review -->, then a line: Fixed in <sha>: <what changed>.
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
@@ -287,9 +287,10 @@ replies, pull requests), apart from its hourly limit: about 80 a minute and
 500 an hour. Every session shares one account: the user's, or the app's for
 `pr-review` ("Review on the pull request"). So make those calls one at a time,
 at least a second apart. When GitHub refuses one for this limit ("submitted
-too quickly", or a 403, 422 or 429 whose reply names a secondary rate limit),
-check that it did not land, wait a minute (or the `retry-after` it gives), and
-send the same call again.
+too quickly", or a `403 Forbidden`, `422 Unprocessable Entity` or
+`429 Too Many Requests` whose reply names a secondary rate limit), check that
+it did not land, wait a minute (or the `retry-after` it gives), and send the
+same call again.
 
 #### Merging
 
