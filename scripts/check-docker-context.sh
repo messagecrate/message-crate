@@ -185,7 +185,7 @@ elif [[ -z "${image_frontend}" ]]; then
   echo "${DOCKERFILE}: could not read a FROM ... AS frontend-builder stage" >&2
   failures=$((failures + 1))
 elif [[ ! "${image_frontend}" =~ ^node:([0-9]+)([.@-]|$) ]]; then
-  echo "${DOCKERFILE}: the frontend-builder stage is not a node:<major>-<variant> image: ${image_frontend}" >&2
+  echo "${DOCKERFILE}: the frontend-builder stage is not a node:<major>[.<minor>[.<patch>]][-<variant>] image: ${image_frontend}" >&2
   failures=$((failures + 1))
 elif [[ "${BASH_REMATCH[1]}" != "${nvmrc_major}" ]]; then
   echo "${DOCKERFILE}: the frontend-builder stage is on Node.js ${BASH_REMATCH[1]}, .nvmrc names ${nvmrc_major}; keep them on one major" >&2

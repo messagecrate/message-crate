@@ -23,7 +23,7 @@
 # Each FROM names its base image by tag and digest. The tag is for the
 # reader, and scripts/check-docker-context.sh reads the Rust minor and the
 # frontend stage's Node.js major from it. That major must be the one in
-# .nvmrc, which every workflow that installs Node.js reads.
+# .nvmrc; the script says why.
 # The digest fixes the image, so two builds of one commit start from the
 # same bases. Dependabot's docker entry in .github/dependabot.yml moves the
 # digests by pull request, and scripts/check-docker-context.sh fails a FROM
