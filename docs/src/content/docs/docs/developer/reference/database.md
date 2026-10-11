@@ -99,7 +99,13 @@ sets `account_id` NULL here and on its `imports` and `exports`, which keep the
 `username`, and marks each of them with `deletion_entry_id`, the id of the
 account's `account_deleted` row, by which the deleted account is read apart
 from any other account given its username. Refused logins for a username no
-account has are deleted after 90 days; nothing else is.
+account has are deleted after 90 days; nothing else is. Two triggers hold
+this for any statement, one run by hand included. `audit_entries_never_edited`
+refuses every update except the two that deleting an account makes:
+`deletion_entry_id` set once, to the `account_deleted` row about the same
+account, and `account_id` set NULL once that account's row is gone.
+`audit_entries_never_deleted` refuses the delete of any row but a refused login
+for an unknown username.
 
 ### `message_crate`
 

@@ -4,6 +4,7 @@ use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
 use crate::progress::Progress;
 use crate::test_support::{
     ConversationRow, MessageRow, conversation_header, message_line, stored_time,
+    with_trigger_lifted,
 };
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
@@ -645,11 +646,17 @@ async fn reset_check_refuses_a_reset_that_loses_the_old_demo_accounts_audit_trai
     write_tiny_reset_bundle(&bundle);
     let cfg = test_config(&db, &temp.path().join("data"));
 
+    // The schema refuses the delete, so the trigger is lifted for it: the
+    // check still has to catch a reset that gets past it.
     let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |db| {
-        sqlx::query("DELETE FROM audit_entries WHERE id = $1")
-            .bind(entry)
-            .execute(db)
-            .await?;
+        let mut conn = db.acquire().await?;
+        with_trigger_lifted(&mut conn, "audit_entries_never_deleted", async |conn| {
+            sqlx::query("DELETE FROM audit_entries WHERE id = $1")
+                .bind(entry)
+                .execute(conn)
+                .await
+        })
+        .await?;
         Ok(())
     })
     .await;
