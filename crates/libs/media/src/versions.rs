@@ -133,6 +133,15 @@ pub(crate) fn browser_shows_with(
     Some(tools.probe(src).is_ok_and(|probe| probe.codec == "h264"))
 }
 
+/// Whether every browser shows a file of `media_type` as it is, judged by
+/// the type alone: a JPEG, PNG, GIF, WebP or MP3. What a caller assumes
+/// when [`browser_shows`] answers `None` and it knows nothing better, so an
+/// original that cannot be read is not given a Preview its type never needs.
+#[must_use]
+pub fn shown_as_is_by_type(media_type: Option<&str>) -> bool {
+    media_type.is_some_and(|media_type| SHOWN_AS_IS.iter().any(|(shown, _)| *shown == media_type))
+}
+
 /// The first [`HEAD_LEN`] bytes of `src`, or all of it when it is shorter.
 fn read_head(src: &Path) -> std::io::Result<Vec<u8>> {
     use std::io::Read;

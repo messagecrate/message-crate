@@ -57,7 +57,9 @@ import to name a fingerprint's type decides it for good. So a JPEG, PNG, GIF,
 WebP or MP3 is shown as it is only when its first bytes are that type's
 signature. One that starts as anything else gets a Preview, a file called a
 GIF included (#2257). One that cannot be read keeps the decision an earlier
-pass recorded. An MP4 is opened by ffprobe, to read
+pass recorded, because nothing is known about its bytes. Its type alone then
+decides whether the pass wants a Preview of it, so a missing JPEG is not
+recorded as a Preview not made, which its type never needs. An MP4 is opened by ffprobe, to read
 its video codec, so a HEVC video in an `.mp4` gets a Preview too. The list is
 exact rather than generous: AAC audio in an `.m4a` plays in most browsers and
 still gets a Preview, because a list that holds a type most browsers show
@@ -105,9 +107,8 @@ still fetches the original and hands it over.
 - The **Preview**, a copy a browser can play or show: a JPEG of an image, an
   MP4 of a video with H.264 video at most 1080p and AAC audio, an MP3 of
   audio. Only an attachment of a type in rule 2 that browsers often cannot
-  show has one, or one whose bytes are not its type's (rule 2). A GIF has
-  none, because a still copy of an animation is not the animation. A file
-  called a GIF whose bytes are not one has one, like any other image.
+  show has one, or one whose bytes are not its type's (rule 2). A real GIF
+  has none, because a still copy of an animation is not the animation.
 - The **original**, as it was imported, never changed.
 
 The Thumbnail and the Preview are stored in the account's converted

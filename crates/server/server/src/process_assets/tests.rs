@@ -1144,6 +1144,40 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
 }
 
+/// A missing original says nothing about its bytes, so its type decides
+/// whether it needs a Preview: a missing GIF or JPEG is not recorded as a
+/// Preview not made, which its type never needs (#2257).
+#[tokio::test]
+async fn a_missing_original_of_a_type_shown_as_is_wants_no_preview() {
+    for (mime, bytes) in [
+        ("image/gif", &b"GIF89a rest"[..]),
+        ("image/jpeg", &b"\xFF\xD8\xFF\xE0 rest"[..]),
+    ] {
+        let (opened, _dir) = open_db().await;
+        let mut conn = opened.conn().await.unwrap();
+        seed_account(&mut conn, ACCOUNT).await;
+        let message_id = seed_message(&mut conn, "imessage").await;
+        let attachment_id =
+            attach_stored_original(&opened, &mut conn, message_id, SHA, mime, bytes).await;
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::remove_file(&original).unwrap();
+
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, Some("the original file is missing".to_string())),
+            "{mime}"
+        );
+    }
+}
+
 /// Why each version of one attachment row was not made: Preview, then
 /// Thumbnail.
 async fn not_made_reasons(
