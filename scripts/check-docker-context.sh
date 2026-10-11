@@ -72,7 +72,8 @@ else
     echo "${DOCKERFILE}: COPY rust-toolchain.toml into the rust-builder stage so the image compiles with the pinned Rust ${channel}" >&2
     failures=$((failures + 1))
   fi
-  image_rust="$(sed -n 's/^FROM rust:\([0-9][0-9.]*\).*$/\1/p' "${DOCKERFILE}" | head -1)"
+  # The keyword in any case, after any indent, and past any --flag=value.
+  image_rust="$(sed -n 's/^[[:space:]]*[Ff][Rr][Oo][Mm][[:space:]]\{1,\}\(--[^[:space:]]*[[:space:]]\{1,\}\)*rust:\([0-9][0-9.]*\).*$/\2/p' "${DOCKERFILE}" | head -1)"
   if [[ -z "${image_rust}" ]]; then
     echo "${DOCKERFILE}: could not read a rust:<version> base image" >&2
     failures=$((failures + 1))
@@ -86,12 +87,34 @@ fi
 # FROM by tag alone can start two builds of one commit from different
 # images. Each FROM names its digest after the tag, and Dependabot's docker
 # entry moves the digests by pull request (#2179).
+# Docker reads the keyword in any case and after an indent, a --flag=value
+# such as --platform may come before the image, and a FROM that names an
+# earlier stage (AS <name>) has no image of its own to pin.
+stages=()
 while IFS= read -r from; do
-  if [[ ! "${from}" =~ ^FROM[[:space:]]+[^[:space:]]+:[^[:space:]@]+@sha256:[0-9a-f]{64}([[:space:]]|$) ]]; then
+  read -ra words <<<"${from}"
+  image=""
+  stage=""
+  for ((k = 1; k < ${#words[@]}; k++)); do
+    word="${words[k]}"
+    if [[ -z "${image}" ]]; then
+      [[ "${word}" == --* ]] && continue
+      image="${word}"
+    elif [[ "${word,,}" == "as" && $((k + 1)) -lt ${#words[@]} ]]; then
+      stage="${words[k + 1],,}"
+      break
+    fi
+  done
+  earlier=0
+  for name in "${stages[@]}"; do
+    [[ "${image,,}" == "${name}" ]] && earlier=1
+  done
+  if [[ "${earlier}" -eq 0 && ! "${image}" =~ ^[^@[:space:]]+:[^@/:[:space:]]+@sha256:[0-9a-f]{64}$ ]]; then
     echo "${DOCKERFILE}: pin the base image by tag and digest (FROM <image>:<tag>@sha256:<digest>): ${from}" >&2
     failures=$((failures + 1))
   fi
-done < <(grep -E '^FROM[[:space:]]' "${DOCKERFILE}")
+  [[ -n "${stage}" ]] && stages+=("${stage}")
+done < <(grep -iE '^[[:space:]]*FROM[[:space:]]' "${DOCKERFILE}")
 
 if [[ ${failures} -gt 0 ]]; then
   echo "Docker context check failed (${failures} failure(s))." >&2
