@@ -425,21 +425,40 @@ fn message_to_ir(
 }
 
 /// The Apple-specific fields, field for field.
+///
+/// The record is destructured without `..`, so a field added to the
+/// reader's `Imessage` fails to compile here until it is carried, just as a
+/// field added to `IrImessage` does.
 fn imessage_to_ir(fields: ImessageRecord) -> IrImessage {
+    let ImessageRecord {
+        send_effect,
+        shared_location,
+        announcement,
+        read_receipt_rfc3339,
+        parts,
+        app,
+        balloon_bundle_id,
+        balloon_kind,
+        associated_guid,
+        associated_part,
+        tapback_kind,
+        tapback_emoji,
+        tapback_action,
+    } = fields;
     IrImessage {
-        send_effect: fields.send_effect,
-        shared_location: fields.shared_location,
-        announcement: fields.announcement,
-        read_receipt_rfc3339: fields.read_receipt_rfc3339,
-        parts: fields.parts,
-        app: fields.app,
-        balloon_bundle_id: fields.balloon_bundle_id,
-        balloon_kind: fields.balloon_kind,
-        associated_guid: fields.associated_guid,
-        associated_part: fields.associated_part,
-        tapback_kind: fields.tapback_kind,
-        tapback_emoji: fields.tapback_emoji,
-        tapback_action: fields.tapback_action,
+        send_effect,
+        shared_location,
+        announcement,
+        read_receipt_rfc3339,
+        parts,
+        app,
+        balloon_bundle_id,
+        balloon_kind,
+        associated_guid,
+        associated_part,
+        tapback_kind,
+        tapback_emoji,
+        tapback_action,
     }
 }
 
