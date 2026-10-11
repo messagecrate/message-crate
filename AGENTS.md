@@ -129,11 +129,11 @@ resolves it.
    Repeat the three `comments[]` fields for each finding, every one with
    `-F`. `gh` adds every `-f` field before every `-F` field, so with mixed
    flags a second finding's line lands in the wrong `comments[]` object and
-   GitHub answers `422`. The marker starts the summary file and each finding
-   file, because the finding's comment opens the thread. A finding with no
-   line in the diff goes in a top-level comment instead, with the marker on
-   its first line. It has no thread, so it is answered by a new marked
-   top-level comment that quotes it:
+   GitHub answers `422 Unprocessable Entity`. The marker starts the summary
+   file and each finding file, because the finding's comment opens the
+   thread. A finding with no line in the diff goes in a top-level comment
+   instead, with the marker on its first line. It has no thread, so it is
+   answered by a new marked top-level comment that quotes it:
 
    ```bash
    bash <gh-as-reviewer> pr comment <N> --body-file <file>
@@ -161,7 +161,7 @@ resolves it.
 
    ```bash
    bash <gh-as-reviewer> api repos/messagecrate/message-crate/pulls/<N>/comments/<comment-id>/replies \
-       -f body=$'<!-- pr-review -->\nFixed in <sha>: <what changed>.'
+       -F body=@<reply-file>   # <!-- pr-review -->, then Fixed in <sha>: <what changed>.
    gh api graphql -f query='query { repository(owner: "messagecrate", name: "message-crate") {
      pullRequest(number: <N>) { reviewThreads(first: 100) { nodes { id isResolved
        comments(first: 1) { nodes { databaseId path body } } } } } } }'
