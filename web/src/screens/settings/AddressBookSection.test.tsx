@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { loadAddressBook } from "../../lib/serverApi";
+import { MIB } from "../../test/units";
 import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
 
@@ -191,7 +192,7 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     const input = screen.getByLabelText("Address book file") as HTMLInputElement;
     const file = new File(["x"], "huge.csv");
-    Object.defineProperty(file, "size", { value: 9 * 1024 * 1024 });
+    Object.defineProperty(file, "size", { value: 9 * MIB });
     fireEvent.change(input, { target: { files: [file] } });
 
     expect(await screen.findByText("That file is larger than 8 MB.")).toBeInTheDocument();

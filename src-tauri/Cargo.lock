@@ -985,6 +985,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "hex",
+ "libc",
  "sha2 0.11.0",
 ]
 

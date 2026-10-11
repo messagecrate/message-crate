@@ -6,6 +6,7 @@ import type {
   StagingSummary,
   UploadFinishedReport,
 } from "../../lib/tauri";
+import { MIB } from "../../test/units";
 import { importOutcome, stableStem } from "./importOutcome";
 
 function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
@@ -61,7 +62,7 @@ function approvedPlan(counts: { tooLarge?: number } = {}): StagingSummary {
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
   };
 }
