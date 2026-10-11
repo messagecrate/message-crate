@@ -253,8 +253,9 @@ fn count_open_uploads(assets_root: &Path) -> usize {
 /// # Errors
 ///
 /// Returns [`AssetError::Invalid`] when `bytes` is over the attachment size
-/// limit, or when the account already has [`MAX_OPEN_UPLOADS`] uploads open,
-/// and [`AssetError::Internal`] when the upload's directory cannot be made.
+/// limit, [`AssetError::TooManyUploads`] when the account already has
+/// [`MAX_OPEN_UPLOADS`] uploads open, and [`AssetError::Internal`] when the
+/// upload's directory cannot be made.
 pub fn start_upload(
     assets_root: &Path,
     sha: &Sha256,
@@ -278,10 +279,7 @@ pub fn start_upload(
 
     let _starting = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
     if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
-        return Err(AssetError::Invalid(format!(
-            "this account already has {MAX_OPEN_UPLOADS} uploads in progress, the most it may \
-             have open at once; complete or abort one before starting another"
-        )));
+        return Err(AssetError::TooManyUploads);
     }
     let part_size = limits.part_size;
     let upload_id = new_upload_id();
@@ -822,7 +820,7 @@ mod tests {
         let next = &files[MAX_OPEN_UPLOADS];
 
         let err = start(next).unwrap_err();
-        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
+        assert!(matches!(err, AssetError::TooManyUploads), "{err}");
         assert!(
             err.to_string().contains(&MAX_OPEN_UPLOADS.to_string()),
             "the refusal does not name the limit: {err}"

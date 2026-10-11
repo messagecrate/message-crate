@@ -614,6 +614,37 @@ async fn an_upload_part_over_the_part_size_is_a_json_413() {
     );
 }
 
+/// An account with as many uploads open as it may have is refused one more
+/// with `409 Conflict` (`state-conflict`), and `detail` names the limit: no
+/// rewrite of the request gets past the account's state, and the remedy is
+/// to end an upload, not to start this one again.
+#[tokio::test]
+async fn an_upload_start_past_the_open_upload_limit_is_a_state_conflict() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let limit = crate::asset_uploads::MAX_OPEN_UPLOADS;
+    for n in 0..=limit {
+        let sha = format!("{n:064x}");
+        let (status, text) = crate::test_support::post_json_raw(
+            &fixture.state,
+            &format!("/v1/assets/{sha}/uploads"),
+            &user.token,
+            serde_json::json!({ "bytes": 4 }),
+        )
+        .await;
+        if n < limit {
+            assert_eq!(status, StatusCode::CREATED, "upload {n}: {text}");
+            continue;
+        }
+        let problem = crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::StateConflict,
+        );
+        let detail = problem.detail.unwrap_or_default();
+        assert!(detail.contains(&limit.to_string()), "{detail}");
+    }
+}
+
 /// A multipart upload read at its own path answers its size, part size and
 /// the parts received so far, so a client that lost track of an upload can
 /// resume it; an upload id nobody started answers `404 Not Found`.

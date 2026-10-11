@@ -731,13 +731,14 @@ What each reaches:
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
 - An account may have at most 128 multipart uploads open at once. The start
-  of one more answers `422 Unprocessable Entity` (`asset-upload-invalid`),
-  with `detail` naming the limit, until one of them is completed, aborted,
-  or removed as stale after a day untouched. Why: an open upload keeps its
-  parts on the disk every account shares, and with no cap one account could
-  leave enough of them to fill it (#2176). The number is twice the uploads
-  the desktop app runs at once, so a run that was stopped and started again
-  is not refused.
+  of one more answers `409 Conflict` (`state-conflict`), with `detail`
+  naming the limit, until one of them is completed, aborted, or removed as
+  stale after a day untouched. Why: an open upload keeps its parts on the
+  disk every account shares, and with no cap one account could leave enough
+  of them to fill it (#2176). It is `409` and not `422` because the
+  account's state refuses the start, and no rewrite of the request gets
+  past it. The number is twice the uploads the desktop app runs at once, so
+  a run that was stopped and started again is not refused.
 
 The credential names the account. No route takes an `account=` parameter. A
 Media Link is a credential, so its `media_link` parameter names the account
