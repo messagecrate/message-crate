@@ -492,14 +492,21 @@ mod tests {
             crate::problem::ProblemType::ValidationFailed,
         );
 
+        assert_eq!(
+            token_count(&state, account.account_id).await,
+            0,
+            "a refused create stores no token"
+        );
+    }
+
+    /// How many API tokens the account holds, read from the table itself.
+    async fn token_count(state: &AppState, account_id: i64) -> i64 {
         let mut conn = state.db.acquire().await.unwrap();
-        let rows: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
-                .bind(account.account_id)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap();
-        assert_eq!(rows, 0, "a refused create stores no token");
+        sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
+            .bind(account_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap()
     }
 
     /// The Demo Account makes no API token, with or without an expiry: every
@@ -527,14 +534,11 @@ mod tests {
             );
         }
 
-        let mut conn = state.db.acquire().await.unwrap();
-        let rows: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM account_api_tokens WHERE account_id = $1")
-                .bind(demo)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap();
-        assert_eq!(rows, 0, "a refused create stores no token");
+        assert_eq!(
+            token_count(&state, demo).await,
+            0,
+            "a refused create stores no token"
+        );
     }
 
     /// The owner lists another account's tokens, each with its label,

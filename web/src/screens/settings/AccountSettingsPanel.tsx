@@ -68,7 +68,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
         <>
           <h3 className={sectionTitleClass}>API Tokens</h3>
           <p className="mb-6 mt-0 text-[0.813rem] text-muted">
-            The Demo Account makes no API tokens.
+            The Demo Account makes no API Tokens.
           </p>
         </>
       ) : !managed && !isOwner ? (

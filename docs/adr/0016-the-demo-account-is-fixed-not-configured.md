@@ -5,9 +5,9 @@ so that a person can look at conversations before bringing their own (#971).
 Anyone who reaches the Message Crate can enter it. What it may and may not do
 is therefore fixed in the server, keyed on its account id, and is not a set of
 permissions the owner can change: it may export and use the trash; it may not
-import, delete for good, or make an API token; it never has a password; its status, its
-permissions and its own identities cannot be changed. The owner can delete it
-or reset it and nothing else.
+import, delete for good, or make an API token; it never has a password; its
+status, its permissions and its own identities cannot be changed. The owner
+can delete it or reset it and nothing else.
 
 ## Why
 
