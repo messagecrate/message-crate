@@ -14,7 +14,7 @@ export function ApiTokensSection({
   accountCanExport: boolean;
 }) {
   const {
-    items,
+    tokens,
     loadError,
     busy,
     composing,
@@ -79,7 +79,7 @@ export function ApiTokensSection({
       )}
 
       <ApiTokensTable
-        items={items}
+        tokens={tokens}
         busy={busy}
         composing={composing}
         onRename={openRename}

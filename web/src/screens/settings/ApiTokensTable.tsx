@@ -19,13 +19,13 @@ type ApiToken = components["schemas"]["ApiToken"];
  * another account's tokens, which shows no secret and only revokes.
  */
 export default function ApiTokensTable({
-  items,
+  tokens,
   busy,
   composing,
   onRename,
   onRevoke,
 }: {
-  items: ApiToken[];
+  tokens: ApiToken[];
   busy: boolean;
   composing: boolean;
   onRename?: (token: ApiToken) => void;
@@ -51,7 +51,7 @@ export default function ApiTokensTable({
           <Column className={`${thClass} w-[8%]`} />
         </TableHeader>
         <TableBody
-          items={items}
+          items={tokens}
           dependencies={[busy, holder]}
           renderEmptyState={() =>
             composing ? null : (

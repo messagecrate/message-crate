@@ -18,11 +18,11 @@
   },
   "dependencies": {
     "@internationalized/date": "^3.12.4",
-    "@tanstack/react-query": "^5.103.2",
+    "@tanstack/react-query": "^5.104.1",
     "@tanstack/react-virtual": "^3.14.13",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-dialog": "^2.8.1",
-    "@tauri-apps/plugin-shell": "^2.4.0",
+    "@tauri-apps/plugin-shell": "^2.4.1",
     "@vvo/tzdb": "^6.198.0",
     "react": "^19.2.4",
     "react-aria-components": "^1.21.1",
@@ -30,7 +30,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
+    "@biomejs/biome": "^2.5.15",
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -43,6 +43,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7",
     "vite": "^8",
-    "vitest": "^5.0.1"
+    "vitest": "^5.0.3"
   }
 }

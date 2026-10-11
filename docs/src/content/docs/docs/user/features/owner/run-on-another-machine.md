@@ -86,9 +86,6 @@ The desktop app's own origins, `tauri://localhost`, `http://tauri.localhost`, an
 
 The browser needs no entry either, because it loads the website from the same server it then talks to.
 
-The Docker image's configuration lists two more origins, `http://localhost:5173` and `http://127.0.0.1:5173`.
-They are for developing Message Crate and play no part here.
-
 ## Move an existing Message Crate
 
 Everything a Message Crate holds is in the Docker volume `message-crate-data`: the database and the attachment files.
