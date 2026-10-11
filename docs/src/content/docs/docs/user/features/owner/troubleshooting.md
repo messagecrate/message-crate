@@ -38,6 +38,14 @@ The desktop app then needs `http://127.0.0.1:8090` under **Change server address
 The new release changed the database layout, and the server rebuilt the database empty.
 [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) describes what is gone and the way back.
 
+### Owner Home says the server could not turn on write-ahead logging
+
+The server turns on write-ahead logging each time it starts, so pages load while an import writes.
+When another program has the database file open, or a server that stopped part-way left a journal behind, the server starts without it, and every page waits for each import batch.
+The server's log, under **Logs** in Owner Home, names the cause.
+Closing any other program that has the database file open, then restarting the server, turns it back on.
+**Server Settings** shows the journal mode, which reads `wal` once it is on.
+
 ## Logging in
 
 ### "invalid username or password" with the right password
