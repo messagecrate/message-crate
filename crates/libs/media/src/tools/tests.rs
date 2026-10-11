@@ -688,3 +688,38 @@ fn missing_ffprobe_names_the_tool_not_the_input_file() {
         "message was {message:?}"
     );
 }
+
+/// A file with an executable bit is executable, and the same file without
+/// one is not: the WhatsApp exporter refuses a `wtsexporter` without the
+/// bit, and the desktop app downloads it again.
+#[cfg(unix)]
+#[test]
+fn a_file_is_executable_only_with_an_executable_bit() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = dir.path().join("wtsexporter");
+    fs::write(&program, "#!/bin/sh\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!is_executable(&program));
+
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(is_executable(&program));
+}
+
+/// A directory has an executable bit too, and is not a program: one left
+/// where `wtsexporter` belongs must not pass for it.
+#[cfg(unix)]
+#[test]
+fn a_directory_is_not_executable() {
+    let dir = tempfile::tempdir().unwrap();
+    let not_a_program = dir.path().join("wtsexporter");
+    fs::create_dir(&not_a_program).unwrap();
+    fs::set_permissions(&not_a_program, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(!is_executable(&not_a_program));
+}
+
+/// Nothing at the path is not executable.
+#[test]
+fn a_missing_file_is_not_executable() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(!is_executable(&dir.path().join("wtsexporter")));
+}

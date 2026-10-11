@@ -15,12 +15,12 @@ function accountCell(entry: AuditEntry) {
   // Opening and closing the Message Crate to new accounts is about no account,
   // and a refused login that typed no valid username keeps none.
   if (!entry.username) return <span className="text-muted">—</span>;
-  // A refused login for an unknown username never had an account to lose.
-  const deleted = entry.account_id == null && entry.reason !== "unknown_username";
   return (
     <>
       {entry.username}
-      {deleted ? <span className="block text-[0.75rem] text-muted">deleted</span> : null}
+      {entry.account_deleted ? (
+        <span className="block text-[0.75rem] text-muted">deleted</span>
+      ) : null}
     </>
   );
 }

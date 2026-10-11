@@ -455,8 +455,12 @@ pub struct AuditEntry {
     /// Who acted.
     pub actor: AuditActor,
     /// The account the entry is about, or `null` when it is about none, or
-    /// the account has been deleted.
+    /// the account has been deleted: `account_deleted` tells the two apart.
     pub account_id: Option<i64>,
+    /// Whether the account the entry is about has since been deleted. `false`
+    /// for an entry about no account, and for a refused login as a username
+    /// no account holds.
+    pub account_deleted: bool,
     /// The username of the account the entry is about, as it was; for a
     /// refused login as a username no account holds, the username as typed,
     /// or `null` when the text typed could not be a username. Kept after the
@@ -527,6 +531,7 @@ impl AuditEntry {
         at: String,
         actor: AuditActor,
         account_id: Option<i64>,
+        account_deleted: bool,
         username: Option<String>,
     ) -> Self {
         Self {
@@ -535,6 +540,7 @@ impl AuditEntry {
             at,
             actor,
             account_id,
+            account_deleted,
             username,
             reason: None,
             app: None,
@@ -909,6 +915,15 @@ macro_rules! session_expiry_sql {
     };
 }
 
+/// The `account_deleted` column of a row of `table`: whether the account the
+/// row is about has since been deleted, which its deletion marks on every
+/// such row by setting `deletion_entry_id`.
+macro_rules! account_deleted_sql {
+    ($table:literal) => {
+        concat!($table, ".deletion_entry_id IS NOT NULL AS account_deleted")
+    };
+}
+
 /// Where a row of [`sources_sql`] comes from, by the one-letter tag the
 /// query gives it. The tags also break a tie between rows at the same time,
 /// the greatest first: an expiry, then an Export Run, an Import Run, and an
@@ -1075,11 +1090,12 @@ pub async fn deleted_accounts_page(
 
 /// An entry of `audit_entries` as the interface hands it out.
 async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<AuditEntry>> {
-    let row = sqlx::query(
-        "SELECT id, at, action, actor, account_id, username, reason, app_kind, app_build,
-                details
-         FROM audit_entries WHERE id = $1",
-    )
+    let row = sqlx::query(concat!(
+        "SELECT id, at, action, actor, account_id, ",
+        account_deleted_sql!("audit_entries"),
+        ", username, reason, app_kind, app_build, details
+         FROM audit_entries WHERE id = $1"
+    ))
     .bind(id)
     .fetch_optional(&mut *conn)
     .await?;
@@ -1121,6 +1137,7 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
             row.try_get("at")?,
             AuditActor::parse(&actor),
             row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
             row.try_get("username")?,
         )
     }))
@@ -1129,32 +1146,39 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
 /// The `session_ended` entry read, not stored, for a Session that ran out:
 /// its `logged_in` entry's account, at its expiry.
 async fn load_expiry(conn: &mut SqliteConnection, login_id: i64) -> Result<Option<AuditEntry>> {
-    let row: Option<(i64, String, Option<i64>, Option<String>)> = sqlx::query_as(concat!(
+    let row = sqlx::query(concat!(
         "SELECT l.id, ",
         session_expiry_sql!(),
-        ", l.account_id, l.username FROM audit_entries l WHERE l.id = $1"
+        " AS at, l.account_id, ",
+        account_deleted_sql!("l"),
+        ", l.username FROM audit_entries l WHERE l.id = $1"
     ))
     .bind(login_id)
     .fetch_optional(&mut *conn)
     .await?;
-    Ok(row.map(|(id, at, account_id, username)| AuditEntry {
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(AuditEntry {
         reason: Some(AuditReason::Expired),
         ..AuditEntry::new(
-            id,
+            row.try_get("id")?,
             AuditAction::SessionEnded,
-            at,
+            row.try_get("at")?,
             AuditActor::Server,
-            account_id,
-            username,
+            row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
+            row.try_get("username")?,
         )
     }))
 }
 
 /// The account a run is about, and the username to show: the account's while
 /// it exists, the one written on the run once it is deleted.
-const RUN_ACCOUNT_SQL: &str =
-    "r.account_id, COALESCE(a.username, r.username) AS username, r.credential, r.app_kind,
-     r.app_build, r.api_token_label, r.api_token_hint";
+const RUN_ACCOUNT_SQL: &str = concat!(
+    "r.account_id, ",
+    account_deleted_sql!("r"),
+    ", COALESCE(a.username, r.username) AS username, r.credential, r.app_kind,
+     r.app_build, r.api_token_label, r.api_token_hint"
+);
 
 /// Fill the fields every run has: whose it is and what started it.
 fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<AuditEntry> {
@@ -1185,6 +1209,7 @@ fn run_entry(row: &sqlx::sqlite::SqliteRow, action: AuditAction) -> Result<Audit
             row.try_get("started_at")?,
             actor,
             row.try_get("account_id")?,
+            row.try_get("account_deleted")?,
             row.try_get("username")?,
         )
     })

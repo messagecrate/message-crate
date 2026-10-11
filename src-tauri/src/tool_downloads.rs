@@ -322,22 +322,8 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
 fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),
-        Program::Wtsexporter => is_executable(&dir.join(program.file_name())),
+        Program::Wtsexporter => media::is_executable(&dir.join(program.file_name())),
     }
-}
-
-/// Whether the file at `path` is a file with an executable bit.
-#[cfg(unix)]
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path)
-        .is_ok_and(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
-}
-
-/// Windows runs any `.exe`, so a file is enough.
-#[cfg(not(unix))]
-fn is_executable(path: &Path) -> bool {
-    path.is_file()
 }
 
 /// Why a download failed, as Settings shows it.
