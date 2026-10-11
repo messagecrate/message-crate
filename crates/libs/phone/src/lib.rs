@@ -4,6 +4,9 @@
 //! by the server, by the contacts book, and by [`OwnerHandleSet`].
 //! [`Handle::parse`] is where an exporter classifies an address before it
 //! keys it: a phone number, an email address, or a sender name.
+//! [`IdentityType`] is the kind an address is classified as. It is defined
+//! here, and `message-ir` re-exports it for the conversation file, so this
+//! crate does not depend on the conversation model.
 //!
 //! A number carries its country only when that is certain: written with its
 //! `+` code, or written without it in a country a person or the source
