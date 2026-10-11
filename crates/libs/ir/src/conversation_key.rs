@@ -65,7 +65,7 @@ impl ConversationKey {
     /// The name is kept whole rather than made filename-safe, because a
     /// filename-safe stem gives "张伟" and "李娜" one key, and "Ana Lee" and
     /// "Ana.Lee" another. The file name is made from the chat id later, by
-    /// [`ConversationDocument::filename_stem`](crate::ConversationDocument::filename_stem).
+    /// `message_ir_format::filename_stem`.
     pub fn chat_id(&self) -> String {
         match self {
             Self::OneToOne(handle) => handle.clone(),
