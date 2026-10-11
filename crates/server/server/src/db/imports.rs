@@ -677,10 +677,12 @@ async fn not_running(
 
 /// Close a running Import Run the user gave up on.
 ///
-/// Records `cancelled` with `issues`, the Import Errors the run recorded
-/// before it was given up, and its `notes`, and clears `stage`, which frees the account's
-/// single active slot. Nothing reclaims a run on a timer — a run
-/// is broken by an explicit discard or not at all.
+/// Records `cancelled` at the instant `now` with `issues`, the Import Errors
+/// the run recorded before it was given up, and its `notes`, and clears
+/// `stage`, which frees the account's single active slot. Nothing reclaims a
+/// run on a timer — a run is broken by an explicit discard or not at all.
+/// The caller passes the instant, so a test names it rather than reading
+/// the clock.
 ///
 /// # Errors
 ///
@@ -693,6 +695,7 @@ pub async fn discard_import(
     import_id: i64,
     issues: &[ImportIssueInput],
     notes: &[ImportNoteRow],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), ImportLookupError> {
     // The update and the inserts are one write transaction, so a discarded
     // run never lands without the issues and notes it was discarded with.
@@ -704,7 +707,7 @@ pub async fn discard_import(
          SET status = 'cancelled', stage = NULL, finished_at = $1
          WHERE id = $2 AND account_id = $3 AND status = 'running'",
     )
-    .bind(Utc::now().to_rfc3339())
+    .bind(now.to_rfc3339())
     .bind(import_id)
     .bind(account_id)
     .execute(&mut *tx)
@@ -713,15 +716,15 @@ pub async fn discard_import(
         drop(tx);
         return Err(not_running(conn, account_id, import_id).await);
     }
-    insert_issues(&mut tx, import_id, issues).await?;
-    insert_notes(&mut tx, import_id, notes).await?;
+    insert_issues(&mut tx, import_id, issues, now).await?;
+    insert_notes(&mut tx, import_id, notes, now).await?;
     tx.commit().await?;
     Ok(())
 }
 
-/// Discard the account's running Import Run, whichever it is, and return the row
-/// as it was before the discard; `None` when the account has no live
-/// run.
+/// Discard the account's running Import Run, whichever it is, at the instant
+/// `now`, and return the row as it was before the discard; `None` when the
+/// account has no live run.
 ///
 /// This is the way out for a command-line operator: a killed
 /// `message-crate-server import` leaves its run open, and the
@@ -735,6 +738,7 @@ pub async fn discard_import(
 pub async fn discard_running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
+    now: chrono::DateTime<Utc>,
 ) -> Result<Option<ImportRow>> {
     let row = sqlx::query(&format!(
         "SELECT {IMPORT_COLUMNS}
@@ -748,7 +752,7 @@ pub async fn discard_running_import(
         return Ok(None);
     };
     let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[], &[])
+    discard_import(conn, account_id, running.id, &[], &[], now)
         .await
         .map_err(|err| anyhow::anyhow!(err))?;
     Ok(Some(running))
@@ -850,18 +854,19 @@ pub(crate) async fn complete_import(
             message: format!("import {import_id} finished while it was being completed"),
         });
     }
-    insert_issues(&mut tx, import_id, &args.issues).await?;
-    insert_notes(&mut tx, import_id, &args.notes).await?;
+    insert_issues(&mut tx, import_id, &args.issues, now).await?;
+    insert_notes(&mut tx, import_id, &args.notes, now).await?;
     tx.commit().await?;
 
     get_owned_import(&mut *conn, account_id, import_id).await
 }
 
-/// Append issue rows for an import.
+/// Append issue rows for an import, each recorded at the instant `now`.
 async fn insert_issues(
     conn: &mut SqliteConnection,
     import_id: i64,
     issues: &[ImportIssueInput],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), sqlx::Error> {
     for issue in issues {
         sqlx::query(
@@ -876,18 +881,19 @@ async fn insert_issues(
         .bind(issue.stage.as_str())
         .bind(&issue.item)
         .bind(&issue.reason)
-        .bind(Utc::now().to_rfc3339())
+        .bind(now.to_rfc3339())
         .execute(&mut *conn)
         .await?;
     }
     Ok(())
 }
 
-/// Append note rows for an import.
+/// Append note rows for an import, each recorded at the instant `now`.
 async fn insert_notes(
     conn: &mut SqliteConnection,
     import_id: i64,
     notes: &[ImportNoteRow],
+    now: chrono::DateTime<Utc>,
 ) -> std::result::Result<(), sqlx::Error> {
     for note in notes {
         sqlx::query(
@@ -900,7 +906,7 @@ async fn insert_notes(
         .bind(note.stage.as_str())
         .bind(&note.item)
         .bind(&note.text)
-        .bind(Utc::now().to_rfc3339())
+        .bind(now.to_rfc3339())
         .execute(&mut *conn)
         .await?;
     }

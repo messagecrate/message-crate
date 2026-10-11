@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way an Upload and an Export remember what they already
+  did for each server and account was reworked inside, with nothing visible
+  (#2253).
+
 - 2026-10-11: The way the Import screen moves between the form, a running
   import and its reviews was reworked inside, with nothing visible (#2252).
 
@@ -357,6 +361,16 @@ released versions carry their date on the heading.
 ### Fixes
 
 #### Accounts, Settings and screens
+
+- 2026-10-11: **Settings says why a downloaded tool found in the Tools
+  Directory could not be made to run.** When the desktop app finds ffmpeg,
+  ffprobe or wtsexporter already in its Tools Directory, it marks the file
+  as a program it can run. When the computer refused that, Settings said
+  only that the tool doesn't run there, and from the next start on it no
+  longer tried. It now says the tool could not be marked as a program that
+  runs, and what the computer refused, such as a permission error. The app
+  tries again each time it starts, so fixing the permission is enough
+  (#2255).
 
 - 2026-10-11: **No account is created after the owner closes registration.**
   A stranger's registration that arrived just as the owner closed
