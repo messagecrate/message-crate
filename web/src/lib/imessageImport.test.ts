@@ -6,6 +6,7 @@ import {
   MISSING_STAT,
   NEITHER_STAT,
 } from "../test/pathStats";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED } from "./encryptedBackup";
 import {
   IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
   IMESSAGE_ERR_CONTACTS_NOT_FILE,
@@ -25,7 +26,7 @@ import {
   macMessagesDbPath,
   shouldPrefillMacMessagesDb,
 } from "./imessageImport";
-import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED, PATH_MISSING } from "./pathChecks";
+import { PATH_MISSING } from "./pathChecks";
 
 describe("iMessage methods", () => {
   it("lists three methods", () => {

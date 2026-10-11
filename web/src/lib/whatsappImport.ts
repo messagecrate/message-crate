@@ -1,9 +1,5 @@
-import {
-  checkOptionalPath,
-  checkRequiredPath,
-  ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
-  type ImportPathStat,
-} from "./pathChecks";
+import { encryptedBackupPasswordError } from "./encryptedBackup";
+import { checkOptionalPath, checkRequiredPath, type ImportPathStat } from "./pathChecks";
 
 export const WHATSAPP_SOURCE_ID = "whatsapp";
 
@@ -145,12 +141,12 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
     errors.key = WHATSAPP_ERR_CRYPT_KEY;
   }
 
-  if (
-    whatsappShowsPassword(args.method) &&
-    args.stats.backupEncrypted === true &&
-    args.backupPassword.trim() === ""
-  ) {
-    errors.backupPassword = ENCRYPTED_BACKUP_PASSWORD_REQUIRED;
+  const passwordError = encryptedBackupPasswordError(
+    args.stats.backupEncrypted,
+    args.backupPassword,
+  );
+  if (whatsappShowsPassword(args.method) && passwordError !== null) {
+    errors.backupPassword = passwordError;
   }
 
   if (whatsappOwnerPhoneRequired(args.method) && args.ownerPhone.trim() === "") {

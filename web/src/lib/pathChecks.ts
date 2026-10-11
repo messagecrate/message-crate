@@ -25,15 +25,6 @@ export type PathRequirement = { expected: PathKind; kindError: string };
 export const PATH_MISSING = "This path does not exist.";
 
 /**
- * The Import form's message when the chosen iPhone backup is encrypted and
- * Encryption password is empty, for Apple Messages and WhatsApp alike. The
- * Apple Messages Reader and the WhatsApp exporter refuse the same backup
- * with the same words.
- */
-export const ENCRYPTED_BACKUP_PASSWORD_REQUIRED =
-  "The backup is encrypted. Fill in the Encryption password.";
-
-/**
  * What the form says about a path it knows nothing about. Such a path may
  * well be there, so it is never `PATH_MISSING`. A permission refusal says
  * what lets Message Crate read it; a failed check says the path was never

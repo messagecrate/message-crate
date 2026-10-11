@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DIRECTORY_STAT, FILE_STAT, MISSING_STAT, NEITHER_STAT } from "../test/pathStats";
-import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED, PATH_MISSING } from "./pathChecks";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED } from "./encryptedBackup";
+import { PATH_MISSING } from "./pathChecks";
 import {
   isWhatsappMethod,
   WHATSAPP_ERR_BACKUP_NOT_DIRECTORY,

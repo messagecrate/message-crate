@@ -1,7 +1,7 @@
+import { encryptedBackupPasswordError } from "./encryptedBackup";
 import {
   checkOptionalPath,
   checkRequiredPath,
-  ENCRYPTED_BACKUP_PASSWORD_REQUIRED,
   type ImportPathStat,
   type PathRequirement,
 } from "./pathChecks";
@@ -139,12 +139,12 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
     });
   }
 
-  if (
-    args.method === "imessage-ios" &&
-    args.stats.backupEncrypted === true &&
-    args.backupPassword.trim() === ""
-  ) {
-    errors.backupPassword = ENCRYPTED_BACKUP_PASSWORD_REQUIRED;
+  const passwordError = encryptedBackupPasswordError(
+    args.stats.backupEncrypted,
+    args.backupPassword,
+  );
+  if (args.method === "imessage-ios" && passwordError !== null) {
+    errors.backupPassword = passwordError;
   }
 
   const attachmentCheckPending =
