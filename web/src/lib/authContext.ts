@@ -7,6 +7,7 @@
  * this context.
  */
 import { createContext, useContext } from "react";
+import type { AccountRunDirectories } from "./importRun";
 
 export interface AuthState {
   serverUrl: string;
@@ -30,12 +31,14 @@ interface AuthContextValue extends AuthState {
    * revokes the session anyway and says the Upload resumes from what it sent.
    *
    * `deletedAccountDirectories` is given when the account has just been deleted:
-   * the directories of its Import Runs on this computer, deleted once the session is
-   * revoked. One that cannot be deleted is named in a notice.
+   * the directories of its Import Runs found on this computer, deleted once the
+   * session is revoked, and the ones Message Crate may not read. One that
+   * cannot be deleted, and one Message Crate may not read, are named in a
+   * notice.
    */
   logout: (options?: {
     ask?: boolean;
-    deletedAccountDirectories?: readonly string[];
+    deletedAccountDirectories?: AccountRunDirectories;
   }) => Promise<void>;
   setServer: (url: string) => void;
   /**
