@@ -67,7 +67,7 @@ function MessageBubble({
 }
 
 /**
- * A thread renders every message it has loaded, so stepping through find matches
+ * A conversation renders every message it has loaded, so stepping through find matches
  * would otherwise re-render the whole list to move one highlight. `onAttachmentClick`
  * is a stable callback in the one screen that passes it, so this holds.
  */

@@ -7,8 +7,8 @@ use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
-    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, ItemKind, OutputFormat,
-    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, prepare_outputs, project_conversation,
+    ConvertRun, Counter, ExportReport, ItemKind, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
+    prepare_outputs, project_conversation,
 };
 use message_ir::{
     ExportMeta, IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage,
@@ -436,14 +436,7 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// the Scratch Directory, which the run's attachment spool goes under.
     pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
-    pub transforms: ExportTransforms,
-    pub output_format: OutputFormat,
-    pub cancel: Option<&'a CancelFlag>,
-    /// Continue an interrupted export: keep previous output and skip the
-    /// conversations already written.
-    pub resume: bool,
-    /// Where each Import Error and note goes as the run records it.
-    pub issues: Option<&'a IssueSink>,
+    pub convert_run: ConvertRun<'a>,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
@@ -462,11 +455,14 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_dir,
         scratch_dir,
         owner_phones,
-        transforms,
-        output_format,
-        cancel,
-        resume,
-        issues,
+        convert_run:
+            ConvertRun {
+                transforms,
+                output_format,
+                cancel,
+                resume,
+                issues,
+            },
     } = args;
     if !input_dir.is_dir() {
         bail!("input is not a directory: {}", input_dir.display());

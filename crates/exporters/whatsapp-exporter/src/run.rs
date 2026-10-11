@@ -10,7 +10,7 @@ use crate::wtsexporter::{
 };
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
-    ExportTransforms, ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
+    ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
     WhatsappPlatform as CorePlatform, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
@@ -183,19 +183,15 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     }
 
     message_crate_core::check_cancel(config.cancel.as_ref())?;
-    let transforms = ExportTransforms::from_config(config);
-    let needs_media_tools = transforms.needs_media_tools();
+    let convert_run = config.convert_run();
+    let needs_media_tools = convert_run.transforms.needs_media_tools();
     let report = convert_json(ConvertRequest {
         json_path: &json_path,
         output: &config.output,
-        transforms,
         media_search_roots: &media_roots,
         owner_identity,
         backup_taken_at_unix_ms,
-        output_format: config.output_format,
-        cancel: config.cancel.as_ref(),
-        resume: config.resume,
-        issues: config.issues.as_ref(),
+        convert_run,
     })?;
     // The work directory goes once the conversion has copied the media.
     drop(work);
