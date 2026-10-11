@@ -560,5 +560,9 @@ fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
         "[paths]\ndb = \"loop/messagecrate.db\"\ndata_dir = \"loop\"\n[server]\n",
     );
 
-    assert!(refusal(&cfg).contains("loop"));
+    let text = refusal(&cfg);
+    assert!(
+        text.contains(&format!("more than {MAX_SYMLINKS} symlinks")),
+        "{text}"
+    );
 }

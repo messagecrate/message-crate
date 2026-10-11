@@ -401,30 +401,34 @@ impl Config {
         let website = real_path(&server.static_dir)?;
         let data_dir = real_path(&self.paths.data_dir)?;
         let db = real_path(&self.paths.db)?;
-        let website_dir = (
-            "the website directory",
-            server.static_dir.as_path(),
-            &website,
-        );
-        let data_directory = (
-            "the Data Directory",
-            self.paths.data_dir.as_path(),
-            &data_dir,
-        );
-        let database = ("the database", self.paths.db.as_path(), &db);
+        let website_dir = Place {
+            name: "the website directory",
+            configured: &server.static_dir,
+            real: &website,
+        };
+        let data_directory = Place {
+            name: "the Data Directory",
+            configured: &self.paths.data_dir,
+            real: &data_dir,
+        };
+        let database = Place {
+            name: "the database",
+            configured: &self.paths.db,
+            real: &db,
+        };
         for (inner, outer) in [
-            (data_directory, website_dir),
-            (database, website_dir),
-            (website_dir, data_directory),
+            (&data_directory, &website_dir),
+            (&database, &website_dir),
+            (&website_dir, &data_directory),
         ] {
-            if is_within(inner.2, outer.2) {
+            if is_within(inner.real, outer.real) {
                 bail!(
                     "{} {} is inside {} {}. Everything in the website directory is served to \
                      anyone who can reach the server, without a login. Move one outside the other",
-                    capitalized(inner.0),
-                    shown(inner.1, inner.2),
-                    outer.0,
-                    shown(outer.1, outer.2)
+                    capitalized(inner.name),
+                    inner.shown(),
+                    outer.name,
+                    outer.shown()
                 );
             }
         }
@@ -522,16 +526,57 @@ fn real_path(path: &Path) -> Result<PathBuf> {
             Some(Component::RootDir | Component::Prefix(_)) => real.push(&next),
         }
     }
-    Ok(real)
+    Ok(with_existing_part_canonical(real))
 }
 
-/// A configured path for a refusal, with where it really leads when a link
-/// or a `..` makes that differ.
-fn shown(configured: &Path, real: &Path) -> String {
-    if configured == real {
-        configured.display().to_string()
-    } else {
-        format!("{} (really {})", configured.display(), real.display())
+/// `path`, which holds no link, `.` or `..`, with the part that exists
+/// canonicalized and the rest joined on as written. Every path compared then
+/// has one form: on Windows a link's target comes back verbatim (`\\?\C:\`)
+/// and a short name (`MESSAG~1`) stands for a long one, and canonicalizing
+/// gives both the form every other path gets.
+fn with_existing_part_canonical(path: PathBuf) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path.as_path();
+    loop {
+        if let Ok(real) = existing.canonicalize() {
+            return missing
+                .iter()
+                .rev()
+                .fold(real, |real, name| real.join(name));
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                existing = parent;
+            }
+            _ => return path.clone(),
+        }
+    }
+}
+
+/// One of the paths [`Config::require_static_dir_apart`] compares.
+struct Place<'a> {
+    /// What the path is, as a refusal names it.
+    name: &'static str,
+    /// The path the config and the flags give.
+    configured: &'a Path,
+    /// Where [`real_path`] says it leads.
+    real: &'a Path,
+}
+
+impl Place<'_> {
+    /// The configured path for a refusal, with where it really leads when a
+    /// link or a `..` makes that differ.
+    fn shown(&self) -> String {
+        if self.configured == self.real {
+            self.configured.display().to_string()
+        } else {
+            format!(
+                "{} (really {})",
+                self.configured.display(),
+                self.real.display()
+            )
+        }
     }
 }
 
@@ -545,11 +590,11 @@ fn capitalized(text: &str) -> String {
 
 /// Whether `path` is `dir` or inside it, component by component, so `website`
 /// is not inside `web`. macOS and Windows ignore letter case by default, so
-/// there `Static` and `static` are one directory. [`real_path`] keeps names
-/// as written, and a part that does not exist yet has no case on disk to
-/// compare, so the case is folded here. On a volume of theirs that does
-/// tell case apart, two names differing only in case are refused too:
-/// refusing a safe layout is the cheaper mistake than publishing the data.
+/// there `Static` and `static` are one directory. A part of a path that does
+/// not exist yet has no case on disk to compare, so the case is folded here.
+/// On a volume of theirs that does tell case apart, two names differing only
+/// in case are refused too. Refusing a safe layout is a cheaper mistake than
+/// publishing the data.
 fn is_within(path: &Path, dir: &Path) -> bool {
     if cfg!(any(target_os = "macos", windows)) {
         let fold = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
