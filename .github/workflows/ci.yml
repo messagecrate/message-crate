@@ -318,7 +318,7 @@ jobs:
       - name: Check license metadata agrees on the Fair Core License
         run: ./scripts/check-license.sh
 
-  # ── Always: release Dockerfile copies [patch.crates-io] path crates ──
+  # ── Always: release Dockerfile's build context and pinned base images ──
   docker-context:
     name: Docker rust-builder context
     needs: changes
@@ -327,7 +327,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Check Docker rust-builder copies patched crates
+      - name: Check the Dockerfile's build context and base image pins
         run: ./scripts/check-docker-context.sh
 
   # ── docker: the release Dockerfile builds ─────────────────────────────

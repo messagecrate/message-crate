@@ -14,11 +14,18 @@
 # .git is not in the build context, so neither stage can ask git for it. Left
 # out, the server and the website report <version>+unknown. Passed empty, as
 # the release job does, they report the Product Version alone.
+#
+# Each FROM names its base image by tag and digest. The tag is for the
+# reader, and scripts/check-docker-context.sh reads the Rust minor from it.
+# The digest fixes the image, so two builds of one commit start from the
+# same bases. Dependabot's docker entry in .github/dependabot.yml moves the
+# digests by pull request, and scripts/check-docker-context.sh fails a FROM
+# without one.
 
 # -----------------------------------------------------------------------------
 # Stage 1: Vite SPA frontend
 # -----------------------------------------------------------------------------
-FROM node:22-bookworm-slim AS frontend-builder
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS frontend-builder
 
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
@@ -37,7 +44,7 @@ RUN npm run build
 # The base tag only picks the Debian release and pre-installs the same
 # minor: once Docker Hub carries the patch release the install is a no-op,
 # and scripts/check-docker-context.sh fails when the two minors disagree.
-FROM rust:1.98-bookworm AS rust-builder
+FROM rust:1.98-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS rust-builder
 
 WORKDIR /src
 COPY rust-toolchain.toml Cargo.toml Cargo.lock ./
@@ -58,7 +65,7 @@ RUN cargo build --release -p message-crate-server
 # -----------------------------------------------------------------------------
 # Stage 3: slim runtime
 # -----------------------------------------------------------------------------
-FROM node:20-bookworm-slim AS runtime
+FROM node:20-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0 AS runtime
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
