@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { advanceTimersAndSettle } from "../test/fakeTimers";
 import { Providers } from "../test/providers";
 import { createQueryClient } from "./routeQuery";
 import {
@@ -31,14 +32,6 @@ vi.mock("./tauri", async (importOriginal) => ({
 const DIRECTORY = { exists: true, isFile: false, isDirectory: true };
 const FILE = { exists: true, isFile: true, isDirectory: false };
 const MISSING = { exists: false, isFile: false, isDirectory: false };
-
-/** Let the debounce run out and the desktop's answers arrive. */
-async function settle() {
-  await act(() => vi.advanceTimersByTimeAsync(PATH_PROBE_DEBOUNCE_MS));
-  // The query starts on the render the debounce caused, and its answer
-  // reaches the hook on a timer of its own.
-  await act(() => vi.advanceTimersByTimeAsync(1));
-}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -71,7 +64,7 @@ describe("useImessagePathStats", () => {
   it("checks a typed path once, after the typing stops", async () => {
     desktop.paths.set("/backup", "directory");
     const view = renderImessage({ source: "imessage-ios", backupPath: "" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     desktop.pathStat.mockClear();
 
     for (const typed of ["/b", "/ba", "/backup"]) {
@@ -80,7 +73,7 @@ describe("useImessagePathStats", () => {
     }
     expect(desktop.pathStat).not.toHaveBeenCalled();
 
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(desktop.pathStat.mock.calls).toEqual([["/backup"]]);
     expect(view.result.current.backup).toEqual(DIRECTORY);
     expect(view.result.current.backupEncrypted).toBe(true);
@@ -89,17 +82,17 @@ describe("useImessagePathStats", () => {
   it("keeps the last answer while a path is typed, and starts another method empty", async () => {
     desktop.paths.set("/backup", "directory");
     const view = renderImessage({ source: "imessage-ios", backupPath: "/backup" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.backup).toEqual(DIRECTORY);
 
     view.rerender({ source: "imessage-ios", backupPath: "/backup/x" });
     expect(view.result.current.backup).toEqual(DIRECTORY);
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.backup).toEqual(MISSING);
 
     view.rerender({ source: "imessage-macos", backupPath: "/backup/x" });
     expect(view.result.current.backup).toBeNull();
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.backup).toEqual(MISSING);
     // Only an iPhone backup is asked whether it is encrypted.
     expect(view.result.current.backupEncrypted).toBeNull();
@@ -108,7 +101,7 @@ describe("useImessagePathStats", () => {
   it("asks nothing in the browser, which has no desktop process", async () => {
     desktop.isTauri = false;
     const view = renderImessage({ source: "imessage-ios", backupPath: "/backup" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(desktop.pathStat).not.toHaveBeenCalled();
     expect(view.result.current.backup).toBeNull();
   });
@@ -129,7 +122,7 @@ describe("useWhatsappPathStats", () => {
     desktop.paths.set("/wa", "directory");
     desktop.paths.set("/wa/msgstore.db.crypt15", "file");
     const view = renderWhatsapp({ source: "whatsapp-android", backupPath: "/wa" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.backup).toEqual(DIRECTORY);
     expect(view.result.current.cryptName).toBe("msgstore.db.crypt15");
     expect(view.result.current.backupEncrypted).toBeNull();
@@ -137,7 +130,7 @@ describe("useWhatsappPathStats", () => {
     view.rerender({ source: "whatsapp-android", backupPath: "/wa2" });
     expect(view.result.current.backup).toBeNull();
     expect(view.result.current.cryptName).toBeNull();
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.backup).toEqual(MISSING);
     expect(view.result.current.cryptName).toBeNull();
   });
@@ -160,21 +153,21 @@ describe("useWhatsappPathStats", () => {
         }),
       { initialProps: { backupPath: "/wa" }, wrapper },
     );
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.cryptName).toBeNull();
 
     view.rerender({ backupPath: "/wa/" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     desktop.paths.set("/wa/msgstore.db.crypt15", "file");
     view.rerender({ backupPath: "/wa" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(view.result.current.cryptName).toBe("msgstore.db.crypt15");
   });
 
   it("asks an iPhone backup whether it is encrypted", async () => {
     desktop.paths.set("/ios", "directory");
     const view = renderWhatsapp({ source: "whatsapp-ios", backupPath: "/ios" });
-    await settle();
+    await advanceTimersAndSettle(PATH_PROBE_DEBOUNCE_MS);
     expect(desktop.encrypted).toHaveBeenCalledWith("/ios");
     expect(view.result.current.backupEncrypted).toBe(true);
   });

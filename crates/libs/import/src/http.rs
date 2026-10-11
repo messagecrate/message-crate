@@ -518,7 +518,7 @@ mod tests {
                 account_id: 1,
                 username: "alice".into(),
             },
-            stop: Default::default(),
+            cancel: Default::default(),
             refused: Default::default(),
         }
     }
