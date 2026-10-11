@@ -237,9 +237,9 @@ export function SelectChevronIcon({ size, className, ...rest }: IconProps) {
 }
 
 /**
- * Small chevron pointing left — the way back on the sign-in cards. The
- * left-pointing sibling of `SelectChevronIcon`: the same 10-unit grid and 1.5
- * stroke.
+ * Small chevron pointing left, drawn on the way back to login on the
+ * onboarding card. The left-pointing sibling of `SelectChevronIcon`: the same
+ * 10-unit grid and 1.5 stroke.
  */
 export function BackChevronIcon({ size, className, ...rest }: IconProps) {
   return (
