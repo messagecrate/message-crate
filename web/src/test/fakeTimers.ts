@@ -2,8 +2,10 @@
  * Moving Vitest's fake clock in a test that renders React.
  *
  * A test that faked the clock with `vi.useFakeTimers` moves it with
- * `advanceTimersAndSettle`, never with a real wait, so a debounce or a poll
- * fires when the test says and not when a busy machine gets to it.
+ * `vi.advanceTimersByTimeAsync` inside `act`, never with a real wait, so a
+ * debounce or a poll fires when the test says and not when a busy machine
+ * gets to it. `advanceTimersAndSettle` does that and also lets what the
+ * timers started land.
  */
 
 import { act } from "@testing-library/react";
