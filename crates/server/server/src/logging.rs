@@ -41,7 +41,9 @@ static SERVER_LOG: RwLock<Option<LogFiles>> = RwLock::new(None);
 
 /// Install the subscriber: stderr, and the server's log once
 /// [`write_files_in`] opens it. Call once, before any work; a second call is
-/// ignored so tests that build a server in-process do not panic.
+/// ignored so tests that build a server in-process do not panic. A unit
+/// test never calls it: the log capture of unit tests installs its own
+/// process-wide subscriber.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = tracing_subscriber::registry()
@@ -96,17 +98,14 @@ pub(crate) fn subscriber_for(
 /// asking only the subscriber of the thread that first reaches the line. A
 /// test thread with no subscriber then marks the line as wanted by no one,
 /// and the test whose subscriber does want it reads an empty log (#2824).
-/// A process-wide subscriber keeps a second one in the process, so the
-/// cache is filled by asking every subscriber.
-///
-/// If a process-wide subscriber is already installed, such as by [`init`],
-/// it keeps that second one in the process just as well, so the refusal is
-/// ignored.
+/// With a process-wide subscriber, at least two subscribers exist whenever
+/// a test captures the log, so `tracing` asks every one of them.
 #[cfg(test)]
 fn install_ask_each_time() {
     static INSTALL: std::sync::Once = std::sync::Once::new();
     INSTALL.call_once(|| {
-        let _ = tracing::subscriber::set_global_default(AskEachTime);
+        tracing::subscriber::set_global_default(AskEachTime)
+            .expect("no unit test calls `init` or installs a process-wide subscriber");
     });
 }
 
