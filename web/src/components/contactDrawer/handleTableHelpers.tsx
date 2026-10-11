@@ -15,28 +15,29 @@ export function SortableColumn({
   isRowHeader?: boolean;
   children: ReactNode;
 }) {
-  const justify =
+  const justifyClass =
     align === "right" ? "justify-end" : align === "left" ? "justify-start" : "justify-center";
-  const textAlign =
+  const textAlignClass =
     align === "right" ? "text-right" : align === "left" ? "text-left" : "text-center";
-  const headerAlign = align === "right" ? thRightClass : align === "left" ? thLeftClass : thClass;
+  const headerAlignClass =
+    align === "right" ? thRightClass : align === "left" ? thLeftClass : thClass;
 
   return (
     <Column
       id={id}
       isRowHeader={isRowHeader}
       allowsSorting
-      className={`${headerAlign} ${widthClass}`.trim()}
+      className={`${headerAlignClass} ${widthClass}`.trim()}
     >
       {({ sortDirection }) => (
         <div className="relative flex w-full min-w-0 items-center">
           <Group
-            className={`flex min-w-0 flex-1 items-center outline-none ${justify} ${
+            className={`flex min-w-0 flex-1 items-center outline-none ${justifyClass} ${
               align === "right" ? "pr-4" : align === "left" ? "" : "px-4"
             }`}
           >
             <span
-              className={`max-w-full leading-tight ${textAlign} ${
+              className={`max-w-full leading-tight ${textAlignClass} ${
                 sortDirection ? "text-accent" : "text-text"
               }`}
             >
