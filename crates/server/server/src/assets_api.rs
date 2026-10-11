@@ -205,7 +205,7 @@ pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAss
 /// received. Hashing the whole file first would read every download twice.
 pub fn lookup_by_sha256_unverified(assets_root: &Path, sha256: &Sha256) -> Option<StoredAsset> {
     let assets_path = shard_rel_path(sha256, "");
-    if !is_regular_file(&assets_root.join(&assets_path)) {
+    if file_io::ensure_regular_file(&assets_root.join(&assets_path)).is_err() {
         return None;
     }
     let mime_type = read_mime_metadata(assets_root, sha256);
@@ -441,7 +441,7 @@ pub fn hash_and_store(
     export_mime: Option<&str>,
     stats: &mut AssetStats,
 ) -> Result<Option<StoredAsset>> {
-    if !is_regular_file(source) {
+    if file_io::ensure_regular_file(source).is_err() {
         stats.missing += 1;
         return Ok(None);
     }
@@ -567,11 +567,6 @@ fn resolve_mime(export_mime: Option<&str>, source: &Path) -> Option<String> {
 /// therefore need to be in the shared table.
 fn guess_mime(ext: Option<&str>) -> Option<String> {
     media::mime_for_ext(ext?).map(str::to_string)
-}
-
-/// True for a plain file; symlinks are never followed into the asset store.
-fn is_regular_file(path: &Path) -> bool {
-    file_io::ensure_regular_file(path).is_ok()
 }
 
 /// Stored asset fingerprint and path.
