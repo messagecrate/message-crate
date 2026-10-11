@@ -21,13 +21,6 @@ export type ManagedAccountChanges = Partial<
 const fetchAccounts = (signal: AbortSignal) => listAccounts({ signal });
 
 /** A deletion from one account changes the account list, the Dashboard and the Demo Account. */
-function useOwnerWrite<V>(
-  write: (vars: V) => Promise<unknown>,
-): UseMutationResult<unknown, Error, V> {
-  return useRouteMutation<unknown, Error, V>({
-    mutationFn: write,
-  });
-}
 
 /**
  * Change an account's status or permissions. The server answers with the
@@ -49,11 +42,11 @@ export function useUpdateAccount(): UseMutationResult<
 }
 
 export function useDeleteAccount(): UseMutationResult<unknown, Error, number> {
-  return useOwnerWrite((id: number) => deleteAccountById(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteAccountById(id) });
 }
 
 export function useDeleteAccountMessages(): UseMutationResult<unknown, Error, number> {
-  return useOwnerWrite((id: number) => deleteAccountMessages(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteAccountMessages(id) });
 }
 
 /**
