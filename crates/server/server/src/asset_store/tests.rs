@@ -308,6 +308,17 @@ async fn a_warning_from_a_removal_carries_the_request_id() {
     // `info` span, and a filter that drops it drops the id with it.
     let _subscriber =
         tracing::subscriber::set_default(crate::logging::subscriber_for(files, "info"));
+    // Another test's thread, with no subscriber, reaches the warning first,
+    // as one can in a full run; this test still reads its line (#2824).
+    {
+        let paths = paths.clone();
+        std::thread::spawn(move || {
+            let mut removal = RemovalDir::new(&paths, ACCOUNT);
+            assert!(removal.make_or_reuse().is_none());
+        })
+        .join()
+        .unwrap();
+    }
 
     // The account has no directory on disk, so `.removing/` cannot be made
     // and the removal warns.

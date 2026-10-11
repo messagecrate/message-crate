@@ -74,14 +74,64 @@ pub fn write_files_in(data_dir: &Path) -> std::io::Result<LogFiles> {
 
 /// A subscriber that writes, at `filter`, to `files` alone, formatted as the
 /// server's log is. For a test that reads what a run left in the log.
+///
+/// A test installs it as its thread's default, beside tests on other threads
+/// that install none. `tracing` caches, once per process, whether any
+/// subscriber wants each `tracing::warn!` and the like. While exactly one
+/// subscriber exists in the process, it fills that cache by asking only the
+/// subscriber of the thread that first reaches the line. A test thread with
+/// no subscriber then marks the line as wanted by no one, and the test whose
+/// subscriber does want it reads an empty log (#2824). So the first call
+/// also installs [`AskEachTime`] process-wide, which keeps a second
+/// subscriber in the process and answers "ask each time" itself.
 #[cfg(test)]
 pub(crate) fn subscriber_for(
     files: LogFiles,
     filter: &str,
 ) -> impl tracing::Subscriber + Send + Sync {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        tracing::subscriber::set_global_default(AskEachTime)
+            .expect("no other test installs a process-wide subscriber");
+    });
     tracing_subscriber::registry()
         .with(EnvFilter::new(filter))
         .with(file_layer(FileTarget::Files(files)))
+}
+
+/// The process-wide subscriber of a test run: it records nothing, and
+/// answers "ask me each time" for every line, so no line's cached answer is
+/// ever "no one wants it" and each line asks the subscriber of the thread
+/// it runs on.
+#[cfg(test)]
+struct AskEachTime;
+
+#[cfg(test)]
+impl tracing::Subscriber for AskEachTime {
+    fn register_callsite(
+        &self,
+        _: &'static tracing::Metadata<'static>,
+    ) -> tracing::subscriber::Interest {
+        tracing::subscriber::Interest::sometimes()
+    }
+
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        false
+    }
+
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+
+    fn event(&self, _: &tracing::Event<'_>) {}
+
+    fn enter(&self, _: &tracing::span::Id) {}
+
+    fn exit(&self, _: &tracing::span::Id) {}
 }
 
 /// The server's log layer: the stderr format without colour, one event per
