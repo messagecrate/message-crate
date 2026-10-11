@@ -80,7 +80,7 @@ describe("accountRunDirectories", () => {
     });
   });
 
-  it("asks the desktop app for the operating system once for every directory it may not read", async () => {
+  it("asks the desktop app for the operating system once, however many directories it may not read", async () => {
     listEveryImport.mockResolvedValue([
       { id: 1, run_dir: "/home/u/a" },
       { id: 0, run_dir: "/home/u/b" },

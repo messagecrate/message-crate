@@ -88,10 +88,10 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<Accou
   );
   const directories: AccountRunDirectories = { found: [], unreadable: [] };
   // The operating system is the same for every directory, so it is asked once.
-  let asked: Promise<DesktopOs | null> | undefined;
+  let osAnswer: Promise<DesktopOs | null> | undefined;
   const os = () => {
-    asked ??= desktopOs();
-    return asked;
+    osAnswer ??= desktopOs();
+    return osAnswer;
   };
   for (const { path, stat } of stats) {
     if (stat.unreadable) {

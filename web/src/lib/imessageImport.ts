@@ -2,6 +2,7 @@ import { encryptedBackupPasswordError } from "./encryptedBackup";
 import {
   checkOptionalPath,
   checkRequiredPath,
+  type DesktopOs,
   type ImportPathStat,
   type ImportPathUnknown,
   type PathRequirement,
@@ -172,7 +173,7 @@ export function macMessagesDbPath(homeDir: string): string {
  * Access lets Message Crate read it.
  */
 export function shouldPrefillMacMessagesDb(args: {
-  os: string;
+  os: DesktopOs | null;
   homeDir: string;
   chatDb: Pick<ImportPathStat, "exists" | "isFile"> & {
     unreadable: { kind: ImportPathUnknown["kind"] } | null;

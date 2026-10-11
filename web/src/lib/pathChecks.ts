@@ -68,12 +68,15 @@ function accessSentence(os: DesktopOs | null): string {
  * A message built with a null system says nothing about access.
  */
 export async function desktopOs(): Promise<DesktopOs | null> {
-  let os: string;
   try {
-    os = (await invokeHomeDir()).os;
+    return toDesktopOs((await invokeHomeDir()).os);
   } catch {
     return null;
   }
+}
+
+/** An operating system name from the desktop app, or null for one it does not ship for. */
+export function toDesktopOs(os: string): DesktopOs | null {
   return os === "macos" || os === "windows" || os === "linux" ? os : null;
 }
 
