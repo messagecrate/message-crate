@@ -35,6 +35,25 @@ Both files start the container with the same limits. It keeps no Linux capabilit
 
 A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, so it catches a write at start and not one made later. CI's "Docker image builds" job and the nightly build run it.
 
+`--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.
+It runs `scripts/check-served-website.sh`, which opens the website in headless Chromium inside the Playwright image, logs in to the Demo Account, searches the conversation list, and opens a conversation the search found.
+The search term is a word from a conversation name on the list, chosen by `scripts/website-check/check.mjs` so the search finds fewer conversations than the whole list.
+The check fails when a screen does not appear, when the browser logs a console error or an uncaught exception, or when the server answers any request with a 5xx server error status.
+The nightly build passes `--website`, and CI's job leaves it out, because pulling the Playwright image adds a few minutes to every pull request.
+
+The script takes a built image, an optional host port (18080 unless given), and `--website` before, between, or after those two.
+It refuses any other argument that starts with `-`, so a mistyped option is never taken for the image or the port.
+The stack runs under its own Compose project and volume, so it never touches a running Message Crate, and the script removes it on exit.
+
+```bash title="Build the release image and run the nightly check on it"
+docker build -f docker/Dockerfile -t message-crate-server:check .
+./scripts/check-docker-compose.sh --website message-crate-server:check
+```
+
+The check needs Docker, `jq`, and `curl` on the local machine, and nothing else, because npm installs the browser driver inside the Playwright image.
+That container uses the host's network so it can reach the server at `127.0.0.1`.
+`./scripts/check-served-website.sh <base-url>` runs the browser check alone against any running Message Crate that holds the Demo Account, such as `http://127.0.0.1:8080`.
+
 ## What the image contains
 
 The container is the server process only. The desktop app stays on the local machine and talks to the server over HTTP.
