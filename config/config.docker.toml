@@ -25,7 +25,10 @@ bind = "0.0.0.0:8080"
 # whatever this file says, and the website it serves is same-origin, so
 # neither needs an entry. The Vite development origins are left out on
 # purpose, because they would let any page on port 5173 of the viewer's
-# computer call this API. To point `cargo tauri dev` at this container, run
-# `serve` with the flag in place of the default command:
-#   docker compose run --rm --service-ports server \
-#     serve --config config/config.toml --cors-origin http://localhost:5173
+# computer call this API. `cargo tauri dev` reaches a container built from a
+# checkout when `serve` runs with `--cors-origin` in place of the default
+# command. The stack must be stopped first, because the run publishes port
+# 8080 and fails while the stack holds it:
+#   docker compose -f docker/compose.release.yml down
+#   docker compose -f docker/compose.release.yml run --rm --service-ports \
+#     server serve --config config/config.toml --cors-origin http://localhost:5173
