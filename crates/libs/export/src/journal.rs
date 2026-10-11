@@ -120,15 +120,11 @@ pub fn append(path: &Path, event: &ExportJournalEvent) -> Result<()> {
 ///
 /// Returns an error when the temporary file cannot be written or the rename fails.
 pub fn compact(path: &Path, target: &ServerTarget, state: &ExportJournalState) -> Result<()> {
-    let mut events = Vec::new();
-    let mut assets: Vec<_> = state.assets.iter().collect();
-    assets.sort_unstable();
-    for sha in assets {
-        events.push(ExportJournalEvent::AssetOk {
+    let mut events =
+        jsonl_journal::asset_ok_events(&state.assets, |sha256| ExportJournalEvent::AssetOk {
             target: target.clone(),
-            sha256: sha.clone(),
+            sha256,
         });
-    }
     if state.export_complete {
         // A later Export Run ignores the counts; an `export_complete` row
         // only means the last Export Run finished.

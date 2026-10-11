@@ -9,7 +9,7 @@ import { CLEARED_RUN, initialImportRunState } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
 import type { ImportRunDeps, RunContext } from "./context";
 import { summarizeStagingWithProgress } from "./desktopJob";
-import { discardRun } from "./finish";
+import { type DiscardOutcome, discardRun } from "./finish";
 import { mediaToolsMissingFor, runMediaStage } from "./media";
 import { dismissRunDirDeleteFailure } from "./runDirectory";
 import { beginRun, freshScratch, loadCarriedRecord } from "./scratch";
@@ -359,13 +359,18 @@ export function createImportRunService(deps: ImportRunDeps) {
     await runMediaStage(ctx, known, runId, outputDir, approved);
   }
 
-  /** Cancel the run at a Review: end it (`discardRun`) and go back to the form. */
+  /**
+   * Cancel the run at a Review: end it (`discardRun`) and go back to the form.
+   * A close the server refused leaves the run open there, so the form's
+   * resume check offers it again, with the server's message on `resumeError`.
+   */
   async function cancelRunAtReview(): Promise<void> {
     if (ctx.scratch.reviewAction) return;
     ctx.scratch.reviewAction = true;
     try {
       const { importRunId: runId, runDir: outputDir } = store.get();
-      await discardRun(ctx, runId, outputDir);
+      const outcome = await discardRun(ctx, runId, outputDir);
+      if (outcome.kind === "not_closed") store.set({ resumeError: outcome.message });
     } finally {
       ctx.scratch.reviewAction = false;
     }
@@ -393,7 +398,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     returnToForm: (account: RunAccount): void => {
       if (ownsRun(account)) returnToForm(ctx);
     },
-    discardRun: (runId: number | null, runDir: string | null): Promise<void> =>
+    discardRun: (runId: number | null, runDir: string | null): Promise<DiscardOutcome> =>
       discardRun(ctx, runId, runDir),
     dismissRunDirDeleteFailure: (): void => dismissRunDirDeleteFailure(ctx),
   };

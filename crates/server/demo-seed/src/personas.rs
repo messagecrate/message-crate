@@ -13,7 +13,7 @@ use crate::names::NameBank;
 use crate::phones;
 pub use crate::phones::OWNER_PHONE;
 
-/// Demo owner email address. Matches the value in `crates/server/demo-seed/config/seed.toml`.
+/// Demo owner email address. Written into `config/seed.toml` by [`crate::bundle::write_seed_toml`].
 pub const OWNER_EMAIL: &str = "demo.ingest@example.com";
 
 /// Which conversations a contact appears in.

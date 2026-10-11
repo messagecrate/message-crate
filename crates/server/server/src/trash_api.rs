@@ -34,7 +34,13 @@ pub(crate) async fn delete_trash(
 ) -> Result<StatusCode, ApiError> {
     let unreferenced = {
         let mut conn = state.db.acquire().await?;
-        let emptied = trash::empty_trash(&mut conn, auth.account_id, AuditActor::Holder).await?;
+        let emptied = trash::empty_trash(
+            &mut conn,
+            auth.account_id,
+            AuditActor::Holder,
+            chrono::Utc::now(),
+        )
+        .await?;
         emptied.orphaned
     };
     asset_store::remove_unreferenced(

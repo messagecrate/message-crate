@@ -1182,15 +1182,70 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("deletes the directory even when discarding the run fails", async () => {
-    // Either half failing must not leave the other undone: an open run with
-    // no directory blocks the next import, and a directory with no run is litter
-    // nothing will ever clean up.
+  it("keeps the directory, and shows the server's message, when the server refuses a discarded paused run (#2669)", async () => {
+    // The server still holds the run as running, so its files stay for the
+    // next visit to Import to offer it again.
+    discardImportRunMock.mockRejectedValueOnce(
+      new ApiError(422, "The import can't be discarded.", {
+        type: "https://messagecrate.app/problems/validation-failed",
+        title: "The import can't be discarded.",
+        status: 422,
+      }),
+    );
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "The import can't be discarded." });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "409 Conflict",
+      new ApiError(409, "import 7 is not running", {
+        type: "https://messagecrate.app/problems/state-conflict",
+        title: "State conflict",
+        status: 409,
+      }),
+    ],
+    [
+      "404 Not Found",
+      new ApiError(404, "import 7 not found for this account", {
+        type: "https://messagecrate.app/problems/not-found",
+        title: "Not found",
+        status: 404,
+      }),
+    ],
+  ])(
+    "deletes the directory when the server answers a discard with %s: the run is already closed",
+    async (_name, answer) => {
+      discardImportRunMock.mockRejectedValueOnce(answer);
+      const { result } = renderJob();
+      const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+      expect(outcome).toEqual({ kind: "discarded" });
+      expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+    },
+  );
+
+  it("keeps the directory when a 404 Not Found with no problem comes from in front of the server", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(404, "Not Found"));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "Not Found" });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the directory when a Cancel at a Review never reaches the server (#2669)", async () => {
     discardImportRunMock.mockRejectedValueOnce(new Error("offline"));
     const { result } = renderJob();
     await act(() => result.current.startImport(importForm({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(invokeDeleteRunDirMock).toHaveBeenCalled();
+
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("form");
+    expect(result.current.resumeError).toBe("offline");
   });
 
   it("still discards the run, and still returns to the form, even when deleting the directory fails", async () => {

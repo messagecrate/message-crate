@@ -127,16 +127,17 @@ impl MediaQueue {
 }
 
 /// Queue the Assets Import Run `import_id` of `account_id` brought and wake
-/// the pass. A failure is logged: the run's end is what the caller answers
-/// for, and `process-assets` repairs what was not queued.
+/// the pass, queued at `now`. A failure is logged: the run's end is what the
+/// caller answers for, and `process-assets` repairs what was not queued.
 pub(crate) async fn queue_import_run(
     pool: &SqlitePool,
     queue: &MediaQueue,
     account_id: i64,
     import_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
 ) {
     let queued = match pool.acquire().await {
-        Ok(mut conn) => queue_without_waking(&mut conn, account_id, import_id).await,
+        Ok(mut conn) => queue_without_waking(&mut conn, account_id, import_id, now).await,
         Err(error) => {
             log_not_queued(account_id, import_id, &error);
             0
@@ -149,14 +150,15 @@ pub(crate) async fn queue_import_run(
 
 /// Queue the Assets Import Run `import_id` of `account_id` brought, on
 /// `conn`, without waking a pass: the `import` command runs none, and the
-/// next `serve` works on them. Answers how many were queued; a failure is
-/// logged and answers none.
+/// next `serve` works on them. They are queued at `now`. Answers how many
+/// were queued; a failure is logged and answers none.
 pub(crate) async fn queue_without_waking(
     conn: &mut sqlx::SqliteConnection,
     account_id: i64,
     import_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> u64 {
-    match media_queue::queue_import_run(conn, account_id, import_id).await {
+    match media_queue::queue_import_run(conn, account_id, import_id, now).await {
         Ok(count) => {
             if count > 0 {
                 tracing::info!(
