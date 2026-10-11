@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::Result;
-use message_crate_core::{RunLogLevel, check_cancel, count_of};
+use message_crate_core::{RunLogLevel, count_of};
 use message_crate_http::HttpError;
 
 use crate::directory::file_label;
@@ -727,9 +727,9 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the caller asked the run to stop.
+    /// True once the caller cancelled the run or the server refused the session.
     fn is_cancelled(&self) -> bool {
-        check_cancel(&self.cfg.cancel).is_err()
+        self.session.check_stop().is_err()
     }
 
     /// Lock the shared journal (panics only if another thread panicked while holding it).

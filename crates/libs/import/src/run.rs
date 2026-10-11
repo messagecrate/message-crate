@@ -44,7 +44,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use jsonl_journal::ServerTarget;
-use message_crate_core::{CancelFlag, RunLogLevel, check_cancel};
+use message_crate_core::{CancelFlag, Cancelled, RunLogLevel, check_cancel};
 
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
@@ -121,9 +121,9 @@ pub struct ImportConfig {
     /// Where to write the run log; `None` puts it beside the input.
     pub log_path: Option<PathBuf>,
     /// Checked between files and uploads; set it to stop the run early.
-    /// The run sets it itself when the server refuses the session, so a
-    /// refused session stops the run the way a cancel does, and a run after
-    /// it needs a flag of its own.
+    /// The run only reads it: a session the server refuses stops the run the
+    /// way a cancel does through a flag of the run's own, so the same config
+    /// can run the next Upload.
     pub cancel: CancelFlag,
     /// Existing Import Run to post into when the caller already created one.
     pub import_id: Option<i64>,
@@ -159,9 +159,10 @@ pub(crate) struct Session {
     /// Username the server reports for the account the session token resolved to.
     pub username: String,
     pub auth: AuthInfo,
-    /// The run's cancel flag, which a refused session sets.
-    pub stop: CancelFlag,
-    /// Set once the server refuses the session token.
+    /// The caller's cancel flag. The run reads it and never sets it.
+    pub cancel: CancelFlag,
+    /// Set once the server refuses the session token. It is this run's own,
+    /// and stops the run as the caller's cancel flag does.
     pub refused: Arc<AtomicBool>,
 }
 
@@ -192,13 +193,25 @@ impl Session {
     fn note_refusal(&self, error: &anyhow::Error) {
         if message_crate_http::is_session_refused(error) {
             self.refused.store(true, Ordering::SeqCst);
-            self.stop.store(true, Ordering::SeqCst);
         }
     }
 
     /// True once the server has refused the session token.
     pub(crate) fn is_refused(&self) -> bool {
         self.refused.load(Ordering::SeqCst)
+    }
+
+    /// Whether the run must stop: the caller cancelled it, or the server
+    /// refused the session token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Cancelled`] when the run must stop.
+    pub(crate) fn check_stop(&self) -> std::result::Result<(), Cancelled> {
+        if self.is_refused() {
+            return Err(Cancelled);
+        }
+        check_cancel(&self.cancel)
     }
 }
 
@@ -255,8 +268,6 @@ impl RunPaths {
 /// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
 /// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
 pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<ImportReport> {
-    // A refused session stops the run through the cancel flag.
-    let stop = cfg.cancel.clone();
     let run_started = Instant::now();
     let started_at = now_stamp();
     let paths = RunPaths::resolve(cfg)?;
@@ -270,12 +281,11 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
             paths.input.display()
         );
     }
-    let session = match login(cfg, stop.clone(), &mut out) {
+    let session = match login(cfg, &mut out) {
         Ok(session) => session,
         // A session that has already ended is refused at the first request,
         // and stops the run the same way as one refused later.
         Err(error) if message_crate_http::is_session_refused(&error) => {
-            stop.store(true, Ordering::SeqCst);
             let report = refused_at_login(cfg, &files, started_at, run_started);
             return finish_refused_at_login(&paths, report, &mut out);
         }
@@ -298,7 +308,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
     let mut assets = AssetTotals::default();
 
     let halted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
-    settle(cfg, &mut pipeline, halted, &mut out)?;
+    settle(&session, &mut pipeline, halted, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
         out.show_at(
@@ -416,7 +426,7 @@ pub fn run(cfg: &ImportConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<
 /// # Errors
 ///
 /// Returns an error when the HTTP client cannot be built or the session token is rejected.
-fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Result<Session> {
+fn login(cfg: &ImportConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -432,7 +442,7 @@ fn login(cfg: &ImportConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Re
         token: cfg.token.clone(),
         username,
         auth,
-        stop,
+        cancel: cfg.cancel.clone(),
         refused: Arc::new(AtomicBool::new(false)),
     })
 }
@@ -543,7 +553,7 @@ fn drive(
 
         while next_consume < total {
             // Cancel must still join the in-flight import and write a report.
-            if check_cancel(&ctx.cfg.cancel).is_err() {
+            if ctx.session.check_stop().is_err() {
                 aborted = true;
                 break;
             }
@@ -670,8 +680,9 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 }
 
 /// End of run: send any leftover batch and wait for the last import. A
-/// halted run (`halted`, or the cancel flag) sends nothing more, and still
-/// waits for the in-flight import so the journal stays consistent.
+/// halted run (`halted`, a cancel, or a refused session) sends nothing
+/// more, and still waits for the in-flight import so the journal stays
+/// consistent.
 ///
 /// Whether the run halted is not decided here: a cancel that arrives while
 /// the last request is in flight halts nothing, so the caller reads the halt
@@ -681,12 +692,12 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 ///
 /// Returns an error when the journal cannot be updated or the import thread panicked.
 fn settle(
-    cfg: &ImportConfig,
+    session: &Session,
     pipeline: &mut ImportPipeline<'_>,
     halted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
-    let halted = halted || check_cancel(&cfg.cancel).is_err();
+    let halted = halted || session.check_stop().is_err();
     if halted || !pipeline.flush_and_continue(true, out)? {
         let _ = pipeline.join_inflight(out);
     }
