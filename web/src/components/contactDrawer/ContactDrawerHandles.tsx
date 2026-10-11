@@ -5,11 +5,11 @@ import ConfirmDialog from "../ConfirmDialog";
 import DataCard from "../DataCard";
 import IdentityDialogs from "../IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../IdentityTable";
-import type { ContactBrowseKind } from "./contactDrawerTypes";
+import type { ContactBrowseScope } from "./contactDrawerTypes";
 import { removeIdentityConfirmBody } from "./handleTableLogic";
 import { useHandleMutations } from "./useHandleMutations";
 
-type BrowseFn = (args: { kind: ContactBrowseKind; handle?: string }) => void;
+type BrowseFn = (scope: ContactBrowseScope) => void;
 
 /** A contact's identity as the shared table shows it. */
 function toIdentityRow(h: ContactHandle): IdentityRow {

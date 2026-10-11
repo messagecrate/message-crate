@@ -494,7 +494,13 @@ security scheme with its scopes, so every route says which it accepts.
   person's act, and a leaked or faulty program must not be able to empty an
   archive. A token never signs in and never browses. It is ended by the person
   or the owner revoking it (`DELETE /v1/accounts/{id}/api-tokens/{token_id}`,
-  with a session) or by its expiry, never by the program holding it.
+  with a session) or by its expiry, never by the program holding it. The
+  owner makes no token, and a token row on the owner's account, written by
+  hand or restored with a database, answers the same `401 Unauthorized` as a
+  token the server never issued. Why: no token acts as the owner
+  (`docs/adr/0008-the-owner-holds-no-messages.md`), and the refusal sits in
+  the token lookup every route goes through, so a route that forgets to
+  refuse the owner cannot break it.
 - `GET /v1/session` answers whose credential the caller holds — the account's
   id and username — for a session or a token. Why: a program holding a token
   needs to know which account it writes to before it starts, and push and export
