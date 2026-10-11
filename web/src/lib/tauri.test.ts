@@ -173,9 +173,9 @@ describe("staging command wrappers name only the directory", () => {
   });
 
   // The desktop process keeps the Staging Directory and knows which directories
-  // it made. A Staging Directory sent from the window would be checked
-  // against the setting as it is now, and a run started under an earlier
-  // setting would be refused (#1154).
+  // it made. A Staging Directory path sent from the window would be checked
+  // against the Staging Directory the desktop process holds now, and a run
+  // started under an earlier one would be refused (#1154).
   it("sends no Staging Directory with any staging command", async () => {
     await invokeSummarizeStaging({ run_dir: run });
     await invokeTranscodeStaging({ run_dir: run });
