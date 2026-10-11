@@ -17,9 +17,9 @@
 //! writes its lines with [`format_lines`].
 //!
 //! A line never holds a control character a terminal acts on: each one is
-//! written as `\xNN` or `\u{..}` ([`push_escaped`]), so a line opened with `cat`,
-//! `less -r` or `tail` shows what it says and cannot move the cursor, clear
-//! the screen or ring the bell.
+//! written as `\xNN` or `\u{..}` ([`push_escaped`]), so a line opened with
+//! `cat`, `less -r` or `tail` shows what it says and cannot move the cursor,
+//! clear the screen or ring the bell.
 
 use std::borrow::Cow;
 use std::fmt::Write as _;
@@ -82,8 +82,9 @@ pub fn time_now() -> String {
 /// `text` at `level` as lines, each stamped with `time` and ending in a line
 /// break. Text that holds a line break is written as one line per part, each
 /// with the time and the level, so every line is whole on its own, and any
-/// other control character in a part is escaped ([`escape_controls`]). Empty when `text` holds nothing but white space, so
-/// a blank spacer line is not written.
+/// other control character in a part is escaped ([`escape_controls`]).
+/// Empty when `text` holds nothing but white space, so a blank spacer line is
+/// not written.
 pub fn format_lines(time: &str, level: LogLevel, text: &str) -> String {
     let mut out = String::new();
     for part in text
@@ -302,7 +303,7 @@ mod tests {
     /// before, BEL rings, and U+009B is CSI on its own to a terminal that
     /// decodes UTF-8. A line holds each as `\xNN` or `\u{..}` instead.
     #[test]
-    fn a_control_character_is_written_as_backslash_x() {
+    fn a_control_character_is_escaped() {
         let text = format_lines(
             TIME,
             LogLevel::Warn,

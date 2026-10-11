@@ -123,7 +123,7 @@ fn a_line_break_inside_an_event_is_written_as_backslash_n() {
 /// it rather than clearing the screen, and the reader reads the line back
 /// whole.
 #[test]
-fn a_control_character_in_a_display_field_is_written_as_backslash_x() {
+fn a_control_character_in_a_display_field_is_escaped() {
     let tmp = TempDir::new().unwrap();
     let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
     let path = "IMG\x1b[2J\x07\u{9b}2J.jpg";
