@@ -1052,7 +1052,6 @@ impl PrepareQueue {
 mod tests {
     use super::*;
     use crate::run::NO_MESSAGE_COUNT_LIMIT;
-    use sha2::{Digest, Sha256};
 
     fn resolver() -> DigestResolver {
         DigestResolver {
@@ -1085,7 +1084,7 @@ mod tests {
         let path = dir.path().join("pic.bin");
         std::fs::write(&path, b"hello").unwrap();
         let claimed = "a".repeat(64);
-        let expected_disk = hex::encode(Sha256::digest(b"hello"));
+        let expected_disk = file_io::sha256_hex(b"hello");
 
         let mut warnings = Vec::new();
         let trusted = resolver()

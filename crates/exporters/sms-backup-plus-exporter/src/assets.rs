@@ -4,7 +4,6 @@ use crate::types::AttachmentBytes;
 use mailparse::{MailHeaderMap, ParsedMail};
 use message_crate_core::attachments::{attachment_date_prefix, digest_prefix};
 use regex::Regex;
-use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -219,7 +218,7 @@ fn attachment_bytes(
     let ext = extension_for(&ctype, original.as_deref());
     // Content-addressed prefix: re-exports with different bytes get a new path
     // instead of leaving stale attachment files under the old name.
-    let digest_hex = hex::encode(Sha256::digest(&data));
+    let digest_hex = file_io::sha256_hex(&data);
     let digest_prefix = digest_prefix(&digest_hex);
     let filename = match &original {
         Some(orig) => format!("{prefix}_{digest_prefix}_{}", safe_basename(orig)),
