@@ -4,8 +4,9 @@ name: Audit
 # somebody writes bad code, so they do not run on every pull request. They
 # run when a change could alter the dependency graph (a manifest, a lockfile
 # or the deny config moves — which is every Dependabot PR), when the audit
-# itself changes (this file or scripts/audit-docs.sh), and on a weekly
-# schedule that catches newly published advisories on main. These checks
+# itself changes (this file, scripts/audit-docs.sh, or the Node.js major in
+# .nvmrc it installs), and on a weekly schedule that catches newly published
+# advisories on main. These checks
 # are deliberately not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # The same trigger runs the licence policy
@@ -32,6 +33,7 @@ on:
       - "scripts/openapi-typescript/package.json"
       - "scripts/website-check/package-lock.json"
       - "scripts/website-check/package.json"
+      - ".nvmrc"
       - ".github/workflows/audit.yml"
       - "scripts/audit-docs.sh"
   schedule:
@@ -72,10 +74,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The Node.js that builds web/ and docs/ elsewhere. Each npm ci below
+      # runs its tree's install scripts and engine checks, so on any other
+      # Node.js the audit could fail, or pass, for a reason the builds do
+      # not share.
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: |
             web/package-lock.json

@@ -111,6 +111,10 @@ jobs:
               # The server's config, whose website and Data Directory check
               # has Windows-only cases the windows-config job tests.
               crates/server/server/src/config.rs|crates/server/server/src/config/*) rust=true; server_config=true ;;
+              # The Node.js major the web and docs jobs install. The
+              # docker-context job, which runs on every change, checks the
+              # Dockerfile's frontend stage against it.
+              .nvmrc) web=true; docs=true ;;
               .github/workflows/*) rust=true; web=true; docs=true; docker=true; server_config=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
               *.md) ;;
@@ -290,7 +294,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -327,7 +331,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: docs/package-lock.json
 
@@ -525,7 +529,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: web/package-lock.json
 

@@ -327,7 +327,7 @@ The product has two pieces:
 | Database               | SQLite file at `data/messagecrate.db`. Table SQL lives in `schema/sql/`. The server fingerprints those files at compile time (`SCHEMA_FINGERPRINT` in `db/schema.rs`) and rebuilds a database stamped with any other fingerprint empty, so a schema change is only a change to the SQL: nothing to bump. The rebuilt database needs a fresh import. |
 | Desktop app            | Tauri 2 native window. Vite 8 + React 19 + TypeScript SPA in `web/`. React Router 7, React Aria, Tailwind CSS 4. Vitest + Biome.  |
 | Website                | Same `web/` SPA. Dev server on port 5173. Production copy in `static/`, served by the server on port 8080.                        |
-| Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. |
+| Node                   | Node.js 24 for `web/`, `docs/`, the CI jobs that build them, and the Docker frontend build. `.nvmrc` holds the major; the workflows read it, and `scripts/check-docker-context.sh` fails a Dockerfile frontend stage on another. |
 | Docs site              | Astro 7 + Starlight, published to GitHub Pages at messagecrate.app on each `v*` release tag.                                            |
 | Packaging              | Docker (Node.js 24 frontend build, Rust build, Node.js 20 runtime). GitHub Actions on `v*` tags builds the image and Tauri installers. |
 | Helpers                | `ffmpeg` / `ffprobe` for media, on PATH or in the Tools Directory (`~/message-crate/tools`). `wtsexporter` for WhatsApp, downloaded by the app into the Tools Directory (a `pipx` install linked there where the app has no download, such as Linux on ARM). `gh` for GitHub. `imessage-reader` and `message-crate-server` are bundled beside the app, not on PATH (`src-tauri/build.rs` builds both). |
@@ -408,7 +408,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install tauri-cli --version "^2"
 ```
 
-**3. Node.js 24**. Distro Node is usually too old. nvm example:
+**3. Node.js 24**, the major in `.nvmrc`. Distro Node is usually too old. nvm example:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
