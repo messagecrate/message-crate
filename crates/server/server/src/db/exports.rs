@@ -244,11 +244,11 @@ pub async fn get_export(
     row.as_ref().map(export_from_row).transpose()
 }
 
-/// Close a running run with `status`, stamp `finished_at` with `now`, and delete the
-/// list of messages it matched at creation: a closed run hands nothing over.
-/// Returns `false` when the run was not running, which is the caller's
-/// `409`: the status check and the write are one statement, so two closers
-/// racing cannot both win.
+/// Close a running run with `status`, stamp `finished_at` with `now`, and
+/// delete the list of messages it matched at creation: a closed run hands
+/// nothing over. Returns `false` when the run was not running, which is the
+/// caller's `409`: the status check and the write are one statement, so two
+/// closers racing cannot both win.
 ///
 /// # Errors
 ///
