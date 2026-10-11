@@ -31,7 +31,6 @@ function pathOnlySource(
     snapshotSecret: () => null,
     backupField: () => BACKUP_PATH_FIELD,
     readiness: (input) => ({ enabled: Boolean(input.backupPath), errors: {} }),
-    FormSection: () => null,
     ...rest,
   };
 }

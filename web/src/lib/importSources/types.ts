@@ -1,5 +1,3 @@
-import type { ComponentType, ReactNode, RefObject } from "react";
-import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
 import type { ImportFormFieldsProps } from "../../screens/import/ImportFormFields";
 import type { ImportJobFormValues } from "../../screens/import/useImportJob";
 import type { ImportSourceId } from "../exportSources";
@@ -47,12 +45,10 @@ export type ExtractFields = Partial<Omit<ExtractConfig, "source" | "path" | "out
 
 /**
  * The owner phone numbers as they are being typed, for a source that asks
- * for them. The Import form holds this state, because the Import button
- * reads it too.
+ * for them, as its readiness reads them. The Import form holds this state,
+ * because the Import button reads it too.
  */
-export type OwnerPhoneEntry = {
-  fieldRef: RefObject<PhoneTokenFieldHandle | null>;
-  onDraftChange: (draft: string) => void;
+export type OwnerPhoneState = {
   /** True while a number is typed and not yet committed. */
   draftPending: boolean;
   /** The committed numbers and the typed one, as the profile check reads them. */
@@ -60,11 +56,10 @@ export type OwnerPhoneEntry = {
   /** True when none of `phonesForMatch` is on the profile. */
   mismatch: boolean;
   mismatchAck: boolean;
-  onMismatchAckChange: (value: boolean) => void;
 };
 
 /** What the Import form reads to decide whether Import can start. */
-export type ReadinessInput = ImportFormFieldsProps & { ownerPhoneEntry: OwnerPhoneEntry };
+export type ReadinessInput = ImportFormFieldsProps & { ownerPhoneEntry: OwnerPhoneState };
 
 /** Whether the source's fields are ready for Import, and the problem with each field that is not. */
 export type Readiness = {
@@ -72,22 +67,15 @@ export type Readiness = {
   errors: Partial<Record<string, string>>;
 };
 
-/** What a source's form section is given. */
-export type ImportFormSectionProps = ReadinessInput & {
-  /** The selected source's own descriptor. */
-  descriptor: ImportSourceDescriptor;
-  errors: Partial<Record<string, string>>;
-  /** The Attachments field, for a section whose source shows it to place. */
-  attachmentFields: ReactNode;
-};
-
 /**
  * What the Import screen and the run know about one backup source, in one
  * place. Each field is read for the selected source, so a new source needs
- * only its descriptor. The exception is the Import screen's path checks as
- * the paths are typed: each fills its own source's stats (`pathStats`,
- * `whatsappStats`), which the source's readiness and form section read, so
- * a source that checks its paths adds a check and its stats there too.
+ * only its descriptor and, in `screens/import/formSections/`, its form
+ * section, which renders the source's fields and so stays out of `lib/`.
+ * The other exception is the Import screen's path checks as the paths are
+ * typed: each fills its own source's stats (`pathStats`, `whatsappStats`),
+ * which the source's readiness and form section read, so a source that
+ * checks its paths adds a check and its stats there too.
  *
  * `M` is the source's own method ids. The functions below are declared in
  * method syntax, which TypeScript checks bivariantly in their parameters, so
@@ -148,6 +136,4 @@ export type ImportSourceDescriptor<M extends string = string> = {
   backupField(method: M): BackupField;
   /** Whether the source's own fields let Import start, and what is wrong with each. */
   readiness(input: ReadinessInput & { source: M }): Readiness;
-  /** The source's fields after its backup field, in the Import Messages section. */
-  FormSection: ComponentType<ImportFormSectionProps>;
 };
