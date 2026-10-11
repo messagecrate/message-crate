@@ -45,6 +45,18 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => desktop.isTauri,
 }));
 
+/** The desktop app, with every program found: only it can name a run's log. */
+function onDesktop() {
+  desktop.isTauri = true;
+  desktop.toolsStatus.mockResolvedValue({
+    toolsDir: "/home/sam/message-crate/tools",
+    checking: false,
+    ffmpeg: { state: "found", path: "/home/sam/message-crate/tools/ffmpeg" },
+    ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
+    wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
+  } satisfies ToolsStatus);
+}
+
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/tauri")>()),
   invokeImportRunLog: (runDir: string) => invokeImportRunLog(runDir),
@@ -270,6 +282,7 @@ describe("ImportRunView", () => {
   });
 
   it("offers no import log until Upload has started, then shows it in the Upload row", async () => {
+    onDesktop();
     const user = setupUser();
     const runDir = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ runDir });
@@ -291,6 +304,7 @@ describe("ImportRunView", () => {
   });
 
   it("keeps the import log once the run ends and its directory is gone", async () => {
+    onDesktop();
     const runDir = "/home/sam/message-crate/staging-iphone";
     const view = renderView({
       runDir,
@@ -313,6 +327,7 @@ describe("ImportRunView", () => {
   });
 
   it("keeps the import log of a run that stops with its directory still there", async () => {
+    onDesktop();
     // A paused run ends the screen's part with its directory kept.
     const staging = "/home/sam/message-crate/staging-iphone";
     const steps = stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" });
@@ -325,6 +340,14 @@ describe("ImportRunView", () => {
       within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
     ).toBeInTheDocument();
     expect(invokeImportRunLog).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks for no import log in the browser, which has no desktop process to name it", () => {
+    renderView({
+      runDir: "/home/sam/message-crate/staging-iphone",
+      steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
+    });
+    expect(invokeImportRunLog).not.toHaveBeenCalled();
   });
 
   it("shows the options group only when Obfuscate is on", () => {

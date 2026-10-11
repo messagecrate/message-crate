@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+
 - 2026-10-11: The messages about a password, such as a wrong current
   password or two new passwords that differ, are written the way the
   server's other messages are, so they no longer end with a full stop.
