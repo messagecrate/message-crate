@@ -18,7 +18,7 @@ export function healthBackoffMs(failureIndex: number): number {
 export type ServerHealthStatus = "unknown" | "checking" | "ok" | "fail";
 
 /**
- * URL to GET for server liveness.
+ * URL to GET to ask whether the server can answer.
  * A blank value means this origin (same as the API client empty base URL).
  * Returns null when the value is not empty and not an absolute http(s) URL.
  */
@@ -37,7 +37,8 @@ export function healthProbeUrl(baseUrl: string): string | null {
 }
 
 /**
- * Probe server liveness via GET /health (plain text, not JSON).
+ * Ask GET /health whether the server can answer: the server says `ok` only
+ * when it can reach its database, so the light agrees with the API calls.
  * Returns true only when the response is OK.
  *
  * Calls `fetch` itself rather than going through `serverApi.ts`: the address

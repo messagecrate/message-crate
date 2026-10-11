@@ -354,6 +354,13 @@ released versions carry their date on the heading.
   letters and digits. Each now comes up equally often. The tokens were never
   close to guessable, and they keep the same length and form (#2220).
 
+- 2026-10-11: **The login screen reads Disconnected when the server cannot
+  reach its database.** Before, it read Connected as long as the server was
+  running, even when every page failed because the database could not be
+  read or every connection to it was taken. Docker's health check of
+  the Message Crate container asks the same question, so a container whose
+  server cannot reach its database now reads unhealthy too (#2202).
+
 - 2026-10-11: **A screen stops waiting for a server that never answers.**
   When the server takes a request and then never answers, such as a stalled
   container, a screen now gives up after 30 seconds and says the server
