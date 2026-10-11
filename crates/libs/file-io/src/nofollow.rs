@@ -4,9 +4,7 @@
 //! in an export or in the store cannot make the server read a file outside it.
 
 use anyhow::{Context, Result, bail};
-use sha2::{Digest, Sha256};
 use std::fs::File;
-use std::io::{self, Read};
 use std::path::Path;
 
 /// Fail unless `path` is a regular file, not a symlink.
@@ -62,16 +60,6 @@ pub fn open_nofollow(path: &Path) -> Result<File> {
 /// Returns an error when [`open_nofollow`] refuses or fails, or the file
 /// cannot be read.
 pub fn file_sha256_nofollow(path: &Path) -> Result<String> {
-    let mut file = open_nofollow(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 64 * 1024];
-    loop {
-        match file.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buf[..n]),
-            Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(hex::encode(hasher.finalize()))
+    let file = open_nofollow(path)?;
+    Ok(crate::sha256_of_reader(file)?)
 }

@@ -37,21 +37,24 @@ pub use nofollow::{ensure_regular_file, file_sha256_nofollow, open_nofollow};
 /// Returns an error when the file cannot be opened or read; the error message
 /// names the file.
 pub fn file_sha256(path: &Path) -> io::Result<String> {
-    let mut file = std::fs::File::open(path)
+    let file = std::fs::File::open(path)
         .map_err(|e| io::Error::new(e.kind(), format!("open {}: {e}", path.display())))?;
+    sha256_of_reader(file)
+        .map_err(|e| io::Error::new(e.kind(), format!("read {}: {e}", path.display())))
+}
+
+/// Stream `reader` through SHA-256 in 64 KB chunks, retrying an interrupted
+/// read, and return 64 lowercase hex digits. A read error is returned as it
+/// is, so each caller words it.
+fn sha256_of_reader(mut reader: impl Read) -> io::Result<String> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 64 * 1024];
     loop {
-        match file.read(&mut buf) {
+        match reader.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => hasher.update(&buf[..n]),
             Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
-            Err(e) => {
-                return Err(io::Error::new(
-                    e.kind(),
-                    format!("read {}: {e}", path.display()),
-                ));
-            }
+            Err(e) => return Err(e),
         }
     }
     Ok(hex::encode(hasher.finalize()))
