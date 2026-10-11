@@ -1112,7 +1112,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
 /// named by `sha` alone, with no extension, as the store names an Asset.
 ///
 /// `sha` stands in for the content hash; the store never reads the bytes
-/// back here, so it only has to be 64 characters long the way a real digest
+/// back here, so it only has to be 64 hex characters the way a real digest
 /// is. The file goes in the account's one assets directory, the directory
 /// every source of the account shares, which is where a delete looks for it.
 pub async fn attach_stored_file(
@@ -1121,15 +1121,15 @@ pub async fn attach_stored_file(
     conversation_id: i64,
     sha: &str,
 ) -> std::path::PathBuf {
-    let shard = state
-        .cfg
-        .paths
-        .assets_dir_for_account(account_id)
-        .join(&sha[..2]);
-    std::fs::create_dir_all(&shard).unwrap();
-    let path = shard.join(sha);
+    let sha = crate::assets_api::Sha256::parse(sha)
+        .expect("attach_stored_file needs a 64-hex fingerprint");
+    let assets_dir = state.cfg.paths.assets_dir_for_account(account_id);
+    let rel = crate::assets_api::shard_rel_path(&sha, "");
+    let path = assets_dir.join(&rel);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(&path, b"jpeg bytes").unwrap();
-    std::fs::write(shard.join(format!(".{sha}.mime")), "image/jpeg").unwrap();
+    let sidecar = crate::asset_store::sidecar_path(&assets_dir, &sha);
+    std::fs::write(sidecar, "image/jpeg").unwrap();
 
     let mut conn = state.db.acquire().await.unwrap();
     let message_id: i64 = sqlx::query_scalar(
@@ -1142,8 +1142,8 @@ pub async fn attach_stored_file(
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3)")
         .bind(message_id)
-        .bind(sha)
-        .bind(format!("{}/{sha}", &sha[..2]))
+        .bind(sha.as_str())
+        .bind(rel)
         .execute(&mut *tx)
         .await
         .unwrap();
