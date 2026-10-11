@@ -1,10 +1,10 @@
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { sourceLabel } from "../../lib/exportSources";
 import { findImportMethod } from "../../lib/importSources";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { countOf } from "../../lib/plural";
 import { ATTACHMENT_OPTIONS } from "./ImportFormUi";
 import type { ImportPhase } from "./importProgressState";
-import type { ImportJobFormValues } from "./useImportJob";
 
 /** Which of the run's two reviews ((CONTEXT.md, "Review")). */
 export type ReviewKind = "staging" | "media";

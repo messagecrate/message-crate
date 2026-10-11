@@ -1,11 +1,10 @@
-import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
 import { textInputClass } from "../../components/TextField";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
-import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "../../lib/routeQuery";
 import { getServerSettings, updateServerSettings } from "../../lib/serverApi";
 import { useServerInfo } from "../../lib/useServerInfo";
 import { DemoAccountCard } from "./DemoAccountCard";
@@ -33,18 +32,16 @@ export function ServerSettingsPanel() {
   const { data, isPending, error } = useRouteQuery(keys.serverSettings.all, (signal) =>
     getServerSettings({ signal }),
   );
-  const save = useMutation({
+  const save = useRouteMutation({
     mutationFn: (public_registration: boolean) => updateServerSettings({ public_registration }),
     onSuccess: (settings) => cache.set(keys.serverSettings.all, settings),
-    onSettled: () => cache.invalidateAccount(),
   });
-  const saveLimit = useMutation({
+  const saveLimit = useRouteMutation({
     mutationFn: (asset_max_bytes: number) => updateServerSettings({ asset_max_bytes }),
     onSuccess: (settings) => {
       cache.set(keys.serverSettings.all, settings);
       setLimitDraft(null);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
   // What the owner has typed and not yet saved; null shows the limit in force.
   const [limitDraft, setLimitDraft] = useState<string | null>(null);

@@ -8,7 +8,6 @@ import Select, { ListBoxItem, selectItemClassName } from "../../components/Selec
 import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
-import type { ImessagePathStats } from "../../lib/imessageImport";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
 import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
@@ -16,10 +15,9 @@ import { parseSelectKey } from "../../lib/selectKey";
 import { toolUsable } from "../../lib/tauri";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import { useToolsStatus } from "../../lib/useToolsStatus";
-import type { WhatsappPathStats } from "../../lib/whatsappImport";
 import { IMPORT_FORM_SECTIONS } from "./formSections";
 import { FieldStatus } from "./formSections/FieldStatus";
-import type { OwnerPhoneEntry } from "./formSections/types";
+import type { ImportFormFieldsProps, OwnerPhoneEntry } from "./formSections/types";
 import { WhatsappFallbackPhoneField } from "./formSections/WhatsappFormSection";
 import {
   ATTACHMENT_OPTIONS,
@@ -31,68 +29,6 @@ import {
 } from "./ImportFormUi";
 import { MissingProgramNotice } from "./MissingProgramNotice";
 import { mediaJobVerb } from "./reviewForecast";
-
-export type ImportFormFieldsProps = {
-  source: string;
-  onSourceChange: (source: string) => void;
-  backupPath: string;
-  onBackupPathChange: (path: string) => void;
-  backupPassword: string;
-  onBackupPasswordChange: (value: string) => void;
-  showBackupPassword: boolean;
-  onToggleBackupPassword: () => void;
-  attachmentRoot: string;
-  onAttachmentRootChange: (path: string) => void;
-  appleContacts: string;
-  onAppleContactsChange: (path: string) => void;
-  pathStats: ImessagePathStats;
-  whatsappKey: string;
-  onWhatsappKeyChange: (value: string) => void;
-  showWhatsappKey: boolean;
-  onToggleWhatsappKey: () => void;
-  whatsappWa: string;
-  onWhatsappWaChange: (path: string) => void;
-  whatsappMedia: string;
-  onWhatsappMediaChange: (path: string) => void;
-  whatsappDb: string;
-  onWhatsappDbChange: (path: string) => void;
-  isBusinessApp: boolean;
-  onIsBusinessAppChange: (value: boolean) => void;
-  /** The holder's WhatsApp number: required on Android, a fallback on iPhone. */
-  whatsappOwnerPhone: string;
-  onWhatsappOwnerPhoneChange: (value: string) => void;
-  whatsappStats: WhatsappPathStats;
-  attachments: AttachmentChoices;
-  onAttachmentsChange: (attachments: AttachmentChoices) => void;
-  ownerPhones: string[];
-  onOwnerPhonesChange: (phones: string[]) => void;
-  /** Owner email addresses as typed (SMS Backup+ only); commas separate several. */
-  ownerEmails: string;
-  onOwnerEmailsChange: (value: string) => void;
-  /** The account's phones for SBR mismatch checks (empty until loaded). */
-  profilePhones: string[];
-  profilePhonesReady: boolean;
-  /** True when the profile request failed (fail open on the mismatch check). */
-  profilePhonesError: boolean;
-  showMissingAccountPhoneWarning: boolean;
-  formatOpen: boolean;
-  onToggleFormat: () => void;
-  processingOpen: boolean;
-  onToggleProcessing: () => void;
-  obfuscate: boolean;
-  onObfuscateChange: (value: boolean) => void;
-  /** The IANA zone iMazing dates are read in; shown only for that source. */
-  timeZone: string;
-  onTimeZoneChange: (zone: string) => void;
-  /** The phone's country as an ISO code, or empty for none; every source has it. */
-  phoneCountry: string;
-  /** The countries to offer, from `GET /v1/phone-countries`; empty until loaded. */
-  phoneCountries: readonly PhoneCountryChoice[];
-  onPhoneCountryChange: (code: string) => void;
-  running: boolean;
-  /** Optional flushed owner phones (SBR commits draft before import). */
-  onImport: (ownerPhones?: string[]) => void;
-};
 
 /** The choice that states no country for the phone. */
 const NO_PHONE_COUNTRY = "none";

@@ -1,7 +1,7 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import type { AccountProfile } from "./account";
 import { keys } from "./queryKeys";
-import { useRouteCache, useRouteQuery } from "./routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./routeQuery";
 import { getAccount, getAccountProfile, updateAccount } from "./serverApi";
 import { type AccountProfileChange, useUpdateAccountProfile } from "./useAccountProfile";
 
@@ -43,12 +43,11 @@ export function useUpdateSettingsProfile(
 ): UseMutationResult<AccountProfile, Error, AccountProfileChange> {
   const cache = useRouteCache();
   const own = useUpdateAccountProfile();
-  const managed = useMutation<AccountProfile, Error, AccountProfileChange>({
+  const managed = useRouteMutation<AccountProfile, Error, AccountProfileChange>({
     mutationFn: (body) => updateAccount(managedAccountId ?? 0, body),
     onSuccess: (profile) => {
       cache.set(keys.ownerAccounts.member(profile.account_id), profile);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
   return managedAccountId === undefined ? own : managed;
 }

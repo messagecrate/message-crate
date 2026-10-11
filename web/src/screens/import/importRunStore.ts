@@ -3,9 +3,9 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { getAccountId, onAccountIdChange } from "../../lib/api";
 import { useAuth } from "../../lib/authContext";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { MediaToolName, StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
-import type { ImportJobFormValues } from "./useImportJob";
 
 /** A run directory Message Crate could not delete, and the reason it gave. */
 export type RunDirDeleteFailure = { path: string; reason: string };

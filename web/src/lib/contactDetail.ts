@@ -1,6 +1,6 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { keys } from "./queryKeys";
-import { useRouteCache, useRouteQuery } from "./routeQuery";
+import { useRouteCache, useRouteMutation, useRouteQuery } from "./routeQuery";
 import { getContact, updateContact } from "./serverApi";
 import type { components } from "./serverApi.types";
 
@@ -62,11 +62,10 @@ export function useUpdateContact(): UseMutationResult<
   { contactId: string; body: ContactChange }
 > {
   const cache = useRouteCache();
-  return useMutation<ContactDetail, Error, { contactId: string; body: ContactChange }>({
+  return useRouteMutation<ContactDetail, Error, { contactId: string; body: ContactChange }>({
     mutationFn: ({ contactId, body }) => updateContact(contactId, body),
     onSuccess: (detail, { contactId }) => {
       cache.set(keys.contacts.detail(contactId), detail);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }

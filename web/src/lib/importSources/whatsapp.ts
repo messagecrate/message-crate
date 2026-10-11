@@ -1,4 +1,4 @@
-import { attachmentChoicesOf } from "../../screens/import/attachmentChoices";
+import { attachmentChoicesOf } from "../attachmentChoices";
 import { sourceLabel } from "../exportSources";
 import { whatsappExtractFields } from "../whatsappExtractFields";
 import {
