@@ -7,8 +7,8 @@ use sqlx::SqliteConnection;
 use crate::db::{account_profile, imports};
 use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, expect_problem, fixture_with_account,
-    register_via_api, seed_one_message, stored_time, test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
+    fixture_with_account, register_via_api, seed_one_message, stored_time, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these
@@ -84,16 +84,12 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'c.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -174,16 +170,12 @@ async fn list_conversations_finds_a_handle_across_platforms() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (10, $1, $2, 'individual', 'wa.jsonl')",
-    )
-    .bind(account)
-    .bind(wa)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(10),
+        ..ConversationRow::new(account, wa)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (10, $1, 'Sam WA')",
@@ -249,16 +241,12 @@ async fn list_conversations_sorts_by_date_or_message_count() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         body: Some("newest"),
@@ -351,16 +339,12 @@ async fn list_conversations_paginates() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         timestamp: stored_time("2024-07-01T12:00:00.000Z"),
         body: Some("later"),
@@ -496,16 +480,12 @@ async fn list_conversations_filters_by_contact_and_type() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (9, $1, $2, 'group', 'Other', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(9),
+        ..ConversationRow::group(account, other, "Other")
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("group"),
@@ -519,16 +499,12 @@ async fn list_conversations_filters_by_contact_and_type() {
         account_profile::link_account_handle(&mut conn, account, "chat123456", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (3, $1, $2, 'group', 'Sam Group', 'sg.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::group(account, group_chat, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Sam')",
@@ -694,16 +670,12 @@ async fn list_conversations_filters_by_participant_count() {
         account_profile::link_account_handle(&mut conn, account, "chat-big", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (10, $1, $2, 'group', 'Trio', 't.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(10),
+        ..ConversationRow::group(account, group_chat, "Trio")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias) VALUES
          (10, $1, 'A'), (10, $2, 'B')",
@@ -780,16 +752,12 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
         account_profile::link_account_handle(&mut conn, account, "chat-trio", IdentityType::Other)
             .await
             .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (20, $1, $2, 'group', 'Trio', 't2.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(20),
+        ..ConversationRow::group(account, group_chat, "Trio")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias) VALUES
          (20, $1, 'A'), (20, $2, 'B'), (20, $3, 'C')",
@@ -824,13 +792,8 @@ async fn list_conversations_filters_by_import_id() {
     // Fresh db (conversations_setup() already owns conversation 1, which this test inserts itself).
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
@@ -872,16 +835,12 @@ async fn list_conversations_filters_by_import_id() {
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'c1.jsonl')",
-    )
-    .bind(account)
-    .bind(peer1)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer1)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -890,16 +849,12 @@ async fn list_conversations_filters_by_import_id() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (2, $1, $2, 'individual', 'c2.jsonl')",
-    )
-    .bind(account)
-    .bind(peer2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::new(account, peer2)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Alex')",
@@ -1005,13 +960,8 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     // NULLs go.
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
@@ -1025,17 +975,12 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
             account_profile::link_account_handle(&mut conn, account, raw, IdentityType::Phone)
                 .await
                 .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (
-                id, account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES ($1, $2, $3, 'individual', 'c.jsonl')",
-        )
-        .bind(id)
-        .bind(account)
-        .bind(peer)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        ConversationRow {
+            id: Some(id),
+            ..ConversationRow::new(account, peer)
+        }
+        .insert(&mut conn)
+        .await;
     }
 
     // Conversation 4 keeps a real message, and it belongs to the import.
@@ -1206,13 +1151,8 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     // which breaks the "all" total assertion below.
     let fixture = test_fixture().await;
     let pool = fixture.state.db.clone();
-    let account = 101_i64;
+    let account = fixture.account_with_id(101, "alice").await;
     let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'alice')")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
 
     let import_a = imports::start_import(
         &mut conn,
@@ -1229,16 +1169,12 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (3, $1, $2, 'individual', 'dup-only.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Pat')",
@@ -1257,16 +1193,12 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (4, $1, $2, 'individual', 'winner.jsonl')",
-    )
-    .bind(account)
-    .bind(peer_other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(4),
+        ..ConversationRow::new(account, peer_other)
+    }
+    .insert(&mut conn)
+    .await;
     let winner_id = MessageRow {
         timestamp: stored_time("2024-05-01T12:00:00.000Z"),
         body: Some("canonical"),
@@ -2016,15 +1948,9 @@ async fn conversation_messages_fixture() -> (TestFixture, RegisteredAccount, i64
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    let conversation_id: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'seed.jsonl') RETURNING id",
-    )
-    .bind(user.account_id)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation_id = ConversationRow::new(user.account_id, handle_id)
+        .insert(&mut conn)
+        .await;
     (fixture, user, conversation_id)
 }
 

@@ -4,9 +4,9 @@ use serde_json::{Value, json};
 use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, delete_raw, delete_status, expect_problem, expect_problem_for, get_json,
-    get_raw, get_status, patch_failure, patch_json, patch_json_raw, post_created_json,
-    post_json_raw, register_via_api, test_fixture,
+    ConversationRow, RegisteredAccount, delete_raw, delete_status, expect_problem,
+    expect_problem_for, get_json, get_raw, get_status, patch_failure, patch_json, patch_json_raw,
+    post_created_json, post_json_raw, register_via_api, test_fixture,
 };
 
 /// Which collection a case runs against. Every case runs for both, except
@@ -46,15 +46,9 @@ impl Kind {
                 .fetch_one(&mut *conn)
                 .await
                 .unwrap();
-                sqlx::query_scalar(
-                    "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-                     VALUES ($1, $2, 'individual', 'seed.jsonl') RETURNING id",
-                )
-                .bind(account_id)
-                .bind(handle_id)
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap()
+                ConversationRow::new(account_id, handle_id)
+                    .insert(&mut conn)
+                    .await
             }
         }
     }

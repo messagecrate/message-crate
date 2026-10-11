@@ -1,4 +1,5 @@
 use super::*;
+use crate::test_support::ConversationRow;
 
 async fn insert_contact(conn: &mut SqliteConnection, account: i64, name: &str) -> i64 {
     sqlx::query_scalar(
@@ -22,15 +23,7 @@ async fn insert_conversation(conn: &mut SqliteConnection, account: i64, phone: &
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'seed.jsonl') RETURNING id",
-    )
-    .bind(account)
-    .bind(handle)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap()
+    ConversationRow::new(account, handle).insert(conn).await
 }
 
 /// Insert one row a set of `spec`'s kind can hold, answering its id.
@@ -639,12 +632,7 @@ async fn another_accounts_set_is_not_found() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let other = 102_i64;
-    sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'bob')")
-        .bind(other)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    let other = fixture.account_with_id(102, "bob").await;
     let (id, _) = create_set(tag_spec(), &mut conn, other, "Holiday")
         .await
         .unwrap();
