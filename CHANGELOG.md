@@ -29,11 +29,12 @@ released versions carry their date on the heading.
   container can read the same state. The first five minutes after a start
   are not counted as unhealthy, so the first start, which builds the Demo
   Account before the server answers, does not read as a fault. The check asks
-  the server at the port it listens on, so a container whose config or
-  `serve --bind` names another port than 8080 reads healthy too, and a
+  the server at the port it listens on, so a server that the config or
+  `serve --bind` puts on a port other than 8080 reads healthy too. A
   container started for one command, such as
-  `docker compose run --rm server reset-demo`, reads healthy while it runs
-  rather than unhealthy after five minutes (#2132, #2541, #2542).
+  `docker compose run --rm server reset-demo`, reads healthy while the
+  command runs, rather than unhealthy after five minutes (#2132, #2541,
+  #2542).
 
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
   and edits.** Each reaction in an iMazing export is kept with its emoji and

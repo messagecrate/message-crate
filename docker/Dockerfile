@@ -91,15 +91,13 @@ VOLUME ["/app/data"]
 
 # Docker marks the container unhealthy when the server stops answering, so
 # `docker ps` and anything in front of the container can tell a server that
-# hangs from one that runs. docker/healthcheck.cjs asks /health at the address
-# the server listens on, read from /proc, so it follows `[server] bind` and
-# `serve --bind`. A container that runs another command, such as
-# `reset-demo`, reads healthy. The first start seeds the Demo Account before
-# the server listens. A failed probe inside --start-period does not count
-# against --retries, so a seed shorter than five minutes never marks the
-# container unhealthy. --start-interval probes every 2 seconds during the
-# start period (Docker Engine 25 and later), so a fresh container reads
-# healthy as soon as the server answers.
+# hangs from one that runs. docker/healthcheck.cjs says what it asks and
+# when it passes. The first start seeds the Demo Account before the server
+# listens. A failed probe inside --start-period does not count against
+# --retries, so a seed shorter than five minutes never marks the container
+# unhealthy. --start-interval probes every 2 seconds during the start period
+# (Docker Engine 25 and later), so a fresh container reads healthy as soon as
+# the server answers.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --start-interval=2s --retries=3 \
   CMD ["node", "/usr/local/lib/message-crate/healthcheck.cjs"]
 
