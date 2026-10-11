@@ -5,8 +5,8 @@
 //! go through.
 //!
 //! `crate::dedupe` sequences these statements, hashes the content keys,
-//! picks the copy shown and keeps the counts, and holds no SQL
-//! (`docs/architecture/http-api.md`, "Code").
+//! picks the copy shown, says how far it is and keeps the counts, and holds
+//! no SQL (`docs/architecture/http-api.md`, "Code").
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -16,9 +16,6 @@ use sqlx::SqliteConnection;
 
 use super::schema;
 use super::sql::SQLITE_IN_CHUNK;
-use crate::progress::Progress;
-
-const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
 /// Whether the message `m` has a content key, as a SQL condition: whether a
 /// dedupe, or an import that filled the keys, has seen it.
@@ -50,12 +47,18 @@ fn sender_for_key_sql() -> String {
     )
 }
 
-/// Source preference for survivors: first imported source (min message id), then name.
+/// The sources of the account's messages, in the order they were first
+/// imported (the source of the lowest message id first), then by name. The
+/// dedupe ranks the copies of a message by it, and the session lists the
+/// account's sources in it.
 ///
 /// # Errors
 ///
 /// Returns an error when the query fails.
-pub async fn source_priority(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<String>> {
+pub async fn sources_in_import_order(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<Vec<String>> {
     let rows: Vec<(String,)> = sqlx::query_as(
         r"
         SELECT m.source, MIN(m.id) AS first_id
@@ -258,6 +261,8 @@ pub async fn clear_content_keys(conn: &mut SqliteConnection, ids: &[i64]) -> Res
 
 /// Write the `(message id, content key)` pairs onto `messages` through the
 /// `_content_keys` temp table, which is dropped again afterwards.
+/// `on_written` is called with how many pairs are in the table after each
+/// chunk is inserted.
 ///
 /// # Errors
 ///
@@ -265,7 +270,7 @@ pub async fn clear_content_keys(conn: &mut SqliteConnection, ids: &[i64]) -> Res
 pub async fn write_content_keys(
     conn: &mut SqliteConnection,
     keys: &[(i64, String)],
-    progress: Progress,
+    mut on_written: impl FnMut(usize),
 ) -> Result<()> {
     for stmt in schema::split_ddl(
         r"
@@ -278,7 +283,12 @@ pub async fn write_content_keys(
     ) {
         sqlx::query(&stmt).execute(&mut *conn).await?;
     }
-    insert_content_key_rows(conn, keys, progress).await?;
+    let mut written = 0usize;
+    for chunk in keys.chunks(SQLITE_IN_CHUNK) {
+        insert_content_key_rows(conn, chunk).await?;
+        written += chunk.len();
+        on_written(written);
+    }
     sqlx::query(
         r"
         UPDATE messages AS m
@@ -295,35 +305,24 @@ pub async fn write_content_keys(
     Ok(())
 }
 
-/// Bulk-insert fingerprints into the `_content_keys` temp table in chunks that fit the bind limit.
+/// Insert one chunk of fingerprints, no more than fit the bind limit, into
+/// the `_content_keys` temp table.
 async fn insert_content_key_rows(
     conn: &mut SqliteConnection,
-    keys: &[(i64, String)],
-    progress: Progress,
+    chunk: &[(i64, String)],
 ) -> Result<()> {
-    let total = keys.len();
-    let mut written = 0usize;
-    for chunk in keys.chunks(SQLITE_IN_CHUNK) {
-        let mut sql = "INSERT INTO _content_keys (id, content_key) VALUES ".to_string();
-        for (i, _) in chunk.iter().enumerate() {
-            if i > 0 {
-                sql.push(',');
-            }
-            let _ = write!(sql, "(${}, ${})", i * 2 + 1, i * 2 + 2);
+    let mut sql = "INSERT INTO _content_keys (id, content_key) VALUES ".to_string();
+    for (i, _) in chunk.iter().enumerate() {
+        if i > 0 {
+            sql.push(',');
         }
-        let mut q = sqlx::query(&sql);
-        for (id, key) in chunk {
-            q = q.bind(*id).bind(key);
-        }
-        q.execute(&mut *conn).await?;
-        let previous = written;
-        written += chunk.len();
-        let crossed_log_mark =
-            written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY;
-        if written == total || crossed_log_mark {
-            progress.say(format_args!("Wrote {written} of {total} content keys"));
-        }
+        let _ = write!(sql, "(${}, ${})", i * 2 + 1, i * 2 + 2);
     }
+    let mut q = sqlx::query(&sql);
+    for (id, key) in chunk {
+        q = q.bind(*id).bind(key);
+    }
+    q.execute(&mut *conn).await?;
     Ok(())
 }
 
@@ -538,7 +537,8 @@ pub async fn clear_duplicate_flags(conn: &mut SqliteConnection, ids: &[i64]) -> 
 
 /// Apply `(message id, duplicate-of id)` pairs through the temp table
 /// `table`, so one UPDATE covers them all; the table is dropped again
-/// afterwards.
+/// afterwards. Each pass names its own table, so a test can make one pass
+/// fail and not the others.
 ///
 /// # Errors
 ///

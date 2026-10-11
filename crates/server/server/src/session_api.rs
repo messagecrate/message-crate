@@ -106,7 +106,7 @@ pub(crate) async fn get_session(
 async fn list_account_sources(pool: &SqlitePool, account_id: i64) -> Result<Vec<String>, ApiError> {
     // Read-only: do not run ensure_schema (avoids write locks on auth).
     let mut conn = pool.acquire().await?;
-    Ok(dedupe::source_priority(&mut conn, account_id).await?)
+    Ok(dedupe::sources_in_import_order(&mut conn, account_id).await?)
 }
 
 /// Username for the credential's account. An account deleted between the

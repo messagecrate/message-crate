@@ -1,5 +1,4 @@
 //! Cross-source content fingerprint and soft-hide dedupe.
-
 //!
 //! This module sequences the dedupe, hashes the content keys, picks the copy
 //! shown and keeps the counts. Its statements are in `crate::db::dedupe`
@@ -17,6 +16,8 @@ use crate::db::conversations::is_group_type;
 use crate::db::dedupe::{self as db, ContentKeyInputs, ContentKeyRow, KeyScope, NearRows};
 use crate::db::{WriteTx, begin_write};
 use crate::progress::Progress;
+
+const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
 /// Collapse whitespace so minor text differences do not split the same SMS.
 pub fn normalize_body(body: Option<&str>) -> String {
@@ -110,14 +111,12 @@ fn content_key_for_row(
     Some((row.id, key))
 }
 
-/// Fingerprint every row in parallel.
-fn hash_content_keys(
-    rows: &[ContentKeyRow],
-    group_handles: &HashMap<i64, Vec<String>>,
-    shas_by_msg: &HashMap<i64, Vec<String>>,
-) -> Vec<(i64, String)> {
-    rows.par_iter()
-        .filter_map(|row| content_key_for_row(row, group_handles, shas_by_msg))
+/// `(message id, content key)` for every row of `inputs`, hashed in parallel.
+fn hash_content_keys(inputs: &ContentKeyInputs) -> Vec<(i64, String)> {
+    inputs
+        .rows
+        .par_iter()
+        .filter_map(|row| content_key_for_row(row, &inputs.group_handles, &inputs.shas_by_msg))
         .collect()
 }
 
@@ -161,7 +160,7 @@ pub async fn dedupe_cross_source(
     let priority = if let Some(p) = source_priority {
         p
     } else {
-        owned_priority = db::source_priority(&mut tx, account_id).await?;
+        owned_priority = db::sources_in_import_order(&mut tx, account_id).await?;
         owned_priority.as_slice()
     };
     let mut stats = DedupeStats::default();
@@ -269,7 +268,7 @@ pub async fn dedupe_changed_messages(
     db::clear_content_keys(conn, changed).await?;
     recompute_content_keys(conn, KeyScope::Changed(changed), account_id, progress).await?;
 
-    let priority = db::source_priority(conn, account_id).await?;
+    let priority = db::sources_in_import_order(conn, account_id).await?;
     let prio: HashMap<&str, usize> = priority
         .iter()
         .enumerate()
@@ -380,7 +379,7 @@ async fn recompute_content_keys(
         "Hashing the content keys of {}…",
         words(inputs.rows.len() as u64, "1 message", "{n} messages")
     ));
-    let keys = tokio::task::spawn_blocking(move || hash_inputs(&inputs))
+    let keys = tokio::task::spawn_blocking(move || hash_content_keys(&inputs))
         .await
         .context("content-key hash task panicked")?;
     let keys = if scope != KeyScope::All {
@@ -394,13 +393,20 @@ async fn recompute_content_keys(
     if keys.is_empty() {
         return Ok(0);
     }
-    db::write_content_keys(conn, &keys, progress).await?;
+    let total = keys.len();
+    let mut logged = 0usize;
+    db::write_content_keys(conn, &keys, |written| {
+        // Say how far the write is at each multiple of the log interval it
+        // passes, and when it is done.
+        if written == total
+            || written / CONTENT_KEY_WRITE_LOG_EVERY != logged / CONTENT_KEY_WRITE_LOG_EVERY
+        {
+            progress.say(format_args!("Wrote {written} of {total} content keys"));
+        }
+        logged = written;
+    })
+    .await?;
     Ok(keys.len() as u64)
-}
-
-/// `(message id, content key)` for every row of `inputs`, hashed in parallel.
-fn hash_inputs(inputs: &ContentKeyInputs) -> Vec<(i64, String)> {
-    hash_content_keys(&inputs.rows, &inputs.group_handles, &inputs.shas_by_msg)
 }
 
 /// One copy of a message, with what decides whether it is the copy shown

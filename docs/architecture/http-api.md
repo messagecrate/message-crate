@@ -979,7 +979,8 @@ and picks the copy shown, and the statements that read and write
 `messages.content_key` and `messages.duplicate_of` for it are in
 `db/dedupe.rs`. Why: the point of the rule is that the SQL for a table is
 found in one place, and a stage that carried its own statements would be a
-second place for `staging_messages`.
+second place for its table's SQL: `staging_messages` for the import stages,
+`messages` for the dedupe.
 
 A promotion statement reads a staging table and writes a production one in
 the same `INSERT ... SELECT`, and it belongs with the staging tables rather

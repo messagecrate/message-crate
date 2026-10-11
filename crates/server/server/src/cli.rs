@@ -531,7 +531,7 @@ async fn run_dedupe(args: DedupeArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
     let mut conn = opened.conn().await?;
-    let priority = crate::db::dedupe::source_priority(&mut conn, account).await?;
+    let priority = crate::db::dedupe::sources_in_import_order(&mut conn, account).await?;
 
     println!("Cross-source dedupe on {}", opened.location().display());
     println!("  config:       {}", args.config.display());

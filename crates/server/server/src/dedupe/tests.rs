@@ -119,10 +119,16 @@ fn parallel_content_keys_match_serial() {
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
     let mut shas = HashMap::new();
     shas.insert(2, vec!["abc".into()]);
-    let parallel = hash_content_keys(&rows, &groups, &shas);
+    let inputs = ContentKeyInputs {
+        rows,
+        group_handles: groups,
+        shas_by_msg: shas,
+    };
+    let (rows, groups, shas) = (&inputs.rows, &inputs.group_handles, &inputs.shas_by_msg);
+    let parallel = hash_content_keys(&inputs);
     let serial: Vec<_> = rows
         .iter()
-        .filter_map(|row| content_key_for_row(row, &groups, &shas))
+        .filter_map(|row| content_key_for_row(row, groups, shas))
         .collect();
     // Both sides call `content_key_for_row`, so this alone only shows that the
     // parallel pass keeps its input order — worth having, and not enough. The
@@ -1749,7 +1755,7 @@ async fn assert_dedupe_invariants(conn: &mut SqliteConnection, ctx: &str) {
         .await
         .unwrap()
         .expect("the database has messages");
-    let expected: HashMap<i64, String> = hash_inputs(&inputs).into_iter().collect();
+    let expected: HashMap<i64, String> = hash_content_keys(&inputs).into_iter().collect();
     for (id, row) in &rows {
         assert_eq!(
             row.content_key.as_deref(),
