@@ -8,13 +8,32 @@
  * (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
  */
 
+import { formatBytes } from "./formatBytes";
 import { countOf } from "./plural";
 import type { components } from "./serverApi.types";
 
 export type AuditEntry = components["schemas"]["AuditEntry"];
 type AuditActor = components["schemas"]["AuditActor"];
+type DemoDataSize = components["schemas"]["DemoDataSize"];
 
 const APP_NAMES = { desktop: "desktop app", website: "website" } as const;
+
+/**
+ * The words for each set of Demo Data. A map rather than the wire value, so
+ * a set the server adds fails the type-check until it has words here.
+ */
+const DEMO_DATA_SIZES: Record<DemoDataSize, string> = { medium: "medium", large: "large" };
+
+/** " with the large set", or nothing when the entry names no set. */
+function withDemoDataSize(entry: AuditEntry): string {
+  return entry.demo_data_size ? ` with the ${DEMO_DATA_SIZES[entry.demo_data_size]} set` : "";
+}
+
+/** "Attachment size limit set to 100 MB", or "changed" when the entry names no limit. */
+function assetLimitChanged(entry: AuditEntry): string {
+  if (entry.asset_max_bytes == null) return "Attachment size limit changed";
+  return `Attachment size limit set to ${formatBytes(entry.asset_max_bytes)}`;
+}
 
 /** "3 conversations", "1 conversation"; a count the entry lacks reads as 0. */
 function countOrZero(n: number | null | undefined, one: string, many?: string): string {
@@ -130,6 +149,12 @@ export function describeAuditEntry(entry: AuditEntry): string {
       return "Opened Message Crate to new accounts";
     case "registration_closed":
       return "Closed Message Crate to new accounts";
+    case "asset_limit_changed":
+      return assetLimitChanged(entry);
+    case "demo_account_added":
+      return `Demo Account added${withDemoDataSize(entry)}`;
+    case "demo_account_reset":
+      return `Demo Account reset${withDemoDataSize(entry)}`;
     case "api_token_created":
       return `API token “${entry.api_token_label ?? ""}” made (${entry.api_token_hint ?? ""})`;
     case "api_token_deleted":

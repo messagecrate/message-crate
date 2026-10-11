@@ -110,3 +110,17 @@ leaves it as it is. An app pointed at a Message Crate elsewhere therefore
 starts nothing at every later start. The very first start, before any
 address is saved, still starts and seeds the app's own Message Crate; no
 start-up option skips it.
+
+## Note, 2026-10-11: a server that stops answering is killed
+
+The server can also end a third way: it still runs but no longer answers
+(#2204). While the login card is open, the login card asks the app for the
+server's state every three seconds. Each time, the app asks the address
+whether a Message Crate answers, as it already did for one it only found.
+When two checks in a row find none, the app kills its server the way it
+does on close. The login card then says the server stopped answering. One
+check is not enough, because a server can miss one answer. A server busy
+with a long write usually answers with a problem document, which counts as
+answering. An import can still keep the server from answering in time. The
+app therefore does not kill it while a desktop job runs. Once no job runs,
+two more checks in a row that find nothing are needed to kill it.

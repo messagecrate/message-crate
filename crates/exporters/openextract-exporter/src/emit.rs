@@ -35,7 +35,8 @@ pub(crate) struct ConvertExportArgs<'a> {
 /// Convert OpenExtract CSV(s) under `input`.
 ///
 /// When `cancel` is set, cooperative cancellation is checked between CSV files
-/// and before writing. Cancelled runs return an error with message `cancelled`.
+/// and before writing. A cancelled run returns
+/// what [`message_staging::Sinks::cancel`] says.
 ///
 /// # Errors
 ///

@@ -1,8 +1,10 @@
 use super::*;
 
 use std::ffi::OsString;
+use std::io::{Read, Write};
 
 use httpmock::prelude::*;
+use sha2::{Digest, Sha256};
 
 /// The SHA-256 of `bytes`, in lowercase hex.
 impl Retry {
@@ -92,9 +94,78 @@ fn no_ffmpeg_on_path(dir: &Path) -> media::testutil::ToolsHidden {
     media::testutil::locate_tools(OsString::new(), dir.to_path_buf())
 }
 
-/// [`download_missing`] as one check of `downloads`, on this thread.
-fn check_now(dir: &Path, base: &str, pinned: &[Pinned], downloads: &ToolDownloads) {
-    download_missing(dir, base, pinned, downloads.begin_check());
+/// [`download_missing`] as one check of `downloads`, on this thread. Each
+/// wait before a download is tried again returns at once, and the waits
+/// asked for are returned, in order.
+fn check_now(
+    dir: &Path,
+    base: &str,
+    pinned: &[Pinned],
+    downloads: &ToolDownloads,
+) -> Vec<Duration> {
+    let waits = std::cell::RefCell::new(Vec::new());
+    check_waiting(dir, base, pinned, downloads, &|pause| {
+        waits.borrow_mut().push(pause);
+    });
+    waits.into_inner()
+}
+
+/// [`download_missing`] as one check of `downloads`, on this thread, with
+/// `wait` in place of the pause before a download is tried again.
+fn check_waiting(
+    dir: &Path,
+    base: &str,
+    pinned: &[Pinned],
+    downloads: &ToolDownloads,
+    wait: &dyn Fn(Duration),
+) {
+    download_missing(
+        dir,
+        &HttpFetch::new(base),
+        pinned,
+        downloads.begin_check(),
+        wait,
+    );
+}
+
+/// A server on this computer that closes a connection without an answer, as
+/// when the network is not there, unless `answers` says to answer the
+/// request: it is given the request's number, counted from 0. A request it
+/// answers gets `body`, whatever its path.
+struct NoNetworkUnless {
+    base: String,
+    requests: Arc<AtomicUsize>,
+}
+
+fn no_network_unless(
+    body: Vec<u8>,
+    answers: impl Fn(usize) -> bool + Send + 'static,
+) -> NoNetworkUnless {
+    use std::io::BufRead;
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counting = requests.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            // The request's head, up to the empty line that ends it.
+            let mut reader = io::BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            while reader.read_line(&mut line).is_ok_and(|read| read > 0) && line != "\r\n" {
+                line.clear();
+            }
+            if answers(counting.fetch_add(1, Ordering::SeqCst)) {
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        }
+    });
+    NoNetworkUnless { base, requests }
 }
 
 /// The names in `dir` other than `keep` and the lock file, to see that no
@@ -109,14 +180,43 @@ fn other_files(dir: &Path, keep: &[&str]) -> Vec<String> {
     names
 }
 
-/// The file that arrives is refused when its checksum is not the pinned one:
-/// it is deleted, nothing is put in place, and the failure says the
-/// checksum did not match.
+/// A fetch that writes `bytes` for any pin, as if the download arrived.
+struct FixedFetch {
+    bytes: Vec<u8>,
+}
+
+impl Fetch for FixedFetch {
+    fn fetch(
+        &self,
+        _pinned: &Pinned,
+        into: &mut dyn Write,
+        progress: &dyn Fn(u64, Option<u64>),
+    ) -> Result<(), DownloadError> {
+        let total = self.bytes.len() as u64;
+        into.write_all(&self.bytes)
+            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
+        progress(total, Some(total));
+        Ok(())
+    }
+}
+
+/// [`download_missing`] as one check of `downloads`, getting every file
+/// with a fetch that writes `bytes`. A wait before a try again returns at
+/// once.
+fn check_fetching(dir: &Path, bytes: &[u8], pinned: &[Pinned], downloads: &ToolDownloads) {
+    let fetch = FixedFetch {
+        bytes: bytes.to_vec(),
+    };
+    download_missing(dir, &fetch, pinned, downloads.begin_check(), &|_| {});
+}
+
+/// What a fetch writes is refused when its SHA-256 is not the pinned one,
+/// with no server: no program and no temporary file is left in the Tools
+/// Directory, and the failure names both checksums.
 #[test]
-fn a_download_whose_checksum_does_not_match_is_refused() {
+fn a_fetched_file_whose_checksum_does_not_match_is_not_left_behind() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let server = MockServer::start();
     let (pinned, _) = pin_with(
         Program::Wtsexporter,
         "r1",
@@ -124,29 +224,73 @@ fn a_download_whose_checksum_does_not_match_is_refused() {
         false,
         &sha256_hex(b"the pinned file"),
     );
-    serve(&server, &pinned, b"a file changed on the way");
     let downloads = ToolDownloads::default();
 
-    check_now(
+    check_fetching(
         tools.path(),
-        &server.base_url(),
+        b"a file changed on the way",
         std::slice::from_ref(&pinned),
         &downloads,
     );
 
-    assert!(!tools.path().join(Program::Wtsexporter.file_name()).exists());
     assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
-    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
-        panic!(
-            "the download did not fail: {:?}",
-            downloads.get(Program::Wtsexporter)
-        );
-    };
-    assert!(
-        reason.contains("checksum did not match"),
-        "the reason does not name the checksum: {reason}"
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::ChecksumMismatch {
+                expected: sha256_hex(b"the pinned file"),
+                actual: sha256_hex(b"a file changed on the way"),
+            }
+            .to_string(),
+        })
     );
-    assert!(reason.contains(&sha256_hex(b"a file changed on the way")));
+}
+
+/// A gzipped asset that passes its checksum and does not unpack puts no
+/// program in place and leaves no temporary file, and the program already
+/// there stays.
+#[test]
+fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"the old wtsexporter").unwrap();
+    let not_gzip = b"not a gzip stream";
+    let pinned = Pinned {
+        program: Program::Wtsexporter,
+        repo: "owner/project",
+        release: "r2",
+        asset: "wtsexporter-test.gz",
+        sha256: leak(sha256_hex(not_gzip)),
+        program_sha256: leak(sha256_hex(b"wtsexporter")),
+        gzipped: true,
+    };
+    let downloads = ToolDownloads::default();
+
+    check_fetching(
+        tools.path(),
+        not_gzip,
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    assert_eq!(std::fs::read(&target).unwrap(), b"the old wtsexporter");
+    assert_eq!(
+        other_files(tools.path(), &[&Program::Wtsexporter.file_name()]),
+        Vec::<String>::new()
+    );
+    // The unpack's own failure, not the program's checksum after it.
+    let unpack_error = io::copy(
+        &mut flate2::read::GzDecoder::new(&not_gzip[..]),
+        &mut io::sink(),
+    )
+    .expect_err("the bytes unpacked");
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::CouldNotWrite(unpack_error.to_string()).to_string(),
+        })
+    );
 }
 
 /// A program the app wrote from an older release stays in use while the
@@ -768,22 +912,223 @@ fn a_second_check_at_the_same_time_does_nothing() {
     );
 }
 
-/// With no network the check fails quietly, saying so, and leaves nothing.
+/// With no network the check tries again after each wait, then fails
+/// quietly, saying so, and leaves nothing. The waits are spent once per
+/// check, not once per program, so a network that never comes keeps an
+/// import waiting for its program no longer than one round of them.
 #[test]
 fn no_network_is_a_failed_download_that_says_so() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let (wts, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let (ffprobe, _) = pin(Program::Ffprobe, "r1", &gzipped(b"ffprobe"), true);
     let downloads = ToolDownloads::default();
 
     // Port 9 on this computer, where nothing listens.
-    check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
+    let waits = check_now(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[ffprobe, wts],
+        &downloads,
+    );
 
+    assert_eq!(waits, NO_NETWORK_WAITS);
+    for program in [Program::Ffprobe, Program::Wtsexporter] {
+        let Some(DownloadState::Failed { reason }) = downloads.get(program) else {
+            panic!("the {} download did not fail", program.name());
+        };
+        assert!(reason.starts_with("No connection"), "{reason}");
+    }
+    assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
+}
+
+/// A download that finds no network, as on a laptop opened before its
+/// Wi-Fi connects, is tried again after a growing wait, and shows as
+/// downloading all the while, so Settings says it is still trying and an
+/// import waiting for it goes on waiting (#2200).
+#[test]
+fn no_network_is_tried_again_after_a_growing_wait() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    // The network comes during the second wait.
+    let server = no_network_unless(published, |request| request >= 2);
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    check_waiting(
+        tools.path(),
+        &server.base,
+        &[pinned],
+        &downloads,
+        &|pause| {
+            assert_eq!(
+                downloads.get(Program::Wtsexporter),
+                Some(DownloadState::Downloading {
+                    received: 0,
+                    total: None
+                }),
+                "the download was not shown as downloading while it waited"
+            );
+            waits.borrow_mut().push(pause);
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS[..2]);
+    assert!(
+        NO_NETWORK_WAITS.is_sorted_by(|a, b| a < b),
+        "the waits do not grow"
+    );
+    assert_eq!(server.requests.load(Ordering::SeqCst), 3);
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
+        b"wtsexporter"
+    );
+}
+
+/// A download that reaches its server starts the waits over, so the next
+/// program that finds no network gets the whole round again, because the
+/// network was there a moment before.
+#[test]
+fn a_download_that_reaches_its_server_starts_the_waits_over() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (first, published) = pin(Program::Ffprobe, "r1", b"the same file", false);
+    let (second, _) = pin(Program::Wtsexporter, "r1", b"the same file", false);
+    // The first program's second try is answered, and nothing after it.
+    let server = no_network_unless(published, |request| request == 1);
+    let downloads = ToolDownloads::default();
+
+    let waits = check_now(tools.path(), &server.base, &[first, second], &downloads);
+
+    let mut expected = vec![NO_NETWORK_WAITS[0]];
+    expected.extend(NO_NETWORK_WAITS);
+    assert_eq!(waits, expected);
+    assert!(tools.path().join(Program::Ffprobe.file_name()).exists());
     let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
-        panic!("the download did not fail");
+        panic!("the wtsexporter download did not fail");
     };
     assert!(reason.starts_with("No connection"), "{reason}");
-    assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
+}
+
+/// A program put in the Tools Directory by hand while the check waits for
+/// the network, as Troubleshooting suggests, ends the tries: it is used,
+/// and an import waiting for it goes on instead of failing for a download
+/// it no longer needs.
+#[cfg(unix)]
+#[test]
+fn a_program_put_in_place_during_a_wait_ends_the_tries() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[pinned],
+        &downloads,
+        &|pause| {
+            waits.borrow_mut().push(pause);
+            write_runnable(&target);
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS[..1]);
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "#!/bin/sh\nexit 0\n"
+    );
+}
+
+/// A program put in place by hand while an earlier program's tries wait is
+/// used too, though the waits are spent by the time its turn comes.
+#[cfg(unix)]
+#[test]
+fn a_program_put_in_place_during_another_programs_wait_is_used() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (ffprobe, _) = pin(Program::Ffprobe, "r1", b"ffprobe", false);
+    let (wts, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[ffprobe, wts],
+        &downloads,
+        &|pause| {
+            let mut waits = waits.borrow_mut();
+            waits.push(pause);
+            if waits.len() == 1 {
+                write_runnable(&target);
+            }
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS);
+    assert!(matches!(
+        downloads.get(Program::Ffprobe),
+        Some(DownloadState::Failed { .. })
+    ));
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
+}
+
+/// A program that was already in place before the check and is not the
+/// pinned one does not end the tries: the check still wants the pinned
+/// release, and with no network it fails after the whole round.
+#[cfg(unix)]
+#[test]
+fn a_program_already_in_place_does_not_end_the_tries() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    write_runnable(&tools.path().join(Program::Wtsexporter.file_name()));
+    let downloads = ToolDownloads::default();
+
+    let waits = check_now(tools.path(), "http://127.0.0.1:9", &[pinned], &downloads);
+
+    assert_eq!(waits, NO_NETWORK_WAITS);
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed { .. })
+    ));
+}
+
+/// A download that reached its server and failed for another reason, such
+/// as a checksum that does not match, is not tried again: the same request
+/// would fail the same way.
+#[test]
+fn a_failure_other_than_no_network_is_not_tried_again() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let server = MockServer::start();
+    let (pinned, _) = pin_with(
+        Program::Wtsexporter,
+        "r1",
+        b"",
+        false,
+        &sha256_hex(b"the pinned file"),
+    );
+    let asked = serve(&server, &pinned, b"a file changed on the way");
+    let downloads = ToolDownloads::default();
+
+    let waits = check_now(tools.path(), &server.base_url(), &[pinned], &downloads);
+
+    assert_eq!(waits, Vec::<Duration>::new());
+    asked.assert_calls(1);
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed { .. })
+    ));
 }
 
 /// Each supported platform pins ffmpeg, ffprobe and, except Linux on ARM,
@@ -1201,7 +1546,7 @@ fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
 
     let retried = retry_with(
         tools.path().to_path_buf(),
-        "http://127.0.0.1:9".into(),
+        Box::new(HttpFetch::new("http://127.0.0.1:9")),
         vec![pinned],
         &downloads,
         &[Program::Wtsexporter],

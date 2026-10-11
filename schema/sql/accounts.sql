@@ -413,7 +413,8 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- account_created, account_disabled, account_enabled, password_set,
     -- permissions_changed, messages_deleted, conversation_deleted,
     -- trash_emptied, account_deleted, registration_opened,
-    -- registration_closed, api_token_created, api_token_deleted,
+    -- registration_closed, asset_limit_changed, demo_account_added,
+    -- demo_account_reset, api_token_created, api_token_deleted,
     -- address_book_loaded or address_book_exported.
     action TEXT NOT NULL,
     -- Who acted: owner, holder (the account's own holder), command_line
@@ -422,7 +423,8 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     actor TEXT NOT NULL,
     -- The account the entry is about (`accounts.id`). NULL when it is about
     -- no account (a refused login for an unknown username, opening or closing
-    -- registration) or once the account is deleted.
+    -- registration, changing the attachment size limit, adding the Demo
+    -- Account) or once the account is deleted.
     account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.
@@ -451,7 +453,8 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     session_expires_at TEXT,
     -- JSON object of the entry's counts and names: permissions added and
     -- removed, conversations and attachments deleted, an API token's label
-    -- and hint, an address book's mode and contact counts.
+    -- and hint, an address book's mode and contact counts, the new
+    -- attachment size limit, the size of Demo Data a build was asked for.
     details TEXT
 );
 

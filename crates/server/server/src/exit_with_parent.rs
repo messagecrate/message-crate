@@ -65,7 +65,7 @@ impl ParentWatch {
 /// looked.
 #[cfg(unix)]
 fn watch(pid: u32, ended: oneshot::Sender<()>) {
-    tokio::spawn(async move {
+    crate::request_id::spawn_in_current_span(async move {
         let mut checks = tokio::time::interval(PARENT_CHECK_INTERVAL);
         loop {
             checks.tick().await;

@@ -65,6 +65,9 @@ async fn an_upload_with_the_import_librarys_settings_hides_the_whole_second_twin
         import_id: None,
         phone_country: None,
     };
+    // tokio's own call: `request_id::spawn_blocking_in_current_span` is the
+    // server crate's own, and a test under `tests/` cannot call it.
+    #[allow(clippy::disallowed_methods)]
     let report = tokio::task::spawn_blocking(move || message_crate_import::run(&config, None))
         .await
         .unwrap()

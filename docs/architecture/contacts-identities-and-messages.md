@@ -176,15 +176,26 @@ Each service says which types it can carry, and within those the shape
 (`phone::Handle::parse`) picks one. WhatsApp carries phone numbers and its own
 internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`. The
 `phone` service carries phone numbers and email addresses, because iMessage
-reaches an email address. A shape the service cannot carry is never that
-type: an address with an `@` on WhatsApp is not an email address, however it
-looks, and an import stores it as `other`. A name that is neither a number
+reaches an email address. Every service carries `other`, and neither carries
+a username. A shape the service cannot carry is never that type: an address
+with an `@` on WhatsApp is not an email address, however it looks, and an
+import stores it as `other`. A name that is neither a number
 nor an address, such as the sender `AMAZON`, is `other` on every service. Why:
 the service knows what it can carry, and the address alone does not. Typed
 by shape alone, a WhatsApp participant such as `123456789012345@lid` was
 stored as an email identity on WhatsApp, which no WhatsApp identity can be,
 and the identities list named it `email`
 ([#1671](https://github.com/messagecrate/message-crate/issues/1671)).
+
+**Every pair of service and type is decided, and a pair the service does
+not carry is refused.** `IdentityService::carries` lists every pair, and an
+import stores no other. An identity added by hand to an account or a
+contact, or by an address book load, in a type its service does not carry is
+refused, and the reason names the service and the type. Why: the check
+refused an email address on WhatsApp and let every other pair through, so a
+new service or type would have been carried everywhere without anyone
+deciding it. Now a new one does not compile until someone does
+([#2212](https://github.com/messagecrate/message-crate/issues/2212)).
 
 **The server types every address; the conversation file states no type.**
 An import types each address it meets by the rule above (`db/handles.rs`,
@@ -542,7 +553,8 @@ rather than being guessed at.
 
 **A load is strict, and refuses whole.** A phone is keyed by the one rule
 above, an email is lowercased and must be one `@` with text on both sides,
-an unknown `service` or `identity_type` is an error, and so is a row with more
+an unknown `service` or `identity_type` is an error, so is an `identity_type`
+the row's service does not carry (above), and so is a row with more
 fields than the header, whose cells cannot be matched to the columns. A row
 with fewer fields reads its missing trailing cells as blank, because a
 spreadsheet can drop empty cells at the end of a row and no column moves.

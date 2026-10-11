@@ -480,7 +480,7 @@ where
     T: Send + 'static,
     E: Into<ApiError> + Send + 'static,
 {
-    tokio::task::spawn_blocking(f)
+    crate::request_id::spawn_blocking_in_current_span(f)
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("{task} task: {e}")))?
         .map_err(Into::into)
@@ -1471,13 +1471,17 @@ pub(crate) fn http_app(state: AppState) -> Router {
 ///
 /// # Errors
 ///
-/// Returns an error when the database cannot be opened, the operation lock
+/// Returns an error when the website directory and the Data Directory or the
+/// database overlap, the database cannot be opened, the operation lock
 /// cannot be taken, or the listener cannot bind.
 pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<()> {
     // First, so the process is watched from the moment the server starts,
     // through a first start's Demo Account build.
     let exit_with_parent = exit_with_parent.map(ParentWatch::start);
     let server = cfg.require_server()?.clone();
+    // Before anything is written to the Data Directory, so a layout that
+    // would publish it never gets a log or a database there (#2175).
+    cfg.require_static_dir_apart()?;
     // The desktop app names its Tools Directory; ffmpeg is looked for on
     // PATH first and there second, as the app looks (#1053).
     media::set_tools_dir(server.tools_dir.clone());
@@ -1501,10 +1505,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     }
     let opened = OpenDb::create_or_open(cfg).await?;
     crate::operation_lock::mark_ready(&opened.cfg.paths.db)?;
-    let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
-        .fetch_one(&opened.db)
+    let mode = crate::db::engine::journal_mode_or_warn(&opened.db)
         .await
-        .unwrap_or_else(|_| "unknown".into());
+        .map_or_else(|| "unknown".to_owned(), |mode| mode.to_string());
     say!(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
@@ -1638,15 +1641,40 @@ pub(crate) async fn stop_requested() {
     }
 }
 
-/// Report process liveness.
+/// How long `/health` waits for a pool connection and its `SELECT 1`. It
+/// stays under the time `docker/healthcheck.cjs` gives each address it asks,
+/// and `SELECT 1` reads no table, so it never waits on a writer's lock. Why a
+/// pool that writers fill reads as down, and why that is accepted:
+/// `docs/architecture/http-api.md`, "Failures".
+const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
+
+/// Report whether the server can answer.
+///
+/// Answers `ok` when the server can take a database connection and run a
+/// statement on it within 1.5 seconds. A server whose connections are all
+/// taken, or whose database cannot be opened, fails the way a `/v1` call it
+/// cannot answer fails, with `500 Internal Server Error`, so a health check
+/// agrees with those calls.
 #[utoipa::path(
     get,
     path = "/health",
     tag = "Health",
-    responses((status = 200, description = "Process is up", body = String))
+    responses((status = 200, description = "The server is up and can reach its database", body = String))
 )]
-pub(crate) async fn get_health() -> (StatusCode, &'static str) {
-    (StatusCode::OK, "ok\n")
+pub(crate) async fn get_health(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> Result<(StatusCode, &'static str), ApiError> {
+    let probe = sqlx::query("SELECT 1").execute(&state.db);
+    match tokio::time::timeout(HEALTH_DATABASE_LIMIT, probe).await {
+        Ok(Ok(_)) => Ok((StatusCode::OK, "ok\n")),
+        Ok(Err(e)) => Err(ApiError::Internal(
+            anyhow::Error::new(e).context("run the health check's statement on the database"),
+        )),
+        Err(_) => Err(ApiError::Internal(anyhow::anyhow!(
+            "the health check could not take a database connection and run SELECT 1 within {} ms",
+            HEALTH_DATABASE_LIMIT.as_millis()
+        ))),
+    }
 }
 
 /// Read the Bearer token from `Authorization`.

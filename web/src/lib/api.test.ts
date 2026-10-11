@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiClient, getBaseUrl, problemFromBody, setBaseUrl, setToken } from "./api";
+import {
+  ApiError,
+  apiClient,
+  getBaseUrl,
+  problemFromBody,
+  REQUEST_TIMEOUT_MS,
+  setBaseUrl,
+  setToken,
+} from "./api";
 import { APP_BUILD } from "./build";
 
 afterEach(() => {
@@ -15,6 +23,7 @@ function stubOkFetch() {
     status: 200,
     json: async () => ({}),
     text: async () => "{}",
+    blob: async () => new Blob(["{}"]),
   });
   vi.stubGlobal("fetch", fetchSpy);
   return fetchSpy;
@@ -177,11 +186,13 @@ describe("apiClient request shape", () => {
     await apiClient.get("/v1/conversations");
     await apiClient.postRaw("/v1/imports/1/conversations", "{}", "application/x-ndjson");
     await apiClient.postText("/v1/contacts/address-book", { ids: [4] });
+    await apiClient.getBlob("/v1/assets/abc");
 
     const calls = fetchSpy.mock.calls as [string, RequestInit][];
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     for (const [, init] of calls) {
       expect(init.redirect).toBe("error");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer mc-user-abc123");
     }
   });
 
@@ -320,13 +331,17 @@ describe("apiClient request shape", () => {
     expect(lastCall(fetchSpy)[1].method).toBe("DELETE");
   });
 
-  it("passes the abort signal through, so a screen that unmounts cancels its request", async () => {
-    const fetchSpy = stubOkFetch();
+  it("passes the abort signal on, so a screen that unmounts cancels its request", async () => {
+    stubStalledFetch();
     const controller = new AbortController();
 
-    await apiClient.get("/v1/conversations", { signal: controller.signal });
+    const call = apiClient.get("/v1/conversations", { signal: controller.signal });
+    controller.abort();
 
-    expect(lastCall(fetchSpy)[1].signal).toBe(controller.signal);
+    // A cancel is not a failure to show, so it stays the abort it was.
+    const err = await call.catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect((err as DOMException).name).toBe("AbortError");
   });
 
   it("posts a raw body under its own media type without re-encoding it", async () => {
@@ -341,5 +356,144 @@ describe("apiClient request shape", () => {
     expect(headers["Content-Type"]).toBe("application/x-ndjson");
     expect(headers.Authorization).toBe("Bearer mc-user-abc123");
     expect(init.body).toBe(jsonl);
+  });
+});
+
+/**
+ * Stub a fetch that never answers, as a server that accepts the connection and
+ * then stalls does. Like the real one, it rejects with the signal's reason
+ * once the signal it was given aborts.
+ */
+function stubStalledFetch() {
+  const fetchSpy = vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }),
+  );
+  vi.stubGlobal("fetch", fetchSpy);
+  return fetchSpy;
+}
+
+/** Start `call` and note when it settles, so a test can ask whether it is still waiting. */
+function track(call: Promise<unknown>): { settled: () => boolean; error: Promise<unknown> } {
+  let done = false;
+  const error = call.then(
+    () => {
+      done = true;
+      return undefined;
+    },
+    (e: unknown) => {
+      done = true;
+      return e;
+    },
+  );
+  return { settled: () => done, error };
+}
+
+describe("apiClient time limit", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("gives up on a server that never answers and says so in a sentence", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.get("/v1/conversations"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1);
+    expect(call.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const err = await call.error;
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe("The server didn't answer within 30 seconds.");
+  });
+
+  it("puts the same limit on every kind of call", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const calls = [
+      apiClient.post("/v1/imports", { a: 1 }),
+      apiClient.postRaw("/v1/contacts/address-book", "BEGIN:VCARD", "text/vcard"),
+      apiClient.postText("/v1/contacts/address-book", {}),
+      apiClient.getText("/v1/server/log-files/1"),
+    ].map((c) => track(c));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    for (const call of calls) {
+      expect(await call.error).toBeInstanceOf(ApiError);
+    }
+  });
+
+  it("waits as long as a caller asks for when its call does long work", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.post("/v1/imports/1/complete", {}, { timeoutMs: 10 * 60_000 }));
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
+    expect(call.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const err = await call.error;
+    expect((err as ApiError).message).toBe("The server didn't answer within 10 minutes.");
+  });
+
+  it("stops the clock once the server answers", async () => {
+    vi.useFakeTimers();
+    stubOkFetch();
+
+    await apiClient.get("/v1/conversations");
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("marks a timeout as one, so a screen's retry can tell it from a server error", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.get("/v1/conversations"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    expect((await call.error) as ApiError).toMatchObject({ status: 0, timedOut: true });
+    expect(new ApiError(500, "Internal Server Error").timedOut).toBe(false);
+  });
+
+  it("gives up on a download that never starts to answer", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.getBlob("/v1/assets/abc"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    expect(await call.error).toBeInstanceOf(ApiError);
+  });
+
+  it("lets a download that has started take as long as it needs", async () => {
+    vi.useFakeTimers();
+    let finishBody: (bytes: string) => void = () => {};
+    const body = new Promise<string>((resolve) => {
+      finishBody = resolve;
+    });
+    // Like a real body, this one stops arriving when the request's signal aborts.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => ({
+        ok: true,
+        status: 200,
+        blob: () =>
+          new Promise<Blob>((resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+            body.then((bytes) => resolve(new Blob([bytes])));
+          }),
+      })),
+    );
+
+    const call = apiClient.getBlob("/v1/assets/abc");
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    finishBody("bytes");
+
+    expect(await (await call).text()).toBe("bytes");
   });
 });

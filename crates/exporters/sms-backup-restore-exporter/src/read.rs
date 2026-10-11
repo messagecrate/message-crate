@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
-    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, document_messages, import_error_lines, is_cancelled, item_line,
+    CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
+    ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
+    SKIPPED_UNREADABLE_PART, check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -231,16 +231,20 @@ pub struct ReadOptions<'a> {
     pub cancel: &'a CancelFlag,
 }
 
+/// One attachment of a [`MessageInProgress`], named by the digest its
+/// payload is spooled under when the read has a spool.
 #[derive(Debug, Clone)]
-struct PendingAttachment {
+struct AttachmentInProgress {
     original_name: Option<String>,
     mime_type: Option<String>,
     digest: String,
     size_bytes: u64,
 }
 
+/// One SMS or MMS as the read collects it, before [`dedupe`] and
+/// [`to_document`] turn its conversation into a document.
 #[derive(Debug, Clone)]
-struct PendingMessage {
+struct MessageInProgress {
     sort_key: f64,
     is_from_me: bool,
     /// The sender's handle key, for an incoming message.
@@ -248,7 +252,7 @@ struct PendingMessage {
     sender_display_name: Option<String>,
     text: String,
     subject: String,
-    attachments: Vec<PendingAttachment>,
+    attachments: Vec<AttachmentInProgress>,
     message_kind: &'static str,
     date_ms: String,
     contact_name: String,
@@ -258,13 +262,15 @@ struct PendingMessage {
     left_out: LeftOutCounts,
 }
 
+/// The messages the read has collected for one conversation, before
+/// [`to_document`].
 #[derive(Debug, Default)]
-struct PendingConversation {
+struct ConversationInProgress {
     kind: ConversationKind,
     group_title: Option<String>,
     /// Each participant's handle key.
     participants: Vec<String>,
-    messages: Vec<PendingMessage>,
+    messages: Vec<MessageInProgress>,
 }
 
 /// The backup file to read: SMS Backup & Restore writes each backup as one
@@ -293,9 +299,9 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.skipped_empty_participants += stats.skipped_empty_participants;
 }
 
-/// Pending attachments for a message's decoded parts, each payload written
-/// to the spool when there is one. The record, and the decoded bytes with
-/// it, are dropped once this returns.
+/// The attachments in progress for a message's decoded parts, each payload
+/// written to the spool when there is one. The record, and the decoded
+/// bytes with it, are dropped once this returns.
 ///
 /// # Errors
 ///
@@ -303,14 +309,14 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
 fn queue_attachments(
     attachments: &[AttachmentBytes],
     spool: Option<&AttachmentSpool>,
-) -> Result<Vec<PendingAttachment>> {
+) -> Result<Vec<AttachmentInProgress>> {
     attachments
         .iter()
         .map(|attachment| {
             if let Some(spool) = spool {
                 spool.put(&attachment.data)?;
             }
-            Ok(PendingAttachment {
+            Ok(AttachmentInProgress {
                 original_name: attachment.original_name.clone(),
                 mime_type: attachment.mime_type.clone(),
                 digest: attachment.digest_hex.clone(),
@@ -351,6 +357,23 @@ pub fn spooled_attachments<'a>(
     )
 }
 
+/// Record the error that stopped the parse of `input` in `report`, so the
+/// records parsed before it are kept, unless the parse stopped for a cancel.
+///
+/// # Errors
+///
+/// Returns the error when it is [`Cancelled`]. A cancel is told from a
+/// failure by its type, so a failure whose text is `cancelled` is recorded.
+fn keep_parse_error(parse_result: Result<()>, input: &Path, report: &mut ReadReport) -> Result<()> {
+    if let Err(error) = parse_result {
+        if error.is::<Cancelled>() {
+            return Err(error);
+        }
+        report.errors.push(ReadError::new(input, &error));
+    }
+    Ok(())
+}
+
 /// Stage the attachments [`read_backup`] left in `options.spool` into
 /// `options.attachments_dir`, reading one spooled file at a time. A caller
 /// stages only once the read has succeeded, so a backup the read refuses
@@ -388,9 +411,9 @@ fn chat_id(record: &Record) -> String {
 /// Append a parsed SMS or MMS to its conversation, creating the
 /// conversation on first sight.
 fn add_record(
-    conversations: &mut BTreeMap<String, PendingConversation>,
+    conversations: &mut BTreeMap<String, ConversationInProgress>,
     record: Record,
-    attachments: Vec<PendingAttachment>,
+    attachments: Vec<AttachmentInProgress>,
 ) -> Result<()> {
     let id = chat_id(&record);
     let peers = record
@@ -400,7 +423,7 @@ fn add_record(
         .collect();
     let conversation = conversations
         .entry(id)
-        .or_insert_with(|| PendingConversation {
+        .or_insert_with(|| ConversationInProgress {
             kind: record.conversation_kind,
             group_title: record.group_title.clone(),
             participants: peers,
@@ -411,7 +434,7 @@ fn add_record(
         .as_object()
         .cloned()
         .unwrap_or_default();
-    conversation.messages.push(PendingMessage {
+    conversation.messages.push(MessageInProgress {
         sort_key: record.timestamp_secs,
         is_from_me: record.is_from_me,
         sender,
@@ -432,7 +455,7 @@ fn add_record(
     Ok(())
 }
 
-impl PendingMessage {
+impl MessageInProgress {
     /// The UTC instant in milliseconds and how finely the XML recorded it:
     /// the `date` attribute's milliseconds, else the sort key's whole second.
     fn time(&self) -> (i64, TimePrecision) {
@@ -454,7 +477,7 @@ impl PendingMessage {
 /// Sort by time and keep one copy of each message
 /// ([`one_copy_per_message`]), each with the time it keeps. Returns how many
 /// copies it dropped.
-fn dedupe(messages: &mut Vec<PendingMessage>) -> u64 {
+fn dedupe(messages: &mut Vec<MessageInProgress>) -> u64 {
     messages.sort_by(|a, b| a.sort_key.total_cmp(&b.sort_key));
     let prepared: Vec<_> = messages
         .iter()
@@ -491,7 +514,7 @@ fn dedupe(messages: &mut Vec<PendingMessage>) -> u64 {
 }
 
 /// Display names seen per sender handle across the conversation.
-fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String> {
+fn names_by_handle(conversation: &ConversationInProgress) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for message in &conversation.messages {
         if let (Some(sender), Some(name)) = (
@@ -516,11 +539,12 @@ fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String
     names
 }
 
-/// Project one pending conversation into a document and fold its counts into the report.
+/// Project one conversation in progress into a document and fold its counts
+/// into the report.
 fn to_document(
     id: &str,
     file_path: &str,
-    conversation: &PendingConversation,
+    conversation: &ConversationInProgress,
     owner_identity: Option<&str>,
     backup_taken_at_unix_ms: Option<i64>,
     report: &mut ReadReport,
@@ -579,7 +603,7 @@ fn to_document(
 /// with <address>`, the `address` attribute as the file writes it, so a
 /// search of the file finds it. An MMS with no `address` attribute names
 /// every identity in its conversation instead.
-fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
+fn describe(message: &MessageInProgress, conversation: &ConversationInProgress) -> String {
     let (ms, _) = message.time();
     let time =
         format_local_ts(ms.div_euclid(1000)).map_or_else(|| ms.to_string(), |(_, utc, _)| utc);
@@ -603,12 +627,12 @@ fn describe(message: &PendingMessage, conversation: &PendingConversation) -> Str
     format!("message of {time} with {with}")
 }
 
-/// The IR message for one pending message. `owner` (handle, display name)
+/// The IR message for one message in progress. `owner` (handle, display name)
 /// stands in as the sender of anything sent from this phone; the timestamp
 /// is the record's own milliseconds when it parses, else the sort key.
 fn ir_message(
     chat_id: &str,
-    message: &PendingMessage,
+    message: &MessageInProgress,
     owner: &(Option<String>, Option<String>),
 ) -> IrMessage {
     let (timestamp_unix_ms, time_precision) = message.time();
@@ -657,9 +681,9 @@ fn ir_message(
     }
 }
 
-/// The IR attachment for one pending attachment. Neither a path nor the
+/// The IR attachment for one attachment in progress. Neither a path nor the
 /// bytes: whoever stages it reads the payload from the spool by its digest.
-fn ir_attachment(a: &PendingAttachment) -> IrAttachment {
+fn ir_attachment(a: &AttachmentInProgress) -> IrAttachment {
     IrAttachment {
         path: None,
         original_name: a.original_name.clone(),
@@ -676,7 +700,7 @@ fn ir_attachment(a: &PendingAttachment) -> IrAttachment {
 
 /// Every participant with the kind of address it is, named when the XML
 /// named it.
-fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
+fn ir_participants(conversation: &ConversationInProgress) -> Vec<IrParticipant> {
     let names = names_by_handle(conversation);
     conversation
         .participants
@@ -764,12 +788,7 @@ pub fn read_backup(
     if let Some(error) = spool_error {
         return Err(error);
     }
-    if let Err(error) = parse_result {
-        if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
-            return Err(error);
-        }
-        report.errors.push(ReadError::new(input, &error));
-    }
+    keep_parse_error(parse_result, input, &mut report)?;
     check_cancel(options.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {

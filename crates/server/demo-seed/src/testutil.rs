@@ -29,7 +29,7 @@ inactive_fraction = 0.1
 no_messages_fraction = 0.1
 multi_phone_fraction = 0.2
 
-[labels]
+[contact_groups]
 names = ["Family", "Work", "College", "Inactive"]
 family = 0.3
 work = 0.3

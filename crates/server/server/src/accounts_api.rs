@@ -597,10 +597,10 @@ impl UpdateAccountRequest {
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
 enum ProfileUpdateError {
-    /// The service cannot carry an identity of the address's type: an email
-    /// address on WhatsApp.
+    /// The service does not carry an identity of the address's type, such
+    /// as an email address on WhatsApp.
     #[error(transparent)]
-    ServiceCannotCarry(#[from] handles::EmailOnWhatsapp),
+    ServiceCannotCarry(#[from] handles::ServiceCannotCarry),
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -990,9 +990,10 @@ pub async fn delete_account(
     // answered as a failure. No later account takes this id, so the directory
     // stays out of every account's reach until someone removes it.
     let paths = state.cfg.paths.clone();
-    let removed =
-        tokio::task::spawn_blocking(move || crate::asset_store::remove_account_dir(&paths, target))
-            .await;
+    let removed = crate::request_id::spawn_blocking_in_current_span(move || {
+        crate::asset_store::remove_account_dir(&paths, target)
+    })
+    .await;
     let failure = match removed {
         Ok(Ok(())) => None,
         Ok(Err(e)) => Some(e.to_string()),

@@ -82,11 +82,10 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => true,
 }));
 
-const { AuthProvider } = await import("../../lib/auth");
+const { default: AuthShell } = await import("../../components/AuthShell");
 const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
-const { useImportJob } = await import("./useImportJob");
-const { resetImportRun } = await import("./run/scratch");
+const { importRunService, useImportJob } = await import("./useImportJob");
 
 const MIB = 1024 * 1024;
 
@@ -146,10 +145,13 @@ type Screen = {
   auth: ReturnType<typeof useAuth>;
 };
 
-/** The Import screen's hook beside the login state, under the real AuthProvider. */
+/**
+ * The Import screen's hook beside the login state, under the real AuthProvider
+ * and the logout dialog, as `App.tsx` renders them.
+ */
 async function logIn(): Promise<{ current: Screen }> {
   const { result } = renderHook((): Screen => ({ job: useImportJob(), auth: useAuth() }), {
-    wrapper: AuthProvider,
+    wrapper: AuthShell,
   });
   await act(() => result.current.auth.login("http://127.0.0.1:8080", "session-token", 7));
   return result;
@@ -178,7 +180,7 @@ function pressLogOut(result: { current: Screen }): void {
 describe("logging out during an Upload", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetImportRun();
+    importRunService.reset();
     calls.length = 0;
     finishUpload = null;
     serverLogoutMock.mockReset();
@@ -463,7 +465,7 @@ async function resumeUpload(): Promise<{ current: Screen }> {
 describe("a session the server refuses to the Import Run's own calls (#1677)", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetImportRun();
+    importRunService.reset();
     calls.length = 0;
     finishUpload = null;
     completeImportMock.mockReset();

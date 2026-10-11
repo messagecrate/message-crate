@@ -19,9 +19,9 @@ inactive_fraction = 0.02
 no_messages_fraction = 0.03
 multi_phone_fraction = 0.05
 
-[labels]
+[contact_groups]
 names = ["Family", "Work", "College", "Inactive"]
-# Rough share of contacts that get each non-Inactive label (independent rolls).
+# Rough share of contacts that join each Contact Group except Inactive (independent rolls).
 family = 0.25
 work = 0.25
 college = 0.20

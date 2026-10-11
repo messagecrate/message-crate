@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-11: **Owner Home says when the database runs without write-ahead
+  logging.** The server turns write-ahead logging on each time it starts, so
+  pages load while an import writes. When it cannot, most often because
+  another program holds the database file, every page waits for each import
+  batch instead, and the only sign was a warning in the server's log. Owner
+  Home now says so above every section, with where to read what went wrong
+  and what to do: close any other program that has the database file open,
+  then restart the server. Server Settings shows the journal mode beside
+  the version (#2201).
+
 - 2026-10-10: **An attachment says why it has no copy a browser can show.**
   When the server tries to make the Preview of a photo, video or recording
   and cannot, opening it now says **No Preview could be made** and what
@@ -173,6 +183,26 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The desktop app's download of ffmpeg, ffprobe and wtsexporter
+  into the Tools Directory was reworked inside. The one change you could see:
+  on the rare computer where the app cannot set up its downloads at all,
+  Settings, and an import waiting for the download, now say the download
+  could not be started, instead of saying there is no connection to the
+  download's server (#2213).
+
+- 2026-10-11: The way logging out works in the app was reworked inside, with
+  nothing visible (#2214).
+
+- 2026-10-11: The way attachments are converted and compressed, and their
+  Thumbnails and Previews made, was reworked inside, with nothing visible
+  (#2206).
+
+- 2026-10-11: The Apple Messages and SMS Backup & Restore imports were
+  reworked inside, with nothing visible (#2195).
+
+- 2026-10-11: The way the Demo Account is built was reworked inside, with
+  nothing visible (#2197).
+
 - 2026-10-11: The way the server finds and hides duplicate messages was
   reworked inside, with nothing visible (#2182).
 
@@ -318,6 +348,47 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **The login screen no longer reads Disconnected for a moment
+  while an import runs.** An import can keep the server's database busy for
+  longer than its health check waits, so one check could fail though the
+  server was still answering, and the login screen read Disconnected until
+  its next check a second later. When the server answers a check with an
+  error, the login screen now checks once more three seconds later, and
+  reads Disconnected only when both fail (#2718).
+
+- 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
+  empty list.** An account with no attachments saw "Top 100 attachments by
+  file size" above "No attachments with sizes yet". Under **Largest
+  attachments** it now shows only "No attachments with sizes yet". When
+  there are attachments, the line above the list gives how many are listed,
+  such as "Top 3 attachments by file size" (#2633).
+
+- 2026-10-11: **The login screen reads Disconnected when the server cannot
+  reach its database.** Before, it read Connected as long as the server was
+  running, even when every page failed because the database could not be
+  read or every connection to it was taken. Docker's health check of
+  the Message Crate container asks the same question, so a container whose
+  server cannot reach its database now reads unhealthy too (#2202).
+
+- 2026-10-11: **A screen stops waiting for a server that never answers.**
+  When the server takes a request and then never answers, such as a stalled
+  container, a screen now gives up after 30 seconds and says the server
+  didn't answer within that time. Before, it kept loading until the
+  browser's own limit, which can be minutes, and then tried again for as
+  long. An attachment gives up the same way when its download never starts,
+  and a large one that has started takes as long as it needs. Work that
+  takes longer on a large account, such as an import's steps, deleting
+  messages or an account for good, or loading an address book, waits up to
+  10 minutes (#2199).
+
+- 2026-10-11: **The Audit Trail records the attachment size limit and adding
+  or resetting the Demo Account.** When the owner changes the attachment size
+  limit in Server Settings, the Audit Trail now says so and names the new
+  limit; saving the limit it already had records nothing. Adding or resetting
+  the Demo Account is recorded too, with the set of Demo Data asked for. Before,
+  neither left an entry, though opening or closing Message Crate to new
+  accounts did (#2187).
+
 - 2026-10-11: **Names, addresses and Import Errors have a length limit.**
   A display name or a contact's name may be up to 200 characters, an
   address up to 320, and each part of an Import Error up to 2,000. Anything
@@ -428,6 +499,25 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **The desktop app keeps trying to download ffmpeg and
+  wtsexporter when the computer is not online yet.** At start the app
+  downloads the programs missing from its Tools Directory. When it had no
+  network, such as on a laptop opened before its Wi-Fi connected, each
+  download was tried once and failed, and nothing tried again until the
+  next start or **Try again**. The app now tries again after 5, 15, 30 and
+  60 seconds, about two minutes in all, and **Settings → System** shows the
+  download as still in progress while it waits. A copy put in the Tools
+  Directory by hand during those waits ends them, and is used. A download
+  that fails for any other reason, such as a checksum that does not match,
+  is still tried once (#2200).
+- 2026-10-11: **The desktop app notices when its own Message Crate stops
+  answering.** A Message Crate the desktop app started could keep running
+  without answering, and the login card still called it ready. The app now
+  checks it while the login card is open. When two checks in a row find
+  nothing answering, the app stops it, and the login card says **Message
+  Crate stopped answering.** with **Try again**. The app does not stop the
+  server during an import, since a large import can keep the server from
+  answering in time (#2204).
 - 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
   call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
@@ -477,6 +567,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **Messages about the backup password read as plain
+  sentences.** An encrypted iPhone backup with no password is now refused
+  with "The backup is encrypted. Fill in the Encryption password.", and a
+  password given with a backup that has none with "This backup is not
+  encrypted. Clear the Encryption password." The server's message when it
+  finds no accounts to process attachments for, and its report line on
+  phone numbers that need review, no longer join two clauses with a dash
+  either (#2189).
 - 2026-10-10: **An attachment an import could not save is named in the
   Import Run's log.** It used to be written where no log of Message Crate
   showed it (#2165).
@@ -664,6 +762,13 @@ released versions carry their date on the heading.
 
 #### Browsing and search
 
+- 2026-10-11: **A Saved Search no list could ever run is not saved.** A
+  search longer than 2,048 bytes, with a parenthesis or quote that never
+  closes, with more than 32 words, or too many parts or levels of nesting is
+  refused on every list, but a Saved Search holding one was saved anyway,
+  and the mistake showed only when it was selected. **Save** now refuses it
+  with the same message the search box gives. A word that works on some
+  lists and not others is still saved as typed (#2184).
 - 2026-10-10: **The left panel highlights Contacts on a Contact Group page.**
   A Contact Group page, **No Contact Group** and **Unknown** list contacts,
   but the left panel highlighted no Browse row on them, where a Message Tag
@@ -720,6 +825,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-11: **An address book load refuses an identity its service cannot
+  hold.** A row that put an email address on WhatsApp, or a username on
+  either service, was stored as an identity that reaches nobody. The load now
+  refuses it, naming the row, the service and the kind of identity, as adding
+  one to a contact already did (#2212).
+
 - 2026-10-10: **Contacts calls a search that finds nothing a search.** When
   the text in **Search contacts** matched no contact, the list said "No
   contacts match this filter". It now says "No contacts match this search"
@@ -750,6 +861,30 @@ released versions carry their date on the heading.
   contact. Messages are not changed (#1662).
 
 #### The server
+
+- 2026-10-11: **The server will not publish its own data as the website.**
+  The server shows everything in its website directory to anyone who can
+  reach it, without a login. A config that put the Data Directory or the
+  database inside that directory, or the website directory inside the Data
+  Directory, used to start and serve every message and attachment that way.
+  The server now refuses to start and names both directories, even when a
+  link or a `..` in a path hides the overlap (#2175).
+
+- 2026-10-11: **Every line the server's log writes for a request names
+  that request.** A warning written while the server removed files, hashed
+  an import's messages, or did other work it runs apart from the request
+  that asked for it, left out the request's id, so it could not be matched
+  to the request or to the error a person was shown. It now carries the id
+  like every other line of the request (#2186).
+
+- 2026-10-11: **A database failure while reading a conversation or a search's
+  messages says what the server was reading.** The error in the server's
+  log used to give only the database's own message, such as that a table
+  was missing, so a request that reads messages, their attachments, their
+  reactions and their earlier versions gave no way to tell which read
+  failed. The error now starts with what was being read, such as "read the
+  attachments of a page of messages". The values the read was given, such as
+  the words of a search, are never written (#2172).
 
 - 2026-10-11: **The server's log says why it refused a request.** A wrong
   password, a request that did not log in or whose Session ended, a request

@@ -445,14 +445,51 @@ caller who is not the owner.
 Every response, success or failure, carries an `x-request-id` header, a UUID v4
 the server makes; a request id a client sends is ignored. Problem bodies repeat
 it as `request_id`. The id joins the request's tracing span so every log line
-under a request carries it. RFC 7807's `instance` stays unused, because it is
-defined as a URI reference and a bare id is not one.
+under a request carries it, work the request spawns included
+([The server's log](server-log.md)). RFC 7807's `instance` stays unused,
+because it is defined as a URI reference and a bare id is not one.
 
 Rejected: a flat `{error}` body. It gives a client nothing to branch on except
 the sentence.
 
 Rejected: a request id on `5xx` only. A body whose members vary by status is
 the drift the one-shape rule exists to stop.
+
+`/health` answers `ok` only when the server can take a database connection
+and run `SELECT 1` on it within 1.5 seconds (`HEALTH_DATABASE_LIMIT` in
+`crates/server/server/src/server.rs`). When it cannot, it fails as a `/v1`
+call fails, with a `500 Internal Server Error` problem document. Why: the web
+app's login card and the release image's Docker health check ask `/health`
+whether a server can answer, and a server whose pool is exhausted or whose
+database cannot be opened answers no `/v1` call, so `ok` from the process
+alone told them it was up while every page failed. The desktop app's watch
+on its own server asks `GET /v1/server`, which reads the database, so the two
+disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
+
+Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
+waits on an import's write lock, and the limit stays under the time
+`docker/healthcheck.cjs` gives each address it asks (4 seconds, or 2 each
+when it asks both 127.0.0.1 and ::1), so a failure arrives as the server's
+answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+(`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
+requests that write wait on SQLite's busy timeout while an import holds the
+write lock, and enough of them can take every connection for that long. The
+check fails then, though a `/v1` read would wait for a connection and get
+one. One failure does not mark the container unhealthy, because Docker needs
+three in a row 30 seconds apart. When `/health` answers with an error, the
+login card asks once more three seconds later and shows Disconnected only
+when both fail, as the desktop app's watch on its own server needs two
+failed checks in a row
+(`checkServerHealthWithRetry` in `web/src/lib/serverHealth.ts`,
+[#2718](https://github.com/messagecrate/message-crate/issues/2718)). A pool
+taken for longer than that, up to the 15-second busy timeout, still fails
+both probes, and the card shows Disconnected until its next probe finds the
+server. That is accepted: while every connection is taken, the card's own
+login would wait as well.
+
+Rejected: `503 Service Unavailable`. Every registered problem type is a `4xx`
+whose remedy a client can act on, and a server that cannot reach its own
+database is the `500 Internal Server Error` no page could help with.
 
 ## Content negotiation
 
@@ -725,6 +762,15 @@ What each reaches:
   other route has a body cap fixed in the code. Why: the owner may set any
   limit of 1 byte or more, and a limit that held every body would refuse
   the login and the settings change that raise it again.
+- `GET /v1/server` reports the journal mode SQLite runs the database in,
+  `journal_mode`, read when the request is answered, to any client. Owner
+  Home says so when it is not `wal`. It is `null` when the mode cannot be
+  read, and the route still answers, because the entry screen reads it
+  before anyone can log in. Why: in any other mode every page
+  waits while an import writes, and a warning in the server's log was the
+  only sign of it (#2201). The mode is a fact about the installation that
+  holds nothing of any account, as the Build is, so it needs no credential.
+  The reason SQLite gave stays in the log, which the owner alone reads.
 - Free text a route stores has a cap of its own, stated in the field's
   OpenAPI description: a name a person types (an account's display name, a
   contact's name) at most 200 characters, an identity address it links at

@@ -83,6 +83,42 @@ a value that broke a rule, and a line holds only outcomes (below). The slug
 says which problem it was, and the request id joins the line to the answer
 the client received.
 
+## A failed request names the step that failed
+
+A request that fails with `500 Internal Server Error` leaves one `ERROR`
+line, written where its problem document is built, with the error's whole
+chain, outermost first. Each database statement adds the step it does to
+that chain, in a few words (`read the attachments of a page of messages`),
+so the line reads as the step and then the database's own message. The
+step is a fixed phrase: it never holds a value bound into the statement.
+
+Why: the request's span already names the route, but a route that runs
+several statements gives the same database message for each, and a line
+that does not say which statement failed sends the owner to the code to
+guess. Why a fixed phrase: a bound value can be a search word or a message's
+text, which a line never holds (below).
+
+`db/conversation_messages.rs` names every statement it runs; the other `db/`
+modules do not all name theirs yet
+([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
+
+## A request's lines carry its id, spawned work included
+
+Every line written while the server answers a request carries the request's
+id, method and path, from the tracing span the request runs under. That
+holds for a line written by work the request runs in a task of its own or
+on the blocking pool, such as removing files or hashing an import's
+messages: the server starts that work with `request_id::spawn_in_current_span` or
+`request_id::spawn_blocking_in_current_span`, which run it under the span and subscriber of
+the code that started it. `crates/server/server/clippy.toml` refuses
+`tokio::spawn` and `tokio::task::spawn_blocking` in the server, so a new
+spawn cannot leave them out.
+
+Why: a tracing span does not cross a spawn on its own, and a warning that
+names no request cannot be matched to the request that caused it or to the
+error its client was shown
+([#2186](https://github.com/messagecrate/message-crate/issues/2186)).
+
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past

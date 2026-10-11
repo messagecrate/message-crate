@@ -333,8 +333,8 @@ impl ContactEditor<'_> {
     ///
     /// # Errors
     ///
-    /// Refused when `platform` cannot carry a new identity of that type: an
-    /// email address on WhatsApp.
+    /// Refused when `platform` does not carry a new identity of that type,
+    /// such as an email address on WhatsApp.
     async fn handle_row(
         &mut self,
         raw: &str,

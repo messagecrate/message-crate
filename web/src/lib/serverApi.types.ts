@@ -11,7 +11,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Report process liveness. */
+        /**
+         * Report whether the server can answer.
+         * @description Answers `ok` when the server can take a database connection and run a
+         *     statement on it within 1.5 seconds. A server whose connections are all
+         *     taken, or whose database cannot be opened, fails the way a `/v1` call it
+         *     cannot answer fails, with `500 Internal Server Error`, so a health check
+         *     agrees with those calls.
+         */
         get: operations["get_health"];
         put?: never;
         post?: never;
@@ -1371,8 +1378,8 @@ export interface paths {
         /**
          * Report whether this Message Crate is unclaimed, closed, or open.
          * @description Also reports this Message Crate's id, the server's Build, its Schema
-         *     Fingerprint, whether the Demo Account exists, and the attachment size
-         *     limit.
+         *     Fingerprint, the database's journal mode, whether the Demo Account
+         *     exists, and the attachment size limit.
          */
         get: operations["get_server"];
         put?: never;
@@ -1911,7 +1918,7 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_added" | "demo_account_reset" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
@@ -1946,6 +1953,11 @@ export interface components {
             app: components["schemas"]["AppKind"] | null;
             /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
             app_build: string | null;
+            /**
+             * Format: int64
+             * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+             */
+            asset_max_bytes: number | null;
             /**
              * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
              *     session that expired.
@@ -1989,6 +2001,11 @@ export interface components {
             conversations: number | null;
             /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
+            /**
+             * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+             *     build was asked for.
+             */
+            demo_data_size: components["schemas"]["DemoDataSize"] | null;
             /**
              * Format: int64
              * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -2595,10 +2612,16 @@ export interface components {
              */
             name: string;
             /**
-             * @description The query in the search language, trimmed and stored as written. The
-             *     server does not check it when storing it, so a query a list cannot
-             *     run is refused when it runs. A blank query is refused with `422
-             *     Unprocessable Entity`.
+             * @description The query in the search language, trimmed and stored as written. A
+             *     blank query is refused with `422 Unprocessable Entity`
+             *     (`validation-failed`). A query that every list refuses, one over
+             *     2,048 bytes, with a syntax error such as a parenthesis or quote that
+             *     never closes, with more than 32 words, more than 64 parts, or nesting
+             *     deeper than 32, is refused with `422 Unprocessable Entity`
+             *     (`search-query-invalid`) and the search language's own sentence. A
+             *     `word:` is not checked against any list, because a Saved Search runs
+             *     on more than one: a word or value the list cannot use is refused when
+             *     it runs there.
              */
             query: string;
         };
@@ -3328,6 +3351,16 @@ export interface components {
          * @enum {string}
          */
         ImportStatus: "running" | "completed" | "completed_with_issues" | "failed" | "cancelled";
+        /**
+         * @description The journal mode SQLite runs a database in, as `PRAGMA journal_mode`
+         *     names it.
+         *
+         *     The server asks for `wal` on every open. In any other mode a reader waits
+         *     for a writer, so every page load waits while an import batch holds its
+         *     write transaction.
+         * @enum {string}
+         */
+        JournalMode: "delete" | "truncate" | "persist" | "memory" | "wal" | "off";
         /** @description One identity to link onto the account, with its platform service. */
         LinkAccountIdentityRequest: {
             /**
@@ -3952,6 +3985,11 @@ export interface components {
                 /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
                 app_build: string | null;
                 /**
+                 * Format: int64
+                 * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+                 */
+                asset_max_bytes: number | null;
+                /**
                  * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
                  *     session that expired.
                  */
@@ -3994,6 +4032,11 @@ export interface components {
                 conversations: number | null;
                 /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
+                /**
+                 * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+                 *     build was asked for.
+                 */
+                demo_data_size: components["schemas"]["DemoDataSize"] | null;
                 /**
                  * Format: int64
                  * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -5237,6 +5280,16 @@ export interface components {
              */
             id: string;
             /**
+             * @description The journal mode SQLite runs the database in now. The server asks for
+             *     `wal` on every start. Any other mode means it could not have it, as
+             *     when another program held the database file, and then every page
+             *     waits while an import writes. Owner Home says so, and the server's
+             *     log holds what SQLite answered. `null` when the
+             *     mode could not be read. The route still answers, because the entry
+             *     screen reads it before anyone can log in.
+             */
+            journal_mode: components["schemas"]["JournalMode"] | null;
+            /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.
              */
@@ -5609,7 +5662,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Process is up */
+            /** @description The server is up and can reach its database */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -12704,7 +12757,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -12958,7 +13015,11 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            /**
+             * @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.
+             *
+             *     [`search-query-invalid`](https://messagecrate.app/docs/developer/reference/errors/search-query-invalid): The search language refused the query.
+             */
             422: {
                 headers: {
                     [name: string]: unknown;

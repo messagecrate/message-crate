@@ -1,14 +1,7 @@
 import type { ImportIssue } from "../../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
 import { formatAttachmentProgress } from "../../../lib/attachmentProgressCopy";
-import {
-  awaitDesktopJob,
-  type DesktopJobResult,
-  invokeSummarizeStaging,
-  onDesktopJobEvents,
-  type RunDirConfig,
-  type StagingSummary,
-} from "../../../lib/tauri";
+import type { DesktopJobResult, RunDirConfig, StagingSummary } from "../../../lib/tauri";
 import { waitingLine } from "../../../lib/toolStatusCopy";
 import type {
   AttachmentMediaMode,
@@ -32,8 +25,9 @@ import {
   resolveInRecord,
   withoutResolved,
 } from "../runRecord";
+import type { RunContext } from "./context";
 import { saveCarriedRecord } from "./runRecordWrites";
-import { runScratch } from "./scratch";
+import type { RunScratch } from "./scratch";
 import { mediaVerb, updateSteps } from "./screen";
 import { stopIfAccountLeft } from "./serverCalls";
 
@@ -67,9 +61,9 @@ function progressLabel(
   return STEP_LABEL[step] ?? "Working";
 }
 
-function applyProgress(event: ImportProgressEvent): void {
-  const scratch = runScratch();
-  const now = performance.now();
+function applyProgress(ctx: RunContext, event: ImportProgressEvent): void {
+  const { scratch } = ctx;
+  const now = ctx.now();
 
   scratch.timing = recordStageTime(scratch.timing, event.step, now);
   if (event.step === "parse") {
@@ -93,10 +87,10 @@ function applyProgress(event: ImportProgressEvent): void {
   // Staging in the Import Errors list.
   scratch.activeStage = stageForStep(event.step);
 
-  const detail = rowDetail(event);
+  const detail = rowDetail(scratch, event);
   const done = isProgressStepComplete(event.step, event.done, event.total);
 
-  updateSteps((current) =>
+  updateSteps(ctx, (current) =>
     current.map((step, index) => {
       if (index < stepIndex) {
         return { ...step, status: "done" };
@@ -136,9 +130,8 @@ function isStagingProgressStep(step: ImportProgressEvent["step"]): step is Stagi
  * updates its own line and leaves the others in place; the setup line goes
  * once messages are being read, since setup is over by then.
  */
-function rowDetail(event: ImportProgressEvent): string {
-  const scratch = runScratch();
-  const line = progressDetail(event);
+function rowDetail(scratch: RunScratch, event: ImportProgressEvent): string {
+  const line = progressDetail(scratch, event);
   if (!isStagingProgressStep(event.step)) return line;
   scratch.stagingLines = { ...scratch.stagingLines, [event.step]: line };
   if (event.step !== "setup") delete scratch.stagingLines.setup;
@@ -146,8 +139,7 @@ function rowDetail(event: ImportProgressEvent): string {
 }
 
 /** The detail line for one progress event. */
-function progressDetail(event: ImportProgressEvent): string {
-  const scratch = runScratch();
+function progressDetail(scratch: RunScratch, event: ImportProgressEvent): string {
   // A run waiting for a download, on the Setup or the Media row, says only that.
   if (event.waiting) {
     return waitingLine(event.waiting, event.bytes_done ?? 0, event.bytes_total ?? null);
@@ -168,8 +160,8 @@ function progressDetail(event: ImportProgressEvent): string {
   return `${progressLabel(event.step, scratch.attachmentMode)}: ${counts}`;
 }
 
-function recordIssue(event: ImportIssueEvent): void {
-  const scratch = runScratch();
+function recordIssue(ctx: RunContext, event: ImportIssueEvent): void {
+  const { scratch } = ctx;
   if (event.kind === "resolved") {
     // An earlier row no longer holds: it goes, and nothing replaces it.
     const resolved = { stage: stageForStep(event.step), item: event.item };
@@ -182,7 +174,7 @@ function recordIssue(event: ImportIssueEvent): void {
   } else {
     scratch.issues.push(issueFromEvent(event));
   }
-  void saveCarriedRecord();
+  void saveCarriedRecord(ctx);
 }
 
 /**
@@ -190,12 +182,12 @@ function recordIssue(event: ImportIssueEvent): void {
  * when some row is about that conversation, so it is written again only
  * then.
  */
-function recordFileDone(event: ImportFileDoneEvent): void {
-  const scratch = runScratch();
+function recordFileDone(ctx: RunContext, event: ImportFileDoneEvent): void {
+  const { scratch } = ctx;
   scratch.conversations.set(event.file, event.status);
   const about = (issue: ImportIssue) => issue.conversation === event.file;
   if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
-    void saveCarriedRecord();
+    void saveCarriedRecord(ctx);
   }
 }
 
@@ -204,18 +196,18 @@ function recordFileDone(event: ImportFileDoneEvent): void {
  * changes only when some Staging row is about that conversation, so it is
  * written again only then (#1688).
  */
-function recordFileWritten(event: ImportFileWrittenEvent): void {
-  const scratch = runScratch();
+function recordFileWritten(ctx: RunContext, event: ImportFileWrittenEvent): void {
+  const { scratch } = ctx;
   scratch.staged.set(event.file, event.status);
   const about = (issue: ImportIssue) =>
     isStagingRowOfConversation(issue) && issue.conversation === event.file;
   if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
-    void saveCarriedRecord();
+    void saveCarriedRecord(ctx);
   }
 }
 
-export function recordError(stage: ImportIssueStage, message: string): void {
-  runScratch().issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
+export function recordError(ctx: RunContext, stage: ImportIssueStage, message: string): void {
+  ctx.scratch.issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
 }
 
 /**
@@ -223,19 +215,19 @@ export function recordError(stage: ImportIssueStage, message: string): void {
  * run. A job that a Cancel came before is never started, and fails with
  * `CANCELLED_MESSAGE` the way a job cancelled while it runs does.
  */
-export function runJob(invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
-  const guarded = runScratch().runCancel.guard(invokeFn);
-  return awaitDesktopJob(
+export function runJob(ctx: RunContext, invokeFn: () => Promise<void>): Promise<DesktopJobResult> {
+  const guarded = ctx.scratch.runCancel.guard(invokeFn);
+  return ctx.desktop.awaitDesktopJob(
     "Import Run",
     async () => {
-      stopIfAccountLeft();
+      stopIfAccountLeft(ctx);
       await guarded();
     },
     undefined,
-    applyProgress,
-    recordIssue,
-    recordFileDone,
-    recordFileWritten,
+    (event) => applyProgress(ctx, event),
+    (event) => recordIssue(ctx, event),
+    (event) => recordFileDone(ctx, event),
+    (event) => recordFileWritten(ctx, event),
   );
 }
 
@@ -246,15 +238,18 @@ export function runJob(invokeFn: () => Promise<void>): Promise<DesktopJobResult>
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.
  */
-export async function summarizeStagingWithProgress(config: RunDirConfig): Promise<StagingSummary> {
-  const unlisten = await onDesktopJobEvents({
+export async function summarizeStagingWithProgress(
+  ctx: RunContext,
+  config: RunDirConfig,
+): Promise<StagingSummary> {
+  const unlisten = await ctx.desktop.onDesktopJobEvents({
     onLog: () => {},
-    onProgress: applyProgress,
+    onProgress: (event) => applyProgress(ctx, event),
     onFinished: () => {},
     onError: () => {},
   });
   try {
-    return await invokeSummarizeStaging(config);
+    return await ctx.desktop.invokeSummarizeStaging(config);
   } finally {
     unlisten();
   }

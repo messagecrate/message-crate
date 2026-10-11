@@ -496,7 +496,7 @@ fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     if import.phones_needing_review > 0 {
         let _ = writeln!(
             out,
-            "  phones needing review: {} (ambiguous numbers — fix them in Message Crate)",
+            "  phones needing review: {} (ambiguous numbers to fix in Message Crate)",
             import.phones_needing_review
         );
     }
@@ -728,7 +728,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let opened = OpenDb::open(cfg).await?;
     let stop = Arc::new(AtomicBool::new(false));
-    let stopper = tokio::spawn({
+    let stopper = crate::request_id::spawn_in_current_span({
         let stop = Arc::clone(&stop);
         async move {
             crate::server::stop_requested().await;

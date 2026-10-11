@@ -6,10 +6,10 @@ import {
   MISSING_STAT,
   NEITHER_STAT,
 } from "../test/pathStats";
+import { ENCRYPTED_BACKUP_PASSWORD_REQUIRED } from "./encryptedBackup";
 import {
   IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY,
   IMESSAGE_ERR_CONTACTS_NOT_FILE,
-  IMESSAGE_ERR_ENCRYPTED_PASSWORD,
   IMESSAGE_ERR_IPHONE_NOT_DIRECTORY,
   IMESSAGE_ERR_JAILBREAK_NOT_FILE,
   IMESSAGE_ERR_MAC_NOT_FILE,
@@ -137,7 +137,7 @@ describe("imessageCanImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPassword).toBe(IMESSAGE_ERR_ENCRYPTED_PASSWORD);
+    expect(result.errors.backupPassword).toBe(ENCRYPTED_BACKUP_PASSWORD_REQUIRED);
   });
 
   it("enables an encrypted backup when the password is filled", () => {

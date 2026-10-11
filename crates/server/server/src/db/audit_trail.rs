@@ -32,6 +32,7 @@ use message_crate_api_types::{ExportQueryList, ExportStatus};
 use crate::credentials::{is_valid_username, normalize_username};
 use crate::db::account_profile;
 use crate::db::address_book::LoadMode;
+use crate::db::demo_account_build::DemoDataSize;
 use crate::db::exports::ExportScopeKind;
 use crate::db::imports::ImportStatus;
 use crate::db::permissions::Permission;
@@ -75,6 +76,16 @@ pub enum AuditAction {
     RegistrationOpened,
     /// The owner stopped strangers creating accounts.
     RegistrationClosed,
+    /// The owner changed the attachment size limit; `asset_max_bytes` is the
+    /// new limit.
+    AssetLimitChanged,
+    /// The owner added the Demo Account where there was none: a build
+    /// started; `demo_data_size` is the set of Demo Data asked for.
+    DemoAccountAdded,
+    /// The owner reset the Demo Account: a build started that removes it,
+    /// with all it holds, and builds it again; `demo_data_size` is the set of
+    /// Demo Data asked for.
+    DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
     /// The holder deleted an API token.
@@ -108,6 +119,9 @@ impl AuditAction {
             Self::AccountDeleted => "account_deleted",
             Self::RegistrationOpened => "registration_opened",
             Self::RegistrationClosed => "registration_closed",
+            Self::AssetLimitChanged => "asset_limit_changed",
+            Self::DemoAccountAdded => "demo_account_added",
+            Self::DemoAccountReset => "demo_account_reset",
             Self::ApiTokenCreated => "api_token_created",
             Self::ApiTokenDeleted => "api_token_deleted",
             Self::AddressBookLoaded => "address_book_loaded",
@@ -415,6 +429,13 @@ pub struct Details {
     /// `api_token_created` and `api_token_deleted`: the token's masked hint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_token_hint: Option<String>,
+    /// `asset_limit_changed`: the new attachment size limit, in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asset_max_bytes: Option<u64>,
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+    /// build was asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub demo_data_size: Option<DemoDataSize>,
 }
 
 /// One entry of the Audit Trail as the interface hands it out: an entry of
@@ -490,6 +511,11 @@ pub struct AuditEntry {
     pub contacts_updated: Option<i64>,
     /// `address_book_loaded`: contacts removed.
     pub contacts_deleted: Option<i64>,
+    /// `asset_limit_changed`: the new attachment size limit, in bytes.
+    pub asset_max_bytes: Option<u64>,
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
+    /// build was asked for.
+    pub demo_data_size: Option<DemoDataSize>,
 }
 
 impl AuditEntry {
@@ -532,6 +558,8 @@ impl AuditEntry {
             contacts_created: None,
             contacts_updated: None,
             contacts_deleted: None,
+            asset_max_bytes: None,
+            demo_data_size: None,
         }
     }
 }
@@ -1085,6 +1113,8 @@ async fn load_entry(conn: &mut SqliteConnection, id: i64) -> Result<Option<Audit
         contacts_created: details.contacts_created,
         contacts_updated: details.contacts_updated,
         contacts_deleted: details.contacts_deleted,
+        asset_max_bytes: details.asset_max_bytes,
+        demo_data_size: details.demo_data_size,
         ..AuditEntry::new(
             row.try_get("id")?,
             action,

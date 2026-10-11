@@ -1,3 +1,4 @@
+import { encryptedBackupPasswordError } from "./encryptedBackup";
 import {
   checkOptionalPath,
   checkRequiredPath,
@@ -86,8 +87,6 @@ export const IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY =
   "Pick the directory that contains Attachments and StickerCache.";
 export const IMESSAGE_ERR_CONTACTS_NOT_FILE =
   "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
-export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
-  "The backup is encrypted — fill Encryption password.";
 
 /** The kind of path each method's backup path field takes, and its message for any other. */
 const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, PathRequirement> = {
@@ -140,12 +139,12 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
     });
   }
 
-  if (
-    args.method === "imessage-ios" &&
-    args.stats.backupEncrypted === true &&
-    args.backupPassword.trim() === ""
-  ) {
-    errors.backupPassword = IMESSAGE_ERR_ENCRYPTED_PASSWORD;
+  const passwordError = encryptedBackupPasswordError(
+    args.stats.backupEncrypted,
+    args.backupPassword,
+  );
+  if (args.method === "imessage-ios" && passwordError !== null) {
+    errors.backupPassword = passwordError;
   }
 
   const attachmentCheckPending =

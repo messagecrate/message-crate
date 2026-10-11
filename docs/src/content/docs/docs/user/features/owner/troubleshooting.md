@@ -38,6 +38,14 @@ The desktop app then needs `http://127.0.0.1:8090` under **Change server address
 The new release changed the database layout, and the server rebuilt the database empty.
 [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) describes what is gone and the way back.
 
+### Owner Home says the server could not turn on write-ahead logging
+
+The server turns on write-ahead logging each time it starts, so pages load while an import writes.
+When it can't, most often because another program has the database file open, the server starts without it, and every page waits for each import batch.
+The server's log, under **Logs** in Owner Home, holds a warning from the start: SQLite's error when it gave one, or else the journal mode it kept.
+Closing any other program that has the database file open, then restarting the server, turns it back on.
+**Server Settings** shows the journal mode, which reads `wal` once it is on.
+
 ## Logging in
 
 ### "invalid username or password" with the right password
@@ -90,12 +98,12 @@ Importing needs an account, and that account needs **Import** on under **Message
 
 ## Import
 
-### "The backup is encrypted — fill Encryption password."
+### "The backup is encrypted. Fill in the Encryption password."
 
 The iPhone backup was made with encryption, and the Import form's **Encryption password** is empty.
 The password is the one chosen when the backup was made.
 
-### "This backup is not encrypted. Clear Encryption password."
+### "This backup is not encrypted. Clear the Encryption password."
 
 The iPhone backup was made without encryption, and the Import form's **Encryption password** holds a value.
 Import continues once the field is empty.
@@ -223,7 +231,7 @@ A failed download is tried again the next time the app starts, or at once with *
 
 | The reason starts with | What it means | What fixes it |
 |---|---|---|
-| `No connection to the download's server` | The connection to `github.com`, where every file comes from, failed or dropped: no internet, a firewall or proxy in the way, or a connection cut off partway through. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
+| `No connection to the download's server` | The connection to `github.com`, where every file comes from, failed or dropped: no internet, a firewall or proxy in the way, or a connection cut off partway through. Before it gave up, the app tried again after 5, 15, 30 and 60 seconds. The programs share those four tries, so a program whose download starts after the first one's may be tried only once. | **Try again** once the computer is online, or a copy put in the Tools Directory by hand. |
 | `The download's server answered`, then a status such as `503 Service Unavailable` | GitHub refused the request or had trouble. `404 Not Found` means the pinned file is no longer there. | **Try again** later. A `404 Not Found` that stays belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), and meanwhile a copy put in the Tools Directory by hand is used. |
 | `The downloaded file's checksum did not match the one this app carries` | The file that arrived isn't the one the app was built to accept, so the app deleted it. A proxy that rewrites downloads, or a damaged transfer, does this. | **Try again**. A mismatch that repeats belongs in an issue on [GitHub](https://github.com/messagecrate/message-crate/issues), with the two checksums the reason names. |
 | `The file could not be written to the Tools Directory` | The disk is full, or the Tools Directory can't be written to. The reason ends with the operating system's words. | Free space on that disk, or give the account that runs the app permission to write to the Tools Directory, then **Try again**. |

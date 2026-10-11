@@ -1,3 +1,4 @@
+import { encryptedBackupPasswordError } from "./encryptedBackup";
 import { checkOptionalPath, checkRequiredPath, type ImportPathStat } from "./pathChecks";
 
 export const WHATSAPP_SOURCE_ID = "whatsapp";
@@ -77,8 +78,6 @@ export function emptyWhatsappPathStats(): WhatsappPathStats {
 
 export const WHATSAPP_ERR_BACKUP_NOT_DIRECTORY = "Pick the backup directory.";
 export const WHATSAPP_ERR_CRYPT_KEY = "Decryption key is required for an encrypted backup.";
-export const WHATSAPP_ERR_ENCRYPTED_PASSWORD =
-  "The backup is encrypted — fill Encryption password.";
 export const WHATSAPP_ERR_MUST_BE_FILE = "This path must be a file.";
 export const WHATSAPP_ERR_MUST_BE_DIRECTORY = "This path must be a directory.";
 export const WHATSAPP_ERR_OWNER_PHONE = "Owner's WhatsApp number is required.";
@@ -142,12 +141,12 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
     errors.key = WHATSAPP_ERR_CRYPT_KEY;
   }
 
-  if (
-    whatsappShowsPassword(args.method) &&
-    args.stats.backupEncrypted === true &&
-    args.backupPassword.trim() === ""
-  ) {
-    errors.backupPassword = WHATSAPP_ERR_ENCRYPTED_PASSWORD;
+  const passwordError = encryptedBackupPasswordError(
+    args.stats.backupEncrypted,
+    args.backupPassword,
+  );
+  if (whatsappShowsPassword(args.method) && passwordError !== null) {
+    errors.backupPassword = passwordError;
   }
 
   if (whatsappOwnerPhoneRequired(args.method) && args.ownerPhone.trim() === "") {

@@ -127,6 +127,39 @@ async fn the_state_route_carries_the_build_and_the_schema_fingerprint() {
     );
 }
 
+/// The route reports the journal mode the database runs in when it is read,
+/// so a server that could not have write-ahead logging says so beside its
+/// Build, where Owner Home reads it.
+#[tokio::test]
+async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
+    use crate::db::engine::JournalMode;
+    use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+
+    let fixture = test_fixture().await;
+    let body: Server = get_json(&fixture.state, "/v1/server", "").await;
+    assert_eq!(body.journal_mode, Some(JournalMode::Wal));
+
+    // A database left in a rollback journal, as one is when the server could
+    // not turn write-ahead logging on.
+    let dir = tempfile::tempdir().unwrap();
+    let pool = SqlitePoolOptions::new()
+        .connect_with(
+            SqliteConnectOptions::new()
+                .filename(dir.path().join("messagecrate.db"))
+                .create_if_missing(true)
+                .journal_mode(SqliteJournalMode::Delete),
+        )
+        .await
+        .unwrap();
+    {
+        let mut conn = pool.acquire().await.unwrap();
+        crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    }
+    let state = crate::server::test_app_state(pool, dir.path());
+    let body: Server = get_json(&state, "/v1/server", "").await;
+    assert_eq!(body.journal_mode, Some(JournalMode::Delete));
+}
+
 /// Two Message Crates have different ids, though both start their account
 /// and Import Run ids at the same numbers, and one Message Crate keeps its id
 /// across reads: the desktop app tells their Import Run logs apart by it.
@@ -543,6 +576,46 @@ async fn the_owner_sets_a_limit_below_the_configured_part_size() {
     assert_eq!(server["asset_max_bytes"], below);
 }
 
+/// The owner's Audit Trail entries with `action`, newest first.
+async fn owner_entries(state: &AppState, token: &str, action: &str) -> Vec<serde_json::Value> {
+    let page: serde_json::Value = get_json(state, "/v1/audit-trail?limit=500", token).await;
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["action"] == action)
+        .cloned()
+        .collect()
+}
+
+/// Changing the attachment size limit leaves an Audit Trail entry naming the
+/// new limit, as opening registration does (#2187). Sending the limit the
+/// server already holds, the default included, changes nothing and records
+/// nothing.
+#[tokio::test]
+async fn changing_the_attachment_size_limit_is_recorded_once_per_change() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let limit: u64 = 100 * 1024 * 1024;
+
+    for bytes in [DEFAULT_LIMIT, limit, limit] {
+        let _: serde_json::Value = crate::test_support::patch_json(
+            &state,
+            "/v1/server/settings",
+            &owner.token,
+            serde_json::json!({ "asset_max_bytes": bytes }),
+        )
+        .await;
+    }
+
+    let entries = owner_entries(&state, &owner.token, "asset_limit_changed").await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["actor"], "owner");
+    assert_eq!(entries[0]["asset_max_bytes"], limit);
+    assert!(entries[0]["account_id"].is_null());
+}
+
 /// Claiming this Message Crate puts a row at the owner id and nowhere else.
 #[tokio::test]
 async fn claiming_the_server_creates_exactly_one_owner() {
@@ -866,7 +939,7 @@ impl OpenGate {
     /// the build's error when the build ends without reaching the generator.
     async fn arrival(&self, state: &AppState) {
         let gate = self.0;
-        let arrived = tokio::task::spawn_blocking(move || {
+        let arrived = crate::request_id::spawn_blocking_in_current_span(move || {
             let mut gate_state = gate.lock();
             // An open gate ends the wait too, so a test that panics here
             // leaves no thread waiting.
@@ -1034,6 +1107,68 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
             .await
             .unwrap()
             >= 1
+    );
+}
+
+/// Adding the Demo Account and resetting it are each recorded as the owner's
+/// act, with the size of Demo Data asked for, when the build starts (#2187).
+/// The add is about no account, since none exists yet. The reset is about
+/// the Demo Account it replaced, so it comes before that account's deletion
+/// and stays in its record.
+#[tokio::test(flavor = "multi_thread")]
+async fn adding_and_resetting_the_demo_account_are_recorded() {
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.demo_bundle_generator = tiny_bundle;
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    for _ in 0..2 {
+        let (status, body) = start_demo_build(&state, &owner.token).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let demo = demo_account_after_build(&state, &owner.token).await;
+        assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
+    }
+
+    let added = owner_entries(&state, &owner.token, "demo_account_added").await;
+    assert_eq!(added.len(), 1, "{added:?}");
+    assert_eq!(added[0]["actor"], "owner");
+    assert_eq!(added[0]["demo_data_size"], "medium");
+    assert!(added[0]["account_id"].is_null());
+    assert!(
+        added[0]["username"].is_null(),
+        "a username with no account would read as a deleted account"
+    );
+
+    let reset = owner_entries(&state, &owner.token, "demo_account_reset").await;
+    assert_eq!(reset.len(), 1, "{reset:?}");
+    assert_eq!(reset[0]["actor"], "owner");
+    assert_eq!(reset[0]["username"], account_profile::DEMO_USERNAME);
+    assert_eq!(reset[0]["demo_data_size"], "medium");
+    let deleted = owner_entries(&state, &owner.token, "account_deleted").await;
+    let replaced = deleted
+        .iter()
+        .find(|entry| entry["username"] == account_profile::DEMO_USERNAME)
+        .expect("the reset deleted the Demo Account it replaced");
+    let reset_id = reset[0]["id"].as_i64().expect("an entry has an id");
+    let replaced_id = replaced["id"].as_i64().expect("an entry has an id");
+    assert!(
+        reset_id < replaced_id,
+        "the reset is recorded before the Demo Account it replaced is deleted"
+    );
+
+    let old_record: serde_json::Value = get_json(
+        &state,
+        &format!("/v1/audit-trail?deleted_account_id={replaced_id}"),
+        &owner.token,
+    )
+    .await;
+    assert!(
+        old_record["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["action"] == "demo_account_reset"),
+        "{old_record}"
     );
 }
 

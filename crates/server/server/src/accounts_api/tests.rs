@@ -1722,7 +1722,7 @@ async fn deleting_messages_waits_for_a_batch_in_progress() {
         .account_import_locks
         .lock(alice.account_id.to_string())
         .await;
-    let delete = tokio::spawn({
+    let delete = crate::request_id::spawn_in_current_span({
         let state = state.clone();
         let path = format!("{}/messages", member(alice.account_id));
         let token = alice.token.clone();

@@ -3,14 +3,13 @@
  * the server refused, and the account that started the run having logged out.
  */
 
-import { getAccountId, getToken } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
-import { type ImportStage, setImportStage } from "../../../lib/importRun";
+import type { ImportStage } from "../../../lib/importRun";
 import { endsSession } from "../../../lib/routeQuery";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { sessionRefused } from "../../../lib/sessionRefusal";
 import type { StagingSummary } from "../../../lib/tauri";
-import { importRunStore as store } from "../importRunStore";
+import type { RunContext } from "./context";
 import { discardRunDirectory } from "./runDirectory";
 import { returnToForm } from "./screen";
 
@@ -19,16 +18,16 @@ import { returnToForm } from "./screen";
  * that account logged out while a stage ran. The server calls the run makes
  * go with the session logged in now, so the run must not make another.
  */
-export function accountLeft(): boolean {
-  return getAccountId() !== store.get().accountId;
+export function accountLeft(ctx: RunContext): boolean {
+  return ctx.server.accountId() !== ctx.store.get().accountId;
 }
 
 /**
  * Stop the run where it got to, the way a Cancel does, once the account that
  * started it has left. The run stays open for that account to resume.
  */
-export function stopIfAccountLeft(): void {
-  if (accountLeft()) throw new Error(CANCELLED_MESSAGE);
+export function stopIfAccountLeft(ctx: RunContext): void {
+  if (accountLeft(ctx)) throw new Error(CANCELLED_MESSAGE);
 }
 
 /**
@@ -55,8 +54,8 @@ export class SessionRefusedError extends Error {}
  * a refusal that arrives after a later login says nothing of that login's
  * session.
  */
-export async function endSessionIfRefused<T>(call: () => Promise<T>): Promise<T> {
-  const token = getToken();
+export async function endSessionIfRefused<T>(ctx: RunContext, call: () => Promise<T>): Promise<T> {
+  const token = ctx.server.token();
   try {
     return await call();
   } catch (e: unknown) {
@@ -72,12 +71,16 @@ export async function endSessionIfRefused<T>(call: () => Promise<T>): Promise<T>
  * and the form's resume check offers it again at the account's next login. A
  * run the server never created has nothing to offer, so its directory goes.
  */
-export async function leaveIfRefused(e: unknown, runId: number | null): Promise<boolean> {
+export async function leaveIfRefused(
+  ctx: RunContext,
+  e: unknown,
+  runId: number | null,
+): Promise<boolean> {
   if (!(e instanceof SessionRefusedError)) return false;
-  const { runDir } = store.get();
-  if (runId == null && runDir != null) await discardRunDirectory(runDir);
-  returnToForm();
-  store.set({ running: false });
+  const { runDir } = ctx.store.get();
+  if (runId == null && runDir != null) await discardRunDirectory(ctx, runDir);
+  returnToForm(ctx);
+  ctx.store.set({ running: false });
   return true;
 }
 
@@ -95,12 +98,13 @@ export async function leaveIfRefused(e: unknown, runId: number | null): Promise<
  * on to work the server does not know the run reached.
  */
 export async function moveStage(
+  ctx: RunContext,
   runId: number,
   stage: ImportStage,
   approvedPlan?: StagingSummary,
 ): Promise<void> {
   try {
-    await endSessionIfRefused(() => setImportStage(runId, stage, approvedPlan));
+    await endSessionIfRefused(ctx, () => ctx.server.setImportStage(runId, stage, approvedPlan));
   } catch (e: unknown) {
     if (e instanceof SessionRefusedError) throw e;
     const reason = errorText(e);
@@ -117,17 +121,18 @@ export async function moveStage(
  * `refused`, for the caller to stop.
  */
 export async function moveStageAtReview(
+  ctx: RunContext,
   runId: number,
   stage: "staging_review" | "media_review",
   approvedPlan?: StagingSummary,
 ): Promise<"recorded" | "failed" | "refused"> {
   try {
-    await moveStage(runId, stage, approvedPlan);
-    store.set({ reviewError: null });
+    await moveStage(ctx, runId, stage, approvedPlan);
+    ctx.store.set({ reviewError: null });
     return "recorded";
   } catch (e: unknown) {
-    if (await leaveIfRefused(e, runId)) return "refused";
-    store.set({ reviewError: errorText(e) });
+    if (await leaveIfRefused(ctx, e, runId)) return "refused";
+    ctx.store.set({ reviewError: errorText(e) });
     return "failed";
   }
 }

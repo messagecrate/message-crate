@@ -516,11 +516,18 @@ fn build_exporter_config(
 /// The programs the Tools Directory holds that `source`'s exporter runs: a
 /// WhatsApp import runs wtsexporter. Staging copies attachments as they are
 /// whatever the person chose, so it never runs ffmpeg; the Media stage does
-/// (`transcode_staging`).
+/// (`transcode_staging`). Every source is named, with no wildcard arm, so a
+/// new source does not compile until someone decides what it runs.
 fn programs_run_by(source: &SourceConfig) -> &'static [Program] {
     match source {
         SourceConfig::Whatsapp(_) => &[Program::Wtsexporter],
-        _ => &[],
+        SourceConfig::GoSmsPro(_)
+        | SourceConfig::SmsBackupRestore(_)
+        | SourceConfig::SmsBackupPlus(_)
+        | SourceConfig::OpenExtract(_)
+        | SourceConfig::Imazing(_)
+        | SourceConfig::Apple(_)
+        | SourceConfig::Format(_) => &[],
     }
 }
 

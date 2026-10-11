@@ -45,7 +45,7 @@ The Owner's row reads zero, because the Owner holds no messages.
 
 ## Server Settings
 
-**Server Settings** holds one switch, the attachment size limit, the Demo Account, and two facts about the server.
+**Server Settings** holds one switch, the attachment size limit, the Demo Account, and three facts about the server.
 
 The switch is **Let anyone who can reach this server create their own account**.
 
@@ -86,6 +86,7 @@ Below the Demo Account:
 
 - **Version** is the version of the server that is running.
 - **Schema fingerprint** is a number the server derives from its database layout. [Update Message Crate](/docs/user/features/owner/update/#when-the-database-layout-changes) says what a changed number means.
+- **Journal mode** reads `wal` when the server runs the database with write-ahead logging, as it should. Any other mode means the server could not turn it on, and every page waits while an import writes: [Troubleshooting](/docs/user/features/owner/troubleshooting/#owner-home-says-the-server-could-not-turn-on-write-ahead-logging) says what to do. **unknown** means the server could not read the mode, and its log says why.
 
 ## User Accounts
 
@@ -210,7 +211,8 @@ A deleted account's entries stay under its old username, marked **deleted**.
 **Account** lists deleted accounts under **Deleted accounts**, below the live ones, each by its old username and when it was deleted.
 Picking one narrows the list to the entries and runs that account left.
 Another account given the same username, before or after, keeps its own entries apart.
-Opening and closing the Message Crate to new accounts is recorded too, under no account.
+Opening and closing the Message Crate to new accounts is recorded too, under no account, and so is each change to the attachment size limit, with the new limit.
+Adding the Demo Account is recorded under no account, and resetting it under the Demo Account it replaced, each with the set of Demo Data asked for.
 
 ## Logs
 

@@ -10,6 +10,8 @@
 //! in the Tools Directory ([`set_tools_dir`]), and nowhere else.
 
 mod estimate;
+#[cfg(test)]
+mod fake_tools;
 mod mime;
 mod probe;
 mod process;

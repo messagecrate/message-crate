@@ -119,7 +119,7 @@ impl MediaQueue {
         let Some(thread) = thread else {
             return;
         };
-        let ended = tokio::task::spawn_blocking(move || thread.join()).await;
+        let ended = crate::request_id::spawn_blocking_in_current_span(move || thread.join()).await;
         if !matches!(ended, Ok(Ok(()))) {
             tracing::warn!("The pass that makes Thumbnails and Previews did not end cleanly");
         }

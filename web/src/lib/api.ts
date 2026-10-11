@@ -1,4 +1,5 @@
 import { appHeaders } from "./build";
+import { startTimeLimit } from "./timeLimit";
 
 let baseUrl = "";
 let authToken: string | null = null;
@@ -92,11 +93,19 @@ export class ApiError extends Error {
   readonly detail: string | null;
   readonly errors: string[];
   readonly requestId: string | null;
+  /** True when the call's time limit ended it and no answer arrived (`requestTimeoutError`). */
+  readonly timedOut: boolean;
 
-  constructor(status: number, message: string, problem: Problem | null = null) {
+  constructor(
+    status: number,
+    message: string,
+    problem: Problem | null = null,
+    { timedOut = false }: { timedOut?: boolean } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.timedOut = timedOut;
     this.type = problem ? problemSlug(problem.type) : null;
     this.title = problem?.title ?? null;
     this.detail = problem?.detail ?? null;
@@ -168,31 +177,107 @@ export function problemFromBody(status: number, text: string): ApiError {
  */
 export const NEVER_FOLLOW: RequestRedirect = "error";
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-  signal?: AbortSignal,
-): Promise<T> {
+/**
+ * How long a call waits for the server's whole answer, the body included,
+ * unless its caller asks for longer. A server that takes the connection and
+ * then never answers (a stalled container, a request stuck behind the
+ * database's write lock) would otherwise leave a screen loading until the
+ * browser's own limit, which can be minutes.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+
+export type ApiRequestOptions = {
+  signal?: AbortSignal;
+  /** How long to wait for the answer; `REQUEST_TIMEOUT_MS` when not given. */
+  timeoutMs?: number;
+};
+
+/** A time limit in words: "30 seconds", "10 minutes". */
+function durationText(ms: number): string {
+  if (ms >= 60_000 && ms % 60_000 === 0) {
+    const minutes = ms / 60_000;
+    return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  }
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return seconds === 1 ? "1 second" : `${seconds} seconds`;
+}
+
+/**
+ * The error for a call its time limit ended: an `ApiError` of status 0 (no
+ * answer arrived, so there is no HTTP status) whose message says how long it
+ * waited, so a screen shows a sentence rather than the browser's abort text.
+ */
+export function requestTimeoutError(ms: number): ApiError {
+  return new ApiError(0, `The server didn't answer within ${durationText(ms)}.`, null, {
+    timedOut: true,
+  });
+}
+
+/**
+ * The headers every call carries: this app and its Build, the Session's
+ * token when there is one, and `contentType` when the call has a body.
+ */
+function callHeaders(contentType: string | null): Record<string, string> {
   const headers: Record<string, string> = { ...appHeaders() };
-  // A request says it carries JSON only when it does. The server reads a body
-  // wherever the media type promises one, so an empty DELETE marked as JSON is
-  // refused as unparseable.
-  if (body) {
-    headers["Content-Type"] = "application/json";
+  if (contentType) {
+    headers["Content-Type"] = contentType;
   }
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
+  return headers;
+}
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-    redirect: NEVER_FOLLOW,
-  });
+/**
+ * Send one request and read its answer with `read`, within the call's time
+ * limit. The limit covers the body as well as the headers, since a server
+ * can stall partway through either, unless `untilHeaders` says it ends once
+ * the answer starts: a download as large as a video then takes as long as it
+ * needs, while a server that never answers still ends the call.
+ *
+ * A call the limit ends rejects with `requestTimeoutError`. A call its
+ * caller's signal ends rejects with that abort, as before, since a cancel is
+ * not a failure to show.
+ */
+async function exchange<T>(
+  method: string,
+  path: string,
+  body: { text: string; contentType: string } | null,
+  opts: ApiRequestOptions | undefined,
+  read: (res: Response) => Promise<T>,
+  { untilHeaders = false }: { untilHeaders?: boolean } = {},
+): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const limit = startTimeLimit(timeoutMs, opts?.signal);
+  try {
+    const res = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: callHeaders(body?.contentType ?? null),
+      body: body?.text,
+      signal: limit.signal,
+      redirect: NEVER_FOLLOW,
+    });
+    if (untilHeaders) limit.stopClock();
+    return await read(res);
+  } catch (e: unknown) {
+    if (limit.timedOut()) throw requestTimeoutError(timeoutMs);
+    throw e;
+  } finally {
+    limit.dispose();
+  }
+}
 
+/**
+ * A JSON body, or none. A request says it carries JSON only when it does: the
+ * server reads a body wherever the media type promises one, so an empty
+ * DELETE marked as JSON is refused as unparseable.
+ */
+function jsonBody(body: unknown): { text: string; contentType: string } | null {
+  return body ? { text: JSON.stringify(body), contentType: "application/json" } : null;
+}
+
+/** Read a JSON answer: a failure's problem document, nothing for a 204, or the body. */
+async function readJson<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);
@@ -203,62 +288,11 @@ async function request<T>(
     return undefined as T;
   }
 
-  return res.json() as Promise<T>;
+  return (await res.json()) as T;
 }
 
-async function requestRaw<T>(
-  method: string,
-  path: string,
-  body: string,
-  contentType: string,
-  signal?: AbortSignal,
-): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": contentType, ...appHeaders() };
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body,
-    signal,
-    redirect: NEVER_FOLLOW,
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    throw problemFromBody(res.status, text);
-  }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return res.json() as Promise<T>;
-}
-
-/**
- * Ask a route that answers a file's text instead of JSON, and return that
- * text: a POST with a JSON body, or a GET with none. A failure is still a
- * problem document, read as everywhere else.
- */
-async function requestText(
-  method: "GET" | "POST",
-  path: string,
-  body: unknown,
-  signal?: AbortSignal,
-): Promise<string> {
-  const headers: Record<string, string> = { ...appHeaders() };
-  if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
-  }
-  if (authToken) {
-    headers.Authorization = `Bearer ${authToken}`;
-  }
-  const res = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-    redirect: NEVER_FOLLOW,
-  });
+/** Read a file's text, or a failure's problem document as everywhere else. */
+async function readText(res: Response): Promise<string> {
   const text = await res.text();
   if (!res.ok) {
     throw problemFromBody(res.status, text);
@@ -266,13 +300,27 @@ async function requestText(
   return text;
 }
 
-export type ApiRequestOptions = {
-  signal?: AbortSignal;
-};
+/** Read an answer's bytes, or a failure's problem document as everywhere else. */
+async function readBlob(res: Response): Promise<Blob> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw problemFromBody(res.status, text);
+  }
+  return res.blob();
+}
+
+function request<T>(
+  method: string,
+  path: string,
+  body: unknown,
+  opts?: ApiRequestOptions,
+): Promise<T> {
+  return exchange(method, path, jsonBody(body), opts, readJson<T>);
+}
 
 export const apiClient = {
   get<T>(path: string, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("GET", path, undefined, opts?.signal);
+    return request<T>("GET", path, undefined, opts);
   },
   /** POST a body that is not JSON — a file's text — under its own media type. */
   postRaw<T>(
@@ -281,26 +329,34 @@ export const apiClient = {
     contentType: string,
     opts?: ApiRequestOptions,
   ): Promise<T> {
-    return requestRaw<T>("POST", path, body, contentType, opts?.signal);
+    return exchange("POST", path, { text: body, contentType }, opts, readJson<T>);
   },
   /** POST a JSON body and read the answer as text: a file the server writes. */
   postText(path: string, body: unknown, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("POST", path, body, opts?.signal);
+    return exchange("POST", path, jsonBody(body), opts, readText);
   },
   /** GET a route that answers a file's text instead of JSON. */
   getText(path: string, opts?: ApiRequestOptions): Promise<string> {
-    return requestText("GET", path, undefined, opts?.signal);
+    return exchange("GET", path, null, opts, readText);
+  },
+  /**
+   * GET a route that answers bytes, such as an attachment, as a Blob. The time
+   * limit covers only the wait for the answer to start, so a large file that
+   * is arriving is never cut off.
+   */
+  getBlob(path: string, opts?: ApiRequestOptions): Promise<Blob> {
+    return exchange("GET", path, null, opts, readBlob, { untilHeaders: true });
   },
   post<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("POST", path, body, opts?.signal);
+    return request<T>("POST", path, body, opts);
   },
   put<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("PUT", path, body, opts?.signal);
+    return request<T>("PUT", path, body, opts);
   },
   patch<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("PATCH", path, body, opts?.signal);
+    return request<T>("PATCH", path, body, opts);
   },
   delete<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
-    return request<T>("DELETE", path, body, opts?.signal);
+    return request<T>("DELETE", path, body, opts);
   },
 };
