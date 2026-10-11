@@ -7,35 +7,6 @@ use super::*;
 /// 2015-03-12T18:04:22Z, the second every message here falls in.
 const SECOND: i64 = 1_426_183_462_000;
 
-/// Create an Import Run for `source`, post `body` as its one batch, and
-/// complete it.
-async fn import_run(state: &crate::server::AppState, token: &str, source: &str, body: String) {
-    let (_, created): (String, serde_json::Value) = post_created_json(
-        state,
-        "/v1/imports",
-        token,
-        serde_json::json!({ "source": source, "mode": "append" }),
-    )
-    .await;
-    let id = created["id"].as_i64().unwrap();
-    let (status, text) = crate::test_support::post_raw(
-        state,
-        &format!("/v1/imports/{id}/batches"),
-        token,
-        "application/jsonl",
-        body,
-    )
-    .await;
-    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
-    let _: serde_json::Value = post_json(
-        state,
-        &format!("/v1/imports/{id}/complete"),
-        token,
-        serde_json::json!({ "status": "completed" }),
-    )
-    .await;
-}
-
 /// An SMS Backup+ file holding `line` as its one message.
 fn sms_backup_plus_file(line: MessageLine) -> String {
     let header =
@@ -62,7 +33,7 @@ async fn a_whole_second_copy_and_a_millisecond_copy_are_shown_once_with_the_mill
     ] {
         let (state, _fixture, token) = importer().await;
         for file in files {
-            import_run(&state, &token, "sms-backup-plus", file).await;
+            import_one_batch(&state, &token, "sms-backup-plus", "append", file).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();
@@ -100,7 +71,7 @@ async fn a_whole_second_copy_at_another_time_keeps_seconds() {
     ] {
         let (state, _fixture, token) = importer().await;
         for body in imports {
-            import_run(&state, &token, "sms-backup-plus", body).await;
+            import_one_batch(&state, &token, "sms-backup-plus", "append", body).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();
@@ -129,10 +100,11 @@ async fn each_precision_is_kept_through_import_the_api_and_an_export_run() {
         .at(SECOND + 1000)
         .sms()
         .sender("+15555550123");
-    import_run(
+    import_one_batch(
         &state,
         &token,
         "sms-backup-plus",
+        "append",
         format!("{header}\n{whole}\n{exact}\n"),
     )
     .await;
@@ -205,7 +177,7 @@ async fn one_message_held_at_whole_seconds_and_at_000_milliseconds_says_millisec
     ] {
         let (state, _fixture, token) = importer().await;
         for body in imports {
-            import_run(&state, &token, "sms-backup-plus", body).await;
+            import_one_batch(&state, &token, "sms-backup-plus", "append", body).await;
         }
         let page: serde_json::Value = get_json(&state, "/v1/messages", &token).await;
         let items = page["items"].as_array().unwrap();
