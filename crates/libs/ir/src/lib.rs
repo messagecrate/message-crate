@@ -339,7 +339,7 @@ impl IrService {
 
 /// Platform identity stored on `handles.service` (not per-message SMS/iMessage/RCS).
 ///
-/// On screen, `Phone` is "Text Message" and `Whatsapp` is "WhatsApp".
+/// [`Self::label`] gives the name the app shows for each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentityService {
@@ -1127,8 +1127,8 @@ mod pending_message_tests {
 mod service_carries_tests {
     use super::{IdentityService, IdentityType};
 
-    /// Every `(service, type)` pair and whether the service carries it, as
-    /// [`IdentityService::carries`] gives the reason.
+    /// Every `(service, type)` pair and whether the service carries it;
+    /// [`IdentityService::carries`] says why.
     const TABLE: [(IdentityService, IdentityType, bool); 8] = [
         (IdentityService::Phone, IdentityType::Phone, true),
         (IdentityService::Phone, IdentityType::Email, true),

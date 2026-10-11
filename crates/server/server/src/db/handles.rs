@@ -620,7 +620,8 @@ mod tests {
     /// ([`IdentityService::carries`]), with a reason naming the service and
     /// the type, and let through for every pair it carries. A username on
     /// Text Message was let through, because only an email address on
-    /// WhatsApp was refused (#2212).
+    /// WhatsApp was refused (#2212). The two loops list every
+    /// `IdentityService` and `IdentityType`, and must follow the enums.
     #[test]
     fn a_new_identity_is_refused_for_every_type_its_service_does_not_carry() {
         let refusals = [
