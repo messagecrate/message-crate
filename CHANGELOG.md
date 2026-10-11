@@ -167,6 +167,11 @@ released versions carry their date on the heading.
 - 2026-10-10: The way an import passes its log, its progress and its cancel
   around was reworked inside, with nothing visible (#2165).
 
+- 2026-10-10: **An import is never sent back to a stage it has passed.**
+  Message Crate now refuses to move an import that is under way back to an
+  earlier stage, so a mistake in the app can no longer make the next resume
+  start over at work already done. Nothing changes on screen (#2167).
+
 - 2026-10-10: The check that ffmpeg is there before an import converts or
   compresses attachments was reworked inside, with nothing visible (#2166).
 
