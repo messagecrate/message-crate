@@ -1,5 +1,22 @@
 use super::*;
 
+/// The context of a form validated with its Scratch Directory at `/cache`
+/// and no ffmpeg.
+fn no_ffmpeg() -> FormContext<'static> {
+    FormContext {
+        scratch_dir: Path::new("/cache"),
+        ffmpeg_available: false,
+    }
+}
+
+/// [`no_ffmpeg`], with ffmpeg available.
+fn with_ffmpeg() -> FormContext<'static> {
+    FormContext {
+        ffmpeg_available: true,
+        ..no_ffmpeg()
+    }
+}
+
 #[test]
 fn values_split_on_newline_comma_and_semicolon_but_not_spaces() {
     let cases: &[(&str, &[&str])] = &[
@@ -53,9 +70,7 @@ fn imazing_passes_obfuscate() {
         obfuscate: true,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Imazing, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Imazing, no_ffmpeg()).unwrap();
     assert!(config.obfuscate.enabled);
     assert!(matches!(config.source, SourceConfig::Imazing(_)));
 }
@@ -69,7 +84,7 @@ fn seed_must_be_valid_hex() {
         ..Form::default()
     };
     assert_eq!(
-        form.to_config(Exporter::OpenExtract, Path::new("/cache"))
+        form.to_config(Exporter::OpenExtract, no_ffmpeg())
             .unwrap_err(),
         vec!["obfuscate seed must be exactly 64 hex characters, got 3".to_string()]
     );
@@ -80,7 +95,7 @@ fn seed_must_be_valid_hex() {
         ..Form::default()
     };
     assert_eq!(
-        form.to_config(Exporter::OpenExtract, Path::new("/cache"))
+        form.to_config(Exporter::OpenExtract, no_ffmpeg())
             .unwrap_err(),
         vec!["obfuscate seed must be exactly 64 hex characters, got 8".to_string()]
     );
@@ -91,7 +106,7 @@ fn seed_must_be_valid_hex() {
         ..Form::default()
     };
     assert_eq!(
-        form.to_config(Exporter::OpenExtract, Path::new("/cache"))
+        form.to_config(Exporter::OpenExtract, no_ffmpeg())
             .unwrap_err(),
         vec!["obfuscate seed must contain only hex characters (0-9, a-f)".to_string()]
     );
@@ -101,9 +116,7 @@ fn seed_must_be_valid_hex() {
         obfuscate_seed: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::OpenExtract, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::OpenExtract, no_ffmpeg()).unwrap();
     assert!(config.obfuscate.enabled);
     assert_eq!(
         config.obfuscate.seed.as_deref(),
@@ -122,7 +135,7 @@ fn plus_verbose_and_owner_fields() {
         ..Form::default()
     };
     let config = form
-        .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupPlus, no_ffmpeg())
         .unwrap();
     assert_eq!(config.inputs.len(), 1);
     let SourceConfig::SmsBackupPlus(plus) = config.source else {
@@ -146,7 +159,7 @@ fn plus_carries_the_phone_country_and_an_unknown_one_is_refused() {
         ..Form::default()
     };
     let config = form
-        .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupPlus, no_ffmpeg())
         .unwrap();
     let SourceConfig::SmsBackupPlus(plus) = config.source else {
         panic!("expected SmsBackupPlus");
@@ -158,7 +171,7 @@ fn plus_carries_the_phone_country_and_an_unknown_one_is_refused() {
         ..form
     };
     let errors = unknown
-        .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupPlus, no_ffmpeg())
         .unwrap_err();
     assert_eq!(
         errors,
@@ -177,7 +190,7 @@ fn plus_rejects_multiple_inputs() {
         ..Form::default()
     };
     let err = form
-        .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupPlus, no_ffmpeg())
         .unwrap_err();
     assert!(err.iter().any(|e| e.contains("single file or directory")));
 }
@@ -189,8 +202,7 @@ fn imessage_requires_output_and_uses_caller_id() {
         ..Form::default()
     };
     assert_eq!(
-        form.to_config(Exporter::Imessage, Path::new("/cache"))
-            .unwrap_err(),
+        form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap_err(),
         vec!["Output directory is required.".to_string()]
     );
 
@@ -198,9 +210,7 @@ fn imessage_requires_output_and_uses_caller_id() {
         output: "out".into(),
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Imessage, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap();
     assert_eq!(config.output, PathBuf::from("out"));
     let SourceConfig::Apple(apple) = config.source else {
         panic!("expected Apple");
@@ -220,7 +230,7 @@ fn sbr_refuses_a_directory_and_go_sms_pro_takes_one() {
         ..Form::default()
     };
     let errors = form
-        .to_config(Exporter::SmsBackupRestore, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupRestore, no_ffmpeg())
         .unwrap_err();
     assert!(
         errors
@@ -228,10 +238,7 @@ fn sbr_refuses_a_directory_and_go_sms_pro_takes_one() {
             .any(|e| e.contains("one SMS Backup & Restore .xml file, not a directory")),
         "{errors:?}"
     );
-    assert!(
-        form.to_config(Exporter::GoSmsPro, Path::new("/cache"))
-            .is_ok()
-    );
+    assert!(form.to_config(Exporter::GoSmsPro, no_ffmpeg()).is_ok());
 }
 
 #[test]
@@ -244,13 +251,11 @@ fn sbr_passes_output_format() {
         ..Form::default()
     };
     let config = form
-        .to_config(Exporter::SmsBackupRestore, Path::new("/cache"))
+        .to_config(Exporter::SmsBackupRestore, no_ffmpeg())
         .unwrap();
     assert_eq!(config.output_format, OutputFormat::Eml);
 
-    let go = form
-        .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-        .unwrap();
+    let go = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
     assert_eq!(go.output_format, OutputFormat::Eml);
 }
 
@@ -261,9 +266,7 @@ fn imessage_passes_output_format() {
         output_format: OutputFormat::Eml,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Imessage, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap();
     assert_eq!(config.output_format, OutputFormat::Eml);
 }
 
@@ -276,9 +279,7 @@ fn android_passes_media_mode() {
         attachment_media: AttachmentMedia::Clone,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
     assert_eq!(config.media.mode, MediaMode::Clone);
 
     let form = Form {
@@ -288,9 +289,7 @@ fn android_passes_media_mode() {
         attachment_media: AttachmentMedia::Disabled,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap();
     assert_eq!(config.media.mode, MediaMode::Disabled);
 }
 
@@ -301,9 +300,7 @@ fn openextract_builds_its_own_source() {
         output: "out".into(),
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::OpenExtract, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::OpenExtract, no_ffmpeg()).unwrap();
     assert!(matches!(config.source, SourceConfig::OpenExtract(_)));
 }
 
@@ -315,9 +312,7 @@ fn imazing_passes_timezone_to_config() {
         timezone: "UTC-05:00".into(),
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Imazing, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Imazing, no_ffmpeg()).unwrap();
     let SourceConfig::Imazing(_) = &config.source else {
         panic!("expected Imazing");
     };
@@ -337,9 +332,7 @@ fn whatsapp_passes_platform_and_media() {
         attachment_media: AttachmentMedia::Clone,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Whatsapp, no_ffmpeg()).unwrap();
     assert!(config.inputs.is_empty());
     assert_eq!(config.media.mode, MediaMode::Clone);
     let SourceConfig::Whatsapp(wa) = config.source else {
@@ -359,9 +352,7 @@ fn whatsapp_passes_platform_and_media() {
         whatsapp_backup: "/tmp/ios-backup".into(),
         ..Form::default()
     };
-    let ios_config = ios
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
-        .unwrap();
+    let ios_config = ios.to_config(Exporter::Whatsapp, no_ffmpeg()).unwrap();
     let SourceConfig::Whatsapp(wa) = ios_config.source else {
         panic!("expected Whatsapp");
     };
@@ -376,7 +367,7 @@ fn whatsapp_passes_platform_and_media() {
         ..Form::default()
     };
     let err = ios_missing
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
+        .to_config(Exporter::Whatsapp, no_ffmpeg())
         .unwrap_err();
     assert!(
         err.iter()
@@ -394,9 +385,7 @@ fn whatsapp_android_requires_the_owner_number() {
         whatsapp_platform: WhatsappPlatform::Android,
         ..Form::default()
     };
-    let err = form
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
-        .unwrap_err();
+    let err = form.to_config(Exporter::Whatsapp, no_ffmpeg()).unwrap_err();
     assert!(
         err.iter()
             .any(|e| e == "Owner's WhatsApp number is required."),
@@ -413,9 +402,7 @@ fn whatsapp_forwards_existing_input_as_search_root() {
         owner_phones: "+15555550100".into(),
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Whatsapp, no_ffmpeg()).unwrap();
     assert_eq!(config.inputs, vec![dir.path().to_path_buf()]);
 
     let missing = Form {
@@ -425,7 +412,7 @@ fn whatsapp_forwards_existing_input_as_search_root() {
         ..Form::default()
     };
     let err = missing
-        .to_config(Exporter::Whatsapp, Path::new("/cache"))
+        .to_config(Exporter::Whatsapp, no_ffmpeg())
         .unwrap_err();
     assert!(err.iter().any(|e| e.contains("does not exist")), "{err:?}");
 }
@@ -449,10 +436,6 @@ const SEED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 
 #[test]
 fn without_ffmpeg_only_unobfuscated_convert_and_compress_are_refused() {
-    // Holds the tools lock, so a test that runs the real ffmpeg waits.
-    let _hidden = media::testutil::hide_ffmpeg();
-    assert!(!media::ffmpeg_available());
-
     let form = |attachment_media, obfuscate, seed: &str| Form {
         input: std::env::current_dir().unwrap().display().to_string(),
         output: "out".into(),
@@ -466,34 +449,30 @@ fn without_ffmpeg_only_unobfuscated_convert_and_compress_are_refused() {
     for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
         for media in [AttachmentMedia::Convert, AttachmentMedia::Compress] {
             let err = form(media, false, "")
-                .to_config(exporter, Path::new("/cache"))
+                .to_config(exporter, no_ffmpeg())
                 .unwrap_err();
-            assert!(
-                err.iter().any(|e| e.contains("ffmpeg")),
-                "{exporter:?} {media:?}: {err:?}"
+            assert_eq!(
+                err,
+                vec![CONVERT_COMPRESS_FFMPEG_REQUIRED.to_string()],
+                "{exporter:?} {media:?}"
             );
+            form(media, false, "")
+                .to_config(exporter, with_ffmpeg())
+                .unwrap_or_else(|e| panic!("{exporter:?} {media:?} with ffmpeg: {e:?}"));
             // Obfuscation replaces media with placeholders, so no ffmpeg.
             form(media, true, "")
-                .to_config(exporter, Path::new("/cache"))
+                .to_config(exporter, no_ffmpeg())
                 .unwrap_or_else(|e| panic!("{exporter:?} {media:?} obfuscated: {e:?}"));
             form(media, false, SEED)
-                .to_config(exporter, Path::new("/cache"))
+                .to_config(exporter, no_ffmpeg())
                 .unwrap_or_else(|e| panic!("{exporter:?} {media:?} seeded: {e:?}"));
         }
         for media in [AttachmentMedia::Clone, AttachmentMedia::Disabled] {
             form(media, false, "")
-                .to_config(exporter, Path::new("/cache"))
+                .to_config(exporter, no_ffmpeg())
                 .unwrap_or_else(|e| panic!("{exporter:?} {media:?}: {e:?}"));
         }
     }
-
-    let err = form(AttachmentMedia::Convert, false, "")
-        .to_config(Exporter::Imessage, Path::new("/cache"))
-        .unwrap_err();
-    assert!(
-        err.iter().any(|e| e == CONVERT_COMPRESS_FFMPEG_REQUIRED),
-        "{err:?}"
-    );
 }
 
 #[test]
@@ -503,9 +482,7 @@ fn imessage_with_attachments_disabled_does_not_copy_them() {
         attachment_media: AttachmentMedia::Disabled,
         ..Form::default()
     };
-    let config = form
-        .to_config(Exporter::Imessage, Path::new("/cache"))
-        .unwrap();
+    let config = form.to_config(Exporter::Imessage, no_ffmpeg()).unwrap();
     let SourceConfig::Apple(apple) = config.source else {
         panic!("expected Apple");
     };
@@ -556,7 +533,7 @@ fn compress_settings_reach_the_config() {
         output: "out".into(),
         owner_phones: "+15555550100".into(),
         attachment_media: AttachmentMedia::Compress,
-        // Obfuscated, so the test does not depend on ffmpeg being installed.
+        // Obfuscated, so Compress needs no ffmpeg.
         obfuscate: true,
         media_max_resolution: MaxResolution::P720,
         media_max_fps: "24".into(),
@@ -572,7 +549,7 @@ fn compress_settings_reach_the_config() {
     };
     assert_eq!(form.compress_options().unwrap(), expected);
     for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
-        let config = form.to_config(exporter, Path::new("/cache")).unwrap();
+        let config = form.to_config(exporter, no_ffmpeg()).unwrap();
         assert_eq!(config.media.mode, MediaMode::Compress);
         assert_eq!(config.media.compress, expected, "{exporter:?}");
     }
@@ -581,9 +558,7 @@ fn compress_settings_reach_the_config() {
         media_max_fps: "abc".into(),
         ..form
     };
-    let err = bad
-        .to_config(Exporter::GoSmsPro, Path::new("/cache"))
-        .unwrap_err();
+    let err = bad.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap_err();
     assert_eq!(
         err,
         vec![
@@ -617,7 +592,7 @@ fn every_source_carries_the_shared_form_fields() {
         Exporter::SmsBackupPlus,
     ] {
         let config = form
-            .to_config(exporter, Path::new("/cache"))
+            .to_config(exporter, no_ffmpeg())
             .unwrap_or_else(|errors| panic!("{exporter:?}: {errors:?}"));
         assert_eq!(config.output, PathBuf::from("out"), "{exporter:?}");
         assert_eq!(config.scratch_dir, PathBuf::from("/cache"), "{exporter:?}");
