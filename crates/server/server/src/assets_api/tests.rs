@@ -319,6 +319,69 @@ fn unverified_lookup_reads_no_content_while_verified_lookup_rejects_corruption()
     );
 }
 
+/// A stored Asset that cannot be read reads as not here, as a corrupt one
+/// does, and the read error goes to the server's log with the Asset's path,
+/// so a failing disk or a permission change is not hidden behind a
+/// re-upload (#2171).
+#[cfg(unix)]
+#[test]
+fn verified_lookup_logs_a_stored_asset_it_cannot_read() {
+    use crate::logging::{LogFiles, LogLevel, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    let assets_root = dir.path().join("assets");
+    let sha = Sha256::of_bytes(b"stored-bytes");
+    let stored_path = assets_root.join(shard_rel_path(&sha, ""));
+    fs::create_dir_all(stored_path.parent().unwrap()).unwrap();
+    fs::write(&stored_path, b"stored-bytes").unwrap();
+    fs::set_permissions(&stored_path, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&stored_path).is_ok() {
+        eprintln!(
+            "skipped: {} can still be read without permission",
+            stored_path.display()
+        );
+        return;
+    }
+
+    let log_dir = dir.path().join("logs");
+    let files = LogFiles::open(&log_dir, SERVER_LOG_LIMITS).unwrap();
+    let looked_up =
+        tracing::subscriber::with_default(crate::logging::subscriber_for(files, "warn"), || {
+            lookup_by_sha256(&assets_root, &sha)
+        });
+    fs::set_permissions(&stored_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+    assert!(looked_up.is_none());
+    let (lines, _) = read_lines(
+        &log_dir,
+        &LogLinesQuery {
+            limit: 10,
+            ..LogLinesQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert_eq!(lines[0].level, LogLevel::Warn);
+    assert!(
+        lines[0].text.contains(&stored_path.display().to_string()),
+        "{}",
+        lines[0].text
+    );
+}
+
+/// A stored Asset removed between the lookup and the hash is simply gone,
+/// not a fault to log (#2171).
+#[test]
+fn a_file_that_is_gone_is_told_from_one_that_cannot_be_read() {
+    let dir = tempdir().unwrap();
+    let missing = hash_file(&dir.path().join("gone")).unwrap_err();
+    assert!(is_not_found(&missing), "{missing:#}");
+
+    let not_io = anyhow::anyhow!("refusing to follow symlink");
+    assert!(!is_not_found(&not_io));
+}
+
 #[test]
 fn store_verified_hashes_source_before_deduplication() {
     let dir = tempdir().unwrap();

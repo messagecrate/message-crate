@@ -681,6 +681,13 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **An attachment the server cannot read is written to its
+  log.** Before it skips an upload because an attachment is already
+  stored, the server reads the stored copy to check it. When that read
+  failed, for example on a failing disk or after a permission change, the
+  server asked for the attachment again and said nothing about why. The
+  attachment is still sent again, and the server's log now names the file
+  it could not read and the error (#2171).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front

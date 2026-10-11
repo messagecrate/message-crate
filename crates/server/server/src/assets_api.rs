@@ -176,13 +176,36 @@ pub fn shard_rel_path(sha256: &Sha256, ext: &str) -> String {
 /// Upload and import paths that skip sending bytes because "the file is already
 /// here" must use this function. A truncated or replaced file is then never
 /// treated as the real content.
+///
+/// A stored file that cannot be read is not here either, so the client
+/// sends the bytes again. Any read error other than the file being gone is
+/// written to the server's log with the file's path, so a failing disk or a
+/// permission change is not hidden behind the re-upload.
 pub fn lookup_by_sha256(assets_root: &Path, sha256: &Sha256) -> Option<StoredAsset> {
     let stored = lookup_by_sha256_unverified(assets_root, sha256)?;
     let path = assets_root.join(&stored.assets_path);
-    if hash_file(&path).ok()? != stored.sha256 {
-        return None;
+    match hash_file(&path) {
+        Ok(actual) if actual == stored.sha256 => Some(stored),
+        Ok(_) => None,
+        Err(error) => {
+            if !is_not_found(&error) {
+                tracing::warn!(
+                    path = %path.display(),
+                    error = format!("{error:#}"),
+                    "A stored Asset could not be read to check it"
+                );
+            }
+            None
+        }
     }
-    Some(stored)
+}
+
+/// Whether `error` comes from a file that is not there.
+fn is_not_found(error: &anyhow::Error) -> bool {
+    error
+        .root_cause()
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound)
 }
 
 /// Find the stored path and MIME type for a SHA-256 fingerprint without reading
