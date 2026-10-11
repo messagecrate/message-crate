@@ -659,7 +659,7 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
         assert_eq!(
             reason,
             "ffmpeg in the Tools Directory doesn't run on this computer. \
-             Install it with your package manager instead; the app uses the copy on PATH."
+             Install it with your package manager instead. The app uses the copy on PATH."
         );
     }
 
@@ -726,38 +726,43 @@ fn ffmpeg_with_no_record_is_adopted_when_it_is_the_pinned_program() {
     );
 }
 
-/// An adopted program whose executable bit could not be set fails with
-/// the reason it could not, not the generic "does not run" text, so
-/// Settings says what to fix, and ffmpeg keeps the advice to use the copy
-/// on `PATH`.
+/// An adopted program that does not run, and whose executable bits could
+/// not be set, fails with the reason they could not, not the generic "does
+/// not run" text, so Settings says what to fix, and ffmpeg keeps the advice
+/// to use the copy on `PATH`.
 #[test]
 fn an_adopted_program_that_could_not_be_made_executable_says_why() {
     let denied = io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
 
-    let Adopted::NotExecutable(err) = adopted(Err(denied), false, false) else {
-        panic!("a program left with no executable bit is not executable");
+    let Adopted::NotExecutable(err) = classify_adopted(Err(denied), false) else {
+        panic!("a program that does not run and could not be made executable");
     };
 
     assert_eq!(
         DownloadError::CouldNotMakeExecutable(Program::Ffmpeg, err.to_string()).to_string(),
         "ffmpeg in the Tools Directory could not be marked as a program that runs: \
-         Operation not permitted. Install it with your package manager instead; \
-         the app uses the copy on PATH."
+         Operation not permitted. Install it with your package manager instead. \
+         The app uses the copy on PATH."
     );
 }
 
 /// An adopted program that runs is in place whether or not its bits could
-/// be set, and one that has its executable bit and does not run fails as
-/// not running, since setting the bits is not what stopped it.
+/// be set, and keeps the error when they could not. One whose bits were set
+/// and that does not run fails as not running.
 #[test]
-fn an_adopted_program_blames_its_bits_only_when_it_has_none() {
+fn an_adopted_program_blames_its_bits_only_when_setting_them_failed() {
     let denied = || io::Error::new(io::ErrorKind::PermissionDenied, "Operation not permitted");
 
-    assert!(matches!(adopted(Ok(()), true, true), Adopted::Runs));
-    assert!(matches!(adopted(Err(denied()), true, true), Adopted::Runs));
-    assert!(matches!(adopted(Ok(()), true, false), Adopted::DoesNotRun));
     assert!(matches!(
-        adopted(Err(denied()), true, false),
+        classify_adopted(Ok(()), true),
+        Adopted::Runs(None)
+    ));
+    assert!(matches!(
+        classify_adopted(Err(denied()), true),
+        Adopted::Runs(Some(_))
+    ));
+    assert!(matches!(
+        classify_adopted(Ok(()), false),
         Adopted::DoesNotRun
     ));
 }

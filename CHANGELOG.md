@@ -361,8 +361,8 @@ released versions carry their date on the heading.
   as a program it can run. When the computer refused that, Settings said
   only that the tool doesn't run there, and from the next start on it no
   longer tried. It now says the tool could not be marked as a program that
-  runs and what the computer refused, such as a permission error, and it
-  tries again each time the app starts, so fixing the permission is enough
+  runs, and what the computer refused, such as a permission error. The app
+  tries again each time it starts, so fixing the permission is enough
   (#2255).
 
 - 2026-10-11: **No account is created after the owner closes registration.**
