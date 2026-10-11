@@ -204,7 +204,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
 function storedForm(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     source: "imessage-ios",
-    backupPath: "/backups/iphone",
+    backupPath: "/backups/iphone.tar",
     attachmentMedia: "copy",
     maxResolution: "720p",
     maxFps: "30",
@@ -467,28 +467,7 @@ describe("ImportScreen entering Import", () => {
       activeImportRun({
         stage: "upload",
         run_dir: "/home/u/message-crate/staging-260830",
-        form: {
-          source: "imessage-ios",
-          backupPath: "/backups/iphone.tar",
-          attachmentMedia: "copy",
-          maxResolution: "720p",
-          maxFps: "30",
-          minSizeMb: "20",
-          ownerPhones: [],
-          ownerEmails: [],
-          obfuscate: false,
-          attachmentRoot: "",
-          appleContacts: "",
-          whatsappWa: "",
-          whatsappMedia: "",
-          whatsappDb: "",
-          isBusinessApp: false,
-          whatsappOwnerPhone: "",
-          timeZone: "America/New_York",
-          backupPasswordGiven: false,
-          whatsappKeyGiven: false,
-          assetMaxBytes: 512 * 1024 * 1024,
-        },
+        form: storedForm(),
       }),
     );
     renderWithProviders(<ImportScreen />);
@@ -503,28 +482,7 @@ describe("ImportScreen entering Import", () => {
     expect(discardImportRunMock).not.toHaveBeenCalled();
   });
 
-  const restorableForm = {
-    source: "imessage-ios",
-    backupPath: "/backups/iphone.tar",
-    attachmentMedia: "copy",
-    maxResolution: "720p",
-    maxFps: "30",
-    minSizeMb: "20",
-    ownerPhones: [],
-    ownerEmails: [],
-    obfuscate: false,
-    attachmentRoot: "",
-    appleContacts: "",
-    whatsappWa: "",
-    whatsappMedia: "",
-    whatsappDb: "",
-    isBusinessApp: false,
-    whatsappOwnerPhone: "",
-    timeZone: "America/New_York",
-    backupPasswordGiven: false,
-    whatsappKeyGiven: false,
-    assetMaxBytes: 512 * 1024 * 1024,
-  };
+  const restorableForm = storedForm();
 
   it.each([
     ["staging_review", "resume_review"],
@@ -602,28 +560,7 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
         stage: "parse",
-        form: {
-          source: "imessage-ios",
-          backupPath: "/backups/iphone.tar",
-          attachmentMedia: "copy",
-          maxResolution: "720p",
-          maxFps: "30",
-          minSizeMb: "20",
-          ownerPhones: [],
-          ownerEmails: [],
-          obfuscate: false,
-          attachmentRoot: "",
-          appleContacts: "",
-          whatsappWa: "",
-          whatsappMedia: "",
-          whatsappDb: "",
-          isBusinessApp: false,
-          whatsappOwnerPhone: "",
-          timeZone: "America/New_York",
-          backupPasswordGiven: false,
-          whatsappKeyGiven: false,
-          assetMaxBytes: 512 * 1024 * 1024,
-        },
+        form: storedForm(),
       }),
     );
     renderWithProviders(<ImportScreen />);
@@ -654,28 +591,7 @@ describe("ImportScreen entering Import", () => {
           size_bytes: 1000,
           modified_unix_ms: 1_700_000_000_000,
         },
-        form: {
-          source: "imessage-ios",
-          backupPath: "/backups/iphone.tar",
-          attachmentMedia: "copy",
-          maxResolution: "720p",
-          maxFps: "30",
-          minSizeMb: "20",
-          ownerPhones: [],
-          ownerEmails: [],
-          obfuscate: false,
-          attachmentRoot: "",
-          appleContacts: "",
-          whatsappWa: "",
-          whatsappMedia: "",
-          whatsappDb: "",
-          isBusinessApp: false,
-          whatsappOwnerPhone: "",
-          timeZone: "America/New_York",
-          backupPasswordGiven: false,
-          whatsappKeyGiven: false,
-          assetMaxBytes: 512 * 1024 * 1024,
-        },
+        form: storedForm(),
       }),
     );
     // The staged directory first, then the backup: same size and mtime, so the
@@ -792,28 +708,7 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
         stage: "parse",
-        form: {
-          source: "imessage-ios",
-          backupPath: "/backups/iphone.tar",
-          attachmentMedia: "copy",
-          maxResolution: "720p",
-          maxFps: "30",
-          minSizeMb: "20",
-          ownerPhones: [],
-          ownerEmails: [],
-          obfuscate: false,
-          attachmentRoot: "",
-          appleContacts: "",
-          whatsappWa: "",
-          whatsappMedia: "",
-          whatsappDb: "",
-          isBusinessApp: false,
-          whatsappOwnerPhone: "",
-          timeZone: "America/New_York",
-          backupPasswordGiven: false,
-          whatsappKeyGiven: false,
-          assetMaxBytes: 512 * 1024 * 1024,
-        },
+        form: storedForm(),
       }),
     );
     // The panel stays mounted across this round trip by design, so the
@@ -871,28 +766,7 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
         stage: "parse",
-        form: {
-          source: "imessage-ios",
-          backupPath: "/backups/iphone.tar",
-          attachmentMedia: "copy",
-          maxResolution: "720p",
-          maxFps: "30",
-          minSizeMb: "20",
-          ownerPhones: [],
-          ownerEmails: [],
-          obfuscate: false,
-          attachmentRoot: "",
-          appleContacts: "",
-          whatsappWa: "",
-          whatsappMedia: "",
-          whatsappDb: "",
-          isBusinessApp: false,
-          whatsappOwnerPhone: "",
-          timeZone: "America/New_York",
-          backupPasswordGiven: false,
-          whatsappKeyGiven: false,
-          assetMaxBytes: 512 * 1024 * 1024,
-        },
+        form: storedForm(),
       }),
     );
     discardImportRunMock.mockRejectedValue(new Error("network down"));
