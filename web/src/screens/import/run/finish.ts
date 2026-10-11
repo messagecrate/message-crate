@@ -4,11 +4,8 @@ import type {
   ImportSummaryView,
 } from "../../../components/import/ImportSummaryPanel";
 import { errorText } from "../../../lib/apiErrorMessage";
-import { discardImportRun } from "../../../lib/importRun";
-import { completeImport } from "../../../lib/serverApi";
-import { invokeReadImportRunRecord, type UploadFinishedReport } from "../../../lib/tauri";
+import type { UploadFinishedReport } from "../../../lib/tauri";
 import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
-import { importRunStore as store } from "../importRunStore";
 import {
   filesSkippedOverRun,
   issueRequests,
@@ -18,10 +15,11 @@ import {
   RUN_ERROR_ITEM,
   wholeRun,
 } from "../runRecord";
+import type { RunContext } from "./context";
 import { recordError } from "./desktopJob";
 import { discardRunDirectory } from "./runDirectory";
 import { recordWritesSettled, saveCarriedRecord } from "./runRecordWrites";
-import { currentPart, runScratch } from "./scratch";
+import { currentPart } from "./scratch";
 import { failActiveStep, setRowByLabel, updateSteps } from "./screen";
 import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serverCalls";
 
@@ -50,16 +48,19 @@ import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serv
  * The summary and the completion cover the whole run, the earlier parts'
  * record (`scratch.carried`) included.
  */
-export async function finishImport(args: {
-  runId: number | null;
-  status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused";
-  uploadReport: UploadFinishedReport | null;
-  uploadMs: number | null;
-  skipComplete?: boolean;
-}): Promise<void> {
+export async function finishImport(
+  ctx: RunContext,
+  args: {
+    runId: number | null;
+    status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused";
+    uploadReport: UploadFinishedReport | null;
+    uploadMs: number | null;
+    skipComplete?: boolean;
+  },
+): Promise<void> {
   const { runId, status, uploadReport, uploadMs, skipComplete } = args;
-  const carried = runScratch().carried;
-  const whole = wholeRun(carried, currentPart(uploadReport, uploadMs));
+  const carried = ctx.scratch.carried;
+  const whole = wholeRun(carried, currentPart(ctx, uploadReport, uploadMs));
   const finalSummary: ImportSummaryView = {
     status,
     messagesParsed: whole.messagesParsed,
@@ -91,7 +92,7 @@ export async function finishImport(args: {
     [STAGING_LABEL, stagingMs],
     [UPLOAD_LABEL, whole.uploadMs ?? null],
   ]);
-  updateSteps((current) =>
+  updateSteps(ctx, (current) =>
     current.map((step) => {
       const duration = durationByLabel.get(step.label);
       if (duration == null) return step;
@@ -105,8 +106,8 @@ export async function finishImport(args: {
     try {
       // The server counts the messages and attachments the run holds: a
       // resumed Upload's report counts only what the resume sent.
-      await endSessionIfRefused(() =>
-        completeImport(runId, {
+      await endSessionIfRefused(ctx, () =>
+        ctx.server.completeImport(runId, {
           status,
           bytes_uploaded: whole.bytesUploaded,
           parse_ms: whole.parseMs,
@@ -137,7 +138,7 @@ export async function finishImport(args: {
   if (completeRefused != null) {
     if (status === "completed" || status === "completed_with_issues") {
       finalSummary.status = "paused";
-      setRowByLabel(UPLOAD_LABEL, { status: "error", detail: "Paused" });
+      setRowByLabel(ctx, UPLOAD_LABEL, { status: "error", detail: "Paused" });
     }
     // Shown here only, since the server never took the issues it would be
     // recorded with. A refused session is no fault of the run: the session
@@ -157,21 +158,21 @@ export async function finishImport(args: {
   // A run with no server record at all (its creation failed) is ended too:
   // nothing will ever offer its directory again.
   const runEnded = runId == null || (posts && completeRefused == null);
-  let runDir = store.get().runDir;
+  let runDir = ctx.store.get().runDir;
   if (runEnded) {
     // An ended run's directory goes: the staged messages, the Upload's log, journal
     // and report, and the run record. When the delete fails, the directory link
     // stays and the failure is shown, so the person can find what was left
     // and remove it by hand. A record write still on its way finishes
     // first, so it cannot land in the directory after the delete.
-    await recordWritesSettled();
-    if (runDir != null && (await discardRunDirectory(runDir))) runDir = null;
+    await recordWritesSettled(ctx);
+    if (runDir != null && (await discardRunDirectory(ctx, runDir))) runDir = null;
   } else {
-    await saveCarriedRecord(uploadReport, uploadMs);
+    await saveCarriedRecord(ctx, uploadReport, uploadMs);
   }
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
-  store.set({ summaryView: finalSummary, phase: "done", running: false, runDir });
+  ctx.store.set({ summaryView: finalSummary, phase: "done", running: false, runDir });
 }
 
 /**
@@ -182,14 +183,15 @@ export async function finishImport(args: {
  * again.
  */
 export async function stopStageNotRecorded(
+  ctx: RunContext,
   e: unknown,
   runId: number,
   stage: "media" | "upload",
 ): Promise<void> {
-  if (await leaveIfRefused(e, runId)) return;
-  recordError(stage, errorText(e));
-  failActiveStep();
-  await finishImport({
+  if (await leaveIfRefused(ctx, e, runId)) return;
+  recordError(ctx, stage, errorText(e));
+  failActiveStep(ctx);
+  await finishImport(ctx, {
     runId,
     status: "failed",
     uploadReport: null,
@@ -213,13 +215,19 @@ export async function stopStageNotRecorded(
  * litter nothing will ever clean up. `runDir` is null for a run whose
  * directory is not on this device. Never throws.
  */
-export async function discardRun(runId: number | null, runDir: string | null): Promise<void> {
+export async function discardRun(
+  ctx: RunContext,
+  runId: number | null,
+  runDir: string | null,
+): Promise<void> {
   let issues: ImportIssue[] = [];
   let notes: ImportNote[] = [];
   if (runDir != null) {
-    await recordWritesSettled();
+    await recordWritesSettled(ctx);
     try {
-      const record = parseRunRecord(await invokeReadImportRunRecord({ run_dir: runDir }));
+      const record = parseRunRecord(
+        await ctx.desktop.invokeReadImportRunRecord({ run_dir: runDir }),
+      );
       issues = issuesToDiscard(record);
       notes = notesToDiscard(record);
     } catch {
@@ -228,10 +236,12 @@ export async function discardRun(runId: number | null, runDir: string | null): P
   }
   if (runId != null) {
     try {
-      await endSessionIfRefused(() => discardImportRun(runId, issueRequests(issues), notes));
+      await endSessionIfRefused(ctx, () =>
+        ctx.server.discardImportRun(runId, issueRequests(issues), notes),
+      );
     } catch (e: unknown) {
       if (e instanceof SessionRefusedError) return;
     }
   }
-  if (runDir != null) await discardRunDirectory(runDir);
+  if (runDir != null) await discardRunDirectory(ctx, runDir);
 }

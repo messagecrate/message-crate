@@ -85,8 +85,7 @@ vi.mock("../../lib/tauri-check", () => ({
 const { AuthProvider } = await import("../../lib/auth");
 const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
-const { useImportJob } = await import("./useImportJob");
-const { resetImportRun } = await import("./run/scratch");
+const { importRunService, useImportJob } = await import("./useImportJob");
 
 const MIB = 1024 * 1024;
 
@@ -178,7 +177,7 @@ function pressLogOut(result: { current: Screen }): void {
 describe("logging out during an Upload", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetImportRun();
+    importRunService.reset();
     calls.length = 0;
     finishUpload = null;
     serverLogoutMock.mockReset();
@@ -463,7 +462,7 @@ async function resumeUpload(): Promise<{ current: Screen }> {
 describe("a session the server refuses to the Import Run's own calls (#1677)", () => {
   beforeEach(() => {
     localStorage.clear();
-    resetImportRun();
+    importRunService.reset();
     calls.length = 0;
     finishUpload = null;
     completeImportMock.mockReset();

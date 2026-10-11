@@ -2,17 +2,16 @@ import type { ImportIssue, ImportNote } from "../../../components/import/ImportS
 import type { ImportIssueStage } from "../../../components/import/importIssueStage";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { createRunCancel, type RunCancel } from "../../../lib/runCancel";
-import { invokeReadImportRunRecord, type UploadFinishedReport } from "../../../lib/tauri";
+import type { UploadFinishedReport } from "../../../lib/tauri";
 import type { AttachmentMediaMode, ConversationStatus, StagedStatus } from "../../../lib/types";
 import {
   type AttachmentProgressCounts,
   EMPTY_TIMING,
   type StageTiming,
 } from "../importProgressState";
-import { initialImportRunState, importRunStore as store } from "../importRunStore";
 import { EMPTY_RUN_RECORD, parseRunRecord, type RunPart, type RunRecord } from "../runRecord";
+import type { RunContext } from "./context";
 import type { StagingProgressStep } from "./desktopJob";
-import { initialSteps } from "./screen";
 
 /** Parse/attachments/prepare durations, fixed once extract finishes and read again at finish time. */
 type ExtractDurations = {
@@ -25,8 +24,9 @@ const EMPTY_DURATIONS: ExtractDurations = { parseMs: null, attachmentsMs: null, 
 
 /**
  * What one run remembers between its stages and never shows: timings,
- * issues, counts, the submitted form. One run at a time, so one of these;
- * it lives beside the store so the run survives the screen unmounting.
+ * issues, counts, the submitted form. One run at a time, so each service
+ * keeps one of these (`RunContext`), beside its store, so the run survives
+ * the screen unmounting.
  */
 export type RunScratch = {
   /** The submitted form, parked while the identity stop is showing. */
@@ -79,7 +79,8 @@ export type RunScratch = {
   carried: RunRecord;
 };
 
-function freshScratch(): RunScratch {
+/** The scratch of a run that has not started, cancelling its jobs with `stopJob`. */
+export function freshScratch(stopJob: () => Promise<void>): RunScratch {
   return {
     pendingIdentityForm: null,
     activeStage: "staging",
@@ -96,34 +97,20 @@ function freshScratch(): RunScratch {
     lastAttachmentProgress: null,
     stagingLines: {},
     reviewAction: false,
-    runCancel: createRunCancel(),
+    runCancel: createRunCancel(stopJob),
     startImport: false,
     carried: EMPTY_RUN_RECORD,
   };
 }
 
-let scratch: RunScratch = freshScratch();
-
-/**
- * The scratch of the run in the store now. `resetImportRun` replaces it, so
- * a caller that must keep writing to the run it started holds on to what
- * this returned rather than calling it again.
- */
-export function runScratch(): RunScratch {
-  return scratch;
-}
-
-/** Put the store and the scratch back to a fresh form, started by no account. */
-export function resetImportRun(): void {
-  scratch = freshScratch();
-  store.reset(initialImportRunState(initialSteps()));
-}
-
-resetImportRun();
-
 /** Start a run's bookkeeping from nothing. */
-export function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void {
-  scratch.importStartedAt = performance.now();
+export function beginRun(
+  ctx: RunContext,
+  form: ImportJobFormValues,
+  firstStage: ImportIssueStage,
+): void {
+  const { scratch } = ctx;
+  scratch.importStartedAt = ctx.now();
   scratch.activeStage = firstStage;
   scratch.issues = [];
   scratch.notes = [];
@@ -136,20 +123,21 @@ export function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage
   scratch.stagingLines = {};
   scratch.attachmentMode = form.attachmentMedia;
   scratch.form = form;
-  scratch.runCancel = createRunCancel();
+  scratch.runCancel = createRunCancel(ctx.desktop.invokeCancel);
   scratch.carried = EMPTY_RUN_RECORD;
 }
 
 /** This part of the run as it stands now. */
 export function currentPart(
+  ctx: RunContext,
   report: UploadFinishedReport | null,
   uploadMs: number | null,
-  run: RunScratch = scratch,
+  run: RunScratch = ctx.scratch,
 ): RunPart {
   return {
     issues: run.issues,
     notes: run.notes,
-    durationMs: performance.now() - run.importStartedAt,
+    durationMs: ctx.now() - run.importStartedAt,
     ...run.durations,
     uploadMs,
     filesParsed: run.counts.filesParsed,
@@ -165,9 +153,12 @@ export function currentPart(
  * record that cannot be read leaves the run with only what this part
  * records: the resume itself goes ahead.
  */
-export async function loadCarriedRecord(runDir: string): Promise<void> {
+export async function loadCarriedRecord(ctx: RunContext, runDir: string): Promise<void> {
+  const { scratch } = ctx;
   try {
-    scratch.carried = parseRunRecord(await invokeReadImportRunRecord({ run_dir: runDir }));
+    scratch.carried = parseRunRecord(
+      await ctx.desktop.invokeReadImportRunRecord({ run_dir: runDir }),
+    );
   } catch {
     scratch.carried = EMPTY_RUN_RECORD;
   }

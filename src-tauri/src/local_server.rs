@@ -43,6 +43,12 @@
 //! `web/src/lib/useLocalServer.ts`), and the check that finds the address
 //! free starts the app's own.
 //!
+//! The same checks ask the app's own server whether it still answers. One
+//! that runs but no longer answers is killed once [`UNANSWERED_CHECKS`]
+//! checks in a row find no Message Crate there, and the login card says it
+//! stopped rather than that it is ready (#2204). While a desktop job runs it
+//! is not killed, since an import can keep it from answering in time.
+//!
 //! What happens next is decided by one pure function, [`step`], from the
 //! state the app has, the network setting the person wants, and what just
 //! happened. [`LocalServer`] holds that state with the processes and does
@@ -100,6 +106,14 @@ const OUTPUT_LINES_KEPT: usize = 40;
 /// may still be creating the Demo Account, so the app waits for it as long
 /// as for a start of its own: [`START_TIMEOUT`].
 const LOCKED_OUT_PROBES: u32 = 1200;
+
+/// How many checks in a row may find no Message Crate answering at the
+/// address before the app's own server, still running, is killed as stopped
+/// (#2204). One check is not enough: a server may miss one answer within
+/// [`ANSWER_TIMEOUT`]. A busy one usually answers with a problem document,
+/// and while a desktop job runs the kill waits for it to end, since an
+/// import can keep the server from answering in time.
+const UNANSWERED_CHECKS: u32 = 2;
 
 /// What is at an address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -215,6 +229,10 @@ enum Phase {
     Own {
         /// Whether it was started open to the network.
         open: bool,
+        /// Whether the address is being asked whether it still answers.
+        checking: bool,
+        /// How many checks in a row found no Message Crate answering.
+        unanswered: u32,
     },
     /// A Message Crate the app did not start answers.
     Found {
@@ -279,7 +297,13 @@ enum Event {
         open: bool,
     },
     /// The address answered a [`Action::Probe`].
-    Probed(Probe),
+    Probed {
+        /// What is at the address.
+        answer: Probe,
+        /// What the app's server last wrote, for a failure report when the
+        /// answer ends it. Empty when the app runs no server.
+        output: String,
+    },
     /// The app's server wrote [`LISTENING_LINE`].
     Listening,
     /// The app's server exited, having written `output`.
@@ -300,8 +324,8 @@ enum Event {
         /// Why.
         error: String,
     },
-    /// The screens asked for the state: a found Message Crate is asked again
-    /// whether it still answers.
+    /// The screens asked for the state: a found Message Crate, or the app's
+    /// own ready server, is asked again whether it still answers.
     Check,
     /// A desktop job started.
     JobStarted,
@@ -354,7 +378,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             state.wanted_open = open;
             restart_if_wanted(&mut state, &mut actions);
         }
-        Event::Probed(answer) => match (&state.phase, answer) {
+        Event::Probed { answer, output } => match (&state.phase, answer) {
             (
                 Phase::Probing | Phase::Found { checking: true } | Phase::Lost { .. },
                 Probe::MessageCrate,
@@ -371,6 +395,46 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             }
             (Phase::Probing | Phase::Found { checking: true }, Probe::Other) => {
                 state.phase = Phase::PortTaken;
+            }
+            (
+                Phase::Own {
+                    open,
+                    checking: true,
+                    ..
+                },
+                Probe::MessageCrate,
+            ) => {
+                state.phase = Phase::Own {
+                    open: *open,
+                    checking: false,
+                    unanswered: 0,
+                };
+            }
+            (
+                Phase::Own {
+                    open,
+                    checking: true,
+                    unanswered,
+                },
+                Probe::Free | Probe::Other,
+            ) => {
+                let unanswered = unanswered + 1;
+                // A desktop job may be an import into a server too busy to
+                // answer in time, so the kill waits until no job runs, and
+                // the count starts again when the last job ends.
+                if unanswered < UNANSWERED_CHECKS || state.jobs > 0 {
+                    state.phase = Phase::Own {
+                        open: *open,
+                        checking: false,
+                        unanswered,
+                    };
+                } else {
+                    // The server still runs but does not answer. Killing it
+                    // ends it, and no `ChildExited` follows a kill, so the
+                    // phase becomes `Failed` here.
+                    own_server_ended(&mut state, "Message Crate stopped answering.", output);
+                    actions.push(Action::Kill);
+                }
             }
             (
                 Phase::Lost {
@@ -397,7 +461,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
         },
         Event::Listening => {
             if let Phase::Starting { open } = state.phase {
-                state.phase = Phase::Own { open };
+                state.phase = Phase::Own {
+                    open,
+                    checking: false,
+                    unanswered: 0,
+                };
             }
         }
         Event::ChildExited { output, code } => match state.phase {
@@ -415,13 +483,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 };
                 actions.push(Action::Probe);
             }
-            Phase::Own { .. } => {
-                state.phase = Phase::Failed {
-                    reason: FailureReason::StartFailed,
-                    message: "Message Crate stopped.".into(),
-                    details: output,
-                };
-            }
+            Phase::Own { .. } => own_server_ended(&mut state, "Message Crate stopped.", output),
             _ => {}
         },
         Event::Deadline { output } => {
@@ -443,24 +505,28 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 };
             }
         }
-        Event::Check => {
-            if state.phase == (Phase::Found { checking: false }) {
-                state.phase = Phase::Found { checking: true };
+        Event::Check => match &mut state.phase {
+            Phase::Found { checking } | Phase::Own { checking, .. } if !*checking => {
+                *checking = true;
                 actions.push(Action::Probe);
             }
-        }
+            _ => {}
+        },
         Event::JobStarted => state.jobs += 1,
         Event::JobEnded => {
             state.jobs = state.jobs.saturating_sub(1);
+            // The checks that went unanswered during the job may have been
+            // the job's doing: two more are needed after it.
+            if state.jobs == 0
+                && let Phase::Own { unanswered, .. } = &mut state.phase
+            {
+                *unanswered = 0;
+            }
             restart_if_wanted(&mut state, &mut actions);
         }
         Event::Stopped => match state.phase {
             Phase::Starting { .. } | Phase::Own { .. } => {
-                state.phase = Phase::Failed {
-                    reason: FailureReason::StartFailed,
-                    message: "Message Crate stopped.".into(),
-                    details: String::new(),
-                };
+                own_server_ended(&mut state, "Message Crate stopped.", String::new());
                 actions.push(Action::Kill);
             }
             // A probe under way must not start a server once the app closes.
@@ -473,6 +539,18 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
     (state, actions)
 }
 
+/// The app's own server has ended, whether it was starting or ready: it
+/// exited, it was killed because it stopped answering, or the app is
+/// closing. `message` says which. `details` holds what it last wrote, and
+/// is empty when the app is closing.
+fn own_server_ended(state: &mut State, message: &str, details: String) {
+    state.phase = Phase::Failed {
+        reason: FailureReason::StartFailed,
+        message: message.into(),
+        details,
+    };
+}
+
 /// Restart the app's own server when it runs the other way from the network
 /// setting. One that is starting is restarted at once; one that is ready only
 /// while no desktop job runs, since a kill would cut off an import.
@@ -480,7 +558,7 @@ fn restart_if_wanted(state: &mut State, actions: &mut Vec<Action>) {
     let wanted = state.wanted_open;
     let restart = match state.phase {
         Phase::Starting { open } => open != wanted,
-        Phase::Own { open } => open != wanted && state.jobs == 0,
+        Phase::Own { open, .. } => open != wanted && state.jobs == 0,
         _ => false,
     };
     if restart {
@@ -704,7 +782,8 @@ impl LocalServer {
 
     /// The current state. A Message Crate the app only found is asked again,
     /// in the background, whether it still answers; when it no longer does,
-    /// the app starts its own.
+    /// the app starts its own. The app's own ready server is asked too, and
+    /// killed when it no longer answers.
     pub fn status(&self) -> Status {
         let mut inner = self.lock();
         self.apply(&mut inner, Event::Check);
@@ -790,12 +869,25 @@ impl LocalServer {
         let Some(address) = inner.launch.as_ref().map(|launch| launch.address) else {
             return;
         };
+        let asked = inner.generation;
         let server = self.clone();
         thread::spawn(move || {
             thread::sleep(wait);
             let answer = probe(address);
-            server.apply_now(Event::Probed(answer));
+            server.probed(asked, answer);
         });
+    }
+
+    /// Report `answer`, asked while the server of generation `asked` was the
+    /// app's. An answer asked before a server was killed or started is about
+    /// the address as it was then, and is dropped: it would count against
+    /// the server that replaced it (#2204).
+    fn probed(&self, asked: u64, answer: Probe) {
+        let mut inner = self.lock();
+        if inner.generation == asked {
+            let output = joined(&inner.output);
+            self.apply(&mut inner, Event::Probed { answer, output });
+        }
     }
 
     /// Start the server program from the last request, listening on the

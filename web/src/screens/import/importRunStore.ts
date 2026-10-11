@@ -18,8 +18,8 @@ export type RunDirDeleteFailure = { path: string; reason: string };
  * or uploading on its own thread, and the person is meant to come back to
  * the run wherever it has got to (CONTEXT.md, "Import Run"). React state in
  * the screen was lost on every navigation; this store is read by the screen
- * and by the sidebar badge, and written only by `useImportJob` and the run's
- * modules in `run/`.
+ * and by the sidebar badge, and written only by the app's Import Run service
+ * (`run/service.ts`, built in `useImportJob.ts`) and its modules in `run/`.
  *
  * The store is named with the account that started the run, the rule ADR 0002
  * sets for every cache entry: another account logged in on the same desktop
@@ -123,7 +123,8 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
 
 type Patch = Partial<ImportRunState> | ((state: ImportRunState) => Partial<ImportRunState>);
 
-function createImportRunStore(initial: ImportRunState) {
+/** A store of one Import Run. The app has one (`importRunStore`); a test may make its own. */
+export function createImportRunStore(initial: ImportRunState) {
   let state = initial;
   const listeners = new Set<() => void>();
   return {
@@ -146,6 +147,8 @@ function createImportRunStore(initial: ImportRunState) {
     },
   };
 }
+
+export type ImportRunStore = ReturnType<typeof createImportRunStore>;
 
 /** The one store. There is one Import Run per account, and one account logged in. */
 export const importRunStore = createImportRunStore(initialImportRunState([]));
@@ -198,13 +201,13 @@ export function importRunFor(state: ImportRunState, accountId: number | null): I
 }
 
 /**
- * The logged-in account's run as it stands, re-rendering the caller whenever
- * any of it changes.
+ * The logged-in account's run in `store` as it stands, re-rendering the
+ * caller whenever any of it changes.
  */
-export function useImportRunState(): ImportRunState {
+export function useImportRunState(store: ImportRunStore = importRunStore): ImportRunState {
   const accountId = useAuth().accountId ?? null;
-  const read = useCallback(() => importRunFor(importRunStore.get(), accountId), [accountId]);
-  return useSyncExternalStore(importRunStore.subscribe, read, read);
+  const read = useCallback(() => importRunFor(store.get(), accountId), [store, accountId]);
+  return useSyncExternalStore(store.subscribe, read, read);
 }
 
 /** True at either review: the run is waiting for the person to decide. */

@@ -30,17 +30,18 @@ export type RunCancel = {
   guard: (invokeFn: () => Promise<void>) => () => Promise<void>;
 };
 
-export function createRunCancel(): RunCancel {
+/** A run's Cancel, stopping the running job with `stopJob` (the desktop side's Cancel). */
+export function createRunCancel(stopJob: () => Promise<void> = invokeCancel): RunCancel {
   let cancelled = false;
   return {
     cancel: async () => {
       cancelled = true;
-      await invokeCancel();
+      await stopJob();
     },
     guard: (invokeFn) => async () => {
       if (cancelled) throw new Error(CANCELLED_MESSAGE);
       await invokeFn();
-      if (cancelled) await invokeCancel();
+      if (cancelled) await stopJob();
     },
   };
 }
