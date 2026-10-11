@@ -2,7 +2,7 @@
  * Browser storage keys for Settings → System in the desktop app.
  *
  * The Staging Directory is not here: the desktop process keeps it
- * (`invokeStagingRoot`, `invokeSetStagingRoot`), because it alone decides
+ * (`invokeStagingDirectory`, `invokeSetStagingDirectory`), because it alone decides
  * which run directories its commands act on.
  */
 

@@ -20,7 +20,7 @@ const desktopStaging = vi.hoisted(() => ({
   /** Set to make reading the Staging Directory fail with this text. */
   readError: null as string | null,
 }));
-const setStagingRoot = vi.hoisted(() => vi.fn());
+const setStagingDirectory = vi.hoisted(() => vi.fn());
 const invokeOpenDataDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
@@ -38,14 +38,14 @@ vi.mock("../../lib/tauri-check", () => ({
 vi.mock("../../lib/tauri", async (importOriginal) => ({
   toolsDownloading: (await importOriginal<typeof import("../../lib/tauri")>()).toolsDownloading,
   invokeToolsStatus: () => toolsStatus(),
-  invokeStagingRoot: async () => {
+  invokeStagingDirectory: async () => {
     if (desktopStaging.readError !== null) throw desktopStaging.readError;
     return {
       root: desktopStaging.root || desktopStaging.defaultRoot,
       defaultRoot: desktopStaging.defaultRoot,
     };
   },
-  invokeSetStagingRoot: (root: string) => setStagingRoot(root),
+  invokeSetStagingDirectory: (root: string) => setStagingDirectory(root),
   invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
   invokeOpenDataDirectory: () => invokeOpenDataDirectory(),
   invokeSetOpenToNetwork: (on: boolean) => invokeSetOpenToNetwork(on),
@@ -61,8 +61,8 @@ beforeEach(() => {
   tauriState.isTauri = true;
   desktopStaging.root = "";
   desktopStaging.readError = null;
-  setStagingRoot.mockReset();
-  setStagingRoot.mockImplementation(async (root: string) => {
+  setStagingDirectory.mockReset();
+  setStagingDirectory.mockImplementation(async (root: string) => {
     // The desktop process refuses a relative directory, as resolve_staging_root does.
     if (root !== "" && !root.startsWith("/")) throw "The staging directory must be a full path.";
     desktopStaging.root = root === desktopStaging.defaultRoot ? "" : root;
@@ -221,14 +221,14 @@ describe("SystemSection", () => {
     await fill(user, stagingInput, "/tmp/my-staging");
 
     await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
-    expect(setStagingRoot).toHaveBeenLastCalledWith("/tmp/my-staging");
+    expect(setStagingDirectory).toHaveBeenLastCalledWith("/tmp/my-staging");
   });
 
   it("says why the desktop process refused a staging directory", async () => {
     const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
-    setStagingRoot.mockRejectedValue("Could not save staging.json: disk full");
+    setStagingDirectory.mockRejectedValue("Could not save staging.json: disk full");
 
     await user.type(stagingInput, "/x");
 
@@ -250,7 +250,7 @@ describe("SystemSection", () => {
     (stagingInput as HTMLInputElement).select();
     // The desktop process accepts the pasted directory, but answers late.
     let answer!: () => void;
-    setStagingRoot.mockImplementationOnce(
+    setStagingDirectory.mockImplementationOnce(
       (root: string) =>
         new Promise((resolve) => {
           answer = () => {
