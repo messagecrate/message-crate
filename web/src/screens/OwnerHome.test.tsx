@@ -946,11 +946,11 @@ describe("OwnerHome", () => {
 
     // The server judges the pair, so a differing one goes to it and its
     // sentence comes back to the screen.
-    setAccountPassword.mockRejectedValueOnce(new Error("New passwords do not match."));
+    setAccountPassword.mockRejectedValueOnce(new Error("new passwords do not match"));
     await fill(user, await screen.findByLabelText("New password"), "correct horse");
     await fill(user, screen.getByLabelText("Confirm new password"), "correct hors");
     await user.click(screen.getByRole("button", { name: "Change password" }));
-    expect(await screen.findByText("New passwords do not match.")).toBeInTheDocument();
+    expect(await screen.findByText("New passwords do not match")).toBeInTheDocument();
     expect(setAccountPassword).toHaveBeenCalledWith(101, {
       password: "correct horse",
       password_confirmation: "correct hors",

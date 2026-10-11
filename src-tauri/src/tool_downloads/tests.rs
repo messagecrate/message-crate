@@ -666,6 +666,49 @@ fn a_pinned_program_that_does_not_run_is_not_downloaded_again() {
     asked.assert_calls(1);
 }
 
+/// A recorded wtsexporter with an executable bit this account may not run,
+/// as a root-owned `0o744` file is to any other account, is not kept as in
+/// place: it is said not to run, and not downloaded again (#2793). It skips
+/// where [`media::testutil::may_read_any_file`] says so.
+#[cfg(unix)]
+#[test]
+fn a_recorded_wtsexporter_this_account_may_not_run_does_not_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let tools = tempfile::tempdir().unwrap();
+    if media::testutil::may_read_any_file(tools.path()) {
+        return;
+    }
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    std::fs::write(&target, b"pinned").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o611)).unwrap();
+    let mut manifest = Manifest::new();
+    manifest.insert(
+        Program::Wtsexporter,
+        Written::of(&pinned, Stamp::at(&target).unwrap()),
+    );
+    write_manifest(tools.path(), &manifest).unwrap();
+    let server = MockServer::start();
+    let asked = serve(&server, &pinned, &published);
+    let downloads = ToolDownloads::default();
+
+    check_now(
+        tools.path(),
+        &server.base_url(),
+        std::slice::from_ref(&pinned),
+        &downloads,
+    );
+
+    asked.assert_calls(0);
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: "wtsexporter in the Tools Directory doesn't run on this computer.".to_string(),
+        })
+    );
+}
+
 /// The pinned program put there by hand that does not run is kept and
 /// recorded, and not downloaded, because the download would be the same file.
 #[cfg(unix)]

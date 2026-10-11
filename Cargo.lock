@@ -1920,6 +1920,7 @@ dependencies = [
  "anyhow",
  "csv",
  "file-io",
+ "rustix",
  "serde",
  "tempfile",
 ]

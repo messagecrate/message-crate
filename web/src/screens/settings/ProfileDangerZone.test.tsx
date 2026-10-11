@@ -53,7 +53,7 @@ afterEach(cleanup);
 
 describe("ProfileDangerZone", () => {
   it("shows the server's refusal inside the delete account dialog", async () => {
-    deleteAccount.mockRejectedValue(new Error("Current password is incorrect."));
+    deleteAccount.mockRejectedValue(new Error("current password is incorrect"));
     const user = setupUser();
     render(
       <QueryClientProvider client={testQueryClient()}>
@@ -77,7 +77,7 @@ describe("ProfileDangerZone", () => {
 
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: "wrong" });
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
-      "Current password is incorrect.",
+      "Current password is incorrect",
     );
     expect(logout).not.toHaveBeenCalled();
   });

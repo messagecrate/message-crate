@@ -993,7 +993,7 @@ pub async fn delete_account(
         if has_password(password_hash.as_deref()) {
             let Some(pw) = req.current_password.as_deref() else {
                 return Err(ApiError::validation(
-                    "Current password is required to delete this account.",
+                    "current password is required to delete this account",
                 ));
             };
             require_current_password(&state, target, password_hash.as_deref(), pw)?;
@@ -1046,7 +1046,7 @@ fn require_current_password(
     if !passwords_match(password_hash, current) {
         count_auth_failure(&state.auth_rate_limits, &bucket)?;
         return Err(ApiError::InvalidCredentials(
-            "Current password is incorrect.".into(),
+            "current password is incorrect".into(),
         ));
     }
     Ok(())
@@ -1120,21 +1120,21 @@ pub async fn replace_account_password(
     if reach == Reach::OwnersOwn {
         let Some(current) = req.current_password.as_deref() else {
             return Err(ApiError::validation(
-                "Current password is required to change the owner's password.",
+                "current password is required to change the owner's password",
             ));
         };
         let password_hash = account_profile::load_password_hash(&mut conn, target).await?;
         require_current_password(&state, target, password_hash.as_deref(), current)?;
         if req.password != req.password_confirmation {
-            return Err(ApiError::validation("New passwords do not match."));
+            return Err(ApiError::validation("new passwords do not match"));
         }
         if req.password == current {
             return Err(ApiError::validation(
-                "New password must be different from the current password.",
+                "new password must be different from the current password",
             ));
         }
     } else if req.password != req.password_confirmation {
-        return Err(ApiError::validation("New passwords do not match."));
+        return Err(ApiError::validation("new passwords do not match"));
     }
 
     // The owner must have a password; a user account may have none.

@@ -431,6 +431,16 @@ Every failure answers an RFC 7807 problem document as
 `request_id`. A validation failure replaces `detail` with `errors`, a list of
 every rule that broke rather than the first.
 
+`detail`, and each entry of `errors`, is one sentence in lowercase with no
+final period, naming the thing and what is wrong with it: `asset not found`,
+`new passwords do not match`. A word always written with a capital keeps it,
+such as a header (`Content-Type must be text/csv`) or an abbreviation
+(`API token not found`). The client decides how the sentence starts and ends
+on its screen, because it may show the sentence alone or joined with others.
+The web app joins a validation failure's `errors` with `; ` into one line, and
+a screen that shows a sentence on a line of its own capitalises its first
+letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
 The code is the registry: each type is declared once in

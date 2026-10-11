@@ -40,7 +40,7 @@ The line under the checkboxes says so: "The owner sets your status and permissio
 
 The form takes **New password** and **Confirm new password**.
 **Change password** stays disabled until both fields hold text.
-The server compares the two and answers "New passwords do not match." when they differ.
+The server compares the two, and the form shows "New passwords do not match" when they differ.
 
 A password has no minimum length.
 The longest password the server accepts is 1,024 bytes.
