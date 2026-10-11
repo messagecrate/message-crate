@@ -61,8 +61,8 @@ pub struct SeedConfig {
     pub reference_time: DateTime<Utc>,
     /// How many contacts to invent and how their handles are shaped.
     pub contacts: ContactsConfig,
-    /// Contact labels and the share of contacts that get each one.
-    pub labels: LabelsConfig,
+    /// Contact Groups and the share of contacts that join each one.
+    pub contact_groups: ContactGroupsConfig,
     /// One-to-one conversation sizes and shapes.
     pub one_to_one: OneToOneConfig,
     /// Group conversation counts and sizes.
@@ -112,11 +112,11 @@ pub struct ContactsConfig {
     pub multi_phone_fraction: f64,
 }
 
-/// The `[labels]` section: the four Contact Groups and the chance that a
+/// The `[contact_groups]` section: the four Contact Groups and the chance that a
 /// contact is put in each of the first three.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LabelsConfig {
+pub struct ContactGroupsConfig {
     /// The Contact Group names in a fixed order: family, work, college,
     /// inactive. [`SeedConfig::validate`] refuses any other count, because the
     /// generator picks each Contact Group by its position.
@@ -322,7 +322,7 @@ impl SeedConfig {
         Ok(cfg)
     }
 
-    /// Check that `labels.names` has four entries, that the name-shape shares
+    /// Check that `contact_groups.names` has four entries, that the name-shape shares
     /// sum to at most 1.0, that `one_to_one.newest_days` is at most 30, that
     /// each `typical_min` and `groups.per_contact_min` is no larger than its
     /// maximum, and that the large-group size range sits inside the overall
@@ -331,15 +331,15 @@ impl SeedConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `labels.names` does not have exactly four entries,
+    /// Returns an error if `contact_groups.names` does not have exactly four entries,
     /// if the name-shape shares sum to more than 1.0, if `newest_days` is over
     /// 30, if a minimum is larger than its maximum, or if the large-group range
     /// sticks out past the overall min or max.
     pub fn validate(&self) -> Result<()> {
-        if self.labels.names.len() != 4 {
+        if self.contact_groups.names.len() != 4 {
             anyhow::bail!(
-                "labels.names must have exactly 4 entries (family, work, college, inactive), found {}",
-                self.labels.names.len()
+                "contact_groups.names must have exactly 4 entries (family, work, college, inactive), found {}",
+                self.contact_groups.names.len()
             );
         }
         if self.contacts.first_only + self.contacts.first_middle_last + self.contacts.first_last
@@ -468,10 +468,11 @@ mod tests {
     fn a_settings_file_with_an_unknown_key_is_refused_naming_the_file() {
         let dir = tempfile::tempdir().expect("temp dir");
         let path = dir.path().join("demo_seed.toml");
-        let text =
-            DemoSize::Medium
-                .settings()
-                .replacen("[labels]\n", "[labels]\nfriends = 0.1\n", 1);
+        let text = DemoSize::Medium.settings().replacen(
+            "[contact_groups]\n",
+            "[contact_groups]\nfriends = 0.1\n",
+            1,
+        );
         fs::write(&path, text).expect("write settings");
         let text = format!("{:#}", SeedConfig::load(&path).unwrap_err());
         assert!(text.contains("demo_seed.toml"), "{text}");
@@ -528,10 +529,11 @@ mod tests {
     }
 
     #[test]
-    fn rejects_labels_names_without_four_entries() {
+    fn rejects_contact_group_names_without_four_entries() {
         let mut cfg = SeedConfig::for_size(DemoSize::Large).expect("load");
-        cfg.labels.names = vec!["Family".into(), "Work".into()];
-        assert!(cfg.validate().is_err());
+        cfg.contact_groups.names = vec!["Family".into(), "Work".into()];
+        let text = cfg.validate().unwrap_err().to_string();
+        assert!(text.contains("contact_groups.names"), "{text}");
     }
 
     #[test]

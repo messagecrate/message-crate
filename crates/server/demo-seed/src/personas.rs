@@ -42,7 +42,7 @@ pub struct Contact {
     /// Last name, empty when the contact has none.
     pub last_name: String,
     /// The contact's Contact Groups, such as Family or Work, from the
-    /// `[labels]` names.
+    /// `[contact_groups]` names.
     pub groups: Vec<String>,
     /// False for a contact that appears in no conversation.
     pub has_messages: bool,
@@ -209,16 +209,16 @@ fn make_contact(
 
     let mut groups = Vec::new();
     if inactive {
-        groups.push(cfg.labels.names[3].clone());
+        groups.push(cfg.contact_groups.names[3].clone());
     } else {
-        if rng.random_bool(cfg.labels.family) {
-            groups.push(cfg.labels.names[0].clone());
+        if rng.random_bool(cfg.contact_groups.family) {
+            groups.push(cfg.contact_groups.names[0].clone());
         }
-        if rng.random_bool(cfg.labels.work) {
-            groups.push(cfg.labels.names[1].clone());
+        if rng.random_bool(cfg.contact_groups.work) {
+            groups.push(cfg.contact_groups.names[1].clone());
         }
-        if rng.random_bool(cfg.labels.college) {
-            groups.push(cfg.labels.names[2].clone());
+        if rng.random_bool(cfg.contact_groups.college) {
+            groups.push(cfg.contact_groups.names[2].clone());
         }
     }
 
@@ -745,7 +745,7 @@ mod tests {
     }
 
     #[test]
-    fn group_labels_come_from_config_names() {
+    fn contact_group_names_come_from_config() {
         let cfg =
             SeedConfig::for_size(crate::config::DemoSize::Large).expect("load the large settings");
         let names = NameBank::load_default().expect("names");
@@ -754,8 +754,8 @@ mod tests {
         for contact in &roster.contacts {
             for group in &contact.groups {
                 assert!(
-                    cfg.labels.names.iter().any(|n| n == group),
-                    "group label not from config: {group}"
+                    cfg.contact_groups.names.iter().any(|n| n == group),
+                    "Contact Group not from config: {group}"
                 );
             }
         }

@@ -496,7 +496,7 @@ fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     if import.phones_needing_review > 0 {
         let _ = writeln!(
             out,
-            "  phones needing review: {} (ambiguous numbers — fix them in Message Crate)",
+            "  phones needing review: {} (ambiguous numbers to fix in Message Crate)",
             import.phones_needing_review
         );
     }

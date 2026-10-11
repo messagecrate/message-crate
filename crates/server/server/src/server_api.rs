@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
+use crate::db::demo_account_build::DemoDataSize;
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
 use crate::server::{ApiError, AppState, Created, Owner, run_blocking};
@@ -304,25 +305,41 @@ pub async fn update_server_settings(
     if let Some(problem) = req.asset_max_bytes.and_then(asset_max_bytes_problem) {
         return Err(ApiError::validation(problem));
     }
+    use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
     let mut conn = state.db.acquire().await?;
-    if let Some(enabled) = req.public_registration {
-        let was = server_settings::load(&mut conn).await?.public_registration;
-        server_settings::set_public_registration(&mut conn, enabled).await?;
-        if enabled != was {
-            use crate::db::audit_trail::{AuditAction, AuditActor, NewEntry};
-            let action = if enabled {
-                AuditAction::RegistrationOpened
-            } else {
-                AuditAction::RegistrationClosed
-            };
-            let entry = NewEntry::about_no_account(action, AuditActor::Owner);
-            crate::db::audit_trail::record(&mut conn, &entry).await?;
-        }
+    // One write transaction, so each setting is compared with the value it
+    // replaces and recorded once, however many requests arrive together.
+    let mut tx = crate::db::begin_write(&mut conn).await?;
+    let was = server_settings::load(&mut tx).await?;
+    if let Some(enabled) = req.public_registration
+        && enabled != was.public_registration
+    {
+        server_settings::set_public_registration(&mut tx, enabled).await?;
+        let action = if enabled {
+            AuditAction::RegistrationOpened
+        } else {
+            AuditAction::RegistrationClosed
+        };
+        audit_trail::record(
+            &mut tx,
+            &NewEntry::about_no_account(action, AuditActor::Owner),
+        )
+        .await?;
     }
-    if let Some(bytes) = req.asset_max_bytes {
-        server_settings::set_asset_max_bytes(&mut conn, bytes).await?;
+    if let Some(bytes) = req.asset_max_bytes
+        && bytes != was.asset_max_bytes
+    {
+        server_settings::set_asset_max_bytes(&mut tx, bytes).await?;
+        let entry = NewEntry::about_no_account(AuditAction::AssetLimitChanged, AuditActor::Owner)
+            .with_details(Details {
+                asset_max_bytes: Some(bytes),
+                ..Details::default()
+            });
+        audit_trail::record(&mut tx, &entry).await?;
     }
-    Ok(Json(server_settings::load(&mut conn).await?.into()))
+    let settings = server_settings::load(&mut tx).await?;
+    tx.commit().await?;
+    Ok(Json(settings.into()))
 }
 
 /// What the whole database holds, summed over every account.
@@ -417,25 +434,6 @@ pub async fn get_server_storage(
         fts_bytes,
         accounts,
     }))
-}
-
-/// How much Demo Data the Demo Account holds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum DemoDataSize {
-    /// About 54,000 messages. A new Message Crate starts with this.
-    Medium,
-    /// About 613,000 messages. Building it takes about a minute.
-    Large,
-}
-
-impl From<DemoDataSize> for demo_seed::DemoSize {
-    fn from(size: DemoDataSize) -> Self {
-        match size {
-            DemoDataSize::Medium => Self::Medium,
-            DemoDataSize::Large => Self::Large,
-        }
-    }
 }
 
 /// Where the Demo Account stands.
@@ -770,7 +768,7 @@ pub async fn replace_demo_account(
     }
     // The build is marked first, so no login can make a Session after the
     // Sessions are ended here.
-    if let Err(error) = end_demo_sessions(&state).await {
+    if let Err(error) = record_build_and_end_demo_sessions(&state, req.size).await {
         state.demo_build.set(DemoBuildState::Idle);
         return Err(error);
     }
@@ -794,15 +792,38 @@ pub async fn replace_demo_account(
     ))
 }
 
-/// End every Session of the Demo Account, so nobody is inside it while it
-/// is removed and built again.
-async fn end_demo_sessions(state: &AppState) -> Result<(), ApiError> {
+/// Record the owner's build of the Demo Account in the Audit Trail, then end
+/// every Session of the Demo Account, so nobody is inside it while it is
+/// removed and built again. A reset is about the Demo Account it replaces, so
+/// it stays in that account's record once the build deletes it. An add is
+/// about no account, since none exists yet: an entry with a username and no
+/// account reads as one whose account was deleted.
+async fn record_build_and_end_demo_sessions(
+    state: &AppState,
+    size: DemoDataSize,
+) -> Result<(), ApiError> {
+    use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
     let mut conn = state.db.acquire().await?;
     let mut tx = crate::db::begin_write(&mut conn).await?;
+    let demo =
+        account_profile::username_for_account(&mut tx, account_profile::DEMO_ACCOUNT_ID).await?;
+    let entry = match &demo {
+        Some(username) => NewEntry::about(
+            AuditAction::DemoAccountReset,
+            AuditActor::Owner,
+            (account_profile::DEMO_ACCOUNT_ID, username),
+        ),
+        None => NewEntry::about_no_account(AuditAction::DemoAccountAdded, AuditActor::Owner),
+    }
+    .with_details(Details {
+        demo_data_size: Some(size),
+        ..Details::default()
+    });
+    audit_trail::record(&mut tx, &entry).await?;
     crate::db::session_tokens::revoke_account_sessions(
         &mut tx,
         account_profile::DEMO_ACCOUNT_ID,
-        crate::db::audit_trail::AuditActor::Owner,
+        AuditActor::Owner,
     )
     .await
     .map_err(ApiError::Internal)?;

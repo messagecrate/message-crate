@@ -176,6 +176,9 @@ released versions carry their date on the heading.
 - 2026-10-11: The Apple Messages and SMS Backup & Restore imports were
   reworked inside, with nothing visible (#2195).
 
+- 2026-10-11: The way the Demo Account is built was reworked inside, with
+  nothing visible (#2197).
+
 - 2026-10-11: The way the server finds and hides duplicate messages was
   reworked inside, with nothing visible (#2182).
 
@@ -320,6 +323,14 @@ released versions carry their date on the heading.
 ### Fixes
 
 #### Accounts, Settings and screens
+
+- 2026-10-11: **The Audit Trail records the attachment size limit and adding
+  or resetting the Demo Account.** When the owner changes the attachment size
+  limit in Server Settings, the Audit Trail now says so and names the new
+  limit; saving the limit it already had records nothing. Adding or resetting
+  the Demo Account is recorded too, with the set of Demo Data asked for. Before,
+  neither left an entry, though opening or closing Message Crate to new
+  accounts did (#2187).
 
 - 2026-10-11: **Names, addresses and Import Errors have a length limit.**
   A display name or a contact's name may be up to 200 characters, an
@@ -480,6 +491,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **Messages about the backup password read as plain
+  sentences.** An encrypted iPhone backup with no password is now refused
+  with "The backup is encrypted. Fill in the Encryption password.", and a
+  password given with a backup that has none with "This backup is not
+  encrypted. Clear the Encryption password." The server's message when it
+  finds no accounts to process attachments for, and its report line on
+  phone numbers that need review, no longer join two clauses with a dash
+  either (#2189).
 - 2026-10-10: **An attachment an import could not save is named in the
   Import Run's log.** It used to be written where no log of Message Crate
   showed it (#2165).

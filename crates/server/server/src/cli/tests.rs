@@ -563,9 +563,7 @@ fn import_counts_print_one_line_for_each_count() {
     let text = format_import_counts(&appended);
     assert!(text.contains("  messages appended: 4\n"), "{text}");
     assert!(
-        text.ends_with(
-            "  phones needing review: 1 (ambiguous numbers — fix them in Message Crate)\n"
-        ),
+        text.ends_with("  phones needing review: 1 (ambiguous numbers to fix in Message Crate)\n"),
         "{text}"
     );
 

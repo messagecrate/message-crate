@@ -13482,6 +13482,9 @@
           "account_deleted",
           "registration_opened",
           "registration_closed",
+          "asset_limit_changed",
+          "demo_account_added",
+          "demo_account_reset",
           "api_token_created",
           "api_token_deleted",
           "address_book_loaded",
@@ -13514,6 +13517,7 @@
           "api_token_label",
           "app",
           "app_build",
+          "asset_max_bytes",
           "attachments",
           "bytes",
           "contacts",
@@ -13522,6 +13526,7 @@
           "contacts_updated",
           "conversations",
           "credential",
+          "demo_data_size",
           "identities",
           "messages",
           "mode",
@@ -13582,6 +13587,15 @@
               "null"
             ],
             "description": "That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is."
+          },
+          "asset_max_bytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "`asset_limit_changed`: the new attachment size limit, in bytes.",
+            "minimum": 0
           },
           "at": {
             "type": "string",
@@ -13653,6 +13667,17 @@
               }
             ],
             "description": "A run: what started it. `null` for a run the server started itself."
+          },
+          "demo_data_size": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DemoDataSize"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
           },
           "id": {
             "type": "integer",
@@ -16814,6 +16839,7 @@
                 "api_token_label",
                 "app",
                 "app_build",
+                "asset_max_bytes",
                 "attachments",
                 "bytes",
                 "contacts",
@@ -16822,6 +16848,7 @@
                 "contacts_updated",
                 "conversations",
                 "credential",
+                "demo_data_size",
                 "identities",
                 "messages",
                 "mode",
@@ -16882,6 +16909,15 @@
                     "null"
                   ],
                   "description": "That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is."
+                },
+                "asset_max_bytes": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "format": "int64",
+                  "description": "`asset_limit_changed`: the new attachment size limit, in bytes.",
+                  "minimum": 0
                 },
                 "at": {
                   "type": "string",
@@ -16953,6 +16989,17 @@
                     }
                   ],
                   "description": "A run: what started it. `null` for a run the server started itself."
+                },
+                "demo_data_size": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/DemoDataSize"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
                 },
                 "id": {
                   "type": "integer",
