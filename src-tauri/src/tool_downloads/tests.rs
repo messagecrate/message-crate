@@ -248,7 +248,8 @@ fn a_fetched_file_whose_checksum_does_not_match_is_not_left_behind() {
 
 /// A gzipped asset that passes its checksum and does not unpack puts no
 /// program in place and leaves no temporary file, and the program already
-/// there stays.
+/// there stays. The reason says the file did not unpack, not that the Tools
+/// Directory could not be written.
 #[test]
 fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
     let tools = tempfile::tempdir().unwrap();
@@ -288,7 +289,7 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
     assert_eq!(
         downloads.get(Program::Wtsexporter),
         Some(DownloadState::Failed {
-            reason: DownloadError::CouldNotWrite(unpack_error.to_string()).to_string(),
+            reason: format!("The downloaded file could not be unpacked: {unpack_error}."),
         })
     );
 }

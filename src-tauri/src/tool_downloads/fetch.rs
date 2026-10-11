@@ -143,9 +143,10 @@ impl Write for Hashing<'_> {
 /// The asset is written to a temporary file in `dir` and its SHA-256
 /// computed on the way. On a match it is unpacked when gzipped and the
 /// program's SHA-256 checked, then made executable and renamed over the
-/// program; on a mismatch, or any failure, the temporary files are deleted
-/// and the program there is left as it was. `progress` hears the bytes
-/// received so far and the total when it is known.
+/// program; on a mismatch, an asset that does not unpack, or any other
+/// failure, the temporary files are deleted and the program there is left
+/// as it was. `progress` hears the bytes received so far and the total when
+/// it is known.
 pub(super) fn install(
     fetch: &dyn Fetch,
     pinned: &Pinned,
@@ -176,7 +177,7 @@ pub(super) fn install(
             .map_err(write_error)?;
         let packed = arrived.as_file_mut();
         packed.rewind().map_err(write_error)?;
-        io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
+        unpack(packed, &mut unpacked)?;
         unpacked.flush().map_err(write_error)?;
         let actual = file_io::file_sha256(unpacked.path()).map_err(write_error)?;
         if actual != pinned.program_sha256 {
@@ -200,6 +201,26 @@ pub(super) fn install(
     // now is the one the next start sees.
     let stamp = Stamp::at(&target).map_err(write_error)?;
     Ok(Written::of(pinned, stamp))
+}
+
+/// Unpack the gzipped `packed` into `into`.
+///
+/// A failure to read the gzip stream is [`DownloadError::CouldNotUnpack`],
+/// since the file that arrived is at fault; a failure to write `into` is
+/// [`DownloadError::CouldNotWrite`].
+fn unpack(packed: &mut File, into: &mut dyn Write) -> Result<(), DownloadError> {
+    let mut decoder = flate2::read::GzDecoder::new(packed);
+    let mut buffer = vec![0u8; 64 * 1024];
+    loop {
+        let read = match decoder.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(read) => read,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(DownloadError::CouldNotUnpack(err.to_string())),
+        };
+        into.write_all(&buffer[..read])
+            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
+    }
 }
 
 /// Give the file at `path` its executable bits.

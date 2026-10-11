@@ -357,6 +357,9 @@ pub enum DownloadError {
     },
     /// The file could not be written to the Tools Directory.
     CouldNotWrite(String),
+    /// The file arrived and passed its checksum, and is gzipped, and does
+    /// not unpack.
+    CouldNotUnpack(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
     /// The check's thread could not be started, or the client the downloads
@@ -389,6 +392,9 @@ impl fmt::Display for DownloadError {
                     f,
                     "The file could not be written to the Tools Directory: {why}."
                 )
+            }
+            Self::CouldNotUnpack(why) => {
+                write!(f, "The downloaded file could not be unpacked: {why}.")
             }
             Self::DoesNotRun(program @ (Program::Ffmpeg | Program::Ffprobe)) => write!(
                 f,
