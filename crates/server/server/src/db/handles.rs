@@ -92,7 +92,7 @@ pub fn handle_type_on(address: &str, service: IdentityService) -> IdentityType {
 #[error(
     "{address} is {}, and {} carries no {}",
     type_noun(*handle_type).0,
-    service_name(*service),
+    service.label(),
     type_noun(*handle_type).1
 )]
 pub struct ServiceCannotCarry {
@@ -102,14 +102,6 @@ pub struct ServiceCannotCarry {
     pub service: IdentityService,
     /// The identity's type.
     pub handle_type: IdentityType,
-}
-
-/// The service's name as the app shows it.
-fn service_name(service: IdentityService) -> &'static str {
-    match service {
-        IdentityService::Phone => "Text Message",
-        IdentityService::Whatsapp => "WhatsApp",
-    }
 }
 
 /// One identity of the type, and many, as a refusal names them.
@@ -624,42 +616,57 @@ mod tests {
 
     const TEST_ACCOUNT: i64 = 7;
 
-    /// A new identity is refused for every pair its service does not carry,
-    /// with a reason naming the service and the type, and let through for
-    /// every pair it carries. A username on Text Message was let through,
-    /// because only an email address on WhatsApp was refused (#2212).
+    /// A new identity is refused for every pair its service does not carry
+    /// ([`IdentityService::carries`]), with a reason naming the service and
+    /// the type, and let through for every pair it carries. A username on
+    /// Text Message was let through, because only an email address on
+    /// WhatsApp was refused (#2212).
     #[test]
     fn a_new_identity_is_refused_for_every_type_its_service_does_not_carry() {
-        for (service, handle_type, refusal) in [
-            (IdentityService::Phone, IdentityType::Phone, None),
-            (IdentityService::Phone, IdentityType::Email, None),
+        let refusals = [
             (
                 IdentityService::Phone,
                 IdentityType::Username,
-                Some("x is a username, and Text Message carries no usernames"),
+                "x is a username, and Text Message carries no usernames",
             ),
-            (IdentityService::Phone, IdentityType::Other, None),
-            (IdentityService::Whatsapp, IdentityType::Phone, None),
             (
                 IdentityService::Whatsapp,
                 IdentityType::Email,
-                Some("x is an email address, and WhatsApp carries no email addresses"),
+                "x is an email address, and WhatsApp carries no email addresses",
             ),
             (
                 IdentityService::Whatsapp,
                 IdentityType::Username,
-                Some("x is a username, and WhatsApp carries no usernames"),
+                "x is a username, and WhatsApp carries no usernames",
             ),
-            (IdentityService::Whatsapp, IdentityType::Other, None),
-        ] {
-            let answer =
-                check_service_carries("x", service, handle_type).map_err(|e| e.to_string());
-            assert_eq!(
-                answer,
-                refusal.map_or(Ok(()), |m| Err(m.to_string())),
-                "{service:?} {handle_type:?}"
-            );
+        ];
+        let mut refused = 0;
+        for service in [IdentityService::Phone, IdentityService::Whatsapp] {
+            for handle_type in [
+                IdentityType::Phone,
+                IdentityType::Email,
+                IdentityType::Username,
+                IdentityType::Other,
+            ] {
+                let answer =
+                    check_service_carries("x", service, handle_type).map_err(|e| e.to_string());
+                if service.carries(handle_type) {
+                    assert_eq!(answer, Ok(()), "{service:?} {handle_type:?}");
+                } else {
+                    let (_, _, reason) = refusals
+                        .iter()
+                        .find(|(s, t, _)| *s == service && *t == handle_type)
+                        .unwrap_or_else(|| panic!("no reason for {service:?} {handle_type:?}"));
+                    assert_eq!(answer, Err((*reason).to_string()));
+                    refused += 1;
+                }
+            }
         }
+        assert_eq!(
+            refused,
+            refusals.len(),
+            "every listed reason is a refused pair"
+        );
     }
 
     /// The count of numbers that need a look takes one for each identity the

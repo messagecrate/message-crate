@@ -358,6 +358,14 @@ impl IdentityService {
         }
     }
 
+    /// The service's name as the app shows it: "Text Message" or "WhatsApp".
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Phone => "Text Message",
+            Self::Whatsapp => "WhatsApp",
+        }
+    }
+
     /// Parse storage ids and common aliases from documents, UI, and import.
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
@@ -1119,11 +1127,8 @@ mod pending_message_tests {
 mod service_carries_tests {
     use super::{IdentityService, IdentityType};
 
-    /// Every `(service, type)` pair and whether the service carries it.
-    /// Text Message carries phone numbers and email addresses (iMessage
-    /// reaches one), WhatsApp phone numbers and its own ids, which are
-    /// `other`, and every service carries `other`, the type of a name that is
-    /// neither a number nor an address. No service carries a username.
+    /// Every `(service, type)` pair and whether the service carries it, as
+    /// [`IdentityService::carries`] gives the reason.
     const TABLE: [(IdentityService, IdentityType, bool); 8] = [
         (IdentityService::Phone, IdentityType::Phone, true),
         (IdentityService::Phone, IdentityType::Email, true),
