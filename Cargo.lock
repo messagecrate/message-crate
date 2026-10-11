@@ -45,6 +45,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "android-fields"
+version = "0.1.0"
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1140,6 +1144,7 @@ dependencies = [
 name = "go-sms-pro-exporter"
 version = "0.1.0"
 dependencies = [
+ "android-fields",
  "anyhow",
  "csv",
  "go-sms-mms",
@@ -3037,6 +3042,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 name = "sbr"
 version = "0.1.0"
 dependencies = [
+ "android-fields",
  "anyhow",
  "base64 0.23.1",
  "hex",

@@ -1,6 +1,7 @@
 //! Streaming reader for SMS Backup & Restore XML: it walks the elements and
 //! turns each `<sms>` and `<mms>` into a [`Record`].
 
+use android_fields::unix_secs_from_date_ms;
 use anyhow::{Context, Result};
 use phone::{Handle, OwnerHandleSet};
 use quick_xml::{Reader, events::Event};
@@ -188,29 +189,18 @@ fn parse_sms(
     })
 }
 
-/// The last millisecond of the year 9999, the latest `date` read as real.
-const MAX_DATE_MS: i64 = 253_402_300_799_999;
-
 /// Unix seconds from an element's millisecond `date` attribute, with the raw
-/// value. Counts and drops an unreadable date: anything but a whole number of
-/// milliseconds from 0 to [`MAX_DATE_MS`], so `NaN`, `inf`, and out-of-range
-/// values never become a timestamp.
+/// value. Counts and drops a date [`unix_secs_from_date_ms`] cannot read.
 fn timestamp_from_date(
     attrs: &HashMap<String, String>,
     stats: &mut ParseStats,
 ) -> Option<(String, f64)> {
     let date_ms = get(attrs, "date").to_string();
-    let Some(millis) = date_ms
-        .parse::<i64>()
-        .ok()
-        .filter(|ms| (0..=MAX_DATE_MS).contains(ms))
-    else {
+    let Some(secs) = unix_secs_from_date_ms(&date_ms) else {
         stats.skipped_invalid_date += 1;
         return None;
     };
-    // Exact: every value up to MAX_DATE_MS fits in an f64 mantissa.
-    let millis = millis as f64;
-    Some((date_ms, millis / 1000.0))
+    Some((date_ms, secs))
 }
 
 /// One `<mms>` element as a [`Record`], or `None` (counted in `stats`) when it

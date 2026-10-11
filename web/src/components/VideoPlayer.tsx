@@ -54,7 +54,7 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
             aria-label={`Play ${name}`}
             className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-none bg-media-control text-lightbox-text disabled:cursor-wait ${focusRingClass}`}
           >
-            <PlayIcon size={20} />
+            <PlayIcon size={20} className="shrink-0" />
           </PlainButton>
         ) : null}
         {media.note ? (

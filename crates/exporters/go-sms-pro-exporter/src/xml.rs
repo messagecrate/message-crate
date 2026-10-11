@@ -1,6 +1,7 @@
 //! Parse GO SMS Pro `gosms_sys*.xml` SMS backups.
 
 use crate::emit::MAX_SKIP_DETAILS;
+use android_fields::unix_secs_from_date_ms;
 use anyhow::{Context, Result, bail};
 use go_sms_mms::decode_gosms_emojis;
 use phone::Handle;
@@ -55,22 +56,6 @@ pub(crate) struct XmlParseStats {
     pub skipped_unreadable_text: u64,
 }
 
-/// The last millisecond of the year 9999, the latest `<date>` read as real.
-/// The SBR reader in `crates/libs/sbr` uses the same bound.
-const MAX_DATE_MS: i64 = 253_402_300_799_999;
-
-/// Unix seconds from a millisecond `<date>`, or `None` for anything but a
-/// whole number of milliseconds from 0 to [`MAX_DATE_MS`], so `NaN`, `inf`,
-/// and out-of-range values never become a timestamp.
-fn timestamp_secs_from_date_ms(date_ms: &str) -> Option<f64> {
-    let millis = date_ms
-        .parse::<i64>()
-        .ok()
-        .filter(|ms| (0..=MAX_DATE_MS).contains(ms))?;
-    // Exact: every value up to MAX_DATE_MS fits in an f64 mantissa.
-    Some(millis as f64 / 1000.0)
-}
-
 /// Parse one GO SMS Pro XML backup file.
 ///
 /// # Errors
@@ -111,7 +96,7 @@ pub(crate) fn parse_xml_str(text: &str) -> Result<(Vec<XmlMessage>, XmlParseStat
             stats.skipped_invalid_date += 1;
             continue;
         };
-        let Some(timestamp_secs) = timestamp_secs_from_date_ms(&date_ms) else {
+        let Some(timestamp_secs) = unix_secs_from_date_ms(&date_ms) else {
             stats.skipped_invalid_date += 1;
             continue;
         };
@@ -436,42 +421,10 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_dates_are_skipped() {
-        for date in [
-            "NaN",
-            "nan",
-            "inf",
-            "-inf",
-            "infinity",
-            "1e400",
-            "1.4e12",
-            "1400773261000.5",
-            "",
-            "-1",
-            "abc",
-            "99999999999999999999999",
-            "9223372036854775807",
-        ] {
-            let (msgs, stats) = sms_with_date(date);
-            assert!(msgs.is_empty(), "date {date:?} was accepted");
-            assert_eq!(stats.skipped_invalid_date, 1, "date {date:?}");
-        }
-    }
-
-    #[test]
-    fn millisecond_dates_parse_exactly() {
-        for (date, secs) in [
-            ("0", 0.0),
-            ("1", 0.001),
-            ("1400773261000", 1_400_773_261.0),
-            ("1400773261123", 1_400_773_261_123.0 / 1000.0),
-            ("253402300799999", 253_402_300_799_999.0 / 1000.0),
-        ] {
-            let (msgs, stats) = sms_with_date(date);
-            assert_eq!(stats.skipped_invalid_date, 0, "date {date:?}");
-            assert_eq!(msgs[0].timestamp_secs, secs, "date {date:?}");
-            assert_eq!(msgs[0].date_ms, date);
-        }
+    fn an_unreadable_date_is_counted_and_skipped() {
+        let (msgs, stats) = sms_with_date("NaN");
+        assert!(msgs.is_empty());
+        assert_eq!(stats.skipped_invalid_date, 1);
     }
 
     #[test]

@@ -92,7 +92,7 @@ export default function ApiTokensTable({
                       aria-label="Edit API Token"
                       onClick={() => onRename(token)}
                     >
-                      <PencilIcon />
+                      <PencilIcon className="shrink-0" />
                     </Button>
                   ) : null}
                   <Button
@@ -103,7 +103,7 @@ export default function ApiTokensTable({
                     aria-label="Revoke API Token"
                     onClick={() => onRevoke(token)}
                   >
-                    <TrashIcon />
+                    <TrashIcon className="shrink-0" />
                   </Button>
                 </div>
               </Cell>
