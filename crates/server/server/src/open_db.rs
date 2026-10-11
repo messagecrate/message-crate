@@ -32,7 +32,9 @@ pub struct OpenDb {
 ///
 /// The file is read through a read-only connection, so a file that is not a
 /// Message Crate database is refused before any statement changes it: the
-/// server's own pool would switch it to write-ahead logging on open.
+/// server's own pool would switch it to write-ahead logging on open. The
+/// connection runs with `trusted_schema` OFF, as the pool's do
+/// ([`engine`]), because the file is not yet known to be one the server made.
 ///
 /// # Errors
 ///
@@ -44,6 +46,7 @@ pub(crate) async fn inspect(path: &Path) -> Result<Option<DatabaseKind>> {
     let mut conn = SqliteConnectOptions::new()
         .filename(path)
         .read_only(true)
+        .pragma("trusted_schema", "OFF")
         .connect()
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;

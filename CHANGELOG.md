@@ -917,6 +917,16 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server trusts a database file less.** The server opens
+  only a database it made, but it knows one only by a number in the file,
+  which anyone can copy. A tampered file that carries that number, such as
+  a restored backup someone else handled, could hold views or triggers that
+  call any function the database engine has while the server reads it. The
+  server now opens its database in the database engine's recommended mode
+  for a file that may have been tampered with: such a file can call only
+  functions that are safe to call, and nothing the server runs can rewrite
+  the database's structure by hand (#2249).
+
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can
   reach it, without a login. A config that put the Data Directory or the
