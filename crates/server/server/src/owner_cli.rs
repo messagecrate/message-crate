@@ -23,16 +23,16 @@ use crate::open_db::OpenDb;
 /// Fails when this Message Crate already has an owner, when the username is malformed
 /// or taken, or when the password is empty.
 pub async fn create_owner(opened: &OpenDb, username: &str, password: &str) -> Result<String> {
-    let mut conn = opened.conn().await?;
-
     let username = match crate::credentials::require_valid_username(username) {
         Ok(username) => username,
         Err(e) => bail!("{e}"),
     };
-    let hash = match crate::credentials::hash_owner_password(password) {
+    // Hashed before a connection is taken, so none is held for the hash.
+    let hash = match crate::credentials::hash_owner_password(password).await {
         Ok(hash) => hash,
         Err(e) => bail!("{e}"),
     };
+    let mut conn = opened.conn().await?;
 
     if account_profile::is_claimed(&mut conn).await? {
         bail!(
@@ -73,12 +73,12 @@ pub async fn create_owner(opened: &OpenDb, username: &str, password: &str) -> Re
 ///
 /// Fails when this Message Crate has no owner, or when the password is empty.
 pub async fn reset_owner_password(opened: &OpenDb, password: &str) -> Result<String> {
-    let mut conn = opened.conn().await?;
-
-    let hash = match crate::credentials::hash_owner_password(password) {
+    // Hashed before a connection is taken, so none is held for the hash.
+    let hash = match crate::credentials::hash_owner_password(password).await {
         Ok(hash) => hash,
         Err(e) => bail!("{e}"),
     };
+    let mut conn = opened.conn().await?;
     if !account_profile::is_claimed(&mut conn).await? {
         bail!("this Message Crate has no owner yet; use `create-owner` to claim it");
     }
