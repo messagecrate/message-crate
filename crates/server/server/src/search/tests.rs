@@ -117,6 +117,16 @@ pub(crate) async fn contact(
     id
 }
 
+/// Puts contact `id` of `account` in the trash.
+pub(crate) async fn trash_contact(conn: &mut SqliteConnection, account: i64, id: i64) {
+    sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
+        .bind(account)
+        .bind(id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+}
+
 /// A conversation whose chat handle is `chat` and whose participants are the
 /// given handles, each linked to its contact when one exists.
 pub(crate) async fn conversation(
@@ -807,6 +817,92 @@ mod free_text {
             run(&mut conn, ListKind::Messages, "jane").await,
             Vec::<i64>::new()
         );
+    }
+
+    /// A one-to-one conversation with no participants rows is shown under the
+    /// Contact name of its chat handle (`db::participant_names`,
+    /// `load_from_chat_handle`), so plain text and `name:` find it by that
+    /// name (#2737). A group conversation's chat handle is not a person. A
+    /// Contact in the trash names nobody, as in the list, unless the query
+    /// carries `trashed:`: then its name is read, as a trashed participant's
+    /// Contact's name is (#724), though the list still shows the address.
+    #[tokio::test]
+    async fn plain_text_and_name_find_a_conversation_by_its_chat_handle_contact_name() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let alice_handle = handle(&mut conn, ACCOUNT, "+15550001111", "sms").await;
+        let alice = contact(&mut conn, ACCOUNT, "Alice Smith", &[alice_handle]).await;
+        let with_alice =
+            conversation(&mut conn, ACCOUNT, alice_handle, "individual", None, &[]).await;
+        let to_alice = message(
+            &mut conn,
+            ACCOUNT,
+            msg(with_alice, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let group_handle = handle(&mut conn, ACCOUNT, "chat1000000005", "sms").await;
+        contact(&mut conn, ACCOUNT, "Quill Ward", &[group_handle]).await;
+        let group = conversation(&mut conn, ACCOUNT, group_handle, "group", None, &[]).await;
+        message(
+            &mut conn,
+            ACCOUNT,
+            msg(group, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in [
+            "alice",
+            "smith",
+            "\"Alice Smith\"",
+            "ali*",
+            "name:alice",
+            "name:\"Alice Smith\"",
+            "name:ali*",
+        ] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                vec![with_alice],
+                "Conversations {query}"
+            );
+        }
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "name:alice").await,
+            vec![to_alice]
+        );
+        for query in ["quill", "name:quill"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                Vec::<i64>::new(),
+                "{query}: a group conversation's chat handle named a person"
+            );
+        }
+
+        let named = run(&mut conn, ListKind::Conversations, "name:any").await;
+        assert!(named.contains(&with_alice) && !named.contains(&group));
+        let nameless = run(&mut conn, ListKind::Conversations, "name:none").await;
+        assert!(!nameless.contains(&with_alice) && !nameless.contains(&group));
+
+        trash_contact(&mut conn, ACCOUNT, alice).await;
+        // The list now shows the address alone: the person has no name.
+        assert!(
+            run(&mut conn, ListKind::Conversations, "name:none")
+                .await
+                .contains(&with_alice)
+        );
+        for query in ["alice", "name:alice"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                Vec::<i64>::new(),
+                "{query}: a trashed Contact named the conversation"
+            );
+        }
+        for query in ["trashed:any alice", "trashed:any name:alice"] {
+            assert_eq!(
+                run(&mut conn, ListKind::Conversations, query).await,
+                vec![with_alice],
+                "{query}"
+            );
+        }
     }
 
     /// `-(a or b)` negates the group, the same as `not (a or b)`, and the
@@ -2338,12 +2434,7 @@ mod kind_words {
             run(&mut conn, ListKind::Conversations, "trashed:yes gone").await,
             vec![f.trashed_conv]
         );
-        sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
-            .bind(ACCOUNT)
-            .bind(f.cy)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        trash_contact(&mut conn, ACCOUNT, f.cy).await;
         assert_eq!(
             run(&mut conn, ListKind::Contacts, "trashed:yes").await,
             vec![f.cy]
@@ -2515,12 +2606,7 @@ mod trash_across_lists {
     async fn a_conversations_words_leave_a_trashed_contact_out() {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
-        sqlx::query("INSERT INTO trashed_contacts (account_id, contact_id) VALUES ($1, $2)")
-            .bind(ACCOUNT)
-            .bind(f.ana)
-            .execute(&mut *conn)
-            .await
-            .unwrap();
+        trash_contact(&mut conn, ACCOUNT, f.ana).await;
         let anas = sorted(vec![f.ana_direct, f.archive_group, f.big_group]);
         let with_id = format!("with:#{}", f.ana);
         for q in [
