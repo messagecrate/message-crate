@@ -23,9 +23,9 @@ released versions carry their date on the heading.
 
 - 2026-10-10: **User Accounts shows which accounts have no password.** In
   Owner Home, the Status of an account that has no password now reads
-  **No password** under it. Anyone who reaches the server and knows such an
-  account's username logs in with an empty password, and the list used to
-  give no sign of which accounts those were. The Demo Account has no password
+  **No password** under it. Once such an account is active, anyone who
+  reaches the server and knows its username logs in with an empty password,
+  and the list used to give no sign of which accounts those were. The Demo Account has no password
   by design and is not marked (#2146).
 
 - 2026-10-10: **Docker reports whether the server answers.** The Docker image

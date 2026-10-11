@@ -156,3 +156,32 @@ export function auditEntry(
     ...fields,
   };
 }
+
+/**
+ * An active account that is not the owner or the Demo Account, with a
+ * password, no messages, and every optional field `null` or empty.
+ */
+export function account(
+  fields: Partial<Schema["Account"]> & Pick<Schema["Account"], "account_id" | "username">,
+): Schema["Account"] {
+  return {
+    preferred_name: null,
+    app: null,
+    app_build: null,
+    can_delete: false,
+    can_export: true,
+    can_import: true,
+    disabled: false,
+    emails: [],
+    has_password: true,
+    is_demo: false,
+    is_owner: false,
+    last_login_at: null,
+    message_count: 0,
+    must_set_up_profile: false,
+    phones: [],
+    storage_bytes: 0,
+    time_zone: "UTC",
+    ...fields,
+  };
+}

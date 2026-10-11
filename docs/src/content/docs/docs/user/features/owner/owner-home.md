@@ -94,7 +94,7 @@ Below the Demo Account:
 | Column | Meaning |
 |---|---|
 | **User** | The username, with the account's display name under it when it has one. |
-| **Status** | **Owner**, **Active**, or **Disabled**, with **No password** under it for an account that has no password, so anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
+| **Status** | **Owner**, **Active**, or **Disabled**, with **No password** under it for an account that has no password: once the account is active, anyone who knows its username logs in with an empty one. The Demo Account has no password by design and is not marked. |
 | **Last login** | The date and time of the last login, or **Never**. |
 
 The search bar at the top reads **Search accounts**.
