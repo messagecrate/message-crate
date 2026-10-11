@@ -866,7 +866,7 @@ impl OpenGate {
     /// the build's error when the build ends without reaching the generator.
     async fn arrival(&self, state: &AppState) {
         let gate = self.0;
-        let arrived = tokio::task::spawn_blocking(move || {
+        let arrived = crate::request_id::spawn_blocking_in_current_span(move || {
             let mut gate_state = gate.lock();
             // An open gate ends the wait too, so a test that panics here
             // leaves no thread waiting.

@@ -417,13 +417,13 @@ async fn unless_import_running_then<F, D>(
 {
     let pool = pool.clone();
     let paths = paths.clone();
-    let task = tokio::spawn(async move {
+    let task = crate::request_id::spawn_in_current_span(async move {
         let mut conn = pool.acquire().await?;
         let mut tx = begin_write(&mut conn).await?;
         if !may_take_out(&mut tx, account_id).await? {
             return Ok(());
         }
-        let removal_dir = tokio::task::spawn_blocking(move || {
+        let removal_dir = crate::request_id::spawn_blocking_in_current_span(move || {
             let mut removal = RemovalDir::new(&paths, account_id);
             move_out(&mut removal);
             removal.into_dir()
@@ -433,9 +433,11 @@ async fn unless_import_running_then<F, D>(
         tx.commit().await?;
         drop(conn);
         if let Some(dir) = removal_dir {
-            tokio::task::spawn_blocking(move || delete(account_id, vec![dir]))
-                .await
-                .context("deleting removed files stopped")?;
+            crate::request_id::spawn_blocking_in_current_span(move || {
+                delete(account_id, vec![dir])
+            })
+            .await
+            .context("deleting removed files stopped")?;
         }
         anyhow::Ok(())
     });
@@ -457,7 +459,7 @@ async fn run_blocking_logged<F>(account_id: i64, work: F)
 where
     F: FnOnce() + Send + 'static,
 {
-    if let Err(error) = tokio::task::spawn_blocking(work).await {
+    if let Err(error) = crate::request_id::spawn_blocking_in_current_span(work).await {
         tracing::warn!(account_id, %error, "The task removing files did not finish");
     }
 }
@@ -524,14 +526,16 @@ where
 {
     let pool = pool.clone();
     let paths = paths.clone();
-    tokio::spawn(async move {
+    crate::request_id::spawn_in_current_span(async move {
         let mut conn = pool.acquire().await?;
         let (removed, to_delete) = take_out_unnamed(&mut conn, paths, account_id).await?;
         drop(conn);
         if !to_delete.is_empty() {
-            tokio::task::spawn_blocking(move || delete(account_id, to_delete))
-                .await
-                .context("deleting swept files stopped")?;
+            crate::request_id::spawn_blocking_in_current_span(move || {
+                delete(account_id, to_delete)
+            })
+            .await
+            .context("deleting swept files stopped")?;
         }
         Ok(removed)
     })
@@ -557,7 +561,7 @@ async fn take_out_unnamed(
         return Ok((0, Vec::new()));
     }
     let named = named_fingerprints(&mut tx, account_id).await?;
-    let taken_out = tokio::task::spawn_blocking(move || {
+    let taken_out = crate::request_id::spawn_blocking_in_current_span(move || {
         let mut to_delete: Vec<PathBuf> = std::fs::read_dir(removing_dir(&paths, account_id))
             .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
             .unwrap_or_default();

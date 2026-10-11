@@ -84,7 +84,7 @@ pub async fn serve(state: &AppState) -> TestServer {
 pub async fn serve_router(app: axum::Router) -> TestServer {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let handle = tokio::spawn(async move {
+    let handle = crate::request_id::spawn_in_current_span(async move {
         axum::serve(listener, app).await.unwrap();
     });
     TestServer {
