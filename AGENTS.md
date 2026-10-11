@@ -11,8 +11,8 @@ vocabulary. Read it before writing any of those.
 ## Git Workflow
 
 - Every change goes on a branch or worktree. `main` takes pull requests only:
-  its ruleset requires one, plus eleven `ci.yml` checks: every job that runs
-  on a pull request except the Windows server config tests (#2788).
+  its ruleset requires one, plus the `ci.yml` checks that
+  `docs/adr/0007-ci-is-the-only-gate.md` names as required.
 - Before pushing, run `git fetch`, then read the pull request's real state
   with `gh pr list`, `gh pr view <number> --json <fields>`, and
   `gh pr checks <number>`.
@@ -559,7 +559,7 @@ npm run build             # tsc && vite build
 npm run dev               # Vite on http://localhost:5173 (proxies /v1 to :8080)
 ```
 
-From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs everything CI runs, serially, starting with `check-pr.sh`. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
+From the repository root, `./scripts/format-all.sh` rewrites Rust and web sources to the formatters. `./scripts/check-pr.sh` is the fast pre-flight — `cargo fmt --check` and Clippy at `-D warnings` on both manifests, `biome ci`, and the web type-check; it checks and never rewrites. `./scripts/check-all.sh` runs CI's checks serially, starting with `check-pr.sh`. It runs them on the machine it is started on, so the Windows-only cases of the server config tests run only in CI's `windows-config` job. Why the split: `docs/adr/0007-ci-is-the-only-gate.md`.
 
 Do not start a separate `npm run dev` while `cargo tauri dev` is running. Tauri starts Vite itself.
 

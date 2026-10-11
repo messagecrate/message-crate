@@ -27,7 +27,7 @@ jobs read them:
 | `docker-build` | `docker`, pull requests only | `docker/build-push-action` with `push: false`: the release Dockerfile builds; then `check-docker-compose.sh` starts it with `docker/compose.release.yml` and logs in to the Demo Account |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag |
 
-The ruleset requires eleven of them, every job but `windows-config`; whether
+The ruleset requires eleven of them: every job but `windows-config`. Whether
 it should require that one too is open in #2788.
 
 Four classifier arms are not what the directory alone would suggest.
@@ -50,7 +50,8 @@ so does any change to a workflow. The `windows-config` job reads it: the check
 that keeps the website directory and the Data Directory apart
 (`Config::require_static_dir_apart`) has cases only Windows has, a junction's
 target that comes back verbatim (`\\?\C:\...`) and a short name
-(`WEBSIT~1`) that stands for a long one, and every other job runs on Linux. A
+(`WEBSIT~1`) that stands for a long one, and every other job that runs on a
+pull request runs on Linux. A
 Windows build is not worth its time on a pull request that cannot change these
 paths. On a push, a tag or a manual run it runs like every other job, and the
 `docker` and `release` jobs need it, so a release waits for it (#2683).
