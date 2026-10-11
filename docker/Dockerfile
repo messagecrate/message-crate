@@ -1,7 +1,12 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 # The line above makes BuildKit parse this file with the current Dockerfile
 # frontend rather than the one bundled with the engine, because the frontend
 # bundled with Docker Engine 24 and older refuses HEALTHCHECK --start-interval.
+# BuildKit pulls that frontend as an image and runs it at build time, so it is
+# pinned by tag and digest like the base images below, and
+# scripts/check-docker-context.sh fails it without a digest. Dependabot reads
+# only FROM lines, so this digest is moved by hand: take the new one from
+#   docker buildx imagetools inspect docker/dockerfile:1
 #
 # Multi-stage release image built from the current checkout.
 # Usage (from the repository root):

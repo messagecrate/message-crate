@@ -9,24 +9,36 @@ fn config_file(dir: &Path, text: &str) -> PathBuf {
     path
 }
 
+/// A `[paths] db` naming `db`, an absolute path. `/srv/...` is not
+/// absolute on Windows, which wants a drive, so the tests use the temporary
+/// directory's own path. A TOML literal string (single quotes) keeps a
+/// Windows path's backslashes as they are; in double quotes they would be
+/// escapes.
+fn db_config(db: &Path) -> String {
+    format!("[paths]\ndb = '{}'\n", db.display())
+}
+
 #[test]
 fn without_db_the_database_is_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
 
     let cfg = Config::load_with_db(&path, None).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/srv/messagecrate.db"));
+    assert_eq!(cfg.paths.db, db);
 }
 
 #[test]
 fn db_replaces_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
+    let other = dir.path().join("elsewhere/other.db");
 
-    let cfg = Config::load_with_db(&path, Some(PathBuf::from("/elsewhere/other.db"))).unwrap();
+    let cfg = Config::load_with_db(&path, Some(other.clone())).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/elsewhere/other.db"));
+    assert_eq!(cfg.paths.db, other);
 }
 
 /// S7-12: `--db data/messagecrate.db` names the file `[paths] db =
@@ -565,4 +577,99 @@ fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
         text.contains(&format!("more than {MAX_SYMLINKS} symlinks")),
         "{text}"
     );
+}
+
+/// What `cmd /C <line>` prints, after asserting it succeeded. `line` is
+/// passed as written, not quoted again, so a quoted path in it reaches
+/// `cmd` as one argument. `line` must not start with a quote, or `cmd`
+/// strips the first and last quote of it.
+#[cfg(windows)]
+fn cmd(line: &str) -> String {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("cmd")
+        .raw_arg(format!("/C {line}"))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "cmd /C {line}: {output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+/// Makes `link` a directory junction to `target`. A junction needs no
+/// privilege, where a directory symlink on Windows does.
+#[cfg(windows)]
+fn junction(link: &Path, target: &Path) {
+    cmd(&format!(
+        "mklink /J \"{}\" \"{}\"",
+        link.display(),
+        target.display()
+    ));
+}
+
+/// A junction's target comes back verbatim (`\\?\C:\...`), unlike every
+/// other path, so the check canonicalizes before it compares.
+#[cfg(windows)]
+#[test]
+fn a_junction_cannot_hide_the_nesting_and_the_refusal_names_where_it_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    let real = dir.path().canonicalize().unwrap().join("static\\data");
+    let text = refusal(&cfg);
+    assert!(text.contains(&real.display().to_string()), "{text}");
+}
+
+/// A junction to a directory not made yet still decides where the database
+/// is created, so it is followed like any other.
+#[cfg(windows)]
+#[test]
+fn a_dangling_junction_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `path` with every component as its 8.3 short name, as `cmd` reports it.
+#[cfg(windows)]
+fn short_name(path: &Path) -> PathBuf {
+    let printed = cmd(&format!("for %I in (\"{}\") do @echo %~sI", path.display()));
+    PathBuf::from(printed.trim())
+}
+
+/// `WEBSIT~1` is another name for `websitedirectory`, so a Data Directory
+/// named through the long name is inside a website directory named through
+/// the short one.
+#[cfg(windows)]
+#[test]
+fn a_short_name_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    let website = dir.path().join("websitedirectory");
+    fs::create_dir_all(website.join("data")).unwrap();
+    let short = short_name(&website);
+    assert_ne!(
+        short.file_name(),
+        website.file_name(),
+        "8.3 short names are off on the volume holding {}",
+        website.display()
+    );
+    let cfg = load_in(
+        dir.path(),
+        &format!(
+            "[paths]\ndb = \"elsewhere/messagecrate.db\"\ndata_dir = \"websitedirectory/data\"\n\
+             [server]\nstatic_dir = '{}'\n",
+            short.display()
+        ),
+    );
+
+    refusal(&cfg);
 }

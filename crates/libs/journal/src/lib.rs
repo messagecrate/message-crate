@@ -5,6 +5,8 @@
 //! Events are opaque to this crate — callers bring their own serde type. The
 //! one shape this crate names is [`ServerTarget`], the server and account an
 //! event belongs to, which the Upload's journal and the Export's both carry.
+//! An event that names it through [`TargetedEvent`] can be loaded and
+//! compacted one target at a time.
 //!
 //! All writes run under one process-wide lock, so a rewrite can never mix
 //! bytes with a concurrent append.
@@ -42,6 +44,16 @@ impl ServerTarget {
             username: username.into(),
         }
     }
+}
+
+/// An event that belongs to one [`ServerTarget`].
+///
+/// A journal can hold the events of several servers and accounts, and a run
+/// reads and rewrites only its own: [`load_for_target`] keeps the events of
+/// one target, and [`compact_for_target`] keeps every other target's.
+pub trait TargetedEvent {
+    /// The server and account this event belongs to.
+    fn target(&self) -> &ServerTarget;
 }
 
 /// One lock for append and rewrite so two threads cannot mix bytes on a line
@@ -98,18 +110,16 @@ fn ends_in_a_torn_row(file: &mut File) -> std::io::Result<bool> {
     Ok(last[0] != b'\n')
 }
 
-/// Parse every event from a journal file.
+/// Parse every event from a journal file, of every target.
 ///
 /// A missing file is treated as an empty journal. Each line that cannot be
-/// parsed is reported to `on_unreadable(line_number, parse_error)` and skipped —
-/// the caller decides whether to warn or stay silent. A line that is not
-/// valid UTF-8, such as a row a crash cut inside a character, is one of
-/// those lines, so it cannot stop every later run from reading the file.
+/// parsed is reported to `on_unreadable(line_number, parse_error)` and
+/// skipped, as [`load_for_target`] says.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or read.
-pub fn load_events<E: DeserializeOwned>(
+fn load_events<E: DeserializeOwned>(
     label: &str,
     path: &Path,
     on_unreadable: &mut dyn FnMut(usize, &serde_json::Error),
@@ -132,6 +142,38 @@ pub fn load_events<E: DeserializeOwned>(
     Ok(events)
 }
 
+/// Read the journal, keep the events of `target`, and fold them in file order
+/// into a state that starts from `S::default()`.
+///
+/// A missing file folds nothing. Each line that cannot be parsed is reported
+/// to `on_unreadable(line_number, parse_error)` and skipped. The caller
+/// decides whether to warn or stay silent. A line that is not valid UTF-8,
+/// such as a row a crash cut inside a character, is one of those lines, so it
+/// cannot stop every later run from reading the file.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be opened or read.
+pub fn load_for_target<E, S>(
+    label: &str,
+    path: &Path,
+    target: &ServerTarget,
+    on_unreadable: &mut dyn FnMut(usize, &serde_json::Error),
+    mut fold: impl FnMut(&mut S, E),
+) -> Result<S>
+where
+    E: DeserializeOwned + TargetedEvent,
+    S: Default,
+{
+    let mut state = S::default();
+    for event in load_events::<E>(label, path, on_unreadable)? {
+        if event.target() == target {
+            fold(&mut state, event);
+        }
+    }
+    Ok(state)
+}
+
 /// serde's text for why a journal line did not parse, for a sentence that
 /// names the line by its number in the file.
 ///
@@ -150,19 +192,51 @@ pub fn unreadable_line_reason(error: &serde_json::Error) -> String {
     }
 }
 
-/// Read the journal, transform the surviving events with `rebuild`, and
-/// rewrite the file — all under one write-lock acquisition, so a concurrent
-/// [`append`] either lands before the read or after the rewrite, never between
-/// them.
+/// Rewrite the lines of `target` as `events`, and keep every line of every
+/// other target as it was. The kept lines stay in their order, and `events`
+/// follow them.
 ///
-/// Unreadable lines are skipped silently during the read, in the import journal
-/// and the export journal alike.
+/// One directory can hold the progress of runs against several servers, or
+/// several accounts on one server. Each target's lines are its own skip list,
+/// so compacting one target must not drop another's. Every event in `events`
+/// belongs to `target`.
+///
+/// Unreadable lines are dropped silently, in the Upload's journal and the
+/// Export's alike.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be read, the temporary file cannot
 /// be written, or the rename fails.
-pub fn compact_with<E, F>(label: &str, path: &Path, rebuild: F) -> Result<()>
+pub fn compact_for_target<E>(
+    label: &str,
+    path: &Path,
+    target: &ServerTarget,
+    events: Vec<E>,
+) -> Result<()>
+where
+    E: Serialize + DeserializeOwned + TargetedEvent,
+{
+    debug_assert!(events.iter().all(|event| event.target() == target));
+    compact_with::<E, _>(label, path, |mut kept| {
+        kept.retain(|event| event.target() != target);
+        kept.extend(events);
+        kept
+    })
+}
+
+/// Read the journal, transform the surviving events with `rebuild`, and
+/// rewrite the file — all under one write-lock acquisition, so a concurrent
+/// [`append`] either lands before the read or after the rewrite, never between
+/// them.
+///
+/// Unreadable lines are skipped silently during the read.
+///
+/// # Errors
+///
+/// Returns an error when the file cannot be read, the temporary file cannot
+/// be written, or the rename fails.
+fn compact_with<E, F>(label: &str, path: &Path, rebuild: F) -> Result<()>
 where
     E: Serialize + DeserializeOwned,
     F: FnOnce(Vec<E>) -> Vec<E>,
@@ -392,6 +466,118 @@ mod tests {
             lines += 1;
         }
         assert_eq!(lines, 4 * 25);
+    }
+
+    /// An event that names its target, as both journals' events do.
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    struct Seen {
+        #[serde(flatten)]
+        target: ServerTarget,
+        key: String,
+    }
+
+    impl TargetedEvent for Seen {
+        fn target(&self) -> &ServerTarget {
+            &self.target
+        }
+    }
+
+    fn seen(url: &str, username: &str, key: &str) -> Seen {
+        Seen {
+            target: ServerTarget::new(url, username),
+            key: key.into(),
+        }
+    }
+
+    /// Only the events of the asked target are folded: another server's, and
+    /// another account's on the same server, are left out.
+    #[test]
+    fn load_for_target_folds_only_that_targets_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.jsonl");
+        for event in [
+            seen("http://a", "alice", "1"),
+            seen("http://b", "alice", "2"),
+            seen("http://a", "bob", "3"),
+            seen("http://a", "alice", "4"),
+        ] {
+            append("journal", &path, &event).unwrap();
+        }
+        let keys: Vec<String> = load_for_target(
+            "journal",
+            &path,
+            &ServerTarget::new("http://a", "alice"),
+            &mut |_, _| {},
+            |keys: &mut Vec<String>, event: Seen| keys.push(event.key),
+        )
+        .unwrap();
+        assert_eq!(keys, ["1", "4"]);
+    }
+
+    /// A missing file folds nothing, and an unreadable line is reported and
+    /// skipped.
+    #[test]
+    fn load_for_target_reports_unreadable_lines_and_starts_from_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.jsonl");
+        let target = ServerTarget::new("http://a", "alice");
+        let empty: Vec<String> = load_for_target(
+            "journal",
+            &path,
+            &target,
+            &mut |_, _| panic!("a missing file has no lines"),
+            |keys: &mut Vec<String>, event: Seen| keys.push(event.key),
+        )
+        .unwrap();
+        assert!(empty.is_empty());
+
+        fs::write(
+            &path,
+            "{not json}\n{\"url\":\"http://a\",\"username\":\"alice\",\"key\":\"1\"}\n",
+        )
+        .unwrap();
+        let mut reported = Vec::new();
+        let keys: Vec<String> = load_for_target(
+            "journal",
+            &path,
+            &target,
+            &mut |line, _| reported.push(line),
+            |keys: &mut Vec<String>, event: Seen| keys.push(event.key),
+        )
+        .unwrap();
+        assert_eq!(reported, [1]);
+        assert_eq!(keys, ["1"]);
+    }
+
+    /// Compacting one target replaces that target's lines and keeps every
+    /// other target's lines as they were.
+    #[test]
+    fn compact_for_target_keeps_every_other_targets_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.jsonl");
+        for event in [
+            seen("http://a", "alice", "old"),
+            seen("http://b", "alice", "b"),
+            seen("http://a", "bob", "bob"),
+        ] {
+            append("journal", &path, &event).unwrap();
+        }
+        compact_for_target(
+            "journal",
+            &path,
+            &ServerTarget::new("http://a", "alice"),
+            vec![seen("http://a", "alice", "new")],
+        )
+        .unwrap();
+        let loaded: Vec<Seen> = load_events("journal", &path, &mut |_, _| {}).unwrap();
+        assert_eq!(
+            loaded,
+            [
+                seen("http://b", "alice", "b"),
+                seen("http://a", "bob", "bob"),
+                seen("http://a", "alice", "new"),
+            ]
+        );
     }
 
     #[test]
