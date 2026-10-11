@@ -566,3 +566,96 @@ fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
         "{text}"
     );
 }
+
+/// Makes `link` a directory junction to `target`. A junction needs no
+/// privilege, where a directory symlink on Windows does.
+#[cfg(windows)]
+fn junction(link: &Path, target: &Path) {
+    use std::os::windows::process::CommandExt;
+    let status = std::process::Command::new("cmd")
+        .raw_arg(format!(
+            "/C mklink /J \"{}\" \"{}\"",
+            link.display(),
+            target.display()
+        ))
+        .status()
+        .unwrap();
+    assert!(status.success(), "mklink /J {}", link.display());
+}
+
+/// A junction's target comes back verbatim (`\\?\C:\...`), unlike every
+/// other path, so the check canonicalizes before it compares.
+#[cfg(windows)]
+#[test]
+fn a_junction_cannot_hide_the_nesting_and_the_refusal_names_where_it_leads() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    let real = dir.path().canonicalize().unwrap().join("static\\data");
+    let text = refusal(&cfg);
+    assert!(text.contains(&real.display().to_string()), "{text}");
+}
+
+/// A junction to a directory not made yet still decides where the database
+/// is created, so it is followed like any other.
+#[cfg(windows)]
+#[test]
+fn a_dangling_junction_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    junction(&dir.path().join("data"), &dir.path().join("static\\data"));
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `path` with every component as its 8.3 short name, as `cmd` reports it.
+#[cfg(windows)]
+fn short_name(path: &Path) -> PathBuf {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("cmd")
+        .raw_arg(format!(
+            "/C for %I in (\"{}\") do @echo %~sI",
+            path.display()
+        ))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "cmd: {output:?}");
+    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+}
+
+/// `WEBSIT~1` is another name for `websitedirectory`, so a Data Directory
+/// named through the long name is inside a website directory named through
+/// the short one.
+#[cfg(windows)]
+#[test]
+fn a_short_name_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    let website = dir.path().join("websitedirectory");
+    fs::create_dir_all(website.join("data")).unwrap();
+    let short = short_name(&website);
+    assert_ne!(
+        short.file_name(),
+        website.file_name(),
+        "8.3 short names are off on the volume holding {}",
+        website.display()
+    );
+    let cfg = load_in(
+        dir.path(),
+        &format!(
+            "[paths]\ndb = \"elsewhere/messagecrate.db\"\ndata_dir = \"websitedirectory/data\"\n\
+             [server]\nstatic_dir = '{}'\n",
+            short.display()
+        ),
+    );
+
+    refusal(&cfg);
+}
