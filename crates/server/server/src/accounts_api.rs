@@ -597,10 +597,10 @@ impl UpdateAccountRequest {
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
 enum ProfileUpdateError {
-    /// The service cannot carry an identity of the address's type: an email
-    /// address on WhatsApp.
+    /// The service does not carry an identity of the address's type, such
+    /// as an email address on WhatsApp.
     #[error(transparent)]
-    ServiceCannotCarry(#[from] handles::EmailOnWhatsapp),
+    ServiceCannotCarry(#[from] handles::ServiceCannotCarry),
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
