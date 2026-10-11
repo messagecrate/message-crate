@@ -533,8 +533,6 @@ fn compress_settings_reach_the_config() {
         output: "out".into(),
         owner_phones: "+15555550100".into(),
         attachment_media: AttachmentMedia::Compress,
-        // Obfuscated, so Compress needs no ffmpeg.
-        obfuscate: true,
         media_max_resolution: MaxResolution::P720,
         media_max_fps: "24".into(),
         media_min_size: "5".into(),
@@ -549,7 +547,7 @@ fn compress_settings_reach_the_config() {
     };
     assert_eq!(form.compress_options().unwrap(), expected);
     for exporter in [Exporter::Imessage, Exporter::GoSmsPro] {
-        let config = form.to_config(exporter, no_ffmpeg()).unwrap();
+        let config = form.to_config(exporter, with_ffmpeg()).unwrap();
         assert_eq!(config.media.mode, MediaMode::Compress);
         assert_eq!(config.media.compress, expected, "{exporter:?}");
     }
@@ -558,7 +556,9 @@ fn compress_settings_reach_the_config() {
         media_max_fps: "abc".into(),
         ..form
     };
-    let err = bad.to_config(Exporter::GoSmsPro, no_ffmpeg()).unwrap_err();
+    let err = bad
+        .to_config(Exporter::GoSmsPro, with_ffmpeg())
+        .unwrap_err();
     assert_eq!(
         err,
         vec![

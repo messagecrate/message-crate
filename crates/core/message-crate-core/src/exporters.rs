@@ -108,7 +108,8 @@ impl AttachmentMedia {
         }
     }
 
-    /// True when convert or compress is selected (ffmpeg must be on PATH).
+    /// True when Convert or Compress is selected, which need ffmpeg and
+    /// ffprobe ([`media::ffmpeg_available`]).
     pub fn needs_ffmpeg(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }
@@ -257,7 +258,8 @@ pub struct FormContext<'a> {
     pub scratch_dir: &'a Path,
     /// Whether ffmpeg and ffprobe can be used, as [`media::ffmpeg_available`]
     /// answers. Without them the form refuses Convert and Compress unless it
-    /// obfuscates.
+    /// obfuscates. It is read for no other choice, so a caller whose form
+    /// asks for neither may pass `false` without asking.
     pub ffmpeg_available: bool,
 }
 

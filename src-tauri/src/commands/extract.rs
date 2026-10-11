@@ -404,9 +404,10 @@ fn run_staging(
 /// the form (missing input path, missing owner phones, …). Multiple
 /// validation problems are joined with `; `. The compress fields are not
 /// checked here: `Form` sees Clone for a real Compress choice, and
-/// [`media_settings_for`] checks them against the real one. It asks
-/// [`media::ffmpeg_available`] once and gives the answer to `Form::to_config`
-/// in its [`FormContext`].
+/// [`media_settings_for`] checks them against the real one. For the same
+/// reason the form's ffmpeg check never refuses here, and
+/// [`media::ffmpeg_available`] is asked only if the form ever carries Convert
+/// or Compress.
 fn build_exporter_config(
     scratch_dir: &Path,
     source: &str,
@@ -506,7 +507,7 @@ fn build_exporter_config(
 
     let ctx = FormContext {
         scratch_dir,
-        ffmpeg_available: media::ffmpeg_available(),
+        ffmpeg_available: form.attachment_media.needs_ffmpeg() && media::ffmpeg_available(),
     };
     form.to_config(exporter, ctx)
         .map_err(|errors| errors.join("; "))
