@@ -132,7 +132,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
   const backupStat = args.stats.backup;
   if (!backupStat.exists) {
     errors.backupPath = PATH_MISSING;
-  } else if (backupStat.isFile) {
+  } else if (!backupStat.isDirectory) {
     errors.backupPath = WHATSAPP_ERR_DIRECTORY_IS_FILE;
   }
 

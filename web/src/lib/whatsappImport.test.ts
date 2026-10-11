@@ -132,6 +132,34 @@ describe("whatsappImport", () => {
     expect(result.errors.backupPath).toBe(WHATSAPP_ERR_DIRECTORY_IS_FILE);
   });
 
+  it("disables Import when the backup path is neither a file nor a directory, for every method", () => {
+    // A socket, a device file, or a pipe: it exists but is neither.
+    const neither = { exists: true, isFile: false, isDirectory: false };
+    for (const method of ["whatsapp-android", "whatsapp-ios"] as const) {
+      const result = whatsappCanImport({
+        method,
+        backupPath: "/dev/null",
+        key: "",
+        backupPassword: "",
+        contactsDb: "",
+        media: "",
+        db: "",
+        ownerPhone: "+15555550100",
+        stats: {
+          backup: neither,
+          contactsDb: null,
+          media: null,
+          db: null,
+          hasMsgstoreDb: true,
+          cryptName: null,
+          backupEncrypted: null,
+        },
+      });
+      expect(result.enabled, method).toBe(false);
+      expect(result.errors.backupPath, method).toBe(WHATSAPP_ERR_DIRECTORY_IS_FILE);
+    }
+  });
+
   it("requires the key when only a crypt file is present", () => {
     const result = whatsappCanImport({
       method: "whatsapp-android",

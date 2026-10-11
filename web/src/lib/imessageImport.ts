@@ -115,17 +115,17 @@ export function imessageCanImport(args: ImessageCanImportArgs): {
   } else {
     switch (args.method) {
       case "imessage-ios":
-        if (backupStat.isFile) {
+        if (!backupStat.isDirectory) {
           errors.backupPath = IMESSAGE_ERR_IPHONE_PATH_IS_FILE;
         }
         break;
       case "imessage-macos":
-        if (backupStat.isDirectory) {
+        if (!backupStat.isFile) {
           errors.backupPath = IMESSAGE_ERR_MAC_PATH_IS_DIR;
         }
         break;
       case "imessage-jailbreak":
-        if (backupStat.isDirectory) {
+        if (!backupStat.isFile) {
           errors.backupPath = IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR;
         }
         break;

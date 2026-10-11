@@ -36,6 +36,12 @@ const missing: { exists: false; isFile: false; isDirectory: false } = {
   isFile: false,
   isDirectory: false,
 };
+// A socket, a device file, or a pipe: it exists but is neither.
+const presentNeither: { exists: true; isFile: false; isDirectory: false } = {
+  exists: true,
+  isFile: false,
+  isDirectory: false,
+};
 
 describe("iMessage methods", () => {
   it("lists three methods", () => {
@@ -236,6 +242,31 @@ describe("imessageCanImport", () => {
     });
     expect(jail.enabled).toBe(false);
     expect(jail.errors.backupPath).toBe(IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR);
+  });
+
+  it("rejects a backup path that is neither a file nor a directory, for every method", () => {
+    const expected = {
+      "imessage-ios": IMESSAGE_ERR_IPHONE_PATH_IS_FILE,
+      "imessage-macos": IMESSAGE_ERR_MAC_PATH_IS_DIR,
+      "imessage-jailbreak": IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR,
+    } as const;
+    for (const method of IMESSAGE_METHODS.map((m) => m.id)) {
+      const result = imessageCanImport({
+        method,
+        backupPath: "/dev/null",
+        attachmentRoot: "",
+        appleContacts: "",
+        backupPassword: "",
+        stats: {
+          backup: presentNeither,
+          attachmentRoot: null,
+          appleContacts: null,
+          backupEncrypted: null,
+        },
+      });
+      expect(result.enabled, method).toBe(false);
+      expect(result.errors.backupPath, method).toBe(expected[method]);
+    }
   });
 
   it("treats attachment root as required only for jailbreak", () => {
