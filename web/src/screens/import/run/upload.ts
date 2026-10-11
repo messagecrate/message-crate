@@ -1,16 +1,15 @@
-import { getBaseUrl } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
 import { CANCELLED_MESSAGE } from "../../../lib/runCancel";
 import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
-import { type DesktopJobResult, invokeUpload, type StagingSummary } from "../../../lib/tauri";
+import type { DesktopJobResult, StagingSummary } from "../../../lib/tauri";
 import { importOutcome } from "../importOutcome";
 import { UPLOAD_LABEL } from "../importProgressState";
-import { importRunStore as store } from "../importRunStore";
 import { wholeRun } from "../runRecord";
+import type { RunContext } from "./context";
 import { recordError, runJob } from "./desktopJob";
 import { finishImport, stopStageNotRecorded } from "./finish";
-import { currentPart, runScratch } from "./scratch";
+import { currentPart } from "./scratch";
 import { failActiveStep, setRowByLabel } from "./screen";
 import { moveStage } from "./serverCalls";
 
@@ -22,6 +21,7 @@ import { moveStage } from "./serverCalls";
  * other terminal outcome.
  */
 export async function runUpload(
+  ctx: RunContext,
   token: string | null,
   runId: number,
   outputDir: string,
@@ -29,8 +29,8 @@ export async function runUpload(
 ): Promise<void> {
   // Logging out pauses this Upload before it ends the session the Upload
   // sends (`lib/runningUpload.ts`), and waits until the pause is recorded.
-  const runCancel = runScratch().runCancel;
-  const upload = uploadAndFinish(token, runId, outputDir, approvedPlan);
+  const runCancel = ctx.scratch.runCancel;
+  const upload = uploadAndFinish(ctx, token, runId, outputDir, approvedPlan);
   const pause = async () => {
     await runCancel.cancel();
     await upload;
@@ -52,31 +52,32 @@ export async function runUpload(
  * Resolves to whether the server refused the session the Upload sent.
  */
 async function uploadAndFinish(
+  ctx: RunContext,
   token: string | null,
   runId: number,
   outputDir: string,
   approvedPlan?: StagingSummary,
 ): Promise<boolean> {
-  store.set({ running: true, phase: "running" });
-  runScratch().activeStage = "upload";
-  setRowByLabel(UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
+  ctx.store.set({ running: true, phase: "running" });
+  ctx.scratch.activeStage = "upload";
+  setRowByLabel(ctx, UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
   try {
-    await moveStage(runId, "upload", approvedPlan);
+    await moveStage(ctx, runId, "upload", approvedPlan);
   } catch (e: unknown) {
-    await stopStageNotRecorded(e, runId, "upload");
+    await stopStageNotRecorded(ctx, e, runId, "upload");
     return false;
   }
 
-  const uploadStartedAt = performance.now();
+  const uploadStartedAt = ctx.now();
   let uploadResult: DesktopJobResult | null = null;
   let threw = false;
   // A Pause that came before the Upload started: the guard refused the job.
   let pausedBeforeStart = false;
   try {
-    const baseUrl = getBaseUrl();
+    const baseUrl = ctx.server.baseUrl();
     if (!token) throw new Error("Not authenticated");
-    uploadResult = await runJob(() =>
-      invokeUpload({
+    uploadResult = await runJob(ctx, () =>
+      ctx.desktop.invokeUpload({
         base_url: baseUrl,
         token,
         input_dir: outputDir,
@@ -91,11 +92,11 @@ async function uploadAndFinish(
       pausedBeforeStart = true;
     } else {
       threw = true;
-      recordError(runScratch().activeStage, msg);
-      failActiveStep();
+      recordError(ctx, ctx.scratch.activeStage, msg);
+      failActiveStep(ctx);
     }
   }
-  const uploadMs = performance.now() - uploadStartedAt;
+  const uploadMs = ctx.now() - uploadStartedAt;
   const report = uploadResult?.report ?? null;
   // An Upload that did not send every conversation, paused or failed, is
   // paused: the run stays at `upload` with its directory, and resuming it
@@ -105,19 +106,19 @@ async function uploadAndFinish(
     : importOutcome({
         report: report ?? undefined,
         threw,
-        issues: wholeRun(runScratch().carried, currentPart(report, uploadMs)).issues,
+        issues: wholeRun(ctx.scratch.carried, currentPart(ctx, report, uploadMs)).issues,
         approved: approvedPlan,
       });
   if (status === "paused") {
-    setRowByLabel(UPLOAD_LABEL, { status: "error", detail: "Paused", durationMs: uploadMs });
+    setRowByLabel(ctx, UPLOAD_LABEL, { status: "error", detail: "Paused", durationMs: uploadMs });
   } else {
-    setRowByLabel(UPLOAD_LABEL, {
+    setRowByLabel(ctx, UPLOAD_LABEL, {
       status: "done",
       detail: "Upload complete",
       durationMs: uploadMs,
     });
   }
 
-  await finishImport({ runId, status, uploadReport: report, uploadMs });
+  await finishImport(ctx, { runId, status, uploadReport: report, uploadMs });
   return report?.session_refused === true;
 }
