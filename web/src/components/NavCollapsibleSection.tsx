@@ -99,7 +99,7 @@ export default function NavCollapsibleSection({
         )}
         {showAdd ? (
           <NavGlyphButton aria-label={addLabel} disabled={addDisabled} onClick={onAdd}>
-            <PlusIcon size={14} />
+            <PlusIcon size={14} className="shrink-0" />
           </NavGlyphButton>
         ) : null}
       </div>

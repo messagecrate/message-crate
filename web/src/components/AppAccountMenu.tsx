@@ -48,7 +48,7 @@ export default function AppAccountMenu() {
             title={username || undefined}
             className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-transparent p-0 text-text hover:bg-hover aria-expanded:bg-hover ${focusRingClass}`}
           >
-            <PersonIcon size={18} />
+            <PersonIcon size={18} className="shrink-0" />
           </PlainButton>
         }
         label="Account menu"
@@ -73,7 +73,7 @@ export default function AppAccountMenu() {
             onSelect: () => navigate(settingsPath),
             children: (
               <span className={`${itemRowClass} ${settingsActive ? "font-semibold" : ""}`}>
-                <GearIcon size={15} />
+                <GearIcon size={15} className="shrink-0" />
                 Settings
               </span>
             ),
@@ -84,7 +84,7 @@ export default function AppAccountMenu() {
             onSelect: () => logout(),
             children: (
               <span className={itemRowClass}>
-                <LogOutIcon size={15} />
+                <LogOutIcon size={15} className="shrink-0" />
                 Log out
               </span>
             ),

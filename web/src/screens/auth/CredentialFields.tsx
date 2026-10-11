@@ -36,7 +36,7 @@ export default function CredentialFields({
     <>
       <TextField
         label="Username"
-        leadingIcon={<PersonIcon size={16} />}
+        leadingIcon={<PersonIcon size={16} className="shrink-0" />}
         value={username.value}
         onChange={username.onChange}
         name="username"
@@ -49,7 +49,7 @@ export default function CredentialFields({
       <PasswordField
         label="Password"
         className="mt-3.5"
-        leadingIcon={<LockIcon size={16} />}
+        leadingIcon={<LockIcon size={16} className="shrink-0" />}
         value={password.value}
         onChange={password.onChange}
         name={autoComplete === "current-password" ? "password" : "new-password"}
@@ -63,7 +63,7 @@ export default function CredentialFields({
         <PasswordField
           label="Confirm Password"
           className="mt-3.5"
-          leadingIcon={<LockIcon size={16} />}
+          leadingIcon={<LockIcon size={16} className="shrink-0" />}
           value={confirmPassword.value}
           onChange={confirmPassword.onChange}
           name="confirm-password"

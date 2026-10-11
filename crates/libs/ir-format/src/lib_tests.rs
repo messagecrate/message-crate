@@ -591,16 +591,8 @@ fn hard_texts_survive_every_format() {
             let mut doc = message_ir::testutil::sample_document(&case.text);
             if case.with_attachment {
                 doc.messages[0].attachments.push(message_ir::IrAttachment {
-                    path: None,
-                    original_name: Some("photo.jpg".into()),
-                    mime_type: Some("image/jpeg".into()),
-                    digest_sha256: None,
-                    is_sticker: false,
-                    transcription: None,
-                    sticker_effect: None,
-                    size_bytes: None,
-                    missing_reason: None,
                     bytes: Some(b"\xff\xd8\xfffakejpeg".to_vec()),
+                    ..message_ir::testutil::sample_attachment()
                 });
             }
             let tmp = tempfile::tempdir().unwrap();
@@ -732,16 +724,9 @@ fn document_with_hard_fields() -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document("from my phone number");
     doc.export.source = "imessage".into();
     let attachment = |name: &str, mime: &str| message_ir::IrAttachment {
-        path: None,
         original_name: Some(name.into()),
         mime_type: Some(mime.into()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     };
 
     let first = &mut doc.messages[0];

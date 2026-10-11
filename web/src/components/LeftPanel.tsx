@@ -179,7 +179,7 @@ export default function LeftPanel({
         <div className="px-3 py-2">
           <PlainButton {...itemRow("messages", browseLinkClass)} onPress={() => navigate("/")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ConversationsIcon size={15} />
+              <ConversationsIcon size={15} className="shrink-0" />
             </span>
             Messages
           </PlainButton>
@@ -188,13 +188,13 @@ export default function LeftPanel({
             onPress={() => navigate("/contacts")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <ContactsIcon size={15} />
+              <ContactsIcon size={15} className="shrink-0" />
             </span>
             Contacts
           </PlainButton>
           <PlainButton {...itemRow("trash", browseLinkClass)} onPress={() => navigate("/trash")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
-              <TrashIcon size={15} />
+              <TrashIcon size={15} className="shrink-0" />
             </span>
             Trash
           </PlainButton>
@@ -213,7 +213,7 @@ export default function LeftPanel({
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ImportIcon size={15} />
+                  <ImportIcon size={15} className="shrink-0" />
                 </span>
                 <span className="truncate">Import</span>
                 {importAttention ? (
@@ -242,7 +242,7 @@ export default function LeftPanel({
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
-                  <ExportIcon size={15} />
+                  <ExportIcon size={15} className="shrink-0" />
                 </span>
                 <span className="truncate">Export</span>
               </span>
@@ -281,7 +281,7 @@ export default function LeftPanel({
                       className={`${NAV_NESTED_ROW_CLASS} cursor-pointer border-none bg-transparent p-0 text-left text-inherit`}
                     >
                       <span className={NAV_LEADING_GLYPH_CLASS}>
-                        <SearchIcon size={15} />
+                        <SearchIcon size={15} className="shrink-0" />
                       </span>
                       <span className="min-w-0 truncate">{g.name}</span>
                     </PlainButton>
@@ -296,7 +296,7 @@ export default function LeftPanel({
                               : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                           }
                         >
-                          <EllipsisIcon size={15} />
+                          <EllipsisIcon size={15} className="shrink-0" />
                         </NavGlyphButton>
                       }
                       label={`Saved search options for ${g.name}`}

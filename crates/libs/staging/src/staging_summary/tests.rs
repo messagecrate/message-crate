@@ -42,15 +42,10 @@ fn staged_fixture() -> tempfile::TempDir {
         path: Some("attachments/photo.png".into()),
         original_name: Some("photo.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         // Deliberately stale: the reader must measure the file on disk,
         // never trust this.
         size_bytes: Some(1),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc_a.messages.push(second);
     doc_a.messages.push(third);
@@ -97,13 +92,9 @@ fn staged_fixture_with_missing_reason(reason: &str) -> tempfile::TempDir {
         path: Some("attachments/broken.png".into()),
         original_name: Some("broken.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(2048),
         missing_reason: Some(reason.to_string()),
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     }];
     doc.finalize_stats();
     let jsonl = dir.path().join(format!("{}.jsonl", doc.filename_stem()));
@@ -130,13 +121,8 @@ fn staged_fixture_with_sizes(specs: &[(&str, u64)]) -> tempfile::TempDir {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some((*name).to_string()),
                 mime_type: None,
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
                 size_bytes: Some(*size),
-                missing_reason: None,
-                bytes: None,
+                ..message_ir::testutil::sample_attachment()
             }
         })
         .collect();
@@ -162,13 +148,8 @@ fn staged_fixture_with_aliased_attachment(size: u64) -> tempfile::TempDir {
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(size),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     };
 
     let mut doc_a = message_ir::testutil::sample_document("conversation A, shared photo");
@@ -207,13 +188,8 @@ fn staged_fixture_with_many_attachments(count: usize) -> tempfile::TempDir {
                 path: Some(format!("attachments/{name}")),
                 original_name: Some(name),
                 mime_type: None,
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
                 size_bytes: Some(10),
-                missing_reason: None,
-                bytes: None,
+                ..message_ir::testutil::sample_attachment()
             }
         })
         .collect();
@@ -391,13 +367,8 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
         path: Some("attachments/shared.png".into()),
         original_name: Some("shared.png".into()),
         mime_type: None,
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
         size_bytes: Some(900 * 1024 * 1024),
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::sample_attachment()
     };
 
     let mut doc = message_ir::testutil::sample_document("one conversation, two references");

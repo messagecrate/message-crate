@@ -628,6 +628,53 @@ impl ApiError {
         Self::AuthenticationRequired("account no longer exists".into())
     }
 
+    /// The sentence of a variant that carries nothing else, or `None` for a
+    /// variant with fields of its own. The one list of those variants:
+    /// [`Self::to_problem`] takes the `detail` from it and `Display` writes
+    /// it, both through [`Self::sentence`]. A variant put in the `None` arm
+    /// needs an arm of its own in both.
+    fn message(&self) -> Option<&str> {
+        match self {
+            Self::MalformedBody(m)
+            | Self::UnsupportedMediaType(m)
+            | Self::PayloadTooLarge(m)
+            | Self::InvalidCredentials(m)
+            | Self::AuthenticationRequired(m)
+            | Self::UsernameTaken(m)
+            | Self::NameTaken(m)
+            | Self::DemoAccountProtected(m)
+            | Self::NotTheOwner(m)
+            | Self::RegistrationClosed(m)
+            | Self::InsufficientScope(m)
+            | Self::AccountDisabled(m)
+            | Self::StateConflict(m)
+            | Self::AssetUploadInvalid(m)
+            | Self::NotFound(m)
+            | Self::MethodNotAllowed(m)
+            | Self::NotAcceptable(m)
+            | Self::MediaLinkInvalid(m) => Some(m),
+            Self::ValidationFailed(_)
+            | Self::MalformedImportLine { .. }
+            | Self::InvalidImportLines { .. }
+            | Self::RateLimited { .. }
+            | Self::SearchQueryInvalid { .. }
+            | Self::IdentityExists { .. }
+            | Self::RangeNotSatisfiable { .. }
+            | Self::Internal(_) => None,
+        }
+    }
+
+    /// The sentence of a variant that the last arm of [`Self::to_problem`]
+    /// or `Display` reached. A variant with fields of its own that has no arm
+    /// above that one panics here, so the first test that answers or displays
+    /// it fails rather than giving an empty sentence.
+    fn sentence(&self) -> &str {
+        let Some(sentence) = self.message() else {
+            unreachable!("{self:?} has fields of its own and needs its own arm");
+        };
+        sentence
+    }
+
     /// The registered type, or `None` for an internal error.
     #[must_use]
     pub fn problem_type(&self) -> Option<ProblemType> {
@@ -735,25 +782,9 @@ impl ApiError {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
             }
-            Self::MalformedBody(m)
-            | Self::UnsupportedMediaType(m)
-            | Self::PayloadTooLarge(m)
-            | Self::InvalidCredentials(m)
-            | Self::AuthenticationRequired(m)
-            | Self::UsernameTaken(m)
-            | Self::NameTaken(m)
-            | Self::DemoAccountProtected(m)
-            | Self::NotTheOwner(m)
-            | Self::RegistrationClosed(m)
-            | Self::InsufficientScope(m)
-            | Self::AccountDisabled(m)
-            | Self::StateConflict(m)
-            | Self::AssetUploadInvalid(m)
-            | Self::NotFound(m)
-            | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m)
-            | Self::MediaLinkInvalid(m) => problem.detail = Some(m.clone()),
             Self::Internal(_) => unreachable!("handled above"),
+            // The variants that carry only a sentence, which `message` lists.
+            _ => problem.detail = Some(self.sentence().to_string()),
         }
         problem
     }
@@ -778,24 +809,8 @@ impl std::fmt::Display for ApiError {
             | Self::MalformedImportLine { detail, .. }
             | Self::IdentityExists { detail, .. }
             | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
-            Self::MalformedBody(m)
-            | Self::UnsupportedMediaType(m)
-            | Self::PayloadTooLarge(m)
-            | Self::InvalidCredentials(m)
-            | Self::AuthenticationRequired(m)
-            | Self::UsernameTaken(m)
-            | Self::NameTaken(m)
-            | Self::DemoAccountProtected(m)
-            | Self::NotTheOwner(m)
-            | Self::RegistrationClosed(m)
-            | Self::InsufficientScope(m)
-            | Self::AccountDisabled(m)
-            | Self::StateConflict(m)
-            | Self::AssetUploadInvalid(m)
-            | Self::NotFound(m)
-            | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m)
-            | Self::MediaLinkInvalid(m) => f.write_str(m),
+            // The variants that carry only a sentence, which `message` lists.
+            _ => f.write_str(self.sentence()),
         }
     }
 }
