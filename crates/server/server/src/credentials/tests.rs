@@ -358,17 +358,59 @@ async fn the_owner_needs_one_character_and_a_user_needs_none() {
     }
 }
 
-/// A login to an account with no password takes the empty password only,
-/// and Argon2 still runs against the dummy hash for it.
+/// A login to an account with no password takes the empty password only.
 #[tokio::test]
 async fn a_login_to_an_account_with_no_password_takes_only_the_empty_one() {
     for no_hash in [None, Some("")] {
         assert!(verify_login_password(no_hash, "").await.unwrap());
         assert!(!verify_login_password(no_hash, "anything").await.unwrap());
     }
-    spend_dummy_password_check("anything")
+}
+
+/// An Argon2 run holds its permit for as long as it runs, so no more runs
+/// go at once than there are permits, and gives it back when it ends.
+#[tokio::test]
+async fn an_argon2_run_holds_its_permit_while_it_runs() {
+    let permits = Arc::new(Semaphore::new(1));
+    let seen_by_the_run = Arc::clone(&permits);
+    let free_during_the_run = run_argon2_under(&permits, "test run", move || {
+        Ok(seen_by_the_run.available_permits())
+    })
+    .await
+    .unwrap();
+    assert_eq!(free_during_the_run, 0, "the run holds the only permit");
+    assert_eq!(permits.available_permits(), 1, "and gives it back");
+}
+
+/// A request dropped while its Argon2 run goes on keeps the permit taken
+/// until the run itself ends, so a client that disconnects cannot start more
+/// runs than there are permits.
+#[tokio::test]
+async fn a_dropped_request_keeps_its_permit_until_the_run_ends() {
+    let permits = Arc::new(Semaphore::new(1));
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let request_permits = Arc::clone(&permits);
+    let request = crate::request_id::spawn_in_current_span(async move {
+        run_argon2_under(&request_permits, "test run", move || {
+            let _ = started_tx.send(());
+            let _ = release_rx.recv();
+            Ok(())
+        })
         .await
-        .expect("the dummy check runs");
+    });
+    started_rx.await.expect("the run starts");
+    request.abort();
+    assert!(request.await.is_err(), "the request is dropped");
+    assert_eq!(
+        permits.available_permits(),
+        0,
+        "the run still holds its permit"
+    );
+
+    release_tx.send(()).expect("the run is still waiting");
+    // Taken only once the run gives it back.
+    let _permit = permits.acquire().await.expect("the permit comes back");
 }
 
 /// The username rule, at both its edges and over its character set.

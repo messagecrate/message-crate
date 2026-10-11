@@ -11,7 +11,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
     MAX_PASSWORD_BYTES, check_auth_rate_limit, normalize_username, password_bucket,
-    spend_dummy_password_check, unknown_username_bucket, verify_login_password,
+    unknown_username_bucket, verify_login_password,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -187,7 +187,7 @@ pub async fn create_session(
         // The connection goes back to the pool for the length of the Argon2
         // run, as it does before the real check below.
         drop(conn);
-        spend_dummy_password_check(&password).await?;
+        let _ = verify_login_password(None, &password).await?;
         let mut conn = state.db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,

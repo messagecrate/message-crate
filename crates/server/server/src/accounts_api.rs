@@ -1039,7 +1039,7 @@ pub async fn delete_account(
 /// session must not be a way to guess the password faster than the login
 /// allows.
 ///
-/// Argon2 runs on the blocking thread pool; the caller holds no database
+/// Argon2 runs on the blocking thread pool. The caller holds no database
 /// connection across this call.
 async fn require_current_password(
     state: &AppState,
