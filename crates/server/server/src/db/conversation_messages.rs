@@ -508,51 +508,51 @@ async fn fetch_message_page(
     sql: &str,
     params: &[SqlParam],
 ) -> Result<Vec<Message>, ApiError> {
-    let rows = (&mut *conn)
+    let page_rows: Vec<RawRow> = (&mut *conn)
         .fetch_all(bind_all(sql, params))
         .await
-        .context("read a page of messages")?;
-    let page_rows: Vec<RawRow> = rows
-        .iter()
-        .map(|row| {
-            Ok(RawRow {
-                id: row.try_get::<i64, _>(0)?,
-                conversation_id: row.try_get(1)?,
-                source: row.try_get(2)?,
-                service: row.try_get(3)?,
-                guid: row.try_get(4)?,
-                timestamp: row.try_get(5)?,
-                sort_order: row.try_get(6)?,
-                is_from_me: row.try_get::<i64, _>(7)? != 0,
-                sender: row.try_get(8)?,
-                subject: row.try_get(9)?,
-                body: row.try_get(10)?,
-                is_announcement: row.try_get::<i64, _>(11)? != 0,
-                reply_to: if row.try_get::<i64, _>(12)? != 0 {
-                    Some(ReplyTo {
-                        guid: row.try_get(13)?,
-                        part_index: row.try_get(14)?,
+        .and_then(|rows| {
+            rows.iter()
+                .map(|row| {
+                    Ok(RawRow {
+                        id: row.try_get::<i64, _>(0)?,
+                        conversation_id: row.try_get(1)?,
+                        source: row.try_get(2)?,
+                        service: row.try_get(3)?,
+                        guid: row.try_get(4)?,
+                        timestamp: row.try_get(5)?,
+                        sort_order: row.try_get(6)?,
+                        is_from_me: row.try_get::<i64, _>(7)? != 0,
+                        sender: row.try_get(8)?,
+                        subject: row.try_get(9)?,
+                        body: row.try_get(10)?,
+                        is_announcement: row.try_get::<i64, _>(11)? != 0,
+                        reply_to: if row.try_get::<i64, _>(12)? != 0 {
+                            Some(ReplyTo {
+                                guid: row.try_get(13)?,
+                                part_index: row.try_get(14)?,
+                            })
+                        } else {
+                            None
+                        },
+                        reply_count: row.try_get(15)?,
+                        chat_identifier: row.try_get(16)?,
+                        conversation_type: row.try_get(17)?,
+                        group_title: row.try_get(18)?,
+                        owner: row.try_get(19)?,
+                        shown_title: row.try_get(20)?,
+                        deletion: row.try_get(21)?,
+                        backup_taken_at: row.try_get(22)?,
+                        time_precision: {
+                            let stored: String = row.try_get(23)?;
+                            TimePrecision::parse(&stored).ok_or_else(|| {
+                                sqlx::Error::Decode(format!("time_precision {stored:?}").into())
+                            })?
+                        },
                     })
-                } else {
-                    None
-                },
-                reply_count: row.try_get(15)?,
-                chat_identifier: row.try_get(16)?,
-                conversation_type: row.try_get(17)?,
-                group_title: row.try_get(18)?,
-                owner: row.try_get(19)?,
-                shown_title: row.try_get(20)?,
-                deletion: row.try_get(21)?,
-                backup_taken_at: row.try_get(22)?,
-                time_precision: {
-                    let stored: String = row.try_get(23)?;
-                    TimePrecision::parse(&stored).ok_or_else(|| {
-                        sqlx::Error::Decode(format!("time_precision {stored:?}").into())
-                    })?
-                },
-            })
+                })
+                .collect()
         })
-        .collect::<Result<Vec<RawRow>, sqlx::Error>>()
         .context("read a page of messages")?;
 
     let conv_ids = unique_ids(page_rows.iter().map(|r| r.conversation_id));
@@ -560,9 +560,15 @@ async fn fetch_message_page(
         .await
         .context("read the participants of a page's conversations")?;
     let msg_ids: Vec<i64> = page_rows.iter().map(|r| r.id).collect();
-    let attachments = load_attachments(conn, &msg_ids).await?;
-    let tapbacks = load_tapbacks(conn, &msg_ids).await?;
-    let mut earlier_versions = load_earlier_versions(conn, &msg_ids).await?;
+    let attachments = load_attachments(conn, &msg_ids)
+        .await
+        .context("read the attachments of a page of messages")?;
+    let tapbacks = load_tapbacks(conn, &msg_ids)
+        .await
+        .context("read the tapbacks of a page of messages")?;
+    let mut earlier_versions = load_earlier_versions(conn, &msg_ids)
+        .await
+        .context("read the earlier versions of a page of messages")?;
 
     Ok(page_rows
         .into_iter()
@@ -612,8 +618,8 @@ async fn fetch_message_page(
 async fn load_attachments(
     conn: &mut SqliteConnection,
     message_ids: &[i64],
-) -> anyhow::Result<HashMap<i64, Vec<Attachment>>> {
-    group_rows_by_id::<_, sqlx::Error>(
+) -> Result<HashMap<i64, Vec<Attachment>>, sqlx::Error> {
+    group_rows_by_id(
         conn,
         message_ids,
         |placeholders| {
@@ -649,15 +655,14 @@ async fn load_attachments(
         },
     )
     .await
-    .context("read the attachments of a page of messages")
 }
 
 /// Tapback rows for these messages, grouped by message id.
 async fn load_tapbacks(
     conn: &mut SqliteConnection,
     message_ids: &[i64],
-) -> anyhow::Result<HashMap<i64, Vec<Tapback>>> {
-    group_rows_by_id::<_, sqlx::Error>(
+) -> Result<HashMap<i64, Vec<Tapback>>, sqlx::Error> {
+    group_rows_by_id(
         conn,
         message_ids,
         |placeholders| {
@@ -684,7 +689,6 @@ async fn load_tapbacks(
         },
     )
     .await
-    .context("read the tapbacks of a page of messages")
 }
 
 /// The id of the message whose earlier versions the message `alias` shows,
@@ -772,8 +776,8 @@ const EARLIER_VERSION_ORDER: &str = "s.id, v.id";
 async fn load_earlier_versions(
     conn: &mut SqliteConnection,
     message_ids: &[i64],
-) -> anyhow::Result<HashMap<i64, Vec<EarlierVersion>>> {
-    group_rows_by_id::<_, sqlx::Error>(
+) -> Result<HashMap<i64, Vec<EarlierVersion>>, sqlx::Error> {
+    group_rows_by_id(
         conn,
         message_ids,
         |placeholders| {
@@ -798,7 +802,6 @@ async fn load_earlier_versions(
         },
     )
     .await
-    .context("read the earlier versions of a page of messages")
 }
 
 /// `COUNT(*)` of the messages a compiled filter matches.
@@ -1102,13 +1105,25 @@ mod tests {
 
     /// A failed statement's error names the statement, so the one `ERROR`
     /// line of a `500` says which of a page's statements failed, not only
-    /// the sqlx message (#2172). Each table is read by its own statement,
-    /// and dropping it fails that statement alone.
+    /// the sqlx message (#2172). Each case breaks one statement alone: a
+    /// dropped table fails the one statement that reads it, and a temporary
+    /// `messages` without its columns, which hides the real table, fails the
+    /// count, the first statement that reads messages.
     #[tokio::test]
     async fn a_failed_statement_names_what_it_was_reading() {
-        for (table, statement) in [
-            ("attachments", "read the attachments of a page of messages"),
-            ("tapbacks", "read the tapbacks of a page of messages"),
+        for (breaks, statement) in [
+            (
+                "DROP TABLE attachments",
+                "read the attachments of a page of messages",
+            ),
+            (
+                "DROP TABLE tapbacks",
+                "read the tapbacks of a page of messages",
+            ),
+            (
+                "CREATE TEMP TABLE messages (id INTEGER)",
+                "count a conversation's messages",
+            ),
         ] {
             let (fixture, account) = fixture_with_account().await;
             let conversation_id = seed_conversation(
@@ -1129,10 +1144,7 @@ mod tests {
             )
             .await;
             let mut conn = fixture.conn().await;
-            sqlx::query(&format!("DROP TABLE {table}"))
-                .execute(&mut *conn)
-                .await
-                .unwrap();
+            sqlx::query(breaks).execute(&mut *conn).await.unwrap();
 
             let error = get_conversation_messages(
                 &mut conn,
@@ -1143,12 +1155,12 @@ mod tests {
                 MessageWindow::Offset(0),
             )
             .await
-            .expect_err("a statement over a dropped table fails");
+            .expect_err("the broken statement fails");
 
             let chain = error.to_string();
             assert!(
-                chain.starts_with(&format!("{statement}: ")) && chain.contains(table),
-                "{table}: {chain}"
+                chain.starts_with(&format!("{statement}: ")),
+                "{breaks}: {chain}"
             );
         }
     }
