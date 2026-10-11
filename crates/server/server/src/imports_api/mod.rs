@@ -261,7 +261,19 @@ pub(crate) async fn complete_run(
     import_id: i64,
     outcome: &CompleteImportArgs,
 ) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
-    let row = imports::complete_import(conn, account_id, import_id, outcome).await?;
+    complete_run_at(conn, account_id, import_id, outcome, chrono::Utc::now()).await
+}
+
+/// [`complete_run`] finishing at the instant `now`, so a test names the day
+/// the run's Saved Search and Contact Group are named after.
+async fn complete_run_at(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    import_id: i64,
+    outcome: &CompleteImportArgs,
+    now: chrono::DateTime<chrono::Utc>,
+) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
+    let row = imports::complete_import(conn, account_id, import_id, outcome, now).await?;
     create_import_saved_search(conn, account_id, &row).await;
     create_import_contact_group(conn, account_id, &row).await;
     Ok(row)

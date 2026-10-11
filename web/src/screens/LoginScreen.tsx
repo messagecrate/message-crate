@@ -6,7 +6,11 @@ import { errorText } from "../lib/apiErrorMessage";
 import { useAuth } from "../lib/authContext";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
 import { isOwnAddress } from "../lib/localServer";
-import { checkServerHealth, type ServerHealthStatus } from "../lib/serverHealth";
+import {
+  checkServerHealth,
+  checkServerHealthWithRetry,
+  type ServerHealthStatus,
+} from "../lib/serverHealth";
 import { invokeOpenDataDirectory, type LocalServerStatus } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
 import {
@@ -222,8 +226,10 @@ export default function LoginScreen() {
       // JSON). The body is discarded either way — only reachability matters.
       // The API client's base URL is left alone until the address answers,
       // so a request made meanwhile still goes to the Message Crate the card
-      // is on.
-      const reachable = await checkServerHealth(trimmed, controller.signal);
+      // is on. A failed probe is asked once more before the card says
+      // Disconnected: a server whose database an import keeps busy can miss
+      // one (#2718).
+      const reachable = await checkServerHealthWithRetry(trimmed, controller.signal);
       if (connectRun.current !== run) return;
       if (reachable) {
         setBaseUrl(trimmed);

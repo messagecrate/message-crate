@@ -248,7 +248,8 @@ fn a_fetched_file_whose_checksum_does_not_match_is_not_left_behind() {
 
 /// A gzipped asset that passes its checksum and does not unpack puts no
 /// program in place and leaves no temporary file, and the program already
-/// there stays.
+/// there stays. The reason says the file did not unpack, not that the Tools
+/// Directory could not be written.
 #[test]
 fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
     let tools = tempfile::tempdir().unwrap();
@@ -288,8 +289,32 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
     assert_eq!(
         downloads.get(Program::Wtsexporter),
         Some(DownloadState::Failed {
-            reason: DownloadError::CouldNotWrite(unpack_error.to_string()).to_string(),
+            reason: format!("The downloaded file could not be unpacked: {unpack_error}."),
         })
+    );
+}
+
+/// A gzipped file that ends partway through did not unpack, while a
+/// failure to read the file back, such as the disk under the Tools
+/// Directory, is the Tools Directory's fault, not the download's.
+#[test]
+fn only_bad_gzip_data_is_a_file_that_does_not_unpack() {
+    let whole = gzipped(b"ffmpeg");
+    let mut cut_short = &whole[..whole.len() / 2];
+    assert!(matches!(
+        super::fetch::unpack(&mut cut_short, &mut io::sink()),
+        Err(DownloadError::CouldNotUnpack(_))
+    ));
+
+    struct FailingDisk;
+    impl Read for FailingDisk {
+        fn read(&mut self, _buffer: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("the disk failed"))
+        }
+    }
+    assert_eq!(
+        super::fetch::unpack(&mut FailingDisk, &mut io::sink()),
+        Err(DownloadError::CouldNotWrite("the disk failed".to_string()))
     );
 }
 

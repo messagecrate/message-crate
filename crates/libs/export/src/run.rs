@@ -852,19 +852,12 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         with_retries(MAX_RETRIES, || {
             crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
         })
-        .map_err(|e| format!("{e:#}"))
     });
 
     for result in results {
-        match result {
-            Ok(bytes) => {
-                stats.bytes = stats.bytes.saturating_add(bytes);
-                stats.fetched += 1;
-            }
-            Err(error) => {
-                bail!("{error}");
-            }
-        }
+        let bytes = result?;
+        stats.bytes = stats.bytes.saturating_add(bytes);
+        stats.fetched += 1;
     }
     Ok(stats)
 }

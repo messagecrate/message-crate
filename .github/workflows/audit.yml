@@ -30,6 +30,8 @@ on:
       - "docs/package.json"
       - "scripts/openapi-typescript/package-lock.json"
       - "scripts/openapi-typescript/package.json"
+      - "scripts/website-check/package-lock.json"
+      - "scripts/website-check/package.json"
       - ".github/workflows/audit.yml"
       - "scripts/audit-docs.sh"
   schedule:
@@ -79,6 +81,7 @@ jobs:
             web/package-lock.json
             docs/package-lock.json
             scripts/openapi-typescript/package-lock.json
+            scripts/website-check/package-lock.json
 
       - name: Audit web frontend
         run: |
@@ -91,6 +94,14 @@ jobs:
       - name: Audit API type generator
         run: |
           cd scripts/openapi-typescript
+          npm ci
+          npm audit --audit-level=high
+
+      # The browser check of the served website, which nightly.yml runs
+      # from its own tree beside web/.
+      - name: Audit website check
+        run: |
+          cd scripts/website-check
           npm ci
           npm audit --audit-level=high
 

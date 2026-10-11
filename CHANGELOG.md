@@ -348,6 +348,21 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **The login screen no longer reads Disconnected for a moment
+  while an import runs.** An import can keep the server's database busy for
+  longer than its health check waits, so one check could fail though the
+  server was still answering, and the login screen read Disconnected until
+  its next check a second later. When the server answers a check with an
+  error, the login screen now checks once more three seconds later, and
+  reads Disconnected only when both fail (#2718).
+
+- 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
+  empty list.** An account with no attachments saw "Top 100 attachments by
+  file size" above "No attachments with sizes yet". Under **Largest
+  attachments** it now shows only "No attachments with sizes yet". When
+  there are attachments, the line above the list gives how many are listed,
+  such as "Top 3 attachments by file size" (#2633).
+
 - 2026-10-11: **The login screen reads Disconnected when the server cannot
   reach its database.** Before, it read Connected as long as the server was
   running, even when every page failed because the database could not be
@@ -483,6 +498,15 @@ released versions carry their date on the heading.
   come later (#1722).
 
 #### Desktop app
+
+- 2026-10-11: **A downloaded program that does not unpack says so.** When
+  ffmpeg or ffprobe arrived with the right checksum and then did not unpack,
+  Settings and a run waiting for it said the file could not be written to
+  the Tools Directory, which sent you looking at disk space and permissions.
+  The reason now reads "The downloaded file could not be unpacked", since the
+  file that arrived is at fault. A disk that fails while the app reads the
+  file back now reads "could not be written to or read back from the Tools
+  Directory" (#2716).
 
 - 2026-10-11: **The desktop app keeps trying to download ffmpeg and
   wtsexporter when the computer is not online yet.** At start the app
