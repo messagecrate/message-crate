@@ -381,6 +381,31 @@ async fn a_closed_server_and_an_ordinary_session_are_both_refused() {
     expect_problem(status, &text, ProblemType::NotTheOwner);
 }
 
+/// #2231: a closed server refuses a stranger before it hashes the password,
+/// so a refused registration costs no Argon2 work. The password here is too
+/// long to hash, and hashing refuses it as a validation problem: a server
+/// that hashed first would answer that, not that registration is closed.
+#[tokio::test]
+async fn a_closed_server_refuses_before_it_hashes_the_password() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    {
+        let mut conn = state.db.acquire().await.unwrap();
+        server_settings::set_public_registration(&mut conn, false)
+            .await
+            .unwrap();
+    }
+
+    let too_long = "x".repeat(crate::credentials::MAX_PASSWORD_BYTES + 1);
+    let (status, text) = post_logged_out(
+        &state,
+        "/v1/accounts",
+        serde_json::json!({ "username": "stranger", "password": too_long }),
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::RegistrationClosed);
+}
+
 /// The username is the collection's key, taken once.
 #[tokio::test]
 async fn a_taken_username_is_a_conflict() {

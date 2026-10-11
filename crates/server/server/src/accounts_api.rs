@@ -359,7 +359,6 @@ pub async fn create_account(
         }
     };
 
-    let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
     let preferred_name = req
         .preferred_name
         .as_deref()
@@ -374,18 +373,28 @@ pub async fn create_account(
         .and_then(message_ir::nonempty);
 
     let mut conn = state.db.acquire().await?;
-    if !by_owner && !server_settings::load(&mut conn).await?.public_registration {
-        return Err(ApiError::RegistrationClosed(
-            "this Message Crate does not accept new accounts; ask its owner for one".into(),
-        ));
+    // A stranger is refused on a closed server before the password is hashed,
+    // so a refusal costs no Argon2 work. This read takes no lock, so the
+    // owner may close registration before the write transaction below
+    // begins: the check inside that transaction is the one that decides.
+    if !by_owner {
+        require_registration_open(&mut conn).await?;
     }
+    // Hashed before the write transaction, so the write lock is not held for
+    // the length of an Argon2 hash.
+    let password_hash = hash_user_password(req.password.as_deref().unwrap_or(""))?;
 
     // The insert, the phone, and the profile-setup mark land together: a
     // failure between them would leave an account that owes profile setup
     // without being marked for it. The write transaction takes the write
-    // lock before the username check, so two registrations of one name
-    // cannot both pass the check and then race to the insert.
+    // lock before the registration and username checks, so the owner cannot
+    // close registration between the check and the insert, and two
+    // registrations of one name cannot both pass the check and then race to
+    // the insert.
     let mut tx = begin_write(&mut conn).await?;
+    if !by_owner {
+        require_registration_open(&mut tx).await?;
+    }
     require_username_free(&mut tx, &username).await?;
     let account_id = account_profile::insert_account(
         &mut tx,
@@ -437,6 +446,17 @@ pub async fn create_account(
         location: format!("/v1/accounts/{account_id}"),
         body: CreateAccountResponse { account, token },
     })
+}
+
+/// Refuse a stranger's registration while the owner has registration closed.
+async fn require_registration_open(conn: &mut SqliteConnection) -> Result<(), ApiError> {
+    if server_settings::load(conn).await?.public_registration {
+        Ok(())
+    } else {
+        Err(ApiError::RegistrationClosed(
+            "this Message Crate does not accept new accounts; ask its owner for one".into(),
+        ))
+    }
 }
 
 // ---------------------------------------------------------------------------
