@@ -1,3 +1,5 @@
+import { checkOptionalPath, type ImportPathStat, PATH_MISSING } from "./pathChecks";
+
 export const WHATSAPP_SOURCE_ID = "whatsapp";
 
 export const WHATSAPP_DEFAULT_METHOD = "whatsapp-android";
@@ -50,17 +52,11 @@ export function whatsappCryptRequired(hasMsgstoreDb: boolean, cryptName: string 
   return !hasMsgstoreDb && cryptName !== null;
 }
 
-export type PathStat = {
-  exists: boolean;
-  isFile: boolean;
-  isDirectory: boolean;
-};
-
 export type WhatsappPathStats = {
-  backup: PathStat | null;
-  contactsDb: PathStat | null;
-  media: PathStat | null;
-  db: PathStat | null;
+  backup: ImportPathStat | null;
+  contactsDb: ImportPathStat | null;
+  media: ImportPathStat | null;
+  db: ImportPathStat | null;
   hasMsgstoreDb: boolean;
   cryptName: string | null;
   /** Whether the iPhone backup directory is encrypted; null when unknown or not iPhone. */
@@ -79,7 +75,6 @@ export function emptyWhatsappPathStats(): WhatsappPathStats {
   };
 }
 
-export const WHATSAPP_ERR_PATH_MISSING = "This path does not exist.";
 export const WHATSAPP_ERR_DIRECTORY_IS_FILE = "Pick the backup directory.";
 export const WHATSAPP_ERR_CRYPT_KEY = "Decryption key is required for an encrypted backup.";
 export const WHATSAPP_ERR_ENCRYPTED_PASSWORD =
@@ -119,34 +114,6 @@ type WhatsappImportErrorKey =
   | "db"
   | "ownerPhone";
 
-function checkOptionalPath(
-  path: string,
-  stat: PathStat | null,
-  errors: Partial<Record<WhatsappImportErrorKey, string>>,
-  key: WhatsappImportErrorKey,
-  kindError: string,
-  expectDirectory: boolean,
-): void {
-  const trimmed = path.trim();
-  if (trimmed === "") {
-    return;
-  }
-  if (stat === null) {
-    return;
-  }
-  if (!stat.exists) {
-    errors[key] = WHATSAPP_ERR_PATH_MISSING;
-    return;
-  }
-  if (expectDirectory) {
-    if (stat.isFile) {
-      errors[key] = kindError;
-    }
-  } else if (stat.isDirectory) {
-    errors[key] = kindError;
-  }
-}
-
 export function whatsappCanImport(args: WhatsappCanImportArgs): {
   enabled: boolean;
   errors: Partial<Record<WhatsappImportErrorKey, string>>;
@@ -164,7 +131,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
 
   const backupStat = args.stats.backup;
   if (!backupStat.exists) {
-    errors.backupPath = WHATSAPP_ERR_PATH_MISSING;
+    errors.backupPath = PATH_MISSING;
   } else if (backupStat.isFile) {
     errors.backupPath = WHATSAPP_ERR_DIRECTORY_IS_FILE;
   }
@@ -196,7 +163,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
       errors,
       "contactsDb",
       WHATSAPP_ERR_MUST_BE_FILE,
-      false,
+      "file",
     );
   }
 
@@ -207,12 +174,12 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
       errors,
       "media",
       WHATSAPP_ERR_MUST_BE_DIRECTORY,
-      true,
+      "directory",
     );
   }
 
   if (whatsappShowsDb(args.method)) {
-    checkOptionalPath(args.db, args.stats.db, errors, "db", WHATSAPP_ERR_MUST_BE_FILE, false);
+    checkOptionalPath(args.db, args.stats.db, errors, "db", WHATSAPP_ERR_MUST_BE_FILE, "file");
   }
 
   const contactsCheckPending =

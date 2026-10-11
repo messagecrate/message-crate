@@ -13,6 +13,11 @@ assets_converted_dir = "assets_converted"
 # machines on the network can reach it. Restrict that with the host firewall
 # to a trusted subnet, and do not port-forward it on the router: the server
 # speaks plain HTTP.
+#
+# Port 8080 is also written into docker/Dockerfile (EXPOSE and the
+# HEALTHCHECK probe) and into the port mappings of docker/compose.yml and
+# docker/compose.release.yml. A change to the port here must be made there
+# too, or the container reads unhealthy while the server answers.
 [server]
 bind = "0.0.0.0:8080"
 

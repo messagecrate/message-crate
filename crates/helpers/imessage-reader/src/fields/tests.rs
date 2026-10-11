@@ -49,6 +49,8 @@ fn message() -> Message {
         num_replies: 0,
         components: Vec::new(),
         edited_parts: None,
+        filter_action: None,
+        filter_sub_action: None,
     }
 }
 
@@ -383,11 +385,13 @@ fn an_app_bubble_names_the_app_and_carries_its_data() {
 #[test]
 fn balloon_values_over_a_database_with_no_payloads() {
     let db = Connection::open_in_memory().unwrap();
+    let capabilities = Capabilities::determine(&db).unwrap();
 
-    assert_eq!(build_balloon_value(&db, &message()), None);
+    assert_eq!(build_balloon_value(&db, &capabilities, &message()), None);
 
     let value = build_balloon_value(
         &db,
+        &capabilities,
         &balloon_message("com.apple.Handwriting.HandwritingProvider"),
     )
     .unwrap();
@@ -395,15 +399,25 @@ fn balloon_values_over_a_database_with_no_payloads() {
 
     let value = build_balloon_value(
         &db,
+        &capabilities,
         &balloon_message("com.apple.DigitalTouchBalloonProvider"),
     )
     .unwrap();
     assert_eq!(value["kind"], "digital_touch");
 
-    let value = build_balloon_value(&db, &balloon_message("com.apple.messages.Polls")).unwrap();
+    let value = build_balloon_value(
+        &db,
+        &capabilities,
+        &balloon_message("com.apple.messages.Polls"),
+    )
+    .unwrap();
     assert_eq!(value, json!({ "kind": "poll", "error": "unparseable" }));
     assert_eq!(
-        poll_value(&db, &balloon_message("com.apple.messages.Polls")),
+        poll_value(
+            &db,
+            &capabilities,
+            &balloon_message("com.apple.messages.Polls")
+        ),
         json!({ "kind": "poll", "error": "unparseable" })
     );
 
@@ -411,7 +425,7 @@ fn balloon_values_over_a_database_with_no_payloads() {
         text: Some("Your move".to_string()),
         ..balloon_message("com.example.game")
     };
-    let value = build_balloon_value(&db, &msg).unwrap();
+    let value = build_balloon_value(&db, &capabilities, &msg).unwrap();
     assert_eq!(value["kind"], "application");
     assert_eq!(value["bundle_id"], "com.example.game");
     assert_eq!(value["text"], "Your move");
