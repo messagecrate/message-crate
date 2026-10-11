@@ -1,7 +1,7 @@
 import { useThumbnail } from "../hooks/useThumbnail";
 import { attachmentName } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import PlainButton from "./PlainButton";
 import { ThumbnailPicture, ThumbnailTile } from "./ThumbnailTile";
@@ -26,7 +26,7 @@ export default function AttachmentThumbnail({
       <PlainButton
         onPress={onClick}
         aria-label={`Open ${name}`}
-        className={`block h-full cursor-pointer overflow-hidden rounded-md border border-border bg-transparent p-0 ${focusRing}`}
+        className={`block h-full cursor-pointer overflow-hidden rounded-md border border-border bg-transparent p-0 ${focusRingClass}`}
       >
         <ThumbnailPicture name={name} url={thumbnail.url} />
       </PlainButton>

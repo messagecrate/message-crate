@@ -3,7 +3,7 @@ import { deletedInSourceText, UNSENT_TEXT } from "../../lib/deletionMarkText";
 import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
-import { focusRing } from "../../lib/uiStyles";
+import { focusRingClass } from "../../lib/uiStyles";
 import PlainButton from "../PlainButton";
 
 /** A message's mark: Deleted in the source app, or Unsent. */
@@ -246,7 +246,7 @@ function EditedControl({ state }: { state: EarlierVersionsState }) {
         aria-expanded={state.open}
         aria-controls={state.open ? state.panelId : undefined}
         onPress={state.toggle}
-        className={`cursor-pointer rounded-sm border-none bg-transparent p-0 text-[length:inherit] text-muted underline decoration-dotted underline-offset-2 hover:text-text ${focusRing}`}
+        className={`cursor-pointer rounded-sm border-none bg-transparent p-0 text-[length:inherit] text-muted underline decoration-dotted underline-offset-2 hover:text-text ${focusRingClass}`}
       >
         Edited
       </PlainButton>

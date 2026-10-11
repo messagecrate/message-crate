@@ -1,6 +1,6 @@
 import { type ReactNode, useId, useState } from "react";
 import PlainButton from "../../components/PlainButton";
-import { focusRing } from "../../lib/uiStyles";
+import { focusRingClass } from "../../lib/uiStyles";
 
 /**
  * The rows a stage of an Import Run shows under its label: named groups of
@@ -93,7 +93,7 @@ export function ExpandableFactRow({
         aria-expanded={open}
         aria-controls={panelId}
         onPress={() => setOpen((was) => !was)}
-        className={`flex w-full items-baseline justify-between gap-4 rounded border-0 bg-transparent py-0.5 pl-4 pr-0 text-left text-[0.813rem] ${focusRing}`}
+        className={`flex w-full items-baseline justify-between gap-4 rounded border-0 bg-transparent py-0.5 pl-4 pr-0 text-left text-[0.813rem] ${focusRingClass}`}
       >
         <span className="min-w-0 text-accent [overflow-wrap:anywhere]">
           <span

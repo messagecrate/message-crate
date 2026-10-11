@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RANGE_PILL_SCROLL_PAD_CLASS, RangePillSpacer } from "./components/ListRangePill";
 import { AVATAR_COLOR_CLASSES } from "./lib/contactInitials";
-import { focusOutline, focusRing } from "./lib/uiStyles";
+import { focusOutlineClass, focusRingClass } from "./lib/uiStyles";
 import { Z_CONTACT_DRAWER, Z_DRAWER_SCRIM, Z_MODAL, Z_RESIZE_HANDLE } from "./lib/zLayers";
 
 // The style guide's rules (STYLE_GUIDE.md, "Rules" 1 and "Overlay Z-Index
@@ -137,7 +137,7 @@ describe("focus rings", () => {
 
   // A ring offset is a box-shadow in a colour of its own, white unless a class
   // sets it, so it drew a white line round every focused button in the dark
-  // theme (#1703). `focusRing` leaves the gap as an outline offset, which shows
+  // theme (#1703). `focusRingClass` leaves the gap as an outline offset, which shows
   // whatever surface the element sits on.
   it("no source puts an offset on a ring", () => {
     const found = sources().flatMap(([path, text]) => hits(path, text, /\bring-offset-/));
@@ -145,7 +145,7 @@ describe("focus rings", () => {
   });
 
   // Every focused outline is the same because every one comes from
-  // lib/uiStyles.ts (#1711): `focusRing`, or `focusOutline` behind React Aria's
+  // lib/uiStyles.ts (#1711): `focusRingClass`, or `focusOutlineClass` behind React Aria's
   // `isFocusVisible` render prop where focus sits on a hidden input. In the .ts
   // and .tsx sources, outside comments, these count: an outline class other
   // than `outline-none` and `outline-hidden`, which take an outline away; the
@@ -168,7 +168,7 @@ describe("focus rings", () => {
   });
 
   // A ring drawn flush against the element on focus was a third focus style
-  // beside `focusRing` and the inset ring (#1717). Outside lib/uiStyles.ts a
+  // beside `focusRingClass` and the inset ring (#1717). Outside lib/uiStyles.ts a
   // ring is the style guide's inset ring, `ring-2 ring-inset ring-accent`, for
   // an element that draws its ring inside itself (a table row, a resize grip).
   // The check reads one line at a time, so a ring's classes go on one line.
@@ -226,12 +226,12 @@ describe("focus rings", () => {
     expect(found).toEqual([]);
   });
 
-  it("focusRing is focusOutline on focus-visible", () => {
-    const onFocusVisible = focusOutline
+  it("focusRingClass is focusOutlineClass on focus-visible", () => {
+    const onFocusVisible = focusOutlineClass
       .split(" ")
       .map((cls) => `focus-visible:${cls}`)
       .join(" ");
-    expect(focusRing).toBe(`outline-none ${onFocusVisible}`);
+    expect(focusRingClass).toBe(`outline-none ${onFocusVisible}`);
   });
 });
 

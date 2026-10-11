@@ -1,3 +1,4 @@
+import { textInputClass } from "../../components/TextField";
 import { fixedSettings } from "../../lib/account";
 import { useSettingsAccount } from "../../lib/useSettingsAccount";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
@@ -5,7 +6,7 @@ import { ApiTokensSection } from "./ApiTokensSection";
 import { ChangePasswordSection } from "./ChangePasswordSection";
 import { ManagedApiTokensSection } from "./ManagedApiTokensSection";
 import { ProfileDangerZone } from "./ProfileDangerZone";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * Account settings: username, password, status, permissions, API tokens,
@@ -40,7 +41,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
           type="text"
           value={profile.username}
           readOnly
-          className={`${inputClassName} !text-muted`}
+          className={`${textInputClass} !text-muted`}
         />
       </div>
       {/* The owner cannot be disabled and holds no messages to import, export or delete. */}
