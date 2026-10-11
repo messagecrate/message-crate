@@ -3,9 +3,9 @@
 use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    CancelFlag, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig, ProgressSink,
-    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
-    check_cancel, document_messages, import_error_lines, is_cancelled, item_line,
+    CancelFlag, Cancelled, Counter, DUPLICATES_DROPPED, ItemKind, LogSink, MediaConfig,
+    ProgressSink, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
+    SKIPPED_UNREADABLE_PART, check_cancel, document_messages, import_error_lines, item_line,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -772,7 +772,7 @@ pub fn read_backup(
         return Err(error);
     }
     if let Err(error) = parse_result {
-        if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
+        if error.is::<Cancelled>() {
             return Err(error);
         }
         report.errors.push(ReadError::new(input, &error));

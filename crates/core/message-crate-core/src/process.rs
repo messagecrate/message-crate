@@ -114,17 +114,19 @@ pub fn check_cancel(cancel: &CancelFlag) -> Result<(), Cancelled> {
 ///
 /// Workers pull the next job index from a shared counter (work stealing).
 /// Cancel is checked before each job; once cancel is requested, every job not
-/// yet started records `Err("cancelled")` instead of running `f`.
-pub fn parallel_for_each<J, T, F>(
+/// yet started records [`Cancelled`] (converted into `E`) instead of running
+/// `f`.
+pub fn parallel_for_each<J, T, E, F>(
     jobs: &[J],
     workers: usize,
     cancel: &CancelFlag,
     f: F,
-) -> Vec<Result<T, String>>
+) -> Vec<Result<T, E>>
 where
     J: Sync,
     T: Send,
-    F: Fn(&J) -> Result<T, String> + Sync,
+    E: From<Cancelled> + Send,
+    F: Fn(&J) -> Result<T, E> + Sync,
 {
     if jobs.is_empty() {
         return Vec::new();
@@ -134,7 +136,7 @@ where
     let results = Mutex::new(
         std::iter::repeat_with(|| None)
             .take(jobs.len())
-            .collect::<Vec<Option<Result<T, String>>>>(),
+            .collect::<Vec<Option<Result<T, E>>>>(),
     );
     std::thread::scope(|scope| {
         for _ in 0..worker_count {
@@ -146,7 +148,7 @@ where
                     }
                     let result = match check_cancel(cancel) {
                         Ok(()) => f(&jobs[index]),
-                        Err(cancelled) => Err(cancelled.to_string()),
+                        Err(cancelled) => Err(cancelled.into()),
                     };
                     results.lock().expect("parallel job mutex poisoned")[index] = Some(result);
                 }
@@ -176,7 +178,7 @@ mod tests {
         let jobs: Vec<usize> = (0..20).collect();
         let results = parallel_for_each(&jobs, 4, &CancelFlag::default(), |job| {
             if job % 7 == 3 {
-                Err(format!("bad {job}"))
+                Err(anyhow::anyhow!("bad {job}"))
             } else {
                 Ok(job * 2)
             }
@@ -185,7 +187,7 @@ mod tests {
         for (job, result) in jobs.iter().zip(&results) {
             match result {
                 Ok(doubled) => assert_eq!(*doubled, job * 2),
-                Err(message) => assert_eq!(message, &format!("bad {job}")),
+                Err(error) => assert_eq!(error.to_string(), format!("bad {job}")),
             }
         }
     }
@@ -194,12 +196,11 @@ mod tests {
     fn parallel_for_each_reports_cancel_without_running_jobs() {
         let flag: CancelFlag = Arc::new(AtomicBool::new(true));
         let jobs = [1u8, 2, 3];
-        let results = parallel_for_each(&jobs, 2, &flag, |_| Ok::<_, String>(()));
-        assert!(
-            results
-                .iter()
-                .all(|r| r.as_ref().err().map(String::as_str) == Some("cancelled"))
-        );
+        let results = parallel_for_each(&jobs, 2, &flag, |_| Ok::<_, anyhow::Error>(()));
+        assert!(results.iter().all(|r| {
+            r.as_ref()
+                .is_err_and(|error| error.downcast_ref::<Cancelled>().is_some())
+        }));
     }
 
     #[test]

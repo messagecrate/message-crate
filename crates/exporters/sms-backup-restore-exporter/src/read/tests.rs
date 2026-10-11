@@ -605,3 +605,29 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
         [("+15555550101".to_string(), Some(1_500_000_000_000))]
     );
 }
+
+/// A read whose cancel flag is set stops with the typed `Cancelled`, so a
+/// caller tells a cancel from a failure by its type rather than its text.
+#[test]
+fn a_cancelled_read_returns_cancelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    fs::write(
+        &input,
+        r#"<smses><sms address="+15555550101" date="1400773400000" type="1" body="hi"/></smses>"#,
+    )
+    .unwrap();
+    let cancel: CancelFlag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let owner_phones = ["+15555550100".to_string()];
+    let options = ReadOptions {
+        cancel: &cancel,
+        ..opts(&owner_phones, None, None)
+    };
+    let error = read_backup(&input, options).unwrap_err();
+    assert!(
+        error
+            .downcast_ref::<message_crate_core::Cancelled>()
+            .is_some(),
+        "{error:#}"
+    );
+}

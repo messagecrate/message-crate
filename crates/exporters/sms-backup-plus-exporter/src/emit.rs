@@ -12,8 +12,8 @@ use crate::types::ParsedMessage;
 use android_fields::android_source;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink, RunIssue,
-    RunIssueKind, count_of, prepare_outputs, project_conversation,
+    CancelFlag, Cancelled, ConvertRun, Counter, ExportReport, IssueSink, ItemKind, LogSink,
+    RunIssue, RunIssueKind, count_of, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrService, IrSource,
@@ -642,7 +642,7 @@ impl<'a> EmlIngest<'a> {
     /// cannot be written to the spool.
     fn absorb(&mut self, outcome: ParsedEmlKind) -> Result<()> {
         match outcome {
-            ParsedEmlKind::Cancelled => bail!("cancelled"),
+            ParsedEmlKind::Cancelled => return Err(Cancelled.into()),
             ParsedEmlKind::Flat { msg } => {
                 self.report.bump(FLAT_EML, 1);
                 if msg.unreadable_parts > 0 {
@@ -928,6 +928,20 @@ mod tests {
             owner_not_named: false,
             email_number: None,
         }
+    }
+
+    /// A worker that saw the cancel flag stops the scan with the typed
+    /// `Cancelled`, so a caller tells a cancel from a failure by its type.
+    #[test]
+    fn a_cancelled_parse_stops_the_scan_with_cancelled() {
+        let mut ingest = EmlIngest::new(None, 1, &IssueSink::none());
+        let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<message_crate_core::Cancelled>()
+                .is_some(),
+            "{error:#}"
+        );
     }
 
     /// A MIME part that could not be decoded reaches the run's report by name.
