@@ -432,15 +432,7 @@ mod tests {
             let mut doc = message_ir::testutil::sample_document("with media");
             doc.messages[0].attachments = vec![IrAttachment {
                 path: Some(rel.into()),
-                original_name: Some("photo.jpg".into()),
-                mime_type: Some("image/jpeg".into()),
-                digest_sha256: None,
-                is_sticker: false,
-                transcription: None,
-                sticker_effect: None,
-                size_bytes: None,
-                missing_reason: None,
-                bytes: None,
+                ..message_ir::testutil::attachment()
             }];
 
             let transforms = ExportTransforms {

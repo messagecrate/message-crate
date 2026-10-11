@@ -73,13 +73,7 @@ fn attachment(name: &str, path: Option<&str>) -> IrAttachment {
         path: path.map(str::to_string),
         original_name: Some(name.to_string()),
         mime_type: Some("text/plain".to_string()),
-        digest_sha256: None,
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        size_bytes: None,
-        missing_reason: None,
-        bytes: None,
+        ..message_ir::testutil::attachment()
     }
 }
 

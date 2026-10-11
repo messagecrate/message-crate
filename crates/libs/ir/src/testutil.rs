@@ -2,10 +2,28 @@
 
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
-    ExportMeta, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
+    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
+    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::json;
+
+/// Attachment fixture: a JPEG named `photo.jpg` with no staged file, no
+/// bytes, no size, and no digest. A test sets the fields it cares about on
+/// the result, with struct update syntax or by assignment.
+pub fn attachment() -> IrAttachment {
+    IrAttachment {
+        path: None,
+        original_name: Some("photo.jpg".into()),
+        mime_type: Some("image/jpeg".into()),
+        digest_sha256: None,
+        is_sticker: false,
+        transcription: None,
+        sticker_effect: None,
+        size_bytes: None,
+        missing_reason: None,
+        bytes: None,
+    }
+}
 
 /// One-message conversation fixture: an incoming SMS from `+15555550101`.
 ///
