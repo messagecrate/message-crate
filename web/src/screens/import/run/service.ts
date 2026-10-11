@@ -370,7 +370,7 @@ export function createImportRunService(deps: ImportRunDeps) {
     try {
       const { importRunId: runId, runDir: outputDir } = store.get();
       const outcome = await discardRun(ctx, runId, outputDir);
-      if (outcome.kind === "refused") store.set({ resumeError: outcome.message });
+      if (outcome.kind === "not_closed") store.set({ resumeError: outcome.message });
     } finally {
       ctx.scratch.reviewAction = false;
     }

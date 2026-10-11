@@ -1195,9 +1195,38 @@ describe("useImportJob wiring", () => {
     const { result } = renderJob();
     const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(outcome).toEqual({ kind: "refused", message: "The import can't be discarded." });
+    expect(outcome).toEqual({ kind: "not_closed", message: "The import can't be discarded." });
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
+
+  it.each([
+    [
+      "409 Conflict",
+      new ApiError(409, "import 7 is not running", {
+        type: "https://messagecrate.app/problems/state-conflict",
+        title: "State conflict",
+        status: 409,
+      }),
+    ],
+    [
+      "404 Not Found",
+      new ApiError(404, "import 7 not found for this account", {
+        type: "https://messagecrate.app/problems/not-found",
+        title: "Not found",
+        status: 404,
+      }),
+    ],
+  ])(
+    "deletes the directory when the server answers a discard with %s: the run is already closed",
+    async (_name, answer) => {
+      discardImportRunMock.mockRejectedValueOnce(answer);
+      const { result } = renderJob();
+      const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+      expect(outcome).toEqual({ kind: "discarded" });
+      expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+    },
+  );
 
   it("keeps the directory when a Cancel at a Review never reaches the server (#2669)", async () => {
     discardImportRunMock.mockRejectedValueOnce(new Error("offline"));

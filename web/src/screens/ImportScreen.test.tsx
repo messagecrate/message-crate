@@ -7,6 +7,7 @@
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { errorText } from "../lib/apiErrorMessage";
 import type { ActiveImportRun } from "../lib/importRun";
 import type { MediaToolName, StagingSummary } from "../lib/tauri";
 import { activeImportRun } from "../test/apiShapes";
@@ -92,9 +93,9 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
         try {
           await discardImportRunMock(runId);
         } catch (e: unknown) {
-          return { kind: "refused", message: (e as Error).message };
+          return { kind: "not_closed", message: errorText(e) };
         }
-        if (runDir != null) await Promise.allSettled([invokeDeleteRunDirMock({ run_dir: runDir })]);
+        if (runDir != null) await invokeDeleteRunDirMock({ run_dir: runDir })?.catch(() => {});
         return { kind: "discarded" };
       },
       dismissRunDirDeleteFailure: dismissRunDirDeleteFailureMock,
@@ -777,7 +778,7 @@ describe("ImportScreen entering Import", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("still restarts when discarding the old run before a restart fails server-side", async () => {
+  it("keeps the panel, with the message, and starts nothing when the old run's discard before a restart is not taken (#2669)", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
@@ -792,10 +793,9 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(startImportMock).toHaveBeenCalledTimes(1);
-    const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
-    expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
-    expect(resume).toBeUndefined();
+    expect(await screen.findByTestId("resume-error")).toHaveTextContent("network down");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
+    expect(startImportMock).not.toHaveBeenCalled();
   });
 
   it("asks for the backup password again when a resumed Staging will read an encrypted backup", async () => {
