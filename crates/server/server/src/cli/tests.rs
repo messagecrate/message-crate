@@ -197,12 +197,20 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "imessage").await;
         let sha = "c".repeat(64);
-        attach_stored_original(&opened, &mut conn, message_id, &sha, ".png", PNG_1X1_RGB).await;
+        attach_stored_original(
+            &opened,
+            &mut conn,
+            message_id,
+            &sha,
+            "image/png",
+            PNG_1X1_RGB,
+        )
+        .await;
         let original = opened
             .cfg
             .paths
             .assets_dir_for_account(ALICE)
-            .join(format!("cc/{sha}.png"));
+            .join(format!("cc/{sha}"));
         fs::remove_file(original).unwrap();
     }
 
@@ -233,7 +241,7 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
 #[tokio::test]
 async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_names_it() {
     use crate::process_assets::tests::{
-        ACCOUNT, attach_stored_original, seed_message, with_read_only,
+        ACCOUNT, attach_incomplete_original, seed_message, with_read_only,
     };
 
     let dir = tempfile::tempdir().unwrap();
@@ -246,7 +254,7 @@ async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_na
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "imessage").await;
         let sha = "c".repeat(64);
-        attach_stored_original(&opened, &mut conn, message_id, &sha, ".part", b"half").await;
+        attach_incomplete_original(&opened, &mut conn, message_id, &sha, b"half").await;
         opened.cfg.paths.assets_dir_for_account(ALICE).join("cc")
     };
 
