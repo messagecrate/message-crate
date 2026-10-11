@@ -361,6 +361,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-10: **The Import form refuses a path that is neither a file nor a
+  directory.** An Apple Messages attachments directory, an Apple Contacts
+  database, or a WhatsApp database, contacts database or media directory
+  that named a socket, a device file or a pipe passed the form's check, and
+  the import failed only after it had started. The form now gives the
+  field's own message for such a path, the same one it gives for a file
+  where a directory is needed or the reverse (#2539).
 - 2026-10-10: **A large attachment no longer fails to import because the
   server said another request held its upload.** The desktop app sends a
   large attachment to the server in parts, and the server could refuse a
