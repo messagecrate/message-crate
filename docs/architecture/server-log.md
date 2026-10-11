@@ -65,7 +65,8 @@ sequence as ESC `[` does.
 ## A refused request names its problem type
 
 Every request leaves an `INFO` line with its method, path, status and
-latency. A request the server refuses with a `4xx` leaves one more line,
+latency. A request the server refuses with a registered problem type (a
+`4xx`, or `server-stopping`, the one `503`) leaves one more line,
 written where its problem document is built, with the problem type's slug
 and the status (`problem=invalid-credentials status=401`). It is at `WARN`
 for `401 Unauthorized`, `403 Forbidden` and `429 Too Many Requests`, and at

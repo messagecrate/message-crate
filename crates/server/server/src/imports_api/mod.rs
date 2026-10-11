@@ -1726,6 +1726,7 @@ pub(crate) async fn discard_import(
     responses(
         (status = 200, body = CreateImportBatchResponse),
         crate::problem::openapi::StateConflict,
+        crate::problem::openapi::ServerStopping,
     )
 )]
 pub(crate) async fn create_import_batch(
@@ -1805,12 +1806,15 @@ async fn run_import_path(
     // An import holds one pooled connection for its whole run (JSONL parse,
     // asset IO, promote). Bound concurrent imports here so they can never
     // drain the pool; the slot is taken before the per-account lock so
-    // lock order (slot → account → pool) is consistent everywhere.
-    let _import_permit = state
-        .import_slots
-        .acquire()
-        .await
-        .map_err(|_| ApiError::Internal(anyhow::anyhow!("server is shutting down")))?;
+    // lock order (slot → account → pool) is consistent everywhere. The
+    // slots close when the server is told to stop
+    // (`AppState::on_stop_signal`), so a batch still waiting here is refused
+    // and the Upload retries it, rather than making the stop wait for it.
+    let _import_permit = state.import_slots.acquire().await.map_err(|_| {
+        ApiError::ServerStopping(
+            "the server is stopping, so it did not start this batch; send it again once the server is running".into(),
+        )
+    })?;
     let cfg = Arc::clone(&state.cfg);
     let BatchContext {
         account,

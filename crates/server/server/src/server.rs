@@ -458,6 +458,29 @@ impl AppState {
         ))
     }
 
+    /// What the server does the moment it is told to stop, before it drains
+    /// the requests in flight ([`serve_until_shutdown`]'s `on_signal`).
+    ///
+    /// It stops the conversions: Ctrl-C in a terminal reaches the ffmpeg
+    /// they run as well, and a conversion not yet told to stop would read
+    /// that ffmpeg's exit as a failure, take the Asset off the queue, and
+    /// start the next one (#1729). It closes the import slots, so an import
+    /// batch still waiting for one is refused with `server-stopping`, which
+    /// the Upload retries, rather than taking a slot when an earlier batch
+    /// ends and making the stop wait for a whole batch more (#2203). A batch
+    /// that already holds a slot is not refused, and the stop waits for it
+    /// to finish (#2122 is about bounding that wait).
+    pub(crate) fn on_stop_signal(&self) -> impl FnOnce() + Send + 'static {
+        let media_queue = self.media_queue.clone();
+        let demo_build = self.demo_build.clone();
+        let import_slots = Arc::clone(&self.import_slots);
+        move || {
+            media_queue.ask_to_stop();
+            demo_build.stop_conversions();
+            import_slots.close();
+        }
+    }
+
     /// The attachment size limit as the Server Settings hold it at this
     /// moment, in bytes. Read on every request that needs it, so a change the
     /// owner makes holds for the next upload with no restart.
@@ -608,6 +631,8 @@ pub enum ApiError {
         /// The file's length in bytes.
         length: u64,
     },
+    /// `503` — the server is stopping and refused work it had not started.
+    ServerStopping(String),
     /// `500` — unexpected failure. The whole context chain goes to the log;
     /// the client sees a fixed sentence and `about:blank`.
     Internal(anyhow::Error),
@@ -670,7 +695,8 @@ impl ApiError {
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
             | Self::NotAcceptable(m)
-            | Self::MediaLinkInvalid(m) => Some(m),
+            | Self::MediaLinkInvalid(m)
+            | Self::ServerStopping(m) => Some(m),
             Self::PayloadTooLarge => Some("the request body is too large"),
             Self::ValidationFailed(_)
             | Self::MalformedImportLine { .. }
@@ -723,6 +749,7 @@ impl ApiError {
             Self::NotAcceptable(_) => ProblemType::NotAcceptable,
             Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
             Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
+            Self::ServerStopping(_) => ProblemType::ServerStopping,
             Self::Internal(_) => return None,
         })
     }
@@ -1534,6 +1561,7 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
 
     let demo_build = state.demo_build.clone();
     let media_queue = state.media_queue.clone();
+    let on_signal = state.on_stop_signal();
     let app = http_app(state);
     let listener = tokio::net::TcpListener::bind(&bind)
         .await
@@ -1550,14 +1578,6 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     say!(
         "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
-    let on_signal = {
-        let demo_build = demo_build.clone();
-        let media_queue = media_queue.clone();
-        move || {
-            media_queue.ask_to_stop();
-            demo_build.stop_conversions();
-        }
-    };
     let served = serve_until_shutdown(listener, app, exit_with_parent, on_signal).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
@@ -1575,11 +1595,8 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
 /// process `exit_with_parent` names is gone, then stop accepting connections
 /// and return once the requests in flight have finished.
 ///
-/// `on_signal` runs as the signal arrives, before the requests drain. The
-/// server stops its conversions there: Ctrl-C in a terminal reaches the
-/// ffmpeg they run as well, and a conversion not yet told to stop would read
-/// that ffmpeg's exit as a failure, take the Asset off the queue, and start
-/// the next one (#1729).
+/// `on_signal` runs as the signal arrives, before the requests drain;
+/// `serve` passes [`AppState::on_stop_signal`].
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
