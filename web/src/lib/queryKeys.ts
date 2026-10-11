@@ -200,6 +200,8 @@ export const keys = {
   desktopToolsStatus: { all: ["desktop", "tools-status"] as const },
   /** The Export Directory, from the desktop process; used as it is, like `desktopToolsStatus`. */
   desktopExportDirectory: { all: ["desktop", "export-directory"] as const },
+  /** The Staging Directory and its default, from the desktop process; used as it is, like `desktopToolsStatus`. */
+  desktopStagingRoot: { all: ["desktop", "staging-root"] as const },
   /** The log of the Import Run whose directory is `runDir`, as the desktop process names it. */
   desktopImportRunLog: {
     all: ["desktop", "import-run-log"] as const,
