@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
@@ -8,6 +9,7 @@ import { getBaseUrl } from "../../lib/api";
 import { errorText } from "../../lib/apiErrorMessage";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork, isOwnAddress, setOpenToNetwork } from "../../lib/localServer";
+import { keys } from "../../lib/queryKeys";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   invokeExportDirectory,
@@ -372,22 +374,14 @@ function DataDirectory() {
  * the app-data directory; the button opens it.
  */
 function ExportDirectory() {
-  const [path, setPath] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    invokeExportDirectory().then(
-      (dir) => {
-        if (live) setPath(dir);
-      },
-      (caught: unknown) => {
-        if (live) setError(errorText(caught));
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, []);
+  const query = useQuery({
+    queryKey: keys.desktopExportDirectory.all,
+    queryFn: invokeExportDirectory,
+    enabled: isTauri(),
+    retry: false,
+  });
+  const path = query.data ?? null;
+  const error = query.error ? errorText(query.error) : null;
   return (
     <div className="mt-8">
       <h3 className={sectionHeadingClass}>Exports</h3>

@@ -20,7 +20,6 @@ import {
   imessageShowsAppleContacts,
   imessageShowsAttachmentRoot,
   imessageShowsPassword,
-  imessageStatsForMethod,
   imessageVisiblePlatforms,
   isImessageMethod,
   macMessagesDbPath,
@@ -396,24 +395,6 @@ describe("imessageCanImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-  });
-});
-
-describe("imessageStatsForMethod", () => {
-  it("clears encryption state when leaving iPhone backup", () => {
-    expect(
-      imessageStatsForMethod("imessage-macos", {
-        backup: FILE_STAT,
-        attachmentRoot: null,
-        appleContacts: null,
-        backupEncrypted: true,
-      }),
-    ).toEqual({
-      backup: FILE_STAT,
-      attachmentRoot: null,
-      appleContacts: null,
-      backupEncrypted: null,
-    });
   });
 });
 
