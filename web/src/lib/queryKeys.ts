@@ -61,6 +61,13 @@ export const keys = {
      */
     unmatchedCount: (identifiers: readonly string[]) =>
       ["contacts", "unmatched-count", identifiers] as const,
+    /**
+     * The contacts the search box offers for a person word, one entry per
+     * typed prefix. One page, not the paged `InfiniteData` of `lists`, so it
+     * sits outside that prefix, and under `all`, so a write that changes
+     * contacts changes what is offered.
+     */
+    suggest: (prefix: string) => ["contacts", "suggest", prefix] as const,
   },
   conversations: {
     all: ["conversations"] as const,

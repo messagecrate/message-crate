@@ -157,6 +157,21 @@ impl ProblemType {
         }
     }
 
+    /// Whether the line a request refused with this type leaves in the
+    /// server's log is a warning (`docs/architecture/server-log.md`): true
+    /// for the types that answer `401 Unauthorized`, `403 Forbidden` and
+    /// `429 Too Many Requests`, because a run of them is what a password
+    /// guesser or an API token that lost its rights looks like, and the
+    /// owner's Logs panel opens at warnings and up. Every other refusal is
+    /// logged at `INFO`.
+    #[must_use]
+    pub fn refusal_is_a_warning(self) -> bool {
+        matches!(
+            self.status(),
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+        )
+    }
+
     /// The fixed, human-readable name every problem of this type carries.
     #[must_use]
     pub const fn title(self) -> &'static str {

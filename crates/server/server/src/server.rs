@@ -719,8 +719,10 @@ impl ApiError {
             .map_or(StatusCode::INTERNAL_SERVER_ERROR, ProblemType::status)
     }
 
-    /// The problem document this failure answers with. An internal error is
-    /// logged here, once, with its whole chain; the document says nothing of it.
+    /// The problem document this failure answers with. Every failure is
+    /// logged here, once: an internal error at `ERROR` with its whole chain,
+    /// which the document says nothing of, and a refused request with
+    /// [`log_refusal`]'s line.
     #[must_use]
     pub fn to_problem(&self) -> Problem {
         let request_id = crate::request_id::current();
@@ -743,6 +745,7 @@ impl ApiError {
                 holder: None,
             };
         };
+        log_refusal(kind);
         let mut problem = Problem {
             kind: kind.url(),
             title: kind.title().to_string(),
@@ -791,6 +794,23 @@ impl ApiError {
             _ => problem.detail = Some(self.sentence().to_string()),
         }
         problem
+    }
+}
+
+/// The line a refused request leaves: its problem type's slug and its status,
+/// under the request's span, which names the method, the path and the
+/// request id: at `WARN` when [`ProblemType::refusal_is_a_warning`], at
+/// `INFO` otherwise. The problem's
+/// `detail` is never written: it can repeat what a person typed, and a log
+/// line holds only ids, counts, routes and outcomes
+/// (`docs/architecture/server-log.md`).
+fn log_refusal(kind: ProblemType) {
+    let status = kind.status();
+    let problem = kind.slug();
+    if kind.refusal_is_a_warning() {
+        tracing::warn!(%problem, status = status.as_u16(), "The server refused a request");
+    } else {
+        tracing::info!(%problem, status = status.as_u16(), "The server refused a request");
     }
 }
 
@@ -1404,9 +1424,11 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // handlers'.
         .layer(axum::middleware::from_fn(no_store_unless_set))
         // One `info` line per response (method, path, status, latency), and an
-        // `error` line for a 5xx. Runs outside CORS so the status it logs is
-        // the one the client receives. The span carries method and path; its
-        // level must match the line's or the default `info` filter drops it.
+        // `error` line for a 5xx. A refused request's problem type is
+        // logged where the problem is built (`log_refusal`). Runs outside
+        // CORS so the status it logs is the one the client receives. The span
+        // carries method and path; its level must match the line's or the
+        // default `info` filter drops it.
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::extract::Request| {

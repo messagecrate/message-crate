@@ -173,6 +173,12 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: **The search box remembers the contacts it offered.** After a
+  word such as `with:` or `from:`, the search box keeps the names it
+  suggested for each prefix. Typing the same prefix again within half a
+  minute shows them without asking the server. The names already shown stay
+  up while the next ones load (#2181).
+
 - 2026-10-11: **The Docker image is built on fixed base images.** Each
   image the Docker image is built from is now named by its exact content,
   not only by a name its publisher can point at a newer image, so two builds
@@ -734,6 +740,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-11: **The server's log says why it refused a request.** A wrong
+  password, a request that did not log in or whose Session ended, a request
+  without the right to what it asked for, and a client that asked too often
+  now each leave a warning in the server's log naming which of those it was,
+  so Owner Home's Logs shows them at its opening filter. Before, they were
+  in the log only as a status number, shown only when the Logs panel showed
+  everything, and a person guessing passwords left nothing among the
+  warnings. Every other refused request also names its reason now, shown
+  when the Logs panel shows everything. What the person typed is never
+  written to the log (#2168).
+
 - 2026-10-10: **One account can no longer fill the server's disk with
   unfinished uploads.** A large attachment is sent in parts, and the parts
   of an upload that was never finished stayed on disk for a day. Nothing
@@ -742,6 +759,7 @@ released versions carry their date on the heading.
   server shares. An account may now have 128 uploads in progress at once.
   The next is refused until one of them is completed, is stopped by the
   program that sent it, or has sat untouched for a day (#2176).
+
 - 2026-10-10: **An attachment the server cannot read is written to its
   log.** Before it skips an upload because an attachment is already
   stored, the server reads the stored copy to check it. When that read
