@@ -3,8 +3,9 @@
 // item each route is on, and the contact panel the layout holds for them.
 
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
+import type { ContactBrowseTarget } from "../lib/contactBrowseQuery";
 import type { HeaderSearch } from "./AppHeader";
-import type { ContactBrowseTarget, ContactPreview } from "./contactDrawer/contactDrawerTypes";
+import type { ContactPreview } from "./contactDrawer/contactDrawerTypes";
 
 /**
  * The navigation panel's item a route is on, which the panel highlights: one

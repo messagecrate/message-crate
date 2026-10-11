@@ -1,11 +1,11 @@
 import { type ReactNode, useMemo } from "react";
+import type { ContactBrowseScope } from "../../lib/contactBrowseQuery";
 import type { ContactDetail, ContactHandle } from "../../lib/contactDetail";
 import Button from "../Button";
 import ConfirmDialog from "../ConfirmDialog";
 import DataCard from "../DataCard";
 import IdentityDialogs from "../IdentityDialogs";
 import IdentityTable, { type IdentityRow } from "../IdentityTable";
-import type { ContactBrowseScope } from "./contactDrawerTypes";
 import { removeIdentityConfirmBody } from "./handleTableLogic";
 import { useHandleMutations } from "./useHandleMutations";
 

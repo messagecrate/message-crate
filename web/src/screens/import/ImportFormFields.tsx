@@ -10,9 +10,6 @@ import TimeZoneField from "../../components/TimeZoneField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ImessagePathStats } from "../../lib/imessageImport";
 import { IMPORT_SOURCES, importSourceById, importSourceFor } from "../../lib/importSources";
-import { FieldStatus } from "../../lib/importSources/FieldStatus";
-import type { OwnerPhoneEntry } from "../../lib/importSources/types";
-import { WhatsappFallbackPhoneField } from "../../lib/importSources/WhatsappFormSection";
 import type { PhoneCountryChoice } from "../../lib/phoneCountries";
 import { ownerPhonesNeedMismatchAck } from "../../lib/phoneTokens";
 import { parseSelectKey } from "../../lib/selectKey";
@@ -20,6 +17,10 @@ import { toolUsable } from "../../lib/tauri";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import type { WhatsappPathStats } from "../../lib/whatsappImport";
+import { IMPORT_FORM_SECTIONS } from "./formSections";
+import { FieldStatus } from "./formSections/FieldStatus";
+import type { OwnerPhoneEntry } from "./formSections/types";
+import { WhatsappFallbackPhoneField } from "./formSections/WhatsappFormSection";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
@@ -231,6 +232,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
   const asksOwnerPhones = source.asksOwnerPhones;
   const backup = source.backupField(props.source);
   const processingOptions = source.processingOptions(props.source);
+  const FormSection = IMPORT_FORM_SECTIONS[source.id];
 
   const phoneFieldRef = useRef<PhoneTokenFieldHandle>(null);
   const [phoneDraft, setPhoneDraft] = useState("");
@@ -378,13 +380,15 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           <FieldStatus message={readiness.errors.backupPath} />
         </StackedField>
 
-        <source.FormSection
-          {...props}
-          descriptor={source}
-          ownerPhoneEntry={ownerPhoneEntry}
-          errors={readiness.errors}
-          attachmentFields={attachmentFields}
-        />
+        {FormSection ? (
+          <FormSection
+            {...props}
+            descriptor={source}
+            ownerPhoneEntry={ownerPhoneEntry}
+            errors={readiness.errors}
+            attachmentFields={attachmentFields}
+          />
+        ) : null}
       </CollapsibleSection>
 
       <CollapsibleSection
