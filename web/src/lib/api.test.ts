@@ -23,6 +23,7 @@ function stubOkFetch() {
     status: 200,
     json: async () => ({}),
     text: async () => "{}",
+    blob: async () => new Blob(["{}"]),
   });
   vi.stubGlobal("fetch", fetchSpy);
   return fetchSpy;
@@ -185,11 +186,13 @@ describe("apiClient request shape", () => {
     await apiClient.get("/v1/conversations");
     await apiClient.postRaw("/v1/imports/1/conversations", "{}", "application/x-ndjson");
     await apiClient.postText("/v1/contacts/address-book", { ids: [4] });
+    await apiClient.getBlob("/v1/assets/abc");
 
     const calls = fetchSpy.mock.calls as [string, RequestInit][];
-    expect(calls).toHaveLength(3);
+    expect(calls).toHaveLength(4);
     for (const [, init] of calls) {
       expect(init.redirect).toBe("error");
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer mc-user-abc123");
     }
   });
 
@@ -444,5 +447,53 @@ describe("apiClient time limit", () => {
     await apiClient.get("/v1/conversations");
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("marks a timeout as one, so a screen's retry can tell it from a server error", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.get("/v1/conversations"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    expect((await call.error) as ApiError).toMatchObject({ status: 0, timedOut: true });
+    expect(new ApiError(500, "Internal Server Error").timedOut).toBe(false);
+  });
+
+  it("gives up on a download that never starts to answer", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.getBlob("/v1/assets/abc"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    expect(await call.error).toBeInstanceOf(ApiError);
+  });
+
+  it("lets a download that has started take as long as it needs", async () => {
+    vi.useFakeTimers();
+    let finishBody: (bytes: string) => void = () => {};
+    const body = new Promise<string>((resolve) => {
+      finishBody = resolve;
+    });
+    // Like a real body, this one stops arriving when the request's signal aborts.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => ({
+        ok: true,
+        status: 200,
+        blob: () =>
+          new Promise<Blob>((resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+            body.then((bytes) => resolve(new Blob([bytes])));
+          }),
+      })),
+    );
+
+    const call = apiClient.getBlob("/v1/assets/abc");
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    finishBody("bytes");
+
+    expect(await (await call).text()).toBe("bytes");
   });
 });

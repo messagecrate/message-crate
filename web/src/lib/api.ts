@@ -93,11 +93,19 @@ export class ApiError extends Error {
   readonly detail: string | null;
   readonly errors: string[];
   readonly requestId: string | null;
+  /** True when the call's time limit ended it and no answer arrived (`requestTimeoutError`). */
+  readonly timedOut: boolean;
 
-  constructor(status: number, message: string, problem: Problem | null = null) {
+  constructor(
+    status: number,
+    message: string,
+    problem: Problem | null = null,
+    { timedOut = false }: { timedOut?: boolean } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.timedOut = timedOut;
     this.type = problem ? problemSlug(problem.type) : null;
     this.title = problem?.title ?? null;
     this.detail = problem?.detail ?? null;
@@ -200,7 +208,9 @@ function durationText(ms: number): string {
  * waited, so a screen shows a sentence rather than the browser's abort text.
  */
 export function requestTimeoutError(ms: number): ApiError {
-  return new ApiError(0, `The server didn't answer within ${durationText(ms)}.`);
+  return new ApiError(0, `The server didn't answer within ${durationText(ms)}.`, null, {
+    timedOut: true,
+  });
 }
 
 /**
@@ -221,7 +231,9 @@ function callHeaders(contentType: string | null): Record<string, string> {
 /**
  * Send one request and read its answer with `read`, within the call's time
  * limit. The limit covers the body as well as the headers, since a server
- * can stall partway through either.
+ * can stall partway through either, unless `untilHeaders` says it ends once
+ * the answer starts: a download as large as a video then takes as long as it
+ * needs, while a server that never answers still ends the call.
  *
  * A call the limit ends rejects with `requestTimeoutError`. A call its
  * caller's signal ends rejects with that abort, as before, since a cancel is
@@ -233,6 +245,7 @@ async function exchange<T>(
   body: { text: string; contentType: string } | null,
   opts: ApiRequestOptions | undefined,
   read: (res: Response) => Promise<T>,
+  { untilHeaders = false }: { untilHeaders?: boolean } = {},
 ): Promise<T> {
   const timeoutMs = opts?.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const limit = startTimeLimit(timeoutMs, opts?.signal);
@@ -244,6 +257,7 @@ async function exchange<T>(
       signal: limit.signal,
       redirect: NEVER_FOLLOW,
     });
+    if (untilHeaders) limit.stopClock();
     return await read(res);
   } catch (e: unknown) {
     if (limit.timedOut()) throw requestTimeoutError(timeoutMs);
@@ -286,6 +300,15 @@ async function readText(res: Response): Promise<string> {
   return text;
 }
 
+/** Read an answer's bytes, or a failure's problem document as everywhere else. */
+async function readBlob(res: Response): Promise<Blob> {
+  if (!res.ok) {
+    const text = await res.text();
+    throw problemFromBody(res.status, text);
+  }
+  return res.blob();
+}
+
 function request<T>(
   method: string,
   path: string,
@@ -315,6 +338,14 @@ export const apiClient = {
   /** GET a route that answers a file's text instead of JSON. */
   getText(path: string, opts?: ApiRequestOptions): Promise<string> {
     return exchange("GET", path, null, opts, readText);
+  },
+  /**
+   * GET a route that answers bytes, such as an attachment, as a Blob. The time
+   * limit covers only the wait for the answer to start, so a large file that
+   * is arriving is never cut off.
+   */
+  getBlob(path: string, opts?: ApiRequestOptions): Promise<Blob> {
+    return exchange("GET", path, null, opts, readBlob, { untilHeaders: true });
   },
   post<T>(path: string, body?: unknown, opts?: ApiRequestOptions): Promise<T> {
     return request<T>("POST", path, body, opts);

@@ -64,12 +64,9 @@ function refusedRequest(error: unknown): boolean {
   return error instanceof ApiError && error.status >= 400 && error.status < 500;
 }
 
-/**
- * Whether the call's time limit ended it (`requestTimeoutError` in `api.ts`,
- * the one `ApiError` with status 0, since no answer arrived).
- */
+/** Whether the call's time limit ended it before any answer arrived. */
 function timedOut(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 0;
+  return error instanceof ApiError && error.timedOut;
 }
 
 /**

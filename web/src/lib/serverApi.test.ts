@@ -78,15 +78,11 @@ vi.mock("./api", () => ({
     postRaw: vi.fn().mockResolvedValue({}),
     postText: vi.fn().mockResolvedValue(""),
     getText: vi.fn().mockResolvedValue(""),
+    getBlob: vi.fn().mockResolvedValue(new Blob()),
   },
   // The logged-in account, as `auth.tsx` records it after login.
   getAccountId: () => 7,
   getBaseUrl: () => "http://127.0.0.1:8080",
-  getToken: () => "mc-user-test",
-  NEVER_FOLLOW: "error",
-  problemFromBody: (status: number, text: string) => new Error(`${status}: ${text}`),
-  REQUEST_TIMEOUT_MS: 30_000,
-  requestTimeoutError: (ms: number) => new Error(`no answer within ${ms} ms`),
 }));
 
 const get = vi.mocked(apiClient.get);
@@ -97,6 +93,7 @@ const del = vi.mocked(apiClient.delete);
 const postRaw = vi.mocked(apiClient.postRaw);
 const postText = vi.mocked(apiClient.postText);
 const getText = vi.mocked(apiClient.getText);
+const getBlob = vi.mocked(apiClient.getBlob);
 
 /** The longer time limit a call whose server work grows with an account passes. */
 const LONG = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
@@ -249,9 +246,9 @@ describe("the longer time limit", () => {
   });
 
   it("loads and exports an address book with it", async () => {
-    await loadAddressBook("name\nAda\n", "merge");
+    await loadAddressBook("name\nAda\n", "append");
     expect(postRaw).toHaveBeenCalledWith(
-      "/v1/contacts?mode=merge",
+      "/v1/contacts?mode=append",
       "name\nAda\n",
       "text/csv",
       LONG,
@@ -405,76 +402,16 @@ describe("accounts are one collection", () => {
  * hundreds of them.
  */
 describe("attachments", () => {
-  it("asks for each version at its own address, with the Session's header", async () => {
-    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response("bytes"));
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      await fetchAsset("abc");
-      await fetchAsset("abc", { version: "preview" });
-      await fetchAsset("abc", { version: "thumbnail" });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "http://127.0.0.1:8080/v1/assets/abc",
-      "http://127.0.0.1:8080/v1/assets/abc/preview",
-      "http://127.0.0.1:8080/v1/assets/abc/thumbnail",
+  it("asks for each version at its own address", async () => {
+    const controller = new AbortController();
+    await fetchAsset("abc", { signal: controller.signal });
+    await fetchAsset("abc", { version: "preview" });
+    await fetchAsset("abc", { version: "thumbnail" });
+    expect(getBlob.mock.calls).toEqual([
+      ["/v1/assets/abc", { signal: controller.signal }],
+      ["/v1/assets/abc/preview", { signal: undefined }],
+      ["/v1/assets/abc/thumbnail", { signal: undefined }],
     ]);
-    expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer mc-user-test" });
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(init.redirect).toBe("error");
-    }
-  });
-
-  it("gives up on a server that never starts to answer", async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        (_url: string, init: RequestInit) =>
-          new Promise((_resolve, reject) => {
-            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
-          }),
-      ),
-    );
-    try {
-      const call = fetchAsset("abc").catch((e: unknown) => e);
-      await vi.advanceTimersByTimeAsync(30_000);
-      expect(await call).toEqual(new Error("no answer within 30000 ms"));
-    } finally {
-      vi.unstubAllGlobals();
-      vi.useRealTimers();
-    }
-  });
-
-  it("lets an answer that has started take as long as it needs", async () => {
-    vi.useFakeTimers();
-    let finishBody: (bytes: string) => void = () => {};
-    const body = new Promise<string>((resolve) => {
-      finishBody = resolve;
-    });
-    // Like a real body, this one stops arriving when the request's signal aborts.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => ({
-        ok: true,
-        status: 200,
-        blob: () =>
-          new Promise<Blob>((resolve, reject) => {
-            init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
-            body.then((bytes) => resolve(new Blob([bytes])));
-          }),
-      })),
-    );
-    try {
-      const call = fetchAsset("abc");
-      await vi.advanceTimersByTimeAsync(10 * 60_000);
-      finishBody("bytes");
-      expect(await (await call).text()).toBe("bytes");
-    } finally {
-      vi.unstubAllGlobals();
-      vi.useRealTimers();
-    }
   });
 
   it("makes a Media Link and hands back URLs a media element can load from the server", async () => {

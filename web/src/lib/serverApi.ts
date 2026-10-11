@@ -21,21 +21,10 @@
  * in the browser calls them.
  */
 
-import {
-  type ApiRequestOptions,
-  apiClient,
-  getAccountId,
-  getBaseUrl,
-  getToken,
-  NEVER_FOLLOW,
-  problemFromBody,
-  REQUEST_TIMEOUT_MS,
-  requestTimeoutError,
-} from "./api";
+import { type ApiRequestOptions, apiClient, getAccountId, getBaseUrl } from "./api";
 import { type AssetVersion, buildAssetPath } from "./assetUrl";
 import { PAGE_SIZE_MAX } from "./listPaging";
 import type { components, paths } from "./serverApi.types";
-import { startTimeLimit } from "./timeLimit";
 
 type Schema = components["schemas"];
 /** What `GET /v1/server` answers, named by its route so a renamed schema changes nothing here. */
@@ -270,7 +259,10 @@ export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile
 
 /** One file of the server's log, whole, as text. */
 export function getServerLogFile(id: number, opts?: RequestOptions): Promise<string> {
-  return apiClient.getText(`/v1/server/log-files/${id}`, { ...LONG_CALL, ...opts });
+  return apiClient.getText(`/v1/server/log-files/${id}`, {
+    ...opts,
+    timeoutMs: opts?.timeoutMs ?? LONG_REQUEST_TIMEOUT_MS,
+  });
 }
 
 /** Where the Demo Account stands: absent, building, ready, or failed. */
@@ -483,43 +475,16 @@ export function deleteApiToken(id: number, accountId?: number): Promise<void> {
  * Download one version of an attachment by its content hash: the original
  * bytes, or the Preview or Thumbnail the server holds of them.
  *
- * Attachment bytes are a blob, not JSON, so this is the one route that goes
- * around `apiClient` and calls `fetch` itself, with the Session's header.
- *
- * The client's time limit (`REQUEST_TIMEOUT_MS`) covers only the wait for the
- * answer to start, so a server that never answers ends the call, and a large
- * video that is arriving takes as long as it needs.
+ * Attachment bytes are a blob, not JSON, so this reads them with
+ * `apiClient.getBlob`, whose time limit covers only the wait for the answer
+ * to start: a server that never answers ends the call, and a large video
+ * that is arriving takes as long as it needs.
  */
-export async function fetchAsset(
+export function fetchAsset(
   sha256: string,
   { version = "original", signal }: { version?: AssetVersion; signal?: AbortSignal } = {},
 ): Promise<Blob> {
-  const path = buildAssetPath(sha256, version);
-  const headers: Record<string, string> = {};
-  const token = getToken();
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  const limit = startTimeLimit(REQUEST_TIMEOUT_MS, signal);
-  try {
-    const res = await fetch(`${getBaseUrl()}${path}`, {
-      method: "GET",
-      headers,
-      signal: limit.signal,
-      redirect: NEVER_FOLLOW,
-    });
-    limit.stopClock();
-    if (!res.ok) {
-      const text = await res.text();
-      throw problemFromBody(res.status, text);
-    }
-    return await res.blob();
-  } catch (e: unknown) {
-    if (limit.timedOut()) throw requestTimeoutError(REQUEST_TIMEOUT_MS);
-    throw e;
-  } finally {
-    limit.dispose();
-  }
+  return apiClient.getBlob(buildAssetPath(sha256, version), { signal });
 }
 
 /**
