@@ -378,6 +378,55 @@ impl Config {
         file.into_config()
     }
 
+    /// Refuse a layout where the website directory and what the server
+    /// stores overlap: the Data Directory or the database inside the website
+    /// directory, or the website directory inside the Data Directory.
+    /// Everything in the website directory is served at `/` to anyone who
+    /// reaches the server, without a login, so the database and every
+    /// account's attachments would be published (#2175).
+    ///
+    /// Paths are compared as the filesystem resolves them, so neither a
+    /// symlink nor a `..` hides the nesting. Run it once every path is
+    /// resolved, after the command line's flags. A config with no `[server]`
+    /// section serves no website and is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming both paths when they overlap, or when the
+    /// working directory cannot be read to resolve a relative path.
+    pub fn require_static_dir_apart(&self) -> Result<()> {
+        let Some(server) = &self.server else {
+            return Ok(());
+        };
+        let website = real_path(&server.static_dir)?;
+        let data_dir = real_path(&self.paths.data_dir)?;
+        let db = real_path(&self.paths.db)?;
+        let published = |path: &Path, what: &str| {
+            format!(
+                "{what} {} is inside the website directory {}, which the server serves to \
+                 anyone who can reach it, without a login. Move one outside the other",
+                path.display(),
+                server.static_dir.display()
+            )
+        };
+        if is_within(&data_dir, &website) {
+            bail!("{}", published(&self.paths.data_dir, "The Data Directory"));
+        }
+        if is_within(&db, &website) {
+            bail!("{}", published(&self.paths.db, "The database"));
+        }
+        if is_within(&website, &data_dir) {
+            bail!(
+                "The website directory {} is inside the Data Directory {}. Everything in the \
+                 website directory is served to anyone who can reach the server, without a \
+                 login. Move one outside the other",
+                server.static_dir.display(),
+                self.paths.data_dir.display()
+            );
+        }
+        Ok(())
+    }
+
     /// Server settings for `serve`. Fails if `[server]` is missing.
     pub fn require_server(&self) -> Result<&ServerConfig> {
         let server = self
@@ -410,6 +459,51 @@ fn resolve_path(base: &Path, configured: &Path) -> PathBuf {
         configured.to_path_buf()
     } else {
         base.join(configured)
+    }
+}
+
+/// `path` as the filesystem resolves it: absolute, with every symlink
+/// followed and every `.` and `..` gone. The part of `path` that does not
+/// exist yet is appended to the real path of the part that does, with its
+/// `..` taken lexically, which is right because a directory that does not
+/// exist cannot be a symlink.
+///
+/// # Errors
+///
+/// Returns an error when `path` is relative and the working directory
+/// cannot be read.
+fn real_path(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)
+        .with_context(|| format!("could not resolve {}", path.display()))?;
+    let components: Vec<Component> = absolute.components().collect();
+    for existing in (1..=components.len()).rev() {
+        let prefix: PathBuf = components[..existing].iter().collect();
+        let Ok(mut real) = prefix.canonicalize() else {
+            continue;
+        };
+        for component in &components[existing..] {
+            match component {
+                Component::ParentDir => {
+                    real.pop();
+                }
+                Component::Normal(name) => real.push(name),
+                Component::CurDir | Component::RootDir | Component::Prefix(_) => {}
+            }
+        }
+        return Ok(real);
+    }
+    Ok(absolute)
+}
+
+/// Whether `path` is `dir` or inside it, component by component, so `website`
+/// is not inside `web`. macOS and Windows ignore letter case by default, so
+/// there `Static` and `static` are one directory.
+fn is_within(path: &Path, dir: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        let fold = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+        fold(path).starts_with(fold(dir))
+    } else {
+        path.starts_with(dir)
     }
 }
 

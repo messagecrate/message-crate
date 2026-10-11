@@ -372,3 +372,141 @@ fn docker_config_names_no_cors_origins() {
         .cors_origins;
     assert!(origins.is_empty(), "config.docker.toml names {origins:?}");
 }
+
+/// The config a file in `dir` with `text` loads to, for the layout checks.
+fn load_in(dir: &Path, text: &str) -> Config {
+    Config::load(&config_file(dir, text)).unwrap()
+}
+
+/// The text of [`Config::require_static_dir_apart`]'s refusal, or a panic
+/// when it accepts.
+fn refusal(cfg: &Config) -> String {
+    match cfg.require_static_dir_apart() {
+        Ok(()) => panic!("the layout was accepted"),
+        Err(err) => format!("{err:#}"),
+    }
+}
+
+/// #2175: everything under the website directory is served without a login,
+/// so a Data Directory inside it would publish the database.
+#[test]
+fn a_data_directory_inside_the_website_directory_is_refused_naming_both() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"elsewhere/messagecrate.db\"\ndata_dir = \"static/data\"\n[server]\n",
+    );
+
+    let text = refusal(&cfg);
+
+    assert!(
+        text.contains(&cfg.paths.data_dir.display().to_string()),
+        "{text}"
+    );
+    let static_dir = &cfg.server.as_ref().unwrap().static_dir;
+    assert!(text.contains(&static_dir.display().to_string()), "{text}");
+}
+
+#[test]
+fn a_database_inside_the_website_directory_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"static/messagecrate.db\"\n[server]\n",
+    );
+
+    assert!(refusal(&cfg).contains("messagecrate.db"));
+}
+
+#[test]
+fn a_website_directory_inside_the_data_directory_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\nstatic_dir = \"data/static\"\n",
+    );
+
+    refusal(&cfg);
+}
+
+#[test]
+fn one_directory_for_the_website_and_the_data_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"site/messagecrate.db\"\ndata_dir = \"site\"\n[server]\nstatic_dir = \"site\"\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `static/../static/data` is `static/data`, though the text does not start
+/// with `static`.
+#[test]
+fn a_parent_step_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"messagecrate.db\"\ndata_dir = \"other/../static/data\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_symlink_cannot_hide_the_nesting() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("static/data")).unwrap();
+    std::os::unix::fs::symlink(dir.path().join("static/data"), dir.path().join("data")).unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    refusal(&cfg);
+}
+
+/// `website` only shares its first letters with `web`: it is beside it, not
+/// inside it.
+#[test]
+fn a_sibling_whose_name_starts_with_the_other_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"website/messagecrate.db\"\ndata_dir = \"website\"\n[server]\nstatic_dir = \"web\"\n",
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
+
+/// The default layout, the Docker image's and the repository's: `static`
+/// and `data` side by side.
+#[test]
+fn the_default_layout_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = load_in(
+        dir.path(),
+        "[paths]\ndb = \"data/messagecrate.db\"\n[server]\n",
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
+
+/// The desktop app's layout: `serve --data-dir` with the website shipped in
+/// the app's own resources.
+#[test]
+fn the_desktop_app_layout_is_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = Config::for_data_dir(&dir.path().join("app-data/data")).with_serve_overrides(
+        dir.path(),
+        ServeFlags {
+            static_dir: Some(dir.path().join("resources/static")),
+            ..ServeFlags::default()
+        },
+    );
+
+    cfg.require_static_dir_apart().unwrap();
+}
