@@ -695,6 +695,14 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **One account can no longer fill the server's disk with
+  unfinished uploads.** A large attachment is sent in parts, and the parts
+  of an upload that was never finished stayed on disk for a day. Nothing
+  limited how many such uploads one account could have open, so one account
+  could leave enough of them to fill the disk that every account on the
+  server shares. An account may now have 128 uploads in progress at once;
+  the next is refused until one of them finishes or is cancelled (#2176).
+
 - 2026-10-10: **The server's log and the desktop app's Import Run logs no
   longer act on a terminal that shows them.** A file name in a backup or a
   tool's output can carry a terminal control character, such as the escape

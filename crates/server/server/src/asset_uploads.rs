@@ -17,6 +17,19 @@ use crate::assets_api::{self, AssetError, Sha256, StoredAsset};
 /// Default part size advertised to clients (under Cloudflare ~100 MiB).
 pub const DEFAULT_PART_SIZE: usize = 64 * 1024 * 1024;
 
+/// How many multipart uploads one account may have open at once. An open
+/// upload keeps its parts on disk until it is completed, aborted, or left
+/// untouched for [`crate::asset_store::STALE_UPLOAD_SECS`], so without a cap
+/// one account could start uploads without end and fill the disk every
+/// account shares. The desktop app runs at most 64 at once (16 attachment
+/// workers in each of 4 conversations prepared together); twice that leaves
+/// room for the uploads a stopped run left open.
+pub const MAX_OPEN_UPLOADS: usize = 128;
+
+/// Held while an upload start counts the open uploads and makes its own, so
+/// two starts at once cannot both see room for one more.
+static STARTING: Mutex<()> = Mutex::new(());
+
 /// Limits for one upload: the attachment size limit from the Server Settings
 /// as it is when the upload starts, and the part size worked out from it and
 /// the `[server]` config ([`UploadLimits::within`]).
@@ -218,7 +231,30 @@ fn ext_for_mime(mime: Option<&str>) -> String {
     mime.and_then(media::ext_for_mime).unwrap_or("").to_string()
 }
 
+/// How many multipart uploads are open under `assets_root`: the
+/// `manifest.json` files under `.incoming/*/*/`. Every live upload has one,
+/// and a removal takes it before the directory, so an upload being removed
+/// is not counted. A directory that cannot be read counts nothing.
+fn count_open_uploads(assets_root: &Path) -> usize {
+    let Ok(sha_dirs) = fs::read_dir(assets_root.join(".incoming")) else {
+        return 0;
+    };
+    sha_dirs
+        .filter_map(Result::ok)
+        .filter_map(|sha_dir| fs::read_dir(sha_dir.path()).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|session| manifest_path(&session.path()).is_file())
+        .count()
+}
+
 /// Start a chunked upload session. Returns `already_present` when the Asset is already stored.
+///
+/// # Errors
+///
+/// Returns [`AssetError::Invalid`] when `bytes` is over the attachment size
+/// limit, or when the account already has [`MAX_OPEN_UPLOADS`] uploads open,
+/// and [`AssetError::Internal`] when the upload's directory cannot be made.
 pub fn start_upload(
     assets_root: &Path,
     sha: &Sha256,
@@ -240,6 +276,13 @@ pub fn start_upload(
         return Ok((Some(existing), None));
     }
 
+    let _starting = STARTING.lock().unwrap_or_else(PoisonError::into_inner);
+    if count_open_uploads(assets_root) >= MAX_OPEN_UPLOADS {
+        return Err(AssetError::Invalid(format!(
+            "this account already has {MAX_OPEN_UPLOADS} uploads in progress, the most it may \
+             have open at once; complete or abort one before starting another"
+        )));
+    }
     let part_size = limits.part_size;
     let upload_id = new_upload_id();
     let session = session_dir(assets_root, sha, &upload_id);
@@ -751,6 +794,49 @@ mod tests {
 
         let small_part = UploadLimits::within(10, 1024);
         assert_eq!((small_part.part_size, small_part.max_bytes), (10, 1024));
+    }
+
+    /// An account with as many uploads open as it may have is refused the
+    /// next one, with the limit named. Finishing one or aborting one makes
+    /// room for the next.
+    #[test]
+    fn an_upload_past_the_open_upload_limit_is_refused_until_one_ends() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        let limits = UploadLimits {
+            part_size: 1024,
+            max_bytes: 2048,
+        };
+        let start = |data: &[u8]| {
+            let sha = Sha256::of_bytes(data);
+            start_upload(root, &sha, data.len() as u64, None, limits)
+                .map(|(_, started)| (sha, started.unwrap().upload_id))
+        };
+        let files: Vec<Vec<u8>> = (0..=MAX_OPEN_UPLOADS)
+            .map(|n| format!("file {n}").into_bytes())
+            .collect();
+        let mut open: Vec<(Sha256, String)> = files[..MAX_OPEN_UPLOADS]
+            .iter()
+            .map(|data| start(data).unwrap())
+            .collect();
+        let next = &files[MAX_OPEN_UPLOADS];
+
+        let err = start(next).unwrap_err();
+        assert!(matches!(err, AssetError::Invalid(_)), "{err}");
+        assert!(
+            err.to_string().contains(&MAX_OPEN_UPLOADS.to_string()),
+            "the refusal does not name the limit: {err}"
+        );
+
+        let (sha, upload_id) = open.pop().unwrap();
+        put_part(root, &sha, &upload_id, 1, &files[MAX_OPEN_UPLOADS - 1]).unwrap();
+        complete_upload(root, &sha, &upload_id).unwrap();
+        open.push(start(next).unwrap());
+        assert!(start(b"one more").is_err());
+
+        let (sha, upload_id) = open.pop().unwrap();
+        abort_upload(root, &sha, &upload_id).unwrap();
+        start(next).unwrap();
     }
 
     /// An upload of the five bytes `hello` in one part, started in a new
