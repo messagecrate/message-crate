@@ -9,24 +9,36 @@ fn config_file(dir: &Path, text: &str) -> PathBuf {
     path
 }
 
+/// A `[paths] db` naming `db`, an absolute path. `/srv/...` is not
+/// absolute on Windows, which wants a drive, so the tests use the temporary
+/// directory's own path.
+fn db_config(db: &Path) -> String {
+    format!("[paths]\ndb = '{}'\n", db.display())
+}
+
 #[test]
 fn without_db_the_database_is_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let db = dir.path().join("srv/messagecrate.db");
+    let path = config_file(dir.path(), &db_config(&db));
 
     let cfg = Config::load_with_db(&path, None).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/srv/messagecrate.db"));
+    assert_eq!(cfg.paths.db, db);
 }
 
 #[test]
 fn db_replaces_the_configured_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
+    let path = config_file(
+        dir.path(),
+        &db_config(&dir.path().join("srv/messagecrate.db")),
+    );
+    let other = dir.path().join("elsewhere/other.db");
 
-    let cfg = Config::load_with_db(&path, Some(PathBuf::from("/elsewhere/other.db"))).unwrap();
+    let cfg = Config::load_with_db(&path, Some(other.clone())).unwrap();
 
-    assert_eq!(cfg.paths.db, PathBuf::from("/elsewhere/other.db"));
+    assert_eq!(cfg.paths.db, other);
 }
 
 /// S7-12: `--db data/messagecrate.db` names the file `[paths] db =
@@ -567,20 +579,30 @@ fn a_symlink_loop_is_refused_rather_than_followed_for_ever() {
     );
 }
 
+/// What `cmd /C <line>` prints, after asserting it succeeded. `line` is
+/// passed as written, not quoted again, so a quoted path in it reaches
+/// `cmd` as one argument. `line` must not start with a quote, or `cmd`
+/// strips the first and last quote of it.
+#[cfg(windows)]
+fn cmd(line: &str) -> String {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("cmd")
+        .raw_arg(format!("/C {line}"))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "cmd /C {line}: {output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
 /// Makes `link` a directory junction to `target`. A junction needs no
 /// privilege, where a directory symlink on Windows does.
 #[cfg(windows)]
 fn junction(link: &Path, target: &Path) {
-    use std::os::windows::process::CommandExt;
-    let status = std::process::Command::new("cmd")
-        .raw_arg(format!(
-            "/C mklink /J \"{}\" \"{}\"",
-            link.display(),
-            target.display()
-        ))
-        .status()
-        .unwrap();
-    assert!(status.success(), "mklink /J {}", link.display());
+    cmd(&format!(
+        "mklink /J \"{}\" \"{}\"",
+        link.display(),
+        target.display()
+    ));
 }
 
 /// A junction's target comes back verbatim (`\\?\C:\...`), unlike every
@@ -620,16 +642,8 @@ fn a_dangling_junction_cannot_hide_the_nesting() {
 /// `path` with every component as its 8.3 short name, as `cmd` reports it.
 #[cfg(windows)]
 fn short_name(path: &Path) -> PathBuf {
-    use std::os::windows::process::CommandExt;
-    let output = std::process::Command::new("cmd")
-        .raw_arg(format!(
-            "/C for %I in (\"{}\") do @echo %~sI",
-            path.display()
-        ))
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "cmd: {output:?}");
-    PathBuf::from(String::from_utf8(output.stdout).unwrap().trim())
+    let printed = cmd(&format!("for %I in (\"{}\") do @echo %~sI", path.display()));
+    PathBuf::from(printed.trim())
 }
 
 /// `WEBSIT~1` is another name for `websitedirectory`, so a Data Directory
