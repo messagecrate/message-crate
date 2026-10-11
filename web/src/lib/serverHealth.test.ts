@@ -165,6 +165,16 @@ describe("checkServerHealthWithRetry", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not ask again when nothing answers", async () => {
+    // A busy server still answers, with an error; a refused connection has
+    // nothing behind it that a second ask could find.
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkServerHealthWithRetry("http://127.0.0.1:8080")).resolves.toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns false when both probes fail", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });

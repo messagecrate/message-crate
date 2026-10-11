@@ -352,8 +352,9 @@ released versions carry their date on the heading.
   while an import runs.** An import can keep the server's database busy for
   longer than its health check waits, so one check could fail though the
   server was still answering, and the login screen read Disconnected until
-  its next check a second later. It now checks once more three seconds
-  after a failed check, and reads Disconnected only when both fail (#2718).
+  its next check a second later. When the server answers a check with an
+  error, the login screen now checks once more three seconds later, and
+  reads Disconnected only when both fail (#2718).
 
 - 2026-10-11: **The login screen reads Disconnected when the server cannot
   reach its database.** Before, it read Connected as long as the server was

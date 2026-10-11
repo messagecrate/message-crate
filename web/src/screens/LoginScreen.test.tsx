@@ -81,18 +81,18 @@ const getServerStateMock = vi.mocked(getServerState);
 const serverLoginMock = vi.mocked(serverLogin);
 
 /**
- * The card's connect asks twice before it says Disconnected. Most tests are
- * about what the card shows once it has its answer, so by default the two
- * asks are one ask of the faked probe; the tests of the second ask put the
- * real one back over a faked `fetch`.
+ * The card's connect asks again after a server's error before it says
+ * Disconnected. Most tests are about what the card shows once it has its
+ * answer, so by default connect makes one ask of the faked probe; the tests
+ * of the retry put the real one back over a faked `fetch`.
  */
-function askOnce() {
+function skipRetry() {
   checkServerHealthWithRetryMock.mockImplementation((address, signal) =>
     checkServerHealthMock(address, signal),
   );
 }
 
-async function askTwiceForReal() {
+async function retryForReal() {
   const actual = await vi.importActual<typeof import("../lib/serverHealth")>("../lib/serverHealth");
   checkServerHealthWithRetryMock.mockImplementation(actual.checkServerHealthWithRetry);
 }
@@ -178,7 +178,7 @@ describe("LoginScreen", () => {
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
     checkServerHealthWithRetryMock.mockReset();
-    askOnce();
+    skipRetry();
     getServerStateMock.mockReset();
     serverLoginMock.mockReset();
   });
@@ -317,7 +317,7 @@ describe("LoginScreen", () => {
     // answer the next (#2718).
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     stubServer();
-    await askTwiceForReal();
+    await retryForReal();
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 500 })
@@ -341,7 +341,7 @@ describe("LoginScreen", () => {
   it("says Disconnected once the second probe in a row fails too", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     stubNoServer();
-    await askTwiceForReal();
+    await retryForReal();
     const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
     vi.stubGlobal("fetch", fetchMock);
     renderScreen();

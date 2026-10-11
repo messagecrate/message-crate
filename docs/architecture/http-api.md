@@ -476,9 +476,10 @@ requests that write wait on SQLite's busy timeout while an import holds the
 write lock, and enough of them can take every connection for that long. The
 check fails then, though a `/v1` read would wait for a connection and get
 one. One failure does not mark the container unhealthy, because Docker needs
-three in a row 30 seconds apart. The login card asks once more three seconds
-after a failed probe, the spacing of the desktop app's watch on its own
-server, and shows Disconnected only when both fail
+three in a row 30 seconds apart. When `/health` answers with an error, the
+login card asks once more three seconds later and shows Disconnected only
+when both fail, as the desktop app's watch on its own server needs two
+failed checks in a row
 (`checkServerHealthWithRetry` in `web/src/lib/serverHealth.ts`,
 [#2718](https://github.com/messagecrate/message-crate/issues/2718)). A pool
 taken for longer than that, up to the 15-second busy timeout, still fails
