@@ -94,7 +94,7 @@ pub enum MailPackage {
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
-    /// Conversation id → `X-ME-Chat-Identifier`, directory stem, group chat address local part.
+    /// Conversation id → `X-ME-Chat-Identifier`, group chat address local part.
     pub chat_identifier: String,
     /// `individual` or `group`.
     pub conversation_type: String,
@@ -115,8 +115,6 @@ pub struct MailMessage {
     /// When the backup was made, in Unix milliseconds →
     /// `X-ME-Backup-Taken-At-Unix-Ms`; `None` when the export does not say.
     pub backup_taken_at_unix_ms: Option<i64>,
-    /// Optional stem suffix (e.g. `"__whatsapp"`) for conversation directory / mbox names.
-    pub filename_suffix: Option<String>,
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
     /// its `attachments` list is ignored in favour of `attachments` below).
@@ -132,19 +130,25 @@ impl MailMessage {
     }
 }
 
-/// Write one conversation as EML directories or a single mboxrd file.
+/// Write one conversation as EML directories or a single mboxrd file, named
+/// `stem` (the directory `<stem>/` or the file `<stem>.mbox`) under
+/// `output_root`. The caller names the conversation; this crate only writes
+/// it.
 ///
 /// # Errors
 ///
 /// Returns an error when the directory or file cannot be written.
 pub fn write_mail_package(
     output_root: &Path,
+    stem: &str,
     package: MailPackage,
     messages: &[MailMessage],
 ) -> Result<PathBuf> {
     match package {
-        MailPackage::EmlDirectories => write_conversation(output_root, messages),
-        MailPackage::Mbox => write_conversation_mbox(output_root, messages),
+        MailPackage::EmlDirectories => write_conversation(&output_root.join(stem), messages),
+        MailPackage::Mbox => {
+            write_conversation_mbox(&output_root.join(format!("{stem}.mbox")), messages)
+        }
     }
 }
 
@@ -161,22 +165,6 @@ struct AttachmentMetaCell<'a> {
     size_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     missing_reason: Option<&'a str>,
-}
-
-/// Conversation directory stem (shared per-conversation filename stem).
-fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_identities: Vec<String> = msg
-        .participants
-        .iter()
-        .map(|p| p.identity.clone())
-        .collect();
-    message_ir::conversation_stem(
-        &msg.conversation_type,
-        &msg.chat_identifier,
-        msg.group_title.as_deref(),
-        &participant_identities,
-        msg.filename_suffix.as_deref(),
-    )
 }
 
 /// Write a single `.eml` into an existing conversation directory.
@@ -214,17 +202,14 @@ pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
     ))
 }
 
-/// Write one conversation directory of `.eml` files under `output_root`.
+/// Write one conversation as the directory `conv_dir` of `.eml` files.
 ///
-/// Returns the conversation directory path. Messages are sorted by timestamp,
-/// then guid, before writing.
-fn write_conversation(output_root: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
+/// Returns `conv_dir`. Messages are sorted by timestamp, then guid, before
+/// writing.
+fn write_conversation(conv_dir: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
     if messages.is_empty() {
         bail!("write_conversation requires at least one message");
     }
-
-    let stem = conversation_stem(&messages[0]);
-    let conv_dir = output_root.join(&stem);
 
     let mut ordered: Vec<&MailMessage> = messages.iter().collect();
     ordered.sort_by(|a, b| {
@@ -235,15 +220,10 @@ fn write_conversation(output_root: &Path, messages: &[MailMessage]) -> Result<Pa
     });
 
     for (idx, msg) in ordered.iter().enumerate() {
-        write_message_file(&conv_dir, (idx + 1) as u32, msg)?;
+        write_message_file(conv_dir, (idx + 1) as u32, msg)?;
     }
 
-    Ok(conv_dir)
-}
-
-/// Path to the per-conversation mboxrd file (`<stem>.mbox` under `output_root`).
-fn conversation_mbox_path(output_root: &Path, msg: &MailMessage) -> PathBuf {
-    output_root.join(format!("{}.mbox", conversation_stem(msg)))
+    Ok(conv_dir.to_path_buf())
 }
 
 /// Append one message to a conversation `.mbox` in mboxrd form.
@@ -268,15 +248,15 @@ fn append_message_mbox(mbox_path: &Path, msg: &MailMessage) -> Result<()> {
     Ok(())
 }
 
-/// Write one conversation `.mbox` under `output_root` (mboxrd).
+/// Write one conversation as the mboxrd file `path`.
 ///
-/// Returns the `.mbox` path. Messages are sorted by timestamp, then guid.
-fn write_conversation_mbox(output_root: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
+/// Returns `path`. Messages are sorted by timestamp, then guid.
+fn write_conversation_mbox(path: &Path, messages: &[MailMessage]) -> Result<PathBuf> {
     if messages.is_empty() {
         bail!("write_conversation_mbox requires at least one message");
     }
 
-    let path = conversation_mbox_path(output_root, &messages[0]);
+    let path = path.to_path_buf();
     if path.exists() {
         fs::remove_file(&path)
             .with_context(|| format!("replace existing mbox {}", path.display()))?;

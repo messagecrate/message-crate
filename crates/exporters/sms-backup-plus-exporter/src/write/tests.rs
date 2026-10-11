@@ -243,7 +243,7 @@ fn a_group_lists_every_peer_and_names_the_sender() {
         .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
         .unwrap();
 
-    let written = mails(tmp.path(), &doc.filename_stem());
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
     let raw = &written[0].1;
     assert_eq!(
         header(raw, "X-smssync-address").unwrap(),
@@ -395,7 +395,7 @@ fn the_owner_under_another_spelling_is_not_a_peer() {
         .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
         .unwrap();
 
-    let written = mails(tmp.path(), &doc.filename_stem());
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
     assert_eq!(
         header(&written[0].1, "X-smssync-address").unwrap(),
         "+15555550101"
@@ -440,7 +440,11 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
         archive()
             .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
             .unwrap();
-        header(&mails(tmp.path(), &doc.filename_stem())[0].1, "Subject").unwrap()
+        header(
+            &mails(tmp.path(), &message_ir_format::filename_stem(&doc))[0].1,
+            "Subject",
+        )
+        .unwrap()
     };
 
     assert_eq!(
@@ -470,7 +474,7 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
         .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
         .unwrap();
 
-    let written = mails(tmp.path(), &doc.filename_stem());
+    let written = mails(tmp.path(), &message_ir_format::filename_stem(&doc));
     let raw = &written[0].1;
     assert_eq!(header(raw, "X-smssync-address").unwrap_or_default(), "");
     assert_eq!(header(raw, "Subject").unwrap(), "SMS with Alice");

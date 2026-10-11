@@ -8,7 +8,7 @@ use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
     IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, TimePrecision,
-    nonempty, parse_android_type,
+    nonempty,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -128,7 +128,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     let reactions = parse_reactions(get("reactions_json"))?;
     let edits = parse_earlier_versions(get("earlier_versions_json"))?;
     let source = source_from_parts(
-        parse_android_type(get("android_type")),
+        get("android_type").trim().parse().ok(),
         get("source_fields_json"),
     );
 

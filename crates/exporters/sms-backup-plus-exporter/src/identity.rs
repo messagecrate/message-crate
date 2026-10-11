@@ -15,7 +15,7 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// merge unrelated people; the server resolves the name against contacts on
 /// import. The name key carries a prefix no address has, so a person named
 /// "AMAZON" never shares the chat of the sender `AMAZON`. The file name is
-/// made from this key later, by `ConversationDocument::filename_stem`.
+/// made from this key later, by `message_ir_format::filename_stem`.
 ///
 /// A mail that names nobody, with no address and no name, is keyed
 /// [`NAMELESS_CHAT_ID`], the key every exporter gives the conversation that

@@ -167,7 +167,7 @@ fn resume_rewrites_a_unit_whose_conversation_file_is_missing() {
 
     let doomed = out.join(format!(
         "{}.jsonl",
-        doc_with(&test_number(7), 0).filename_stem()
+        message_ir_format::filename_stem(&doc_with(&test_number(7), 0))
     ));
     assert!(doomed.is_file());
     fs::remove_file(&doomed).unwrap();
@@ -201,7 +201,12 @@ fn resume_rewrites_a_conversation_file_that_is_empty_or_cut_off() {
     };
     drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
 
-    let file_for = |who: &str| out.join(format!("{}.jsonl", doc_with(who, 0).filename_stem()));
+    let file_for = |who: &str| {
+        out.join(format!(
+            "{}.jsonl",
+            message_ir_format::filename_stem(&doc_with(who, 0))
+        ))
+    };
     let intact = file_for(&test_number(6));
     let cut_off = file_for(&test_number(7));
     let empty = file_for(&test_number(8));
@@ -241,7 +246,7 @@ fn disabled_mode_marks_not_copied_and_clears_paths() {
     )];
     drain(&out, units, &options(MediaMode::Disabled, false)).unwrap();
 
-    let stem = doc_with(&test_number(6), 0).filename_stem();
+    let stem = message_ir_format::filename_stem(&doc_with(&test_number(6), 0));
     let doc = read_conversation_jsonl(&out.join(format!("{stem}.jsonl"))).unwrap();
     let a = &doc.messages[0].attachments[0];
     assert_eq!(a.missing_reason.as_deref(), Some("not_copied"));
@@ -267,7 +272,7 @@ fn missing_source_becomes_file_missing_and_the_drain_continues() {
     let report = drain(&out, units, &options(MediaMode::Clone, false)).unwrap();
     assert_eq!(report.conversations_written, 1);
 
-    let stem = doc_with(&test_number(6), 0).filename_stem();
+    let stem = message_ir_format::filename_stem(&doc_with(&test_number(6), 0));
     let doc = read_conversation_jsonl(&out.join(format!("{stem}.jsonl"))).unwrap();
     let atts = &doc.messages[0].attachments;
     assert_eq!(atts[0].missing_reason.as_deref(), Some("file_missing"));
@@ -362,7 +367,7 @@ fn parallel_drain_stops_on_the_first_error() {
     // A directory sitting where a conversation file must go: the write
     // fails for that unit, and the drain reports it rather than
     // finishing quietly.
-    let blocked = doc_with(&test_number(3), 0).filename_stem();
+    let blocked = message_ir_format::filename_stem(&doc_with(&test_number(3), 0));
     fs::create_dir_all(out.join(format!("{blocked}.jsonl"))).unwrap();
 
     let units: Vec<_> = (1..=4)
@@ -776,7 +781,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
         "an unreadable attachment says why, as a sentence, before it turns into a chip: {lines:?}"
     );
 
-    let stem = doc_with(&test_number(6), 0).filename_stem();
+    let stem = message_ir_format::filename_stem(&doc_with(&test_number(6), 0));
     let doc = read_conversation_jsonl(&out.join(format!("{stem}.jsonl"))).unwrap();
     assert_eq!(
         doc.messages[0].attachments[0].missing_reason.as_deref(),
@@ -1010,7 +1015,7 @@ fn convert_runs_after_the_drain_stages_originals() {
         "the convert run after the drain converted the staged original"
     );
 
-    let stem = doc_with(&test_number(6), 0).filename_stem();
+    let stem = message_ir_format::filename_stem(&doc_with(&test_number(6), 0));
     let written = read_conversation_jsonl(&out.join(format!("{stem}.jsonl"))).unwrap();
     let path = written.messages[0].attachments[0].path.as_deref().unwrap();
     assert!(

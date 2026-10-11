@@ -100,7 +100,7 @@ pub fn write_format(
 
 /// Per-conversation JSON artifact (`<stem>.json`).
 fn write_conversation_json(output_dir: &Path, doc: &ConversationDocument) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.json", doc.filename_stem()));
+    let path = output_dir.join(format!("{}.json", crate::filename_stem(doc)));
     let json = serde_json::to_vec_pretty(doc).context("serialize ConversationDocument")?;
     file_io::write_atomic(&path, |out| {
         out.write_all(&json)?;
@@ -139,7 +139,7 @@ pub fn write_conversation_jsonl_to(path: &Path, doc: &ConversationDocument) -> R
 ///
 /// Returns an error when the file cannot be created or written.
 pub fn write_conversation_jsonl(output_dir: &Path, doc: &ConversationDocument) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.jsonl", doc.filename_stem()));
+    let path = output_dir.join(format!("{}.jsonl", crate::filename_stem(doc)));
     write_conversation_jsonl_to(&path, doc)?;
     Ok(path)
 }
@@ -211,7 +211,7 @@ pub(crate) fn write_conversation_csv(
     output_dir: &Path,
     doc: &ConversationDocument,
 ) -> Result<PathBuf> {
-    let path = output_dir.join(format!("{}.csv", doc.filename_stem()));
+    let path = output_dir.join(format!("{}.csv", crate::filename_stem(doc)));
     let participants_json = json_cell(
         &doc.conversation
             .participants
@@ -455,7 +455,7 @@ fn write_conversation_mail(
     if messages.is_empty() {
         bail!("conversation has no messages");
     }
-    write_mail_package(output_dir, package, &messages)
+    write_mail_package(output_dir, &crate::filename_stem(doc), package, &messages)
 }
 
 /// Build [`MailMessage`] list from IR (reads attachment bytes from disk when missing).
@@ -502,7 +502,6 @@ pub fn document_to_mail_messages(
             export_tool: doc.export.tool.clone(),
             export_tool_version: doc.export.tool_version.clone(),
             backup_taken_at_unix_ms: doc.export.backup_taken_at_unix_ms,
-            filename_suffix: doc.packaging_stem_suffix.clone(),
             message: msg.clone(),
             attachments,
         });
