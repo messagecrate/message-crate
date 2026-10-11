@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Assert docker/Dockerfile copies every [patch.crates-io] path crate and
-# rust-toolchain.toml, that its rust base image is on the pinned minor, and
-# that every base image, and the BuildKit frontend its syntax line names, is
-# pinned by tag and digest.
+# rust-toolchain.toml, that its rust base image is on the pinned minor, that
+# its frontend-builder stage is on the Node.js major in .nvmrc, and that every
+# base image, and the BuildKit frontend its syntax line names, is pinned by
+# tag and digest.
 #
 #   ./scripts/check-docker-context.sh
 #
@@ -117,9 +118,11 @@ fi
 # stage (AS <name>), or scratch, has no image of its own to pin. A line
 # inside a heredoc, or after a line that ends in a backslash, is not an
 # instruction, so it is skipped. The first rust:<version> image is kept for
-# the compiler check below.
+# the compiler check below, and the frontend-builder stage's image for the
+# Node.js check.
 stages=()
 image_rust=""
+image_frontend=""
 heredoc=""
 continued=0
 while IFS= read -r line || [[ -n "${line}" ]]; do
@@ -163,8 +166,31 @@ while IFS= read -r line || [[ -n "${line}" ]]; do
   if [[ -z "${image_rust}" && "${image}" =~ ^rust:([0-9][0-9.]*) ]]; then
     image_rust="${BASH_REMATCH[1]}"
   fi
+  [[ "${stage}" == "frontend-builder" ]] && image_frontend="${image}"
   [[ -n "${stage}" ]] && stages+=("${stage}")
 done <"${DOCKERFILE}"
+
+# Node.js. .nvmrc holds the one major that every workflow that installs
+# Node.js reads (actions/setup-node's node-version-file) and that builds web/
+# in the image, so CI tests the website on the Node.js that builds it there
+# (#2821). The file holds the major alone, and only the major of the stage's
+# tag is compared with it, so a tag such as node:24.11.1-bookworm-slim
+# passes. The runtime stage runs the server, not the build, and is not
+# checked.
+nvmrc_major="$(tr -d '[:space:]' 2>/dev/null <.nvmrc || true)"
+if [[ ! "${nvmrc_major}" =~ ^[1-9][0-9]*$ ]]; then
+  echo ".nvmrc: hold a Node.js major alone, such as 24; found '${nvmrc_major}'" >&2
+  failures=$((failures + 1))
+elif [[ -z "${image_frontend}" ]]; then
+  echo "${DOCKERFILE}: could not read a FROM ... AS frontend-builder stage" >&2
+  failures=$((failures + 1))
+elif [[ ! "${image_frontend}" =~ ^node:([0-9]+)([.@-]|$) ]]; then
+  echo "${DOCKERFILE}: the frontend-builder stage is not a node:<major>[.<minor>[.<patch>]][-<variant>] image: ${image_frontend}" >&2
+  failures=$((failures + 1))
+elif [[ "${BASH_REMATCH[1]}" != "${nvmrc_major}" ]]; then
+  echo "${DOCKERFILE}: the frontend-builder stage is on Node.js ${BASH_REMATCH[1]}, .nvmrc names ${nvmrc_major}; keep them on one major" >&2
+  failures=$((failures + 1))
+fi
 
 # The compiler. rust-toolchain.toml pins it; the rust-builder stage has to
 # copy the file so rustup installs that version inside the image. The base
