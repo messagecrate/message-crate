@@ -23,6 +23,37 @@ pub const MAX_CONTACT_SUMMARY_IDS: usize = 500;
 
 pub use message_crate_api_types::Page;
 
+/// The page a list answers: the rows read for `params`, the count of every
+/// row the query matches, and the `limit` and `offset` they were read with.
+pub fn page_from_rows<T>(items: Vec<T>, total: u64, params: PageParams) -> Page<T> {
+    Page {
+        items,
+        total,
+        limit: params.limit,
+        offset: params.offset,
+    }
+}
+
+/// Read a list's `status=` filter against the values its run type holds:
+/// trimmed, and blank or absent is no filter. Each value is matched exactly.
+///
+/// # Errors
+///
+/// `validation-failed` for a value not in `all`, naming the value and the
+/// accepted set.
+pub fn parse_status<'a>(raw: Option<&'a str>, all: &[&str]) -> Result<Option<&'a str>, ApiError> {
+    let Some(status) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(None);
+    };
+    if !all.contains(&status) {
+        return Err(ApiError::validation(format!(
+            "status: unknown value '{status}'; accepted values are {}",
+            all.join(", ")
+        )));
+    }
+    Ok(Some(status))
+}
+
 /// Cut a page out of rows already in memory.
 ///
 /// A list whose whole set is small and already loaded — the account's API
@@ -37,12 +68,7 @@ pub fn page_of<T>(rows: Vec<T>, params: PageParams) -> Page<T> {
         .skip(params.offset)
         .take(params.limit)
         .collect();
-    Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }
+    page_from_rows(items, total, params)
 }
 
 /// The whole of a body-bounded read as one page.
@@ -53,12 +79,8 @@ pub fn page_of<T>(rows: Vec<T>, params: PageParams) -> Page<T> {
 /// `limit` of them. So `total` is the row count, `limit` is that cap, and
 /// `offset` is 0.
 pub fn whole_page<T>(items: Vec<T>, limit: usize) -> Page<T> {
-    Page {
-        total: items.len() as u64,
-        items,
-        limit,
-        offset: 0,
-    }
+    let total = items.len() as u64;
+    page_from_rows(items, total, PageParams { limit, offset: 0 })
 }
 
 /// The `q`/`limit`/`offset` query string of a plain list route; lists with
@@ -375,6 +397,57 @@ mod tests {
             page_params(None, Some(largest), 40, None).unwrap().offset,
             largest
         );
+    }
+
+    #[test]
+    fn a_status_is_trimmed_and_blank_is_no_filter() {
+        let all = ["running", "completed"];
+        assert_eq!(parse_status(None, &all).unwrap(), None);
+        assert_eq!(parse_status(Some("  "), &all).unwrap(), None);
+        assert_eq!(
+            parse_status(Some(" running "), &all).unwrap(),
+            Some("running")
+        );
+    }
+
+    #[test]
+    fn an_unknown_status_is_refused_naming_the_accepted_values() {
+        let err = parse_status(Some(" bogus "), &["running", "completed"]).unwrap_err();
+        assert!(matches!(
+            err,
+            ApiError::ValidationFailed(m)
+                if m == ["status: unknown value 'bogus'; accepted values are running, completed"]
+        ));
+        assert!(parse_status(Some("Running"), &["running"]).is_err());
+    }
+
+    #[test]
+    fn a_page_from_rows_carries_the_params_it_was_read_with() {
+        let page = page_from_rows(
+            vec!["a", "b"],
+            9,
+            PageParams {
+                limit: 2,
+                offset: 4,
+            },
+        );
+        assert_eq!(page.items, ["a", "b"]);
+        assert_eq!((page.total, page.limit, page.offset), (9, 2, 4));
+    }
+
+    #[test]
+    fn mapping_a_page_keeps_its_total_limit_and_offset() {
+        let page = page_from_rows(
+            vec![1, 2],
+            9,
+            PageParams {
+                limit: 2,
+                offset: 4,
+            },
+        )
+        .map(|n| n * 10);
+        assert_eq!(page.items, [10, 20]);
+        assert_eq!((page.total, page.limit, page.offset), (9, 2, 4));
     }
 
     #[test]
