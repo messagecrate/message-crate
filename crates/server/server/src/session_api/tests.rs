@@ -4,9 +4,9 @@ use super::*;
 use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, claim_as_owner, delete_status,
-    expect_problem, fixture_with_account, get_json, get_raw, get_status, http_client, log_in,
-    log_in_raw, post_created_json, post_json_raw, put_status, register_via_api, seed_conversation,
-    stored_time, test_fixture,
+    expect_problem, expect_problem_for, fixture_with_account, get_json, get_raw, get_status,
+    http_client, log_in, log_in_raw, post_created_json, post_json_raw, put_status,
+    register_via_api, seed_conversation, stored_time, test_fixture,
 };
 
 const TEST_ACCOUNT: i64 = 7;
@@ -296,6 +296,9 @@ async fn logout_on_conn_leaves_registered_account() {
     );
 }
 
+/// A disabled account's login is refused with the answer every refused
+/// login gets, whether the password was right or wrong, so a guesser does
+/// not learn which guess was right. The Audit Trail still records why.
 #[tokio::test]
 async fn disabled_account_cannot_log_in() {
     let (fixture, created) = fixture_with_account().await;
@@ -309,7 +312,29 @@ async fn disabled_account_cannot_log_in() {
         .unwrap();
 
     let (status, text) = log_in_raw(&state, "alice", "hunter2hunter2").await;
-    expect_problem(status, &text, ProblemType::AccountDisabled);
+    expect_problem_for(
+        "the right password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
+    );
+    let (status, text) = log_in_raw(&state, "alice", "not-the-password").await;
+    expect_problem_for(
+        "a wrong password",
+        status,
+        &text,
+        ProblemType::InvalidCredentials,
+    );
+
+    let reasons: Vec<String> = sqlx::query_scalar(
+        "SELECT reason FROM audit_entries
+         WHERE action = 'login_refused' AND account_id = $1 ORDER BY id",
+    )
+    .bind(created.account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(reasons, ["account_disabled", "wrong_password"]);
 }
 
 // ---------------------------------------------------------------------------

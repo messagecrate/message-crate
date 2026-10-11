@@ -11,4 +11,4 @@ editUrl: false
 | Status | `403 Forbidden` |
 | Type | `https://messagecrate.app/docs/developer/reference/errors/account-disabled` |
 
-The account exists but the owner has disabled it, so it may not log in or act. Ask the owner to enable it.
+The account exists but the owner has disabled it, so a Session or API token it already has may not act. A login to a disabled account answers `invalid-credentials` instead, so a refused login does not tell a guesser that the password was right. Ask the owner to enable it.

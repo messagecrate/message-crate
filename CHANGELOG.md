@@ -242,6 +242,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **Logging in to a disabled account no longer tells a guesser
+  the password was right.** A disabled account's login used to say the
+  account was disabled only when the password was right, and the usual
+  "invalid username or password" when it was wrong, so someone guessing
+  learned which guess worked, and that password works again once the owner
+  enables the account. Every refused login now gets the same answer. The
+  Audit Trail still records that the login was refused because the account
+  is disabled (#2145).
 - 2026-10-10: **A password typed into the username field no longer reaches
   the Audit Trail.** A refused login for a username that matches no account
   kept the text exactly as typed for 90 days, so a password typed into the wrong
