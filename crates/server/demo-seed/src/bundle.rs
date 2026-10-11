@@ -31,9 +31,11 @@ const SEED_TOML_HEADER: &str = "\
 # Demo account identity, read only when the server builds the Demo Account
 # (`reset-demo`, `serve` on a new database, the Owner Home action).
 #
+# owner.display_name: the Demo Account's display name.
 # owner.handle_specs: (raw handle, handle type) pairs linked into
 #   `account_handles`.
 # owner.emails: each email is an identity too, linked into `account_handles`.
+# account.username: the name the Demo Account logs in with.
 
 ";
 
