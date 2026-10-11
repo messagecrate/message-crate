@@ -18,7 +18,10 @@ type DemoDataSize = components["schemas"]["DemoDataSize"];
 
 const APP_NAMES = { desktop: "desktop app", website: "website" } as const;
 
-/** The sets of Demo Data, as Owner Home's Demo Account card names them. */
+/**
+ * The words for each set of Demo Data. A map rather than the wire value, so
+ * a set the server adds fails the type-check until it has words here.
+ */
 const DEMO_DATA_SIZES: Record<DemoDataSize, string> = { medium: "medium", large: "large" };
 
 /** " with the large set", or nothing when the entry names no set. */

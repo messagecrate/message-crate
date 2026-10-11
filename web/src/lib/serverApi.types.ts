@@ -1995,7 +1995,7 @@ export interface components {
             /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
             /**
-             * @description `demo_account_added` and `demo_account_reset`: how much Demo Data the
+             * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
              *     build was asked for.
              */
             demo_data_size: components["schemas"]["DemoDataSize"] | null;
@@ -4010,7 +4010,7 @@ export interface components {
                 /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
                 /**
-                 * @description `demo_account_added` and `demo_account_reset`: how much Demo Data the
+                 * @description `demo_account_added` and `demo_account_reset`: the set of Demo Data the
                  *     build was asked for.
                  */
                 demo_data_size: components["schemas"]["DemoDataSize"] | null;

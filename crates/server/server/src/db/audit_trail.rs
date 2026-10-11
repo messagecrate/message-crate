@@ -80,11 +80,11 @@ pub enum AuditAction {
     /// new limit.
     AssetLimitChanged,
     /// The owner added the Demo Account where there was none: a build
-    /// started; `demo_data_size` is the size asked for.
+    /// started; `demo_data_size` is the set of Demo Data asked for.
     DemoAccountAdded,
     /// The owner reset the Demo Account: a build started that removes it,
-    /// with all it holds, and builds it again; `demo_data_size` is the size
-    /// asked for.
+    /// with all it holds, and builds it again; `demo_data_size` is the set of
+    /// Demo Data asked for.
     DemoAccountReset,
     /// The holder made an API token.
     ApiTokenCreated,
@@ -432,7 +432,7 @@ pub struct Details {
     /// `asset_limit_changed`: the new attachment size limit, in bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset_max_bytes: Option<u64>,
-    /// `demo_account_added` and `demo_account_reset`: how much Demo Data the
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
     /// build was asked for.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub demo_data_size: Option<DemoDataSize>,
@@ -513,7 +513,7 @@ pub struct AuditEntry {
     pub contacts_deleted: Option<i64>,
     /// `asset_limit_changed`: the new attachment size limit, in bytes.
     pub asset_max_bytes: Option<u64>,
-    /// `demo_account_added` and `demo_account_reset`: how much Demo Data the
+    /// `demo_account_added` and `demo_account_reset`: the set of Demo Data the
     /// build was asked for.
     pub demo_data_size: Option<DemoDataSize>,
 }

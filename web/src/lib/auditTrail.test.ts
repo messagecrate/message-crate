@@ -97,11 +97,18 @@ describe("describeAuditEntry", () => {
     ).toBe("Demo Account added with the medium set");
     expect(
       describeAuditEntry(
-        entry({ action: "demo_account_reset", actor: "owner", demo_data_size: "large" }),
+        auditEntry({
+          action: "demo_account_reset",
+          actor: "owner",
+          username: "demo",
+          demo_data_size: "large",
+        }),
       ),
     ).toBe("Demo Account reset with the large set");
-    expect(describeAuditEntry(entry({ action: "demo_account_reset", actor: "owner" }))).toBe(
-      "Demo Account reset",
-    );
+    expect(
+      describeAuditEntry(
+        auditEntry({ action: "demo_account_reset", actor: "owner", username: "demo" }),
+      ),
+    ).toBe("Demo Account reset");
   });
 });

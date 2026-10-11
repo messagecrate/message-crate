@@ -13675,7 +13675,7 @@
                 "type": "null"
               }
             ],
-            "description": "`demo_account_added` and `demo_account_reset`: how much Demo Data the\nbuild was asked for."
+            "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
           },
           "id": {
             "type": "integer",
@@ -16997,7 +16997,7 @@
                       "type": "null"
                     }
                   ],
-                  "description": "`demo_account_added` and `demo_account_reset`: how much Demo Data the\nbuild was asked for."
+                  "description": "`demo_account_added` and `demo_account_reset`: the set of Demo Data the\nbuild was asked for."
                 },
                 "id": {
                   "type": "integer",
