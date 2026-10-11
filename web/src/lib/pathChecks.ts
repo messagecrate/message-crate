@@ -11,8 +11,10 @@ export const PATH_MISSING = "This path does not exist.";
 /**
  * Check an optional path field of the Import form. An empty path is fine,
  * and so is one not checked yet (`stat` is null). A missing path gets
- * `PATH_MISSING`; a file where a directory is `expected`, or a directory
- * where a file is, gets the field's own `kindError`.
+ * `PATH_MISSING`; a path that exists but is not the `expected` kind gets the
+ * field's own `kindError`. That covers a file where a directory is needed,
+ * a directory where a file is, and a path that is neither, such as a socket
+ * or a device file.
  */
 export function checkOptionalPath<K extends string>(
   path: string,
@@ -29,7 +31,7 @@ export function checkOptionalPath<K extends string>(
     errors[key] = PATH_MISSING;
     return;
   }
-  if (expected === "directory" ? stat.isFile : stat.isDirectory) {
+  if (expected === "directory" ? !stat.isDirectory : !stat.isFile) {
     errors[key] = kindError;
   }
 }
