@@ -224,12 +224,15 @@ function runAlreadyClosed(e: unknown): boolean {
 }
 
 /**
- * True when a call failed with no answer from the server: the request never
- * left, the connection dropped, or its time limit ended it. The server may
+ * True when a call failed without the server saying why: the request never
+ * left, the connection dropped, its time limit ended it, something in front
+ * of the server answered instead, such as a proxy's `504 Gateway Timeout`,
+ * or the server failed with a `500` (`about:blank`). Every other failure the
+ * server answers carries a problem type. In each of these the server may
  * still have done what the call asked.
  */
 function answerLost(e: unknown): boolean {
-  return !(e instanceof ApiError) || e.status === 0;
+  return !(e instanceof ApiError) || e.type === null;
 }
 
 /**

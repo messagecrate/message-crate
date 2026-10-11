@@ -1282,6 +1282,17 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
+  it("deletes the directory when a proxy answers a discard with 504 and the run is no longer running (#2807)", async () => {
+    // The proxy's upstream timed out after the server committed the discard.
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(504, "Gateway Timeout"));
+    getActiveImportRunMock.mockResolvedValueOnce(null);
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "discarded" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
+  });
+
   it("deletes the directory when a discard's answer is lost and another run is the running one now (#2807)", async () => {
     discardImportRunMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
     getActiveImportRunMock.mockResolvedValueOnce(activeRun({ id: 8 }));
