@@ -798,6 +798,7 @@ async fn list_conversations_filters_by_import_id() {
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -815,6 +816,7 @@ async fn list_conversations_filters_by_import_id() {
     let import_b = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -967,6 +969,7 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();
@@ -1158,6 +1161,7 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     let import_a = imports::start_import(
         &mut conn,
         &imports::StartImportArgs::new(account, "imessage-ios", "append", Some("test")),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();

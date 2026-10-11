@@ -1,9 +1,10 @@
 import { appHeaders } from "./build";
+import { createExternalStore } from "./externalStore";
 import { startTimeLimit } from "./timeLimit";
 
 let baseUrl = "";
 let authToken: string | null = null;
-let accountId: number | null = null;
+const accountId = createExternalStore<number | null>(null);
 
 /** Set the server URL. An empty string means "same host as this page". */
 export function setBaseUrl(url: string) {
@@ -27,28 +28,17 @@ export function getToken(): string | null {
  * belongs to. Pass null to log out.
  */
 export function setAccountId(id: number | null) {
-  if (id === accountId) return;
-  accountId = id;
-  for (const listener of accountIdListeners) listener();
+  accountId.set(id);
 }
-
-const accountIdListeners = new Set<() => void>();
 
 /**
  * Call `listener` whenever the logged-in account changes, logging out
  * included. Returns the function that stops it.
  */
-export function onAccountIdChange(listener: () => void): () => void {
-  accountIdListeners.add(listener);
-  return () => {
-    accountIdListeners.delete(listener);
-  };
-}
+export const onAccountIdChange = accountId.subscribe;
 
 /** The logged-in account's id, or null when logged out. */
-export function getAccountId(): number | null {
-  return accountId;
-}
+export const getAccountId = accountId.get;
 
 export function getBaseUrl(): string {
   return baseUrl;

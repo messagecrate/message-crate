@@ -14,6 +14,7 @@ async fn fixture_with_a_run() -> (sqlx::SqlitePool, tempfile::TempDir, i64) {
     let import_id = start_import(
         &mut conn,
         &StartImportArgs::new(ACCOUNT, "imessage", "full", None),
+        crate::test_support::fixed_start_instant(),
     )
     .await
     .unwrap();

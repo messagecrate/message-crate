@@ -133,6 +133,7 @@ impl TestFixture {
                 "append",
                 Some("message-crate-server"),
             ),
+            crate::test_support::fixed_start_instant(),
         )
         .await
         .unwrap();

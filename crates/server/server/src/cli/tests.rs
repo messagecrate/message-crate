@@ -345,6 +345,7 @@ async fn imports_discard_clears_a_stranded_import_run_so_the_next_import_runs() 
                 "replace",
                 Some("message-crate-server"),
             ),
+            crate::test_support::fixed_start_instant(),
         )
         .await
         .unwrap()

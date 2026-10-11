@@ -1059,6 +1059,36 @@ import while the production tables have many. The messages watermark and
 count a promotion takes before it inserts live there too, for the same
 reason: nothing but a promotion reads them.
 
+A route whose answer is one `db/` read's result, as the read returns it,
+answers with the read's own struct. That struct derives `Serialize` and
+`utoipa::ToSchema`, takes its wire name by the rules above, and the handler
+hands it on unchanged: `list_saved_searches` answers
+`Json<Page<SavedSearch>>` with the `SavedSearch` rows `db/saved_searches.rs`
+reads. A struct that a client crate reads too lives in
+`message-crate-api-types`, and the `db/` read returns that struct:
+`ExportRun` from `db/exports.rs`, `Message` from `db/conversation_messages.rs`.
+Why: one struct cannot drift from itself, and a copy beside it would be a
+second place to change for every column.
+No client needs the storage shape hidden from it, because no client is kept
+compatible ([Versioning and change](#versioning-and-change)). A column rename
+that reaches the wire costs a rebuild and nothing more.
+
+Does a route group then never define a wire type of its own? It does, when the
+answer is not one read's result as it stands. An action's answer is a
+`VerbNounResponse`, such as `DeleteMessagesResponse`. A thing assembled from
+several reads is defined in the route group: `Account`, `Contact`, and
+`ImportRun`, which is an `ImportRunSummary` with the run's issues and notes.
+So is a thing whose fields depend on who asks: `ApiToken` carries a `null`
+`token_hint` when the owner lists another account's tokens, and
+`OwnerImportRun` leaves out what the backup held. So is a thing whose stored
+form is not its wire form: `ImportRunSummary` decodes the JSON text its row
+holds in `form_json`, `summary_json`, `source_fingerprint` and
+`source_identities` into JSON values, and answers `form_json` as `form` and
+`summary_json` as `summary`. So is a thing no table holds, such as `Asset`,
+`MediaLink` or `PhoneCountry`. A struct that repeats a `db/` struct's fields
+and is filled from it field by field is none of these, so it is not written:
+the `db/` struct goes on the wire instead.
+
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and
 takes its database and account from the shared fixtures in `test_support.rs`.

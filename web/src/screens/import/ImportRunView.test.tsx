@@ -7,7 +7,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
-import { importForm } from "../../test/importForm";
+import { importForm, MIB } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -78,6 +78,9 @@ function form(overrides: Partial<ImportJobFormValues> = {}): ImportJobFormValues
   });
 }
 
+/** One gibibyte, for the attachment totals. */
+const GIB = 1024 * MIB;
+
 function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
   return {
     conversations: 312,
@@ -85,9 +88,9 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     contactIdentifiers: [],
     ownerIdentities: [],
     attachments: 6118,
-    attachmentBytes: 9.4 * 1024 * 1024 * 1024,
+    attachmentBytes: 9.4 * GIB,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };
@@ -107,8 +110,6 @@ function finished(overrides: Partial<ImportSummaryView> = {}): ImportSummaryView
   };
 }
 
-const MB = 1024 * 1024;
-
 function file(
   name: string,
   sizeMb: number,
@@ -118,8 +119,8 @@ function file(
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MB,
-    estimateBytes: estimateMb * MB,
+    sizeBytes: sizeMb * MIB,
+    estimateBytes: estimateMb * MIB,
     verdict,
   };
 }
@@ -564,7 +565,7 @@ describe("ImportRunView", () => {
     desktop.toolsStatus.mockResolvedValue({
       toolsDir: "/home/sam/message-crate/tools",
       checking: false,
-      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      ffmpeg: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
       wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
     } satisfies ToolsStatus);
@@ -651,7 +652,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done" }),
       stagingSummary: staged(),
       mediaSummary: staged({
-        attachmentBytes: 4.1 * 1024 * 1024 * 1024,
+        attachmentBytes: 4.1 * GIB,
         forecasts: [file("huge-mv.mp4", 84, "probably_too_big")],
       }),
       mediaFailedCount: 2,
