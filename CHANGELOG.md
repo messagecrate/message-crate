@@ -655,7 +655,6 @@ released versions carry their date on the heading.
   discarded cleanly. The files now go only once Message Crate has taken the
   discard. Otherwise the import is offered again with what went wrong, and
   **Discard this import** tries again (#2669).
-
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The
