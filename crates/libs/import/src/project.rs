@@ -113,7 +113,7 @@ fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
 mod tests {
     use super::*;
     use message_ir::IrAttachment;
-    use message_ir::testutil::sample_document;
+    use message_ir::testutil::{sample_attachment, sample_document};
 
     #[test]
     fn serializes_ir_sms() {
@@ -139,12 +139,8 @@ mod tests {
             original_name: Some("big.bin".into()),
             mime_type: Some("application/octet-stream".into()),
             digest_sha256: Some("deadbeef".into()),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
             size_bytes: Some(99),
-            missing_reason: None,
-            bytes: None,
+            ..sample_attachment()
         }];
         let (line, _) = message_line(
             &msg,
