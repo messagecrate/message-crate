@@ -22,7 +22,9 @@ use crate::db::exports::{
 };
 use crate::db::ownership::{OwnedTable, missing_ids};
 use crate::messages_api::message_filter;
-use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_params, parse_sort};
+use crate::paging::{
+    DEFAULT_LIST_LIMIT, Page, page_from_rows, page_params, parse_sort, parse_status, sorted_page,
+};
 use crate::server::{ApiError, AppState, Created, ExportAccess};
 
 /// Most ids one `selection` scope may name in either list, so the `IN` list
@@ -394,30 +396,17 @@ pub(crate) async fn exports_page(
     account: i64,
     query: ListExportsQuery,
 ) -> Result<Page<ExportRun>, ApiError> {
-    let page = page_params(
+    let (page, order) = sorted_page(
         query.limit,
         query.offset,
-        DEFAULT_LIST_LIMIT,
-        Some(MAX_LIST_OFFSET),
-    )?;
-    let order = parse_sort(
         query.sort.as_deref(),
         &EXPORT_SORT_KEYS,
         &DEFAULT_EXPORT_SORT,
     )?;
-    let status = query
-        .status
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    if let Some(status) = status
-        && ExportStatus::parse(status).is_none()
-    {
-        return Err(ApiError::validation(format!(
-            "status: unknown value '{status}'; accepted values are {}",
-            ExportStatus::ALL.map(ExportStatus::as_str).join(", ")
-        )));
-    }
+    let status = parse_status(
+        query.status.as_deref(),
+        &ExportStatus::ALL.map(ExportStatus::as_str),
+    )?;
 
     let (items, total) = exports::list_exports_page(
         conn,
@@ -428,12 +417,7 @@ pub(crate) async fn exports_page(
         i64::try_from(page.offset).map_err(anyhow::Error::from)?,
     )
     .await?;
-    Ok(Page {
-        items,
-        total,
-        limit: page.limit,
-        offset: page.offset,
-    })
+    Ok(page_from_rows(items, total, page))
 }
 
 /// One Export Run.

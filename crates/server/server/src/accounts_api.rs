@@ -35,7 +35,7 @@ use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
 use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun, with_yourself};
-use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
+use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_from_rows, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
 };
@@ -277,12 +277,7 @@ pub async fn list_accounts(
             items.push(account);
         }
     }
-    Ok(Json(Page {
-        items,
-        total: total.max(0) as u64,
-        limit: page.limit,
-        offset: page.offset,
-    }))
+    Ok(Json(page_from_rows(items, total.max(0) as u64, page)))
 }
 
 /// Body for creating an account, by the owner or by a stranger.
@@ -1381,9 +1376,9 @@ pub(crate) async fn list_account_imports(
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
     Ok(Json(if reach.is_own() {
-        AccountImportRuns::Own(crate::imports_api::runs_page(rows))
+        AccountImportRuns::Own(rows.map(Into::into))
     } else {
-        AccountImportRuns::Owner(crate::imports_api::runs_page(rows))
+        AccountImportRuns::Owner(rows.map(Into::into))
     }))
 }
 
@@ -1452,12 +1447,9 @@ pub(crate) async fn list_account_exports(
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let page = crate::exports_api::exports_page(&mut conn, target, query).await?;
     if !reach.is_own() {
-        return Ok(Json(AccountExportRuns::Owner(Page {
-            items: page.items.into_iter().map(OwnerExportRun::from).collect(),
-            total: page.total,
-            limit: page.limit,
-            offset: page.offset,
-        })));
+        return Ok(Json(AccountExportRuns::Owner(
+            page.map(OwnerExportRun::from),
+        )));
     }
     Ok(Json(AccountExportRuns::Own(page)))
 }
