@@ -1,5 +1,6 @@
 import type { ConversationSort, ConversationSortState } from "../lib/conversationSort";
-import SortMenu, { type SortField, type SortOrder } from "./SortMenu";
+import type { SortOrder } from "../lib/sortOrder";
+import SortMenu, { type SortField } from "./SortMenu";
 
 const FIELDS: ReadonlyArray<SortField<ConversationSort>> = [
   { id: "date", label: "Date" },
