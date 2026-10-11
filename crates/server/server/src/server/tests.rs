@@ -308,6 +308,7 @@ fn a_wildcard_cors_origin_is_warned_about() {
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert_eq!(lines[0].level, crate::logging::LogLevel::Warn);
     assert!(lines[0].text.contains("cors_origins"), "{}", lines[0].text);
+    assert!(lines[0].text.contains("--cors-origin"), "{}", lines[0].text);
     assert!(lines[0].text.contains("any website"), "{}", lines[0].text);
 }
 

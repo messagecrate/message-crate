@@ -1052,7 +1052,7 @@ pub(crate) const PACKAGED_DESKTOP_ORIGINS: &[&str] = &[
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
     if origins.iter().any(|o| o.trim() == "*") {
         tracing::warn!(
-            "[server] cors_origins lists \"*\", so any website can call this server through a visitor's browser; list the origins that need it instead"
+            "The CORS origins in cors_origins or --cors-origin include \"*\", so any website can call this server through a visitor's browser; list the origins that need it instead"
         );
         return CorsLayer::permissive();
     }
