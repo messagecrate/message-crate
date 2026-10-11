@@ -523,16 +523,8 @@ mod tests {
             reporter.show("loud".into());
             reporter.show_at(RunLogLevel::Warn, "careful".into());
         }
-        let text = fs::read_to_string(&log_path).unwrap();
-        let lines: Vec<(RunLogLevel, String)> = text
-            .lines()
-            .map(|raw| {
-                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
-                (line.level, line.text)
-            })
-            .collect();
         assert_eq!(
-            lines,
+            message_crate_core::testutil::run_log_lines(&log_path),
             [
                 (RunLogLevel::Info, "quiet".to_string()),
                 (RunLogLevel::Info, "loud".to_string()),
