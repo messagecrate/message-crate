@@ -1,6 +1,6 @@
 //! Config file model ([`Config`]) plus path/source validation.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -378,6 +378,63 @@ impl Config {
         file.into_config()
     }
 
+    /// Refuse a layout where the website directory and what the server
+    /// stores overlap: the Data Directory or the database inside the website
+    /// directory, or the website directory inside the Data Directory.
+    /// Everything in the website directory is served at `/` to anyone who
+    /// reaches the server, without a login, so the database and every
+    /// account's attachments would be published (#2175).
+    ///
+    /// Paths are compared as the filesystem resolves them, so neither a
+    /// symlink nor a `..` hides the nesting. Run it once every path is
+    /// resolved, after the command line's flags. A config with no `[server]`
+    /// section serves no website and is accepted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error naming both paths when they overlap, or when the
+    /// working directory cannot be read to resolve a relative path.
+    pub fn require_static_dir_apart(&self) -> Result<()> {
+        let Some(server) = &self.server else {
+            return Ok(());
+        };
+        let website = real_path(&server.static_dir)?;
+        let data_dir = real_path(&self.paths.data_dir)?;
+        let db = real_path(&self.paths.db)?;
+        let website_dir = Place {
+            name: "the website directory",
+            configured: &server.static_dir,
+            real: &website,
+        };
+        let data_directory = Place {
+            name: "the Data Directory",
+            configured: &self.paths.data_dir,
+            real: &data_dir,
+        };
+        let database = Place {
+            name: "the database",
+            configured: &self.paths.db,
+            real: &db,
+        };
+        for (inner, outer) in [
+            (&data_directory, &website_dir),
+            (&database, &website_dir),
+            (&website_dir, &data_directory),
+        ] {
+            if is_within(inner.real, outer.real) {
+                bail!(
+                    "{} {} is inside {} {}. Everything in the website directory is served to \
+                     anyone who can reach the server, without a login. Move one outside the other",
+                    capitalized(inner.name),
+                    inner.shown(),
+                    outer.name,
+                    outer.shown()
+                );
+            }
+        }
+        Ok(())
+    }
+
     /// Server settings for `serve`. Fails if `[server]` is missing.
     pub fn require_server(&self) -> Result<&ServerConfig> {
         let server = self
@@ -410,6 +467,140 @@ fn resolve_path(base: &Path, configured: &Path) -> PathBuf {
         configured.to_path_buf()
     } else {
         base.join(configured)
+    }
+}
+
+/// How many symlinks [`real_path`] follows in one path before it gives up,
+/// as Linux does (`MAXSYMLINKS`).
+const MAX_SYMLINKS: usize = 40;
+
+/// `path` as the filesystem resolves it: absolute, with every symlink
+/// followed and every `.` and `..` gone. A link is followed even when what
+/// it points at does not exist yet, because a file or directory made at the
+/// path is made where the link points. The part that does not exist is kept
+/// as written.
+///
+/// # Errors
+///
+/// Returns an error when `path` is relative and the working directory
+/// cannot be read, or when it leads through more than [`MAX_SYMLINKS`]
+/// links, as a loop of links does.
+fn real_path(path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)
+        .with_context(|| format!("could not resolve {}", path.display()))?;
+    let mut to_walk: VecDeque<PathBuf> = absolute
+        .components()
+        .map(|component| PathBuf::from(component.as_os_str()))
+        .collect();
+    let mut real = PathBuf::new();
+    let mut links = 0;
+    while let Some(next) = to_walk.pop_front() {
+        match next.components().next() {
+            Some(Component::Normal(_)) => {
+                let candidate = real.join(&next);
+                // Fails for anything that is not a link, including a path
+                // that does not exist, which is then taken as written.
+                let Ok(target) = fs::read_link(&candidate) else {
+                    real = candidate;
+                    continue;
+                };
+                links += 1;
+                if links > MAX_SYMLINKS {
+                    bail!(
+                        "{} leads through more than {MAX_SYMLINKS} symlinks",
+                        path.display()
+                    );
+                }
+                if target.is_absolute() {
+                    real = PathBuf::new();
+                }
+                for component in target.components().rev() {
+                    to_walk.push_front(PathBuf::from(component.as_os_str()));
+                }
+            }
+            // `real` holds no link, so its parent is the real parent.
+            Some(Component::ParentDir) => {
+                real.pop();
+            }
+            Some(Component::CurDir) | None => {}
+            Some(Component::RootDir | Component::Prefix(_)) => real.push(&next),
+        }
+    }
+    Ok(with_existing_part_canonical(real))
+}
+
+/// `path`, which holds no link, `.` or `..`, with the part that exists
+/// canonicalized and the rest joined on as written. Every path compared then
+/// has one form: on Windows a link's target comes back verbatim (`\\?\C:\`)
+/// and a short name (`MESSAG~1`) stands for a long one, and canonicalizing
+/// gives both the form every other path gets.
+fn with_existing_part_canonical(path: PathBuf) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut existing = path.as_path();
+    loop {
+        if let Ok(real) = existing.canonicalize() {
+            return missing
+                .iter()
+                .rev()
+                .fold(real, |real, name| real.join(name));
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                missing.push(name);
+                existing = parent;
+            }
+            _ => return path.clone(),
+        }
+    }
+}
+
+/// One of the paths [`Config::require_static_dir_apart`] compares.
+struct Place<'a> {
+    /// What the path is, as a refusal names it.
+    name: &'static str,
+    /// The path the config and the flags give.
+    configured: &'a Path,
+    /// Where [`real_path`] says it leads.
+    real: &'a Path,
+}
+
+impl Place<'_> {
+    /// The configured path for a refusal, with where it really leads when a
+    /// link or a `..` makes that differ.
+    fn shown(&self) -> String {
+        if self.configured == self.real {
+            self.configured.display().to_string()
+        } else {
+            format!(
+                "{} (really {})",
+                self.configured.display(),
+                self.real.display()
+            )
+        }
+    }
+}
+
+/// `text` with its first letter capitalized.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
+/// Whether `path` is `dir` or inside it, component by component, so `website`
+/// is not inside `web`. macOS and Windows ignore letter case by default, so
+/// there `Static` and `static` are one directory. A part of a path that does
+/// not exist yet has no case on disk to compare, so the case is folded here.
+/// On a volume of theirs that does tell case apart, two names differing only
+/// in case are refused too. Refusing a safe layout is a cheaper mistake than
+/// publishing the data.
+fn is_within(path: &Path, dir: &Path) -> bool {
+    if cfg!(any(target_os = "macos", windows)) {
+        let fold = |p: &Path| PathBuf::from(p.to_string_lossy().to_lowercase());
+        fold(path).starts_with(fold(dir))
+    } else {
+        path.starts_with(dir)
     }
 }
 

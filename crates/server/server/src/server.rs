@@ -1471,13 +1471,17 @@ pub(crate) fn http_app(state: AppState) -> Router {
 ///
 /// # Errors
 ///
-/// Returns an error when the database cannot be opened, the operation lock
+/// Returns an error when the website directory and the Data Directory or the
+/// database overlap, the database cannot be opened, the operation lock
 /// cannot be taken, or the listener cannot bind.
 pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<()> {
     // First, so the process is watched from the moment the server starts,
     // through a first start's Demo Account build.
     let exit_with_parent = exit_with_parent.map(ParentWatch::start);
     let server = cfg.require_server()?.clone();
+    // Before anything is written to the Data Directory, so a layout that
+    // would publish it never gets a log or a database there (#2175).
+    cfg.require_static_dir_apart()?;
     // The desktop app names its Tools Directory; ffmpeg is looked for on
     // PATH first and there second, as the app looks (#1053).
     media::set_tools_dir(server.tools_dir.clone());
