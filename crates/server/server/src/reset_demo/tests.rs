@@ -6,6 +6,7 @@ use crate::test_support::{
     ConversationRow, MessageRow, conversation_header, message_line, stored_time,
     with_trigger_lifted,
 };
+use demo_seed::bundle::{DemoAccount, DemoOwner};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -14,19 +15,7 @@ pub(crate) fn write_tiny_reset_bundle(root: &Path) {
     fs::create_dir_all(root.join("staging").join(IMESSAGE_SOURCE)).expect("imessage dir");
     fs::create_dir_all(root.join("staging").join(SBR_SOURCE)).expect("sbr dir");
     fs::create_dir_all(root.join("staging").join(WHATSAPP_SOURCE)).expect("whatsapp dir");
-    fs::write(
-        root.join("config/seed.toml"),
-        r#"
-[owner]
-display_name = "Demo User"
-handle_specs = [["+14155550100", "phone"]]
-emails = ["demo.ingest@example.com"]
-
-[account]
-username = "demo"
-"#,
-    )
-    .expect("write seed.toml");
+    demo_seed::bundle::write_seed_toml(&root.join("config")).expect("write seed.toml");
     fs::write(
         root.join("config/contacts.csv"),
         "contact_id,display_name,groups,service,identity_type,identity\n\
@@ -53,44 +42,6 @@ username = "demo"
         conversation(WHATSAPP_SOURCE, "+15555550103", "pg-demo-wa"),
     )
     .expect("write whatsapp jsonl");
-}
-
-/// The refusal for the committed `seed.toml` with `find` replaced by `replace`.
-fn refusal_of_committed_seed_with(find: &str, replace: &str) -> String {
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo-seed/config/seed.toml");
-    let text = fs::read_to_string(committed).expect("read the committed seed.toml");
-    assert!(
-        text.contains(find),
-        "the committed seed.toml holds {find:?}"
-    );
-    let dir = tempfile::tempdir().expect("temp dir");
-    let path = dir.path().join("seed.toml");
-    fs::write(&path, text.replacen(find, replace, 1)).expect("write seed.toml");
-    format!("{:#}", load_demo_seed(&path).unwrap_err())
-}
-
-/// The `seed.toml` the repository ships loads under the rule that refuses an
-/// unknown key.
-#[test]
-fn the_committed_seed_toml_loads() {
-    let committed = Path::new(env!("CARGO_MANIFEST_DIR")).join("../demo-seed/config/seed.toml");
-    let seed = load_demo_seed(&committed).expect("the committed seed.toml loads");
-    assert_eq!(seed.account.username, "demo");
-}
-
-/// A key `reset-demo` does not use is refused by its name, with the file: a
-/// misspelt `emails` otherwise seeds a Demo Account with no email identity.
-#[test]
-fn a_seed_toml_with_an_unknown_key_or_section_is_refused_naming_it() {
-    let text = refusal_of_committed_seed_with("emails = ", "email = ");
-    assert!(text.contains("`email`"), "{text}");
-    assert!(text.contains("seed.toml"), "{text}");
-
-    let text = refusal_of_committed_seed_with("[account]\n", "[account]\npassword = \"x\"\n");
-    assert!(text.contains("`password`"), "{text}");
-
-    let text = refusal_of_committed_seed_with("[account]\n", "[acount]\nx = 1\n\n[account]\n");
-    assert!(text.contains("`acount`"), "{text}");
 }
 
 /// The config of a test build: its database at `db`, its data in `data_dir`.

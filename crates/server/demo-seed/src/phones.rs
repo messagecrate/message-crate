@@ -14,7 +14,7 @@ use rand::Rng;
 use rand::RngExt;
 use rand::seq::IndexedRandom;
 
-/// Demo owner phone number. Matches the value in `crates/server/demo-seed/config/seed.toml`.
+/// Demo owner phone number. Written into `config/seed.toml` by [`crate::bundle::write_seed_toml`].
 pub const OWNER_PHONE: &str = "+14155550100";
 
 /// North American area codes. Each holds the 100 fictional numbers
