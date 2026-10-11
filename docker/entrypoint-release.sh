@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release entrypoint: write the container config, then run the server.
+# Release entrypoint: run the server.
 #
 # Nothing is seeded here. `message-crate-server serve` adds the Demo Account
 # itself when the database does not exist yet, so a Message Crate started by
@@ -7,15 +7,15 @@
 #
 # Arguments run another server command in place of `serve`, with the stack
 # stopped: docker compose run --rm server reset-demo --size large
+#
+# It writes nothing. The image carries the config at config/config.toml, the
+# path every server command reads by default, and the Compose files make the
+# root filesystem read-only, so the server writes under /app/data alone.
 set -euo pipefail
 
 cd /app
 
-CONFIG_DOCKER="config/config.docker.toml"
 CONFIG="config/config.toml"
-
-mkdir -p config data
-cp "${CONFIG_DOCKER}" "${CONFIG}"
 
 if [[ $# -gt 0 ]]; then
   exec message-crate-server "$@"

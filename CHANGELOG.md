@@ -173,6 +173,14 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **The Docker Compose files take away what the server does not
+  need.** The container they start keeps no Linux privileges, cannot gain
+  any, and cannot change its own files: the server writes only to the data
+  volume and to a temporary directory in memory. Nothing in Message Crate
+  changes, and a container scanner that checks for these settings now finds
+  them. This limits what someone who got into the container could do. It
+  closes no known hole (#2178).
+
 - 2026-10-10: The way an import passes its log, its progress and its cancel
   around was reworked inside, with nothing visible (#2165).
 
@@ -851,6 +859,12 @@ released versions carry their date on the heading.
   message's `conversation`, and the export's title of a largest
   attachment's conversation in an account's storage from `group_title` in
   place of `conversation_title` (#2198).
+- A Docker Compose file saved from this release starts only the image of
+  this release or a later one. An older image fails to start under it,
+  because it wrote a file outside the data volume at every start. Pin
+  `bitrealm/message-crate` to this release or `latest`, and run
+  `docker compose pull` before `docker compose up -d`, because Compose does
+  not fetch a `latest` it already has (#2178).
 
 ## [0.10.1] - 2026-10-05
 

@@ -103,8 +103,9 @@ jobs:
               # The image is built from the Dockerfile, the Cargo manifests
               # and lockfile it copies, and the toolchain pin. A change to one
               # of them is how the image stops building while the Rust jobs
-              # stay green.
-              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml) rust=true; docker=true ;;
+              # stay green. The job also starts the image with the script
+              # that checks it.
+              docker/*|Cargo.toml|Cargo.lock|rust-toolchain.toml|config/config.docker.toml|scripts/check-docker-compose.sh) rust=true; docker=true ;;
               crates/*/Cargo.toml|vendor/*/Cargo.toml) rust=true; docker=true ;;
               .github/workflows/*) rust=true; web=true; docs=true; docker=true ;;
               .github/*|.cursor/*|.gitignore|LICENSE*) ;;
@@ -333,7 +334,8 @@ jobs:
   # The image used to be built for the first time on the release tag, so a
   # pull request that broke docker/Dockerfile merged green and the tag
   # failed. This job builds it without pushing whenever the Dockerfile, a
-  # Cargo manifest or the lockfile changes. Pull requests only: the docker
+  # Cargo manifest or the lockfile changes, then starts it with
+  # docker/compose.release.yml. Pull requests only: the docker
   # job below builds and pushes the same image on a tag or a manual run with
   # push_docker_image, and nightly.yml builds it from main.
   docker-build:
@@ -354,8 +356,16 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: false
+          load: true
+          tags: message-crate-server:check
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # The Compose files make the root filesystem read-only and drop every
+      # privilege, so an image that writes outside /app/data at start builds
+      # and then fails to start. This starts it the way Compose does.
+      - name: Start the release Compose stack and log in to the Demo Account
+        run: ./scripts/check-docker-compose.sh message-crate-server:check
 
   # ── Always: product version lockstep ──────────────────────────────────
   # The four version files and their lockfiles must agree; on a v* tag they
