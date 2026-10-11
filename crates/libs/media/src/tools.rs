@@ -9,8 +9,10 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, bail};
 
-/// Where this process looks for ffmpeg and ffprobe, and which files there
-/// answered `-version`.
+/// Where this process looks for ffmpeg and ffprobe, and which programs
+/// answered the question they are asked: `-version` for ffmpeg and ffprobe,
+/// and the arguments [`tool_in_dir`] is given for another program, such as
+/// `--help` for wtsexporter.
 struct ToolsState {
     /// The Tools Directory, searched after `PATH`. The desktop app sets it
     /// for itself and passes it to the server it starts (`serve
@@ -21,8 +23,9 @@ struct ToolsState {
     /// not the machine has ffmpeg installed.
     search_path: Option<OsString>,
     generation: u64,
-    /// The files that answered `-version`, by path, each beside the file as
-    /// it was when it answered. Every lookup searches `PATH` and the Tools
+    /// The files that answered, by path, each beside the file as it was
+    /// when it answered. A path is always asked the same question, because
+    /// its file name says which program it is. Every lookup searches `PATH` and the Tools
     /// Directory again, which only reads file metadata, and a lookup runs
     /// once per file staged and once per Asset shown; the answer kept here
     /// means a file that answered is not run again until it changes.
@@ -358,16 +361,27 @@ fn resolve_tools() -> Result<FfmpegTools> {
     find_tools(search_path.as_deref(), tools_dir().as_deref())
 }
 
+/// The arguments ffmpeg and ffprobe are run with to learn that they run.
+const VERSION_ARGS: &[&str] = &["-version"];
+
 /// The program `name` in `dir`, `.exe` added on Windows, when it is a file
-/// that answers `-version`. The desktop app also asks this of a program in
-/// the Tools Directory, to know that the file it keeps there runs.
-pub fn tool_in_dir(dir: &Path, name: &str) -> Option<PathBuf> {
+/// that, run with `args`, exits successfully: `-version` for ffmpeg and
+/// ffprobe, `--help` for wtsexporter, which has no version flag. The
+/// desktop app also asks this of a program in the Tools Directory, to know
+/// that the file it keeps there runs.
+///
+/// A copy still being written into place does not answer: while it is
+/// open for writing the system refuses to start it, and a file cut short
+/// does not run to a successful exit (#2692). An answer is kept until the
+/// file changes ([`ToolsState::answered`]), so a program slow to start is
+/// run once per file, not at every lookup.
+pub fn tool_in_dir(dir: &Path, name: &str, args: &[&str]) -> Option<PathBuf> {
     let candidate = dir.join(executable_name(name));
     let metadata = std::fs::metadata(&candidate).ok()?;
     if !metadata.is_file() {
         return None;
     }
-    candidate_runs(&candidate, FileStamp::of(&metadata)).then_some(candidate)
+    candidate_runs(&candidate, FileStamp::of(&metadata), args).then_some(candidate)
 }
 
 /// Whether `path` is a regular file with an executable bit that this
@@ -389,11 +403,12 @@ pub fn is_executable(path: &Path) -> bool {
     path.is_file()
 }
 
-/// True when `candidate`, as `file` describes it, answers `-version`. An
+/// True when `candidate`, as `file` describes it, exits successfully run
+/// with `args`, which is `-version` for ffmpeg and ffprobe. An
 /// answer is kept in [`ToolsState::answered`], so the same file is run once
 /// until it changes or the lookup is forgotten; a failure is not kept, so
 /// the file is run again on the next lookup. No lock is held while it runs.
-fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
+fn candidate_runs(candidate: &Path, file: FileStamp, args: &[&str]) -> bool {
     let generation = {
         let state = tools_state().lock().expect("tools state lock");
         if state.answered.get(candidate) == Some(&file) {
@@ -401,7 +416,7 @@ fn candidate_runs(candidate: &Path, file: FileStamp) -> bool {
         }
         state.generation
     };
-    let runs = command_runs(candidate, &["-version"]);
+    let runs = command_runs(candidate, args);
     if runs {
         let mut state = tools_state().lock().expect("tools state lock");
         if state.generation == generation {
@@ -417,7 +432,7 @@ fn find_on_path(name: &str, search_path: Option<&OsStr>) -> Option<PathBuf> {
         .into_iter()
         .flat_map(std::env::split_paths)
         .filter(|dir| !dir.as_os_str().is_empty())
-        .find_map(|dir| tool_in_dir(&dir, name))
+        .find_map(|dir| tool_in_dir(&dir, name, VERSION_ARGS))
 }
 
 /// Find ffmpeg and ffprobe on `search_path`, then in `tools_dir`, and
@@ -440,8 +455,8 @@ fn find_tools(search_path: Option<&OsStr>, tools_dir: Option<&Path>) -> Result<F
             ffprobe: path_ffprobe,
         });
     }
-    let dir_ffmpeg = tools_dir.and_then(|dir| tool_in_dir(dir, "ffmpeg"));
-    let dir_ffprobe = tools_dir.and_then(|dir| tool_in_dir(dir, "ffprobe"));
+    let dir_ffmpeg = tools_dir.and_then(|dir| tool_in_dir(dir, "ffmpeg", VERSION_ARGS));
+    let dir_ffprobe = tools_dir.and_then(|dir| tool_in_dir(dir, "ffprobe", VERSION_ARGS));
     if dir_ffmpeg.is_some() && dir_ffprobe.is_some() {
         return Ok(FfmpegTools {
             ffmpeg: dir_ffmpeg,

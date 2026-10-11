@@ -316,13 +316,14 @@ fn only_bad_gzip_data_is_a_file_that_does_not_unpack() {
 /// A program the app wrote from an older release stays in use while the
 /// newer one fails to download or does not match, and is replaced only by
 /// a download that passed.
+#[cfg(unix)]
 #[test]
 fn an_older_program_is_replaced_only_after_a_good_download() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let target = tools.path().join(Program::Wtsexporter.file_name());
-    std::fs::write(&target, b"old release").unwrap();
-    let (old, _) = pin(Program::Wtsexporter, "r1", b"old release", false);
+    std::fs::write(&target, OLD_RELEASE).unwrap();
+    let (old, _) = pin(Program::Wtsexporter, "r1", OLD_RELEASE, false);
     make_executable(&target).unwrap();
     let mut manifest = Manifest::new();
     manifest.insert(
@@ -330,7 +331,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
         Written::of(&old, Stamp::at(&target).unwrap()),
     );
     write_manifest(tools.path(), &manifest).unwrap();
-    let (new, new_bytes) = pin(Program::Wtsexporter, "r2", b"new release", false);
+    let (new, new_bytes) = pin(Program::Wtsexporter, "r2", NEW_RELEASE, false);
     let downloads = ToolDownloads::default();
 
     // 404 Not Found: the old file stays.
@@ -341,7 +342,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
         std::slice::from_ref(&new),
         &downloads,
     );
-    assert_eq!(std::fs::read(&target).unwrap(), b"old release");
+    assert_eq!(std::fs::read(&target).unwrap(), OLD_RELEASE);
     let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
         panic!("the download did not fail");
     };
@@ -355,7 +356,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
         std::slice::from_ref(&new),
         &downloads,
     );
-    assert_eq!(std::fs::read(&target).unwrap(), b"old release");
+    assert_eq!(std::fs::read(&target).unwrap(), OLD_RELEASE);
     assert_eq!(read_manifest(tools.path()), manifest);
     wrong.delete();
 
@@ -367,7 +368,7 @@ fn an_older_program_is_replaced_only_after_a_good_download() {
         std::slice::from_ref(&new),
         &downloads,
     );
-    assert_eq!(std::fs::read(&target).unwrap(), b"new release");
+    assert_eq!(std::fs::read(&target).unwrap(), NEW_RELEASE);
     assert_eq!(downloads.get(Program::Wtsexporter), None);
     assert_eq!(
         read_manifest(tools.path()).get(&Program::Wtsexporter),
@@ -440,11 +441,23 @@ fn a_gzipped_program_that_is_not_the_pinned_one_is_refused() {
     assert!(reason.contains(&sha256_hex(b"ffmpeg")), "{reason}");
 }
 
+/// A program that answers `-version` and `--help`, as the check asks
+/// ffmpeg and wtsexporter to before it counts them in place. A file that
+/// does not run would read as one that does not run, or as one still being
+/// copied in (#2692).
+const RUNNABLE: &[u8] = b"#!/bin/sh\nexit 0\n";
+
+/// A program from an older release, which runs.
+const OLD_RELEASE: &[u8] = b"#!/bin/sh\n# old release\nexit 0\n";
+
+/// A program from a newer release, which runs.
+const NEW_RELEASE: &[u8] = b"#!/bin/sh\n# new release\nexit 0\n";
+
 /// Write a program at `path` that answers `-version`.
 #[cfg(unix)]
 fn write_runnable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::write(path, "#!/bin/sh\nexit 0\n").unwrap();
+    std::fs::write(path, RUNNABLE).unwrap();
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
@@ -464,7 +477,7 @@ fn ffmpeg_on_path_is_not_downloaded() {
     let server = MockServer::start();
     let (ffmpeg, ffmpeg_gz) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(b"ffmpeg"), true);
     let (ffprobe, ffprobe_gz) = pin(Program::Ffprobe, "b6.1.1", &gzipped(b"ffprobe"), true);
-    let (wts, wts_bytes) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (wts, wts_bytes) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let ffmpeg_asked = serve(&server, &ffmpeg, &ffmpeg_gz);
     let ffprobe_asked = serve(&server, &ffprobe, &ffprobe_gz);
     let wts_asked = serve(&server, &wts, &wts_bytes);
@@ -924,12 +937,13 @@ fn an_interrupted_downloads_leftovers_are_deleted() {
 /// Every program to be downloaded shows as downloading before its first
 /// request, so Settings keeps asking through a slow connect and the gap
 /// between two downloads.
+#[cfg(unix)]
 #[test]
 fn every_program_wanted_shows_as_downloading_before_its_request() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     let (ffmpeg, ffmpeg_gz) = pin(Program::Ffmpeg, "b6.1.1", &gzipped(b"ffmpeg"), true);
-    let (wts, wts_bytes) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (wts, wts_bytes) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let ffmpeg_path = format!(
         "/{}/releases/download/{}/{}",
@@ -971,11 +985,12 @@ fn every_program_wanted_shows_as_downloading_before_its_request() {
 
 /// A second app's check, started while the first one runs, does nothing:
 /// it neither downloads nor deletes the first one's temporary files.
+#[cfg(unix)]
 #[test]
 fn a_second_check_at_the_same_time_does_nothing() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let path = format!(
         "/{}/releases/download/{}/{}",
@@ -1012,7 +1027,7 @@ fn a_second_check_at_the_same_time_does_nothing() {
     assert_eq!(first.get(Program::Wtsexporter), None);
     assert_eq!(
         std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
-        b"wtsexporter"
+        RUNNABLE
     );
 }
 
@@ -1050,11 +1065,12 @@ fn no_network_is_a_failed_download_that_says_so() {
 /// Wi-Fi connects, is tried again after a growing wait, and shows as
 /// downloading all the while, so Settings says it is still trying and an
 /// import waiting for it goes on waiting (#2200).
+#[cfg(unix)]
 #[test]
 fn no_network_is_tried_again_after_a_growing_wait() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     // The network comes during the second wait.
     let server = no_network_unless(published, |request| request >= 2);
     let downloads = ToolDownloads::default();
@@ -1087,7 +1103,7 @@ fn no_network_is_tried_again_after_a_growing_wait() {
     assert_eq!(downloads.get(Program::Wtsexporter), None);
     assert_eq!(
         std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
-        b"wtsexporter"
+        RUNNABLE
     );
 }
 
@@ -1148,6 +1164,41 @@ fn a_program_put_in_place_during_a_wait_ends_the_tries() {
         std::fs::read_to_string(&target).unwrap(),
         "#!/bin/sh\nexit 0\n"
     );
+}
+
+/// A wtsexporter copied in by hand during a wait, and cut short when the
+/// wait ends, as a slow copy is, does not end the tries: it is not in place
+/// until it is whole, and nothing that waits for it goes on with half a
+/// program (#2692).
+#[cfg(unix)]
+#[test]
+fn a_program_cut_short_during_a_wait_does_not_end_the_tries() {
+    use std::os::unix::fs::PermissionsExt;
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[pinned],
+        &downloads,
+        &|pause| {
+            waits.borrow_mut().push(pause);
+            std::fs::write(&target, &RUNNABLE[..8]).unwrap();
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS);
+    assert!(matches!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed { .. })
+    ));
 }
 
 /// A program put in place by hand while an earlier program's tries wait is
@@ -1415,11 +1466,12 @@ fn a_cancel_ends_the_wait() {
 /// Try again runs the check once on a thread of its own and returns before
 /// the download ends, with the program already shown as downloading so the
 /// window keeps asking.
+#[cfg(unix)]
 #[test]
 fn try_again_runs_the_check_once_and_returns_at_once() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let path = format!(
         "/{}/releases/download/{}/{}",
@@ -1463,7 +1515,7 @@ fn try_again_runs_the_check_once_and_returns_at_once() {
     assert_eq!(downloads.get(Program::Wtsexporter), None);
     assert_eq!(
         std::fs::read(tools.path().join(Program::Wtsexporter.file_name())).unwrap(),
-        b"wtsexporter"
+        RUNNABLE
     );
 }
 
@@ -1473,7 +1525,7 @@ fn try_again_runs_the_check_once_and_returns_at_once() {
 fn try_again_while_a_check_runs_starts_nothing() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let asked = serve(&server, &pinned, &published);
     let downloads = ToolDownloads::default();
@@ -1502,11 +1554,12 @@ fn try_again_while_a_check_runs_starts_nothing() {
 
 /// A program the check finds in place loses the failure an earlier check
 /// left, so Try again after a file was put there by hand clears it.
+#[cfg(unix)]
 #[test]
 fn a_program_found_in_place_clears_an_earlier_failure() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     std::fs::write(
         tools.path().join(Program::Wtsexporter.file_name()),
         &published,
@@ -1538,7 +1591,7 @@ fn a_program_found_in_place_clears_an_earlier_failure() {
 fn a_check_counts_as_running_until_it_ends() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let path = format!(
         "/{}/releases/download/{}/{}",
@@ -1601,13 +1654,14 @@ fn a_check_that_panics_mid_download_fails_the_download() {
 /// A download that arrives and runs is not a failed download when its
 /// record can't be written: the program is found, and an import waiting for
 /// it goes on.
+#[cfg(unix)]
 #[test]
 fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
     let tools = tempfile::tempdir().unwrap();
     let _tools = no_ffmpeg_on_path(tools.path());
     // A directory where the record goes: renaming the record over it fails.
     std::fs::create_dir(tools.path().join(MANIFEST_FILE)).unwrap();
-    let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, published) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let server = MockServer::start();
     let path = format!(
         "/{}/releases/download/{}/{}",
@@ -1644,7 +1698,7 @@ fn a_record_that_cannot_be_written_does_not_fail_a_good_download() {
 #[test]
 fn a_try_again_whose_thread_cannot_start_fails_with_that_reason() {
     let tools = tempfile::tempdir().unwrap();
-    let (pinned, _) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
+    let (pinned, _) = pin(Program::Wtsexporter, "r1", RUNNABLE, false);
     let downloads = ToolDownloads::default();
     let mut seen = None;
 

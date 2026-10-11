@@ -338,8 +338,10 @@ mod tests {
 
     /// wtsexporter in the Tools Directory is reported where it is, and a
     /// Tools Directory without it reports it missing.
+    #[cfg(unix)]
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
+        use std::os::unix::fs::PermissionsExt;
         let _lock = media::testutil::tools_test_lock();
         let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
@@ -349,7 +351,10 @@ mod tests {
         let pinned = [Program::Wtsexporter];
         let missing = tools_status_with(&downloads, &pinned).wtsexporter;
         let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
-        media::testutil::write_with_mode(&tools.path().join(name), 0o755);
+        // A copy that answers `--help`, as a whole one does (#2692).
+        let program = tools.path().join(name);
+        std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
         let found = tools_status_with(&downloads, &pinned).wtsexporter;
         let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
         media::set_tools_dir(previous);

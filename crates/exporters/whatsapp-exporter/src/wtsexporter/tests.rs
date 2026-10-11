@@ -599,13 +599,72 @@ fn a_full_disk_before_wtsexporter_starts_is_the_free_space_error() {
     assert_eq!(denied.to_string(), "create work/decryption.key");
 }
 
+/// A whole stand-in for wtsexporter: it answers `--help`, as the real one
+/// does, by exiting successfully.
+#[cfg(unix)]
+const WHOLE_STAND_IN: &str = "#!/bin/sh\nexit 0\n";
+
+/// `contents` at `path`, executable by everyone.
+#[cfg(unix)]
+fn write_program(path: &Path, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    fs::write(path, contents).unwrap();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+}
+
 /// wtsexporter is always the app's own copy in the Tools Directory.
+#[cfg(unix)]
 #[test]
 fn wtsexporter_is_found_in_the_tools_directory() {
     let tools = tempfile::tempdir().unwrap();
     let program = tools.path().join(wtsexporter_file_name());
-    write_with_mode(&program, 0o755);
+    write_program(&program, WHOLE_STAND_IN);
 
+    assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
+    assert!(wtsexporter_runs(tools.path()));
+}
+
+/// A copy put in the Tools Directory by hand that was cut short, as one a
+/// slow copy has only half written, is not used: an import would run it and
+/// fail with an unclear error (#2692). The status lookup and the desktop
+/// app's check refuse it too, and the error says what to do.
+#[cfg(unix)]
+#[test]
+fn a_wtsexporter_cut_short_is_refused() {
+    let tools = tempfile::tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, &WHOLE_STAND_IN[..8]);
+
+    let err = wtsexporter_in(Some(tools.path())).expect_err("cut short");
+    let message = err.to_string();
+    assert!(message.contains("doesn't run"), "{message}");
+    assert!(message.contains("once the copy is whole"), "{message}");
+    assert!(message.ends_with(WTSEXPORTER_TROUBLESHOOTING), "{message}");
+    assert!(
+        super::find_wtsexporter(Some(tools.path())).is_err(),
+        "the status lookup refuses it too"
+    );
+    assert!(!wtsexporter_runs(tools.path()), "the check refuses it too");
+
+    // The copy ends, and the whole file is used at once.
+    write_program(&program, WHOLE_STAND_IN);
+    assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
+}
+
+/// A copy still open for writing, as one being copied in is, is not used,
+/// though it already holds the whole program: Linux refuses to start it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_wtsexporter_still_being_written_is_refused() {
+    let tools = tempfile::tempdir().unwrap();
+    let program = tools.path().join(wtsexporter_file_name());
+    write_program(&program, WHOLE_STAND_IN);
+    let writer = fs::File::options().write(true).open(&program).unwrap();
+
+    assert!(wtsexporter_in(Some(tools.path())).is_err());
+    assert!(!wtsexporter_runs(tools.path()));
+
+    drop(writer);
     assert_eq!(wtsexporter_in(Some(tools.path())).unwrap(), program);
 }
 

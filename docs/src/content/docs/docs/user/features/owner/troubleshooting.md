@@ -159,6 +159,11 @@ The account that owns the file runs `chmod +x` on it, or gives the account that 
 The same reason shows when the disk the Tools Directory is on is mounted `noexec`, which lets no program on it run.
 Mounting it without `noexec` fixes that.
 
+The app runs `wtsexporter --help` before it uses a copy, and uses the copy only once it answers.
+A copy still being copied into the Tools Directory doesn't answer, so the Import form and **Settings → System** say `wtsexporter` isn't used because it `doesn't run` until the copy ends.
+Nothing needs doing for that: once the copy is whole it is used.
+A copy that still doesn't run after the copy ended was cut short, and is replaced with the whole file from the release page.
+
 The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds.
 [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 
@@ -174,7 +179,7 @@ ln -sf "$(pipx environment --value PIPX_BIN_DIR)/wtsexporter" ~/message-crate/to
 ```
 
 The app never replaces it there, because it has no file of its own for this computer.
-A WhatsApp import that fails as soon as it starts the program, with `a link to a pipx install whose Python interpreter has gone`, has an install whose Python was removed.
+When the Import form and **Settings → System** say `wtsexporter` `doesn't run` and name `a link to a pipx install whose Python interpreter has gone`, the install's Python was removed.
 An older `pipx` can't repair that install in place.
 `pipx uninstall whatsapp-chat-exporter` removes the broken install, and the two lines above make a new one.
 

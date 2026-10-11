@@ -552,6 +552,15 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **A wtsexporter still being copied in is not used until the
+  copy ends.** The desktop app took a `wtsexporter` copied into its Tools
+  Directory by hand as ready as soon as the file had permission to run, so
+  a WhatsApp import, or the app's wait for its own download, could start it
+  halfway through a slow copy, and the import failed with an unclear error.
+  The app now runs `wtsexporter --help` first and uses the copy only once it
+  answers. Until then Settings and the Import form say it doesn't run, and
+  that a copy still being copied runs once the copy is whole (#2692).
+
 - 2026-10-11: **A wtsexporter the app's account can't run no longer shows
   as found.** The desktop app took a `wtsexporter` in its Tools Directory as
   ready when the file had permission to run for any account, so a copy that

@@ -25,6 +25,11 @@ const RELEASE_FILE_HINT: &str = "a wtsexporter_<platform> file from the messagec
 pub const WTSEXPORTER_TROUBLESHOOTING: &str =
     "See \"Import can't find wtsexporter\" in Troubleshooting at messagecrate.app.";
 
+/// The arguments `wtsexporter` is run with to learn that it runs. It has no
+/// version flag, and `--help` prints its usage and exits successfully
+/// without reading anything.
+const HELP_ARGS: &[&str] = &["--help"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Platform {
     Android,
@@ -87,7 +92,7 @@ pub fn wtsexporter_file_name() -> &'static str {
 /// # Errors
 ///
 /// Returns an error when the file is there but is not executable by this
-/// account.
+/// account, or does not run.
 pub fn wtsexporter_path() -> Result<Option<PathBuf>> {
     find_wtsexporter(media::tools_dir().as_deref())
 }
@@ -106,17 +111,19 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// own copy, so neither `PATH` nor an environment variable is read (#1053).
 /// `Ok(None)` when there is no Tools Directory or no file in it.
 ///
-/// On Unix the file must have an executable bit this account may run. It
-/// is not run here: a `pipx` shim is slow to start. A shim is what is
-/// linked there on a computer the app has no download for, such as Linux
-/// on ARM. So a link to a `pipx` shim whose Python has gone is found, and
-/// fails only when it is run, with the hint [`run_wtsexporter`] gives
-/// (`docs/adr/0019`).
+/// On Unix the file must have an executable bit this account may run, and
+/// on every system it must answer `--help`, so a copy put there by hand is
+/// used only once it is whole (#2692). A copy still being written there
+/// does not start, and one cut short does not exit successfully. The answer
+/// is kept until the file changes (`media::tool_in_dir`), so a `pipx` shim,
+/// slow to start, is run once and not at every lookup. A shim is what is
+/// linked there on a computer the app has no download for, such as Linux on
+/// ARM (`docs/adr/0019`).
 ///
 /// # Errors
 ///
 /// Returns an error when the file is there but is not executable by this
-/// account.
+/// account, or does not answer `--help`.
 fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
     let Some(tools_dir) = tools_dir else {
         return Ok(None);
@@ -134,7 +141,24 @@ fn find_wtsexporter(tools_dir: Option<&Path>) -> Result<Option<PathBuf>> {
             candidate.display()
         );
     }
+    if media::tool_in_dir(tools_dir, wtsexporter_file_name(), HELP_ARGS).is_none() {
+        bail!(
+            "{} doesn't run. A copy still being copied there runs once the copy is whole. \
+             A copy cut short must be replaced with {RELEASE_FILE_HINT}. A link to a pipx \
+             install whose Python interpreter has gone needs that install made again. \
+             {WTSEXPORTER_TROUBLESHOOTING}",
+            candidate.display()
+        );
+    }
     Ok(Some(candidate))
+}
+
+/// Whether `wtsexporter` in `tools_dir` is one the lookup uses: a file this
+/// account may run that answers `--help`. The desktop app's check of the
+/// Tools Directory asks this, so it and the lookup agree on when a copy
+/// put there by hand is in place.
+pub fn wtsexporter_runs(tools_dir: &Path) -> bool {
+    matches!(find_wtsexporter(Some(tools_dir)), Ok(Some(_)))
 }
 
 /// [`find_wtsexporter`], with a missing file as an error.

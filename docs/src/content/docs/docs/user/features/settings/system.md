@@ -70,13 +70,13 @@ One line per program reports the result:
   The app has no wtsexporter download for Linux on ARM.
 - A cross with `<program> not used` and the reason.
   For ffmpeg and ffprobe, the reason is that they were found in two places, one only on `PATH` and the other only in the Tools Directory.
-  For wtsexporter, the reason is that it has no permission to run.
+  For wtsexporter, the reason is that it has no permission to run, or that it doesn't run, as a copy still being copied in doesn't until the copy ends.
 - A download arrow with `Downloading <program>` and how much has arrived, such as `12 MB of 29 MB (41%)`.
   The line updates each second until the download ends.
 - A cross with `<program> download failed` and the reason: no connection to the download's server, the status the server answered, a checksum that didn't match, a file that couldn't be written to the Tools Directory, a download that was interrupted or couldn't be started, a program in the Tools Directory that couldn't be marked as a program that runs, or one that doesn't run on this computer.
   When a download finds no connection, the app tries again after 5, 15, 30 and 60 seconds, and shows the download as in progress while it waits.
   The programs share those four tries, so with no connection at all every download has failed about two minutes after the first one tried.
-  A copy put in the Tools Directory by hand during those waits ends them, and the app uses it.
+  A copy put in the Tools Directory by hand during those waits ends them once it runs, and the app uses it.
   A failed download is tried again the next time the app starts, or at once with **Try again** on the Import form or, for ffmpeg and ffprobe, at the Staging Review.
   The line ends with a link to the program's section in Troubleshooting, [Import can't find wtsexporter](/docs/user/features/owner/troubleshooting/#import-cant-find-wtsexporter) or [ffmpeg or ffprobe not found](/docs/user/features/owner/troubleshooting/#ffmpeg-or-ffprobe-not-found), which says what each reason means and where to put a copy by hand.
   A program that doesn't run is not downloaded again, because the download would be the same file.

@@ -412,9 +412,9 @@ fn a_program_held_open_for_writing_throughout_is_not_found() {
         .write(true)
         .open(tools.path().join("ffmpeg"))
         .unwrap();
-    assert_eq!(tool_in_dir(tools.path(), "ffmpeg"), None);
+    assert_eq!(tool_in_dir(tools.path(), "ffmpeg", VERSION_ARGS), None);
     assert_eq!(
-        tool_in_dir(tools.path(), "ffprobe"),
+        tool_in_dir(tools.path(), "ffprobe", VERSION_ARGS),
         Some(tools.path().join("ffprobe"))
     );
 }
