@@ -316,6 +316,7 @@ pub(crate) async fn delete_conversation(
             auth.account_id,
             Trashable::Conversation(conversation_id),
             crate::db::audit_trail::AuditActor::Holder,
+            chrono::Utc::now(),
         )
         .await?
     };

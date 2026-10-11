@@ -22,7 +22,7 @@ pub struct QueuedAsset {
 /// stored rows it gave their file, whichever run created their message
 /// (#1946). Answers how many. An Asset already queued is queued again, at
 /// the back: the pass may be working on it, and the run's new rows must not
-/// be left out when that work is done.
+/// be left out when that work is done. The rows are queued at `now`.
 ///
 /// # Errors
 ///
@@ -31,6 +31,7 @@ pub async fn queue_import_run(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<u64, sqlx::Error> {
     let queued = sqlx::query(
         "INSERT OR REPLACE INTO media_queue (account_id, sha256, queued_at)
@@ -43,7 +44,7 @@ pub async fn queue_import_run(
     )
     .bind(account_id)
     .bind(import_id)
-    .bind(chrono::Utc::now().timestamp())
+    .bind(now.timestamp())
     .execute(&mut *conn)
     .await?;
     Ok(queued.rows_affected())
