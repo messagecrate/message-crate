@@ -5,10 +5,10 @@
 //! directories for all of the account's sources, so one file imported from two
 //! sources is stored once:
 //!
-//! - `<assets_dir>/<aa>/<sha256><ext>` is an original, named by its
-//!   SHA-256 and sharded by the fingerprint's first two characters.
+//! - `<assets_dir>/<aa>/<sha256>` is an original, named by its SHA-256 with
+//!   no extension and sharded by the fingerprint's first two characters.
 //! - `<assets_dir>/<aa>/.<sha256>.mime` is the MIME sidecar beside an
-//!   original whose name carries no type.
+//!   original, written when the store is told the original's MIME type.
 //! - `<assets_dir>/.incoming/` holds uploads in progress: `{sha256}-*.part`
 //!   files and multipart directories `{sha256}/{upload_id}/`.
 //! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview or a
@@ -636,7 +636,8 @@ fn fingerprints(row: crate::db::attachment_versions::NamedFiles) -> impl Iterato
 }
 
 /// The 64-hex fingerprint a stored file's name starts with, lowercased:
-/// `<sha256><ext>` for a file, `.<sha256>.mime` for a sidecar. `None` for
+/// `<sha256>` for an original, which has no extension, `<sha256><ext>` for
+/// a Preview or a Thumbnail, `.<sha256>.mime` for a sidecar. `None` for
 /// any other name, such as a temporary file.
 pub(crate) fn fingerprint_of(name: &str) -> Option<String> {
     let stem = match name.strip_prefix('.') {

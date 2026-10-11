@@ -554,27 +554,60 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
 }
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
-/// an import leaves it: the Asset at `<aa>/<sha><ext>` in the account's
-/// assets directory and a row pointing at it. Returns the attachment id.
+/// an import leaves it: the Asset at `<aa>/<sha>`, with no extension, in the
+/// account's assets directory, and a row pointing at it with `mime` as its
+/// MIME type. Returns the attachment id.
 pub(crate) async fn attach_stored_original(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
     message_id: i64,
     sha: &str,
-    ext: &str,
+    mime: &str,
     bytes: &[u8],
 ) -> i64 {
-    let rel = format!("{}/{sha}{ext}", &sha[..2]);
-    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
+    let rel = format!("{}/{sha}", &sha[..2]);
+    attach_original_at(opened, conn, message_id, sha, &rel, Some(mime), bytes).await
+}
+
+/// Store `bytes` as an incomplete original for an attachment of
+/// `message_id`: a file at `<aa>/<sha>.part` and a row pointing at it, with
+/// no MIME type. The store never writes this name; it is what
+/// `process-assets` treats as an interrupted transfer and removes. Returns
+/// the attachment id.
+pub(crate) async fn attach_incomplete_original(
+    opened: &OpenDb,
+    conn: &mut SqliteConnection,
+    message_id: i64,
+    sha: &str,
+    bytes: &[u8],
+) -> i64 {
+    let rel = format!("{}/{sha}.part", &sha[..2]);
+    attach_original_at(opened, conn, message_id, sha, &rel, None, bytes).await
+}
+
+/// Write `bytes` at `rel` in the account's assets directory and insert an
+/// attachment row of `message_id` naming it. Returns the attachment id.
+async fn attach_original_at(
+    opened: &OpenDb,
+    conn: &mut SqliteConnection,
+    message_id: i64,
+    sha: &str,
+    rel: &str,
+    mime: Option<&str>,
+    bytes: &[u8],
+) -> i64 {
+    let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(rel);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, bytes).unwrap();
     let mut tx = crate::db::begin_write(conn).await.unwrap();
     let id = sqlx::query_scalar(
-        "INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3) RETURNING id",
+        "INSERT INTO attachments (message_id, sha256, assets_path, mime_type)
+         VALUES ($1, $2, $3, $4) RETURNING id",
     )
     .bind(message_id)
     .bind(sha)
     .bind(rel)
+    .bind(mime)
     .fetch_one(&mut *tx)
     .await
     .unwrap();
@@ -583,20 +616,20 @@ pub(crate) async fn attach_stored_original(
 }
 
 /// A database with one account and one attachment on a message of
-/// `source`, stored as `<sha><ext>` with `bytes`.
-async fn fixture_with(source: &str, ext: &str, bytes: &[u8]) -> (OpenDb, tempfile::TempDir, i64) {
+/// `source`, stored as `<sha>` with `bytes` and `mime`.
+async fn fixture_with(source: &str, mime: &str, bytes: &[u8]) -> (OpenDb, tempfile::TempDir, i64) {
     let (opened, dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, source).await;
     let attachment_id =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, ext, bytes).await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, mime, bytes).await;
     (opened, dir, attachment_id)
 }
 
 /// [`fixture_with`] a BMP, which gets a Preview and a Thumbnail.
 async fn fixture_with_bmp(source: &str) -> (OpenDb, tempfile::TempDir, i64) {
-    fixture_with(source, ".bmp", BMP_1X1).await
+    fixture_with(source, "image/bmp", BMP_1X1).await
 }
 
 /// The Thumbnail columns of one attachment row, `None` until one is recorded.
@@ -669,7 +702,7 @@ async fn store_and_update_derived_db() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let attachment_id =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, ".jpg", b"x").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "image/jpeg", b"x").await;
 
     let converted = dir.path().join("converted");
     fs::create_dir_all(&converted).unwrap();
@@ -884,7 +917,7 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
-            attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+            attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
 
         // The Thumbnail and the Preview are shared with the new rows, so the
@@ -920,7 +953,8 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
 #[test]
 fn a_png_gets_a_thumbnail_and_no_preview() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, attachment_id) =
+            fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
 
         assert_eq!(
             run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -953,7 +987,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
 #[test]
 fn one_asset_is_processed_alone() {
     with_real_ffmpeg(async {
-        let (opened, _dir, queued) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, queued) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let other_sha = "b".repeat(64);
@@ -962,7 +996,7 @@ fn one_asset_is_processed_alone() {
             &mut conn,
             message_id,
             &other_sha,
-            ".png",
+            "image/png",
             PNG_1X1_RGB,
         )
         .await;
@@ -995,7 +1029,7 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let sms_attachment =
-            attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+            attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
 
         assert_eq!(
             run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1066,7 +1100,7 @@ async fn an_asset_that_is_not_media_is_left_as_is_by_the_run() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     let attachment_id =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, ".txt", b"notes").await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "text/plain", b"notes").await;
 
     assert_eq!(
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1085,7 +1119,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         .cfg
         .paths
         .assets_dir_for_account(ACCOUNT)
-        .join(format!("ab/{SHA}.bmp"));
+        .join(format!("ab/{SHA}"));
     fs::remove_file(&original).unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     attach_stored_original(
@@ -1093,7 +1127,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".txt",
+        "text/plain",
         b"notes",
     )
     .await;
@@ -1119,7 +1153,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     let mut conn = opened.conn().await.unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     let sms_attachment =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "image/bmp", BMP_1X1).await;
     let preview_sha = "c".repeat(64);
     let rel = format!("cc/{preview_sha}.jpg");
     let preview = opened
@@ -1145,7 +1179,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
             .cfg
             .paths
             .assets_dir_for_account(ACCOUNT)
-            .join(format!("ab/{SHA}.bmp")),
+            .join(format!("ab/{SHA}")),
     )
     .unwrap();
     let named = Some((preview_sha, rel, "image/jpeg".to_string()));
@@ -1272,7 +1306,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    attach_stored_original(&opened, &mut conn, message_id, SHA, ".part", b"half").await;
+    attach_incomplete_original(&opened, &mut conn, message_id, SHA, b"half").await;
     let dry_run = ProcessAssetsOptions {
         dry_run: true,
         ..Default::default()
@@ -1287,15 +1321,7 @@ async fn an_incomplete_original_removed_is_counted_as_removed() {
         removed(1, 1)
     );
 
-    attach_stored_original(
-        &opened,
-        &mut conn,
-        message_id,
-        &"b".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
+    attach_incomplete_original(&opened, &mut conn, message_id, &"b".repeat(64), b"half").await;
     assert_eq!(
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
@@ -1322,26 +1348,10 @@ async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
     // Two in the read-only shard `aa/`, and one in `bb/` that can go.
-    attach_stored_original(
-        &opened,
-        &mut conn,
-        message_id,
-        &"a".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
+    attach_incomplete_original(&opened, &mut conn, message_id, &"a".repeat(64), b"half").await;
     let second = format!("{}b", "a".repeat(63));
-    attach_stored_original(&opened, &mut conn, message_id, &second, ".part", b"half").await;
-    attach_stored_original(
-        &opened,
-        &mut conn,
-        message_id,
-        &"b".repeat(64),
-        ".part",
-        b"half",
-    )
-    .await;
+    attach_incomplete_original(&opened, &mut conn, message_id, &second, b"half").await;
+    attach_incomplete_original(&opened, &mut conn, message_id, &"b".repeat(64), b"half").await;
     let shard = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join("aa");
 
     let Some(counted) = with_read_only(
@@ -1373,7 +1383,8 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_original(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let dropped = |scanned, dropped| ProcessAssetsStats {
         dropped,
@@ -1395,7 +1406,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".mp3",
+        "audio/mpeg",
         b"y",
     )
     .await;
@@ -1416,7 +1427,7 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
 /// the run makes nothing and needs no ffmpeg.
 #[tokio::test]
 async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() {
-    let (opened, _dir, first) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+    let (opened, _dir, first) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
     let mut conn = opened.conn().await.unwrap();
     let bytes = b"a whole Thumbnail";
     let thumbnail_sha = crate::assets_api::Sha256::of_bytes(bytes).to_string();
@@ -1430,8 +1441,15 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     )
     .await;
     let message_id = seed_message(&mut conn, "sms").await;
-    let second =
-        attach_stored_original(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+    let second = attach_stored_original(
+        &opened,
+        &mut conn,
+        message_id,
+        SHA,
+        "image/png",
+        PNG_1X1_RGB,
+    )
+    .await;
 
     assert_eq!(
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
@@ -1465,14 +1483,15 @@ async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
-    let first = attach_stored_original(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first =
+        attach_stored_original(&opened, &mut conn, message_id, SHA, "audio/mpeg", b"x").await;
     let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
     let second = attach_stored_original(
         &opened,
         &mut conn,
         message_id,
         &"b".repeat(64),
-        ".mp3",
+        "audio/mpeg",
         b"y",
     )
     .await;
@@ -1678,7 +1697,7 @@ fn storing_a_derived_file_leaves_only_the_file() {
 #[test]
 fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
     with_real_ffmpeg(async {
-        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, _) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
@@ -1720,7 +1739,7 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
 #[test]
 fn nothing_is_stored_once_the_account_directory_is_gone() {
     with_real_ffmpeg(async {
-        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let (opened, _dir, _) = fixture_with("imessage", "image/png", PNG_1X1_RGB).await;
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
@@ -1798,7 +1817,7 @@ fn a_work_directory_a_stopped_pass_left_is_removed_by_the_next() {
 /// directory before each original, so another pass leaves it alone.
 #[tokio::test]
 async fn a_live_pass_keeps_its_work_directory_young() {
-    let (opened, dir, _) = fixture_with("imessage", ".txt", b"notes").await;
+    let (opened, dir, _) = fixture_with("imessage", "text/plain", b"notes").await;
     let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
         .await
         .unwrap();
