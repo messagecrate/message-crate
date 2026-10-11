@@ -1,4 +1,6 @@
-//! Length caps on the free text a request stores.
+//! Length caps on the names, addresses, Import Error text and Import Run
+//! JSON that #2183 bounded. The Contact Group, Message Tag and Saved Search
+//! names and the username have older checks of their own (#2665).
 //!
 //! A name, an address or an Import Error's text is stored, returned on every
 //! list that shows it, and written into the Audit Trail and the server log, so

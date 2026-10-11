@@ -735,7 +735,8 @@ What each reaches:
   every list that holds it, and written into the Audit Trail and the
   server's log, so the 32 MiB body cap is no bound on it (#2183). An address
   given to unlink or to find a row is not held to the cap, because it names
-  something already stored.
+  something already stored, and neither is an address book load, because a
+  file Export wrote must load back whatever an import stored.
 - Each part of a multipart upload is held to the part size its upload was
   told when it started, which the upload's manifest records, and not to the
   limit as it is now. Why: an upload in progress keeps the limit it started
