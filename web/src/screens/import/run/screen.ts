@@ -5,7 +5,13 @@
 
 import { errorText } from "../../../lib/apiErrorMessage";
 import type { AttachmentMediaMode } from "../../../lib/types";
-import { type ImportStep, MEDIA_LABEL, STAGING_LABEL, stepsFor } from "../importProgressState";
+import {
+  type ImportStep,
+  MEDIA_LABEL,
+  nextPhase,
+  STAGING_LABEL,
+  stepsFor,
+} from "../importProgressState";
 import { CLEARED_RUN } from "../importRunStore";
 import type { RunContext } from "./context";
 
@@ -75,11 +81,11 @@ export function setRowByLabel(ctx: RunContext, label: string, patch: Partial<Imp
  * screen holds goes. `resumeError` is kept on purpose (see the store).
  */
 export function returnToForm(ctx: RunContext): void {
-  ctx.store.set({
+  ctx.store.set((state) => ({
     ...CLEARED_RUN,
-    phase: "form",
+    phase: nextPhase(state.phase, "back_to_form"),
     form: null,
-  });
+  }));
 }
 
 /**
@@ -97,6 +103,11 @@ export function returnToFormWithError(ctx: RunContext, e: unknown): void {
 }
 
 /** Stop at a review: the run waits, and the review takes the screen. */
-export function waitAtReview(ctx: RunContext, phase: "staging_review" | "media_review"): void {
-  ctx.store.set({ phase, running: false, computingSummary: false });
+export function waitAtReview(ctx: RunContext, review: "staging_review" | "media_review"): void {
+  const event = review === "staging_review" ? "stop_at_staging_review" : "stop_at_media_review";
+  ctx.store.set((state) => ({
+    phase: nextPhase(state.phase, event),
+    running: false,
+    computingSummary: false,
+  }));
 }

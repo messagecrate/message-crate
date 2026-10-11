@@ -3,7 +3,12 @@ import type { ImportProgressEvent } from "../../lib/types";
 import {
   attachmentDoneDetail,
   EMPTY_TIMING,
+  IMPORT_PHASE_EVENTS,
+  IMPORT_PHASES,
+  type ImportPhase,
+  type ImportPhaseEvent,
   isProgressStepComplete,
+  nextPhase,
   recordStageTime,
   type StageTiming,
   setupDetail,
@@ -171,5 +176,54 @@ describe("stageForStep", () => {
     ["upload", "upload"],
   ] as const)("puts the %s step in the %s Stage", (step, stage) => {
     expect(stageForStep(step)).toBe(stage);
+  });
+});
+
+describe("nextPhase", () => {
+  // Every move the Import screen makes, written out. A move missing here
+  // throws, so a phase write that tries one fails the test that runs it.
+  const MOVES: [ImportPhase, ImportPhaseEvent, ImportPhase][] = [
+    ["form", "identity_stop", "identity_stop"],
+    ["form", "start", "running"],
+    ["identity_stop", "start", "running"],
+    ["form", "resume", "running"],
+    ["running", "stop_at_staging_review", "staging_review"],
+    ["running", "stop_at_media_review", "media_review"],
+    ["staging_review", "media_start", "running"],
+    // A resume of a run the server has mid Media starts the stage from the form.
+    ["form", "media_start", "running"],
+    ["staging_review", "upload_start", "running"],
+    ["media_review", "upload_start", "running"],
+    // A resumed Upload: Staging's start already moved the screen to running.
+    ["running", "upload_start", "running"],
+    ["running", "finish", "done"],
+    ["form", "back_to_form", "form"],
+    ["identity_stop", "back_to_form", "form"],
+    ["running", "back_to_form", "form"],
+    ["staging_review", "back_to_form", "form"],
+    ["media_review", "back_to_form", "form"],
+    ["done", "back_to_form", "form"],
+  ];
+
+  it.each(MOVES)("moves from %s on %s to %s", (phase, event, to) => {
+    expect(nextPhase(phase, event)).toBe(to);
+  });
+
+  const allowed = new Set(MOVES.map(([phase, event]) => `${phase} ${event}`));
+  const refused = IMPORT_PHASES.flatMap((phase) =>
+    IMPORT_PHASE_EVENTS.filter((event) => !allowed.has(`${phase} ${event}`)).map(
+      (event): [ImportPhase, ImportPhaseEvent] => [phase, event],
+    ),
+  );
+
+  it.each(refused)("refuses %s on %s", (phase, event) => {
+    expect(() => nextPhase(phase, event)).toThrow(`no move from ${phase} on ${event}`);
+  });
+
+  it("is not forward-only: a run resumed mid Media can wait at the Staging Review", () => {
+    // `media` on the server with ffmpeg missing: the resume reads the
+    // directory again and waits at the Staging Review, before the Media stage.
+    const resumed = nextPhase("form", "resume");
+    expect(nextPhase(resumed, "stop_at_staging_review")).toBe("staging_review");
   });
 });

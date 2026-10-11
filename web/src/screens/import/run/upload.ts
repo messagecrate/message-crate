@@ -4,7 +4,7 @@ import { registerRunningUpload } from "../../../lib/runningUpload";
 import { sessionRefused } from "../../../lib/sessionRefusal";
 import type { DesktopJobResult, StagingSummary } from "../../../lib/tauri";
 import { importOutcome } from "../importOutcome";
-import { UPLOAD_LABEL } from "../importProgressState";
+import { nextPhase, UPLOAD_LABEL } from "../importProgressState";
 import { wholeRun } from "../runRecord";
 import type { RunContext } from "./context";
 import { recordError, runJob } from "./desktopJob";
@@ -58,7 +58,7 @@ async function uploadAndFinish(
   outputDir: string,
   approvedPlan?: StagingSummary,
 ): Promise<boolean> {
-  ctx.store.set({ running: true, phase: "running" });
+  ctx.store.set((state) => ({ running: true, phase: nextPhase(state.phase, "upload_start") }));
   ctx.scratch.activeStage = "upload";
   setRowByLabel(ctx, UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
   try {

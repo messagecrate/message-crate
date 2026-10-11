@@ -9,6 +9,7 @@ import type { StagingSummary } from "../../../lib/tauri";
 import { formSnapshot } from "../formSnapshot";
 import {
   attachmentDoneDetail,
+  nextPhase,
   STAGING_LABEL,
   stageDurations,
   stepsFor,
@@ -132,13 +133,13 @@ export async function runImport(
   const { store } = ctx;
   let form = withShownAttachmentMode(submitted);
   beginRun(ctx, form, "staging");
-  store.set({
+  store.set((state) => ({
     ...CLEARED_RUN,
     running: true,
-    phase: "running",
+    phase: nextPhase(state.phase, "start"),
     form,
     resumeError: null,
-  });
+  }));
 
   let runId: number | null = null;
   // The id of the Message Crate a new run imports into, for its log's first

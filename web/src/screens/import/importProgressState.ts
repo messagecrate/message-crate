@@ -14,14 +14,73 @@ export type ImportStep = {
  * Where the Import screen is. The three stages of a run (CONTEXT.md,
  * "Stage") all show as `running`; the two reviews are phases of their
  * own, because the run is waiting for the person rather than working.
+ * Only `nextPhase` decides which phase follows which.
  */
-export type ImportPhase =
-  | "form"
-  | "identity_stop"
-  | "running"
-  | "staging_review"
-  | "media_review"
-  | "done";
+export const IMPORT_PHASES = [
+  "form",
+  "identity_stop",
+  "running",
+  "staging_review",
+  "media_review",
+  "done",
+] as const;
+export type ImportPhase = (typeof IMPORT_PHASES)[number];
+
+/**
+ * What moves the Import screen to another phase: one event for each kind of
+ * phase write in the run's modules (`run/`).
+ */
+export const IMPORT_PHASE_EVENTS = [
+  /** The backup sent from no address of the account's: ask the person first. */
+  "identity_stop",
+  /** Staging starts: a new run, a continue past the identity stop, or a resumed Staging or Upload. */
+  "start",
+  /** A run waiting at a review is resumed: its directory is read again before the review shows. */
+  "resume",
+  /** Staging ended, or a resume read the directory: wait at the Staging Review. */
+  "stop_at_staging_review",
+  /** Media ended, or a resume read the directory: wait at the Media Review. */
+  "stop_at_media_review",
+  /** Media starts: approved at the Staging Review, or a run resumed mid Media. */
+  "media_start",
+  /** Upload starts: approved at a review, or a resumed Upload once Staging's start ran. */
+  "upload_start",
+  /** The run ended: finished, failed, paused or cancelled. */
+  "finish",
+  /** Back to the form, from wherever the screen is. */
+  "back_to_form",
+] as const;
+export type ImportPhaseEvent = (typeof IMPORT_PHASE_EVENTS)[number];
+
+/** For each event, the phases it may come in and the phase it moves to. */
+const PHASE_MOVES: Record<ImportPhaseEvent, { from: readonly ImportPhase[]; to: ImportPhase }> = {
+  identity_stop: { from: ["form"], to: "identity_stop" },
+  start: { from: ["form", "identity_stop"], to: "running" },
+  resume: { from: ["form"], to: "running" },
+  // Not only after Staging: a run the server has mid Media, resumed with
+  // ffmpeg missing, waits here too, a phase before the stage it stopped in.
+  stop_at_staging_review: { from: ["running"], to: "staging_review" },
+  stop_at_media_review: { from: ["running"], to: "media_review" },
+  media_start: { from: ["staging_review", "form"], to: "running" },
+  upload_start: { from: ["staging_review", "media_review", "running"], to: "running" },
+  finish: { from: ["running"], to: "done" },
+  back_to_form: { from: IMPORT_PHASES, to: "form" },
+};
+
+/**
+ * The phase the Import screen moves to from `phase` on `event`: the one place
+ * that decides it, as `local_server.rs`'s `step` is for the desktop's server.
+ * Every phase write goes through it. A move the table does not hold is a bug
+ * in the write that asked for it, so it throws rather than leave the screen
+ * in a phase no rule put it in.
+ */
+export function nextPhase(phase: ImportPhase, event: ImportPhaseEvent): ImportPhase {
+  const move = PHASE_MOVES[event];
+  if (!move.from.includes(phase)) {
+    throw new Error(`Import phase: no move from ${phase} on ${event}`);
+  }
+  return move.to;
+}
 
 export type AttachmentProgressCounts = {
   done: number;
