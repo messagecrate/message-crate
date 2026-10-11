@@ -1,6 +1,5 @@
 /** @vitest-environment jsdom */
 
-import { useMutation } from "@tanstack/react-query";
 import { act, render, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -582,11 +581,12 @@ describe("AuthProvider when the server says the session has ended", () => {
     seedSession();
     const { ApiError } = await import("./api");
     const { useAuth } = await import("./auth");
+    const { useRouteMutation } = await import("./routeQuery");
 
     const { result } = renderHook(
       () => ({
         auth: useAuth(),
-        rename: useMutation({
+        rename: useRouteMutation({
           mutationFn: async (_name: string) => {
             throw new ApiError(401, "expired session token");
           },
@@ -611,11 +611,12 @@ describe("AuthProvider when the server says the session has ended", () => {
     seedSession();
     const { ApiError } = await import("./api");
     const { useAuth } = await import("./auth");
+    const { useRouteMutation } = await import("./routeQuery");
 
     const { result } = renderHook(
       () => ({
         auth: useAuth(),
-        remove: useMutation({
+        remove: useRouteMutation({
           mutationFn: async (_password: string) => {
             throw new ApiError(401, "Current password is incorrect.", {
               type: "https://messagecrate.app/problems/invalid-credentials",
