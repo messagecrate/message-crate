@@ -60,8 +60,8 @@ const TEST_ACCOUNT: i64 = 7;
 #[tokio::test]
 async fn api_token_cannot_exceed_its_owner() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     sqlx::query("UPDATE accounts SET can_import = 0 WHERE id = $1")
         .bind(TEST_ACCOUNT)
         .execute(&mut *conn)
@@ -86,8 +86,8 @@ async fn api_token_cannot_exceed_its_owner() {
 #[tokio::test]
 async fn disabling_an_account_kills_its_live_session() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -113,8 +113,8 @@ async fn disabling_an_account_kills_its_live_session() {
 #[tokio::test]
 async fn disabling_an_account_kills_its_live_api_token() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let created =
         api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
             .await
@@ -344,9 +344,7 @@ async fn openapi_ui_routes_carry_a_request_id_and_cors_headers() {
 async fn imports_complete_and_detail_surface_timings_and_issues() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let body = CompleteImportRequest {
         status: "completed".into(),
         bytes_uploaded: Some(100),
@@ -428,9 +426,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
 async fn imports_complete_stores_completed_with_issues_status() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let body = CompleteImportRequest {
         status: "completed_with_issues".into(),
         bytes_uploaded: Some(100),
@@ -458,9 +454,7 @@ async fn imports_complete_stores_completed_with_issues_status() {
 async fn imports_complete_rejects_unknown_status() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let body = CompleteImportRequest {
         status: "victorious".into(),
         bytes_uploaded: None,
@@ -499,9 +493,7 @@ async fn imports_complete_rejects_unknown_status() {
 async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let body = CompleteImportRequest {
         status: "completed".into(),
         bytes_uploaded: Some(100),
@@ -548,9 +540,7 @@ async fn imports_complete_refuses_a_note_as_an_issue_before_db_write() {
 async fn imports_get_handler_returns_not_found_for_missing_import() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let err = get_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -569,12 +559,10 @@ async fn imports_get_handler_returns_not_found_for_missing_import() {
 }
 
 #[tokio::test]
-async fn active_session_is_empty_then_reports_the_live_one() {
+async fn active_import_run_is_empty_then_reports_the_live_one() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
 
     let body = CreateImportRequest {
         source: "imessage".into(),
@@ -628,9 +616,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
 async fn a_stored_form_snapshot_drops_credentials() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -693,9 +679,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
 async fn imports_create_stores_source_identities() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -738,7 +722,7 @@ async fn imports_create_stores_source_identities() {
 }
 
 #[tokio::test]
-async fn a_second_session_is_refused_with_conflict() {
+async fn a_second_import_run_is_refused_with_conflict() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let ImportingAccount { token, .. } = fixture.account_with_running_import().await;
@@ -777,9 +761,7 @@ async fn a_second_session_is_refused_with_conflict() {
 async fn stage_endpoint_advances() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
 
     let _ = update_import(
         State(state.clone()),
@@ -802,9 +784,7 @@ async fn stage_endpoint_advances() {
 async fn discard_frees_the_slot() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
-    let ImportingAccount {
-        token, import_id, ..
-    } = fixture.account_with_running_import().await;
+    let ImportingAccount { token, import_id } = fixture.account_with_running_import().await;
     let _ = discard_import(
         State(state.clone()),
         import_access(&state, &token).await,
@@ -1606,8 +1586,8 @@ fn a_request_that_names_no_app_or_names_it_badly_records_nothing() {
 #[tokio::test]
 async fn a_session_records_the_app_it_connects_with() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -1656,8 +1636,8 @@ async fn a_session_records_the_app_it_connects_with() {
 #[tokio::test]
 async fn an_api_token_records_no_app() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
@@ -1698,8 +1678,8 @@ async fn fail_updates_of(conn: &mut SqliteConnection, table: &str) {
 #[tokio::test]
 async fn an_api_token_works_when_its_last_used_time_cannot_be_written() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let created =
         api_tokens::create_api_token(&mut conn, TEST_ACCOUNT, "tool", Permissions::all(), None)
             .await
@@ -1717,8 +1697,8 @@ async fn an_api_token_works_when_its_last_used_time_cannot_be_written() {
 #[tokio::test]
 async fn a_session_works_when_its_connecting_app_cannot_be_written() {
     let fixture = test_fixture().await;
+    fixture.account_with_id(TEST_ACCOUNT, "alice").await;
     let mut conn = fixture.conn().await;
-    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();

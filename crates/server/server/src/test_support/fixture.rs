@@ -136,19 +136,13 @@ impl TestFixture {
         )
         .await
         .unwrap();
-        ImportingAccount {
-            account_id,
-            token,
-            import_id,
-        }
+        ImportingAccount { token, import_id }
     }
 }
 
 /// An account with a live session and a running Import Run, from
 /// [`TestFixture::account_with_running_import`].
 pub struct ImportingAccount {
-    /// The account's id.
-    pub account_id: i64,
     /// A live session token for the account.
     pub token: String,
     /// The id of its running Import Run.
