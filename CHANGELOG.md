@@ -628,7 +628,9 @@ released versions carry their date on the heading.
   name the message gave inside the account's own stored files, so a name
   that matched a half-received file or one of the server's own notes beside
   a stored file was saved as a new attachment. The server now finds an
-  attachment by its fingerprint alone (#2259).
+  attachment by its fingerprint alone. An attachment whose fingerprint is
+  not a real one now stops the Upload at that message and names the
+  attachment, where it used to be counted as missing (#2259).
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The

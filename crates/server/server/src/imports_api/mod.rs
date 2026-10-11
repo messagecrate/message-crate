@@ -98,10 +98,7 @@ pub struct ImportOptions<'a> {
 pub struct FixedImportArgs<'a> {
     /// Content-addressed asset store directory.
     pub assets_dir: &'a Path,
-    /// Root for resolving relative attachment paths in JSONL. `None` when
-    /// the import carries no files, as an HTTP batch does: a path is then
-    /// only a label, still checked as safe, and only a stated SHA-256 finds
-    /// an Asset (#2259).
+    /// As [`ImportOptions::asset_root`] says.
     pub asset_root: Option<&'a Path>,
     /// Import mode: replace or append.
     pub mode: ImportMode,

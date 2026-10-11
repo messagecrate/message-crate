@@ -3,7 +3,7 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{StagingError, store_claimed_or_path};
+use super::{StagingError, prepare_attachments, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::records::AttachmentRecord;
 use crate::imports_api::{
@@ -247,6 +247,71 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
         matches!(err, StagingError::Internal(_)),
         "expected an internal failure, got {err:?}"
     );
+}
+
+/// A stated SHA-256 that is not one, on an attachment with no path, is
+/// refused naming the attachment by its original name, so the sender can
+/// find it (#2259).
+#[test]
+fn a_malformed_fingerprint_without_a_path_is_refused_naming_the_original_name() {
+    let tmp = TempDir::new().unwrap();
+    let att = AttachmentRecord {
+        original_name: Some("holiday.jpg".to_string()),
+        ..claimed("not-a-fingerprint", None)
+    };
+
+    let err = store_claimed_or_path(
+        &att,
+        None,
+        &tmp.path().join("assets"),
+        &mut AssetStats::default(),
+        2,
+    )
+    .expect_err("the fingerprint is refused");
+
+    assert!(
+        matches!(
+            &err,
+            StagingError::Rejected(ImportFailure::AttachmentSha256Invalid { path, line: 2, .. })
+                if path == "holiday.jpg"
+        ),
+        "{err:?}"
+    );
+}
+
+/// A conversion drops the stated fingerprint, so a malformed one is refused
+/// before it, whatever the media mode (#2259).
+#[test]
+fn a_malformed_fingerprint_is_refused_before_a_conversion() {
+    let tmp = TempDir::new().unwrap();
+    let export_dir = tmp.path().join("export");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    std::fs::write(export_dir.join("photo.jpg"), b"some bytes").unwrap();
+    let att = AttachmentRecord {
+        path: Some("photo.jpg".to_string()),
+        ..claimed("not-a-fingerprint", Some("image/jpeg"))
+    };
+
+    for media in [media::MediaMode::Convert, media::MediaMode::Compress] {
+        let err = prepare_attachments(
+            Some(&export_dir),
+            &tmp.path().join("assets"),
+            vec![att.clone()],
+            &mut AssetStats::default(),
+            media,
+            tmp.path(),
+            2,
+        )
+        .err()
+        .expect("the fingerprint is refused");
+        assert!(
+            matches!(
+                &err,
+                StagingError::Rejected(ImportFailure::AttachmentSha256Invalid { line: 2, .. })
+            ),
+            "{media:?}: {err:?}"
+        );
+    }
 }
 
 /// A file the server cannot open is its own fault: the import returns it as

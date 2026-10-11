@@ -120,6 +120,30 @@ fn try_store_converted(
     .map_err(StagingError::Internal)
 }
 
+/// The SHA-256 an attachment states, if any. A stated fingerprint that is
+/// not one is the sender's to fix, naming the line and the attachment,
+/// whether or not a file is there (an HTTP batch never carries one, #2259)
+/// and whatever the media mode.
+fn stated_sha256(
+    att: &AttachmentRecord,
+    line: usize,
+) -> Result<Option<assets_api::Sha256>, ImportFailure> {
+    let Some(sha) = att.sha256.as_deref().and_then(trimmed) else {
+        return Ok(None);
+    };
+    assets_api::Sha256::parse(sha)
+        .map(Some)
+        .map_err(|_| ImportFailure::AttachmentSha256Invalid {
+            path: att
+                .path
+                .clone()
+                .or_else(|| att.original_name.clone())
+                .unwrap_or_default(),
+            stated: sha.to_string(),
+            line,
+        })
+}
+
 /// Store an attachment by the sha256 the export claims (reusing an Asset the
 /// store already holds) or by hashing its file, counting the ones whose file
 /// is missing.
@@ -140,16 +164,7 @@ fn store_claimed_or_path(
         .map(|rel| safe_source(export_dir, rel, line))
         .transpose()?
         .flatten();
-    if let Some(sha) = att.sha256.as_deref().and_then(trimmed) {
-        // A stated fingerprint that is not one is the sender's to fix,
-        // naming the line and the path as sent, whether or not a file is
-        // there: an HTTP batch never carries one (#2259).
-        let claimed =
-            assets_api::Sha256::parse(sha).map_err(|_| ImportFailure::AttachmentSha256Invalid {
-                path: att.path.clone().unwrap_or_default(),
-                stated: sha.to_string(),
-                line,
-            })?;
+    if let Some(claimed) = stated_sha256(att, line)? {
         if let Some(found) = assets_api::lookup_by_sha256(assets_dir, &claimed) {
             asset_stats.deduped += 1;
             return Ok(Some(StoredAsset {
@@ -224,6 +239,8 @@ fn prepare_attachments(
 
     let mut prepared = Vec::with_capacity(attachments.len());
     for mut att in attachments {
+        // Before a conversion, which drops the stated fingerprint.
+        stated_sha256(&att, line)?;
         let stored = match try_store_converted(
             &mut att,
             export_dir,
