@@ -1,9 +1,10 @@
-//! Fields of Android's message store, read one way by every Android backup
-//! reader.
+//! Fields of Android's message store, read one way by the SMS Backup &
+//! Restore and GO SMS Pro readers.
 //!
-//! SMS Backup & Restore and GO SMS Pro both copy a message's `date` from
-//! Android's message store, so both read it with [`unix_secs_from_date_ms`],
-//! and a change to what counts as a readable date is made once.
+//! Both backups copy a message's `date` from Android's message store, so
+//! both readers read it with [`unix_secs_from_date_ms`], and a change to what
+//! counts as a readable date is made once. SMS Backup+ reads its date its own
+//! way, because it accepts seconds as well as milliseconds.
 
 /// The last millisecond of the year 9999, the latest `date` read as real.
 pub const MAX_DATE_MS: i64 = 253_402_300_799_999;

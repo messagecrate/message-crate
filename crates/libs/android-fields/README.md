@@ -1,8 +1,8 @@
 # android-fields
 
 Read the fields Android's message store writes, such as a message's
-millisecond `date`, one way for every Android backup reader: SMS Backup &
-Restore (`sbr`) and GO SMS Pro (`go-sms-pro-exporter`).
+millisecond `date`, one way for the SMS Backup & Restore (`sbr`) and GO SMS
+Pro (`go-sms-pro-exporter`) readers.
 
 ## Build and test
 

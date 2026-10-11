@@ -2,7 +2,7 @@
 name = "android-fields"
 version = "0.1.0"
 edition = "2024"
-description = "Fields of Android's message store, read one way by every Android backup reader"
+description = "Fields of Android's message store, read one way by the SMS Backup & Restore and GO SMS Pro readers"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]
