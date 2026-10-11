@@ -9,7 +9,7 @@ import type { ContactBrowseTarget, ContactPreview } from "./contactDrawer/contac
 /**
  * The navigation panel's item a route is on, which the panel highlights: one
  * of its Browse rows, or Import or Export. The route declares it, so the
- * panel never matches the address against a route table of its own.
+ * panel needs no route table of its own to find these rows' current one.
  */
 export type NavItem = "messages" | "contacts" | "trash" | "import" | "export";
 
@@ -78,10 +78,10 @@ function sameShown(a: ShownSection | null, b: ShownSection | null): boolean {
 /**
  * The layout's side of the sections: the section shown, the navigation
  * panel's item, the functions a route declares them with, and the header's
- * two callbacks. The callbacks are
- * read from the newest declaration when called, so they always act on the
- * route's address as it is now, and a route that renders again with the same
- * words does not render the layout again.
+ * two callbacks. The callbacks are read from the newest declaration when
+ * called, so they always act on the route's address as it is now, and a
+ * route that renders again with the same words does not render the layout
+ * again.
  */
 export function useSectionSlot(): {
   shown: ShownSection | null;

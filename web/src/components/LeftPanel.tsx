@@ -118,9 +118,15 @@ export default function LeftPanel({
     };
   }, []);
 
-  /** Whether `item` is the one the route is on; `aria-current` marks it for a screen reader. */
-  const current = (item: NavItem) => navItem === item;
-  const ariaCurrent = (item: NavItem) => (current(item) ? "page" : undefined);
+  /**
+   * The props of `item`'s row: its look from `rowClass`, highlighted when the
+   * route is on it, and `aria-current` to mark it for a screen reader.
+   */
+  const itemRow = (item: NavItem, rowClass: (active: boolean) => string) => ({
+    className: rowClass(navItem === item),
+    "aria-current": navItem === item ? ("page" as const) : undefined,
+  });
+  const nestedRowClass = (active: boolean) => `${navGlyphRowClass(active)} cursor-pointer`;
 
   const { savedSearches: groups } = useSavedSearches();
   const savedSearchActions = useSavedSearchActions();
@@ -171,19 +177,14 @@ export default function LeftPanel({
       <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutterClass}`}>
         {/* Browse */}
         <div className="px-3 py-2">
-          <PlainButton
-            className={browseLinkClass(current("messages"))}
-            aria-current={ariaCurrent("messages")}
-            onPress={() => navigate("/")}
-          >
+          <PlainButton {...itemRow("messages", browseLinkClass)} onPress={() => navigate("/")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
               <ConversationsIcon size={15} />
             </span>
             Messages
           </PlainButton>
           <PlainButton
-            className={browseLinkClass(current("contacts"))}
-            aria-current={ariaCurrent("contacts")}
+            {...itemRow("contacts", browseLinkClass)}
             onPress={() => navigate("/contacts")}
           >
             <span className={NAV_LEADING_GLYPH_CLASS}>
@@ -191,11 +192,7 @@ export default function LeftPanel({
             </span>
             Contacts
           </PlainButton>
-          <PlainButton
-            className={browseLinkClass(current("trash"))}
-            aria-current={ariaCurrent("trash")}
-            onPress={() => navigate("/trash")}
-          >
+          <PlainButton {...itemRow("trash", browseLinkClass)} onPress={() => navigate("/trash")}>
             <span className={NAV_LEADING_GLYPH_CLASS}>
               <TrashIcon size={15} />
             </span>
@@ -208,13 +205,9 @@ export default function LeftPanel({
           <NavCollapsibleSection
             id="messages-import-export"
             title="Messages"
-            headingActive={current("import") || current("export")}
+            headingActive={navItem === "import" || navItem === "export"}
           >
-            <PlainButton
-              onPress={() => navigate("/import")}
-              aria-current={ariaCurrent("import")}
-              className={`${navGlyphRowClass(current("import"))} cursor-pointer`}
-            >
+            <PlainButton onPress={() => navigate("/import")} {...itemRow("import", nestedRowClass)}>
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>
                   <ImportIcon size={15} />
@@ -242,8 +235,7 @@ export default function LeftPanel({
                     : "/export",
                 )
               }
-              aria-current={ariaCurrent("export")}
-              className={`${navGlyphRowClass(current("export"))} cursor-pointer`}
+              {...itemRow("export", nestedRowClass)}
             >
               <span className={NAV_NESTED_ROW_CLASS}>
                 <span className={NAV_LEADING_GLYPH_CLASS}>

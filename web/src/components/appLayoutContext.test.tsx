@@ -56,7 +56,7 @@ function ListRoute({ query, onSearch }: { query: string; onSearch: (q: string) =
 }
 
 /** A route with no list, on the navigation panel's `item`. */
-function NoListRoute({ item }: { item: NavItem | null }) {
+function NoListTestRoute({ item }: { item: NavItem | null }) {
   useLayoutNavItem(item);
   return <p>No list</p>;
 }
@@ -69,7 +69,11 @@ function Routes({ noListItem = null }: { noListItem?: NavItem | null }) {
       <button type="button" onClick={() => setOnList((v) => !v)}>
         Switch
       </button>
-      {onList ? <ListRoute query="bob" onSearch={() => {}} /> : <NoListRoute item={noListItem} />}
+      {onList ? (
+        <ListRoute query="bob" onSearch={() => {}} />
+      ) : (
+        <NoListTestRoute item={noListItem} />
+      )}
     </Layout>
   );
 }

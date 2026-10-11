@@ -374,13 +374,7 @@ export function TrashRoute({ children }: { children: ReactNode }) {
  * header must never change (#1568). `navItem` is the navigation panel's item
  * the screen is on, such as Import; Settings has none.
  */
-export function NoListRoute({
-  navItem = null,
-  children,
-}: {
-  navItem?: NavItem | null;
-  children: ReactNode;
-}) {
-  useLayoutNavItem(navItem);
+export function NoListRoute({ navItem, children }: { navItem?: NavItem; children: ReactNode }) {
+  useLayoutNavItem(navItem ?? null);
   return <main className={mainPaneClass}>{children}</main>;
 }
