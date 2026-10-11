@@ -3,7 +3,7 @@ import { Dialog, Modal, ModalOverlay } from "react-aria-components";
 import { type AssetRequest, useAssetObjectUrls } from "../hooks/useAssetObjectUrl";
 import { attachmentName, fullVersion } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { Z_MODAL } from "../lib/zLayers";
 import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import PlainButton from "./PlainButton";
@@ -73,7 +73,7 @@ export default function AttachmentLightbox({
   const version = fullVersion(attachment);
   const full = version === "none" ? null : lookup(attachment.sha256, version);
   const thumbnail = attachment.thumbnail_mime_type ? lookup(attachment.sha256, "thumbnail") : null;
-  const note = "text-[0.875rem] text-lightbox-text";
+  const noteClass = "text-[0.875rem] text-lightbox-text";
 
   let media: ReactNode;
   if (full?.url) {
@@ -95,7 +95,7 @@ export default function AttachmentLightbox({
             className="max-h-[80vh] max-w-[90vw] object-contain"
           />
         ) : null}
-        <div className={`${note} max-w-[28rem] text-center`}>{message}</div>
+        <div className={`${noteClass} max-w-[28rem] text-center`}>{message}</div>
         {version === "none" ? (
           <DownloadAttachmentButton attachment={attachment} look="text" />
         ) : null}
@@ -120,7 +120,7 @@ export default function AttachmentLightbox({
               <PlainButton
                 onPress={onPrev}
                 aria-label="Previous attachment"
-                className={`absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRing}`}
+                className={`absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRingClass}`}
               >
                 ‹
               </PlainButton>
@@ -132,21 +132,21 @@ export default function AttachmentLightbox({
               <PlainButton
                 onPress={onNext}
                 aria-label="Next attachment"
-                className={`absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRing}`}
+                className={`absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRingClass}`}
               >
                 ›
               </PlainButton>
             )}
 
             <div className="absolute right-4 top-4 flex items-center gap-4">
-              <span className={note}>
+              <span className={noteClass}>
                 {currentIndex + 1} / {items.length}
               </span>
               <DownloadAttachmentButton attachment={attachment} look="viewer" />
               <PlainButton
                 onPress={onClose}
                 aria-label="Close attachment viewer"
-                className={`flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[1.5rem] text-lightbox-text ${focusRing}`}
+                className={`flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[1.5rem] text-lightbox-text ${focusRingClass}`}
               >
                 ×
               </PlainButton>

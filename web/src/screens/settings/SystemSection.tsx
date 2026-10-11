@@ -23,10 +23,11 @@ import {
 import { isTauri } from "../../lib/tauri-check";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
 import { toolStatusLine, troubleshootingSentence } from "../../lib/toolStatusCopy";
-import { accentLink } from "../../lib/uiStyles";
+import { accentLinkClass } from "../../lib/uiStyles";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 
-const sectionHeading = "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
+const sectionHeadingClass =
+  "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0.05em] text-muted";
 
 const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
 
@@ -35,12 +36,12 @@ const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
  * Below the `sm` width the label sits above its control, so a phone-width
  * window does not scroll sideways.
  */
-const settingsGrid =
+const settingsGridClass =
   "grid grid-cols-[minmax(0,1fr)] items-center gap-x-3 gap-y-1 sm:grid-cols-[13.5rem_minmax(0,1fr)]";
-const settingsLabel = "whitespace-nowrap text-[0.875rem] font-medium text-text";
+const settingsLabelClass = "whitespace-nowrap text-[0.875rem] font-medium text-text";
 /** A line under a control, kept in the control's column from `sm`. */
-const settingsNoteLayout = "pl-2 text-[0.75rem] sm:col-start-2";
-const settingsHelp = `${settingsNoteLayout} text-muted`;
+const settingsNoteLayoutClass = "pl-2 text-[0.75rem] sm:col-start-2";
+const settingsHelpClass = `${settingsNoteLayoutClass} text-muted`;
 
 /** Example path shown under the Staging directory field. */
 function stagingHelpExample(stagingDir: string, defaultDir: string): string {
@@ -126,7 +127,7 @@ function statusExtra(
         node: (
           <>
             {DOWNLOAD_RETRIED} {before}
-            <a href={section.url} target="_blank" rel="noopener" className={accentLink}>
+            <a href={section.url} target="_blank" rel="noopener" className={accentLinkClass}>
               {section.heading}
             </a>
             {after}
@@ -198,14 +199,14 @@ function ToolStatusRow({
 function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string | null }) {
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Media</h3>
+      <h3 className={sectionHeadingClass}>Media</h3>
       <p className="m-0 max-w-prose text-[0.813rem] text-muted">
         ffmpeg and ffprobe are looked for on PATH, then in the Tools Directory, and both must come
         from one of them. wtsexporter is looked for in the Tools Directory only.
       </p>
       {tools?.toolsDir ? (
-        <div className={`${settingsGrid} mt-2`}>
-          <span className={settingsLabel}>Tools directory</span>
+        <div className={`${settingsGridClass} mt-2`}>
+          <span className={settingsLabelClass}>Tools directory</span>
           <span className="break-all pl-2 font-mono text-[0.813rem] text-text">
             {tools.toolsDir}
           </span>
@@ -246,9 +247,9 @@ function MediaTools({ tools, error }: { tools: ToolsStatus | null; error: string
 function AppVersion() {
   return (
     <div>
-      <h3 className={sectionHeading}>About</h3>
-      <div className={settingsGrid}>
-        <span className={settingsLabel}>Version</span>
+      <h3 className={sectionHeadingClass}>About</h3>
+      <div className={settingsGridClass}>
+        <span className={settingsLabelClass}>Version</span>
         <span className="break-all pl-2 font-mono text-[0.813rem] text-text">{APP_BUILD}</span>
       </div>
     </div>
@@ -263,21 +264,21 @@ function AppVersion() {
  * build never shows this.
  */
 function ThirdPartySoftware() {
-  const link = "text-accent";
+  const linkClass = "text-accent";
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Third-party software</h3>
+      <h3 className={sectionHeadingClass}>Third-party software</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
         Apple Messages are read by the Apple Messages reader (imessage-reader), a separate program
         installed beside this app. It is free software under the GNU General Public License, version
         3 or later, and its source is published with each release.
       </p>
       <p className="m-0 mt-1 text-[0.875rem]">
-        <a href={readerSourceUrl(APP_BUILD)} target="_blank" rel="noopener" className={link}>
+        <a href={readerSourceUrl(APP_BUILD)} target="_blank" rel="noopener" className={linkClass}>
           Source
         </a>
         <span className="text-muted"> · </span>
-        <a href={readerLicenseUrl(APP_BUILD)} target="_blank" rel="noopener" className={link}>
+        <a href={readerLicenseUrl(APP_BUILD)} target="_blank" rel="noopener" className={linkClass}>
           License
         </a>
       </p>
@@ -312,7 +313,7 @@ function DataDirectory() {
   const notOurs = server?.status === "ready" && !server.started_by_app;
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Message Crate on this computer</h3>
+      <h3 className={sectionHeadingClass}>Message Crate on this computer</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
         The Message Crate this app starts keeps its database and attachments in one directory. A
         copy of that directory is a backup.
@@ -389,7 +390,7 @@ function ExportDirectory() {
   }, []);
   return (
     <div className="mt-8">
-      <h3 className={sectionHeading}>Exports</h3>
+      <h3 className={sectionHeadingClass}>Exports</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
         Each Export and Convert gets a directory of its own in the Export Directory, unless you
         choose another directory to save to.
@@ -504,9 +505,9 @@ export function SystemSection() {
 
   return (
     <div>
-      <h3 className={sectionHeading}>Staging</h3>
-      <div className={settingsGrid}>
-        <label htmlFor={stagingId} className={settingsLabel}>
+      <h3 className={sectionHeadingClass}>Staging</h3>
+      <div className={settingsGridClass}>
+        <label htmlFor={stagingId} className={settingsLabelClass}>
           Staging directory
         </label>
         <div>
@@ -520,11 +521,11 @@ export function SystemSection() {
           />
         </div>
         {stagingError ? (
-          <p className={`${settingsNoteLayout} m-0 text-danger`} role="alert">
+          <p className={`${settingsNoteLayoutClass} m-0 text-danger`} role="alert">
             {stagingError}
           </p>
         ) : null}
-        <p className={settingsHelp}>
+        <p className={settingsHelpClass}>
           Each Import Run gets a directory here while it runs. For example {helpExample}
         </p>
       </div>

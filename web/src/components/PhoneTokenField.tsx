@@ -2,9 +2,9 @@ import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Tag, TagGroup, TagList } from "react-aria-components";
 import { EXAMPLE_PHONE } from "../lib/offeredService";
 import { commitPhoneTokens, removePhoneToken } from "../lib/phoneTokens";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import PlainButton from "./PlainButton";
-import { textInputClassName } from "./TextField";
+import { textInputClass } from "./TextField";
 
 export type PhoneTokenFieldHandle = {
   /** Commit any in-progress draft and return the resulting phone list. */
@@ -66,7 +66,7 @@ const PhoneTokenField = forwardRef<PhoneTokenFieldHandle, PhoneTokenFieldProps>(
 
     return (
       <div
-        className={`${textInputClassName} flex min-h-[2.75rem] flex-wrap items-center gap-1.5 py-1.5 focus-within:border-accent`}
+        className={`${textInputClass} flex min-h-[2.75rem] flex-wrap items-center gap-1.5 py-1.5 focus-within:border-accent`}
       >
         <TagGroup
           aria-label={ariaLabel}
@@ -81,7 +81,7 @@ const PhoneTokenField = forwardRef<PhoneTokenFieldHandle, PhoneTokenFieldProps>(
                 key={phone}
                 id={phone}
                 textValue={phone}
-                className={`inline-flex items-center gap-1 rounded-lg border border-border bg-panel px-2 py-0.5 text-[0.8125rem] text-text data-[selected]:border-accent ${focusRing}`}
+                className={`inline-flex items-center gap-1 rounded-lg border border-border bg-panel px-2 py-0.5 text-[0.8125rem] text-text data-[selected]:border-accent ${focusRingClass}`}
               >
                 {phone}
                 <PlainButton

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import Button from "../../components/Button";
+import { textInputClass } from "../../components/TextField";
 import { errorText } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/auth";
 import { useRouteCache } from "../../lib/routeQuery";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * Change an account's password: the logged-in account's own, or, given
@@ -91,7 +92,7 @@ export function ChangePasswordSection({
               onChange={(e) => setCurrentPw(e.target.value)}
               autoComplete="current-password"
               disabled={disabled}
-              className={inputClassName}
+              className={textInputClass}
             />
           </label>
         )}
@@ -103,7 +104,7 @@ export function ChangePasswordSection({
             onChange={(e) => setNewPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <label className="mb-2 block">
@@ -114,7 +115,7 @@ export function ChangePasswordSection({
             onChange={(e) => setConfirmPw(e.target.value)}
             autoComplete="new-password"
             disabled={disabled}
-            className={inputClassName}
+            className={textInputClass}
           />
         </label>
         <div className="mt-4 flex flex-wrap gap-2">

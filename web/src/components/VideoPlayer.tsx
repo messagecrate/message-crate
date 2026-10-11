@@ -2,7 +2,7 @@ import { useStreamedMedia } from "../hooks/useStreamedMedia";
 import { useThumbnail } from "../hooks/useThumbnail";
 import { attachmentName } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import { PlayIcon } from "./icons";
 import PlainButton from "./PlainButton";
@@ -52,7 +52,7 @@ export default function VideoPlayer({ attachment }: { attachment: MessageAttachm
             onPress={media.play}
             isDisabled={media.pending}
             aria-label={`Play ${name}`}
-            className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-none bg-media-control text-lightbox-text disabled:cursor-wait ${focusRing}`}
+            className={`flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border-none bg-media-control text-lightbox-text disabled:cursor-wait ${focusRingClass}`}
           >
             <PlayIcon size={20} />
           </PlainButton>

@@ -4,7 +4,7 @@ import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type ContactDetail, useContactDetail, useUpdateContact } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
 import { useTrashContact } from "../lib/trash";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import { UNKNOWN_GROUP_LABEL } from "../lib/unknownGroup";
 import { Z_CONTACT_DRAWER } from "../lib/zLayers";
 import Button from "./Button";
@@ -430,7 +430,7 @@ function OneContactDrawer({
             <PlainButton
               aria-label="Close"
               onPress={onClose}
-              className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRing}`}
+              className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRingClass}`}
             >
               ×
             </PlainButton>
@@ -467,7 +467,7 @@ function ContactLoadFailed({
         <PlainButton
           aria-label="Close"
           onPress={onClose}
-          className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRing}`}
+          className={`cursor-pointer border-none bg-transparent p-0 text-[1.25rem] leading-none text-muted hover:text-text ${focusRingClass}`}
         >
           ×
         </PlainButton>

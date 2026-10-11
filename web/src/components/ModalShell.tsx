@@ -11,7 +11,7 @@ export function DialogFooter({ children }: { children: ReactNode }) {
   return <div className="mt-5 flex justify-end gap-2">{children}</div>;
 }
 
-const CLOSE_BUTTON =
+const CLOSE_BUTTON_CLASS =
   "absolute top-3 right-3 cursor-pointer border-none bg-transparent text-[1.25rem] leading-none text-muted disabled:cursor-not-allowed disabled:opacity-50";
 
 /** Error line shown inside a dialog when the action it submits fails. */
@@ -112,7 +112,7 @@ export default function ModalShell({
         style={{ maxWidth }}
       >
         <Dialog aria-label={label} className="outline-none" {...dialogProps}>
-          {closeButton(CLOSE_BUTTON)}
+          {closeButton(CLOSE_BUTTON_CLASS)}
           {title != null ? (
             <h2 className="mb-2 pr-6 text-[1.125rem] font-semibold text-text">{title}</h2>
           ) : null}

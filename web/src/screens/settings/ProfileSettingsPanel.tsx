@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Button from "../../components/Button";
+import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { fixedSettings } from "../../lib/account";
 import { errorText } from "../../lib/apiErrorMessage";
@@ -7,7 +8,7 @@ import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSetti
 import { AccountActivitySection } from "./AccountActivitySection";
 import { AddressBookSection } from "./AddressBookSection";
 import { IdentitiesSection } from "./IdentitiesSection";
-import { inputClassName, sectionTitleClass } from "./profileStyles";
+import { sectionTitleClass } from "./profileStyles";
 
 /**
  * Profile settings: display name, time zone, identities, address book.
@@ -71,7 +72,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
           value={name}
           readOnly={fixed.displayName}
           onChange={(e) => setNameDraft(e.target.value)}
-          className={`${inputClassName} flex-1${fixed.displayName ? " !text-muted" : ""}`}
+          className={`${textInputClass} flex-1${fixed.displayName ? " !text-muted" : ""}`}
         />
         {fixed.displayName ? null : (
           <Button

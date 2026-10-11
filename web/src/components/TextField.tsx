@@ -9,7 +9,7 @@ import {
 } from "react-aria-components";
 
 /** Shared chrome for text inputs (settings, forms, PathPicker, etc.). */
-export const textInputClassName =
+export const textInputClass =
   "box-border w-full rounded-xl border border-border bg-bg px-3 py-2.5 text-[0.875rem] text-text outline-none focus:border-accent disabled:opacity-50";
 
 /**
@@ -19,7 +19,7 @@ export const textInputClassName =
  * Laying the span out as a flex box shrinks it to the glyph, and only then
  * does centring on the field's midpoint put the glyph there.
  */
-export const leadingIconClassName =
+export const leadingIconClass =
   "pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 items-center text-muted";
 
 /**
@@ -62,9 +62,7 @@ export default function TextField({
   ...props
 }: TextFieldProps) {
   const input = (
-    <Input
-      className={`${textInputClassName} ${leadingIcon ? "pl-10" : ""} ${inputClassName ?? ""}`}
-    />
+    <Input className={`${textInputClass} ${leadingIcon ? "pl-10" : ""} ${inputClassName ?? ""}`} />
   );
 
   return (
@@ -77,7 +75,7 @@ export default function TextField({
       ) : null}
       {leadingIcon ? (
         <div className="relative">
-          <span className={leadingIconClassName}>{leadingIcon}</span>
+          <span className={leadingIconClass}>{leadingIcon}</span>
           {input}
         </div>
       ) : (

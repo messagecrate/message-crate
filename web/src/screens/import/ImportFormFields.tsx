@@ -5,6 +5,7 @@ import PathPicker from "../../components/PathPicker";
 import type { PhoneTokenFieldHandle } from "../../components/PhoneTokenField";
 import { phoneCountryItems } from "../../components/phoneCountryItems";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
+import { textInputClass } from "../../components/TextField";
 import TimeZoneField from "../../components/TimeZoneField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ImessagePathStats } from "../../lib/imessageImport";
@@ -22,7 +23,6 @@ import type { WhatsappPathStats } from "../../lib/whatsappImport";
 import {
   ATTACHMENT_OPTIONS,
   CollapsibleSection,
-  fieldClass,
   hintClass,
   RESOLUTION_OPTIONS,
   StackedField,
@@ -204,7 +204,7 @@ function AttachmentFields(props: {
               type="text"
               value={attachments.maxFps}
               onChange={(e) => onAttachmentsChange({ ...attachments, maxFps: e.target.value })}
-              className={fieldClass}
+              className={textInputClass}
             />
             <p className={hintClass}>
               Maximum video frame rate; a video with a lower frame rate keeps it.
@@ -215,7 +215,7 @@ function AttachmentFields(props: {
               type="text"
               value={attachments.minSizeMb}
               onChange={(e) => onAttachmentsChange({ ...attachments, minSizeMb: e.target.value })}
-              className={fieldClass}
+              className={textInputClass}
             />
             <p className={hintClass}>Only re-encode videos above this size.</p>
           </StackedField>

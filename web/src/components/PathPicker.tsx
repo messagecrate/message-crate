@@ -2,7 +2,7 @@ import { useState } from "react";
 import { errorText } from "../lib/apiErrorMessage";
 import { pickPath } from "../lib/tauri";
 import Button from "./Button";
-import { textInputClassName } from "./TextField";
+import { textInputClass } from "./TextField";
 
 interface PathPickerProps {
   value: string;
@@ -58,7 +58,7 @@ export default function PathPicker({
           spellCheck={false}
           autoComplete="off"
           disabled={isDisabled}
-          className={`flex-1 ${textInputClassName}`}
+          className={`flex-1 ${textInputClass}`}
         />
         <Button onClick={browse} size="xs" disabled={isDisabled}>
           Browse
