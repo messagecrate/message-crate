@@ -29,9 +29,9 @@ import {
 import { isTauri } from "../../lib/tauri-check";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { type ImportRunState, importRunStore, useImportRunState } from "./importRunStore";
-import type { ImportRunDeps } from "./run/context";
+import type { ImportRunDeps, OpenRun } from "./run/context";
 import { createImportRunService, type ImportRunService, type RunAccount } from "./run/service";
-import type { ResumeUpload, ResumeWrite } from "./run/staging";
+import type { ResumeWrite } from "./run/staging";
 
 export type { ImportPhase, ImportStep } from "./importProgressState";
 
@@ -126,7 +126,7 @@ export function useImportJob(service: ImportRunService = importRunService) {
     runDirDeleteFailure: state.runDirDeleteFailure,
     discardRun: service.discardRun,
     dismissRunDirDeleteFailure: service.dismissRunDirDeleteFailure,
-    startImport: (form: ImportJobFormValues, resume?: ResumeUpload, resumeWrite?: ResumeWrite) =>
+    startImport: (form: ImportJobFormValues, resume?: OpenRun, resumeWrite?: ResumeWrite) =>
       service.startImport(account, form, resume, resumeWrite),
     continueAfterIdentityStop: () => service.continueAfterIdentityStop(account),
     cancelIdentityStop: () => service.cancelIdentityStop(account),
