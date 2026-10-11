@@ -936,12 +936,7 @@ mod tests {
     fn a_cancelled_parse_stops_the_scan_with_cancelled() {
         let mut ingest = EmlIngest::new(None, 1, &IssueSink::none());
         let error = ingest.absorb(ParsedEmlKind::Cancelled).unwrap_err();
-        assert!(
-            error
-                .downcast_ref::<message_crate_core::Cancelled>()
-                .is_some(),
-            "{error:#}"
-        );
+        assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     }
 
     /// A MIME part that could not be decoded reaches the run's report by name.

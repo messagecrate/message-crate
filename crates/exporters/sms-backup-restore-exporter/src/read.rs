@@ -357,6 +357,23 @@ pub fn spooled_attachments<'a>(
     )
 }
 
+/// Record the error that stopped the parse of `input` in `report`, so the
+/// records parsed before it are kept, unless the parse stopped for a cancel.
+///
+/// # Errors
+///
+/// Returns the error when it is [`Cancelled`]. A cancel is told from a
+/// failure by its type, so a failure whose text is `cancelled` is recorded.
+fn keep_parse_error(parse_result: Result<()>, input: &Path, report: &mut ReadReport) -> Result<()> {
+    if let Err(error) = parse_result {
+        if error.is::<Cancelled>() {
+            return Err(error);
+        }
+        report.errors.push(ReadError::new(input, &error));
+    }
+    Ok(())
+}
+
 /// Stage the attachments [`read_backup`] left in `options.spool` into
 /// `options.attachments_dir`, reading one spooled file at a time. A caller
 /// stages only once the read has succeeded, so a backup the read refuses
@@ -771,12 +788,7 @@ pub fn read_backup(
     if let Some(error) = spool_error {
         return Err(error);
     }
-    if let Err(error) = parse_result {
-        if error.is::<Cancelled>() {
-            return Err(error);
-        }
-        report.errors.push(ReadError::new(input, &error));
-    }
+    keep_parse_error(parse_result, input, &mut report)?;
     check_cancel(options.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {
