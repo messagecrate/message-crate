@@ -25,20 +25,25 @@ export type PathRequirement = { expected: PathKind; kindError: string };
 export const PATH_MISSING = "This path does not exist.";
 
 /**
- * What the form says about a path it knows nothing about. Such a path may
- * well be there, so it is never `PATH_MISSING`. A permission refusal says
- * what lets Message Crate read it; a failed check says the path was never
- * looked at, so it does not send the person to change permissions.
+ * What Message Crate says about a path it knows nothing about, naming the
+ * path as `subject`: "this path" on the Import form, "it" after the path
+ * itself. Such a path may well be there, so it is never `PATH_MISSING`. A
+ * permission refusal says what lets Message Crate read it; a failed check
+ * says the path was never looked at, so it does not send the person to
+ * change permissions.
  */
-function unknownPathMessage({ kind, reason }: ImportPathUnknown): string {
+export function unknownPathMessage(
+  { kind, reason }: ImportPathUnknown,
+  subject: "this path" | "it" = "this path",
+): string {
   const said = reason.trim().replace(/\.$/, "");
   switch (kind) {
     case "permission_denied":
-      return `Message Crate isn't allowed to read this path. The system says: ${said}. Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.`;
+      return `Message Crate isn't allowed to read ${subject}. The system says: ${said}. Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.`;
     case "other":
-      return `Message Crate could not read this path. The system says: ${said}.`;
+      return `Message Crate could not read ${subject}. The system says: ${said}.`;
     case "check_failed":
-      return `Message Crate could not check this path. The check failed with: ${said}.`;
+      return `Message Crate could not check ${subject}. The check failed with: ${said}.`;
   }
 }
 
