@@ -442,6 +442,12 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-11: **The desktop app notices when its own Message Crate stops
+  answering.** A Message Crate the desktop app started could keep running
+  without answering, and the login card still called it ready. The app now
+  checks it while the login card is open. When two checks in a row find
+  nothing answering, the app stops it, and the login card says **Message
+  Crate stopped answering.** with **Try again** (#2204).
 - 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
   call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
