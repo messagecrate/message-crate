@@ -39,7 +39,9 @@ The stack runs under its own Compose project and volume, so it never touches a r
 `--website` adds a check of the website the container serves, because the web app's tests mock the server and the server's tests never load the website.
 It runs `scripts/check-served-website.sh`, which opens the website in headless Chromium inside the Playwright image, logs in to the Demo Account, searches the conversation list, and opens a conversation the search found.
 The search term is a word from a conversation name on the list, chosen by `scripts/website-check/check.mjs` so the search finds fewer conversations than the whole list.
-The check fails when a screen does not appear, when the search finds nothing, finds no fewer conversations than the whole list, or opens a conversation it did not find, when the browser logs a console error or an uncaught exception, or when the server answers any request with a 5xx server error status.
+
+The check fails when the search finds nothing, finds no fewer conversations than the whole list, or opens a conversation it did not find.
+It also fails when a screen does not appear, when the browser logs a console error or an uncaught exception, or when the server answers any request with a 5xx server error status.
 The nightly build passes `--website`, and CI's job leaves it out, because every run would pull the Playwright image, `mcr.microsoft.com/playwright`, which is about 2.5 GB unpacked.
 
 The script takes a built image, an optional host port (18080 unless given), and `--website` before, between, or after those two.
@@ -54,12 +56,15 @@ docker build -f docker/Dockerfile -t message-crate-server:check .
 
 The check needs Docker with Compose 2.24.4 or later, `jq`, and `curl` on the local machine, and nothing else, because npm installs the browser driver inside the Playwright image.
 Compose 2.24.4 is the first release that reads the `!override` tag the script writes into its override file.
+
 The Playwright container uses the host's network to reach the server at `127.0.0.1`.
 That works with Docker Engine on Linux.
-Docker Desktop puts a host-network container on its own virtual machine unless host networking is turned on in its settings, so `127.0.0.1` there is not the local machine.
+Docker Desktop puts a host-network container on its own virtual machine, where `127.0.0.1` is not the local machine.
+Docker Desktop 4.34 and later can share the local machine's network instead, once host networking is turned on in its settings.
 
 `./scripts/check-served-website.sh <base-url>` runs the browser check alone against any running Message Crate that serves the built website and holds the Demo Account, such as the release Compose stack at `http://127.0.0.1:8080`.
-A server started by `./scripts/run-dev.sh` serves only the API, because the website comes from the Vite server on port 5173 there, so the check fails at its first page against it.
+A server started by `./scripts/run-dev.sh` serves only the API, because the Vite server on port 5173 serves the website there.
+The check fails at its first page against it.
 
 ## What the image contains
 
