@@ -201,7 +201,7 @@ fn failures(path: &str, op: &mut Operation) {
         );
     }
 
-    if path.starts_with("/v1/") {
+    if crate::server::is_api_path(path) {
         // A query parameter the route does not declare.
         kinds.push(ProblemType::ValidationFailed);
         // An `Accept` that names nothing JSON, refused on every route that
