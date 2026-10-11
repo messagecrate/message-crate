@@ -164,11 +164,8 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-10: **The Import Run and Export Run lists read their page and
-  status filter the same way.** Both lists now share one check of the
-  status filter, so the two can no longer drift apart in what they accept
-  or how they refuse a status they do not know. Nothing changes on screen
-  (#2155).
+- 2026-10-10: The Import Run and Export Run lists were reworked inside, with
+  nothing visible (#2155).
 
 - 2026-10-10: **An Import Run keeps only the Import form choices it needs to
   resume.** The desktop app now stores a named list of the form's
