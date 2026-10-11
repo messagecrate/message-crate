@@ -413,8 +413,8 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the run was cancelled, which
-    /// includes a session the server refused. Otherwise the failure is
+    /// A failed request stops the run only when the caller cancelled it or
+    /// the server refused the session. Otherwise the failure is
     /// recorded against the conversations in that batch and the run moves on.
     ///
     /// # Errors
@@ -427,7 +427,7 @@ impl<'a> ImportPipeline<'a> {
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
         let request_ok = self.flush(wait, out)?;
-        Ok(request_ok || !self.is_cancelled())
+        Ok(request_ok || !self.must_stop())
     }
 
     /// Finish the current in-flight import (if any), then start the pending batch (if any).
@@ -451,8 +451,9 @@ impl<'a> ImportPipeline<'a> {
         let Some(batch) = self.pending.take() else {
             return Ok(ok);
         };
-        // Do not start a new import after cancel; leave pending unsent.
-        if self.is_cancelled() {
+        // Do not start a new import after a cancel or a refused session;
+        // leave pending unsent.
+        if self.must_stop() {
             return Ok(false);
         }
         self.inflight = Some(self.spawn_import(batch));
@@ -727,8 +728,9 @@ impl<'a> ImportPipeline<'a> {
         Ok(())
     }
 
-    /// True once the caller cancelled the run or the server refused the session.
-    fn is_cancelled(&self) -> bool {
+    /// True once the run must stop: the caller cancelled it, or the server
+    /// refused the session.
+    fn must_stop(&self) -> bool {
         self.session.check_stop().is_err()
     }
 
