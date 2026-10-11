@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "react-aria-components";
 
-import { popupShadow } from "../lib/uiStyles";
+import { popupShadowClass } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
 import { SelectChevronIcon } from "./icons";
 
@@ -51,7 +51,7 @@ export function selectItemClassName(
 }
 
 /** The heading of a section in a Select's or a ComboBox's list. */
-export const selectSectionHeaderClassName =
+export const selectSectionHeaderClass =
   "px-2 pt-1.5 pb-1 text-[0.688rem] font-semibold uppercase tracking-[0.05em] text-muted";
 
 /**
@@ -88,7 +88,7 @@ export default function Select<T extends object>({
       </Button>
       <Popover
         data-mc-overlay=""
-        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadow} ${popoverClassName ?? ""}`}
+        className={`box-border w-[var(--trigger-width)] max-w-[var(--trigger-width)] rounded-md border border-border bg-popover p-1 outline-none ${Z_POPOVER} ${popupShadowClass} ${popoverClassName ?? ""}`}
       >
         <ListBox className="max-h-72 overflow-auto outline-none">{children}</ListBox>
       </Popover>

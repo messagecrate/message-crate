@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Key } from "react-aria-components";
 import { Tab as RACTab, SelectionIndicator } from "react-aria-components";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 
 /**
  * The app's tab: React Aria's `Tab`, drawn as a label over an accent line that
@@ -28,7 +28,7 @@ export type TabProps = {
   className?: string;
 };
 
-const tabClass = `relative -mb-px cursor-pointer border-none bg-transparent px-3 py-2 font-medium text-muted transition-colors duration-200 data-hovered:text-text data-selected:text-text data-disabled:cursor-not-allowed data-disabled:opacity-50 ${focusRing}`;
+const tabClass = `relative -mb-px cursor-pointer border-none bg-transparent px-3 py-2 font-medium text-muted transition-colors duration-200 data-hovered:text-text data-selected:text-text data-disabled:cursor-not-allowed data-disabled:opacity-50 ${focusRingClass}`;
 
 export default function Tab({ id, children, className = "" }: TabProps) {
   return (

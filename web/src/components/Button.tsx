@@ -1,4 +1,4 @@
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import PlainButton, { type PlainButtonProps } from "./PlainButton";
 
 export type ButtonVariant =
@@ -65,7 +65,7 @@ export default function Button({
         box-border inline-flex cursor-pointer select-none items-center justify-center
         rounded-md text-center leading-[1.25]
         border border-solid font-[inherit]
-        ${focusRing}
+        ${focusRingClass}
         disabled:cursor-not-allowed disabled:brightness-[0.72]
         ${SIZE[size]}
         ${VARIANT[variant]}

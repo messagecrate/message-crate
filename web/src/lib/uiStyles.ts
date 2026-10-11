@@ -15,7 +15,7 @@ import { Z_POPOVER } from "./zLayers";
  * *plus* its own 32px of padding, so the page stood 32px taller than the window
  * it was drawn in and the browser fitted a scrollbar it had no use for.
  */
-export const pageCenter =
+export const pageCenterClass =
   "min-h-screen box-border flex items-center justify-center bg-bg p-4 overflow-y-auto";
 /**
  * Every auth card is at least 576 × 608 and never scrolls, so nothing moves
@@ -30,11 +30,11 @@ export const pageCenter =
  * the owner is, and with a fixed height that line pushed the submit button
  * out of the form and over the "or" rule below it.
  */
-export const authCard =
+export const authCardClass =
   "box-border flex min-h-[38rem] w-full max-w-xl flex-col bg-panel border border-border rounded-lg shadow-card p-8";
 
 /** Content region of an auth card: everything above the pinned action row. */
-export const authCardBody = "flex min-h-0 flex-1 flex-col";
+export const authCardBodyClass = "flex min-h-0 flex-1 flex-col";
 
 /**
  * Action row pinned to the bottom of the frame: the primary action does not
@@ -43,14 +43,14 @@ export const authCardBody = "flex min-h-0 flex-1 flex-col";
  * the action still lands in the same place on that screen too — it just
  * carries more below it there.
  */
-export const authCardFooter = "mt-auto flex flex-col";
+export const authCardFooterClass = "mt-auto flex flex-col";
 /**
  * Heading of a step inside the flow, set left rather than centred. `m-0` for
- * the same reason as `authScreenTitle`: without Tailwind's preflight a heading
+ * the same reason as `authScreenTitleClass`: without Tailwind's preflight a heading
  * keeps the browser's own margins, which push it off the top of the card and
  * away from the line under it.
  */
-export const authTitle = "m-0 text-[1.25rem] font-bold text-text mb-6 text-left";
+export const authTitleClass = "m-0 text-[1.25rem] font-bold text-text mb-6 text-left";
 /**
  * Name at the top of an auth card. The login card and the server settings
  * screen share it, so crossing between them never changes the size of the
@@ -58,17 +58,17 @@ export const authTitle = "m-0 text-[1.25rem] font-bold text-text mb-6 text-left"
  * preflight, so a heading still carries the browser's own margins otherwise;
  * each screen sets the gap below the name itself.
  */
-export const authScreenTitle =
+export const authScreenTitleClass =
   "m-0 text-center text-[1.375rem] font-semibold tracking-[-0.015em] text-text";
-export const authLabel = "block text-[0.875rem] font-medium text-text mb-1";
-export const authInput =
+export const authLabelClass = "block text-[0.875rem] font-medium text-text mb-1";
+export const authInputClass =
   "w-full box-border px-3 py-2 text-[0.875rem] rounded border border-border bg-elevated text-text focus:outline-none focus:border-accent";
-export const mutedText = "text-[0.813rem] text-muted";
-export const accentLink =
+export const mutedTextClass = "text-[0.813rem] text-muted";
+export const accentLinkClass =
   "text-[0.813rem] text-accent cursor-pointer bg-transparent border-none p-0 hover:underline";
 
 /** Floating panels / menus (advanced search, selects, date pickers, recent searches). */
-export const popupShadow = "shadow-popup";
+export const popupShadowClass = "shadow-popup";
 
 /**
  * The keyboard focus ring of an element that takes DOM focus itself, such as
@@ -77,21 +77,21 @@ export const popupShadow = "shadow-popup";
  * element and the ring shows the surface behind it. A ring offset has a colour
  * of its own, white unless set, which drew a white line in the dark theme.
  */
-export const focusRing =
+export const focusRingClass =
   "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent";
 
 /**
- * `focusRing`'s outline with no variant, for an element whose focus sits on a
+ * `focusRingClass`'s outline with no variant, for an element whose focus sits on a
  * hidden input, such as React Aria's `Radio`: the caller shows it when React
  * Aria's `isFocusVisible` render prop is true. Tailwind reads class names from
  * the source as written, so the two strings are spelt out, and
  * `src/styleTokens.test.ts` checks that they agree.
  */
-export const focusOutline = "outline-2 outline-solid outline-offset-1 outline-accent";
+export const focusOutlineClass = "outline-2 outline-solid outline-offset-1 outline-accent";
 
 /** A menu item without its text colour. The focused one (arrow keys or hover) takes the hover background. */
 export const menuItemClass =
   "box-border flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[0.813rem] outline-none data-focused:bg-hover data-disabled:cursor-not-allowed data-disabled:opacity-40";
 
 /** The popover a menu opens in, below its trigger. */
-export const menuPopoverClass = `min-w-[7.5rem] rounded-lg border border-border bg-popover py-1 outline-none ${popupShadow} ${Z_POPOVER}`;
+export const menuPopoverClass = `min-w-[7.5rem] rounded-lg border border-border bg-popover py-1 outline-none ${popupShadowClass} ${Z_POPOVER}`;

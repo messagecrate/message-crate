@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import Button from "../../components/Button";
 import Checkbox from "../../components/Checkbox";
-import { textInputClassName } from "../../components/TextField";
+import { textInputClass } from "../../components/TextField";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
@@ -117,7 +117,7 @@ export function ServerSettingsPanel() {
             min={1}
             step="any"
             inputMode="decimal"
-            className={`${textInputClassName} w-[8rem]`}
+            className={`${textInputClass} w-[8rem]`}
             value={limitText}
             disabled={saveLimit.isPending}
             onChange={(event) => setLimitDraft(event.target.value)}

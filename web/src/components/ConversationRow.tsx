@@ -3,9 +3,9 @@ import { conversationName } from "../lib/conversationName";
 import { formatDateSpan } from "../lib/formatDate";
 import { conversationServiceLabel } from "../lib/serviceLabel";
 import { useTimeZone } from "../lib/timeZone";
-import { listRowDivider } from "../lib/tw";
+import { listRowDividerClass } from "../lib/tw";
 import type { Conversation } from "../lib/types";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import Checkbox from "./Checkbox";
 import { useColumnResizing } from "./columnResizeState";
 import { GroupConversationIcon } from "./icons";
@@ -105,13 +105,13 @@ export default function ConversationRow({
     </div>
   );
 
-  const rowClass = `box-border flex w-full items-center gap-2 border-none px-[0.85rem] py-[0.7rem] text-left ${listRowDivider} ${
+  const rowClass = `box-border flex w-full items-center gap-2 border-none px-[0.85rem] py-[0.7rem] text-left ${listRowDividerClass} ${
     isSelected ? "bg-hover" : "bg-transparent"
   }`;
 
   if (!onCheckChange) {
     return (
-      <PlainButton onPress={onClick} className={`cursor-pointer ${focusRing} ${rowClass}`}>
+      <PlainButton onPress={onClick} className={`cursor-pointer ${focusRingClass} ${rowClass}`}>
         {body}
       </PlainButton>
     );
@@ -136,7 +136,7 @@ export default function ConversationRow({
       />
       <PlainButton
         onPress={onClick}
-        className={`flex min-w-0 flex-1 cursor-pointer items-start border-none bg-transparent p-0 text-left ${focusRing}`}
+        className={`flex min-w-0 flex-1 cursor-pointer items-start border-none bg-transparent p-0 text-left ${focusRingClass}`}
       >
         {body}
       </PlainButton>

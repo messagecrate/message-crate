@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { focusRing } from "../lib/uiStyles";
+import { focusRingClass } from "../lib/uiStyles";
 import PhoneTokenField from "./PhoneTokenField";
 
 afterEach(cleanup);
@@ -17,7 +17,7 @@ describe("PhoneTokenField focus", () => {
     const numbers = screen.getAllByRole("row");
     expect(numbers).toHaveLength(2);
     for (const number of numbers) {
-      expect(number.className).toContain(focusRing);
+      expect(number.className).toContain(focusRingClass);
     }
   });
 });
