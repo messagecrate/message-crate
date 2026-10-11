@@ -29,3 +29,13 @@ export function rejectionMessage(err: unknown, fallback: string): string {
 export function errorText(err: unknown): string {
   return apiErrorMessage(err, String(err));
 }
+
+/**
+ * `text` with its first letter capitalised, for a server `detail` shown as a
+ * line of its own. The server writes each `detail` in lowercase with no final
+ * period (`docs/architecture/http-api.md`, "Failures"), and a line of UI text
+ * starts with a capital.
+ */
+export function sentenceCase(text: string): string {
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+}

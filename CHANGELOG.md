@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The messages about a password, such as a wrong current
+  password or two new passwords that differ, are written the way the
+  server's other messages are, so they no longer end with a full stop.
+
 - 2026-10-11: The way an Upload and an Export remember what they already
   did for each server and account was reworked inside, with nothing visible
   (#2253).
