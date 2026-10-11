@@ -173,6 +173,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The Apple Messages and SMS Backup & Restore imports were
+  reworked inside, with nothing visible (#2195).
+
 - 2026-10-11: The way the Demo Account is built was reworked inside, with
   nothing visible (#2197).
 

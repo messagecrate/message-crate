@@ -57,7 +57,7 @@ pub(crate) const ATTACHMENT_NOT_DECRYPTED: Counter = Counter::new(
 );
 
 /// Messages accumulated for one Apple `chat_identifier` before projection.
-struct PendingConversation {
+struct ChatInProgress {
     conversation_type: IrConversationType,
     group_title: Option<String>,
     participants: Vec<IrParticipant>,
@@ -109,7 +109,7 @@ impl AttachmentLoad {
 
 /// What the stream produced.
 struct Collected {
-    conversations: BTreeMap<String, PendingConversation>,
+    conversations: BTreeMap<String, ChatInProgress>,
     /// Attachment paths need the program to decrypt them.
     encrypted: bool,
     /// Rows the program read but could not convert, from its
@@ -288,7 +288,7 @@ fn stages_attachment_files(options: &ExportOptions) -> bool {
 /// by conversation. Cancel is checked on every event so a cancelled run
 /// stops within one message.
 fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
-    let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
+    let mut conversations: BTreeMap<String, ChatInProgress> = BTreeMap::new();
     let mut encrypted = false;
     let failures;
     let stages_files = stages_attachment_files(options);
@@ -302,7 +302,7 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
             Event::Conversation(record) => {
                 conversations
                     .entry(record.chat_identifier.clone())
-                    .or_insert_with(|| pending_from_record(record));
+                    .or_insert_with(|| chat_from_record(record));
             }
             Event::Message(record) => {
                 let conversation =
@@ -345,8 +345,8 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
 }
 
 /// A conversation's roster, as the program described it.
-fn pending_from_record(record: ConversationRecord) -> PendingConversation {
-    PendingConversation {
+fn chat_from_record(record: ConversationRecord) -> ChatInProgress {
+    ChatInProgress {
         conversation_type: IrConversationType::parse(&record.conversation_type),
         group_title: record.group_title,
         participants: record
@@ -688,7 +688,7 @@ fn embed_attachment_bytes(
 fn write_conversations(
     options: &ExportOptions,
     sink: &mut FormatSink,
-    conversations: BTreeMap<String, PendingConversation>,
+    conversations: BTreeMap<String, ChatInProgress>,
 ) -> Result<u64> {
     let format = options.convert_run.output_format;
     let total = conversations.len();
@@ -709,7 +709,7 @@ fn write_conversations(
             continue;
         }
         kept += 1;
-        let doc = pending_to_document(
+        let doc = chat_to_document(
             chat_identifier,
             conversation,
             options.use_caller_id,
@@ -732,9 +732,9 @@ fn write_conversations(
 /// Project one accumulated conversation into the shared document shape,
 /// read from a backup made at `backup_taken_at_unix_ms`
 /// ([`ExportOptions::backup_taken_at_unix_ms`]).
-fn pending_to_document(
+fn chat_to_document(
     chat_identifier: String,
-    conversation: PendingConversation,
+    conversation: ChatInProgress,
     use_caller_id: bool,
     backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationDocument {
@@ -779,14 +779,14 @@ fn pending_to_document(
 /// `attachment_loads` is positional: it runs in the same order as the
 /// conversation's flattened `messages[].attachments`, so the sources are
 /// consumed in that order and land on the attachment each was collected for.
-fn pending_to_unit(
+fn chat_to_unit(
     chat_identifier: String,
-    mut conversation: PendingConversation,
+    mut conversation: ChatInProgress,
     use_caller_id: bool,
     backup_taken_at_unix_ms: Option<i64>,
 ) -> ConversationUnit {
     let loads = std::mem::take(&mut conversation.attachment_loads);
-    let doc = pending_to_document(
+    let doc = chat_to_document(
         chat_identifier,
         conversation,
         use_caller_id,
@@ -821,7 +821,7 @@ fn drain_conversations(
         .into_iter()
         .filter(|(_, conversation)| !conversation.messages.is_empty())
         .map(|(chat_identifier, conversation)| {
-            pending_to_unit(
+            chat_to_unit(
                 chat_identifier,
                 conversation,
                 use_caller_id,
@@ -1247,7 +1247,7 @@ mod tests {
             record.owner_identity = String::new();
             message_to_ir(record, AttachmentEmbed::Embed, true).0
         };
-        let conversation = PendingConversation {
+        let conversation = ChatInProgress {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1257,7 +1257,7 @@ mod tests {
             attachment_loads: Vec::new(),
         };
 
-        let doc = pending_to_document("+15555550122".into(), conversation, false, None);
+        let doc = chat_to_document("+15555550122".into(), conversation, false, None);
 
         let senders: Vec<_> = doc
             .messages
@@ -1282,7 +1282,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let present = tmp.path().join("present.jpg");
         fs::write(&present, b"x").unwrap();
-        let conversation = PendingConversation {
+        let conversation = ChatInProgress {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1366,7 +1366,7 @@ mod tests {
         // attachments, so the first load belongs to the first message's
         // attachment and the second to the next message's.
         let first = PathBuf::from("first.jpg");
-        let conversation = PendingConversation {
+        let conversation = ChatInProgress {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
@@ -1382,7 +1382,7 @@ mod tests {
             ],
         };
 
-        let unit = pending_to_unit("+15555550101".into(), conversation, false, None);
+        let unit = chat_to_unit("+15555550101".into(), conversation, false, None);
 
         assert_eq!(unit.attachments.len(), 2);
         assert_eq!(unit.attachments[0].message_index, 0);
