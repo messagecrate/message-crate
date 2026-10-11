@@ -13,7 +13,7 @@ use std::sync::atomic::Ordering;
 use message_crate_core::{CancelFlag, Cancelled};
 use tauri::AppHandle;
 
-use super::events::{self, ImportProgressEvent};
+use super::events::{self, ImportProgressEvent, Step};
 use crate::tool_downloads::{self, DownloadState, Program, ToolDownloads, WaitError};
 
 /// Where one program is, as Settings shows it.
@@ -189,8 +189,8 @@ const WAITING_STEP_BYTES: u64 = 256 * 1024;
 
 /// Wait while any of `programs` is downloading, before an import runs it
 /// (#1053). The wait goes to the window as `desktop-job:progress` events on
-/// `step` ([`waiting_event`]): one when it starts, and one each time the
-/// program waited for changes or its download moves by
+/// `step` ([`ImportProgressEvent::waiting`]): one when it starts, and one
+/// each time the program waited for changes or its download moves by
 /// [`WAITING_STEP_BYTES`]. The window writes the progress line from them,
 /// in the byte format the Import form uses.
 ///
@@ -203,7 +203,7 @@ pub(crate) fn wait_for_downloads(
     downloads: &ToolDownloads,
     programs: &[Program],
     cancel: &CancelFlag,
-    step: &str,
+    step: Step,
 ) -> anyhow::Result<()> {
     let mut last: Option<(Program, u64, Option<u64>)> = None;
     downloads
@@ -218,7 +218,7 @@ pub(crate) fn wait_for_downloads(
                 events::emit(
                     app,
                     events::PROGRESS,
-                    waiting_event(step, program, received, total),
+                    ImportProgressEvent::waiting(step, program, received, total),
                 );
                 last = Some(now);
             },
@@ -238,26 +238,6 @@ fn worth_sending(
         return true;
     };
     program != now.0 || total != now.2 || now.1.abs_diff(received) >= WAITING_STEP_BYTES
-}
-
-/// The `desktop-job:progress` event of a run on `step` waiting for `program`'s
-/// download, `received` bytes in of `total`: marked by `waiting`, with no
-/// counts and the bytes in `bytes_done` and `bytes_total`.
-fn waiting_event(
-    step: &str,
-    program: Program,
-    received: u64,
-    total: Option<u64>,
-) -> ImportProgressEvent {
-    ImportProgressEvent {
-        step: step.to_string(),
-        done: 0,
-        total: 0,
-        bytes_done: Some(received),
-        bytes_total: total,
-        status: None,
-        waiting: Some(program),
-    }
 }
 
 /// [`tools_status`], with the downloads in `downloads` and a download for
@@ -296,41 +276,6 @@ fn tools_status_with(downloads: &ToolDownloads, pinned: &[Program]) -> ToolsStat
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// A run waiting for a download is sent marked by the program, with its
-    /// bytes and no counts: the shape `progressDetail` in
-    /// `web/src/screens/import/useImportJob.ts` reads, whose tests feed the
-    /// same JSON.
-    #[test]
-    fn a_run_waiting_for_a_download_is_sent_as_the_program_and_its_bytes() {
-        assert_eq!(
-            serde_json::to_value(waiting_event(
-                "setup",
-                Program::Wtsexporter,
-                12 * 1024 * 1024,
-                Some(30 * 1024 * 1024)
-            ))
-            .unwrap(),
-            serde_json::json!({
-                "step": "setup",
-                "done": 0,
-                "total": 0,
-                "bytes_done": 12_582_912,
-                "bytes_total": 31_457_280,
-                "waiting": "wtsexporter",
-            })
-        );
-        assert_eq!(
-            serde_json::to_value(waiting_event("media", Program::Ffmpeg, 0, None)).unwrap(),
-            serde_json::json!({
-                "step": "media",
-                "done": 0,
-                "total": 0,
-                "bytes_done": 0,
-                "waiting": "ffmpeg",
-            })
-        );
-    }
 
     /// The window hears of a wait when it starts, when the program or the
     /// size changes, and when the download moves by a step, not at every
