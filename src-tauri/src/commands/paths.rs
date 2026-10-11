@@ -201,6 +201,9 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
 /// decrypts `chat.db` into a directory under the Scratch Directory, which the
 /// next request cleans if this one is killed.
+///
+/// The check runs before any Import Run exists, so it has no run log: the
+/// Reader's log lines go to the process log ([`reader_log_line`]).
 #[tauri::command]
 pub async fn imessage_backup_identities(
     app: AppHandle,
@@ -211,11 +214,19 @@ pub async fn imessage_backup_identities(
     let scratch_root = scratch_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
-        ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)
+        let log =
+            message_crate_core::LogSink::new(|line: &str| eprintln!("{}", reader_log_line(line)));
+        ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root, log)
             .map_err(|e| format!("{e:#}"))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// The process log's line for one line the Apple Messages Reader logged
+/// while the Import screen's identity check ran.
+fn reader_log_line(line: &str) -> String {
+    format!("The Apple Messages Reader logged during the identity check: {line}")
 }
 
 /// Ask this process for the current user's home directory.
@@ -524,6 +535,14 @@ fn reject_filesystem_root(root: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn a_reader_log_line_names_the_reader_and_the_check() {
+        assert_eq!(
+            reader_log_line("opening chat.db"),
+            "The Apple Messages Reader logged during the identity check: opening chat.db"
+        );
+    }
 
     #[cfg(unix)]
     #[test]
