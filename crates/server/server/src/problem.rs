@@ -87,6 +87,8 @@ problem_types! {
     MediaLinkInvalid,
     /// A `Range` that selects no byte of the file.
     RangeNotSatisfiable,
+    /// The server is stopping and refused work it had not started.
+    ServerStopping,
 }
 
 impl ProblemType {
@@ -117,6 +119,7 @@ impl ProblemType {
             Self::NotAcceptable => "not-acceptable",
             Self::MediaLinkInvalid => "media-link-invalid",
             Self::RangeNotSatisfiable => "range-not-satisfiable",
+            Self::ServerStopping => "server-stopping",
         }
     }
 
@@ -146,6 +149,7 @@ impl ProblemType {
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::NotAcceptable => StatusCode::NOT_ACCEPTABLE,
             Self::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
+            Self::ServerStopping => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -191,6 +195,7 @@ impl ProblemType {
             Self::NotAcceptable => "Not acceptable",
             Self::MediaLinkInvalid => "Media link invalid",
             Self::RangeNotSatisfiable => "Range not satisfiable",
+            Self::ServerStopping => "Server stopping",
         }
     }
 
@@ -244,6 +249,7 @@ For an import batch, `line` carries the line of the request body that could not 
                 crate::assets_api::media_links::MEDIA_LINK_TTL.as_secs() / 60
             ),
             Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
+            Self::ServerStopping => "The server was told to stop (Ctrl-C, `docker stop`, or the desktop app closing) while this request waited to start, so it refused the request rather than start work it would make the stop wait for. An import batch waiting for its turn answers this: nothing in it was stored. Send the same request once the server is running again.".to_string(),
         }
     }
 }
@@ -308,6 +314,7 @@ pub mod openapi {
         IdentityExists,
         AssetUploadInvalid,
         RangeNotSatisfiable,
+        ServerStopping,
     );
 }
 
@@ -355,7 +362,13 @@ mod tests {
         for t in ProblemType::ALL {
             assert!(!t.page().trim().is_empty(), "{} has no page text", t.slug());
             assert!(t.url().ends_with(t.slug()));
-            assert!(t.status().is_client_error(), "{} is not a 4xx", t.slug());
+            // `server-stopping` is the one type that is not the client's
+            // doing: its remedy is to send the same request again.
+            if t == ProblemType::ServerStopping {
+                assert_eq!(t.status(), StatusCode::SERVICE_UNAVAILABLE);
+            } else {
+                assert!(t.status().is_client_error(), "{} is not a 4xx", t.slug());
+            }
         }
     }
 }

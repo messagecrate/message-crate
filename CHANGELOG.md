@@ -582,6 +582,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **A server told to stop during an Upload stops sooner.** A
+  batch of messages that was still waiting for its turn used to start once
+  an earlier batch ended and run in full before the server stopped. The
+  server now turns it away at once, without storing any of it, and the
+  Upload tries it again. If the server is not back in time, the Upload
+  pauses, and resuming it sends the batch. The server's log no longer reports the turned-away
+  batch as an internal error either (#2203).
 - 2026-10-11: **Messages about the backup password read as plain
   sentences.** An encrypted iPhone backup with no password is now refused
   with "The backup is encrypted. Fill in the Encryption password.", and a
