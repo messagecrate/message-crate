@@ -15,6 +15,7 @@ import { dismissRunDirDeleteFailure } from "./runDirectory";
 import { beginRun, freshScratch, loadCarriedRecord } from "./scratch";
 import {
   initialSteps,
+  movePhase,
   resumeSteps,
   returnToForm,
   returnToFormWithError,
@@ -156,7 +157,7 @@ export function createImportRunService(deps: ImportRunDeps) {
         if (accountLeft(ctx)) return;
         if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
           ctx.scratch.pendingIdentityForm = form;
-          store.set({ phase: "identity_stop" });
+          movePhase(ctx, "identity_stop");
           return;
         }
       } finally {
@@ -303,10 +304,9 @@ export function createImportRunService(deps: ImportRunDeps) {
       partiallyRan: boolean,
     ): Promise<void> {
       const mediaDone = review === "media_review";
-      store.set({
+      movePhase(ctx, "resume", {
         steps: resumeSteps(known.attachmentMedia, mediaDone),
         computingSummary: true,
-        phase: "running",
         running: true,
       });
       try {
