@@ -10,7 +10,6 @@ import {
   imessageShowsPassword,
   imessageVisiblePlatforms,
 } from "../imessageImport";
-import ImessageFormSection from "./ImessageFormSection";
 import type { BackupField, ImportSourceDescriptor } from "./types";
 
 const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
@@ -68,5 +67,4 @@ export const IMESSAGE_SOURCE: ImportSourceDescriptor<ImessageMethodId> = {
       backupPassword: input.backupPassword,
       stats: input.pathStats,
     }),
-  FormSection: ImessageFormSection,
 };

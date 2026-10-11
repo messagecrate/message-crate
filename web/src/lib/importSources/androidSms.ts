@@ -1,7 +1,6 @@
 import { attachmentChoicesOf } from "../../screens/import/attachmentChoices";
 import { type ImportSourceId, sourceLabel } from "../exportSources";
 import { sbrExtractFields } from "../sbrExtractFields";
-import AndroidSmsFormSection from "./AndroidSmsFormSection";
 import type { BackupField, ImportSourceDescriptor, ReadinessInput } from "./types";
 
 /**
@@ -76,7 +75,6 @@ function androidSmsSource(args: {
       enabled: androidSmsReady(input, args.asksOwnerEmails),
       errors: {},
     }),
-    FormSection: AndroidSmsFormSection,
   };
 }
 
