@@ -593,9 +593,9 @@ released versions carry their date on the heading.
   viewer's computer, the port a Message Crate developer's tools use, to call
   the server. Nothing in a release uses that port, so the only effect was
   that any page served on it could call a Message Crate in Docker, though it
-  still needed a login to read anything. The image now allows only the desktop app and the website the
-  server serves itself, as a Message Crate started by the desktop app does
-  (#2144).
+  still needed a login to read anything. The image now allows only the
+  desktop app and the website the server serves itself, as a Message Crate
+  started by the desktop app does (#2144).
 
 ### Upgrading
 
