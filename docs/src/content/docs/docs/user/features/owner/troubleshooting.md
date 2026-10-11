@@ -90,7 +90,7 @@ Importing needs an account, and that account needs **Import** on under **Message
 
 ## Import
 
-### "The backup is encrypted — fill Encryption password."
+### "The backup is encrypted. Fill in the Encryption password."
 
 The iPhone backup was made with encryption, and the Import form's **Encryption password** is empty.
 The password is the one chosen when the backup was made.

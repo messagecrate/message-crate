@@ -1063,9 +1063,9 @@ async fn a_database_without_accounts_is_an_error() {
         .await
         .unwrap_err();
 
-    assert!(
-        err.to_string().starts_with("no accounts found"),
-        "got: {err}"
+    assert_eq!(
+        err.to_string(),
+        "no accounts found: create an account or run reset-demo first"
     );
 }
 

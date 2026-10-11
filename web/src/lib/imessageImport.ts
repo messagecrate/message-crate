@@ -87,7 +87,7 @@ export const IMESSAGE_ERR_ATTACHMENT_NOT_DIRECTORY =
 export const IMESSAGE_ERR_CONTACTS_NOT_FILE =
   "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
 export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
-  "The backup is encrypted — fill Encryption password.";
+  "The backup is encrypted. Fill in the Encryption password.";
 
 /** The kind of path each method's backup path field takes, and its message for any other. */
 const IMESSAGE_BACKUP_PATH: Record<ImessageMethodId, PathRequirement> = {

@@ -18,7 +18,7 @@ use imessage_database::error::{message::MessageError, plist::PlistParseError, ta
 
 /// User-facing copy when an encrypted backup has no password.
 pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
-    "The backup is encrypted — fill Encryption password.";
+    "The backup is encrypted. Fill in the Encryption password.";
 /// User-facing copy when a password is set on an unencrypted backup.
 pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
     "This backup is not encrypted. Clear Encryption password.";
