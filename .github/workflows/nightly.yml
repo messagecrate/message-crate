@@ -3,8 +3,9 @@ name: Nightly
 # Once a night, the release Dockerfile is built from main. "Docker image
 # builds" in ci.yml runs only on a pull request that changes the Dockerfile,
 # a Cargo manifest or the lockfile, so a change anywhere else that breaks
-# the image was not built until a release tag. This run builds it and never
-# publishes it: publishing stays with a v* tag in ci.yml.
+# the image was not built until a release tag. This run builds it, starts it
+# with docker/compose.release.yml, and never publishes it: publishing stays
+# with a v* tag in ci.yml.
 #
 # It is a report, not a gate: it has no pull_request trigger and nothing
 # here is in the ruleset's required list, so it lives outside ci.yml, whose
@@ -90,7 +91,7 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
           fi
 
-  # ── The release Dockerfile builds ─────────────────────────────────────
+  # ── The release Dockerfile builds and starts ──────────────────────────
   # The same steps as "Docker image builds" in ci.yml; keep the two alike.
   # push: false, and no Docker Hub login: nothing is published.
   docker-build:
@@ -111,8 +112,17 @@ jobs:
           context: .
           file: ./docker/Dockerfile
           push: false
+          load: true
+          tags: message-crate-server:check
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # A change to the server that makes it write outside /app/data at start
+      # builds and then fails to start under the Compose files' read-only
+      # root filesystem. Pull requests that change only server code skip the
+      # step in ci.yml, so this run is where such a change shows.
+      - name: Start the release Compose stack and log in to the Demo Account
+        run: ./scripts/check-docker-compose.sh message-crate-server:check
 
   # ── A failed night opens an issue ─────────────────────────────────────
   # One open issue holds every failed night: the first failure opens it and

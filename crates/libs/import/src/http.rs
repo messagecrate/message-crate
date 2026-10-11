@@ -216,34 +216,42 @@ impl Session {
     }
 
     /// Upload in parts: open a multipart upload, send each part, complete
-    /// it. A part or completion that fails aborts the upload on the server.
+    /// it. Any failure after the upload opened, reading the file included,
+    /// aborts the upload on the server, which counts every open upload
+    /// against the account's limit until it ends.
     fn put_asset_multipart(&self, asset: &AssetUpload<'_>, file_len: u64) -> Result<Asset> {
         let Some(upload) = MultipartUpload::start(self, asset, file_len)? else {
             return Ok(Asset {
                 already_present: true,
             });
         };
-        let mut file =
-            File::open(asset.file).with_context(|| format!("open {}", asset.file.display()))?;
+        let sent = Self::send_parts_and_complete(&upload, asset.file, file_len);
+        if sent.is_err() {
+            upload.abort();
+        }
+        sent
+    }
+
+    /// Read `file` a part at a time, send each part of `upload`, and complete it.
+    fn send_parts_and_complete(
+        upload: &MultipartUpload<'_>,
+        file: &Path,
+        file_len: u64,
+    ) -> Result<Asset> {
+        let mut reader = File::open(file).with_context(|| format!("open {}", file.display()))?;
         let mut part: u32 = 1;
         let mut remaining = file_len;
         while remaining > 0 {
             let this_len = remaining.min(upload.part_size as u64) as usize;
             let mut buf = vec![0u8; this_len];
-            file.read_exact(&mut buf)
-                .with_context(|| format!("read part {part} from {}", asset.file.display()))?;
-            if let Err(error) = upload.send_part(part, buf) {
-                upload.abort();
-                return Err(error);
-            }
+            reader
+                .read_exact(&mut buf)
+                .with_context(|| format!("read part {part} from {}", file.display()))?;
+            upload.send_part(part, buf)?;
             remaining -= this_len as u64;
             part += 1;
         }
-        let completed = upload.complete();
-        if completed.is_err() {
-            upload.abort();
-        }
-        completed
+        upload.complete()
     }
 
     /// POST one JSON Lines batch into the Import Run at
@@ -577,6 +585,40 @@ mod tests {
             message_crate_http::classify_retry(&err),
             message_crate_http::RetryKind::Permanent
         );
+    }
+
+    /// A file that is shorter than it was when the upload opened (truncated
+    /// after it was staged) fails to read, and the upload is aborted on the
+    /// server, so it does not stay open against the account's limit.
+    #[test]
+    fn a_multipart_upload_whose_file_cannot_be_read_is_aborted() {
+        let server = MockServer::start();
+        let _start = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/v1/assets/{DIGEST}/uploads"));
+            then.status(201)
+                .json_body(serde_json::json!({ "upload_id": "up-1", "part_size": 4 }));
+        });
+        let abort = server.mock(|when, then| {
+            when.method(DELETE)
+                .path(format!("/v1/assets/{DIGEST}/uploads/up-1"));
+            then.status(204);
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("short.bin");
+        std::fs::write(&file, b"abc").unwrap();
+        let asset = AssetUpload {
+            sha256: DIGEST,
+            file: &file,
+            mime: None,
+            multipart_threshold: 1,
+        };
+
+        let err = session(server.base_url())
+            .put_asset_multipart(&asset, 8)
+            .unwrap_err();
+        assert!(err.to_string().contains("read part 1"), "{err:#}");
+        abort.assert();
     }
 
     /// A server that answers the completion of one Import Run with another

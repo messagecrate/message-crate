@@ -916,8 +916,12 @@ impl From<crate::assets_api::AssetError> for ApiError {
             err @ (AssetError::Mismatch { .. } | AssetError::Invalid(_)) => {
                 Self::AssetUploadInvalid(err.to_string())
             }
-            // The upload is busy, not wrong: a resource in the wrong state.
-            err @ AssetError::Locked => Self::StateConflict(err.to_string()),
+            // The upload is busy, or the account's open uploads are at their
+            // cap. Neither request is wrong: each meets a resource in the
+            // wrong state.
+            err @ (AssetError::Locked | AssetError::TooManyUploads) => {
+                Self::StateConflict(err.to_string())
+            }
             err @ AssetError::UploadNotFound => Self::NotFound(err.to_string()),
             AssetError::Internal(err) => Self::Internal(err),
         }
