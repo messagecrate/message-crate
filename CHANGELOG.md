@@ -351,8 +351,9 @@ released versions carry their date on the heading.
 - 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
   empty list.** An account with no attachments saw "Top 100 attachments by
   file size" above "No attachments with sizes yet". Under **Largest
-  attachments** it now shows only "No attachments with sizes yet", and when
-  there are attachments the line gives how many are listed (#2633).
+  attachments** it now shows only "No attachments with sizes yet". When
+  there are attachments, the line above the list reads "Top N attachments
+  by file size", with N the number listed (#2633).
 
 - 2026-10-11: **The login screen reads Disconnected when the server cannot
   reach its database.** Before, it read Connected as long as the server was

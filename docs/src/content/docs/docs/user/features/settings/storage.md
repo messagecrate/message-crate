@@ -121,7 +121,9 @@ How an export is started is covered in [Export](/docs/user/features/messages/exp
 ## Largest attachments
 
 **Largest attachments** lists the account's 100 largest attachments by file size, 20 to a page.
+The line above the list says how many it holds, such as **Top 100 attachments by file size**.
 **Back** and **Next** move between pages.
+An account with no attachments sees **No attachments with sizes yet** instead.
 
 | Column | Shows |
 |---|---|
