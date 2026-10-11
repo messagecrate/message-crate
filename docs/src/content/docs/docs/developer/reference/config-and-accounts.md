@@ -104,6 +104,16 @@ always account `1` and the demo account `2`; every other account takes an id
 from `100` up.
 
 - Web login uses username + password (Argon2id hash in `accounts.password_hash`).
+  A username is 1 to 128 characters: letters A to Z in either case, digits,
+  `_`, `-` or `.`.
+  The login matches it without regard to the case of its letters.
+  Letters from other scripts are refused, because a name such as `аdmin`
+  with a Cyrillic `а` would look the same as `admin` while naming another
+  account. The preferred name carries a name in any script.
+  An account created before 0.11.0 keeps a username with letters from
+  another script, and logs in with it.
+  Those letters must be typed in the case they were stored in, because the
+  login folds the case of A to Z only.
   An account may have no password (`password_hash` NULL); an empty password is
   accepted only for those accounts.
 - Guesses at one account's password are rate-limited to 20 per 60 seconds:
