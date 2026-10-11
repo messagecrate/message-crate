@@ -10,7 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use jsonl_journal::ServerTarget;
+use jsonl_journal::{ServerTarget, TargetedEvent};
 use serde::{Deserialize, Serialize};
 
 /// Filename of the local upload log, written next to the conversation files.
@@ -62,8 +62,7 @@ pub enum JournalEvent {
     },
 }
 
-impl JournalEvent {
-    /// The server and account this event belongs to.
+impl TargetedEvent for JournalEvent {
     fn target(&self) -> &ServerTarget {
         match self {
             Self::AssetOk { target, .. }
@@ -124,12 +123,12 @@ pub fn load(
     target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
 ) -> Result<JournalState> {
-    let mut state = JournalState::default();
-    let events: Vec<JournalEvent> = jsonl_journal::load_events("journal", path, &mut |i, e| {
-        on_unreadable(unreadable_line_sentence(path, i, e));
-    })?;
-    for event in events.into_iter().filter(|event| event.target() == target) {
-        match event {
+    jsonl_journal::load_for_target(
+        "journal",
+        path,
+        target,
+        &mut |i, e| on_unreadable(unreadable_line_sentence(path, i, e)),
+        |state: &mut JournalState, event| match event {
             JournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
@@ -144,9 +143,8 @@ pub fn load(
                 state.files.insert(file);
             }
             JournalEvent::Fail { .. } => {}
-        }
-    }
-    Ok(state)
+        },
+    )
 }
 
 /// Append one event as a JSON Lines row and flush it to disk.
@@ -169,37 +167,33 @@ pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
 /// Returns an error when the existing file cannot be read, the temporary file
 /// cannot be written, or the rename fails.
 pub fn compact(path: &Path, target: &ServerTarget, state: &JournalState) -> Result<()> {
-    jsonl_journal::compact_with::<JournalEvent, _>("journal", path, |mut events| {
-        // Preserve other server targets so one export directory can resume against
-        // multiple servers without wiping their skip state.
-        events.retain(|event| event.target() != target);
-        let mut assets: Vec<_> = state.assets.iter().collect();
-        assets.sort_unstable();
-        for sha in assets {
-            events.push(JournalEvent::AssetOk {
-                target: target.clone(),
-                sha256: sha.clone(),
-            });
-        }
-        let messages = messages_from_state_keys(state);
-        for batch in messages.chunks(1_000) {
-            events.push(JournalEvent::MessageBatchOk {
-                target: target.clone(),
-                source: String::new(),
-                messages: batch.to_vec(),
-            });
-        }
-        let mut files: Vec<_> = state.files.iter().collect();
-        files.sort_unstable();
-        for file in files {
-            events.push(JournalEvent::FileOk {
-                target: target.clone(),
-                source: String::new(),
-                file: file.clone(),
-            });
-        }
-        events
-    })
+    let mut events = Vec::new();
+    let mut assets: Vec<_> = state.assets.iter().collect();
+    assets.sort_unstable();
+    for sha in assets {
+        events.push(JournalEvent::AssetOk {
+            target: target.clone(),
+            sha256: sha.clone(),
+        });
+    }
+    let messages = messages_from_state_keys(state);
+    for batch in messages.chunks(1_000) {
+        events.push(JournalEvent::MessageBatchOk {
+            target: target.clone(),
+            source: String::new(),
+            messages: batch.to_vec(),
+        });
+    }
+    let mut files: Vec<_> = state.files.iter().collect();
+    files.sort_unstable();
+    for file in files {
+        events.push(JournalEvent::FileOk {
+            target: target.clone(),
+            source: String::new(),
+            file: file.clone(),
+        });
+    }
+    jsonl_journal::compact_for_target("journal", path, target, events)
 }
 
 /// The journal of one Upload: the in-memory skip sets plus the file they
