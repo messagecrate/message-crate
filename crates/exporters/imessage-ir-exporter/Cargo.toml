@@ -30,6 +30,7 @@ tempfile = { workspace = true }
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
 chat-db-fixture = { path = "../../helpers/chat-db-fixture" }
 ios-backup = { path = "../../libs/ios-backup", features = ["testutil"] }
+message-ir = { path = "../../libs/ir", features = ["testutil"] }
 serde_json = { workspace = true }
 
 [lints]

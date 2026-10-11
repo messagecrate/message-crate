@@ -164,6 +164,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-10: **An SMS Backup+ import finishes the way the other imports
+  do.** It now ends through the same steps as GO SMS Pro and the others.
+  Nothing changes on screen (#2163).
+
 - 2026-10-10: The Import Run and Export Run lists were reworked inside, with
   nothing visible (#2155).
 
