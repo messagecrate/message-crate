@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../../lib/saveFile";
 import type { LogLevel, LogLine, LogLinesPage } from "../../lib/serverApi";
+import { advanceTimersAndSettle } from "../../test/fakeTimers";
 import { installIntersectionObserver, scrollNear } from "../../test/intersectionObserver";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
@@ -121,16 +122,6 @@ describe("LogViewer", () => {
       vi.useRealTimers();
     });
 
-    /** Let timers up to `ms` fire, and every read they start land. */
-    async function wait(ms: number) {
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(ms);
-      });
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(0);
-      });
-    }
-
     function searchFor(text: string) {
       fireEvent.change(screen.getByRole("textbox", { name: "Search the log" }), {
         target: { value: text },
@@ -143,33 +134,33 @@ describe("LogViewer", () => {
     it("searches as the words are typed", async () => {
       const { source, readLines } = sourceOver(aLog(20));
       renderViewer(source);
-      await wait(0);
+      await advanceTimersAndSettle(0);
 
       searchFor("line 1");
-      await wait(SEARCH_DELAY_MS);
+      await advanceTimersAndSettle(SEARCH_DELAY_MS);
       expect(shownTexts()).toEqual(["line 15", "line 10"]);
       expect(readLines).toHaveBeenLastCalledWith(expect.objectContaining({ text: "line 1" }));
 
       searchFor("no such line");
-      await wait(SEARCH_DELAY_MS);
+      await advanceTimersAndSettle(SEARCH_DELAY_MS);
       expect(screen.getByText("No line matches the search")).toBeInTheDocument();
     });
 
     it("reads the log once, for the words as they stand when typing stops", async () => {
       const { source, readLines } = sourceOver(aLog(20));
       renderViewer(source);
-      await wait(0);
+      await advanceTimersAndSettle(0);
       expect(textsRead(readLines)).toEqual([undefined]);
 
       searchFor("l");
-      await wait(SEARCH_DELAY_MS - 1);
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
       searchFor("li");
-      await wait(SEARCH_DELAY_MS - 1);
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
       searchFor("  line 1 ");
-      await wait(SEARCH_DELAY_MS - 1);
+      await advanceTimersAndSettle(SEARCH_DELAY_MS - 1);
       expect(textsRead(readLines)).toEqual([undefined]);
 
-      await wait(1);
+      await advanceTimersAndSettle(1);
       expect(textsRead(readLines)).toEqual([undefined, "line 1"]);
       expect(shownTexts()).toEqual(["line 15", "line 10"]);
     });
