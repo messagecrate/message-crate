@@ -467,15 +467,19 @@ on its own server asks `GET /v1/server`, which reads the database, so the two
 disagreed ([#2202](https://github.com/messagecrate/message-crate/issues/2202)).
 
 Why `SELECT 1` and a short limit: `SELECT 1` reads no table, so it never
-waits on an import's write lock, and the limit stays under the two seconds
-`docker/healthcheck.cjs` gives each address it asks, so a failure arrives as
-the server's answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
+waits on an import's write lock, and the limit stays under the time
+`docker/healthcheck.cjs` gives each address it asks (4 seconds, or 2 each
+when it asks both 127.0.0.1 and ::1), so a failure arrives as the server's
+answer. HTTP imports hold at most `MAX_CONCURRENT_IMPORTS`
 (`imports_api/mod.rs`) of the pool's `max_connections` (`db/engine.rs`), but
 requests that write wait on SQLite's busy timeout while an import holds the
 write lock, and enough of them can take every connection for that long. The
 check fails then, though a `/v1` read would wait for a connection and get
-one. One failure flips neither the Docker health check, which needs three in
-a row 30 seconds apart, nor the login card, which asks again.
+one. One failure does not mark the container unhealthy, because Docker needs
+three in a row 30 seconds apart. The login card does show Disconnected after
+one, until its next probe, a second or more later, finds the server and it
+reconnects. That is accepted: while every connection is taken, the card's
+own login would wait as well.
 
 Rejected: `503 Service Unavailable`. Every registered problem type is a `4xx`
 whose remedy a client can act on, and a server that cannot reach its own

@@ -1641,19 +1641,11 @@ pub(crate) async fn stop_requested() {
     }
 }
 
-/// How long `/health` waits for a pool connection and its `SELECT 1`.
-///
-/// Short, so a probe gets the answer before its own time runs out: the
-/// release image's health check gives each address it asks two seconds
-/// (`docker/healthcheck.cjs`). `SELECT 1` reads no table, so it never waits
-/// on a writer's lock. The connection can wait: HTTP imports hold at most
-/// `imports_api::MAX_CONCURRENT_IMPORTS` of the pool's connections, but
-/// requests that write wait on SQLite's busy timeout while an import holds
-/// the write lock, and enough of them can take every connection for that
-/// long. The check then fails, though a `/v1` read would wait for a
-/// connection and get one. A single failure flips neither the Docker health
-/// check, which needs three in a row 30 seconds apart, nor the login card,
-/// which asks again.
+/// How long `/health` waits for a pool connection and its `SELECT 1`. It
+/// stays under the time `docker/healthcheck.cjs` gives each address it asks,
+/// and `SELECT 1` reads no table, so it never waits on a writer's lock. Why a
+/// pool that writers fill reads as down, and why that is accepted:
+/// `docs/architecture/http-api.md`, "Failures".
 const HEALTH_DATABASE_LIMIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
 /// Report whether the server can answer.
