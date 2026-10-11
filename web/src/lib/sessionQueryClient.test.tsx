@@ -34,7 +34,7 @@ describe("SessionQueryClientProvider", () => {
 
     await waitFor(() => expect(refused).toHaveBeenCalledTimes(1));
     // No token: the refusal is of the session in use now.
-    expect(refused).toHaveBeenCalledWith(undefined);
+    expect(refused).toHaveBeenCalledWith();
   });
 
   /** Run a mutation that fails with `error` through the provider's client. */

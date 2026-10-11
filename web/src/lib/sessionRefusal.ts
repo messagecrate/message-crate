@@ -15,8 +15,9 @@
 let endSession: (token?: string) => void = () => {};
 
 /**
- * Record what ends the session when the server refuses it. Returns what to
- * call once that no longer applies.
+ * Record what ends the session when the server refuses it. `handler` gets
+ * the refused token from an Import Run, and no token for the session in use
+ * now. Returns what to call once that no longer applies.
  */
 export function onSessionRefused(handler: (token?: string) => void): () => void {
   endSession = handler;
@@ -26,10 +27,14 @@ export function onSessionRefused(handler: (token?: string) => void): () => void 
 }
 
 /**
- * The server refused a session: end it here as well. `token` is the session
- * an Import Run sent, and a refusal of a token a later login has replaced
- * ends nothing. Without `token`, the refusal is of the session in use now.
+ * The server refused `token`, the session an Import Run sent: end it here as
+ * well, unless a later login has replaced it.
  */
-export function sessionRefused(token?: string): void {
+export function sessionRefused(token: string): void {
   endSession(token);
+}
+
+/** The server refused the session in use now, to a query or mutation: end it here. */
+export function currentSessionRefused(): void {
+  endSession();
 }

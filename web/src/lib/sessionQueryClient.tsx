@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { createQueryClient } from "./routeQuery";
-import { sessionRefused } from "./sessionRefusal";
+import { currentSessionRefused } from "./sessionRefusal";
 
 /**
  * The query client every screen fetches through, built once for the life of
@@ -15,7 +15,7 @@ import { sessionRefused } from "./sessionRefusal";
  */
 export function SessionQueryClientProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() =>
-    createQueryClient({ onUnauthorized: () => sessionRefused() }),
+    createQueryClient({ onUnauthorized: currentSessionRefused }),
   );
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
