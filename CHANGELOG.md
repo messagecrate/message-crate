@@ -477,9 +477,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-11: **Four messages read as plain sentences.** The Import form
+- 2026-10-11: **Five messages read as plain sentences.** The Import form
   now says "The backup is encrypted. Fill in the Encryption password." for
-  an encrypted iPhone backup with no password. The server's message when
+  an encrypted iPhone backup with no password, and "This backup is not
+  encrypted. Clear the Encryption password." for a password given with a
+  backup that has none. The server's message when
   it finds no accounts to process attachments for, and its report line on
   phone numbers that need review, no longer join two clauses with a dash
   (#2189).

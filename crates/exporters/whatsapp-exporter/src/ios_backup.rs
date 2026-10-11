@@ -128,7 +128,7 @@ fn decrypt_with(
     match (ios_backup_encrypted_flag(backup), password) {
         (Some(true), None) => bail!("The backup is encrypted. Fill in the Encryption password."),
         (Some(false), Some(_)) => {
-            bail!("This backup is not encrypted. Clear Encryption password.")
+            bail!("This backup is not encrypted. Clear the Encryption password.")
         }
         (Some(true), Some(password)) => {
             let domain = domain(source);
@@ -224,7 +224,7 @@ mod tests {
             decrypt_with(&source(backup.path(), Some("secret")), work.path(), never).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "This backup is not encrypted. Clear Encryption password."
+            "This backup is not encrypted. Clear the Encryption password."
         );
     }
 

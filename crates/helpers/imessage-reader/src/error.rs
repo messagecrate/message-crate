@@ -21,7 +21,7 @@ pub const ENCRYPTED_BACKUP_PASSWORD_REQUIRED: &str =
     "The backup is encrypted. Fill in the Encryption password.";
 /// User-facing copy when a password is set on an unencrypted backup.
 pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
-    "This backup is not encrypted. Clear Encryption password.";
+    "This backup is not encrypted. Clear the Encryption password.";
 /// User-facing copy when the supplied iOS backup password is wrong.
 pub use imessage_reader_protocol::IOS_BACKUP_PASSWORD_INCORRECT;
 /// User-facing copy when the directory is not an iPhone backup (or Messages is missing).

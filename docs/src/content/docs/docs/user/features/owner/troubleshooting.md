@@ -95,7 +95,7 @@ Importing needs an account, and that account needs **Import** on under **Message
 The iPhone backup was made with encryption, and the Import form's **Encryption password** is empty.
 The password is the one chosen when the backup was made.
 
-### "This backup is not encrypted. Clear Encryption password."
+### "This backup is not encrypted. Clear the Encryption password."
 
 The iPhone backup was made without encryption, and the Import form's **Encryption password** holds a value.
 Import continues once the field is empty.
