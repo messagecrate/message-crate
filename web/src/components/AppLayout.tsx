@@ -53,6 +53,7 @@ export default function AppLayout() {
 
   const context: AppLayoutContextValue = {
     declareSection: section.declareSection,
+    declareNavItem: section.declareNavItem,
     selectedContact,
     selectContact: setSelectedContact,
     closeContactDrawer,
@@ -84,6 +85,7 @@ export default function AppLayout() {
           <div className="flex min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
             <LeftPanel
               browseQuery={shown?.browseQuery ?? ""}
+              navItem={section.navItem}
               besideMinWidth={shown ? BESIDE_PANEL_MIN_WIDTH : undefined}
             />
 
