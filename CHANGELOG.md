@@ -373,6 +373,16 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **Deleting an account names an Import Run's directory the
+  desktop app may not read.** When a person deletes their own account in
+  the desktop app, the app deletes the directories of the account's Import
+  Runs on this computer. A directory the system would not let Message Crate
+  read, such as one macOS protects until the app has Full Disk Access, was
+  skipped without a word and could stay on disk with the deleted account's
+  messages. It is now listed once the account is deleted, with what the
+  system said. It may be on this computer, and it can be deleted by hand
+  (#2651).
+
 - 2026-10-11: **Settings says why a downloaded tool found in the Tools
   Directory could not be made to run.** When the desktop app finds ffmpeg,
   ffprobe or wtsexporter already in its Tools Directory, it marks the file

@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { getToken } from "./api";
 import { applyApiSession, useApiSession } from "./apiSession";
 import { AuthContext, type AuthState } from "./authContext";
-import { deleteRunDirectories } from "./importRun";
+import { type AccountRunDirectories, deleteRunDirectories } from "./importRun";
 import { LogoutPromptContext, type LogoutPromptState } from "./logoutPromptContext";
 import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import {
@@ -239,7 +239,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
       deletedAccountDirectories,
     }: {
       ask?: boolean;
-      deletedAccountDirectories?: readonly string[];
+      deletedAccountDirectories?: AccountRunDirectories;
     } = {}) => {
       const uploadRunning = isUploadRunning();
       if (ask && uploadRunning) {
@@ -267,9 +267,12 @@ function SessionProvider({ children }: { children: ReactNode }) {
         // directory, so the directories go once it has ended. The deleted account's
         // token is refused, so that is soon.
         await pause.ended;
-        const undeleted = await deleteRunDirectories(deletedAccountDirectories);
-        if (undeleted.length > 0) {
-          setPrompt({ kind: "undeletedDirectories", directories: undeleted });
+        // One Message Crate may not read cannot be deleted either, so it is
+        // named too, apart from the rest: it may not be on this computer.
+        const undeleted = await deleteRunDirectories(deletedAccountDirectories.found);
+        const { unreadable } = deletedAccountDirectories;
+        if (undeleted.length > 0 || unreadable.length > 0) {
+          setPrompt({ kind: "leftDirectories", undeleted, unreadable });
         }
       } else if (!paused) {
         setPrompt({ kind: "notPaused" });

@@ -129,7 +129,7 @@ pub struct ImportProgressEvent {
     /// The program the run waits for while it downloads (#1053). The event
     /// then has no counts, `bytes_done` is how much has arrived and
     /// `bytes_total` the file's size when the server said, and the window
-    /// says "Waiting for the <program> download" with them.
+    /// says "Waiting for the `<program>` download" with them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub waiting: Option<Program>,
 }
