@@ -28,7 +28,7 @@ export default function TagsMenu({
       onClearAll={onClearAll}
       disabled={disabled}
       copy={MESSAGE_TAG_MENU_COPY}
-      icon={<TagIcon size={16} />}
+      icon={<TagIcon size={16} className="shrink-0" />}
       labeled={false}
     />
   );

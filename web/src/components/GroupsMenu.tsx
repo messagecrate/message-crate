@@ -146,7 +146,7 @@ export default function GroupsMenu({
             : `flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated hover:text-text disabled:cursor-default disabled:opacity-40 ${toneClass}`
         }
       >
-        {icon ?? <PeopleGroupIcon size={16} />}
+        {icon ?? <PeopleGroupIcon size={16} className="shrink-0" />}
         {labeled ? <span>{copy.title}</span> : null}
         {labeled ? (
           <ChevronDownIcon

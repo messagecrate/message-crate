@@ -9,8 +9,8 @@ export default function GroupsNav({ groups }: { groups: string[] }) {
       names={groups}
       collection={contactGroups}
       slug={groupSlug}
-      icon={<PeopleGroupIcon size={15} />}
-      emptyIcon={<PersonIcon size={15} />}
+      icon={<PeopleGroupIcon size={15} className="shrink-0" />}
+      emptyIcon={<PersonIcon size={15} className="shrink-0" />}
       copy={CONTACT_GROUP_COPY}
     />
   );

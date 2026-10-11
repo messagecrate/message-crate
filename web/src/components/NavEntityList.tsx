@@ -173,7 +173,7 @@ export default function NavEntityList({
                         active ? "" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                       }
                     >
-                      <EllipsisIcon size={15} />
+                      <EllipsisIcon size={15} className="shrink-0" />
                     </NavGlyphButton>
                   }
                   label={copy.optionsLabel(name)}
