@@ -2,8 +2,9 @@
  * The logged-in account, as every screen and query reads it.
  *
  * Its own module, importing neither `routeQuery` nor `useAccountProfile`,
- * because both read `useAuth` and `auth.tsx` imports both: `auth.tsx` holds
- * the provider that fills this context.
+ * because both read `useAuth` and `auth.tsx` imports both (`routeQuery`
+ * through `sessionQueryClient.tsx`): `auth.tsx` holds the provider that fills
+ * this context.
  */
 import { createContext, useContext } from "react";
 

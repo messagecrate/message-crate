@@ -1,25 +1,25 @@
 /**
- * A session the server refused to an Import Run, as the login sees it.
+ * A session the server refused, as the login sees it.
  *
- * The run's server calls do not go through TanStack Query: the Upload sends
- * its own requests from the desktop side, and the run's own calls go
- * straight through `serverApi.ts`. So the query
- * client's `onUnauthorized` never sees their refusals, and the session has to
- * end here instead, as a query the server refuses ends it: for the Upload
- * (#1491), and for the run's own calls (#1677).
+ * Three callers learn the server refused the session, and none of them can
+ * reach the login: the query client (`sessionQueryClient.tsx`), built above
+ * the provider that holds the session, and an Import Run, whose Upload sends
+ * its own requests from the desktop side and whose own calls go straight
+ * through `serverApi.ts` (#1491, #1677). Each reports the refusal here.
  *
- * `auth.tsx` registers how to end the session here, and the run in
- * `screens/import/run/` (`serverCalls.ts`, `upload.ts`) calls it, without
- * either depending on the other.
+ * `auth.tsx` registers how to end the session here, and the query client and
+ * the run in `screens/import/run/` (`serverCalls.ts`, `upload.ts`) call it,
+ * without either side depending on the other.
  */
 
-let endSession: (token: string) => void = () => {};
+let endSession: (token?: string) => void = () => {};
 
 /**
- * Record what ends the session when the server refuses the session token an
- * Import Run sent. Returns what to call once that no longer applies.
+ * Record what ends the session when the server refuses it. `handler` gets
+ * the refused token from an Import Run, and no token for the session in use
+ * now. Returns what to call once that no longer applies.
  */
-export function onSessionRefused(handler: (token: string) => void): () => void {
+export function onSessionRefused(handler: (token?: string) => void): () => void {
   endSession = handler;
   return () => {
     if (endSession === handler) endSession = () => {};
@@ -27,9 +27,14 @@ export function onSessionRefused(handler: (token: string) => void): () => void {
 }
 
 /**
- * The server refused `token`, the session the Import Run sent: end it here as
+ * The server refused `token`, the session an Import Run sent: end it here as
  * well, unless a later login has replaced it.
  */
 export function sessionRefused(token: string): void {
   endSession(token);
+}
+
+/** The server refused the session in use now, to a query or mutation: end it here. */
+export function currentSessionRefused(): void {
+  endSession();
 }
