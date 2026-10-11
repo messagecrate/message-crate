@@ -137,7 +137,7 @@ async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
 
     let fixture = test_fixture().await;
     let body: Server = get_json(&fixture.state, "/v1/server", "").await;
-    assert_eq!(body.journal_mode, JournalMode::Wal);
+    assert_eq!(body.journal_mode, Some(JournalMode::Wal));
 
     // A database left in a rollback journal, as one is when the server could
     // not turn write-ahead logging on.
@@ -157,7 +157,7 @@ async fn the_state_route_carries_the_journal_mode_the_database_runs_in() {
     }
     let state = crate::server::test_app_state(pool, dir.path());
     let body: Server = get_json(&state, "/v1/server", "").await;
-    assert_eq!(body.journal_mode, JournalMode::Delete);
+    assert_eq!(body.journal_mode, Some(JournalMode::Delete));
 }
 
 /// Two Message Crates have different ids, though both start their account

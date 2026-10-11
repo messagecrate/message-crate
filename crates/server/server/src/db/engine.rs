@@ -82,18 +82,18 @@ pub enum JournalMode {
 }
 
 impl JournalMode {
-    /// The mode SQLite names, in any case; `None` for a name SQLite never
-    /// answers.
-    fn parse(name: &str) -> Option<Self> {
-        Some(match name.to_ascii_lowercase().as_str() {
-            "delete" => Self::Delete,
-            "truncate" => Self::Truncate,
-            "persist" => Self::Persist,
-            "memory" => Self::Memory,
-            "wal" => Self::Wal,
-            "off" => Self::Off,
-            _ => return None,
-        })
+    /// The mode SQLite names, in any case, read through the same names the
+    /// mode has on the wire.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a name SQLite never answers.
+    fn parse(name: &str) -> Result<Self> {
+        use serde::de::IntoDeserializer;
+        let lower: serde::de::value::StringDeserializer<serde::de::value::Error> =
+            name.to_ascii_lowercase().into_deserializer();
+        Self::deserialize(lower)
+            .with_context(|| format!("SQLite answered an unknown journal mode, {name:?}"))
     }
 
     /// The name SQLite gives the mode.
@@ -116,12 +116,6 @@ impl std::fmt::Display for JournalMode {
     }
 }
 
-/// Turn an answer to `PRAGMA journal_mode` into a mode.
-fn journal_mode_from(name: &str) -> Result<JournalMode> {
-    JournalMode::parse(name)
-        .with_context(|| format!("SQLite answered an unknown journal mode, {name:?}"))
-}
-
 /// The journal mode the database runs in now.
 ///
 /// # Errors
@@ -136,29 +130,36 @@ where
         .fetch_one(executor)
         .await
         .context("read the journal mode")?;
-    journal_mode_from(&name)
+    JournalMode::parse(&name)
 }
 
 /// Ask SQLite for write-ahead logging, and return the mode the database ends
 /// in. A hot rollback journal or another process holding the database can
-/// make the request fail; SQLite also turns it down without an error where
+/// make the request fail. SQLite also turns it down without an error where
 /// the database cannot use it (one held in memory, say), and answers the
 /// mode it kept. Either way the pool stays usable, and a warning in the log
-/// says so.
-///
-/// # Errors
-///
-/// Returns an error when the request failed and the mode cannot be read
-/// either, or SQLite names a mode this server does not know.
-async fn try_enable_wal(pool: &SqlitePool) -> Result<JournalMode> {
-    let mode = match sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
+/// says so. `None` when the mode cannot be read at all, which is warned of
+/// too and never stops the open: the pool is handed back as it was before
+/// the mode was reported.
+async fn try_enable_wal(pool: &SqlitePool) -> Option<JournalMode> {
+    let answer = match sqlx::query_scalar::<_, String>("PRAGMA journal_mode = WAL")
         .fetch_one(pool)
         .await
     {
-        Ok(name) => journal_mode_from(&name)?,
+        Ok(name) => JournalMode::parse(&name),
         Err(err) => {
             tracing::warn!(error = %err, "Write-ahead logging could not be turned on, so the database goes on without it");
-            return journal_mode(pool).await;
+            journal_mode(pool).await
+        }
+    };
+    let mode = match answer {
+        Ok(mode) => mode,
+        Err(err) => {
+            tracing::warn!(
+                error = format!("{err:#}"),
+                "The database's journal mode could not be read"
+            );
+            return None;
         }
     };
     if mode != JournalMode::Wal {
@@ -166,7 +167,7 @@ async fn try_enable_wal(pool: &SqlitePool) -> Result<JournalMode> {
             "SQLite kept the database in journal mode {mode} rather than write-ahead logging, so the database goes on without it"
         );
     }
-    Ok(mode)
+    Some(mode)
 }
 
 /// Open the configured pool for a SQLite file, naming the file in the error
@@ -180,9 +181,7 @@ pub async fn open_pool_for_path(path: &Path) -> Result<SqlitePool> {
         .connect_with(connect_options(path))
         .await
         .with_context(|| format!("failed to open database {}", path.display()))?;
-    try_enable_wal(&pool)
-        .await
-        .with_context(|| format!("failed to open database {}", path.display()))?;
+    try_enable_wal(&pool).await;
     Ok(pool)
 }
 
@@ -199,7 +198,7 @@ pub(crate) async fn test_pool() -> (SqlitePool, tempfile::TempDir) {
         .connect_with(connect_options(&path))
         .await
         .unwrap();
-    assert_eq!(try_enable_wal(&pool).await.unwrap(), JournalMode::Wal);
+    assert_eq!(try_enable_wal(&pool).await, Some(JournalMode::Wal));
     (pool, dir)
 }
 
@@ -260,12 +259,14 @@ mod tests {
             .connect_with(SqliteConnectOptions::new().in_memory(true))
             .await
             .unwrap();
-        assert_eq!(try_enable_wal(&pool).await.unwrap(), JournalMode::Memory);
+        assert_eq!(try_enable_wal(&pool).await, Some(JournalMode::Memory));
         assert_eq!(journal_mode(&pool).await.unwrap(), JournalMode::Memory);
     }
 
+    /// The name the start-up line prints is the one SQLite answers, which is
+    /// the one the mode is read back by, in any case.
     #[test]
-    fn every_mode_sqlite_names_parses_back_to_itself() {
+    fn a_mode_reads_back_from_the_name_it_prints_in_any_case() {
         for mode in [
             JournalMode::Delete,
             JournalMode::Truncate,
@@ -274,12 +275,11 @@ mod tests {
             JournalMode::Wal,
             JournalMode::Off,
         ] {
-            assert_eq!(JournalMode::parse(mode.as_str()), Some(mode));
             assert_eq!(
-                JournalMode::parse(&mode.as_str().to_ascii_uppercase()),
-                Some(mode)
+                JournalMode::parse(&mode.to_string().to_ascii_uppercase()).unwrap(),
+                mode
             );
         }
-        assert_eq!(JournalMode::parse("wal2"), None);
+        assert!(JournalMode::parse("wal2").is_err());
     }
 }

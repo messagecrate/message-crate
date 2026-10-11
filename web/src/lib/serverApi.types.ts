@@ -5277,9 +5277,11 @@ export interface components {
              *     `wal` on every start; any other mode means it could not have it, as
              *     when another program held the database file or a rollback journal was
              *     left behind, and then every page waits while an import writes. Owner
-             *     Home says so, and the server's log holds the reason.
+             *     Home says so, and the server's log holds the reason. `null` when the
+             *     mode could not be read; the route still answers, because the entry
+             *     screen reads it before anyone can log in.
              */
-            journal_mode: components["schemas"]["JournalMode"];
+            journal_mode: components["schemas"]["JournalMode"] | null;
             /**
              * Format: int64
              * @description The Schema Fingerprint, the number this server stamps into its database.

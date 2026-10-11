@@ -848,13 +848,28 @@ describe("OwnerHome", () => {
     expect(notice).toHaveTextContent(
       "The server could not turn on write-ahead logging when it started",
     );
-    expect(notice).toHaveTextContent("Stop the other program, then restart the server.");
+    expect(notice).toHaveTextContent("If another program has the database file open, close it.");
+    expect(notice).toHaveTextContent("Then restart the server");
     cleanup();
 
     renderHome(["/owner/accounts"]);
     expect(await screen.findByRole("status")).toHaveTextContent("write-ahead logging");
     // It blocks nothing: the screen under it still loads and works.
     expect(await screen.findByText("bob")).toBeInTheDocument();
+  });
+
+  it("says nothing about write-ahead logging when the server could not read the mode", async () => {
+    getServerState.mockResolvedValue({
+      state: "closed",
+      version: APP_BUILD,
+      schema_fingerprint: 1234567890,
+      journal_mode: null,
+    });
+    renderHome();
+
+    await screen.findByText("bob");
+    await waitFor(() => expect(getServerState).toHaveBeenCalled());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("says nothing under the header while the server and the app are one release", async () => {

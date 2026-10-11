@@ -728,7 +728,9 @@ What each reaches:
   the login and the settings change that raise it again.
 - `GET /v1/server` reports the journal mode SQLite runs the database in,
   `journal_mode`, read when the request is answered, to any client. Owner
-  Home says so when it is not `wal`. Why: in any other mode every page
+  Home says so when it is not `wal`. It is `null` when the mode cannot be
+  read, and the route still answers, because the entry screen reads it
+  before anyone can log in. Why: in any other mode every page
   waits while an import writes, and a warning in the server's log was the
   only sign of it (#2201). The mode is a fact about the installation that
   holds nothing of any account, as the Build is, so it needs no credential.

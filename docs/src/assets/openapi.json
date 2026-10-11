@@ -19261,8 +19261,8 @@
           "demo_account",
           "version",
           "schema_fingerprint",
-          "journal_mode",
-          "asset_max_bytes"
+          "asset_max_bytes",
+          "journal_mode"
         ],
         "properties": {
           "asset_max_bytes": {
@@ -19280,8 +19280,15 @@
             "description": "This Message Crate's id: 32 random hexadecimal digits written when\nits database is made, and never changed. An app tells two Message\nCrates at one address apart by it, such as one rebuilt with\n`create-database`, whose account and Import Run ids start again at\nthe same numbers."
           },
           "journal_mode": {
-            "$ref": "#/components/schemas/JournalMode",
-            "description": "The journal mode SQLite runs the database in now. The server asks for\n`wal` on every start; any other mode means it could not have it, as\nwhen another program held the database file or a rollback journal was\nleft behind, and then every page waits while an import writes. Owner\nHome says so, and the server's log holds the reason."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/JournalMode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The journal mode SQLite runs the database in now. The server asks for\n`wal` on every start; any other mode means it could not have it, as\nwhen another program held the database file or a rollback journal was\nleft behind, and then every page waits while an import writes. Owner\nHome says so, and the server's log holds the reason. `null` when the\nmode could not be read; the route still answers, because the entry\nscreen reads it before anyone can log in."
           },
           "schema_fingerprint": {
             "type": "integer",

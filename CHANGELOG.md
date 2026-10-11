@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-11: **Owner Home says when the database runs without write-ahead
+  logging.** The server turns write-ahead logging on each time it starts, so
+  pages load while an import writes. When it cannot, because another program
+  holds the database file or a journal was left behind, every page waits for
+  each import batch instead, and the only sign was a warning in the server's
+  log. Owner Home now says so above every section, with where to find the
+  cause and what to do: close any other program that has the database file
+  open, then restart the server. Server Settings shows the journal mode beside
+  the version (#2201).
+
 - 2026-10-10: **An attachment says why it has no copy a browser can show.**
   When the server tries to make the Preview of a photo, video or recording
   and cannot, opening it now says **No Preview could be made** and what
@@ -776,15 +786,6 @@ released versions carry their date on the heading.
   contact. Messages are not changed (#1662).
 
 #### The server
-
-- 2026-10-11: **Owner Home says when the database runs without write-ahead
-  logging.** The server turns write-ahead logging on each time it starts, so
-  pages load while an import writes. When it cannot, because another program
-  holds the database file or a journal was left behind, every page waits for
-  each import batch instead, and the only sign was a warning in the server's
-  log. Owner Home now says so above every section, with the cause to look for
-  and what to do: stop the other program, then restart the server. Server
-  Settings shows the journal mode beside the version (#2201).
 
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can

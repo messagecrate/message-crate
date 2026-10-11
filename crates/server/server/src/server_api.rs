@@ -84,8 +84,10 @@ pub struct Server {
     /// `wal` on every start; any other mode means it could not have it, as
     /// when another program held the database file or a rollback journal was
     /// left behind, and then every page waits while an import writes. Owner
-    /// Home says so, and the server's log holds the reason.
-    pub journal_mode: crate::db::engine::JournalMode,
+    /// Home says so, and the server's log holds the reason. `null` when the
+    /// mode could not be read; the route still answers, because the entry
+    /// screen reads it before anyone can log in.
+    pub journal_mode: Option<crate::db::engine::JournalMode>,
     /// The attachment size limit, in bytes: the largest asset the server
     /// accepts, as one `PUT` or as the declared total of a multipart upload.
     /// The owner sets it in the server settings. An app reads it here before
@@ -137,7 +139,15 @@ pub async fn get_server(State(state): State<AppState>) -> Result<Json<Server>, A
                 .is_some(),
         version: crate::BUILD.to_string(),
         schema_fingerprint: crate::db::schema::SCHEMA_FINGERPRINT,
-        journal_mode: crate::db::engine::journal_mode(&mut *conn).await?,
+        journal_mode: crate::db::engine::journal_mode(&mut *conn)
+            .await
+            .inspect_err(|error| {
+                tracing::warn!(
+                    error = format!("{error:#}"),
+                    "The database's journal mode could not be read"
+                );
+            })
+            .ok(),
         asset_max_bytes: server_settings::load(&mut conn).await?.asset_max_bytes,
     }))
 }
