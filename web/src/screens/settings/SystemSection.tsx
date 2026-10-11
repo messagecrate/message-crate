@@ -1,5 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type ReactNode, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, DownloadIcon, XIcon } from "../../components/icons";
 import OpenPathButton from "../../components/OpenPathButton";
@@ -407,34 +407,29 @@ function ExportDirectory() {
 }
 
 export function SystemSection() {
+  const queryClient = useQueryClient();
   const stagingId = useId();
-  const [stagingPath, setStagingPath] = useState("");
-  const [defaultStagingPath, setDefaultStagingPath] = useState("");
   /** The Staging Directory the desktop process holds now. */
-  const [stagingError, setStagingError] = useState<string | null>(null);
-  const [rememberPaths, setRememberPaths] = useState(false);
+  const stagingQuery = useQuery({
+    queryKey: keys.desktopStagingDirectory.all,
+    queryFn: invokeStagingRoot,
+    enabled: isTauri(),
+    retry: false,
+  });
+  /** What is typed in the field; `null` until something is, so the field shows the one held. */
+  const [typedStagingPath, setTypedStagingPath] = useState<string | null>(null);
+  const stagingPath = typedStagingPath ?? stagingQuery.data?.root ?? "";
+  const defaultStagingPath = stagingQuery.data?.defaultRoot ?? "";
+  /** Why the last value typed was not saved, or why reading the directory again failed. */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const stagingError = saveError ?? (stagingQuery.error ? errorText(stagingQuery.error) : null);
+  const [rememberPaths, setRememberPaths] = useState(() => isTauri() && getRememberImporterPaths());
   // Asked again each second while a download runs.
   const toolsQuery = useToolsStatus();
   const tools: ToolsStatus | null = toolsQuery.data ?? null;
   const toolsError = toolsQuery.error
     ? `Could not look for the media tools. ${errorText(toolsQuery.error)}`
     : null;
-
-  useEffect(() => {
-    if (!isTauri()) return;
-
-    setRememberPaths(getRememberImporterPaths());
-
-    void (async () => {
-      try {
-        const staging = await invokeStagingRoot();
-        setDefaultStagingPath(staging.defaultRoot);
-        setStagingPath(staging.root);
-      } catch (caught: unknown) {
-        setStagingError(errorText(caught));
-      }
-    })();
-  }, []);
 
   // The desktop process keeps the setting and decides what it takes: every
   // value typed is sent, and a refusal is shown as the desktop process gave
@@ -444,18 +439,21 @@ export function SystemSection() {
   const stagingSaveGen = useRef(0);
   const lastStagingSave = useRef<Promise<unknown>>(Promise.resolve());
   const onStagingPathChange = (next: string) => {
-    setStagingPath(next);
+    setTypedStagingPath(next);
     const gen = ++stagingSaveGen.current;
     const save = invokeSetStagingRoot(next.trim());
     lastStagingSave.current = save;
     save.then(
       () => {
+        // Read again rather than keep this answer: answers can arrive out of
+        // order, and the read after the last one is what the process holds.
+        void queryClient.invalidateQueries({ queryKey: keys.desktopStagingDirectory.all });
         if (gen !== stagingSaveGen.current) return;
-        setStagingError(null);
+        setSaveError(null);
       },
       (caught: unknown) => {
         if (gen !== stagingSaveGen.current) return;
-        setStagingError(`Not saved. ${errorText(caught)}`);
+        setSaveError(`Not saved. ${errorText(caught)}`);
       },
     );
   };
@@ -463,22 +461,24 @@ export function SystemSection() {
   // A value the desktop process refused stays in the field until it is left.
   // The field then shows the directory the desktop process holds, read once the
   // last save has answered, so a value accepted after the refusal is never
-  // hidden behind the one shown before it.
+  // hidden behind the one shown before it. What it reads goes into the
+  // query's cache, which the field shows once the typed value is dropped.
   const onStagingPathBlur = () => {
     if (stagingError === null) return;
     const gen = ++stagingSaveGen.current;
-    setStagingError(null);
+    setSaveError(null);
     lastStagingSave.current
       .catch(() => undefined)
       .then(() => invokeStagingRoot())
       .then(
-        (staging) => {
+        (held) => {
           if (gen !== stagingSaveGen.current) return;
-          setStagingPath(staging.root);
+          queryClient.setQueryData(keys.desktopStagingDirectory.all, held);
+          setTypedStagingPath(null);
         },
         (caught: unknown) => {
           if (gen !== stagingSaveGen.current) return;
-          setStagingError(errorText(caught));
+          setSaveError(errorText(caught));
         },
       );
   };
