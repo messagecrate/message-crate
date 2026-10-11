@@ -2,7 +2,6 @@
 //! attachments they make, and their attributes for the vendor bag.
 
 use base64::Engine;
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 use std::sync::Arc;
@@ -129,7 +128,7 @@ pub(crate) fn decode_part_data(raw: &str) -> DecodedPartData {
     }
     match base64::engine::general_purpose::STANDARD.decode(trimmed) {
         Ok(bytes) => {
-            let digest_hex = hex::encode(Sha256::digest(&bytes));
+            let digest_hex = file_io::sha256_hex(&bytes);
             DecodedPartData::Ok {
                 bytes: Arc::from(bytes),
                 digest_hex,
@@ -137,7 +136,7 @@ pub(crate) fn decode_part_data(raw: &str) -> DecodedPartData {
         }
         Err(_) => DecodedPartData::Err {
             raw_len: raw.len(),
-            raw_sha256: hex::encode(Sha256::digest(raw.as_bytes())),
+            raw_sha256: file_io::sha256_hex(raw.as_bytes()),
         },
     }
 }
@@ -194,7 +193,7 @@ pub(crate) fn mms_body(
                 }
                 (mms_parts::Content::Text(text), _) => (
                     Arc::from(text.as_bytes()),
-                    hex::encode(Sha256::digest(text.as_bytes())),
+                    file_io::sha256_hex(text.as_bytes()),
                 ),
                 _ => return None,
             };
