@@ -978,6 +978,16 @@ fn check(
     for pin in &wanted {
         run.mark_downloading(pin.program);
     }
+    // Each program's file as the check found it. One that appears or
+    // changes later, while an earlier program's tries wait included, was
+    // put there by someone else, such as a copy put in by hand.
+    let found: HashMap<Program, Option<Stamp>> = wanted
+        .iter()
+        .map(|pin| {
+            let path = dir.join(pin.program.file_name());
+            (pin.program, Stamp::at(&path).ok())
+        })
+        .collect();
     let fail_all = |err: DownloadError| {
         for pin in &wanted {
             downloads.set(
@@ -1011,21 +1021,23 @@ fn check(
                 },
             );
         };
-        // A file that appears or changes while the check waits was put
-        // there by someone else, such as a copy put in by hand.
         let path = dir.join(program.file_name());
-        let stamp_before = Stamp::at(&path).ok();
-        let put_in_place = || {
+        let was_put_in_place = || {
             Stamp::at(&path)
                 .ok()
-                .is_some_and(|now| Some(now) != stamp_before)
+                .is_some_and(|now| found.get(&program) != Some(&Some(now)))
                 && runs(program, dir)
         };
+        // Put in place while an earlier program's tries waited.
+        if was_put_in_place() {
+            downloads.clear(program);
+            continue;
+        }
         let tried = try_until_answered(
             &mut no_network_waits,
             wait,
             show_downloading,
-            put_in_place,
+            was_put_in_place,
             &mut attempt,
         );
         let result = match tried {
@@ -1082,13 +1094,13 @@ enum Tried<T> {
 
 /// Run `attempt` until it gets past [`DownloadError::NoNetwork`], waiting
 /// the next of `waits` before each new try. `show_downloading` runs before
-/// each wait. After each wait `put_in_place` is asked whether the program
+/// each wait. After each wait `was_put_in_place` is asked whether the program
 /// is now there without the download, and when it is the tries end.
 fn try_until_answered<T>(
     waits: &mut std::slice::Iter<'static, Duration>,
     wait: &dyn Fn(Duration),
     show_downloading: impl Fn(),
-    put_in_place: impl Fn() -> bool,
+    was_put_in_place: impl Fn() -> bool,
     attempt: &mut dyn FnMut() -> Result<T, DownloadError>,
 ) -> Tried<T> {
     loop {
@@ -1097,7 +1109,7 @@ fn try_until_answered<T>(
                 Some(&pause) => {
                     show_downloading();
                     wait(pause);
-                    if put_in_place() {
+                    if was_put_in_place() {
                         return Tried::PutInPlace;
                     }
                 }

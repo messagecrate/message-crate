@@ -124,12 +124,15 @@ fn check_waiting(
 /// when the network is not there, unless `answers` says to answer the
 /// request: it is given the request's number, counted from 0. A request it
 /// answers gets `body`, whatever its path.
-struct Flaky {
+struct NoNetworkUnless {
     base: String,
     requests: Arc<AtomicUsize>,
 }
 
-fn flaky_server(body: Vec<u8>, answers: impl Fn(usize) -> bool + Send + 'static) -> Flaky {
+fn no_network_unless(
+    body: Vec<u8>,
+    answers: impl Fn(usize) -> bool + Send + 'static,
+) -> NoNetworkUnless {
     use std::io::BufRead;
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -154,7 +157,7 @@ fn flaky_server(body: Vec<u8>, answers: impl Fn(usize) -> bool + Send + 'static)
             }
         }
     });
-    Flaky { base, requests }
+    NoNetworkUnless { base, requests }
 }
 
 /// The names in `dir` other than `keep` and the lock file, to see that no
@@ -868,7 +871,7 @@ fn no_network_is_tried_again_after_a_growing_wait() {
     let _tools = no_ffmpeg_on_path(tools.path());
     let (pinned, published) = pin(Program::Wtsexporter, "r1", b"wtsexporter", false);
     // The network comes during the second wait.
-    let server = flaky_server(published, |request| request >= 2);
+    let server = no_network_unless(published, |request| request >= 2);
     let downloads = ToolDownloads::default();
     let waits = std::cell::RefCell::new(Vec::new());
 
@@ -913,7 +916,7 @@ fn a_download_that_reaches_its_server_starts_the_waits_over() {
     let (first, published) = pin(Program::Ffprobe, "r1", b"the same file", false);
     let (second, _) = pin(Program::Wtsexporter, "r1", b"the same file", false);
     // The first program's second try is answered, and nothing after it.
-    let server = flaky_server(published, |request| request == 1);
+    let server = no_network_unless(published, |request| request == 1);
     let downloads = ToolDownloads::default();
 
     let waits = check_now(tools.path(), &server.base, &[first, second], &downloads);
@@ -960,6 +963,42 @@ fn a_program_put_in_place_during_a_wait_ends_the_tries() {
         std::fs::read_to_string(&target).unwrap(),
         "#!/bin/sh\nexit 0\n"
     );
+}
+
+/// A program put in place by hand while an earlier program's tries wait is
+/// used too, though the waits are spent by the time its turn comes.
+#[cfg(unix)]
+#[test]
+fn a_program_put_in_place_during_another_programs_wait_is_used() {
+    let tools = tempfile::tempdir().unwrap();
+    let _tools = no_ffmpeg_on_path(tools.path());
+    let (ffprobe, _) = pin(Program::Ffprobe, "r1", b"ffprobe", false);
+    let (wts, _) = pin(Program::Wtsexporter, "r1", b"pinned", false);
+    let target = tools.path().join(Program::Wtsexporter.file_name());
+    let downloads = ToolDownloads::default();
+    let waits = std::cell::RefCell::new(Vec::new());
+
+    // Port 9 on this computer, where nothing listens.
+    check_waiting(
+        tools.path(),
+        "http://127.0.0.1:9",
+        &[ffprobe, wts],
+        &downloads,
+        &|pause| {
+            let mut waits = waits.borrow_mut();
+            waits.push(pause);
+            if waits.len() == 1 {
+                write_runnable(&target);
+            }
+        },
+    );
+
+    assert_eq!(waits.into_inner(), NO_NETWORK_WAITS);
+    assert!(matches!(
+        downloads.get(Program::Ffprobe),
+        Some(DownloadState::Failed { .. })
+    ));
+    assert_eq!(downloads.get(Program::Wtsexporter), None);
 }
 
 /// A program that was already in place before the check and is not the
