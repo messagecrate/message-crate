@@ -782,7 +782,6 @@ fn only_a_whatsapp_import_waits_for_a_download() {
             owner_emails: Vec::new(),
             phone_country: None,
             verbose: false,
-            include_summary: false,
         }),
         SourceConfig::OpenExtract(OpenExtractConfig::default()),
         SourceConfig::Imazing(ImazingConfig::default()),
