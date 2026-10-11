@@ -349,8 +349,9 @@ export default function ImportScreen() {
     setDiscardError(null);
     let notClosed = false;
     try {
-      // A discard the server refused keeps the panel, with the server's
-      // message on it, and the run's files: the run is still open there.
+      // A discard that did not close the run (`not_closed`) keeps the
+      // panel, with the message on it, and the run's files: the run is
+      // still open there.
       // Otherwise the panel drops to the form; a run whose session ended is
       // offered again at the account's next login.
       const outcome = await discardOfferedRun(run);

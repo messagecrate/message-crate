@@ -1228,6 +1228,15 @@ describe("useImportJob wiring", () => {
     },
   );
 
+  it("keeps the directory when a 404 Not Found with no problem comes from in front of the server", async () => {
+    discardImportRunMock.mockRejectedValueOnce(new ApiError(404, "Not Found"));
+    const { result } = renderJob();
+    const outcome = await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(outcome).toEqual({ kind: "not_closed", message: "Not Found" });
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
   it("keeps the directory when a Cancel at a Review never reaches the server (#2669)", async () => {
     discardImportRunMock.mockRejectedValueOnce(new Error("offline"));
     const { result } = renderJob();

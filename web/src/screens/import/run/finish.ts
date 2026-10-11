@@ -213,13 +213,14 @@ export type DiscardOutcome =
 
 /**
  * True when the server's answer to a discard says it holds no running run
- * by that id for the account: `404 Not Found`, or `409 Conflict`
- * (`state-conflict`), which this route gives only for a run that is no
- * longer running. Another window, or a close whose answer was lost, may
- * have closed it.
+ * by that id for the account: `404 Not Found` (`not-found`), or
+ * `409 Conflict` (`state-conflict`), which this route gives only for a run
+ * that is no longer running. Another window, or a close whose answer was
+ * lost, may have closed it. Read by problem type, so a 404 from something
+ * in front of the server, which never reached it, is not taken for one.
  */
 function runAlreadyClosed(e: unknown): boolean {
-  return e instanceof ApiError && (e.status === 404 || e.type === "state-conflict");
+  return e instanceof ApiError && (e.type === "not-found" || e.type === "state-conflict");
 }
 
 /**
@@ -235,10 +236,10 @@ function runAlreadyClosed(e: unknown): boolean {
  * (`runAlreadyClosed`). Any other refusal, or a close that never reached the
  * server, leaves the run open there, holding the account's import slot, so
  * its directory stays with it for the next visit to Import to offer again,
- * and the outcome carries the message for the caller to show. A session the server refused to
- * the close is no fault of the run: the run stays for the account's next
- * login, with its directory and no message. `runDir` is null for a run whose
- * directory is not on this device. Never throws.
+ * and the outcome carries the message for the caller to show. A session
+ * the server refused to the close is no fault of the run: the run stays for
+ * the account's next login, with its directory and no message. `runDir` is
+ * null for a run whose directory is not on this device. Never throws.
  */
 export async function discardRun(
   ctx: RunContext,
