@@ -251,22 +251,22 @@ pub(crate) fn join_under(dir: &Path, relative: &str) -> Option<PathBuf> {
 }
 
 /// [`join_under`] for a path read from the database, logging a path it
-/// refuses with the account and `file`, which names the file the row
-/// describes (such as `Preview of <sha256>`), so the damaged row can be found.
-/// Serving and removing both go through it, so neither touches a file the
-/// other would refuse.
+/// refuses with the account and `describes`, which says as much as the
+/// caller knows of what the row stores (such as `Preview of <sha256>`), so
+/// the damaged row can be found. Serving a Preview or Thumbnail and removing
+/// a deleted attachment's files go through it.
 pub(crate) fn join_stored(
     dir: &Path,
     assets_path: &str,
     account_id: i64,
-    file: &str,
+    describes: &str,
 ) -> Option<PathBuf> {
     let path = join_under(dir, assets_path);
     if path.is_none() {
         tracing::warn!(
             account_id,
             assets_path,
-            file,
+            describes,
             "A stored path is not a plain relative path, so the server neither serves nor removes its file"
         );
     }
@@ -343,26 +343,26 @@ fn remove_each(account_id: i64, paths: &[PathBuf], mut removal: Option<&mut Remo
 /// MIME sidecar. A stored path that would leave its directory is logged and
 /// passed over.
 fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<PathBuf> {
-    let (dir, assets_path, sidecar) = match file {
+    let (dir, assets_path, sidecar, describes) = match file {
         OrphanedFile::Original {
             sha256,
             assets_path,
         } => {
             let dir = paths.assets_dir_for_account(account_id);
             let sidecar = stored_sidecar_path(&dir, sha256);
-            (dir, assets_path, sidecar)
+            (dir, assets_path, sidecar, format!("Asset {sha256}"))
         }
+        // One converted file can be the Preview and the Thumbnail of several
+        // originals, and goes only once no row names it, so no single
+        // original or version describes it.
         OrphanedFile::Derived { assets_path } => (
             paths.assets_converted_dir_for_account(account_id),
             assets_path,
             None,
+            "Preview or Thumbnail".to_string(),
         ),
     };
-    let file_name = match file {
-        OrphanedFile::Original { sha256, .. } => format!("Asset {sha256}"),
-        OrphanedFile::Derived { .. } => "Preview or Thumbnail".to_string(),
-    };
-    let Some(path) = join_stored(&dir, assets_path, account_id, &file_name) else {
+    let Some(path) = join_stored(&dir, assets_path, account_id, &describes) else {
         return Vec::new();
     };
     std::iter::once(path).chain(sidecar).collect()
