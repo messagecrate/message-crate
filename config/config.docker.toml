@@ -1,6 +1,7 @@
 # Container defaults for the Docker image (docker/compose.yml and
-# docker/compose.release.yml). The entrypoint copies this to
-# config/config.toml on every start, before `serve` or any other command.
+# docker/compose.release.yml). docker/Dockerfile copies this to
+# config/config.toml in the image, the path `serve` and every other server
+# command read by default.
 
 [paths]
 db = "data/messagecrate.db"

@@ -72,8 +72,10 @@ WORKDIR /app
 # Rust CLI / serve binary
 COPY --from=rust-builder /src/target/release/message-crate-server /usr/local/bin/message-crate-server
 
-# Container config template
-COPY config/config.docker.toml ./config/config.docker.toml
+# Container config, at the path every server command reads by default. The
+# image carries it rather than the entrypoint copying it at start, because
+# the Compose files make the root filesystem read-only.
+COPY config/config.docker.toml ./config/config.toml
 
 # Vite SPA (built in Stage 1)
 COPY --from=frontend-builder /web/dist ./static

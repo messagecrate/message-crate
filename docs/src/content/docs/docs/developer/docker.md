@@ -31,6 +31,10 @@ A local checkout’s `.env.example` sets `COMPOSE_FILE=docker/compose.release.ym
 
 Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That script also binds port 8080.
 
+Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
+
+A change that makes the server write anywhere else fails with a read-only file system error: at start, the container stops, and during an import or an export, that work fails. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account, so it catches a write at start and not one made later. CI's "Docker image builds" job and the nightly build run it.
+
 ## What the image contains
 
 The container is the server process only. The desktop app stays on the local machine and talks to the server over HTTP.
@@ -49,7 +53,7 @@ The file has three stages. Each stage is a temporary image. Only the last stage 
 
 1. **Website.** Node 22 installs `web/` dependencies and runs `npm run build`. The output is `web/dist`.
 2. **Server binary.** Rust 1.98.1, the version `rust-toolchain.toml` pins, compiles `message-crate-server` in release mode. The binary carries what it needs to generate Demo Data: the `demo-seed` crate, its two size settings, the Pride and Prejudice text, and the name lists.
-3. **Runtime.** A slim Node 20 image gets ffmpeg, the server binary, `config/config.docker.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` runs `docker/healthcheck.cjs` with Node every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The script reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The script's header comment has the details.
+3. **Runtime.** A slim Node 20 image gets ffmpeg, the server binary, `config/config.docker.toml` as `config/config.toml`, and the website files copied to `static/`. Its `HEALTHCHECK` runs `docker/healthcheck.cjs` with Node every 30 seconds, and every 2 seconds during its five-minute start period, which covers the Demo Account seed on a first start. The script reads the address the server listens on from `/proc` and asks `/health` there, so it follows `[server] bind` and `serve --bind`. A container whose command is not `serve`, such as `reset-demo` or `create-owner`, or that runs no server at all, passes the check, because nothing in it is meant to answer. The script's header comment has the details.
 
 The build context is the **repository root**. `.dockerignore` decides what Docker sends into that context. It must ignore the live data directory at the repo root (`/data`) so a personal database is not copied into the image. It must not ignore `crates/server/demo-seed/data/`. That directory holds the Pride and Prejudice text and the name lists the server compiles in.
 
@@ -73,7 +77,7 @@ docker compose -f docker/compose.release.yml up --build
 
 The server is at **http://127.0.0.1:8080**. On a data volume with no database, the server adds the Demo Account with the medium data set (about 54,000 messages) before it listens, and leaves Message Crate unclaimed. The first screen offers **Create Owner** and **Explore Demo Account**; the Demo Account has no password. There is no switch for this: a Message Crate started by Docker begins the same as any other.
 
-The container's entrypoint only writes the config and runs `serve`. Arguments after the image name run another server command in its place, with the stack stopped.
+The container's entrypoint only runs `serve`, and writes nothing. Arguments after the image name run another server command in its place, with the stack stopped.
 
 ### Build without starting
 
@@ -188,7 +192,7 @@ That job is the Hub image. `docker/compose.release.yml` is the way to compile th
 
 ## Run the published image
 
-Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it. Upgrades that keep the existing database volume are on [Update](/docs/user/features/owner/update/).
+Pull and start `bitrealm/message-crate` from Docker Hub as described in [Start a Message Crate](/docs/user/features/owner/run-with-docker/#start-the-server). That page gives the `docker run` command; `docker/compose.yml` in the repository is the Compose form of it, with the limits under [Two Compose files](#two-compose-files) added. Upgrades that keep the existing database volume are on [Update](/docs/user/features/owner/update/).
 
 ## Related
 
