@@ -4,7 +4,7 @@ import { type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { advanceTimers } from "../test/fakeTimers";
+import { advanceTimersAndSettle } from "../test/fakeTimers";
 import { createQueryClient } from "./routeQuery";
 import type { SearchField } from "./searchFields";
 import { listContacts, listSearchFields } from "./serverApi";
@@ -151,14 +151,14 @@ describe("useSearchSuggestions", () => {
 
   it("asks for contacts once, after the person stops typing a person word", async () => {
     const hook = typing("with:");
-    await advanceTimers(0);
+    await advanceTimersAndSettle(0);
     hook.rerender({ value: "with:j" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
     hook.rerender({ value: "with:ja" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
     expect(contacts).not.toHaveBeenCalled();
 
-    await advanceTimers(1);
+    await advanceTimersAndSettle(1);
     expect(contacts).toHaveBeenCalledTimes(1);
     expect(contacts.mock.calls[0][0]).toEqual({ q: "ja", limit: 20, offset: 0 });
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe"]);
@@ -166,11 +166,11 @@ describe("useSearchSuggestions", () => {
 
   it("answers a prefix typed again from the cache", async () => {
     const hook = typing("with:ja");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     hook.rerender({ value: "with:j" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     hook.rerender({ value: "with:ja" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
 
     expect(contacts.mock.calls.map(([params]) => params.q)).toEqual(["ja", "j"]);
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe"]);
@@ -178,26 +178,26 @@ describe("useSearchSuggestions", () => {
 
   it("keeps the last contacts on screen while the next prefix waits", async () => {
     const hook = typing("with:j");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe", "Jo Park"]);
 
     hook.rerender({ value: "with:ja" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS - 1);
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe", "Jo Park"]);
   });
 
   it("asks for no contacts for a word whose value is not a person", async () => {
     const hook = typing("kind:gr");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     expect(contacts).not.toHaveBeenCalled();
     expect(hook.result.current.map((s) => s.insert)).toEqual(["kind:group "]);
   });
 
   it("does not ask for contacts with the value of the word typed before", async () => {
     const hook = typing("kind:gr");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     hook.rerender({ value: "kind:gr with:" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
 
     expect(contacts.mock.calls.map(([params]) => params.q)).toEqual([""]);
   });
@@ -215,44 +215,44 @@ describe("useSearchSuggestions", () => {
 
   it("does not offer the names typed for another person word", async () => {
     const hook = typing("from:jo");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jo Park"]);
 
     const release = holdAnswerFor("");
     hook.rerender({ value: "from:jo with:" });
     expect(hook.result.current).toEqual([]);
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     // Asked for, and not answered yet: Jo is not offered while it waits.
     expect(contacts.mock.calls.map(([params]) => params.q)).toEqual(["jo", ""]);
     expect(hook.result.current).toEqual([]);
 
     release();
-    await advanceTimers(0);
+    await advanceTimersAndSettle(0);
     expect(hook.result.current.map((s) => s.label)).toEqual(["Jane Doe", "Jo Park"]);
   });
 
   it("starts a person word typed after a picked contact from no names", async () => {
     const hook = typing("with:jo");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     hook.rerender({ value: "with:#2 " });
 
     const release = holdAnswerFor("");
     hook.rerender({ value: "with:#2 with:" });
     expect(hook.result.current).toEqual([]);
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     expect(hook.result.current).toEqual([]);
     release();
   });
 
   it("starts the same word typed again in a cleared box from no names", async () => {
     const hook = typing("with:jo");
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     hook.rerender({ value: "" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
 
     const release = holdAnswerFor("");
     hook.rerender({ value: "with:" });
-    await advanceTimers(CONTACT_SUGGESTION_DEBOUNCE_MS);
+    await advanceTimersAndSettle(CONTACT_SUGGESTION_DEBOUNCE_MS);
     expect(hook.result.current).toEqual([]);
     release();
   });

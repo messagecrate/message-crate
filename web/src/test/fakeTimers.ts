@@ -2,8 +2,8 @@
  * Moving Vitest's fake clock in a test that renders React.
  *
  * A test that faked the clock with `vi.useFakeTimers` moves it with
- * `advanceTimers`, never with a real wait, so a debounce or a poll fires when
- * the test says and not when a busy machine gets to it.
+ * `advanceTimersAndSettle`, never with a real wait, so a debounce or a poll
+ * fires when the test says and not when a busy machine gets to it.
  */
 
 import { act } from "@testing-library/react";
@@ -18,7 +18,7 @@ import { vi } from "vitest";
  * nothing, which runs the promises and the zero-delay timers the first one
  * queued, so the screen has drawn the answer before the test reads it.
  */
-export async function advanceTimers(ms: number): Promise<void> {
+export async function advanceTimersAndSettle(ms: number): Promise<void> {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
