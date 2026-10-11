@@ -471,9 +471,9 @@ export function SystemSection() {
       .catch(() => undefined)
       .then(() => invokeStagingRoot())
       .then(
-        (staging) => {
-          queryClient.setQueryData(keys.desktopStagingDirectory.all, staging);
+        (held) => {
           if (gen !== stagingSaveGen.current) return;
+          queryClient.setQueryData(keys.desktopStagingDirectory.all, held);
           setTypedStagingPath(null);
         },
         (caught: unknown) => {
