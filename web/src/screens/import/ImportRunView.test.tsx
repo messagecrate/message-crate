@@ -85,9 +85,9 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     contactIdentifiers: [],
     ownerIdentities: [],
     attachments: 6118,
-    attachmentBytes: 9.4 * 1024 * 1024 * 1024,
+    attachmentBytes: 9.4 * 1024 * MIB,
     forecasts: [],
-    assetMaxBytes: 50 * 1024 * 1024,
+    assetMaxBytes: 50 * MIB,
     mediaMode: "copy",
     ...overrides,
   };
@@ -562,7 +562,7 @@ describe("ImportRunView", () => {
     desktop.toolsStatus.mockResolvedValue({
       toolsDir: "/home/sam/message-crate/tools",
       checking: false,
-      ffmpeg: { state: "downloading", received: 12 * 1024 * 1024, total: 30 * 1024 * 1024 },
+      ffmpeg: { state: "downloading", received: 12 * MIB, total: 30 * MIB },
       ffprobe: { state: "found", path: "/home/sam/message-crate/tools/ffprobe" },
       wtsexporter: { state: "found", path: "/home/sam/message-crate/tools/wtsexporter" },
     } satisfies ToolsStatus);
@@ -649,7 +649,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done" }),
       stagingSummary: staged(),
       mediaSummary: staged({
-        attachmentBytes: 4.1 * 1024 * 1024 * 1024,
+        attachmentBytes: 4.1 * 1024 * MIB,
         forecasts: [file("huge-mv.mp4", 84, "probably_too_big")],
       }),
       mediaFailedCount: 2,
