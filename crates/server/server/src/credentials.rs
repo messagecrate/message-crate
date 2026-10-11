@@ -176,7 +176,8 @@ pub(crate) fn verify_password(hash: &str, password: &str) -> bool {
 /// threads. Without a limit, a few hundred logins at once, each as a
 /// different unknown username and so each in its own rate-limit bucket,
 /// would ask for gigabytes and could get the server killed. One run per core
-/// is what the async workers allowed when Argon2 ran on them.
+/// keeps every core busy, and the runs waiting for a permit take no Argon2
+/// memory.
 fn argon2_permits() -> &'static Arc<Semaphore> {
     static PERMITS: OnceLock<Arc<Semaphore>> = OnceLock::new();
     PERMITS.get_or_init(|| {
@@ -192,9 +193,12 @@ fn argon2_permits() -> &'static Arc<Semaphore> {
 /// hold that worker for its whole run, and a burst of logins or password
 /// changes would stall every other request scheduled on the workers. Callers
 /// hold no database connection or transaction across the await, so none
-/// waits on Argon2 either. Each caller gives its own connection back and
-/// takes one again, because what it holds differs: a login shadows its
-/// connection, and a password change takes one per statement.
+/// waits on Argon2 either.
+///
+/// A caller gives its connection back to the pool before the run and takes
+/// one again after it. This function cannot do that for it, because callers
+/// hold connections differently. A login drops its connection and gets a new
+/// one. A password change gets one for each statement.
 async fn run_argon2<T: Send + 'static>(
     task: &'static str,
     f: impl FnOnce() -> Result<T> + Send + 'static,
