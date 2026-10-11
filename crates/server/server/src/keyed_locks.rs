@@ -19,8 +19,8 @@ type LockMap = HashMap<String, Arc<Mutex<()>>>;
 /// Per-key async mutexes. Cloning shares the same map.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct KeyedLocks {
-    /// A `std` mutex: it is only ever held for a map lookup, never across an
-    /// `.await`, and `Drop` cannot await.
+    /// A `std` mutex: it is only ever held for one map operation, never
+    /// across an `.await`, and `Drop` cannot await.
     map: Arc<StdMutex<LockMap>>,
 }
 
