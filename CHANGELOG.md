@@ -396,12 +396,8 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
-- 2026-10-10: **The desktop app no longer adds a second, ready-made copy of
-  its commands to its window.** The app put a copy of all of its commands,
-  such as starting an import from any directory, where any script in the
-  window could pick it up by name. The app itself never used that copy, so
-  it is no longer added. The window still runs only the scripts the app
-  ships, and nothing changes on screen (#2177).
+- 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
+  call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
   directory of the one before it.** An SMS Backup+ export that stopped part
   way could leave an empty conversation directory behind, and the next
