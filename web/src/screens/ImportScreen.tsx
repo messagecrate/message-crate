@@ -5,10 +5,7 @@ import { attachmentChoicesOf, DEFAULT_ATTACHMENT_CHOICES } from "../lib/attachme
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
 import {
-  emptyImessagePathStats,
   IMESSAGE_DEFAULT_METHOD,
-  imessageStatsForMethod,
-  isImessageMethod,
   macMessagesDbPath,
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
@@ -29,7 +26,7 @@ import {
   setImporterExtraPath,
   setImporterPath,
 } from "../lib/system-settings";
-import { invokeHomeDir, invokeIosBackupEncrypted, invokePathStat } from "../lib/tauri";
+import { invokeHomeDir, invokePathStat } from "../lib/tauri";
 import { isTauri } from "../lib/tauri-check";
 import { useTimeZone } from "../lib/timeZone";
 import type { AttachmentChoices } from "../lib/types";
@@ -38,11 +35,7 @@ import {
   useFetchAccountProfile,
   useUpdateAccountProfile,
 } from "../lib/useAccountProfile";
-import {
-  emptyWhatsappPathStats,
-  isWhatsappMethod,
-  WHATSAPP_CRYPT_NAMES,
-} from "../lib/whatsappImport";
+import { useImessagePathStats, useWhatsappPathStats } from "../lib/useBackupPathStats";
 import BackupIdentityList from "./import/BackupIdentityList";
 import BackupIdentityStopScreen from "./import/BackupIdentityStopScreen";
 import { restoreFormFromSnapshot, snapshotSecret } from "./import/formSnapshot";
@@ -64,7 +57,6 @@ import { parseStoredStagingSummary } from "./import/run/stagingSummary";
 import { useImportJob } from "./import/useImportJob";
 
 const DEFAULT_SOURCE = IMESSAGE_DEFAULT_METHOD;
-const PATH_PROBE_DEBOUNCE_MS = 200;
 /** The server's own cap on one `/v1/contacts/unmatched-identities` request (`MAX_MATCH_IDENTIFIERS`,
  * `crates/server/server/src/contacts_api.rs`) — the client batches to it rather than
  * discovering the limit from a 422. */
@@ -187,7 +179,6 @@ export default function ImportScreen() {
   );
   const [attachmentRoot, setAttachmentRoot] = useState("");
   const [appleContacts, setAppleContacts] = useState("");
-  const [pathStats, setPathStats] = useState(emptyImessagePathStats);
   const [whatsappKey, setWhatsappKey] = useState("");
   const [showWhatsappKey, setShowWhatsappKey] = useState(false);
   const [whatsappWa, setWhatsappWa] = useState("");
@@ -196,7 +187,14 @@ export default function ImportScreen() {
   const [isBusinessApp, setIsBusinessApp] = useState(false);
   /** The holder's WhatsApp number; seeded from the profile's first phone. */
   const [whatsappOwnerPhone, setWhatsappOwnerPhone] = useState("");
-  const [whatsappStats, setWhatsappStats] = useState(emptyWhatsappPathStats);
+  const pathStats = useImessagePathStats({ source, backupPath, attachmentRoot, appleContacts });
+  const whatsappStats = useWhatsappPathStats({
+    source,
+    backupPath,
+    contactsDb: whatsappWa,
+    media: whatsappMedia,
+    db: whatsappDb,
+  });
   const [backupPassword, setBackupPassword] = useState("");
   const [showBackupPassword, setShowBackupPassword] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentChoices>(DEFAULT_ATTACHMENT_CHOICES);
@@ -532,87 +530,6 @@ export default function ImportScreen() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!isTauri() || !isImessageMethod(source)) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const [backup, attachment, contacts] = await Promise.all([
-          probePath(backupPath),
-          probePath(attachmentRoot),
-          probePath(appleContacts),
-        ]);
-        let backupEncrypted: boolean | null = null;
-        if (source === "imessage-ios" && backup?.exists && backup.isDirectory) {
-          try {
-            backupEncrypted = await invokeIosBackupEncrypted(backupPath.trim());
-          } catch {
-            backupEncrypted = null;
-          }
-        }
-        if (cancelled) return;
-        const next = {
-          backup,
-          attachmentRoot: attachment,
-          appleContacts: contacts,
-          backupEncrypted,
-        };
-        setPathStats(imessageStatsForMethod(source, next));
-      })();
-    }, PATH_PROBE_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [source, backupPath, attachmentRoot, appleContacts]);
-
-  useEffect(() => {
-    if (!isTauri() || !isWhatsappMethod(source)) return;
-    setWhatsappStats(emptyWhatsappPathStats());
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        const root = backupPath.trim();
-        const [backup, contactsDb, media, db, msgstore, cryptHits] = await Promise.all([
-          probePath(backupPath),
-          probePath(whatsappWa),
-          probePath(whatsappMedia),
-          probePath(whatsappDb),
-          probePath(root ? `${root}/msgstore.db` : ""),
-          Promise.all(
-            WHATSAPP_CRYPT_NAMES.map(async (name) => {
-              const stat = await probePath(root ? `${root}/${name}` : "");
-              return stat?.exists && stat.isFile ? name : null;
-            }),
-          ),
-        ]);
-        let backupEncrypted: boolean | null = null;
-        if (source === "whatsapp-ios" && root !== "") {
-          try {
-            backupEncrypted = await invokeIosBackupEncrypted(root);
-          } catch {
-            backupEncrypted = null;
-          }
-        }
-        if (cancelled) return;
-        const cryptName = cryptHits.find((name) => name !== null) ?? null;
-        setWhatsappStats({
-          backup,
-          contactsDb,
-          media,
-          db,
-          hasMsgstoreDb: Boolean(msgstore?.exists && msgstore.isFile),
-          cryptName,
-          backupEncrypted,
-        });
-      })();
-    }, PATH_PROBE_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [source, backupPath, whatsappWa, whatsappMedia, whatsappDb]);
-
   function applyRememberedPaths(nextSource: string): string {
     const loaded = loadRememberedImportPaths(nextSource);
     const remembered = importSourceFor(nextSource).rememberedPaths;
@@ -633,8 +550,6 @@ export default function ImportScreen() {
     const gen = ++sourceChangeGenRef.current;
     setSource(resolved);
     lastMethodRef.current[importSourceFor(resolved).id] = resolved;
-    setPathStats(emptyImessagePathStats());
-    setWhatsappStats(emptyWhatsappPathStats());
     if (resolved !== "whatsapp-ios") setIsBusinessApp(false);
     const loadedBackup = applyRememberedPaths(resolved);
 

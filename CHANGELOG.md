@@ -183,6 +183,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-11: The way the desktop app checks the paths on the Import form,
+  names an import's log, and finds the Export Directory was reworked inside,
+  with nothing visible (#2268).
+
 - 2026-10-11: The messages about a password, such as a wrong current
   password or two new passwords that differ, are written the way the
   server's other messages are, so they no longer end with a full stop.
@@ -664,7 +668,6 @@ released versions carry their date on the heading.
   discarded cleanly. The files now go only once Message Crate has taken the
   discard. Otherwise the import is offered again with what went wrong, and
   **Discard this import** tries again (#2669).
-
 - 2026-10-11: **A server told to stop during an Upload stops sooner.** A
   batch of messages that was still waiting for its turn used to start once
   an earlier batch ended and run in full before the server stopped. The

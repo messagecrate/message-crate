@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
@@ -11,6 +12,7 @@ import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { formatBytes } from "../../lib/formatBytes";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
+import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import {
@@ -20,6 +22,7 @@ import {
   type MediaToolName,
   type StagingSummary,
 } from "../../lib/tauri";
+import { isTauri } from "../../lib/tauri-check";
 import type { AttachmentMediaMode } from "../../lib/types";
 import { useToolsStatus } from "../../lib/useToolsStatus";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
@@ -210,36 +213,23 @@ function FinishedExits({ importId }: { importId: number }) {
  * with `keep` the last log named is kept rather than dropped.
  */
 function useImportRunLog(runDir: string | null, keep: boolean): string | null {
-  const [log, setLog] = useState<string | null>(null);
-  // The run directory the log was last asked for: `keep` changing on its own
-  // asks again for nothing.
-  const askedFor = useRef<string | null>(null);
-  useEffect(() => {
-    if (!runDir) {
-      if (!keep) {
-        askedFor.current = null;
-        setLog(null);
-      }
-      return;
-    }
-    if (askedFor.current === runDir) return;
-    askedFor.current = runDir;
-    setLog(null);
-    let live = true;
-    invokeImportRunLog(runDir).then(
-      (path) => {
-        if (live) setLog(path);
-      },
-      (caught: unknown) => {
+  // The run directory the log is named for: the current one, or with `keep`
+  // the last one, once the run has ended and its directory has gone.
+  const [named, setNamed] = useState(runDir);
+  const target = runDir ?? (keep ? named : null);
+  if (target !== named) setNamed(target);
+  const query = useQuery({
+    queryKey: keys.desktopImportRunLog.of(target ?? ""),
+    queryFn: () =>
+      invokeImportRunLog(target ?? "").catch((caught: unknown) => {
         // The run goes on without the link; the reason is worth a line.
         console.error("Could not name the Import Run's log", caught);
-      },
-    );
-    return () => {
-      live = false;
-    };
-  }, [runDir, keep]);
-  return log;
+        return null;
+      }),
+    enabled: isTauri() && target !== null,
+    retry: false,
+  });
+  return target === null ? null : (query.data ?? null);
 }
 
 /** The last part of `path`, after its last slash or backslash. */
