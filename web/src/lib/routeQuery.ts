@@ -58,6 +58,11 @@ export function endsSession(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401 && error.type !== "invalid-credentials";
 }
 
+/** Whether the server answered with a `4xx`: it refused the request itself. */
+function refusedRequest(error: unknown): boolean {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500;
+}
+
 /**
  * Build the query client.
  *
@@ -86,9 +91,13 @@ export function createQueryClient({
         // screens does not refetch, and short enough that a stale list
         // corrects itself without anyone reloading.
         staleTime: 30_000,
-        // One retry, except for an ended session: asking again with the same
-        // token gets the same answer, and only delays the login screen.
-        retry: (failureCount, error) => !endsSession(error) && failureCount < 1,
+        // One retry, and only for a failure a second try can change: a
+        // request that never reached the server, or a `5xx`. A `4xx` answers
+        // the same request the same way again, so asking again only delays
+        // the error on screen (or the login screen, for an ended session),
+        // and a `429 Too Many Requests` adds a request to a client already
+        // over the limit.
+        retry: (failureCount, error) => failureCount < 1 && !refusedRequest(error),
         refetchOnWindowFocus: true,
       },
     },
