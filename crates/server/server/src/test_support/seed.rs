@@ -111,6 +111,13 @@ pub fn fixed_instant() -> chrono::DateTime<chrono::Utc> {
         .and_utc()
 }
 
+/// An hour before [`fixed_instant`]: the instant a test starts an Import
+/// Run, so a run the test completes at [`fixed_instant`] finishes after it
+/// starts, as every run the server writes does.
+pub fn fixed_start_instant() -> chrono::DateTime<chrono::Utc> {
+    fixed_instant() - chrono::TimeDelta::hours(1)
+}
+
 /// A message guid no earlier call returned. `messages.guid` is required and
 /// unique per account and source, so [`MessageRow::new`] takes a fresh one
 /// from here for every row; a test that names its message sets a literal.
