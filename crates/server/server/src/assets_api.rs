@@ -721,21 +721,23 @@ pub(crate) async fn get_asset(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     let account = reader.account_id;
-    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-        return Err(ApiError::not_found("asset"));
-    };
-
-    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    stream_file(
-        &assets_dir.join(&stored.assets_path),
-        stored.mime_type,
-        &headers,
-        Some(format!("\"{sha256}\"")),
-        reader.cache_control(),
-    )
-    .await
+    let answer = async {
+        let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+            return Err(ApiError::not_found("asset"));
+        };
+        let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+        stream_file(
+            &assets_dir.join(&stored.assets_path),
+            stored.mime_type,
+            &headers,
+            Some(format!("\"{sha256}\"")),
+        )
+        .await
+    }
+    .await;
+    reader.with_cache_control(answer)
 }
 
 /// Download the preview of a stored asset: the JPEG, MP4 or MP3 the server
@@ -785,7 +787,7 @@ pub(crate) async fn get_asset_preview(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     stream_version(&state, reader, &headers, &sha256, Version::Preview).await
 }
 
@@ -838,7 +840,7 @@ pub(crate) async fn get_asset_thumbnail(
     reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
-) -> Result<Response, ApiError> {
+) -> Response {
     stream_version(&state, reader, &headers, &sha256, Version::Thumbnail).await
 }
 
@@ -851,35 +853,32 @@ async fn stream_version(
     headers: &HeaderMap,
     sha256: &Sha256,
     version: Version,
-) -> Result<Response, ApiError> {
+) -> Response {
     let account = reader.account_id;
-    let Some(stored) = lookup_for_read(state, account, sha256).await? else {
-        return Err(ApiError::not_found("asset"));
-    };
-    let file = crate::db::attachment_versions::file_of(
-        &mut *state.db.acquire().await?,
-        version,
-        OriginalRows {
-            account_id: account,
-            original_sha: &stored.sha256,
-        },
-    )
-    .await?;
-    let Some((path, mime_type)) = file else {
-        return Err(ApiError::NotFound(format!(
-            "asset has no {} yet",
-            version.to_string().to_lowercase()
-        )));
-    };
-    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(
-        &converted_dir.join(path),
-        mime_type,
-        headers,
-        None,
-        reader.cache_control(),
-    )
-    .await
+    let answer = async {
+        let Some(stored) = lookup_for_read(state, account, sha256).await? else {
+            return Err(ApiError::not_found("asset"));
+        };
+        let file = crate::db::attachment_versions::file_of(
+            &mut *state.db.acquire().await?,
+            version,
+            OriginalRows {
+                account_id: account,
+                original_sha: &stored.sha256,
+            },
+        )
+        .await?;
+        let Some((path, mime_type)) = file else {
+            return Err(ApiError::NotFound(format!(
+                "asset has no {} yet",
+                version.to_string().to_lowercase()
+            )));
+        };
+        let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+        stream_file(&converted_dir.join(path), mime_type, headers, None).await
+    }
+    .await;
+    reader.with_cache_control(answer)
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read
@@ -904,14 +903,13 @@ pub(crate) async fn lookup_for_read(
 /// when none is known: the whole file, or the one byte range the request's
 /// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
 /// tag when it has one, which an `If-Range` must name for a range to be
-/// served. `cache_control` is the reader's
-/// ([`AssetReadAccess::cache_control`]).
+/// served. The caller adds the reader's `Cache-Control`
+/// ([`AssetReadAccess::with_cache_control`]).
 async fn stream_file(
     path: &Path,
     mime_type: Option<String>,
     request_headers: &HeaderMap,
     etag: Option<String>,
-    cache_control: header::HeaderValue,
 ) -> Result<Response, ApiError> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -998,7 +996,6 @@ async fn stream_file(
         header::ACCEPT_RANGES,
         header::HeaderValue::from_static("bytes"),
     );
-    headers_mut.insert(header::CACHE_CONTROL, cache_control);
     if let Some(value) = etag.and_then(|etag| header::HeaderValue::from_str(&etag).ok()) {
         headers_mut.insert(header::ETAG, value);
     }

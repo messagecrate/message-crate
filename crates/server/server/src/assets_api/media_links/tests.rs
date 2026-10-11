@@ -92,23 +92,41 @@ async fn a_media_link_opens_its_asset_and_preview_with_no_header() {
 /// shared cache in front of the server may store the answer under its URL
 /// and serve it again after the link has expired or its Session has ended.
 /// Every asset answer is `private`, and one read with a media link is
-/// `no-store` as well, whole or in part.
+/// `no-store` as well: whole or in part, and a `404 Not Found` or
+/// `416 Range Not Satisfiable` too, since a shared cache may keep a `404`
+/// and hide a Preview made later.
 #[tokio::test]
 async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;
     let state = &fixture.state;
     let seeded = seed_attachment_with_preview(state, user.account_id).await;
     let sha = &seeded.with_preview;
+    // The Thumbnail is the Preview's file here: only the header matters.
+    let mut conn = state.db.acquire().await.unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
+            thumbnail_assets_path = derived_assets_path,
+            thumbnail_mime_type = derived_mime_type
+         WHERE sha256 = $1",
+    )
+    .bind(sha)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
     let link = minted(state, sha, &user).await;
 
-    for url in [
-        link["url"].as_str().unwrap(),
-        link["preview_url"].as_str().unwrap(),
-    ] {
-        for range in [None, Some("bytes=0-2")] {
+    for url in ["url", "preview_url", "thumbnail_url"].map(|key| link[key].as_str().unwrap()) {
+        for (range, status) in [
+            (None, StatusCode::OK),
+            (Some("bytes=0-2"), StatusCode::PARTIAL_CONTENT),
+            (Some("bytes=999999-"), StatusCode::RANGE_NOT_SATISFIABLE),
+        ] {
             let headers: Vec<(&str, &str)> = range.map(|r| ("range", r)).into_iter().collect();
             let answer = fetch(state, url, None, &headers).await;
-            assert!(answer.status.is_success(), "{url}: {}", answer.text());
+            assert_eq!(answer.status, status, "{url} {range:?}: {}", answer.text());
             assert_eq!(
                 answer.header("cache-control"),
                 Some("private, no-store"),
@@ -116,13 +134,28 @@ async fn an_asset_read_with_a_media_link_is_never_stored_by_a_cache() {
             );
         }
     }
+    let no_preview = minted(state, &seeded.without_preview, &user).await;
+    let answer = fetch(
+        state,
+        no_preview["preview_url"].as_str().unwrap(),
+        None,
+        &[],
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::NOT_FOUND, "{}", answer.text());
+    assert_eq!(answer.header("cache-control"), Some("private, no-store"));
 
-    for path in [
-        format!("/v1/assets/{sha}"),
-        format!("/v1/assets/{sha}/preview"),
+    for (path, status) in [
+        (format!("/v1/assets/{sha}"), StatusCode::OK),
+        (format!("/v1/assets/{sha}/preview"), StatusCode::OK),
+        (format!("/v1/assets/{sha}/thumbnail"), StatusCode::OK),
+        (
+            format!("/v1/assets/{}/preview", seeded.without_preview),
+            StatusCode::NOT_FOUND,
+        ),
     ] {
         let answer = fetch(state, &path, Some(&user.token), &[]).await;
-        assert_eq!(answer.status, StatusCode::OK, "{path}: {}", answer.text());
+        assert_eq!(answer.status, status, "{path}: {}", answer.text());
         assert_eq!(answer.header("cache-control"), Some("private"), "{path}");
     }
 }

@@ -162,18 +162,27 @@ pub(crate) struct AssetReadAccess {
 }
 
 impl AssetReadAccess {
-    /// The `Cache-Control` of the answer: `private` always, because the
-    /// bytes are one account's attachment, and `no-store` as well when a
-    /// media link admitted the read. That request sends no `Authorization`
-    /// header, so a shared cache would otherwise store the answer under the
-    /// link's URL and serve it again after the link expired or its Session
-    /// ended, and the browser would keep the bytes on disk past the hour.
-    pub(crate) fn cache_control(&self) -> header::HeaderValue {
-        if self.by_media_link {
-            header::HeaderValue::from_static("private, no-store")
+    /// `answer` with its `Cache-Control`, whether it carries the bytes or a
+    /// problem: `private` always, because the bytes are one account's
+    /// attachment, and `no-store` as well when a media link admitted the
+    /// read. That request sends no `Authorization` header, so a shared cache
+    /// would otherwise store the answer under the link's URL and serve it
+    /// again after the link expired or its Session ended, and the browser
+    /// would keep the bytes on disk past the hour. A problem gets it too,
+    /// because a cache may keep a `404 Not Found` and hide a Preview made
+    /// later.
+    pub(crate) fn with_cache_control(&self, answer: Result<Response, ApiError>) -> Response {
+        let mut response = answer.into_response();
+        let value = if self.by_media_link {
+            "private, no-store"
         } else {
-            header::HeaderValue::from_static("private")
-        }
+            "private"
+        };
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static(value),
+        );
+        response
     }
 }
 
