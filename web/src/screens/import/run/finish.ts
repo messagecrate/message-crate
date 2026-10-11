@@ -18,11 +18,12 @@ import {
   RUN_ERROR_ITEM,
   wholeRun,
 } from "../runRecord";
+import { recordError } from "./desktopJob";
 import { discardRunDirectory } from "./runDirectory";
 import { recordWritesSettled, saveCarriedRecord } from "./runRecordWrites";
 import { currentPart, runScratch } from "./scratch";
-import { endSessionIfRefused, SessionRefusedError } from "./serverCalls";
-import { setRowByLabel, updateSteps } from "./steps";
+import { failActiveStep, setRowByLabel, updateSteps } from "./screen";
+import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serverCalls";
 
 /**
  * Build the run's summary, record it, and end the run or leave it open.
@@ -171,6 +172,30 @@ export async function finishImport(args: {
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
   store.set({ summaryView: finalSummary, phase: "done", running: false, runDir });
+}
+
+/**
+ * Stop `stage` when the server did not record its start (`moveStage` threw
+ * `e`). A refused session leaves the run for the form (`leaveIfRefused`).
+ * Otherwise the server still has the run at the review before `stage`, so the
+ * run stays there and is not completed: a later visit offers that review
+ * again.
+ */
+export async function stopStageNotRecorded(
+  e: unknown,
+  runId: number,
+  stage: "media" | "upload",
+): Promise<void> {
+  if (await leaveIfRefused(e, runId)) return;
+  recordError(stage, errorText(e));
+  failActiveStep();
+  await finishImport({
+    runId,
+    status: "failed",
+    uploadReport: null,
+    uploadMs: null,
+    skipComplete: true,
+  });
 }
 
 /**

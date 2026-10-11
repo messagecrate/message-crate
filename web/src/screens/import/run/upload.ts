@@ -9,10 +9,10 @@ import { UPLOAD_LABEL } from "../importProgressState";
 import { importRunStore as store } from "../importRunStore";
 import { wholeRun } from "../runRecord";
 import { recordError, runJob } from "./desktopJob";
-import { finishImport } from "./finish";
+import { finishImport, stopStageNotRecorded } from "./finish";
 import { currentPart, runScratch } from "./scratch";
-import { leaveIfRefused, moveStage } from "./serverCalls";
-import { failActiveStep, setRowByLabel } from "./steps";
+import { failActiveStep, setRowByLabel } from "./screen";
+import { moveStage } from "./serverCalls";
 
 /**
  * Upload to the server and record the outcome: the tail end shared by a
@@ -63,18 +63,7 @@ async function uploadAndFinish(
   try {
     await moveStage(runId, "upload", approvedPlan);
   } catch (e: unknown) {
-    if (await leaveIfRefused(e, runId)) return false;
-    // The server still has the run at its review, so the run stays there
-    // and is not completed: a later visit offers that review again.
-    recordError("upload", errorText(e));
-    failActiveStep();
-    await finishImport({
-      runId,
-      status: "failed",
-      uploadReport: null,
-      uploadMs: null,
-      skipComplete: true,
-    });
+    await stopStageNotRecorded(e, runId, "upload");
     return false;
   }
 

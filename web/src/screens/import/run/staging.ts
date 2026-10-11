@@ -30,6 +30,14 @@ import { mediaToolsMissingFor } from "./media";
 import { saveCarriedRecord } from "./runRecordWrites";
 import { beginRun, loadCarriedRecord, runScratch } from "./scratch";
 import {
+  failActiveStep,
+  initialSteps,
+  returnToFormWithError,
+  setRowByLabel,
+  updateSteps,
+  waitAtReview,
+} from "./screen";
+import {
   endSessionIfRefused,
   leaveIfRefused,
   moveStage,
@@ -38,14 +46,6 @@ import {
   stopIfAccountLeft,
 } from "./serverCalls";
 import { adoptRecordedMode } from "./stagingSummary";
-import {
-  failActiveStep,
-  initialSteps,
-  returnToForm,
-  setRowByLabel,
-  updateSteps,
-  waitAtReview,
-} from "./steps";
 import { runUpload } from "./upload";
 
 /** An Import Run whose copy was interrupted, and the directory it was writing into. */
@@ -302,12 +302,7 @@ export async function runImport(
       store.set({ stagingSummary: summary, mediaToolsMissing: toolsMissing });
       waitAtReview("staging_review");
     } catch (e: unknown) {
-      store.set({
-        resumeError: errorText(e),
-        computingSummary: false,
-        running: false,
-      });
-      returnToForm();
+      returnToFormWithError(e);
     }
   } catch (e: unknown) {
     if (await leaveIfRefused(e, runId)) return;

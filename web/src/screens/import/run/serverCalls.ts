@@ -1,3 +1,8 @@
+/**
+ * The run's own server calls, and the two things that stop them: a session
+ * the server refused, and the account that started the run having logged out.
+ */
+
 import { getAccountId, getToken } from "../../../lib/api";
 import { errorText } from "../../../lib/apiErrorMessage";
 import { type ImportStage, setImportStage } from "../../../lib/importRun";
@@ -7,7 +12,7 @@ import { sessionRefused } from "../../../lib/sessionRefusal";
 import type { StagingSummary } from "../../../lib/tauri";
 import { importRunStore as store } from "../importRunStore";
 import { discardRunDirectory } from "./runDirectory";
-import { returnToForm } from "./steps";
+import { returnToForm } from "./screen";
 
 /**
  * True when the account logged in now is not the one that started the run:

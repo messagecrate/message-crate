@@ -34,8 +34,8 @@ import {
 } from "../runRecord";
 import { saveCarriedRecord } from "./runRecordWrites";
 import { runScratch } from "./scratch";
+import { mediaVerb, updateSteps } from "./screen";
 import { stopIfAccountLeft } from "./serverCalls";
-import { mediaVerb, updateSteps } from "./steps";
 
 /** What a step is doing and what it counts, for every step but `media`
  * (which needs the mode — see `mediaVerb`), `setup` (which carries its own

@@ -1,3 +1,9 @@
+/**
+ * What the Import screen shows of the run: its progress rows and the phase
+ * it is in. Every stage moves the screen through these.
+ */
+
+import { errorText } from "../../../lib/apiErrorMessage";
 import type { AttachmentMediaMode } from "../../../lib/types";
 import { type ImportStep, MEDIA_LABEL, STAGING_LABEL, stepsFor } from "../importProgressState";
 import { CLEARED_RUN, importRunStore as store } from "../importRunStore";
@@ -73,6 +79,20 @@ export function returnToForm(): void {
     phase: "form",
     form: null,
   });
+}
+
+/**
+ * Back to the form with `e` on `resumeError`: reading the run directory
+ * failed after its stage had done its work, so the run stays open where it
+ * is, and the form's resume check offers it again.
+ */
+export function returnToFormWithError(e: unknown): void {
+  store.set({
+    resumeError: errorText(e),
+    computingSummary: false,
+    running: false,
+  });
+  returnToForm();
 }
 
 /** Stop at a review: the run waits, and the review takes the screen. */

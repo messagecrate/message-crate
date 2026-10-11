@@ -1,6 +1,5 @@
 import { completionTextFor } from "../../components/import/ImportSummaryPanel";
 import { profileAddresses } from "../../lib/account";
-import { errorText } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
 import type { ActiveImportRun } from "../../lib/importRun";
@@ -22,6 +21,7 @@ import { discardRun } from "./run/finish";
 import { mediaToolsMissingFor, runMediaStage } from "./run/media";
 import { dismissRunDirDeleteFailure } from "./run/runDirectory";
 import { beginRun, loadCarriedRecord, resetImportRun, runScratch } from "./run/scratch";
+import { resumeSteps, returnToForm, returnToFormWithError, waitAtReview } from "./run/screen";
 import { accountLeft, moveStageAtReview } from "./run/serverCalls";
 import { type ResumeUpload, type ResumeWrite, runImport } from "./run/staging";
 import {
@@ -29,7 +29,6 @@ import {
   parseStoredStagingSummary,
   withRecordedMode,
 } from "./run/stagingSummary";
-import { resumeSteps, returnToForm, waitAtReview } from "./run/steps";
 import { runUpload } from "./run/upload";
 
 export type { ImportPhase, ImportStep } from "./importProgressState";
@@ -343,12 +342,7 @@ export function useImportJob() {
         }
         waitAtReview(review);
       } catch (e: unknown) {
-        store.set({
-          resumeError: errorText(e),
-          computingSummary: false,
-          running: false,
-        });
-        returnToForm();
+        returnToFormWithError(e);
       }
     }
 

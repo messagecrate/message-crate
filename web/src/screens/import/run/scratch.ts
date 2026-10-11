@@ -12,7 +12,7 @@ import {
 import { initialImportRunState, importRunStore as store } from "../importRunStore";
 import { EMPTY_RUN_RECORD, parseRunRecord, type RunPart, type RunRecord } from "../runRecord";
 import type { StagingProgressStep } from "./desktopJob";
-import { initialSteps } from "./steps";
+import { initialSteps } from "./screen";
 
 /** Parse/attachments/prepare durations, fixed once extract finishes and read again at finish time. */
 type ExtractDurations = {

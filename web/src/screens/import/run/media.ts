@@ -14,18 +14,18 @@ import { MEDIA_LABEL } from "../importProgressState";
 import { importRunStore as store } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
-import { finishImport } from "./finish";
+import { finishImport, stopStageNotRecorded } from "./finish";
 import { saveCarriedRecord } from "./runRecordWrites";
 import { runScratch } from "./scratch";
-import { leaveIfRefused, moveStage, moveStageAtReview } from "./serverCalls";
 import {
   failActiveStep,
   mediaDoneDetail,
   mediaVerb,
-  returnToForm,
+  returnToFormWithError,
   setRowByLabel,
   waitAtReview,
-} from "./steps";
+} from "./screen";
+import { moveStage, moveStageAtReview } from "./serverCalls";
 
 /**
  * Which of ffmpeg and ffprobe this mode needs and cannot use; empty when it
@@ -69,18 +69,7 @@ export async function runMediaStage(
   try {
     await moveStage(runId, "media", approvedSummary);
   } catch (e: unknown) {
-    if (await leaveIfRefused(e, runId)) return;
-    // The server still has the run at the Staging Review, so the run stays
-    // there and is not completed: a later visit offers that review again.
-    recordError("media", errorText(e));
-    failActiveStep();
-    await finishImport({
-      runId,
-      status: "failed",
-      uploadReport: null,
-      uploadMs: null,
-      skipComplete: true,
-    });
+    await stopStageNotRecorded(e, runId, "media");
     return;
   }
 
@@ -143,11 +132,6 @@ export async function runMediaStage(
     // and its directory stays: back to the form, as after Staging, with the
     // failure on `resumeError`. The run waits at the Media Review on the
     // server, and resuming it there reads the directory again.
-    store.set({
-      resumeError: errorText(e),
-      computingSummary: false,
-      running: false,
-    });
-    returnToForm();
+    returnToFormWithError(e);
   }
 }
