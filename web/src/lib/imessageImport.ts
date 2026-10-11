@@ -173,7 +173,7 @@ export function macMessagesDbPath(homeDir: string): string {
 export function shouldPrefillMacMessagesDb(args: {
   os: string;
   homeDir: string;
-  chatDb: ImportPathStat;
+  chatDb: Pick<ImportPathStat, "exists" | "isFile"> & { unreadable: { kind: string } | null };
   rememberedPath: string;
 }): string {
   const remembered = args.rememberedPath.trim();

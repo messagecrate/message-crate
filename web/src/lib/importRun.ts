@@ -1,5 +1,5 @@
 import { errorText } from "./apiErrorMessage";
-import { unknownPathMessage } from "./pathChecks";
+import { describeUnreadable, unknownPathMessage } from "./pathChecks";
 import {
   discardImport,
   listEveryImport,
@@ -89,7 +89,10 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<Accou
   const directories: AccountRunDirectories = { found: [], unreadable: [] };
   for (const { path, stat } of stats) {
     if (stat.unreadable) {
-      directories.unreadable.push({ path, reason: unknownPathMessage(stat.unreadable, "it") });
+      directories.unreadable.push({
+        path,
+        reason: unknownPathMessage(await describeUnreadable(stat.unreadable), "it"),
+      });
     } else if (stat.exists && stat.isDirectory) {
       directories.found.push(path);
     }

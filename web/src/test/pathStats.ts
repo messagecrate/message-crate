@@ -48,10 +48,10 @@ export const PERMISSION_DENIED: PathUnreadable = {
   kind: "permission_denied",
   reason: "Operation not permitted (os error 1)",
 };
-/** A path the app is not allowed to read, such as one macOS protects until the app has Full Disk Access. */
+/** A path the app is not allowed to read on a Mac, such as one macOS protects until the app has Full Disk Access. */
 export const DENIED_STAT: ImportPathStat = {
   exists: false,
   isFile: false,
   isDirectory: false,
-  unreadable: PERMISSION_DENIED,
+  unreadable: { ...PERMISSION_DENIED, kind: "permission_denied", os: "macos" },
 };
