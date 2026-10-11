@@ -97,6 +97,9 @@ let auth: { token: string | null; accountId: number | null } = {
   accountId: 1,
 };
 
+/** What `fakeDeps`'s clock last read. */
+let clock = 0;
+
 /**
  * What the run works through, as fakes: the stubs above stand in for the
  * desktop app's commands and the server's routes, and the session is `auth`.
@@ -133,7 +136,8 @@ function fakeDeps(store: ImportRunStore): ImportRunDeps {
       baseUrl: () => "http://127.0.0.1:8080",
     },
     store,
-    now: () => performance.now(),
+    // A clock that moves 1 ms per reading, so no timing depends on how fast the test runs.
+    now: () => ++clock,
   };
 }
 

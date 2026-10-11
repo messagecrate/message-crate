@@ -33,8 +33,13 @@ export type { ImportPhase, ImportStep } from "./importProgressState";
 /**
  * What the app's Import Run works through: the desktop app's commands, the
  * server's routes and the session logged in now, and the one store the
- * screen and the sidebar read. Each call reaches its module when it is made,
- * not when this is built.
+ * screen and the sidebar read.
+ *
+ * Each entry calls its import when the run calls it, rather than holding the
+ * import itself, so building this reads no export. Tests that load this file
+ * with a `vi.mock` of `lib/tauri` giving only the exports they use
+ * (`logoutDuringUpload.test.tsx`, `ImportScreen.test.tsx`) would otherwise
+ * fail at load, because Vitest throws on reading an export its mock lacks.
  */
 const appDeps: ImportRunDeps = {
   desktop: {
