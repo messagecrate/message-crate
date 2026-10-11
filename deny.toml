@@ -12,8 +12,9 @@ all-features = false
 [advisories]
 # In cargo-deny >= 0.18 vulnerability advisories always fail the check and
 # unmaintained/unsound are scopes (default: check all), so specific findings
-# can only be silenced with `ignore`. An entry there must be deliberate; a new
-# advisory still fails the gate until it is fixed or ignored here.
+# can only be silenced with `ignore`. Every entry in `ignore` must be
+# deliberate and carry its reason; a new advisory still fails the gate until
+# it is fixed or added to `ignore`.
 
 ignore = []
 
