@@ -1037,10 +1037,10 @@ pub(crate) const PACKAGED_DESKTOP_ORIGINS: &[&str] = &[
 ];
 
 /// Build the Cross-Origin Resource Sharing (CORS) layer from
-/// `[server].cors_origins`. CORS is the browser rule that decides which other
-/// websites may call this API.
+/// `[server] cors_origins` and each `--cors-origin`. CORS is the browser rule
+/// that decides which other websites may call this API.
 ///
-/// - `["*"]` → fully permissive (local debugging only), with a `WARN` line
+/// - a `*` anywhere in the list → fully permissive (local debugging only), with a `WARN` line
 ///   in the server's log as it starts, since any website a person on the
 ///   network visits can then call the routes a stranger may call (#2218)
 /// - otherwise → exact origin allow list, always including
@@ -1052,7 +1052,7 @@ pub(crate) const PACKAGED_DESKTOP_ORIGINS: &[&str] = &[
 fn build_cors_layer(origins: &[String]) -> CorsLayer {
     if origins.iter().any(|o| o.trim() == "*") {
         tracing::warn!(
-            "The CORS origins in cors_origins or --cors-origin include \"*\", so any website can call this server through a visitor's browser; list the origins that need it instead"
+            "cors_origins in the config's [server] section, or a --cors-origin flag, lists \"*\", so any website can call this server through a visitor's browser; list the origins that need it instead"
         );
         return CorsLayer::permissive();
     }

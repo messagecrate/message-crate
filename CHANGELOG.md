@@ -907,8 +907,8 @@ released versions carry their date on the heading.
   browser: to try logins, to register while registration is open, and to
   claim a server nobody owns yet. Until now the server started with it and
   wrote nothing about it. It now writes a warning to its log as it starts,
-  naming the setting, whether it runs in Docker or the desktop app starts
-  it (#2218).
+  naming the setting and the command-line option that can add it, whether
+  it runs in Docker or the desktop app starts it (#2218).
 
 - 2026-10-11: **The server will not publish its own data as the website.**
   The server shows everything in its website directory to anyone who can
