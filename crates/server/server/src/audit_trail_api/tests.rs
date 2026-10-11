@@ -218,15 +218,15 @@ async fn a_refused_login_for_an_unknown_username_is_kept_ninety_days() {
     assert_eq!(own[0]["reason"], "wrong_password");
     assert!(own.iter().all(|item| item["username"] == "alice"));
 
-    // Ninety-one days on, the next login trims the stranger's refusal and
-    // keeps alice's.
-    let long_ago = (chrono::Utc::now() - chrono::Duration::days(91)).to_rfc3339();
+    // Moved back to the year 2000, far past the 90 days a refusal is kept,
+    // the next login trims the stranger's refusal and keeps alice's.
+    let long_ago = "2000-01-01T00:00:00+00:00";
     with_trigger_lifted(
         &mut *fixture.conn().await,
         "audit_entries_never_edited",
         async |conn| {
             sqlx::query("UPDATE audit_entries SET at = $1 WHERE action = 'login_refused'")
-                .bind(&long_ago)
+                .bind(long_ago)
                 .execute(conn)
                 .await
                 .unwrap();
@@ -467,9 +467,10 @@ async fn a_session_that_ran_out_reads_as_expired() {
     let state = &fixture.state;
     let owner = claim_as_owner(state, "keeper", PASSWORD).await;
     let alice = register_via_api(state, "alice", PASSWORD).await;
-    // Registered thirty-one days ago, so the Session ran out a day ago.
-    let registered = (chrono::Utc::now() - chrono::Duration::days(31)).to_rfc3339();
-    let a_day_ago = (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339();
+    // Registered on 1 January 2000, so the Session ran out on 31 January
+    // 2000, long before any day this test runs on.
+    let registered = "2000-01-01T00:00:00+00:00";
+    let ran_out = "2000-01-31T00:00:00+00:00";
     with_trigger_lifted(
         &mut *fixture.conn().await,
         "audit_entries_never_edited",
@@ -479,8 +480,8 @@ async fn a_session_that_ran_out_reads_as_expired() {
                     session_expires_at = CASE WHEN action = 'logged_in' THEN $2 END
              WHERE account_id = $3",
             )
-            .bind(&registered)
-            .bind(&a_day_ago)
+            .bind(registered)
+            .bind(ran_out)
             .bind(alice.account_id)
             .execute(conn)
             .await
@@ -496,7 +497,7 @@ async fn a_session_that_ran_out_reads_as_expired() {
         ["session_ended", "logged_in", "account_created"]
     );
     assert_eq!(items[0]["reason"], "expired");
-    assert_eq!(items[0]["at"], a_day_ago);
+    assert_eq!(items[0]["at"], ran_out);
 }
 
 /// The owner's changes to an account are each recorded once, with what

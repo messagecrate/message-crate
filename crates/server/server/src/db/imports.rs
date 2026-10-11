@@ -753,29 +753,43 @@ pub async fn discard_running_import(
     Ok(Some(running))
 }
 
-/// Finish a running import: prefer client counts, else derive from linked
-/// messages. A run that has already finished is its permanent record and is
-/// never rewritten, so completing one is
-/// [`ImportLookupError::InvalidRun`] (`409`), checked first and again by
-/// the update itself, so two completions racing cannot both land.
-///
-/// # Errors
-///
-/// [`ImportLookupError::NotFound`] when the account owns no such import,
-/// [`ImportLookupError::InvalidRun`] when it is no longer running,
-/// and [`ImportLookupError::Db`] when a statement fails.
+/// [`complete_import_at`] now, for a test that does not care which day the
+/// run finished on.
+#[cfg(test)]
 pub async fn complete_import(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
     args: &CompleteImportArgs,
 ) -> std::result::Result<ImportRow, ImportLookupError> {
+    complete_import_at(conn, account_id, import_id, args, Utc::now()).await
+}
+
+/// Finish a running import at the instant `now`: prefer client counts, else
+/// derive from linked messages. A run that has already finished is its
+/// permanent record and is never rewritten, so completing one is
+/// [`ImportLookupError::InvalidRun`] (`409`), checked first and again by
+/// the update itself, so two completions racing cannot both land. The
+/// caller passes the instant, so a test names the day the run finished on.
+///
+/// # Errors
+///
+/// [`ImportLookupError::NotFound`] when the account owns no such import,
+/// [`ImportLookupError::InvalidRun`] when it is no longer running,
+/// and [`ImportLookupError::Db`] when a statement fails.
+pub(crate) async fn complete_import_at(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    import_id: i64,
+    args: &CompleteImportArgs,
+    now: chrono::DateTime<Utc>,
+) -> std::result::Result<ImportRow, ImportLookupError> {
     // The check, the counts, the update and the issue inserts are one write
     // transaction: the counts are of the run the update closes, and a failed
     // commit rolls back (sqlx drops the transaction).
     let mut tx = begin_write(conn).await?;
     let existing = require_running_import(&mut tx, account_id, import_id).await?;
-    let finished_at = Utc::now().to_rfc3339();
+    let finished_at = now.to_rfc3339();
     let status = args.status.as_str();
 
     let message_count = if let Some(n) = args.message_count {

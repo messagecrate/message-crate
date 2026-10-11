@@ -210,14 +210,42 @@ async fn complete_run(state: &crate::server::AppState, token: &str, import_id: i
     finished_at[..10].to_string()
 }
 
-/// Create an Import Run for `source`, post `body` as its one batch, complete
-/// it, and hand back the run's id and the day it finished.
-pub(super) async fn completed_run(
+/// Complete `import_id` at noon UTC on `day`, as the route does but at an
+/// instant the test names, so its shortcuts are named after `day` at any
+/// hour the test runs.
+pub(super) async fn complete_run_on(
+    state: &crate::server::AppState,
+    import_id: i64,
+    day: chrono::NaiveDate,
+) {
+    let mut conn = state.db.acquire().await.unwrap();
+    let account: i64 = sqlx::query_scalar("SELECT account_id FROM imports WHERE id = $1")
+        .bind(import_id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    super::complete_run_at(
+        &mut conn,
+        account,
+        import_id,
+        &CompleteImportArgs {
+            status: "completed".into(),
+            ..Default::default()
+        },
+        day.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+    )
+    .await
+    .unwrap();
+}
+
+/// Create an Import Run for `source`, post `body` as its one batch, and hand
+/// back the run's id, still running.
+async fn posted_run(
     state: &crate::server::AppState,
     token: &str,
     source: &str,
     body: String,
-) -> (i64, String) {
+) -> i64 {
     let path = batches_path(state, token, source).await;
     let import_id: i64 = path
         .trim_start_matches("/v1/imports/")
@@ -227,8 +255,34 @@ pub(super) async fn completed_run(
     let (status, text) =
         crate::test_support::post_raw(state, &path, token, "application/jsonl", body).await;
     assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+    import_id
+}
+
+/// Create an Import Run for `source`, post `body` as its one batch, complete
+/// it through the route, and hand back the run's id and the day it finished.
+pub(super) async fn completed_run(
+    state: &crate::server::AppState,
+    token: &str,
+    source: &str,
+    body: String,
+) -> (i64, String) {
+    let import_id = posted_run(state, token, source, body).await;
     let date = complete_run(state, token, import_id).await;
     (import_id, date)
+}
+
+/// Create an Import Run for `source`, post `body` as its one batch, complete
+/// it on `day`, and hand back the run's id.
+pub(super) async fn completed_run_on(
+    state: &crate::server::AppState,
+    token: &str,
+    source: &str,
+    body: String,
+    day: chrono::NaiveDate,
+) -> i64 {
+    let import_id = posted_run(state, token, source, body).await;
+    complete_run_on(state, import_id, day).await;
+    import_id
 }
 
 /// Each conversation of `TEST_ACCOUNT` with its number of participant rows,
