@@ -18,6 +18,8 @@
 # after Rust changes.
 #
 # Writes config/config.toml from the example only when the file is missing.
+# --owner refuses to run unless that config binds a loopback address, so the
+# well-known admin/admin password is never reachable from another machine.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -44,7 +46,9 @@ Usage: $(basename "$0") [--reset | --reset-demo [--large]] [--owner] [--sqlweb] 
   --owner       Claim the Message Crate as admin/admin. Combine with --reset
                 for an empty claimed Message Crate; without it, --reset
                 or --reset-demo leaves it unclaimed so the Create Owner
-                screen is reachable.
+                screen is reachable. Refused unless ${CONFIG} binds
+                127.0.0.1, localhost or [::1], written as one
+                bind = "..." line under [server].
   --sqlweb      Start sqlite-web on http://127.0.0.1:8081 (needs sqlite_web on PATH)
   --release     Build and run the optimized binary (seed and serve)
   -h, --help
@@ -120,6 +124,62 @@ write_host_dev_config() {
     "${CONFIG_EXAMPLE}" >"${CONFIG}"
 }
 
+# The value of `bind = "..."` under a plain [server] header in ${CONFIG}, or
+# nothing when no such line exists or its value spans lines.
+config_bind() {
+  local value
+  value="$(awk '
+    /^[[:space:]]*\[/ { in_server = ($0 ~ /^[[:space:]]*\[server\][[:space:]]*(#.*)?$/); next }
+    in_server && /^[[:space:]]*bind[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*/, "")
+      sub(/[[:space:]]*#.*$/, "")
+      gsub(/["\047]/, "")
+      print
+      exit
+    }
+  ' "${CONFIG}")"
+  echo "${value}"
+}
+
+# Prints why --owner is refused, what to write instead, and exits.
+refuse_owner() {
+  echo "error: --owner sets the password admin/admin, but $1" >&2
+  echo "       Write bind = \"127.0.0.1:<port>\", \"localhost:<port>\" or \"[::1]:<port>\"" >&2
+  echo "       on one line under [server], or leave out --owner and create the owner" >&2
+  echo "       in the web UI." >&2
+  exit 1
+}
+
+# --owner sets a password everyone knows, so it is refused when the server
+# would listen on an address other machines can reach. TOML can spell the
+# key in ways config_bind does not read (a dotted key, an inline table, a
+# quoted header or key, an escape sequence), so when config_bind finds
+# nothing, a bind key in any of those forms, or any \u or \U escape outside
+# a comment, is refused rather than guessed at.
+require_loopback_bind_for_owner() {
+  local bind host
+  bind="$(config_bind)"
+  if [[ -z "${bind}" ]]; then
+    if grep -Eq '^[^#]*(^|[[:space:].{,"'\''])bind["'\'']?[[:space:]]*=' "${CONFIG}" \
+      || grep -Eq '^[^#]*\\[uU]' "${CONFIG}"; then
+      refuse_owner "the [server] bind in ${CONFIG} is written in a form this script cannot read."
+    fi
+    # The server's default when [server] bind is absent: default_server_bind
+    # in crates/server/server/src/config.rs. Change the two together.
+    bind="127.0.0.1:8080"
+  fi
+  if [[ "${bind}" == \[* ]]; then
+    host="${bind#\[}"
+    host="${host%%\]*}"
+  else
+    host="${bind%:*}"
+  fi
+  case "${host}" in
+    127.0.0.1 | localhost | ::1) ;;
+    *) refuse_owner "${CONFIG} binds ${bind}, which other machines can reach." ;;
+  esac
+}
+
 stop_sqlweb() {
   if [[ -n "${SQLWEB_PID}" ]]; then
     kill "${SQLWEB_PID}" 2>/dev/null || true
@@ -176,6 +236,11 @@ mkdir -p data
 if [[ ! -f "${CONFIG}" ]]; then
   echo "Writing ${CONFIG} from ${CONFIG_EXAMPLE} (CORS for :5173 enabled)."
   write_host_dev_config
+fi
+
+# Checked before anything is wiped, so a refused --owner leaves data/ as it is.
+if [[ "${OWNER}" -eq 1 ]]; then
+  require_loopback_bind_for_owner
 fi
 
 if [[ "${RESET}" -eq 1 || "${DEMO}" -eq 1 ]]; then
