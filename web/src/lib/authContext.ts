@@ -33,7 +33,7 @@ interface AuthContextValue extends AuthState {
    * `deletedAccountDirectories` is given when the account has just been deleted:
    * the directories of its Import Runs on this computer, the ones found deleted
    * once the session is revoked. One that cannot be deleted, and one Message
-   * Crate may not read, is named in a notice.
+   * Crate may not read, are named in a notice.
    */
   logout: (options?: {
     ask?: boolean;

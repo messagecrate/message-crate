@@ -59,8 +59,16 @@ export default function LogoutDialog() {
   }
   if (state?.kind === "undeletedDirectories") {
     return (
-      <Notice title="Directories of Import Runs left on this computer" onDismiss={dismiss}>
+      <Notice
+        title={
+          state.directories.length > 0
+            ? "Directories of Import Runs left on this computer"
+            : "Directories of Import Runs that may be left on this computer"
+        }
+        onDismiss={dismiss}
+      >
         <UndeletedDirectories directories={state.directories} />
+        <UnreadableDirectories directories={state.unreadable} />
       </Notice>
     );
   }
@@ -110,11 +118,30 @@ function Notice({
 
 /** Names each Import Run's directory a deleted account left behind, and why. */
 function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
+  if (directories.length === 0) return null;
   return (
     <>
       <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
         Message Crate could not delete these directories of the deleted account's Import Runs.
         Delete them by hand to free the space they take:
+      </p>
+      <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
+    </>
+  );
+}
+
+/**
+ * Names each Import Run's directory of a deleted account that Message Crate
+ * may not read, and why. It may hold the account's data, or the run may have
+ * been on another computer, so the notice does not say it is there.
+ */
+function UnreadableDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
+  if (directories.length === 0) return null;
+  return (
+    <>
+      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
+        Message Crate could not tell whether these directories of the deleted account's Import Runs
+        are on this computer. If they are, delete them by hand:
       </p>
       <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
     </>

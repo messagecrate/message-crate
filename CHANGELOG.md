@@ -373,15 +373,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-11: **Deleting your account names an Import Run's directory the
-  desktop app may not read.** When you delete your account in the desktop
-  app, it deletes the directories of the account's Import Runs on this
+- 2026-10-11: **Deleting an account names an Import Run's directory the
+  desktop app may not read.** When an account deletes itself in the desktop
+  app, the app deletes the directories of the account's Import Runs on this
   computer. A directory the system would not let Message Crate read, such
   as one macOS protects until the app has Full Disk Access, was skipped
-  without a word and stayed on disk with the deleted account's messages.
-  It is now listed after the account is deleted, with the directories that
-  could not be deleted, and with what the system said, so you can delete
-  it by hand (#2651).
+  without a word and could stay on disk with the deleted account's
+  messages. It is now listed once the account is deleted, with what the
+  system said and that it may be on this computer, so it can be deleted by
+  hand (#2651).
 
 - 2026-10-11: **Settings says why a downloaded tool found in the Tools
   Directory could not be made to run.** When the desktop app finds ffmpeg,

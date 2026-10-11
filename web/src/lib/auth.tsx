@@ -268,13 +268,11 @@ function SessionProvider({ children }: { children: ReactNode }) {
         // token is refused, so that is soon.
         await pause.ended;
         // One Message Crate may not read cannot be deleted either, so it is
-        // named with the rest.
-        const undeleted = [
-          ...deletedAccountDirectories.unreadable,
-          ...(await deleteRunDirectories(deletedAccountDirectories.found)),
-        ];
-        if (undeleted.length > 0) {
-          setPrompt({ kind: "undeletedDirectories", directories: undeleted });
+        // named too, apart from the rest: it may not be on this computer.
+        const undeleted = await deleteRunDirectories(deletedAccountDirectories.found);
+        const { unreadable } = deletedAccountDirectories;
+        if (undeleted.length > 0 || unreadable.length > 0) {
+          setPrompt({ kind: "undeletedDirectories", directories: undeleted, unreadable });
         }
       } else if (!paused) {
         setPrompt({ kind: "notPaused" });

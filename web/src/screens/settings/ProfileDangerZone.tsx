@@ -28,9 +28,10 @@ const dangerZoneButtonClass = `${dangerButtonClass} !box-border !w-auto !min-w-[
  * the directories of the account's Import Runs on this computer, which the dialog names
  * first: the server deletes the account's Import Runs with it, so nothing
  * would offer those directories again. One the app may not read is named,
- * with the system's reason, once the account is deleted. Given `managedAccountId`, the owner is deleting someone
- * else's: no password is asked, because the owner does not know it, and the
- * owner lands back on User Accounts. The owner deletes on the strength of the
+ * with the system's reason, once the account is deleted. Given
+ * `managedAccountId`, the owner is deleting someone else's: no password is
+ * asked, because the owner does not know it, and the owner lands back on
+ * User Accounts. The owner deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
  *
  * `canDelete` is the account's own `delete` permission. Deleting the account
@@ -84,9 +85,9 @@ export function ProfileDangerZone({
   );
   // A look that failed deletes nothing, as the dialog says, even with an
   // earlier list still cached.
-  const directoriesFound =
-    checkDirectories && !runDirectories.isError ? runDirectories.data : undefined;
-  const directoriesToDelete = directoriesFound ?? NO_DIRECTORIES;
+  const runDirectoriesHere =
+    (checkDirectories && !runDirectories.isError ? runDirectories.data : undefined) ??
+    NO_DIRECTORIES;
 
   const deleteAllMessages = async () => {
     if (messagesFixed || notPermitted) return;
@@ -123,7 +124,7 @@ export function ProfileDangerZone({
       // named are deleted once the session is revoked.
       void logout({
         ask: false,
-        deletedAccountDirectories: directoriesToDelete,
+        deletedAccountDirectories: runDirectoriesHere,
       });
     } catch (e) {
       setDangerError(errorLine(e));
@@ -258,7 +259,7 @@ export function ProfileDangerZone({
                   // A look still under way holds the confirm, even with an earlier
                   // list cached: that list may miss a directory made since.
                   checking: runDirectories.isFetching,
-                  paths: directoriesToDelete.found,
+                  paths: runDirectoriesHere.found,
                   error: runDirectories.error?.message ?? "",
                 }
               : undefined

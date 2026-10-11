@@ -425,15 +425,22 @@ describe("logging out during an Upload", () => {
             {
               path: "/Users/sam/Documents/staging-iphone",
               reason:
-                "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+                "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.",
             },
           ],
         },
       }),
     );
 
-    const notice = await screen.findByRole("dialog");
-    expect(notice).toHaveTextContent("Message Crate could not delete");
+    // It may not be on this computer at all, so the notice does not say it
+    // could not delete it.
+    const notice = await screen.findByRole("dialog", {
+      name: "Directories of Import Runs that may be left on this computer",
+    });
+    expect(notice).not.toHaveTextContent("Message Crate could not delete");
+    expect(notice).toHaveTextContent(
+      "Message Crate could not tell whether these directories of the deleted account's Import Runs are on this computer.",
+    );
     expect(notice).toHaveTextContent(
       "/Users/sam/Documents/staging-iphone: Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
     );

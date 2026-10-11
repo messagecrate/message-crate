@@ -18,8 +18,16 @@ export type LogoutPromptState =
   | { kind: "pausing"; accountDeleted: boolean }
   /** Logged out before the Upload had paused; it resumes from what it sent. */
   | { kind: "notPaused" }
-  /** Directories of a deleted account's Import Runs that could not be deleted. */
-  | { kind: "undeletedDirectories"; directories: readonly UndeletedDirectory[] };
+  /**
+   * Directories of a deleted account's Import Runs that could not be deleted,
+   * and `unreadable`, the ones Message Crate may not read, which may not be
+   * on this computer at all.
+   */
+  | {
+      kind: "undeletedDirectories";
+      directories: readonly UndeletedDirectory[];
+      unreadable: readonly UndeletedDirectory[];
+    };
 
 interface LogoutPrompt {
   /** What to show, or null when logging out has nothing to show. */

@@ -1,4 +1,5 @@
 import { errorText } from "./apiErrorMessage";
+import { unknownPathMessage } from "./pathChecks";
 import {
   discardImport,
   listEveryImport,
@@ -6,7 +7,7 @@ import {
   setImportStage as setStage,
 } from "./serverApi";
 import type { components } from "./serverApi.types";
-import { invokeDeleteRunDir, invokePathStat, type PathStat, type PathUnreadable } from "./tauri";
+import { invokeDeleteRunDir, invokePathStat, type PathStat } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
@@ -59,9 +60,10 @@ export type UndeletedDirectory = { path: string; reason: string };
 /**
  * The directories of the account's Import Runs on this computer: `found`,
  * the ones to delete with the account, and `unreadable`, the ones the
- * operating system would not let Message Crate read. Those may be there, and
- * Message Crate cannot delete them either, so they are named with the
- * system's reason once the account is deleted (#2651).
+ * operating system would not let Message Crate read. Those may be here with
+ * the account's data, or the run may have been on another computer; Message
+ * Crate cannot tell, and cannot delete them either, so they are named with
+ * the system's reason once the account is deleted (#2651).
  */
 export type AccountRunDirectories = {
   found: string[];
@@ -87,20 +89,12 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<Accou
   const directories: AccountRunDirectories = { found: [], unreadable: [] };
   for (const { path, stat } of stats) {
     if (stat.unreadable) {
-      directories.unreadable.push({ path, reason: unreadableReason(stat.unreadable) });
+      directories.unreadable.push({ path, reason: unknownPathMessage(stat.unreadable, "it") });
     } else if (stat.exists && stat.isDirectory) {
       directories.found.push(path);
     }
   }
   return directories;
-}
-
-/** Why Message Crate could not read a run directory, in the system's own words. */
-function unreadableReason({ kind, reason }: PathUnreadable): string {
-  const said = reason.trim().replace(/\.$/, "");
-  return kind === "permission_denied"
-    ? `Message Crate isn't allowed to read it. The system says: ${said}.`
-    : `Message Crate could not read it. The system says: ${said}.`;
 }
 
 /**

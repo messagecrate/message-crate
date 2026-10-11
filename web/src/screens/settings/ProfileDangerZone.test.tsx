@@ -54,7 +54,7 @@ afterEach(cleanup);
 const UNREADABLE_DIRECTORY = {
   path: "/Users/carol/Documents/staging",
   reason:
-    "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+    "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1). Give Message Crate access to it, such as Full Disk Access in System Settings on a Mac.",
 };
 
 describe("ProfileDangerZone", () => {
