@@ -300,8 +300,8 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
         .unwrap();
 
     let listed: Vec<i64> = imports.iter().map(|run| run.row.id).collect();
-    started.reverse();
-    assert_eq!(listed, started);
+    let oldest_first_ids: Vec<i64> = started.iter().rev().copied().collect();
+    assert_eq!(listed, oldest_first_ids);
 }
 
 /// The account's running Import Run through the list, as the desktop app
