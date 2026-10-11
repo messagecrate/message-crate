@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import { textInputClass } from "../../components/TextField";
-import { errorText, sentenceCase } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { useRouteCache } from "../../lib/routeQuery";
 import { changePassword, setAccountPassword } from "../../lib/serverApi";
@@ -73,7 +73,7 @@ export function ChangePasswordSection({
       setNewPw("");
       setConfirmPw("");
     } catch (e) {
-      setPwMsg(sentenceCase(errorText(e)));
+      setPwMsg(errorLine(e));
     }
   };
 

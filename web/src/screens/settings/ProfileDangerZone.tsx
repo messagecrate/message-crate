@@ -4,7 +4,7 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
-import { errorText, sentenceCase } from "../../lib/apiErrorMessage";
+import { errorLine } from "../../lib/apiErrorMessage";
 import { useAuth } from "../../lib/authContext";
 import { accountRunDirectories } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
@@ -92,7 +92,7 @@ export function ProfileDangerZone({
       if (managed) await removeManagedMessages.mutateAsync(managedAccountId);
       else await deleteAllMessagesRoute({ confirm: true });
     } catch (e) {
-      setDangerError(sentenceCase(errorText(e)));
+      setDangerError(errorLine(e));
     } finally {
       // The owner's deletion is a mutation that marks the cache stale itself.
       if (!managed) cache.invalidateAccount();
@@ -122,7 +122,7 @@ export function ProfileDangerZone({
         deletedAccountDirectories: directoriesToDelete,
       });
     } catch (e) {
-      setDangerError(sentenceCase(errorText(e)));
+      setDangerError(errorLine(e));
     } finally {
       setDeleting(false);
     }

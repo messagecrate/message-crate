@@ -439,7 +439,7 @@ such as a header (`Content-Type must be text/csv`) or an abbreviation
 on its screen, because it may show the sentence alone or joined with others.
 The web app joins a validation failure's `errors` with `; ` into one line, and
 a screen that shows a sentence on a line of its own capitalises its first
-letter with `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
+letter with `errorLine` or `sentenceCase` (`web/src/lib/apiErrorMessage.ts`).
 
 `type` is the URL of a page under
 `messagecrate.app/docs/developer/reference/errors/`, one page per problem type.
