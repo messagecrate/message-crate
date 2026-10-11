@@ -26,7 +26,7 @@ vi.mock("../../lib/importRun", async (importOriginal) => ({
   accountRunDirectories: (...a: unknown[]) => accountRunDirectories(...a),
 }));
 
-vi.mock("../../lib/auth", () => ({
+vi.mock("../../lib/authContext", () => ({
   useAuth: () => ({ accountId: 7, logout }),
 }));
 

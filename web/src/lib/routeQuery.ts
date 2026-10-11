@@ -36,7 +36,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 import { ApiError } from "./api";
-import { useAuth } from "./auth";
+import { useAuth } from "./authContext";
 import { PAGE_SIZE_FILL, PAGE_SIZE_FIRST, PAGE_SIZE_MAX } from "./listPaging";
 import {
   type AccountScope,

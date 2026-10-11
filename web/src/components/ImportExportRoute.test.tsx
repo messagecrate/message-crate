@@ -21,7 +21,7 @@ vi.mock("../lib/tauri-check", () => ({ isTauri: () => state.isTauri }));
 vi.mock("../lib/useAccountProfile", () => ({
   useAccountProfile: () => ({ profile: state.profile, loading: state.loading, error: "" }),
 }));
-vi.mock("../lib/auth", () => ({
+vi.mock("../lib/authContext", () => ({
   useAuth: () => ({ logout: state.logout, accountId: state.accountId }),
 }));
 

@@ -19,7 +19,7 @@ import { OwnerAccountsPanel } from "./OwnerAccountsPanel";
 
 const listAccounts = vi.hoisted(() => vi.fn());
 
-vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/serverApi")>()),

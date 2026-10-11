@@ -1,4 +1,14 @@
 //! Path helpers the Settings and Import screens use.
+//!
+//! [`path_stat`], [`ios_backup_encrypted`] and [`imessage_backup_identities`]
+//! read any path the window names, because the Import screen checks a path the
+//! person typed, which can be anywhere. None of them opens that path for writing.
+//! [`imessage_backup_identities`] starts the Apple Messages Reader, which reads
+//! the backup. For an encrypted backup, the Reader decrypts `chat.db` into the
+//! Scratch Directory, never into the backup. A script in the window could
+//! use the three commands to look around the file system, but the window runs
+//! only the app's own scripts, under the Content Security Policy in
+//! `src-tauri/tauri.conf.json` (`app.security.csp`).
 
 use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
@@ -111,6 +121,8 @@ pub(crate) fn path_stat_inner(path: &str) -> PathStat {
 }
 
 /// Return whether a path exists and whether it is a file or directory.
+///
+/// Reads any path the window names. The [module docs](self) say why.
 #[tauri::command]
 pub fn path_stat(path: String) -> PathStat {
     path_stat_inner(&path)
@@ -118,6 +130,8 @@ pub fn path_stat(path: String) -> PathStat {
 
 /// Read `Manifest.plist` and return whether an iOS backup directory is
 /// encrypted. `None` when the path is blank or is not an iOS backup.
+///
+/// Reads any path the window names. The [module docs](self) say why.
 #[tauri::command]
 pub fn ios_backup_encrypted(path: String) -> Option<bool> {
     let trimmed = path.trim();
@@ -129,6 +143,8 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 
 /// Addresses an iMessage backup's device sent from, for the Import
 /// identity check.
+///
+/// Reads any path the window names. The [module docs](self) say why.
 ///
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
 /// decrypts `chat.db` into a directory under the Scratch Directory, which the

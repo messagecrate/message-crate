@@ -21,7 +21,7 @@ import { groupListQuery } from "../lib/contactGroups";
 import { mockedAuth, Providers } from "../test/providers";
 import ContactList from "./ContactList";
 
-vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+vi.mock("../lib/authContext", () => ({ useAuth: () => mockedAuth }));
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
 vi.mock("../lib/tauri-check", () => ({ isTauri: () => tauriMock.current }));

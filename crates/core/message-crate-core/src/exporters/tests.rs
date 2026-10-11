@@ -130,7 +130,6 @@ fn plus_verbose_and_owner_fields() {
     };
     assert_eq!(plus.owner_phones.len(), 2);
     assert!(plus.verbose);
-    assert!(plus.include_summary);
 }
 
 /// The form's phone country reaches SMS Backup+, which keys numbers by

@@ -68,8 +68,8 @@ export function renderWithProviders(ui: ReactElement, options?: RenderOptions): 
 }
 
 /**
- * What `vi.mock("<path>/auth")` should return so a server query has an account
- * to name its cache entry after.
+ * What the mocked `useAuth` from `vi.mock("<path>/authContext")` should
+ * return, so a server query has an account to name its cache entry after.
  *
  * Any id works; what matters is that it is stable within a test, since a
  * changing account id is a different cache entry by design.

@@ -82,7 +82,8 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => true,
 }));
 
-const { AuthProvider, useAuth } = await import("../../lib/auth");
+const { AuthProvider } = await import("../../lib/auth");
+const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
 const { useImportJob, resetImportRun } = await import("./useImportJob");
 
