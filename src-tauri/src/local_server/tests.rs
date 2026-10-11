@@ -99,14 +99,14 @@ fn settled(server: &LocalServer) -> Status {
     }
 }
 
-/// A launch with its Data Directory and its website side by side in `dir`,
-/// as the packaged app keeps them apart: `serve` refuses a website inside the
-/// Data Directory, or the reverse (#2682).
-fn launch_at(address: SocketAddr, program: &Path, dir: &Path) -> Launch {
+/// A launch with its Data Directory and its website side by side in
+/// `parent`, as the packaged app keeps them apart: `serve` refuses a website
+/// inside the Data Directory, or the reverse (#2682).
+fn launch_at(address: SocketAddr, program: &Path, parent: &Path) -> Launch {
     Launch {
         program: program.to_path_buf(),
-        data_dir: dir.join("data"),
-        static_dir: dir.join("website"),
+        data_dir: parent.join("data"),
+        static_dir: parent.join("website"),
         address,
         open_to_network: false,
         cors_origins: Vec::new(),
