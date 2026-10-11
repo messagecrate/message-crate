@@ -348,6 +348,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **A new account can no longer take a username that looks
+  like another account's.** A username could hold letters from any script,
+  so `аdmin` written with a Cyrillic `а` made a second account that read
+  the same as `admin` in User Accounts, in the Audit Trail and on the login
+  card. A username now holds only the letters A to Z, digits, `_`, `-` and
+  `.`, and the message for a refused name says so. A preferred name still
+  takes a name in any script. An account made before this change keeps its
+  username and still logs in with it (#2229).
+
 - 2026-10-11: **The login screen no longer reads Disconnected for a moment
   while an import runs.** An import can keep the server's database busy for
   longer than its health check waits, so one check could fail though the

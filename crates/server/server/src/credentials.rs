@@ -236,14 +236,20 @@ pub(crate) fn normalize_username(raw: &str) -> String {
     raw.trim().to_string()
 }
 
-/// True for 1 to 128 characters of letters, digits, `_`, `-`, or `.`.
+/// True for 1 to 128 characters of ASCII letters, digits, `_`, `-`, or `.`.
+///
+/// ASCII only, because the account lookup (`COLLATE NOCASE`) and
+/// [`unknown_username_bucket`] fold ASCII letters only: a letter from another
+/// script would make an account whose name looks like another's, such as
+/// `аdmin` with a Cyrillic `а` beside `admin`. A preferred name carries a
+/// person's name in any script.
 pub(crate) fn is_valid_username(s: &str) -> bool {
     let s = s.trim();
-    if s.is_empty() || s.chars().count() > 128 {
+    if s.is_empty() || s.len() > 128 {
         return false;
     }
     s.chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
 /// The trimmed username, or the `validation-failed` every route that takes
@@ -252,7 +258,7 @@ pub(crate) fn require_valid_username(raw: &str) -> Result<String, ApiError> {
     let username = normalize_username(raw);
     if !is_valid_username(&username) {
         return Err(ApiError::validation(
-            "username must be 1–128 chars (alphanumeric, _, -, .)",
+            "username must be 1–128 characters of ASCII letters, digits, _, - or .",
         ));
     }
     Ok(username)

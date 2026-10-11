@@ -337,9 +337,6 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         "matt_beisser",
         "m",
         "user123",
-        // Letters outside ASCII are alphanumeric and allowed.
-        "mätt",
-        "матт",
     ] {
         assert!(is_valid_username(good), "{good:?} must be accepted");
     }
@@ -356,21 +353,20 @@ fn a_username_is_one_to_128_characters_of_a_known_set() {
         assert!(!is_valid_username(bad), "{bad:?} must be refused");
     }
 
+    // Only ASCII letters and digits, because the account lookup
+    // (`COLLATE NOCASE`) and the rate-limit bucket fold ASCII letters only.
+    // A letter from another script would make a second account whose name
+    // looks like an existing one: `аdmin` with a Cyrillic `а` beside `admin`.
+    for other_script in ["аdmin", "mätt", "матт", "ｍatt", "matt\u{0301}", "٣"] {
+        assert!(
+            !is_valid_username(other_script),
+            "{other_script:?} must be refused"
+        );
+    }
+
     // The length boundary, in both directions.
     assert!(is_valid_username(&"a".repeat(128)), "128 is allowed");
     assert!(!is_valid_username(&"a".repeat(129)), "129 is not");
-
-    // The limit counts characters, not bytes. A Cyrillic letter is two bytes
-    // in UTF-8, so a byte count refused a 65-letter Cyrillic name with a
-    // message saying 1–128 characters.
-    assert!(
-        is_valid_username(&"д".repeat(128)),
-        "128 Cyrillic letters are allowed"
-    );
-    assert!(
-        !is_valid_username(&"д".repeat(129)),
-        "129 Cyrillic letters are not"
-    );
 
     // Surrounding whitespace is trimmed before the rule is applied, so a
     // pasted name with a trailing newline is accepted and stored trimmed.
