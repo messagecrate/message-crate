@@ -29,19 +29,44 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}"
 
-WEBSITE=false
-served="the Demo Account"
-if [[ "${1:-}" == "--website" ]]; then
-  WEBSITE=true
-  served="the Demo Account and its website"
-  shift
-fi
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+usage() {
   echo "usage: $0 [--website] <image> [host-port]" >&2
   exit 2
+}
+
+# --website may come before, between or after the image and the port. Any
+# other argument that starts with - is refused, so a mistyped option is never
+# taken for the image or the port.
+WEBSITE=false
+served="the Demo Account"
+positional=()
+for arg in "$@"; do
+  case "${arg}" in
+    --website)
+      WEBSITE=true
+      served="the Demo Account and its website"
+      ;;
+    -*)
+      echo "$0: unknown option ${arg}" >&2
+      usage
+      ;;
+    *) positional+=("${arg}") ;;
+  esac
+done
+if [[ ${#positional[@]} -lt 1 || ${#positional[@]} -gt 2 ]]; then
+  usage
 fi
-IMAGE="$1"
-PORT="${2:-18080}"
+IMAGE="${positional[0]}"
+PORT="${positional[1]:-18080}"
+# A mistyped option without its dashes, such as "website", would otherwise
+# reach Compose as the port, and port 0 or one above 65535 would fail later
+# with a message that blames the image or the server instead.
+if [[ ! "${PORT}" =~ ^[0-9]{1,5}$ ]] || ((10#${PORT} < 1 || 10#${PORT} > 65535)); then
+  echo "$0: the host port must be a number from 1 to 65535, not ${PORT}" >&2
+  usage
+fi
+# Drop a leading zero, so Compose publishes the port the login uses.
+PORT=$((10#${PORT}))
 PROJECT="message-crate-compose-check"
 BASE="http://127.0.0.1:${PORT}"
 
