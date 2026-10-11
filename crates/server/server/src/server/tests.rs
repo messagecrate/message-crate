@@ -1486,13 +1486,21 @@ fn every_api_error_displays_its_detail_sentence() {
         "only JSON"
     );
     assert_eq!(
+        ApiError::RegistrationClosed("ask the owner for an account".into()).to_string(),
+        "ask the owner for an account"
+    );
+    assert_eq!(
+        ApiError::MediaLinkInvalid("the link has expired".into()).to_string(),
+        "the link has expired"
+    );
+    assert_eq!(
         ApiError::Internal(anyhow::anyhow!("disk full").context("stage conversation")).to_string(),
         "stage conversation: disk full"
     );
 }
 
 /// A variant that carries only a sentence answers with that sentence as the
-/// `detail`, and displays the same sentence.
+/// `detail`.
 #[test]
 fn every_message_variant_answers_its_sentence_as_the_detail() {
     let variants: Vec<fn(String) -> ApiError> = vec![
@@ -1522,7 +1530,6 @@ fn every_message_variant_answers_its_sentence_as_the_detail() {
             Some("the sentence"),
             "{error:?}"
         );
-        assert_eq!(error.to_string(), "the sentence", "{error:?}");
     }
 }
 
