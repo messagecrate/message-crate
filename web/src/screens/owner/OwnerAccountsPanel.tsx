@@ -17,6 +17,15 @@ function statusLabel(account: ManagedAccount): string {
   return account.disabled ? "Disabled" : "Active";
 }
 
+/**
+ * Whether the Status column marks the account as having no password. Anyone
+ * who knows its username logs in with an empty password. The Demo Account is
+ * left out: it has no password by design (ADR 0016).
+ */
+function opensWithoutPassword(account: ManagedAccount): boolean {
+  return !account.has_password && !account.is_demo;
+}
+
 /** Whether the search bar's words are in the account's username or preferred name. */
 function matches(account: ManagedAccount, needle: string): boolean {
   return (
@@ -29,6 +38,8 @@ function matches(account: ManagedAccount, needle: string): boolean {
  * The accounts of this Message Crate, the owner's own first.
  *
  * A row carries a username, a preferred name, a status and the last login.
+ * The status of an account with no password says so under it, so the owner
+ * sees every account open to an empty password.
  * The gear at the left of a row, shown while the pointer is in the row, opens
  * the account's Settings, which is where the rest is: the app it connects with
  * under Profile, what it holds under Storage, and its password, status and
@@ -92,7 +103,10 @@ export function OwnerAccountsPanel({ filter = "" }: { filter?: string }) {
                     ) : null}
                   </td>
                   <td className={account.disabled ? tdClass : tdMutedClass}>
-                    {statusLabel(account)}
+                    <div>{statusLabel(account)}</div>
+                    {opensWithoutPassword(account) ? (
+                      <div className="text-[0.75rem] text-warn-soft-text">No password</div>
+                    ) : null}
                   </td>
                   <td className={`${tdMutedClass} whitespace-nowrap`}>
                     {account.last_login_at ? formatDateTime(account.last_login_at) : "Never"}
