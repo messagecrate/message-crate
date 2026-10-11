@@ -12,6 +12,34 @@
 // load is a console error in Chromium, so a broken static/ bundle fails too.
 import { chromium } from "playwright";
 
+// A word of a shown name to search for, and the first name holding it. A
+// bare word on the Conversations list matches any name that contains it,
+// in any case (emit_text in crates/server/server/src/search/emit.rs), so a
+// word inside every shown name could narrow nothing. The word picked is the
+// one contained in the fewest shown names, and it must be missing from at
+// least one. Words are runs of letters and digits, so no punctuation reaches
+// the search syntax; words under three letters are skipped, as they sit
+// inside too many names to narrow anything.
+function narrowingTerm(titles) {
+  const lowered = titles.map((name) => name.toLowerCase());
+  let best = null;
+  for (const name of titles) {
+    for (const word of name.split(/[^\p{L}\p{N}]+/u)) {
+      if (word.length < 3) continue;
+      const holders = lowered.filter((other) => other.includes(word.toLowerCase()));
+      if (best === null || holders.length < best.holders) {
+        best = { term: word, title: name, holders: holders.length };
+      }
+    }
+  }
+  if (best === null || best.holders === titles.length) {
+    throw new Error(
+      `no word of three letters or more is missing from one of the ${titles.length} shown names, so no search could narrow the list: ${JSON.stringify(titles)}`,
+    );
+  }
+  return best;
+}
+
 const base = process.argv[2];
 if (!base) {
   console.error("usage: node check.mjs <base-url>");
@@ -67,17 +95,22 @@ try {
   await search.waitFor();
   await page.getByText("demo", { exact: true }).first().waitFor();
 
-  // The search term comes from the list the Demo Account shows, so the check
-  // does not depend on which names the demo generator picks.
+  // The search term comes from the names the list shows, so the check does
+  // not depend on which names the demo generator picks: it needs only one
+  // shown name holding a word that another shown name lacks (#2731).
   step = "list the Demo Account's conversations";
   const all = await listed;
   if (!all.ok()) throw new Error(`the list answered ${all.status()}`);
   const allTotal = (await all.json()).total;
   const rows = page.getByRole("checkbox", { name: /^Select (?!all conversations$)/ });
   await rows.first().waitFor();
-  const title = (await rows.first().getAttribute("aria-label"))?.replace(/^Select /, "") ?? "";
-  const term = title.split(/[\s,]+/)[0];
-  if (!term) throw new Error(`no search term in the first conversation's name "${title}"`);
+  const labels = await rows.evaluateAll((boxes) =>
+    boxes.map((box) => box.getAttribute("aria-label") ?? ""),
+  );
+  const titles = labels
+    .map((label) => label.replace(/^Select /, ""))
+    .filter((name) => name !== "");
+  const { term, title } = narrowingTerm(titles);
 
   // The row named `title` was on screen before the search, so finding it
   // afterwards proves nothing. The search must reach the server, find fewer
