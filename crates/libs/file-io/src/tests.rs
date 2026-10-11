@@ -7,7 +7,7 @@
 //! `hashlib`). The message id's known answers are in `message-ir`'s
 //! `identity.rs`.
 
-use crate::{file_sha256, sha256_hex};
+use crate::{file_sha256, file_sha256_nofollow, open_nofollow, sha256_hex};
 
 /// A file in the temp directory, removed when dropped.
 struct TempFile(std::path::PathBuf);
@@ -66,4 +66,54 @@ fn sha256_hex_matches_file_sha256_of_the_same_bytes() {
     let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
     let file = TempFile::with("same-bytes", &bytes);
     assert_eq!(sha256_hex(&bytes), file_sha256(&file.0).unwrap());
+}
+
+#[test]
+fn file_sha256_nofollow_matches_file_sha256_of_a_regular_file() {
+    let bytes: Vec<u8> = (0..200_000u32).map(|i| (i % 251) as u8).collect();
+    let file = TempFile::with("nofollow-regular", &bytes);
+    assert_eq!(
+        file_sha256_nofollow(&file.0).unwrap(),
+        file_sha256(&file.0).unwrap()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn file_sha256_nofollow_refuses_a_symlink_to_a_regular_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target");
+    std::fs::write(&target, b"abc").unwrap();
+    let link = dir.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let refused = format!("refusing to follow symlink: {}", link.display());
+    assert_eq!(
+        file_sha256_nofollow(&link).unwrap_err().to_string(),
+        refused
+    );
+    assert_eq!(open_nofollow(&link).unwrap_err().to_string(), refused);
+}
+
+#[test]
+fn file_sha256_nofollow_refuses_a_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let err = file_sha256_nofollow(dir.path()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!("asset source is not a file: {}", dir.path().display())
+    );
+}
+
+#[test]
+fn file_sha256_nofollow_names_a_missing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("missing");
+    let err = file_sha256_nofollow(&path).unwrap_err();
+    assert_eq!(err.to_string(), format!("stat {}", path.display()));
+    assert!(
+        err.chain()
+            .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
+            .any(|io| io.kind() == std::io::ErrorKind::NotFound)
+    );
 }
