@@ -1,8 +1,12 @@
-//! Shared scaffolding for the export crates' tests, such as the exporters'
-//! `convert_smoke` tests and the attachment byte-total tests (behind
-//! `testutil`).
+//! Shared scaffolding for the export crates' tests and the Import Run log
+//! tests, such as the exporters' `convert_smoke` tests, the attachment
+//! byte-total tests, and the tests that read an Import Run log back through
+//! [`run_log_lines`] (behind `testutil`).
 
-use crate::{ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue};
+use crate::{
+    ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue, RunLogLevel,
+    parse_run_log_line,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,6 +45,25 @@ pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
         }
     });
     (progress, totals)
+}
+
+/// Each line of the Import Run log at `path` as its level and text, in the
+/// order the file holds them: what a test of a run log asserts on.
+///
+/// # Panics
+///
+/// Panics when `path` cannot be read, or when a line of it is not a run log's
+/// line.
+pub fn run_log_lines(path: &Path) -> Vec<(RunLogLevel, String)> {
+    fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .map(|raw| {
+            let line =
+                parse_run_log_line(0, raw).unwrap_or_else(|| panic!("not a run log line: {raw:?}"));
+            (line.level, line.text)
+        })
+        .collect()
 }
 
 /// The names in `dir`, sorted, without the `.lock` files a scratch directory

@@ -134,14 +134,9 @@ fn read_log(dir: &Path) -> String {
 /// The text of each line of the log at `path`, without its time and level,
 /// with a line break after each, so a test reads what the lines say.
 fn log_text(path: &Path) -> String {
-    fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .map(|raw| {
-            let line = message_crate_core::parse_run_log_line(0, raw)
-                .unwrap_or_else(|| panic!("a line with no time or level: {raw}"));
-            format!("{}\n", line.text)
-        })
+    message_crate_core::testutil::run_log_lines(path)
+        .into_iter()
+        .map(|(_, text)| format!("{text}\n"))
         .collect()
 }
 
@@ -1764,13 +1759,13 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert!(!log.contains("WARN"), "{log}");
     // Each digest warning is a warning in the log's level, so the Logs
     // panel's "warnings and up" shows it.
-    let raw = fs::read_to_string(dir.path().join("message-crate-import.log")).unwrap();
-    let warnings: Vec<_> = raw
-        .lines()
-        .filter_map(|raw| message_crate_core::parse_run_log_line(0, raw))
-        .filter(|line| line.level == message_crate_core::RunLogLevel::Warn)
-        .collect();
-    assert_eq!(warnings.len(), 2, "{raw}");
+    let lines =
+        message_crate_core::testutil::run_log_lines(&dir.path().join("message-crate-import.log"));
+    let warnings = lines
+        .iter()
+        .filter(|(level, _)| *level == message_crate_core::RunLogLevel::Warn)
+        .count();
+    assert_eq!(warnings, 2, "{lines:?}");
 }
 
 #[test]

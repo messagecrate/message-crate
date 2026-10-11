@@ -161,6 +161,7 @@ mod tests {
     use std::path::Path;
 
     use message_crate_core::RunLogLevel;
+    use message_crate_core::testutil::run_log_lines;
 
     use super::{
         RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up, tools_dir_in,
@@ -217,16 +218,8 @@ mod tests {
         drop(staging);
         RunLog::open(logs.path(), run).line("Converting and compressing attachments…");
 
-        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
-        let lines: Vec<_> = text
-            .lines()
-            .map(|raw| {
-                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
-                (line.level, line.text)
-            })
-            .collect();
         assert_eq!(
-            lines,
+            run_log_lines(&import_run_log(logs.path(), run)),
             [
                 (RunLogLevel::Info, "Conversations: 3".to_string()),
                 (
@@ -247,16 +240,8 @@ mod tests {
         RunLog::open(logs.path(), run)
             .warn("wtsexporter failed (exit status: 1). Its output:\nOSError: [Errno 28] No space left on device");
 
-        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
-        let lines: Vec<_> = text
-            .lines()
-            .map(|raw| {
-                let line = message_crate_core::parse_run_log_line(0, raw).unwrap();
-                (line.level, line.text)
-            })
-            .collect();
         assert_eq!(
-            lines,
+            run_log_lines(&import_run_log(logs.path(), run)),
             [
                 (
                     RunLogLevel::Warn,
