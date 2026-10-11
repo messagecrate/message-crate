@@ -227,36 +227,37 @@ function runAlreadyClosed(e: unknown): boolean {
  * True when a call failed without the server saying why: the request never
  * left, the connection dropped, its time limit ended it, something in front
  * of the server answered instead, such as a proxy's `504 Gateway Timeout`,
- * or the server failed with a `500` (`about:blank`). Every other failure the
- * server answers carries a problem type. In each of these the server may
- * still have done what the call asked.
+ * or the server failed with a `500 Internal Server Error` (`about:blank`).
+ * Every other failure the server answers carries a problem type. In each of
+ * these the server may still have done what the call asked.
  */
 function answerLost(e: unknown): boolean {
   return !(e instanceof ApiError) || e.type === null;
 }
 
 /**
- * How a discard of `runId` that failed with `e` went, or null when the run
- * is closed all the same. A session the server refused, to the discard or to
- * the read below, is `session_ended`. A server that says it holds no such
- * running run (`runAlreadyClosed`) has closed it. A discard whose answer was
- * lost (`answerLost`) may have been committed before the connection dropped
- * (#2807), so the account's running run is read again, and the run is closed
- * when it is no longer that one. A failed read, or any other refusal, leaves
- * it running: `not_closed`, with the discard's message.
+ * How a discard of `runId` that failed with `e` went: `discarded` when the
+ * run is closed all the same. A session the server refused, to the discard
+ * or to the read below, is `session_ended`. A server that says it holds no
+ * such running run (`runAlreadyClosed`) has closed it. A discard whose answer
+ * was lost (`answerLost`) may have been committed although no answer from
+ * the server arrived (#2807), so the account's running run is read again,
+ * and the run is closed when it is no longer that one. A failed read, or any
+ * other refusal, leaves it running: `not_closed`, with the discard's message.
  */
 async function outcomeOfFailedDiscard(
   ctx: RunContext,
   runId: number,
   e: unknown,
-): Promise<DiscardOutcome | null> {
+): Promise<DiscardOutcome> {
+  const discarded: DiscardOutcome = { kind: "discarded" };
   if (e instanceof SessionRefusedError) return { kind: "session_ended" };
-  if (runAlreadyClosed(e)) return null;
+  if (runAlreadyClosed(e)) return discarded;
   const notClosed: DiscardOutcome = { kind: "not_closed", message: errorText(e) };
   if (!answerLost(e)) return notClosed;
   try {
     const running = await endSessionIfRefused(ctx, () => ctx.server.getActiveImportRun());
-    return running?.id === runId ? notClosed : null;
+    return running?.id === runId ? notClosed : discarded;
   } catch (readError: unknown) {
     return readError instanceof SessionRefusedError ? { kind: "session_ended" } : notClosed;
   }
@@ -308,7 +309,7 @@ export async function discardRun(
       );
     } catch (e: unknown) {
       const outcome = await outcomeOfFailedDiscard(ctx, runId, e);
-      if (outcome != null) return outcome;
+      if (outcome.kind !== "discarded") return outcome;
     }
   }
   if (runDir != null) await discardRunDirectory(ctx, runDir);
