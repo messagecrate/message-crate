@@ -75,21 +75,41 @@ impl Fetch for HttpFetch {
             return Err(DownloadError::Http(status.as_u16()));
         }
         let total = response.content_length();
-        let mut buffer = vec![0u8; 64 * 1024];
-        let mut received = 0u64;
-        progress(received, total);
-        loop {
-            let read = match response.read(&mut buffer) {
-                Ok(0) => return Ok(()),
-                Ok(read) => read,
-                Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                Err(err) => return Err(DownloadError::NoNetwork(error_chain(&err))),
-            };
-            into.write_all(&buffer[..read])
-                .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
-            received += read as u64;
-            progress(received, total);
-        }
+        progress(0, total);
+        copy_with_progress(
+            &mut response,
+            into,
+            &|err| DownloadError::NoNetwork(error_chain(&err)),
+            &|received| progress(received, total),
+        )
+    }
+}
+
+/// Copy `from` into `into`, telling `progress` the bytes copied so far after
+/// each chunk.
+///
+/// A failure to read `from` is the error `read_error` makes of it, since
+/// what that means depends on what is read; a failure to write `into` is
+/// [`DownloadError::CouldNotWrite`].
+fn copy_with_progress(
+    from: &mut dyn Read,
+    into: &mut dyn Write,
+    read_error: &dyn Fn(io::Error) -> DownloadError,
+    progress: &dyn Fn(u64),
+) -> Result<(), DownloadError> {
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut copied = 0u64;
+    loop {
+        let read = match from.read(&mut buffer) {
+            Ok(0) => return Ok(()),
+            Ok(read) => read,
+            Err(err) if err.kind() == io::ErrorKind::Interrupted => continue,
+            Err(err) => return Err(read_error(err)),
+        };
+        into.write_all(&buffer[..read])
+            .map_err(|err| DownloadError::CouldNotWrite(err.to_string()))?;
+        copied += read as u64;
+        progress(copied);
     }
 }
 
@@ -143,9 +163,10 @@ impl Write for Hashing<'_> {
 /// The asset is written to a temporary file in `dir` and its SHA-256
 /// computed on the way. On a match it is unpacked when gzipped and the
 /// program's SHA-256 checked, then made executable and renamed over the
-/// program; on a mismatch, or any failure, the temporary files are deleted
-/// and the program there is left as it was. `progress` hears the bytes
-/// received so far and the total when it is known.
+/// program; on a mismatch, an asset that does not unpack, or any other
+/// failure, the temporary files are deleted and the program there is left
+/// as it was. `progress` hears the bytes received so far and the total when
+/// it is known.
 pub(super) fn install(
     fetch: &dyn Fetch,
     pinned: &Pinned,
@@ -176,7 +197,7 @@ pub(super) fn install(
             .map_err(write_error)?;
         let packed = arrived.as_file_mut();
         packed.rewind().map_err(write_error)?;
-        io::copy(&mut flate2::read::GzDecoder::new(packed), &mut unpacked).map_err(write_error)?;
+        unpack(packed, &mut unpacked)?;
         unpacked.flush().map_err(write_error)?;
         let actual = file_io::file_sha256(unpacked.path()).map_err(write_error)?;
         if actual != pinned.program_sha256 {
@@ -200,6 +221,27 @@ pub(super) fn install(
     // now is the one the next start sees.
     let stamp = Stamp::at(&target).map_err(write_error)?;
     Ok(Written::of(pinned, stamp))
+}
+
+/// Unpack the gzipped `packed` into `into`.
+///
+/// Bad gzip data, which flate2 reports as invalid input or data or an early
+/// end, is [`DownloadError::CouldNotUnpack`], since the file that arrived
+/// is at fault. Any other failure to read `packed`, such as the disk under
+/// the Tools Directory, and a failure to write `into`, are
+/// [`DownloadError::CouldNotWrite`].
+pub(super) fn unpack(packed: &mut dyn Read, into: &mut dyn Write) -> Result<(), DownloadError> {
+    copy_with_progress(
+        &mut flate2::read::GzDecoder::new(packed),
+        into,
+        &|err| match err.kind() {
+            io::ErrorKind::InvalidInput
+            | io::ErrorKind::InvalidData
+            | io::ErrorKind::UnexpectedEof => DownloadError::CouldNotUnpack(err.to_string()),
+            _ => DownloadError::CouldNotWrite(err.to_string()),
+        },
+        &|_| {},
+    )
 }
 
 /// Give the file at `path` its executable bits.
