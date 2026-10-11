@@ -17,13 +17,16 @@ pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/
 /// reader could act on.
 pub const INTERNAL_TYPE: &str = "about:blank";
 
-/// Declares [`ProblemType`] and its [`ProblemType::ALL`] from one list of
-/// variants, so a type cannot be declared and left out of `ALL`: the error
-/// pages ([`crate::error_docs`]) and the OpenAPI problem types
-/// ([`crate::openapi::shared_parts`]) walk `ALL`, and a type missing from it
-/// would ship with neither.
+/// Declares [`ProblemType`], its [`ProblemType::ALL`], and each type's slug,
+/// status and title from one list, written
+/// `Variant => ("slug", STATUS_CODE_CONSTANT, "Title"),`. A type cannot be
+/// declared and left out of `ALL`: the error pages ([`crate::error_docs`])
+/// and the OpenAPI problem types ([`crate::openapi::shared_parts`]) walk
+/// `ALL`, and a type missing from it would ship with neither. Nor can a type
+/// be declared without its slug, status or title, because a new type is one
+/// line here rather than one arm in each of three `match` tables.
 macro_rules! problem_types {
-    ($($(#[$doc:meta])* $name:ident,)*) => {
+    ($($(#[$doc:meta])* $name:ident => ($slug:literal, $status:ident, $title:literal),)*) => {
         /// One registered kind of failure.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum ProblemType {
@@ -34,125 +37,88 @@ macro_rules! problem_types {
             /// Every registered type, in the order the docs index lists them:
             /// the order they are declared in.
             pub const ALL: [Self; [$(stringify!($name)),*].len()] = [$(Self::$name),*];
+
+            /// The last segment of the `type` URL and the page's file name.
+            #[must_use]
+            pub const fn slug(self) -> &'static str {
+                match self {
+                    $(Self::$name => $slug,)*
+                }
+            }
+
+            /// The status every problem of this type answers.
+            #[must_use]
+            pub const fn status(self) -> StatusCode {
+                match self {
+                    $(Self::$name => StatusCode::$status,)*
+                }
+            }
+
+            /// The fixed, human-readable name every problem of this type carries.
+            #[must_use]
+            pub const fn title(self) -> &'static str {
+                match self {
+                    $(Self::$name => $title,)*
+                }
+            }
         }
     };
 }
 
 problem_types! {
     /// A query parameter, path segment or body field parsed and then broke a rule.
-    ValidationFailed,
+    ValidationFailed => ("validation-failed", UNPROCESSABLE_ENTITY, "Validation failed"),
     /// The request cannot be read: not valid JSON or JSONL, or a body that failed to arrive.
-    MalformedBody,
+    MalformedBody => ("malformed-body", BAD_REQUEST, "Malformed body"),
     /// `Content-Type` is absent or not one the route accepts.
-    UnsupportedMediaType,
+    UnsupportedMediaType => ("unsupported-media-type", UNSUPPORTED_MEDIA_TYPE, "Unsupported media type"),
     /// The body is over the configured cap.
-    PayloadTooLarge,
+    PayloadTooLarge => ("payload-too-large", PAYLOAD_TOO_LARGE, "Payload too large"),
     /// A username, password, or current-password check failed.
-    InvalidCredentials,
+    InvalidCredentials => ("invalid-credentials", UNAUTHORIZED, "Invalid credentials"),
     /// The bearer token is missing, malformed, unknown or expired.
-    AuthenticationRequired,
+    AuthenticationRequired => ("authentication-required", UNAUTHORIZED, "Authentication required"),
     /// The auth rate limiter refused the attempt.
-    RateLimited,
+    RateLimited => ("rate-limited", TOO_MANY_REQUESTS, "Rate limited"),
     /// A new account's username collides with an existing one.
-    UsernameTaken,
+    UsernameTaken => ("username-taken", CONFLICT, "Username taken"),
     /// A Contact Group, Message Tag, or Saved Search name collides.
-    NameTaken,
+    NameTaken => ("name-taken", CONFLICT, "Name taken"),
     /// The demo account refuses a destructive operation.
-    DemoAccountProtected,
+    DemoAccountProtected => ("demo-account-protected", FORBIDDEN, "Demo account protected"),
     /// The account is not the owner.
-    NotTheOwner,
+    NotTheOwner => ("not-the-owner", FORBIDDEN, "Not the owner"),
     /// The server does not let strangers create their own account.
-    RegistrationClosed,
+    RegistrationClosed => ("registration-closed", FORBIDDEN, "Registration closed"),
     /// The token is valid but lacks the scope the route needs.
-    InsufficientScope,
+    InsufficientScope => ("insufficient-scope", FORBIDDEN, "Insufficient scope"),
     /// The account exists but may not log in or act.
-    AccountDisabled,
+    AccountDisabled => ("account-disabled", FORBIDDEN, "Account disabled"),
     /// The search language refused a word.
-    SearchQueryInvalid,
+    SearchQueryInvalid => ("search-query-invalid", UNPROCESSABLE_ENTITY, "Search query invalid"),
     /// The resource is not in a state that allows the operation.
-    StateConflict,
+    StateConflict => ("state-conflict", CONFLICT, "State conflict"),
     /// A country picked for a phone number gives it a `+` form another
     /// identity already holds, and the request did not ask to merge them.
-    IdentityExists,
+    IdentityExists => ("identity-exists", CONFLICT, "Identity exists"),
     /// A part number, upload id, or completion does not match the upload.
-    AssetUploadInvalid,
+    AssetUploadInvalid => ("asset-upload-invalid", UNPROCESSABLE_ENTITY, "Asset upload invalid"),
     /// The addressed resource does not exist for this account.
-    NotFound,
+    NotFound => ("not-found", NOT_FOUND, "Not found"),
     /// The path exists and the method does not.
-    MethodNotAllowed,
+    MethodNotAllowed => ("method-not-allowed", METHOD_NOT_ALLOWED, "Method not allowed"),
     /// `Accept` names nothing this route can produce.
-    NotAcceptable,
+    NotAcceptable => ("not-acceptable", NOT_ACCEPTABLE, "Not acceptable"),
     /// A media link that is malformed, for another asset, expired, or minted
     /// by a Session that has ended.
-    MediaLinkInvalid,
+    MediaLinkInvalid => ("media-link-invalid", UNAUTHORIZED, "Media link invalid"),
     /// A `Range` that selects no byte of the file.
-    RangeNotSatisfiable,
+    RangeNotSatisfiable => ("range-not-satisfiable", RANGE_NOT_SATISFIABLE, "Range not satisfiable"),
     /// The server is stopping and refused work it had not started.
-    ServerStopping,
+    ServerStopping => ("server-stopping", SERVICE_UNAVAILABLE, "Server stopping"),
 }
 
 impl ProblemType {
-    /// The last segment of the `type` URL and the page's file name.
-    #[must_use]
-    pub const fn slug(self) -> &'static str {
-        match self {
-            Self::ValidationFailed => "validation-failed",
-            Self::MalformedBody => "malformed-body",
-            Self::UnsupportedMediaType => "unsupported-media-type",
-            Self::PayloadTooLarge => "payload-too-large",
-            Self::InvalidCredentials => "invalid-credentials",
-            Self::AuthenticationRequired => "authentication-required",
-            Self::RateLimited => "rate-limited",
-            Self::UsernameTaken => "username-taken",
-            Self::NameTaken => "name-taken",
-            Self::DemoAccountProtected => "demo-account-protected",
-            Self::NotTheOwner => "not-the-owner",
-            Self::RegistrationClosed => "registration-closed",
-            Self::InsufficientScope => "insufficient-scope",
-            Self::AccountDisabled => "account-disabled",
-            Self::SearchQueryInvalid => "search-query-invalid",
-            Self::StateConflict => "state-conflict",
-            Self::IdentityExists => "identity-exists",
-            Self::AssetUploadInvalid => "asset-upload-invalid",
-            Self::NotFound => "not-found",
-            Self::MethodNotAllowed => "method-not-allowed",
-            Self::NotAcceptable => "not-acceptable",
-            Self::MediaLinkInvalid => "media-link-invalid",
-            Self::RangeNotSatisfiable => "range-not-satisfiable",
-            Self::ServerStopping => "server-stopping",
-        }
-    }
-
-    /// The status every problem of this type answers.
-    #[must_use]
-    pub const fn status(self) -> StatusCode {
-        match self {
-            Self::ValidationFailed | Self::SearchQueryInvalid | Self::AssetUploadInvalid => {
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
-            Self::MalformedBody => StatusCode::BAD_REQUEST,
-            Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::InvalidCredentials | Self::AuthenticationRequired | Self::MediaLinkInvalid => {
-                StatusCode::UNAUTHORIZED
-            }
-            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
-            Self::UsernameTaken | Self::NameTaken | Self::StateConflict | Self::IdentityExists => {
-                StatusCode::CONFLICT
-            }
-            Self::DemoAccountProtected
-            | Self::NotTheOwner
-            | Self::RegistrationClosed
-            | Self::InsufficientScope
-            | Self::AccountDisabled => StatusCode::FORBIDDEN,
-            Self::NotFound => StatusCode::NOT_FOUND,
-            Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
-            Self::NotAcceptable => StatusCode::NOT_ACCEPTABLE,
-            Self::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
-            Self::ServerStopping => StatusCode::SERVICE_UNAVAILABLE,
-        }
-    }
-
     /// Whether the line a request refused with this type leaves in the
     /// server's log is a warning (`docs/architecture/server-log.md`): true
     /// for the types that answer `401 Unauthorized`, `403 Forbidden` and
@@ -166,37 +132,6 @@ impl ProblemType {
             self.status(),
             StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
         )
-    }
-
-    /// The fixed, human-readable name every problem of this type carries.
-    #[must_use]
-    pub const fn title(self) -> &'static str {
-        match self {
-            Self::ValidationFailed => "Validation failed",
-            Self::MalformedBody => "Malformed body",
-            Self::UnsupportedMediaType => "Unsupported media type",
-            Self::PayloadTooLarge => "Payload too large",
-            Self::InvalidCredentials => "Invalid credentials",
-            Self::AuthenticationRequired => "Authentication required",
-            Self::RateLimited => "Rate limited",
-            Self::UsernameTaken => "Username taken",
-            Self::NameTaken => "Name taken",
-            Self::DemoAccountProtected => "Demo account protected",
-            Self::NotTheOwner => "Not the owner",
-            Self::RegistrationClosed => "Registration closed",
-            Self::InsufficientScope => "Insufficient scope",
-            Self::AccountDisabled => "Account disabled",
-            Self::SearchQueryInvalid => "Search query invalid",
-            Self::StateConflict => "State conflict",
-            Self::IdentityExists => "Identity exists",
-            Self::AssetUploadInvalid => "Asset upload invalid",
-            Self::NotFound => "Not found",
-            Self::MethodNotAllowed => "Method not allowed",
-            Self::NotAcceptable => "Not acceptable",
-            Self::MediaLinkInvalid => "Media link invalid",
-            Self::RangeNotSatisfiable => "Range not satisfiable",
-            Self::ServerStopping => "Server stopping",
-        }
     }
 
     /// The `type` URL: the page's address.
@@ -299,7 +234,6 @@ pub mod openapi {
     // belongs to no route. A handler that names a type left out here fails
     // to compile.
     named!(
-        PayloadTooLarge,
         InvalidCredentials,
         RateLimited,
         UsernameTaken,
@@ -307,8 +241,6 @@ pub mod openapi {
         DemoAccountProtected,
         NotTheOwner,
         RegistrationClosed,
-        InsufficientScope,
-        AccountDisabled,
         SearchQueryInvalid,
         StateConflict,
         IdentityExists,
