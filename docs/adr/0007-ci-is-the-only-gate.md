@@ -7,17 +7,19 @@ fast pre-flight that catches the mistakes not worth a round trip, and
 `check-all.sh` runs the whole set locally for anyone who wants it before
 pushing.
 
-`ci.yml` holds eleven jobs on a ready pull request. On a draft, all of them
-skip. A `changes` job diffs the branch against its base and publishes four
-booleans — `rust`, `web`, `docs`, `docker` — and the heavy jobs read them:
+`ci.yml` holds twelve jobs on a ready pull request. On a draft, all of them
+skip. A `changes` job diffs the branch against its base and publishes five
+booleans — `rust`, `web`, `docs`, `docker`, `server_config` — and the heavy
+jobs read them:
 
 | Job | Runs when | What it does |
 | --- | --- | --- |
-| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker` |
+| `changes` | always, except on a draft | Diffs against the base and outputs `rust`, `web`, `docs`, `docker`, `server_config` |
 | `fmt` | `rust` | `cargo fmt --check` on the workspace and on `src-tauri` |
 | `clippy` | `rust` | `cargo clippy --workspace --all-targets -- -D warnings` |
 | `test` | `rust` | `cargo build --workspace` and `cargo test --workspace` |
 | `check-tauri` | `rust` | `cargo check`, Clippy at `-D warnings`, and `cargo test` on `src-tauri` |
+| `windows-config` | `server_config` | `cargo test -p message-crate-server --lib "config::tests::"` on `windows-latest` |
 | `web` | `web` | `biome ci`, `check-generated-api-types.sh`, `npm run build`, `npm test` |
 | `docs` | `docs` | `npm ci`, `astro check`, `astro build` — the site without rustdoc or the HTTP API catalog |
 | `license` | always | `check-license.sh` |
@@ -25,7 +27,10 @@ booleans — `rust`, `web`, `docs`, `docker` — and the heavy jobs read them:
 | `docker-build` | `docker`, pull requests only | `docker/build-push-action` with `push: false`: the release Dockerfile builds; then `check-docker-compose.sh` starts it with `docker/compose.release.yml` and logs in to the Demo Account |
 | `version` | always | `check-version-lockstep.sh`: the four product version files and their lockfiles agree, and on a `v*` tag agree with the tag |
 
-Three classifier arms are not what the directory alone would suggest.
+The ruleset requires eleven of them, every job but `windows-config`; whether
+it should require that one too is open in #2788.
+
+Four classifier arms are not what the directory alone would suggest.
 `scripts/check-generated-api-types.sh` and the generator's own tree,
 `scripts/openapi-typescript/`, set `web`, not `rust`, because the `web` job is
 the one that runs them. `scripts/check-docker-compose.sh` sets `docker` as
@@ -39,6 +44,16 @@ the image was built for the first time on the release tag, so a pull request
 that broke `docker/Dockerfile` merged green and the failure appeared where the
 fix is a new tag. The job runs on pull requests only: the tag job builds and
 pushes the same image, and `nightly.yml` builds it from `main`.
+`crates/server/server/src/config.rs` and everything under
+`crates/server/server/src/config/` set `server_config` as well as `rust`, and
+so does any change to a workflow. The `windows-config` job reads it: the check
+that keeps the website directory and the Data Directory apart
+(`Config::require_static_dir_apart`) has cases only Windows has, a junction's
+target that comes back verbatim (`\\?\C:\...`) and a short name
+(`WEBSIT~1`) that stands for a long one, and every other job runs on Linux. A
+Windows build is not worth its time on a pull request that cannot change these
+paths. On a push, a tag or a manual run it runs like every other job, and the
+`docker` and `release` jobs need it, so a release waits for it (#2683).
 
 `src-tauri`'s Clippy stays inside `check-tauri` rather than the `clippy` job,
 because its build needs the webkit and gtk system packages that job already
@@ -59,7 +74,7 @@ schedule, and by hand.
 
 Test coverage lives in `coverage.yml` for the same reason seen from the other
 side: it is a report that never fails a pull request, so it has no place in a
-workflow whose every job is required. It runs `scripts/coverage.sh`
+workflow whose every job can fail one. It runs `scripts/coverage.sh`
 (cargo-llvm-cov over the workspace) on each push
 to `main` and on demand, and keeps the reports as a workflow artifact.
 Mutation testing lives in `mutants.yml` for the same reason. It runs

@@ -11,7 +11,8 @@ vocabulary. Read it before writing any of those.
 ## Git Workflow
 
 - Every change goes on a branch or worktree. `main` takes pull requests only:
-  its ruleset requires one, plus the ten `ci.yml` checks.
+  its ruleset requires one, plus eleven `ci.yml` checks: every job that runs
+  on a pull request except the Windows server config tests (#2788).
 - Before pushing, run `git fetch`, then read the pull request's real state
   with `gh pr list`, `gh pr view <number> --json <fields>`, and
   `gh pr checks <number>`.
