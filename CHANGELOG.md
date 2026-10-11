@@ -164,10 +164,8 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-10: **An attachment an import could not save is named in the
-  Import Run's log.** It used to be written where no log of Message Crate
-  showed it. The way an import passes its log, its progress and its cancel
-  around was reworked inside as well, with nothing else visible (#2165).
+- 2026-10-10: The way an import passes its log, its progress and its cancel
+  around was reworked inside, with nothing visible (#2165).
 
 - 2026-10-10: The check that ffmpeg is there before an import converts or
   compresses attachments was reworked inside, with nothing visible (#2166).
@@ -423,6 +421,10 @@ released versions carry their date on the heading.
   Message Crate stops at once rather than finishing what it was answering.
 
 #### Importing
+
+- 2026-10-10: **An attachment an import could not save is named in the
+  Import Run's log.** It used to be written where no log of Message Crate
+  showed it (#2165).
 
 - 2026-10-10: **Converting or compressing attachments no longer follows a
   symlink.** When the Media Stage of an Import Run converts or compresses
