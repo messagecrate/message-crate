@@ -210,7 +210,8 @@ A deleted account's entries stay under its old username, marked **deleted**.
 **Account** lists deleted accounts under **Deleted accounts**, below the live ones, each by its old username and when it was deleted.
 Picking one narrows the list to the entries and runs that account left.
 Another account given the same username, before or after, keeps its own entries apart.
-Opening and closing the Message Crate to new accounts is recorded too, under no account.
+Opening and closing the Message Crate to new accounts is recorded too, under no account, and so is each change to the attachment size limit, with the new limit.
+Adding or resetting the Demo Account is recorded with the size of Demo Data asked for, under the **demo** username.
 
 ## Logs
 

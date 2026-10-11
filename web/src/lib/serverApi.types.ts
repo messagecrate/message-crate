@@ -1911,7 +1911,7 @@ export interface components {
          * @description What an entry records.
          * @enum {string}
          */
-        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
+        AuditAction: "logged_in" | "session_ended" | "login_refused" | "account_created" | "account_disabled" | "account_enabled" | "password_set" | "permissions_changed" | "messages_deleted" | "conversation_deleted" | "trash_emptied" | "account_deleted" | "registration_opened" | "registration_closed" | "asset_limit_changed" | "demo_account_rebuilt" | "api_token_created" | "api_token_deleted" | "address_book_loaded" | "address_book_exported" | "import_run" | "export_run";
         /**
          * @description Who acted.
          * @enum {string}
@@ -1946,6 +1946,11 @@ export interface components {
             app: components["schemas"]["AppKind"] | null;
             /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
             app_build: string | null;
+            /**
+             * Format: int64
+             * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+             */
+            asset_max_bytes: number | null;
             /**
              * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
              *     session that expired.
@@ -1989,6 +1994,8 @@ export interface components {
             conversations: number | null;
             /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
+            /** @description `demo_account_rebuilt`: how much Demo Data the build was asked for. */
+            demo_data_size: components["schemas"]["DemoDataSize"] | null;
             /**
              * Format: int64
              * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -3952,6 +3959,11 @@ export interface components {
                 /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
                 app_build: string | null;
                 /**
+                 * Format: int64
+                 * @description `asset_limit_changed`: the new attachment size limit, in bytes.
+                 */
+                asset_max_bytes: number | null;
+                /**
                  * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
                  *     session that expired.
                  */
@@ -3994,6 +4006,8 @@ export interface components {
                 conversations: number | null;
                 /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
+                /** @description `demo_account_rebuilt`: how much Demo Data the build was asked for. */
+                demo_data_size: components["schemas"]["DemoDataSize"] | null;
                 /**
                  * Format: int64
                  * @description The row's id: the entry's, the Import Run's or the Export Run's. For a

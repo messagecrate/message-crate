@@ -8,6 +8,7 @@
  * (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
  */
 
+import { formatBytes } from "./formatBytes";
 import { countOf } from "./plural";
 import type { components } from "./serverApi.types";
 
@@ -130,6 +131,10 @@ export function describeAuditEntry(entry: AuditEntry): string {
       return "Opened Message Crate to new accounts";
     case "registration_closed":
       return "Closed Message Crate to new accounts";
+    case "asset_limit_changed":
+      return `Attachment size limit set to ${formatBytes(entry.asset_max_bytes ?? 0)}`;
+    case "demo_account_rebuilt":
+      return `Demo Account built with ${entry.demo_data_size ?? "medium"} Demo Data`;
     case "api_token_created":
       return `API token “${entry.api_token_label ?? ""}” made (${entry.api_token_hint ?? ""})`;
     case "api_token_deleted":

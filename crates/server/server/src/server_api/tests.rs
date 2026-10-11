@@ -543,6 +543,46 @@ async fn the_owner_sets_a_limit_below_the_configured_part_size() {
     assert_eq!(server["asset_max_bytes"], below);
 }
 
+/// The owner's Audit Trail entries with `action`, newest first.
+async fn owner_entries(state: &AppState, token: &str, action: &str) -> Vec<serde_json::Value> {
+    let page: serde_json::Value = get_json(state, "/v1/audit-trail?limit=500", token).await;
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["action"] == action)
+        .cloned()
+        .collect()
+}
+
+/// Changing the attachment size limit leaves an Audit Trail entry naming the
+/// new limit, as opening registration does (#2187). Sending the limit the
+/// server already holds, the default included, changes nothing and records
+/// nothing.
+#[tokio::test]
+async fn changing_the_attachment_size_limit_is_recorded_once_per_change() {
+    let fixture = test_fixture().await;
+    let state = fixture.state.clone();
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+    let limit: u64 = 100 * 1024 * 1024;
+
+    for bytes in [DEFAULT_LIMIT, limit, limit] {
+        let _: serde_json::Value = crate::test_support::patch_json(
+            &state,
+            "/v1/server/settings",
+            &owner.token,
+            serde_json::json!({ "asset_max_bytes": bytes }),
+        )
+        .await;
+    }
+
+    let entries = owner_entries(&state, &owner.token, "asset_limit_changed").await;
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0]["actor"], "owner");
+    assert_eq!(entries[0]["asset_max_bytes"], limit);
+    assert!(entries[0]["account_id"].is_null());
+}
+
 /// Claiming this Message Crate puts a row at the owner id and nowhere else.
 #[tokio::test]
 async fn claiming_the_server_creates_exactly_one_owner() {
@@ -1034,6 +1074,57 @@ async fn the_owner_adds_the_demo_account_and_no_other_account_changes() {
             .await
             .unwrap()
             >= 1
+    );
+}
+
+/// Adding the Demo Account and rebuilding it are each recorded as the owner's
+/// act, with the size of Demo Data asked for, when the build starts (#2187).
+/// The rebuild's entry is about the Demo Account it replaced, so it comes
+/// before that account's deletion and stays in its record.
+#[tokio::test(flavor = "multi_thread")]
+async fn adding_and_rebuilding_the_demo_account_are_recorded() {
+    let fixture = test_fixture().await;
+    let mut state = fixture.state.clone();
+    state.demo_bundle_generator = tiny_bundle;
+    let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+    for _ in 0..2 {
+        let (status, body) = start_demo_build(&state, &owner.token).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let demo = demo_account_after_build(&state, &owner.token).await;
+        assert_eq!(demo.status, DemoAccountStatus::Ready, "{:?}", demo.error);
+    }
+
+    let rebuilt = owner_entries(&state, &owner.token, "demo_account_rebuilt").await;
+    assert_eq!(rebuilt.len(), 2, "{rebuilt:?}");
+    for entry in &rebuilt {
+        assert_eq!(entry["actor"], "owner");
+        assert_eq!(entry["username"], account_profile::DEMO_USERNAME);
+        assert_eq!(entry["demo_data_size"], "medium");
+    }
+    let deleted: Vec<_> = owner_entries(&state, &owner.token, "account_deleted").await;
+    let replaced = deleted
+        .iter()
+        .find(|entry| entry["username"] == account_profile::DEMO_USERNAME)
+        .expect("the rebuild deleted the Demo Account it replaced");
+    assert!(
+        rebuilt[0]["id"].as_i64() < replaced["id"].as_i64(),
+        "the rebuild is recorded before the Demo Account it replaced is deleted"
+    );
+
+    let old_record: serde_json::Value = get_json(
+        &state,
+        &format!("/v1/audit-trail?deleted_account_id={}", replaced["id"]),
+        &owner.token,
+    )
+    .await;
+    assert!(
+        old_record["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["action"] == "demo_account_rebuilt"),
+        "{old_record}"
     );
 }
 

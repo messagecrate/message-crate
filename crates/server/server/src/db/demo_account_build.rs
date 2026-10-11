@@ -5,9 +5,29 @@
 //! server starts belongs to a build the server stopped part-way (#1215).
 
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::session_tokens::unix_secs_string;
+
+/// How much Demo Data the Demo Account holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DemoDataSize {
+    /// About 54,000 messages. A new Message Crate starts with this.
+    Medium,
+    /// About 613,000 messages. Building it takes about a minute.
+    Large,
+}
+
+impl From<DemoDataSize> for demo_seed::DemoSize {
+    fn from(size: DemoDataSize) -> Self {
+        match size {
+            DemoDataSize::Medium => Self::Medium,
+            DemoDataSize::Large => Self::Large,
+        }
+    }
+}
 
 /// Record that a Demo Account build has started. A record already there is
 /// replaced, since only one build runs at a time.
