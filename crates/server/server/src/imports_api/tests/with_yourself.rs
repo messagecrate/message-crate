@@ -39,7 +39,6 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             1_400_776_861_000,
         ),
     ] {
-        let path = batches_path(&state, &token, source).await;
         let message = |guid: &str, sender: Option<&str>, text: &str, reaction: Option<Reaction>| {
             let mut message = message_line(guid, text)
                 .at(sent_at)
@@ -80,15 +79,11 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             message(&format!("{source}-ada"), Some("+15555550101"), "hi", None),
         ]
         .concat();
-        let (status, text) =
-            crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
-        assert!(status.is_success(), "{source}: {status} {text}");
-        let complete = path.replace("/batches", "/complete");
-        let _: serde_json::Value = post_json(
+        import_one_batch_requesting(
             &state,
-            &complete,
             &token,
-            serde_json::json!({ "status": "completed" }),
+            serde_json::json!({ "source": source }),
+            body,
         )
         .await;
     }

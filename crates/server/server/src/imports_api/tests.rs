@@ -177,7 +177,7 @@ async fn import_one_batch(
 /// Create an Import Run with `request` as the `POST /v1/imports` body,
 /// post `body` as its one batch, and complete the run so the account may
 /// start another. Every test in this module that imports one batch over
-/// HTTP goes through here.
+/// HTTP and checks nothing before the run completes goes through here.
 async fn import_one_batch_requesting(
     state: &crate::server::AppState,
     token: &str,
