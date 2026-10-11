@@ -44,7 +44,9 @@ pub fn valid_filename(value: &str) -> Option<String> {
 }
 
 /// Android's message `type` (1 received, 2 sent, and so on) as a number, or
-/// `None` when the field is blank or not a whole number.
+/// `None` when the field is blank or not a whole number. `message-ir-format`'s
+/// CSV reader reads its `android_type` column the same way; keep the two in
+/// step.
 fn parse_android_type(s: &str) -> Option<i32> {
     s.trim().parse().ok()
 }

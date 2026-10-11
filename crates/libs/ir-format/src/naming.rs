@@ -115,6 +115,9 @@ fn with_suffix(stem: &str, suffix: Option<&str>) -> String {
 /// - Untitled group → `group_+A_+B_…` (sorted unique E.164, max 10);
 ///   if more than 10 peers, append `_<16 hex>` of SHA-256 over the full roster
 /// - Untitled group with empty roster → `group_unknown` (or hash of `chat_id`)
+///
+/// `handles` is every participant identity; only the phone numbers among
+/// them name an untitled group.
 fn conversation_stem(
     conversation_type: &str,
     chat_id: &str,
