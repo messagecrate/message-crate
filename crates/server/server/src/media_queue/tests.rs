@@ -182,6 +182,20 @@ async fn queued(state: &AppState) -> i64 {
         .unwrap()
 }
 
+/// An instant one second after the newest row in the queue, or
+/// [`crate::test_support::fixed_instant`] when the queue is empty: a test
+/// that queues an Asset again passes it, so the row goes to the back as an
+/// Import Run that ends later puts it, whatever instant the import queued at.
+async fn after_the_queue(conn: &mut sqlx::SqliteConnection) -> chrono::DateTime<chrono::Utc> {
+    let newest: Option<i64> = sqlx::query_scalar("SELECT MAX(queued_at) FROM media_queue")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    newest.map_or_else(crate::test_support::fixed_instant, |at| {
+        chrono::DateTime::from_timestamp(at + 1, 0).unwrap()
+    })
+}
+
 /// Run `test` on its own runtime with the real ffmpeg held available, or skip
 /// it the way every ffmpeg test in the workspace skips (and fail under CI).
 fn with_real_ffmpeg(test: impl Future<Output = ()>) {
@@ -518,14 +532,12 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
         .fetch_one(&state.db)
         .await
         .unwrap();
-    crate::db::media_queue::queue_import_run(
-        &mut state.db.acquire().await.unwrap(),
-        alice.account_id,
-        run,
-        crate::test_support::fixed_instant(),
-    )
-    .await
-    .unwrap();
+    let mut conn = state.db.acquire().await.unwrap();
+    let later = after_the_queue(&mut conn).await;
+    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
+        .await
+        .unwrap();
+    drop(conn);
     let newest = decide_queued(&state.db, &state.cfg, &stop, last, &mut stats)
         .await
         .unwrap();
@@ -579,13 +591,8 @@ fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
     runtime
         .block_on(async {
             let mut conn = state.db.acquire().await.unwrap();
-            crate::db::media_queue::queue_import_run(
-                &mut conn,
-                alice.account_id,
-                run,
-                crate::test_support::fixed_instant(),
-            )
-            .await
+            let later = after_the_queue(&mut conn).await;
+            crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later).await
         })
         .unwrap();
 
@@ -656,14 +663,10 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
         .unwrap()
         .unwrap();
 
-    crate::db::media_queue::queue_import_run(
-        &mut conn,
-        alice.account_id,
-        run,
-        crate::test_support::fixed_instant(),
-    )
-    .await
-    .unwrap();
+    let later = after_the_queue(&mut conn).await;
+    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run, later)
+        .await
+        .unwrap();
     crate::db::media_queue::remove(&mut conn, &worked_on)
         .await
         .unwrap();
