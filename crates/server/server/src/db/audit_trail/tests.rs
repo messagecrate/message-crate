@@ -373,6 +373,8 @@ async fn the_schema_refuses_an_edit_or_delete_of_an_audit_trail_entry() {
             "UPDATE audit_entries SET at = '2000-01-01T00:00:00+00:00'",
             "UPDATE audit_entries SET details = '{}'",
             &move_to_other,
+            "UPDATE audit_entries SET account_id = NULL",
+            "UPDATE audit_entries SET deletion_entry_id = id",
             "DELETE FROM audit_entries WHERE action = 'logged_in'",
             "DELETE FROM audit_entries WHERE action = 'login_refused'",
         ],
