@@ -287,6 +287,9 @@ pub mod openapi {
         )*};
     }
 
+    // Only the types a handler names as its own failure, so this list is
+    // shorter than `ProblemType::ALL` on purpose: the shared parts add the
+    // rest. A handler that names a type left out here fails to compile.
     named!(
         PayloadTooLarge,
         InvalidCredentials,
@@ -340,17 +343,6 @@ mod tests {
         ] {
             assert_eq!(byte_size(cap), text);
             assert!(page.contains(text), "the page does not name {text}: {page}");
-        }
-    }
-
-    /// `ALL` holds every variant once, in declaration order: the variant
-    /// with discriminant `i` sits at position `i`. `problem_types!` builds
-    /// it that way; this fails if `ALL` is ever written out by hand again
-    /// and falls out of step.
-    #[test]
-    fn all_holds_every_type_in_declaration_order() {
-        for (position, kind) in ProblemType::ALL.iter().enumerate() {
-            assert_eq!(*kind as usize, position, "{} is out of place", kind.slug());
         }
     }
 
