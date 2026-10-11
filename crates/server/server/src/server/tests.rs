@@ -2148,3 +2148,110 @@ fn a_logged_uri_hides_a_search_and_every_value_that_is_not_a_number_or_a_fixed_w
         assert_eq!(logged_uri(&uri), logged, "{uri}");
     }
 }
+
+/// Every `/v1` answer that sets no `Cache-Control` of its own carries
+/// `no-store`, so neither a browser's disk cache nor a proxy keeps a Session
+/// token, message text or a refusal (#2295). That holds for an answer a
+/// handler gives, one an extractor refuses, and one a layer outside the
+/// handler gives. An asset read keeps the `private` it sets itself, and the
+/// website and `/health`, outside `/v1`, are left alone.
+#[tokio::test]
+async fn every_v1_answer_without_its_own_cache_control_is_no_store() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let site = fixture.dir().join("site");
+    std::fs::create_dir_all(&site).unwrap();
+    std::fs::write(site.join("index.html"), "<title>the site</title>").unwrap();
+    let mut state = fixture.state.clone();
+    let mut cfg = (*state.cfg).clone();
+    cfg.server.as_mut().unwrap().static_dir = site;
+    state.cfg = std::sync::Arc::new(cfg);
+    let server = crate::test_support::serve(&state).await;
+    let client = http_client();
+    let url = |path: &str| format!("{}{path}", server.base());
+    let cache_control = |response: &reqwest::Response| {
+        response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .map(|v| v.to_str().unwrap().to_string())
+    };
+
+    let login = client
+        .post(url("/v1/session"))
+        .json(&serde_json::json!({
+            "username": user.username,
+            "password": crate::test_support::PASSWORD,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), StatusCode::CREATED);
+    let login_cache_control = cache_control(&login);
+    // A new login ends the Session before it, so the rest use the new token.
+    let token = login.json::<serde_json::Value>().await.unwrap()["token"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let session = client
+        .get(url("/v1/session"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(session.status(), StatusCode::OK);
+    let logged_out = client.get(url("/v1/session")).send().await.unwrap();
+    assert_eq!(logged_out.status(), StatusCode::UNAUTHORIZED);
+    let asset_logged_out = client
+        .get(url(&format!("/v1/assets/{}", "a".repeat(64))))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(asset_logged_out.status(), StatusCode::UNAUTHORIZED);
+    let not_acceptable = client
+        .get(url("/v1/session"))
+        .bearer_auth(&token)
+        .header(header::ACCEPT, "text/html")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(not_acceptable.status(), StatusCode::NOT_ACCEPTABLE);
+    let undeclared_query = client
+        .get(url("/v1/session?unknown=1"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(undeclared_query.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let wrong_method = client
+        .patch(url("/v1/session"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(wrong_method.status(), StatusCode::METHOD_NOT_ALLOWED);
+    let unknown = client.get(url("/v1/no-such-route")).send().await.unwrap();
+    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
+    for (what, response) in [
+        ("session", &session),
+        ("logged out", &logged_out),
+        ("asset logged out", &asset_logged_out),
+        ("not acceptable", &not_acceptable),
+        ("undeclared query", &undeclared_query),
+        ("wrong method", &wrong_method),
+        ("unknown route", &unknown),
+    ] {
+        assert_eq!(
+            cache_control(response).as_deref(),
+            Some("no-store"),
+            "{what}"
+        );
+    }
+
+    assert_eq!(login_cache_control.as_deref(), Some("no-store"), "login");
+
+    let website = client.get(url("/")).send().await.unwrap();
+    assert_eq!(website.status(), StatusCode::OK);
+    assert_eq!(cache_control(&website), None);
+    let health = client.get(url("/health")).send().await.unwrap();
+    assert_eq!(health.status(), StatusCode::OK);
+    assert_eq!(cache_control(&health), None);
+}

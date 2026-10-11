@@ -1109,6 +1109,28 @@ async fn limit_request_body(
     next.run(request).await
 }
 
+/// Mark every `/v1` answer `Cache-Control: no-store` unless the route set its
+/// own (`docs/architecture/http-api.md`, "Caching"). The answers carry a
+/// Session token, message text, contacts or attachments, and no cache should
+/// keep them. An asset read sets `private` itself and keeps it. Only `/v1`
+/// is marked: the website served by the fallback, `/health` and the OpenAPI
+/// UI keep whatever caching they have.
+async fn no_store_unless_set(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let path = request.uri().path();
+    let is_api = path == "/v1" || path.starts_with("/v1/");
+    let mut response = next.run(request).await;
+    if is_api {
+        response
+            .headers_mut()
+            .entry(header::CACHE_CONTROL)
+            .or_insert(header::HeaderValue::from_static("no-store"));
+    }
+    response
+}
+
 /// Refuse a request whose `Accept` names nothing this route can produce
 /// (`docs/architecture/http-api.md`). Narrow on purpose: only when the header is present and none of
 /// its members is `application/json`, `application/problem+json`,
@@ -1355,6 +1377,10 @@ pub(crate) fn http_app(state: AppState) -> Router {
         // before CORS sees it, so the response a browser gets is both JSON and
         // CORS-clean.
         .layer(axum::middleware::map_response(json_body_limit_response))
+        // Outside every layer that answers a `/v1` request itself (the body
+        // limits, the `Accept` and query checks, the 405 fallback), so their
+        // refusals are covered as well as the handlers' answers.
+        .layer(axum::middleware::from_fn(no_store_unless_set))
         // Outside the limit layer: every response, including one the limit
         // layer answered itself, carries the CORS headers a browser needs to
         // show it.

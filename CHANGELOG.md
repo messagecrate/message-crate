@@ -671,6 +671,12 @@ released versions carry their date on the heading.
   link after the hour or the logout. The server now tells every cache and
   browser not to store an attachment read through such a link, and tells
   shared caches not to keep any attachment at all (#2149).
+- 2026-10-10: **No cache keeps your messages or your login.** The server now
+  tells every browser and proxy not to store what it answers: the login that
+  hands out your session, and every page of messages, contacts and settings.
+  A browser could otherwise write those answers to its own cache on disk,
+  and a proxy that ignores the usual rules could keep them and hand them out
+  again. The website's own files are cached as before (#2295).
 - 2026-10-10: **The guide to moving a Message Crate says to encrypt the
   copy.** The copy of the Docker volume that the guide makes holds every
   account's messages and attachments unencrypted, and the guide sent it on
