@@ -1,3 +1,5 @@
+import { NEVER_FOLLOW } from "./api";
+
 /** How long to wait after failure attempt `failureIndex` (0-based) before the next probe. */
 export const HEALTH_BACKOFF_CAP_MS = 30_000;
 export const HEALTH_SUCCESS_RECHECK_MS = 30_000;
@@ -58,10 +60,9 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
       signal: timeoutController.signal,
       cache: "no-store",
       // The probe sends no credential, but it must agree with the calls that
-      // do: they refuse a redirect (`NEVER_FOLLOW` in `api.ts`), so an address
-      // that redirects shows as unreachable here too, not as a green light
-      // beside a login that fails.
-      redirect: "error",
+      // do, so an address that redirects reads Disconnected here too, not
+      // Connected beside a login that fails.
+      redirect: NEVER_FOLLOW,
     });
     return res.ok;
   } catch {

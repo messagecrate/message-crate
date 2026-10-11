@@ -265,10 +265,11 @@ released versions carry their date on the heading.
 - 2026-10-10: **The website and the desktop app no longer follow a
   redirect with your Session.** If a misconfigured proxy in front of the
   server answered with a redirect to another address, the website or the
-  desktop app followed it and, in some older browsers and system web views,
-  sent your Session along. The server never redirects, so both now refuse
-  any redirect: the server shows as unreachable, and its status light agrees,
-  which points at the proxy instead of sending your Session somewhere else
+  desktop app followed it, and a browser or system web view built before
+  the Fetch standard's November 2022 rule against this sent your Session
+  along. The server never redirects, so both now refuse any
+  redirect: the login card shows the server as **Disconnected**, which
+  points at the proxy instead of sending your Session somewhere else
   (#2294).
 - 2026-10-10: **The Demo Account can no longer make API Tokens.** Anyone
   who entered the Demo Account could make one, even one that never expires,
