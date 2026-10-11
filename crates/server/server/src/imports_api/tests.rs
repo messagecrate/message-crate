@@ -212,19 +212,25 @@ async fn complete_run(state: &crate::server::AppState, token: &str, import_id: i
 
 /// Complete `import_id` at [`crate::test_support::fixed_instant`], so its
 /// shortcuts are named after that day at any hour the test runs. It calls
-/// `complete_run_at` as `complete_run` does, bypassing the route and its
-/// token and ownership checks, and first moves the run's start an hour
-/// before that instant so the run still starts before it finishes.
+/// `complete_run_at` directly, as the complete route does through
+/// `complete_run`, so it skips the route's token and ownership checks. It
+/// first moves the run's start to the day before, so the run starts before
+/// it finishes and a name taken from the start rather than the finish shows
+/// as the wrong day.
 pub(super) async fn complete_run_at_fixed_instant(state: &crate::server::AppState, import_id: i64) {
     let finished = crate::test_support::fixed_instant();
     let mut conn = state.db.acquire().await.unwrap();
-    let account: i64 =
-        sqlx::query_scalar("UPDATE imports SET started_at = $1 WHERE id = $2 RETURNING account_id")
-            .bind((finished - chrono::Duration::hours(1)).to_rfc3339())
-            .bind(import_id)
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
+    sqlx::query("UPDATE imports SET started_at = $1 WHERE id = $2")
+        .bind((finished - chrono::Duration::days(1)).to_rfc3339())
+        .bind(import_id)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    let account: i64 = sqlx::query_scalar("SELECT account_id FROM imports WHERE id = $1")
+        .bind(import_id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
     super::complete_run_at(
         &mut conn,
         account,
