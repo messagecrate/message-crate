@@ -224,6 +224,39 @@ function runAlreadyClosed(e: unknown): boolean {
 }
 
 /**
+ * True when a call failed with no answer from the server: the request never
+ * left, the connection dropped, or its time limit ended it. The server may
+ * still have done what the call asked.
+ */
+function answerLost(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status === 0;
+}
+
+/**
+ * Where `runId` stands after its discard failed with `e`. A server that says
+ * it holds no such running run (`runAlreadyClosed`) has closed it. A discard
+ * whose answer was lost (`answerLost`) may have been committed before the
+ * connection dropped (#2807), so the account's running run is read again,
+ * and the run is closed when it is no longer that one. A failed read, or any
+ * other refusal, leaves it running. A session the server refused to the
+ * read is `session_ended`, as one refused to the discard is.
+ */
+async function stateAfterFailedDiscard(
+  ctx: RunContext,
+  runId: number,
+  e: unknown,
+): Promise<"closed" | "running" | "session_ended"> {
+  if (runAlreadyClosed(e)) return "closed";
+  if (!answerLost(e)) return "running";
+  try {
+    const running = await endSessionIfRefused(ctx, () => ctx.server.getActiveImportRun());
+    return running?.id === runId ? "running" : "closed";
+  } catch (readError: unknown) {
+    return readError instanceof SessionRefusedError ? "session_ended" : "running";
+  }
+}
+
+/**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
@@ -232,9 +265,11 @@ function runAlreadyClosed(e: unknown): boolean {
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
  * directory goes only once the run is closed on the server (#2669): the
- * close went through, or the server says the run is no longer running
- * (`runAlreadyClosed`). Any other refusal, or a close that never reached the
- * server, leaves the run open there, holding the account's import slot, so
+ * close went through, the server says the run is no longer running
+ * (`runAlreadyClosed`), or a close whose answer was lost is followed by a
+ * read that finds the run no longer running (`stateAfterFailedDiscard`). Any
+ * other refusal, or a close that never reached the server, leaves the run
+ * open there, holding the account's import slot, so
  * its directory stays with it for the next visit to Import to offer again,
  * and the outcome carries the message for the caller to show. A session
  * the server refused to the close is no fault of the run: the run stays for
@@ -267,7 +302,9 @@ export async function discardRun(
       );
     } catch (e: unknown) {
       if (e instanceof SessionRefusedError) return { kind: "session_ended" };
-      if (!runAlreadyClosed(e)) return { kind: "not_closed", message: errorText(e) };
+      const state = await stateAfterFailedDiscard(ctx, runId, e);
+      if (state === "session_ended") return { kind: "session_ended" };
+      if (state === "running") return { kind: "not_closed", message: errorText(e) };
     }
   }
   if (runDir != null) await discardRunDirectory(ctx, runDir);
