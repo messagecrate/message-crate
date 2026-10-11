@@ -41,8 +41,8 @@ import { adoptRecordedMode } from "./stagingSummary";
 import { runUpload } from "./upload";
 
 /**
- * An Import Run whose copy was interrupted, and the directory it was writing
- * into. It has passed no Review, so it has no approved plan.
+ * An Import Run whose Staging was interrupted, and the run directory it was
+ * writing into. It has passed no Review, so it has no approved plan.
  */
 export type ResumeWrite = Omit<OpenRun, "approved"> & {
   /** The list recorded on the run at creation (`source_identities`,
@@ -109,9 +109,11 @@ async function startRunLog(
 }
 
 /**
- * Run an Import Run from the start, or pick one up. `resume` is a run whose
- * run directory is already complete: it goes straight to Upload. `resumeWrite`
- * is a run whose copy was interrupted: it copies again into the same directory.
+ * Run an Import Run from the start, or resume one. `resume` is a run whose
+ * run directory is already complete, and it goes straight to Upload.
+ * `resumeWrite` is a run whose Staging was interrupted. Its Staging resumes in
+ * the same run directory and skips the conversations already written. At most
+ * one of the two is given.
  */
 export async function runImport(
   ctx: RunContext,
