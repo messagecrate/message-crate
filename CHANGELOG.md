@@ -417,13 +417,13 @@ released versions carry their date on the heading.
 #### Importing
 
 - 2026-10-10: **Converting or compressing attachments no longer follows a
-  symlink.** When an import converts or compresses media, the desktop app
-  walks the run's attachments directory. A symlink in that directory used to
-  be followed: the files of a linked directory elsewhere were converted and
-  replaced where they lay, and a link back to a parent directory made the
-  walk repeat until it failed. A symlink there is now skipped, so a linked
-  directory is no longer converted, and only files that are really in the
-  attachments directory change (#2262).
+  symlink.** When the Media stage of an Import Run converts or compresses
+  attachments, a symlink among the staged attachments used to be followed:
+  the files of a linked directory elsewhere were converted and replaced
+  where they lay, and a link back to a directory that holds it made the
+  Media stage go round until it failed. A symlink there is now skipped, so a
+  linked directory is no longer converted, and only the attachments that
+  are really in the Import Run's directory change (#2262).
 
 - 2026-10-10: **The Import form refuses a socket, a device file or a pipe
   in any of its path fields.** An Apple Messages or WhatsApp backup path,
