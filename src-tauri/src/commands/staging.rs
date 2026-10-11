@@ -33,7 +33,7 @@ use std::sync::{Arc, Mutex};
 use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 
 use super::events;
-use super::events::ImportProgressEvent;
+use super::events::{ImportProgressEvent, Step};
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
 use crate::run_directories::{self, RunDirectories, StagingRoot};
@@ -152,15 +152,7 @@ pub async fn summarize_staging(
             events::emit(
                 &progress_app,
                 events::PROGRESS,
-                ImportProgressEvent {
-                    step: "check".into(),
-                    done: progress.done,
-                    total: progress.total,
-                    bytes_done: None,
-                    bytes_total: None,
-                    status: None,
-                    waiting: None,
-                },
+                ImportProgressEvent::from(progress),
             );
         })
         .map_err(|error| format!("{error:#}"))
@@ -269,7 +261,7 @@ pub fn transcode_staging(
                 &downloads,
                 &[Program::Ffmpeg, Program::Ffprobe],
                 &cancel,
-                "media",
+                Step::Media,
             )
             .inspect_err(|error| run_log.error(error))?;
             events::log_to_run(
@@ -292,15 +284,7 @@ pub fn transcode_staging(
                 events::emit(
                     &app_handle,
                     events::PROGRESS,
-                    ImportProgressEvent {
-                        step: "media".into(),
-                        done: progress.done,
-                        total: progress.total,
-                        bytes_done: None,
-                        bytes_total: None,
-                        status: None,
-                        waiting: None,
-                    },
+                    ImportProgressEvent::from(progress),
                 );
             },
         );

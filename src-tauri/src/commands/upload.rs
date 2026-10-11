@@ -22,15 +22,8 @@ fn as_usize(value: u64) -> usize {
 fn finished_upload_events(
     report: &message_crate_import::ImportReport,
 ) -> (ImportProgressEvent, serde_json::Value) {
-    let progress = ImportProgressEvent {
-        step: "upload".into(),
-        done: as_usize(report.conversations_total),
-        total: as_usize(report.conversations_total),
-        bytes_done: None,
-        bytes_total: None,
-        status: None,
-        waiting: None,
-    };
+    let total = as_usize(report.conversations_total);
+    let progress = ImportProgressEvent::upload_count(total, total);
     let summary = serde_json::json!({
         "summary": format!(
             "Upload complete: {} new, {} deduped, {} failed of {} attempted; {}/{} conversations ok; {} assets uploaded",
@@ -197,15 +190,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             events::emit(
                 app,
                 events::PROGRESS,
-                ImportProgressEvent {
-                    step: "upload".into(),
-                    done: index.saturating_sub(1),
-                    total,
-                    bytes_done: None,
-                    bytes_total: None,
-                    status: None,
-                    waiting: None,
-                },
+                ImportProgressEvent::upload_count(index.saturating_sub(1), total),
             );
         }
         ProgressEvent::FileDone { file, status } => {
@@ -473,7 +458,7 @@ mod tests {
 
         let (progress, summary) = finished_upload_events(&report);
 
-        assert_eq!(progress.step, "upload");
+        assert_eq!(progress.step, crate::commands::events::Step::Upload);
         assert_eq!(progress.done, 3);
         assert_eq!(progress.total, 3);
         assert!(summary.get("messages").is_none());
