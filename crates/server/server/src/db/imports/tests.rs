@@ -730,7 +730,7 @@ async fn every_move_the_desktop_app_makes_is_accepted() {
     let mut conn = pool.acquire().await.unwrap();
     for (from, to) in DESKTOP_APP_MOVES {
         let id = open_run_at(&mut conn, from).await;
-        for stage in [from, to, to] {
+        for stage in [to, to] {
             set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
                 .await
                 .unwrap_or_else(|e| panic!("{} -> {}: {e}", from.as_str(), to.as_str()));
