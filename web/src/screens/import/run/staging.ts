@@ -44,7 +44,7 @@ import { runUpload } from "./upload";
  * An Import Run whose Staging was interrupted, and the run directory it was
  * writing into. It has passed no Review, so it has no approved plan.
  */
-type ResumeWrite = Omit<OpenRun, "approved"> & {
+type ResumeStaging = Omit<OpenRun, "approved"> & {
   /** The list recorded on the run at creation (`source_identities`,
    * parsed by the caller). A resumed write lands back on the Staging Review
    * without re-probing the backup, so this is the only way that Review's identity
@@ -59,7 +59,7 @@ type ResumeWrite = Omit<OpenRun, "approved"> & {
  * resumes in the same run directory and skips the conversations already
  * written.
  */
-export type Resume = { at: "upload"; run: OpenRun } | { at: "staging"; run: ResumeWrite };
+export type Resume = { at: "upload"; run: OpenRun } | { at: "staging"; run: ResumeStaging };
 
 /**
  * The form an Import Run is started with, its attachment mode as the form
@@ -190,10 +190,9 @@ export async function runImport(
 
     let runDir: string;
     // Whether the extract resumes a Staging that was interrupted.
-    let resumesStaging = false;
-    if (resume?.at === "staging") {
+    const resumesStaging = resume?.at === "staging";
+    if (resumesStaging) {
       const { run } = resume;
-      resumesStaging = true;
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.

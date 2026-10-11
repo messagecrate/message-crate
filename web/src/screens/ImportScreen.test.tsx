@@ -592,7 +592,7 @@ describe("ImportScreen entering Import", () => {
     expect(resume).toBeUndefined();
   });
 
-  it("picks up an interrupted copy in the directory it was already writing into", async () => {
+  it("resumes an interrupted copy in the directory it was already writing into", async () => {
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(
       activeImportRun({
