@@ -356,6 +356,13 @@ released versions carry their date on the heading.
   error, the login screen now checks once more three seconds later, and
   reads Disconnected only when both fail (#2718).
 
+- 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
+  empty list.** An account with no attachments saw "Top 100 attachments by
+  file size" above "No attachments with sizes yet". Under **Largest
+  attachments** it now shows only "No attachments with sizes yet". When
+  there are attachments, the line above the list gives how many are listed,
+  such as "Top 3 attachments by file size" (#2633).
+
 - 2026-10-11: **The login screen reads Disconnected when the server cannot
   reach its database.** Before, it read Connected as long as the server was
   running, even when every page failed because the database could not be
