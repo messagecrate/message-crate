@@ -42,6 +42,18 @@ type Server = paths["/v1/server"]["get"]["responses"][200]["content"]["applicati
 export type RequestOptions = ApiRequestOptions;
 
 /**
+ * The time limit of a call whose work on the server grows with what an
+ * account holds: an Import Run's stage changes, which wait behind the batches
+ * the desktop app is writing, deleting messages for good, and reading or
+ * writing a whole file such as an address book or a server log. It still
+ * ends, so a stalled server cannot hold the call forever. Every other call
+ * keeps the client's default, `REQUEST_TIMEOUT_MS`.
+ */
+export const LONG_REQUEST_TIMEOUT_MS = 10 * 60_000;
+
+const LONG_CALL: ApiRequestOptions = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
+
+/**
  * Build a query string from values that may be absent.
  *
  * Keys whose value is `undefined`, `null`, or an empty string are dropped, so
@@ -194,12 +206,12 @@ export function setAccountPassword(
 
 /** Delete an account as the owner: its login, profile, contacts, and every message it owns. */
 export function deleteAccountById(accountId: number): Promise<void> {
-  return apiClient.delete<void>(accountPath(accountId));
+  return apiClient.delete<void>(accountPath(accountId), undefined, LONG_CALL);
 }
 
 /** Destroy one account's messages as the owner. The account, its contacts and login survive. */
 export function deleteAccountMessages(accountId: number): Promise<unknown> {
-  return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`);
+  return apiClient.delete<unknown>(`${accountPath(accountId)}/messages`, undefined, LONG_CALL);
 }
 
 /** Settings that belong to the whole Message Crate. */
@@ -255,7 +267,7 @@ export async function listServerLogFiles(opts?: RequestOptions): Promise<LogFile
 
 /** One file of the server's log, whole, as text. */
 export function getServerLogFile(id: number, opts?: RequestOptions): Promise<string> {
-  return apiClient.getText(`/v1/server/log-files/${id}`, opts);
+  return apiClient.getText(`/v1/server/log-files/${id}`, { ...opts, ...LONG_CALL });
 }
 
 /** Where the Demo Account stands: absent, building, ready, or failed. */
@@ -422,7 +434,11 @@ export function listAccountAuditTrail(
 export function deleteAllMessages(
   body: Schema["DeleteMessagesRequest"],
 ): Promise<Schema["DeleteMessagesResponse"]> {
-  return apiClient.delete<Schema["DeleteMessagesResponse"]>(`${ownAccountPath()}/messages`, body);
+  return apiClient.delete<Schema["DeleteMessagesResponse"]>(
+    `${ownAccountPath()}/messages`,
+    body,
+    LONG_CALL,
+  );
 }
 
 // ── API tokens ──────────────────────────────────────────────────────────────
@@ -630,7 +646,7 @@ export function restoreConversation(conversationId: number): Promise<void> {
  * for a conversation that is not in the trash — trash is the only door.
  */
 export function deleteConversation(conversationId: number): Promise<void> {
-  return apiClient.delete<void>(`/v1/conversations/${conversationId}`);
+  return apiClient.delete<void>(`/v1/conversations/${conversationId}`, undefined, LONG_CALL);
 }
 
 // ── Trash ───────────────────────────────────────────────────────────────────
@@ -641,7 +657,7 @@ export function deleteConversation(conversationId: number): Promise<void> {
  * conversations untouched.
  */
 export function emptyTrash(): Promise<void> {
-  return apiClient.delete<void>("/v1/trash");
+  return apiClient.delete<void>("/v1/trash", undefined, LONG_CALL);
 }
 
 // ── Contacts ────────────────────────────────────────────────────────────────
@@ -717,6 +733,7 @@ export function loadAddressBook(
     withQuery("/v1/contacts", query({ mode })),
     content,
     "text/csv",
+    LONG_CALL,
   );
 }
 
@@ -725,7 +742,7 @@ export function loadAddressBook(
  * checked ones, or every contact when the body names neither.
  */
 export function exportAddressBook(body: Schema["GetAddressBookRequest"]): Promise<string> {
-  return apiClient.postText("/v1/contacts/address-book", body);
+  return apiClient.postText("/v1/contacts/address-book", body, LONG_CALL);
 }
 
 /** Put a contact in the trash. Idempotent: trashing an already-trashed one still answers. */
@@ -924,7 +941,7 @@ export function getImport(id: number, opts?: RequestOptions): Promise<Schema["Im
 export function createImport(
   body: Schema["CreateImportRequest"],
 ): Promise<Schema["CreateImportResponse"]> {
-  return apiClient.post<Schema["CreateImportResponse"]>("/v1/imports", body);
+  return apiClient.post<Schema["CreateImportResponse"]>("/v1/imports", body, LONG_CALL);
 }
 
 /** Move a live Import Run to another stage; the run comes back. */
@@ -932,21 +949,21 @@ export function setImportStage(
   id: number,
   body: Schema["UpdateImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.patch<Schema["ImportRun"]>(`/v1/imports/${id}`, body);
+  return apiClient.patch<Schema["ImportRun"]>(`/v1/imports/${id}`, body, LONG_CALL);
 }
 
 export function completeImport(
   id: number,
   body: Schema["CompleteImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/complete`, body);
+  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/complete`, body, LONG_CALL);
 }
 
 export function discardImport(
   id: number,
   body: Schema["DiscardImportRequest"],
 ): Promise<Schema["ImportRun"]> {
-  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, body);
+  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, body, LONG_CALL);
 }
 
 /** Which page of an Import Run's contacts to read. Absent values are left off the URL. */

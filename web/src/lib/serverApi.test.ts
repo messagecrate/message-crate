@@ -34,6 +34,7 @@ import {
   getConversation,
   getConversationSources,
   getImport,
+  LONG_REQUEST_TIMEOUT_MS,
   listAccountExports,
   listAccountImports,
   listAccounts,
@@ -81,6 +82,9 @@ const post = vi.mocked(apiClient.post);
 const put = vi.mocked(apiClient.put);
 const patch = vi.mocked(apiClient.patch);
 const del = vi.mocked(apiClient.delete);
+
+/** The longer time limit a call whose server work grows with an account passes. */
+const LONG = { timeoutMs: LONG_REQUEST_TIMEOUT_MS };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -190,7 +194,7 @@ describe("verbs", () => {
 describe("Import Run routes", () => {
   it("patches the run to move its stage", async () => {
     await setImportStage(9, { stage: "parse" });
-    expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" });
+    expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" }, LONG);
   });
 
   it("addresses a discard by session id, with the Import Errors it carries", async () => {
@@ -198,7 +202,7 @@ describe("Import Run routes", () => {
       { kind: "skip" as const, stage: "staging" as const, item: "a.jsonl", reason: "empty" },
     ];
     await discardImport(9, { issues, notes: [] });
-    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues, notes: [] });
+    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues, notes: [] }, LONG);
   });
 
   it("addresses one past run by id", async () => {
@@ -283,7 +287,7 @@ describe("accounts are one collection", () => {
     await deleteAccount({ confirm: true, current_password: "old" });
     expect(del).toHaveBeenCalledWith("/v1/accounts/7", { confirm: true, current_password: "old" });
     await deleteAllMessages({ confirm: true });
-    expect(del).toHaveBeenCalledWith("/v1/accounts/7/messages", { confirm: true });
+    expect(del).toHaveBeenCalledWith("/v1/accounts/7/messages", { confirm: true }, LONG);
     await getAccountStorage();
     expect(lastPath(get)).toBe("/v1/accounts/7/storage");
   });
@@ -309,9 +313,9 @@ describe("accounts are one collection", () => {
       password_confirmation: "resetbytheowner",
     });
     await deleteAccountMessages(12);
-    expect(del).toHaveBeenCalledWith("/v1/accounts/12/messages");
+    expect(del).toHaveBeenCalledWith("/v1/accounts/12/messages", undefined, LONG);
     await deleteAccountById(12);
-    expect(del).toHaveBeenCalledWith("/v1/accounts/12");
+    expect(del).toHaveBeenCalledWith("/v1/accounts/12", undefined, LONG);
   });
 
   it("keeps API tokens under the logged-in account", async () => {

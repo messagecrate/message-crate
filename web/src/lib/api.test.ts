@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, apiClient, getBaseUrl, problemFromBody, setBaseUrl, setToken } from "./api";
+import {
+  ApiError,
+  apiClient,
+  getBaseUrl,
+  problemFromBody,
+  REQUEST_TIMEOUT_MS,
+  setBaseUrl,
+  setToken,
+} from "./api";
 import { APP_BUILD } from "./build";
 
 afterEach(() => {
@@ -320,13 +328,17 @@ describe("apiClient request shape", () => {
     expect(lastCall(fetchSpy)[1].method).toBe("DELETE");
   });
 
-  it("passes the abort signal through, so a screen that unmounts cancels its request", async () => {
-    const fetchSpy = stubOkFetch();
+  it("passes the abort signal on, so a screen that unmounts cancels its request", async () => {
+    stubStalledFetch();
     const controller = new AbortController();
 
-    await apiClient.get("/v1/conversations", { signal: controller.signal });
+    const call = apiClient.get("/v1/conversations", { signal: controller.signal });
+    controller.abort();
 
-    expect(lastCall(fetchSpy)[1].signal).toBe(controller.signal);
+    // A cancel is not a failure to show, so it stays the abort it was.
+    const err = await call.catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ApiError);
+    expect((err as DOMException).name).toBe("AbortError");
   });
 
   it("posts a raw body under its own media type without re-encoding it", async () => {
@@ -341,5 +353,96 @@ describe("apiClient request shape", () => {
     expect(headers["Content-Type"]).toBe("application/x-ndjson");
     expect(headers.Authorization).toBe("Bearer mc-user-abc123");
     expect(init.body).toBe(jsonl);
+  });
+});
+
+/**
+ * Stub a fetch that never answers, as a server that accepts the connection and
+ * then stalls does. Like the real one, it rejects with the signal's reason
+ * once the signal it was given aborts.
+ */
+function stubStalledFetch() {
+  const fetchSpy = vi.fn(
+    (_url: string, init: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }),
+  );
+  vi.stubGlobal("fetch", fetchSpy);
+  return fetchSpy;
+}
+
+/** Start `call` and note when it settles, so a test can ask whether it is still waiting. */
+function track(call: Promise<unknown>): { settled: () => boolean; error: Promise<unknown> } {
+  let done = false;
+  const error = call.then(
+    () => {
+      done = true;
+      return undefined;
+    },
+    (e: unknown) => {
+      done = true;
+      return e;
+    },
+  );
+  return { settled: () => done, error };
+}
+
+describe("apiClient time limit", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("gives up on a server that never answers and says so in a sentence", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.get("/v1/conversations"));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS - 1);
+    expect(call.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const err = await call.error;
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe("The server didn't answer within 30 seconds.");
+  });
+
+  it("puts the same limit on every kind of call", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const calls = [
+      apiClient.post("/v1/imports", { a: 1 }),
+      apiClient.postRaw("/v1/contacts/address-book", "BEGIN:VCARD", "text/vcard"),
+      apiClient.postText("/v1/contacts/address-book", {}),
+      apiClient.getText("/v1/server/log-files/1"),
+    ].map((c) => track(c));
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+
+    for (const call of calls) {
+      expect(await call.error).toBeInstanceOf(ApiError);
+    }
+  });
+
+  it("waits as long as a caller asks for when its call does long work", async () => {
+    vi.useFakeTimers();
+    stubStalledFetch();
+
+    const call = track(apiClient.post("/v1/imports/1/complete", {}, { timeoutMs: 10 * 60_000 }));
+    await vi.advanceTimersByTimeAsync(10 * 60_000 - 1);
+    expect(call.settled()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+
+    const err = await call.error;
+    expect((err as ApiError).message).toBe("The server didn't answer within 10 minutes.");
+  });
+
+  it("stops the clock once the server answers", async () => {
+    vi.useFakeTimers();
+    stubOkFetch();
+
+    await apiClient.get("/v1/conversations");
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
