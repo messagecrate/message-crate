@@ -122,6 +122,11 @@ The accounts' passwords don't protect it, because a password guards the server's
 
 The file should be encrypted before it travels, because a USB drive can be lost and a network share or a copy left behind can be read by others.
 `age` and `gpg` both encrypt a file with a passphrase.
+Neither comes with macOS or Windows, and most Linux installations have `gpg` but not `age`, so one of them may need installing first:
+
+- `age`: `brew install age` on macOS, `winget install FiloSottile.age` on Windows, and the package `age` on Linux.
+- `gpg`: `brew install gnupg` or GPG Suite on macOS, Gpg4win on Windows, and the package `gnupg` on Linux.
+
 Either command below writes an encrypted copy beside the file and asks for the passphrase twice:
 
 ```bash title="On the old computer: encrypt the file with age or with gpg"
@@ -132,7 +137,16 @@ age -p -o message-crate-data.tar.gz.age message-crate-data.tar.gz
 gpg -c message-crate-data.tar.gz
 ```
 
-The unencrypted `message-crate-data.tar.gz` is then deleted from the old computer, so only the encrypted copy remains.
+Neither tool removes the unencrypted file, so it is deleted next, and only the encrypted copy remains:
+
+```bash title="On the old computer: delete the unencrypted file"
+# Linux or macOS
+rm message-crate-data.tar.gz
+
+# PowerShell on Windows
+Remove-Item message-crate-data.tar.gz
+```
+
 The encrypted copy goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
 The passphrase should travel separately from the file, because a passphrase stored beside the file protects nothing.
 
@@ -172,8 +186,10 @@ Two running copies would each take new imports, and nothing merges them afterwar
 
 The old volume remains on the old computer until `docker volume rm message-crate-data` deletes it.
 
-Once the counts match, `message-crate-data.tar.gz` is deleted from the new computer, and the encrypted copy from the new computer, the old computer, and wherever it travelled through, such as the USB drive or the network share.
-The restored volume holds everything the file held, so neither file is needed any more, and each copy left behind is one more place the messages can be read from.
+Once the counts match, neither file is needed any more, because the restored volume holds everything they held.
+Each copy left behind is one more place the messages can be read from.
+`message-crate-data.tar.gz` is deleted from the new computer, with `rm` or `Remove-Item` as on the old computer.
+The encrypted copy is deleted everywhere it went: the new computer, the old computer, and the USB drive or network share it travelled through.
 
 ### Encrypt the disk that holds the volume
 

@@ -653,7 +653,8 @@ released versions carry their date on the heading.
 - 2026-10-10: **The guide to moving a Message Crate says to encrypt the
   copy.** The copy of the Docker volume that the guide makes holds every
   account's messages and attachments unencrypted, and the guide sent it on
-  by USB drive, network share or `scp` without saying so. It now encrypts
+  by USB drive, network share or `scp` without saying that it was
+  unencrypted. It now encrypts
   the copy with `age` or `gpg` before it leaves the old computer, deletes
   every copy once the new computer's Message Crate is checked, and says the
   computer that runs the server should use full-disk encryption, such as
