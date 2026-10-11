@@ -49,7 +49,6 @@ describe("IMPORT_SOURCES", () => {
       expect(typeof source.asksOwnerEmails, source.id).toBe("boolean");
       expect(typeof source.needsWtsexporter, source.id).toBe("boolean");
       expect(typeof source.readiness, source.id).toBe("function");
-      expect(typeof source.FormSection, source.id).toBe("function");
       for (const { id: method } of source.methods) {
         const backup = source.backupField(method);
         expect(backup.label, method).not.toBe("");

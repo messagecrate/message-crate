@@ -1,13 +1,13 @@
-import PasswordField from "../../components/PasswordField";
-import PathPicker from "../../components/PathPicker";
-import { hintClass, StackedField } from "../../screens/import/ImportFormUi";
+import PasswordField from "../../../components/PasswordField";
+import PathPicker from "../../../components/PathPicker";
 import {
   imessageAttachmentRootRequired,
   imessageShowsAppleContacts,
   imessageShowsAttachmentRoot,
   imessageShowsPassword,
   isImessageMethod,
-} from "../imessageImport";
+} from "../../../lib/imessageImport";
+import { hintClass, StackedField } from "../ImportFormUi";
 import { FieldStatus } from "./FieldStatus";
 import type { ImportFormSectionProps } from "./types";
 

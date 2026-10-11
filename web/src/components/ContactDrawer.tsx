@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ApiError } from "../lib/api";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
+import type { ContactBrowseScope, ContactBrowseTarget } from "../lib/contactBrowseQuery";
 import { type ContactDetail, useContactDetail, useUpdateContact } from "../lib/contactDetail";
 import { contactLabelText } from "../lib/contactLabel";
 import { useTrashContact } from "../lib/trash";
@@ -11,8 +12,6 @@ import Button from "./Button";
 import ContactLabel from "./ContactLabel";
 import { ContactDrawerHandles } from "./contactDrawer/ContactDrawerHandles";
 import {
-  type ContactBrowseScope,
-  type ContactBrowseTarget,
   type ContactPreview,
   contactConversations,
   previewHandleStubRows,
