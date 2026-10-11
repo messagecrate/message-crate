@@ -45,7 +45,7 @@ impl KeyedLocks {
     }
 
     /// Take the map, poisoned or not. A panic while it is held cannot leave
-    /// it half-changed: each holder does one `entry`, `get` or `remove`. So a
+    /// it half-changed: each holder does one `entry`, `remove` or `len`. So a
     /// poisoned map is used as it is, rather than failing every later import
     /// and upload completion until the server restarts, or aborting the
     /// process when a guard drops during an unwind.
