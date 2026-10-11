@@ -870,8 +870,15 @@ describe("OwnerHome", () => {
     await screen.findByText("bob");
     await waitFor(() => expect(getServerState).toHaveBeenCalled());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    cleanup();
+  });
 
+  it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
+    getServerState.mockResolvedValue({
+      state: "closed",
+      version: APP_BUILD,
+      schema_fingerprint: 1234567890,
+      journal_mode: null,
+    });
     renderHome(["/owner/settings"]);
     expect((await screen.findByText("Journal mode")).nextElementSibling).toHaveTextContent(
       "unknown (the server's log says why)",

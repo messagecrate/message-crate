@@ -18,9 +18,9 @@ export function JournalModeNotice() {
       className="m-0 shrink-0 border-b border-warn-soft-border bg-warn-soft-bg px-3 py-1.5 text-[0.813rem] text-warn-soft-text"
     >
       The server could not turn on write-ahead logging when it started, so every page waits while an
-      import is writing. The server's log, under Logs, names the cause. If another program has the
-      database file open, close it. Then restart the server, which also clears a journal left behind
-      by a server that stopped part-way.
+      import is writing. The server's log, under Logs, has a warning from the start that says what
+      SQLite answered. If another program has the database file open, close it. Then restart the
+      server.
     </p>
   );
 }

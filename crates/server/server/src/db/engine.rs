@@ -156,8 +156,10 @@ fn mode_or_warn(answer: Result<JournalMode>) -> Option<JournalMode> {
 }
 
 /// Ask SQLite for write-ahead logging, and return the mode the database ends
-/// in. A hot rollback journal or another process holding the database can
-/// make the request fail. SQLite also turns it down without an error where
+/// in. Another process holding the database, or a hot rollback journal that
+/// cannot be rolled back (in a read-only directory, say), can make the
+/// request fail. A hot journal that can be rolled back is not a cause:
+/// SQLite rolls it back on the first read. SQLite also turns it down without an error where
 /// the database cannot use it (one held in memory, say), and answers the
 /// mode it kept. Either way the pool stays usable, and a warning in the log
 /// says so. `None` when the mode cannot be read at all. That is warned of
