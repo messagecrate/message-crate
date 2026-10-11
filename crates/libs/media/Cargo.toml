@@ -11,6 +11,10 @@ csv = { workspace = true }
 file-io = { workspace = true }
 serde = { workspace = true }
 
+# `access`, to ask whether this account may run a file (`is_executable`).
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }
 

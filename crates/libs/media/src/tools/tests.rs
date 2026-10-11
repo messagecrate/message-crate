@@ -705,6 +705,27 @@ fn a_file_is_executable_only_with_an_executable_bit() {
     assert!(is_executable(&program));
 }
 
+/// A file with an executable bit this account may not run is not
+/// executable: a `wtsexporter` with only another class's bits, as a
+/// root-owned `0o744` file is to any other account, must not pass for one
+/// that runs. An account that may read a `0o000` file, such as root, may run
+/// any file with a bit, so the test skips there.
+#[cfg(unix)]
+#[test]
+fn a_file_this_account_may_not_run_is_not_executable() {
+    let dir = tempfile::tempdir().unwrap();
+    let probe = dir.path().join("probe");
+    fs::write(&probe, "").unwrap();
+    fs::set_permissions(&probe, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&probe).is_ok() {
+        return;
+    }
+    let program = dir.path().join("wtsexporter");
+    fs::write(&program, "#!/bin/sh\n").unwrap();
+    fs::set_permissions(&program, fs::Permissions::from_mode(0o611)).unwrap();
+    assert!(!is_executable(&program));
+}
+
 /// A directory has an executable bit too, and is not a program: one left
 /// where `wtsexporter` belongs must not pass for it.
 #[cfg(unix)]

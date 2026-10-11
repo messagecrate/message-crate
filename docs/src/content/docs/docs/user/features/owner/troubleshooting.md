@@ -152,6 +152,11 @@ On Linux and macOS it also needs permission to run:
 chmod +x ~/message-crate/tools/wtsexporter
 ```
 
+The permission has to be for the account that runs the app.
+A copy that another account owns, such as one root put there, can have permission to run for its owner alone.
+The Import form and **Settings → System** then say `wtsexporter` isn't used because it `is not executable by this account`.
+The account that owns the file runs `chmod +x` on it, or gives the account that runs the app ownership of it.
+
 The app keeps a file put there by hand when it is this pinned file, and replaces anything else once a download succeeds.
 [Settings → System](/docs/user/features/settings/system/#media) states the rule.
 

@@ -317,8 +317,10 @@ fn need(pinned: &Pinned, dir: &Path, manifest: &Manifest) -> Need {
 
 /// Whether `program` in `dir` runs, as the lookup that uses it decides:
 /// ffmpeg and ffprobe answer `-version` (an answer `media` keeps until the
-/// file changes), and wtsexporter is a file with an executable bit, which
-/// is all its lookup asks because a `pipx` shim is slow to start.
+/// file changes), and wtsexporter is a file with an executable bit this
+/// account may run, which is all its lookup asks because a `pipx` shim is
+/// slow to start. A bit alone is not enough: a root-owned `0o744` file has
+/// one, and the app can't run it (#2793).
 fn runs(program: Program, dir: &Path) -> bool {
     match program {
         Program::Ffmpeg | Program::Ffprobe => media::tool_in_dir(dir, program.name()).is_some(),

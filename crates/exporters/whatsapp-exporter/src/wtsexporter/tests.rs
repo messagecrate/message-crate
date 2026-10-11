@@ -628,6 +628,35 @@ fn a_wtsexporter_that_is_not_executable_is_refused() {
     );
 }
 
+/// A copy with an executable bit this account may not run, as a root-owned
+/// `0o744` file is to any other account, is refused too, and the error says
+/// whose `chmod +x` fixes it (#2793). An account that may read a `0o000`
+/// file, such as root, may run any file with a bit, so the test skips there.
+#[cfg(unix)]
+#[test]
+fn a_wtsexporter_this_account_may_not_run_is_refused() {
+    let tools = tempfile::tempdir().unwrap();
+    let probe = tools.path().join("probe");
+    write_with_mode(&probe, 0o000);
+    if std::fs::read(&probe).is_ok() {
+        return;
+    }
+    let program = tools.path().join(wtsexporter_file_name());
+    write_with_mode(&program, 0o611);
+
+    let err = wtsexporter_in(Some(tools.path())).expect_err("not executable by this account");
+    let message = err.to_string();
+    assert!(
+        message.contains("is not executable by this account"),
+        "{message}"
+    );
+    assert!(message.contains("another account owns"), "{message}");
+    assert!(
+        super::find_wtsexporter(Some(tools.path())).is_err(),
+        "the status lookup refuses it too"
+    );
+}
+
 /// A missing copy is reported as missing, naming the Tools Directory,
 /// and a copy outside it is not found (#1053).
 #[test]
