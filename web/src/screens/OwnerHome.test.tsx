@@ -190,6 +190,7 @@ beforeEach(() => {
     state: "closed",
     version: APP_BUILD,
     schema_fingerprint: 1234567890,
+    journal_mode: "wal",
   });
   updateServerSettings.mockResolvedValue({ public_registration: true });
   updateAccount.mockResolvedValue({ ...anAccount, disabled: true });
@@ -671,6 +672,7 @@ describe("OwnerHome", () => {
       state: "closed",
       version: "0.10.0+343fe0d8",
       schema_fingerprint: 1234567890,
+      journal_mode: "wal",
     });
     getAccount.mockResolvedValue({
       ...anAccount,
@@ -830,6 +832,57 @@ describe("OwnerHome", () => {
     expect(screen.getByText("Schema fingerprint").nextElementSibling).toHaveTextContent(
       "1234567890",
     );
+    expect(screen.getByText("Journal mode").nextElementSibling).toHaveTextContent("wal");
+  });
+
+  it("says so on every section, and what to do, when the database runs without write-ahead logging", async () => {
+    getServerState.mockResolvedValue({
+      state: "closed",
+      version: APP_BUILD,
+      schema_fingerprint: 1234567890,
+      journal_mode: "delete",
+    });
+    renderHome(["/owner/dashboard"]);
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(
+      "The server could not turn on write-ahead logging when it started",
+    );
+    expect(notice).toHaveTextContent("If another program has the database file open, close it.");
+    expect(notice).toHaveTextContent("Then restart the server");
+    cleanup();
+
+    renderHome(["/owner/accounts"]);
+    expect(await screen.findByRole("status")).toHaveTextContent("write-ahead logging");
+    // It blocks nothing: the screen under it still loads and works.
+    expect(await screen.findByText("bob")).toBeInTheDocument();
+  });
+
+  it("says nothing about write-ahead logging when the server could not read the mode", async () => {
+    getServerState.mockResolvedValue({
+      state: "closed",
+      version: APP_BUILD,
+      schema_fingerprint: 1234567890,
+      journal_mode: null,
+    });
+    renderHome();
+
+    await screen.findByText("bob");
+    await waitFor(() => expect(getServerState).toHaveBeenCalled());
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows the journal mode as unknown in Server Settings when the server could not read it", async () => {
+    getServerState.mockResolvedValue({
+      state: "closed",
+      version: APP_BUILD,
+      schema_fingerprint: 1234567890,
+      journal_mode: null,
+    });
+    renderHome(["/owner/settings"]);
+    expect((await screen.findByText("Journal mode")).nextElementSibling).toHaveTextContent(
+      "unknown (the server's log says why)",
+    );
   });
 
   it("says nothing under the header while the server and the app are one release", async () => {
@@ -845,6 +898,7 @@ describe("OwnerHome", () => {
       state: "closed",
       version: "99.0.0",
       schema_fingerprint: 1234567890,
+      journal_mode: "wal",
     });
     renderHome();
 

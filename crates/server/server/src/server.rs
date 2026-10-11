@@ -1505,10 +1505,9 @@ pub async fn run(cfg: Config, exit_with_parent: Option<u32>) -> anyhow::Result<(
     }
     let opened = OpenDb::create_or_open(cfg).await?;
     crate::operation_lock::mark_ready(&opened.cfg.paths.db)?;
-    let mode: String = sqlx::query_scalar("PRAGMA journal_mode")
-        .fetch_one(&opened.db)
+    let mode = crate::db::engine::journal_mode_or_warn(&opened.db)
         .await
-        .unwrap_or_else(|_| "unknown".into());
+        .map_or_else(|| "unknown".to_owned(), |mode| mode.to_string());
     say!(
         "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()

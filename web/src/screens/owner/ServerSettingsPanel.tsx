@@ -25,7 +25,9 @@ function megabytes(bytes: number): string {
  * attachment; it lives nowhere but here. The Demo
  * Account is added or reset here. Under them the server states which code it runs and which schema its database
  * carries: the Build, and the Schema Fingerprint as the number the server
- * stamps into the database and names in its startup warning.
+ * stamps into the database and names in its startup warning. Last is the
+ * journal mode the database runs in, `wal` unless the server could not turn
+ * write-ahead logging on.
  */
 export function ServerSettingsPanel() {
   const cache = useRouteCache();
@@ -144,6 +146,10 @@ export function ServerSettingsPanel() {
           <dt className="text-muted">Schema fingerprint</dt>
           <dd className="m-0 font-mono text-[0.813rem] text-text">
             {info.data.schema_fingerprint}
+          </dd>
+          <dt className="text-muted">Journal mode</dt>
+          <dd className="m-0 font-mono text-[0.813rem] text-text">
+            {info.data.journal_mode ?? "unknown (the server's log says why)"}
           </dd>
         </dl>
       ) : null}

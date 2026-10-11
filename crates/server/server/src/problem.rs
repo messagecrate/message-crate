@@ -17,9 +17,28 @@ pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/
 /// reader could act on.
 pub const INTERNAL_TYPE: &str = "about:blank";
 
-/// One registered kind of failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ProblemType {
+/// Declares [`ProblemType`] and its [`ProblemType::ALL`] from one list of
+/// variants, so a type cannot be declared and left out of `ALL`: the error
+/// pages ([`crate::error_docs`]) and the OpenAPI problem types
+/// ([`crate::openapi::shared_parts`]) walk `ALL`, and a type missing from it
+/// would ship with neither.
+macro_rules! problem_types {
+    ($($(#[$doc:meta])* $name:ident,)*) => {
+        /// One registered kind of failure.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum ProblemType {
+            $($(#[$doc])* $name,)*
+        }
+
+        impl ProblemType {
+            /// Every registered type, in the order the docs index lists them:
+            /// the order they are declared in.
+            pub const ALL: [Self; [$(stringify!($name)),*].len()] = [$(Self::$name),*];
+        }
+    };
+}
+
+problem_types! {
     /// A query parameter, path segment or body field parsed and then broke a rule.
     ValidationFailed,
     /// The request cannot be read: not valid JSON or JSONL, or a body that failed to arrive.
@@ -71,33 +90,6 @@ pub enum ProblemType {
 }
 
 impl ProblemType {
-    /// Every registered type, in the order the docs index lists them.
-    pub const ALL: [Self; 23] = [
-        Self::ValidationFailed,
-        Self::MalformedBody,
-        Self::UnsupportedMediaType,
-        Self::PayloadTooLarge,
-        Self::InvalidCredentials,
-        Self::AuthenticationRequired,
-        Self::RateLimited,
-        Self::UsernameTaken,
-        Self::NameTaken,
-        Self::DemoAccountProtected,
-        Self::NotTheOwner,
-        Self::RegistrationClosed,
-        Self::InsufficientScope,
-        Self::AccountDisabled,
-        Self::SearchQueryInvalid,
-        Self::StateConflict,
-        Self::IdentityExists,
-        Self::AssetUploadInvalid,
-        Self::NotFound,
-        Self::MethodNotAllowed,
-        Self::NotAcceptable,
-        Self::MediaLinkInvalid,
-        Self::RangeNotSatisfiable,
-    ];
-
     /// The last segment of the `type` URL and the page's file name.
     #[must_use]
     pub const fn slug(self) -> &'static str {
@@ -295,6 +287,11 @@ pub mod openapi {
         )*};
     }
 
+    // The types a handler may name as its own failure, so this list is
+    // shorter than `ProblemType::ALL` on purpose: the shared parts add the
+    // failures every route of a kind shares, and `method-not-allowed`
+    // belongs to no route. A handler that names a type left out here fails
+    // to compile.
     named!(
         PayloadTooLarge,
         InvalidCredentials,
