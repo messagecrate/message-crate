@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::handles::upsert_handle_row;
+use crate::test_support::ConversationRow;
 
 const ACCOUNT: i64 = 7;
 const HEADER: &str = "contact_id,display_name,groups,service,identity_type,identity";
@@ -68,15 +69,7 @@ async fn in_a_conversation(conn: &mut SqliteConnection, raw: &str) {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let conversation: i64 = sqlx::query_scalar(
-        "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-         VALUES ($1, $2, 'individual', 'c.jsonl') RETURNING id",
-    )
-    .bind(ACCOUNT)
-    .bind(handle_id)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    let conversation = ConversationRow::new(ACCOUNT, handle_id).insert(conn).await;
     sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
         .bind(conversation)
         .bind(handle_id)

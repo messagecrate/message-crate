@@ -251,15 +251,12 @@ async fn a_claim_that_loses_a_race_answers_conflict() {
 
     let mut other_conn = state.db.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
-    account_profile::insert_account_at(
+    crate::test_support::insert_account_with_id(
         &mut other,
         account_profile::OWNER_ACCOUNT_ID,
         "keeper",
-        None,
-        None,
     )
-    .await
-    .unwrap();
+    .await;
     let (status, text) = crate::db::write_tx::commit_during(
         other,
         post_logged_out(

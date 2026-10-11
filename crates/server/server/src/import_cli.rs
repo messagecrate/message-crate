@@ -304,7 +304,6 @@ fn files_by_source(paths: &[PathBuf]) -> Result<BTreeMap<String, Vec<PathBuf>>> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::account_profile;
     use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
     use crate::open_db::fresh_config;
     use crate::test_support::{conversation_header, message_line};
@@ -327,9 +326,7 @@ mod tests {
     async fn fixture_with_export(dir: &Path) -> (OpenDb, CliImportOptions) {
         let opened = OpenDb::create_or_open(fresh_config(dir)).await.unwrap();
         let mut conn = opened.conn().await.unwrap();
-        account_profile::insert_account_at(&mut conn, ALICE, "alice", None, None)
-            .await
-            .unwrap();
+        crate::test_support::insert_account_with_id(&mut conn, ALICE, "alice").await;
         drop(conn);
 
         let input = dir.join("export");
