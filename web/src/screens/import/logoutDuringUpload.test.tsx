@@ -14,6 +14,7 @@ import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, getToken } from "../../lib/api";
 import type { DesktopJobResult, UploadFinishedReport } from "../../lib/tauri";
+import { importForm } from "../../test/importForm";
 import { setupUser } from "../../test/user";
 
 /** Every call that matters to the order, in the order it was made. */
@@ -87,37 +88,13 @@ const { useAuth } = await import("../../lib/authContext");
 const { isUploadRunning } = await import("../../lib/runningUpload");
 const { importRunService, useImportJob } = await import("./useImportJob");
 
-const MIB = 1024 * 1024;
-
 const PAUSING = "Pausing the Upload. You are logged out once it has paused, or after 15 seconds.";
 const DELETED_PAUSING =
   "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
 const NOT_PAUSED =
   "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
 
-const form = {
-  source: "imessage-ios",
-  backupPath: "/backups/iphone.tar",
-  backupPassword: "",
-  attachmentMedia: "copy" as const,
-  maxResolution: "",
-  maxFps: "",
-  minSizeMb: "",
-  ownerPhones: [],
-  ownerEmails: [],
-  obfuscate: false,
-  attachmentRoot: "",
-  appleContacts: "",
-  whatsappKey: "",
-  whatsappWa: "",
-  whatsappMedia: "",
-  whatsappDb: "",
-  isBusinessApp: false,
-  whatsappOwnerPhone: "",
-  timeZone: "America/New_York",
-  phoneCountry: "",
-  assetMaxBytes: 512 * MIB,
-};
+const form = importForm();
 
 /** What `run.rs` reports when the cancel flag pauses the Upload after 200 of 681. */
 function pausedReport(): UploadFinishedReport {
