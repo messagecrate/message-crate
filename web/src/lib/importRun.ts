@@ -6,7 +6,7 @@ import {
   setImportStage as setStage,
 } from "./serverApi";
 import type { components } from "./serverApi.types";
-import { invokeDeleteRunDir, invokePathStat, type PathStat } from "./tauri";
+import { invokeDeleteRunDir, invokePathStat, type PathStat, type PathUnreadable } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
@@ -53,28 +53,55 @@ export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveIm
   };
 }
 
+/** An Import Run's directory that could not be deleted, and why. */
+export type UndeletedDirectory = { path: string; reason: string };
+
+/**
+ * The directories of the account's Import Runs on this computer: `found`,
+ * the ones to delete with the account, and `unreadable`, the ones the
+ * operating system would not let Message Crate read. Those may be there, and
+ * Message Crate cannot delete them either, so they are named with the
+ * system's reason once the account is deleted (#2651).
+ */
+export type AccountRunDirectories = {
+  found: string[];
+  unreadable: UndeletedDirectory[];
+};
+
 /**
  * The directories of the account's Import Runs that are on this
  * computer, for deleting with the account (#1491).
  *
  * The server keeps where each run staged its files, but the directories are on
  * whichever computer ran it, so each one is looked for here and only the
- * directories found are named. Desktop app only: it asks the app for each path.
+ * directories found are named. A directory the operating system would not
+ * describe is not taken for missing: it comes back in `unreadable`.
+ * Desktop app only: it asks the app for each path.
  */
-export async function accountRunDirectories(signal?: AbortSignal): Promise<string[]> {
+export async function accountRunDirectories(signal?: AbortSignal): Promise<AccountRunDirectories> {
   const runs = await listEveryImport({ signal });
   const paths = [...new Set(runs.flatMap((run) => (run.run_dir ? [run.run_dir] : [])))];
-  const found = await Promise.all(
-    paths.map(async (path) => {
-      const stat = await invokePathStat(path);
-      return stat.exists && stat.isDirectory ? path : null;
-    }),
+  const stats = await Promise.all(
+    paths.map(async (path) => ({ path, stat: await invokePathStat(path) })),
   );
-  return found.filter((path): path is string => path !== null);
+  const directories: AccountRunDirectories = { found: [], unreadable: [] };
+  for (const { path, stat } of stats) {
+    if (stat.unreadable) {
+      directories.unreadable.push({ path, reason: unreadableReason(stat.unreadable) });
+    } else if (stat.exists && stat.isDirectory) {
+      directories.found.push(path);
+    }
+  }
+  return directories;
 }
 
-/** An Import Run's directory that could not be deleted, and why. */
-export type UndeletedDirectory = { path: string; reason: string };
+/** Why Message Crate could not read a run directory, in the system's own words. */
+function unreadableReason({ kind, reason }: PathUnreadable): string {
+  const said = reason.trim().replace(/\.$/, "");
+  return kind === "permission_denied"
+    ? `Message Crate isn't allowed to read it. The system says: ${said}.`
+    : `Message Crate could not read it. The system says: ${said}.`;
+}
 
 /**
  * Delete the directories of a deleted account's Import Runs, one at a time,

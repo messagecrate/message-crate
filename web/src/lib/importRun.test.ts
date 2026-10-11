@@ -31,10 +31,50 @@ describe("accountRunDirectories", () => {
       isDirectory: path === "/staging/iphone",
       sizeBytes: 0,
       modifiedUnixMs: null,
+      unreadable: null,
     }));
 
-    expect(await accountRunDirectories()).toEqual(["/staging/iphone"]);
+    expect(await accountRunDirectories()).toEqual({ found: ["/staging/iphone"], unreadable: [] });
     expect(invokePathStat).toHaveBeenCalledTimes(2);
+  });
+
+  // A directory the app may not read may still be there with the deleted
+  // account's data, so it is named with the system's reason, not skipped (#2651).
+  it("reports a run directory the app may not read, with the system's reason", async () => {
+    listEveryImport.mockResolvedValue([
+      { id: 2, run_dir: "/staging/iphone" },
+      { id: 1, run_dir: "/Users/u/Documents/staging" },
+      { id: 0, run_dir: "/mnt/broken" },
+    ]);
+    invokePathStat.mockImplementation(async (path: string) => {
+      if (path === "/Users/u/Documents/staging") {
+        return desktopPathStat({ exists: false, isFile: false, unreadable: PERMISSION_DENIED });
+      }
+      if (path === "/mnt/broken") {
+        return desktopPathStat({
+          exists: false,
+          isFile: false,
+          unreadable: { kind: "other", reason: "Input/output error (os error 5)" },
+        });
+      }
+      return desktopPathStat({ isFile: false, isDirectory: true });
+    });
+
+    expect(await accountRunDirectories()).toEqual({
+      found: ["/staging/iphone"],
+      unreadable: [
+        {
+          path: "/Users/u/Documents/staging",
+          reason:
+            "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+        },
+        {
+          path: "/mnt/broken",
+          reason:
+            "Message Crate could not read it. The system says: Input/output error (os error 5).",
+        },
+      ],
+    });
   });
 });
 

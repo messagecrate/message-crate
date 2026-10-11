@@ -51,6 +51,12 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
+const UNREADABLE_DIRECTORY = {
+  path: "/Users/carol/Documents/staging",
+  reason:
+    "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+};
+
 describe("ProfileDangerZone", () => {
   it("shows the server's refusal inside the delete account dialog", async () => {
     deleteAccount.mockRejectedValue(new Error("current password is incorrect"));
@@ -84,7 +90,10 @@ describe("ProfileDangerZone", () => {
 
   it("names the directories of the account's Import Runs on this computer, and deletes them with the account", async () => {
     desktop.value = true;
-    accountRunDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
+    accountRunDirectories.mockResolvedValue({
+      found: ["/home/carol/staging/iphone-2026-10-04"],
+      unreadable: [UNREADABLE_DIRECTORY],
+    });
     deleteAccount.mockResolvedValue(undefined);
     const user = setupUser();
     render(
@@ -109,13 +118,19 @@ describe("ProfileDangerZone", () => {
     expect(dialog).toHaveTextContent(
       "Deleting the account also deletes the directories of its Import Runs on this computer:",
     );
+    // One the app may not read cannot be deleted, so it is named once the
+    // account is deleted, not here.
+    expect(dialog).not.toHaveTextContent(UNREADABLE_DIRECTORY.path);
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
       expect(logout).toHaveBeenCalledWith({
         ask: false,
-        deletedAccountDirectories: ["/home/carol/staging/iphone-2026-10-04"],
+        deletedAccountDirectories: {
+          found: ["/home/carol/staging/iphone-2026-10-04"],
+          unreadable: [UNREADABLE_DIRECTORY],
+        },
       }),
     );
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: undefined });
@@ -127,7 +142,10 @@ describe("ProfileDangerZone", () => {
     // has not answered yet.
     const client = testQueryClient();
     seedEntries(client, 7, [keys.imports.runDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), {
+      found: ["/home/carol/old"],
+      unreadable: [],
+    });
     accountRunDirectories.mockReturnValue(new Promise(() => {}));
     const user = setupUser();
     render(
@@ -160,7 +178,10 @@ describe("ProfileDangerZone", () => {
     deleteAccount.mockResolvedValue(undefined);
     const client = testQueryClient();
     seedEntries(client, 7, [keys.imports.runDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), {
+      found: ["/home/carol/old"],
+      unreadable: [],
+    });
     accountRunDirectories.mockRejectedValue(new Error("path_stat failed"));
     const user = setupUser();
     render(
@@ -184,7 +205,10 @@ describe("ProfileDangerZone", () => {
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
+      expect(logout).toHaveBeenCalledWith({
+        ask: false,
+        deletedAccountDirectories: { found: [], unreadable: [] },
+      }),
     );
   });
 
@@ -212,7 +236,10 @@ describe("ProfileDangerZone", () => {
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
+      expect(logout).toHaveBeenCalledWith({
+        ask: false,
+        deletedAccountDirectories: { found: [], unreadable: [] },
+      }),
     );
     expect(accountRunDirectories).not.toHaveBeenCalled();
   });

@@ -312,7 +312,7 @@ describe("logging out during an Upload", () => {
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: { found: ["/home/sam/staging-iphone"], unreadable: [] },
       }),
     );
 
@@ -337,7 +337,7 @@ describe("logging out during an Upload", () => {
     act(() => {
       void result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: { found: ["/home/sam/staging-iphone"], unreadable: [] },
       });
     });
     await user.click(await screen.findByRole("button", { name: "Log out now" }));
@@ -361,7 +361,10 @@ describe("logging out during an Upload", () => {
     cancelMock.mockImplementation(() => {});
 
     act(() => {
-      void result.current.auth.logout({ ask: false, deletedAccountDirectories: [] });
+      void result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: { found: [], unreadable: [] },
+      });
     });
 
     expect(await screen.findByText(DELETED_PAUSING)).toBeTruthy();
@@ -396,7 +399,10 @@ describe("logging out during an Upload", () => {
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountDirectories: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+        deletedAccountDirectories: {
+          found: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+          unreadable: [],
+        },
       }),
     );
 
@@ -405,6 +411,35 @@ describe("logging out during an Upload", () => {
     expect(notice).toHaveTextContent("/home/sam/staging-iphone: permission denied");
     expect(notice).not.toHaveTextContent("/home/sam/staging-android");
     expect(calls).toContain("deleted /home/sam/staging-android");
+  });
+
+  it("names a directory of a deleted account's Import Runs it may not read, and deletes the rest", async () => {
+    const result = await logIn();
+
+    await act(() =>
+      result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: {
+          found: ["/home/sam/staging-android"],
+          unreadable: [
+            {
+              path: "/Users/sam/Documents/staging-iphone",
+              reason:
+                "Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+            },
+          ],
+        },
+      }),
+    );
+
+    const notice = await screen.findByRole("dialog");
+    expect(notice).toHaveTextContent("Message Crate could not delete");
+    expect(notice).toHaveTextContent(
+      "/Users/sam/Documents/staging-iphone: Message Crate isn't allowed to read it. The system says: Operation not permitted (os error 1).",
+    );
+    expect(notice).not.toHaveTextContent("/home/sam/staging-android");
+    expect(calls).toContain("deleted /home/sam/staging-android");
+    expect(calls).not.toContain("deleted /Users/sam/Documents/staging-iphone");
   });
 
   it("pauses the Upload without asking when the account was just deleted", async () => {
