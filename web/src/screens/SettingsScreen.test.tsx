@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getAccountProfile } from "../lib/serverApi";
+import { account } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import SettingsScreen from "./SettingsScreen";
 
@@ -47,27 +48,7 @@ beforeEach(() => {
 });
 
 function baseProfile(): Awaited<ReturnType<typeof getAccountProfile>> {
-  return {
-    account_id: 7,
-    username: "bob",
-    app: null,
-    app_build: null,
-    last_login_at: null,
-    preferred_name: null,
-    phones: [],
-    emails: [],
-    can_import: true,
-    can_export: true,
-    can_delete: false,
-    disabled: false,
-    has_password: true,
-    is_demo: false,
-    is_owner: false,
-    message_count: 0,
-    must_set_up_profile: false,
-    storage_bytes: 0,
-    time_zone: "UTC",
-  };
+  return account({ account_id: 7, username: "bob" });
 }
 
 function renderSettings(initialEntries: string[]) {
