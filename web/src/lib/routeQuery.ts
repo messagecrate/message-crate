@@ -25,9 +25,12 @@ import {
   QueryClient,
   type UseInfiniteQueryOptions,
   type UseInfiniteQueryResult,
+  type UseMutationOptions,
+  type UseMutationResult,
   type UseQueryOptions,
   type UseQueryResult,
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -350,7 +353,8 @@ export type RouteCache = {
   restore: (entries: RouteCacheEntries) => void;
   /**
    * Mark every entry of the logged-in account stale, so whatever is on screen
-   * refetches. Every write calls this once it settles.
+   * refetches. Every write calls this once it settles: `useRouteMutation`
+   * calls it for each write made with TanStack Query.
    *
    * The whole account, not a list of the entries one write changes: six
    * writes once left out entries they changed, and the screens showing those
@@ -394,6 +398,44 @@ export function useRouteCache(): RouteCache {
       },
     };
   }, [client, account]);
+}
+
+/**
+ * A write to the logged-in account's data. It is `useMutation`, with the
+ * account's cache marked stale once the write settles. The account is marked
+ * before the write's own `onSettled` runs.
+ *
+ * Every write to account data goes through this rather than `useMutation`,
+ * because then none can leave out the `invalidateAccount` call that ADR 0002
+ * asks of each one. A write that left it out would leave every other screen showing
+ * the old state.
+ *
+ * The account is marked stale whether the server accepted the write or
+ * refused it. A refused write may still have changed something. An optimistic
+ * write has drawn a change the server never made.
+ *
+ * Biome refuses `useMutation`, `MutationObserver` and a namespace import of
+ * `@tanstack/react-query` outside this module (`web/biome.json`). The few
+ * mutations that change no account data are the exceptions. See
+ * `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
+ */
+export function useRouteMutation<
+  TData = unknown,
+  TError = Error,
+  TVariables = void,
+  TOnMutateResult = unknown,
+>(
+  options: UseMutationOptions<TData, TError, TVariables, TOnMutateResult>,
+): UseMutationResult<TData, TError, TVariables, TOnMutateResult> {
+  const cache = useRouteCache();
+  const { onSettled } = options;
+  return useMutation({
+    ...options,
+    onSettled: (...args) => {
+      cache.invalidateAccount();
+      return onSettled?.(...args);
+    },
+  });
 }
 
 export type { RouteQueryKey };

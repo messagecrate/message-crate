@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { formSnapshot, restoreFormFromSnapshot } from "./formSnapshot";
-import type { ImportJobFormValues } from "./useImportJob";
 
 /** Every form field filled with a value no other field holds. */
 const markedForm: ImportJobFormValues = {

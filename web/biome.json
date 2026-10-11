@@ -54,6 +54,10 @@
           "level": "error",
           "options": {
             "paths": {
+              "@tanstack/react-query": {
+                "importNames": ["useMutation", "MutationObserver", "*"],
+                "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+              },
               "@tauri-apps/api/core": "Call the desktop through src/lib/tauri.ts",
               "@tauri-apps/api/event": "Call the desktop through src/lib/tauri.ts",
               "@tauri-apps/api/window": "Call the desktop through src/lib/tauri.ts",
@@ -125,11 +129,45 @@
               "level": "error",
               "options": {
                 "paths": {
+                  "@tanstack/react-query": {
+                    "importNames": ["useMutation", "MutationObserver", "*"],
+                    "message": "Write account data with useRouteMutation from src/lib/routeQuery.ts, which marks the account's cache stale once the write settles (docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md)."
+                  },
                   "@tauri-apps/api/core": "Call the desktop through src/lib/tauri.ts",
                   "@tauri-apps/api/event": "Call the desktop through src/lib/tauri.ts",
                   "@tauri-apps/api/window": "Call the desktop through src/lib/tauri.ts",
                   "@tauri-apps/plugin-dialog": "Call the desktop through src/lib/tauri.ts",
                   "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "src/lib/routeQuery.ts",
+        "src/components/DownloadAttachmentButton.tsx",
+        "src/hooks/useStreamedMedia.ts",
+        "src/lib/useToolsStatus.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@tauri-apps/api/core": "Call the desktop through src/lib/tauri.ts",
+                  "@tauri-apps/api/event": "Call the desktop through src/lib/tauri.ts",
+                  "@tauri-apps/api/window": "Call the desktop through src/lib/tauri.ts",
+                  "@tauri-apps/plugin-dialog": "Call the desktop through src/lib/tauri.ts",
+                  "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
+                  "react-aria-components": {
+                    "importNames": ["Tab"],
+                    "message": "Use Tab from src/components/Tab.tsx, the one tab style (STYLE_GUIDE.md, rule 4)."
+                  }
                 }
               }
             }

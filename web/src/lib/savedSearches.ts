@@ -1,7 +1,7 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { keys } from "./queryKeys";
-import { useRouteCache, useRouteQuery } from "./routeQuery";
+import { useRouteMutation, useRouteQuery } from "./routeQuery";
 import {
   createSavedSearch,
   deleteSavedSearch,
@@ -41,21 +41,12 @@ export function useSavedSearches(): {
   return { savedSearches: data ?? [], loading: isPending };
 }
 
-/** Every write marks the account's cache stale, so the sidebar's list is read again. */
-function useSavedSearchWrite<T, V>(write: (vars: V) => Promise<T>): UseMutationResult<T, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<T, Error, V>({
-    mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
-  });
-}
-
 export function useCreateSavedSearch(): UseMutationResult<
   SavedSearch,
   Error,
   { name: string; query: string }
 > {
-  return useSavedSearchWrite((body) => createSavedSearch(body));
+  return useRouteMutation({ mutationFn: createSavedSearch });
 }
 
 export function useUpdateSavedSearch(): UseMutationResult<
@@ -63,11 +54,14 @@ export function useUpdateSavedSearch(): UseMutationResult<
   Error,
   { id: number; name: string; query: string }
 > {
-  return useSavedSearchWrite(({ id, name, query }) => updateSavedSearch(id, { name, query }));
+  return useRouteMutation({
+    mutationFn: ({ id, name, query }: { id: number; name: string; query: string }) =>
+      updateSavedSearch(id, { name, query }),
+  });
 }
 
 export function useDeleteSavedSearch(): UseMutationResult<void, Error, number> {
-  return useSavedSearchWrite((id) => deleteSavedSearch(id));
+  return useRouteMutation({ mutationFn: (id: number) => deleteSavedSearch(id) });
 }
 
 export type SavedSearchActions = {

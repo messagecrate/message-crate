@@ -6,9 +6,8 @@
  * together so a field added to one is added to the other in the same place.
  */
 import { findImportSource, isImportMethod } from "../../lib/importSources";
-import type { SnapshotSecret } from "../../lib/importSources/types";
+import type { ImportJobFormValues, SnapshotSecret } from "../../lib/importSources/types";
 import type { AttachmentChoices, AttachmentMediaMode } from "../../lib/types";
-import type { ImportJobFormValues } from "./useImportJob";
 
 /**
  * The form fields the run record stores: exactly the ones

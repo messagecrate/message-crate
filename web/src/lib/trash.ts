@@ -1,5 +1,5 @@
-import { type UseMutationResult, useMutation } from "@tanstack/react-query";
-import { useRouteCache } from "./routeQuery";
+import type { UseMutationResult } from "@tanstack/react-query";
+import { useRouteMutation } from "./routeQuery";
 import {
   deleteContact,
   deleteConversation,
@@ -18,36 +18,28 @@ import {
  * Unlike Contact Groups and Message Tags this is not a `nameCollection`:
  * there is no name, no membership, and nothing to look an id up by — the
  * caller already has the conversation or contact id. Each one is a plain
- * mutation over one server route that marks the account's cache stale once
- * it settles, like every other write.
+ * mutation over one server route.
  */
-function useTrashWrite<V>(write: (vars: V) => Promise<void>): UseMutationResult<void, Error, V> {
-  const cache = useRouteCache();
-  return useMutation<void, Error, V>({
-    mutationFn: write,
-    onSettled: () => cache.invalidateAccount(),
-  });
-}
 
 export function useTrashConversation(): UseMutationResult<void, Error, number> {
-  return useTrashWrite(trashConversation);
+  return useRouteMutation({ mutationFn: trashConversation });
 }
 
 export function useRestoreConversation(): UseMutationResult<void, Error, number> {
-  return useTrashWrite(restoreConversation);
+  return useRouteMutation({ mutationFn: restoreConversation });
 }
 
 /** Permanently delete a trashed conversation. */
 export function useDeleteConversation(): UseMutationResult<void, Error, number> {
-  return useTrashWrite(deleteConversation);
+  return useRouteMutation({ mutationFn: deleteConversation });
 }
 
 export function useTrashContact(): UseMutationResult<void, Error, string | number> {
-  return useTrashWrite(trashContact);
+  return useRouteMutation({ mutationFn: trashContact });
 }
 
 export function useRestoreContact(): UseMutationResult<void, Error, string | number> {
-  return useTrashWrite(restoreContact);
+  return useRouteMutation({ mutationFn: restoreContact });
 }
 
 /**
@@ -55,7 +47,7 @@ export function useRestoreContact(): UseMutationResult<void, Error, string | num
  * Unknown again, its conversations untouched.
  */
 export function useDeleteContact(): UseMutationResult<void, Error, string | number> {
-  return useTrashWrite(deleteContact);
+  return useRouteMutation({ mutationFn: deleteContact });
 }
 
 /**
@@ -64,5 +56,5 @@ export function useDeleteContact(): UseMutationResult<void, Error, string | numb
  * call.
  */
 export function useEmptyTrash(): UseMutationResult<void, Error, void> {
-  return useTrashWrite(emptyTrash);
+  return useRouteMutation({ mutationFn: emptyTrash });
 }

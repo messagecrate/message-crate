@@ -1,4 +1,4 @@
-import { type InfiniteData, type UseMutationResult, useMutation } from "@tanstack/react-query";
+import type { InfiniteData, UseMutationResult } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 import { ApiError } from "./api";
 import {
@@ -6,6 +6,7 @@ import {
   type RouteCacheEntries,
   type RouteQueryKey,
   useRouteCache,
+  useRouteMutation,
   useRouteQuery,
 } from "./routeQuery";
 import { narrow } from "./searchQuery";
@@ -200,10 +201,8 @@ function checkedName(collection: NameCollection, name: string): string {
 export function useCreateNamedSet(
   collection: NameCollection,
 ): UseMutationResult<NamedSet, Error, string> {
-  const cache = useRouteCache();
-  return useMutation<NamedSet, Error, string>({
+  return useRouteMutation<NamedSet, Error, string>({
     mutationFn: async (name) => collection.routes.create({ name: checkedName(collection, name) }),
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 
@@ -211,13 +210,11 @@ export function useRenameNamedSet(
   collection: NameCollection,
 ): UseMutationResult<NamedSet, Error, { from: string; to: string }> {
   const idOf = useIdOf(collection);
-  const cache = useRouteCache();
-  return useMutation<NamedSet, Error, { from: string; to: string }>({
+  return useRouteMutation<NamedSet, Error, { from: string; to: string }>({
     mutationFn: async ({ from, to }) => {
       const name = checkedName(collection, to);
       return collection.routes.update(await idOf(from), { name });
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 
@@ -225,10 +222,8 @@ export function useDeleteNamedSet(
   collection: NameCollection,
 ): UseMutationResult<void, Error, string> {
   const idOf = useIdOf(collection);
-  const cache = useRouteCache();
-  return useMutation<void, Error, string>({
+  return useRouteMutation<void, Error, string>({
     mutationFn: async (name) => collection.routes.remove(await idOf(name)),
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 
@@ -243,15 +238,15 @@ export type ChipSnapshot = { entries: RouteCacheEntries };
  * in flight together — the Clear all button fires one per name — but the
  * rollback is a whole-entry snapshot: if the earlier of two overlapping
  * writes fails, restoring its snapshot overwrites the later one's optimistic
- * chips too, until the `onSettled` invalidation refetches and the two
- * converge on what the server actually has.
+ * chips too, until the account's cache, marked stale once each write settles,
+ * refetches and the two converge on what the server actually has.
  */
 export function useSetNamedSetMembers(
   collection: NameCollection,
 ): UseMutationResult<MembersChanged, Error, SetMembersVars, ChipSnapshot> {
   const cache = useRouteCache();
   const idOf = useIdOf(collection);
-  return useMutation<MembersChanged, Error, SetMembersVars, ChipSnapshot>({
+  return useRouteMutation<MembersChanged, Error, SetMembersVars, ChipSnapshot>({
     mutationFn: async ({ name, patch }) =>
       collection.routes.updateMembers(await idOf(name), {
         add: patch.add ?? [],
@@ -272,7 +267,6 @@ export function useSetNamedSetMembers(
     onError: (_error, _vars, context) => {
       if (context) cache.restore(context.entries);
     },
-    onSettled: () => cache.invalidateAccount(),
   });
 }
 

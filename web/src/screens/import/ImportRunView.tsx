@@ -10,6 +10,7 @@ import StepProgress, { type Step } from "../../components/StepProgress";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { formatBytes } from "../../lib/formatBytes";
+import type { ImportJobFormValues } from "../../lib/importSources/types";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import {
@@ -39,7 +40,6 @@ import {
 import { TryAgain } from "./MissingProgramNotice";
 import { ExpandableFactRow, FactGroup, FactGroups, FactList, FactRow } from "./RunFacts";
 import { estimatePiles, estimatesHeading, filesOverLimit } from "./reviewForecast";
-import type { ImportJobFormValues } from "./useImportJob";
 
 const STAGING_REVIEW_LABEL = "Staging Review";
 const MEDIA_REVIEW_LABEL = "Media Review";
