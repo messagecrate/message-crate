@@ -1107,8 +1107,9 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
 /// Store a real attachment file for the account's `imessage` source and
 /// attach it to the newest message of `conversation_id`, returning the
 /// file's path so a test can check whether a delete removed it. The MIME
-/// sidecar the store writes beside a stored file is written too, so the
-/// same test can check that it went with the file.
+/// sidecar the store writes beside a file whose type it knows is written
+/// too, so the same test can check that it went with the file. The file is
+/// named by `sha` alone, with no extension, as the store names an Asset.
 ///
 /// `sha` stands in for the content hash; the store never reads the bytes
 /// back here, so it only has to be 64 characters long the way a real digest
@@ -1126,7 +1127,7 @@ pub async fn attach_stored_file(
         .assets_dir_for_account(account_id)
         .join(&sha[..2]);
     std::fs::create_dir_all(&shard).unwrap();
-    let path = shard.join(format!("{sha}.jpg"));
+    let path = shard.join(sha);
     std::fs::write(&path, b"jpeg bytes").unwrap();
     std::fs::write(shard.join(format!(".{sha}.mime")), "image/jpeg").unwrap();
 
@@ -1142,7 +1143,7 @@ pub async fn attach_stored_file(
     sqlx::query("INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3)")
         .bind(message_id)
         .bind(sha)
-        .bind(format!("{}/{sha}.jpg", &sha[..2]))
+        .bind(format!("{}/{sha}", &sha[..2]))
         .execute(&mut *tx)
         .await
         .unwrap();
