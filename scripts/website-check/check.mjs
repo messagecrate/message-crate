@@ -64,21 +64,46 @@ try {
   // The search term comes from the list the Demo Account shows, so the check
   // does not depend on which names the demo generator picks.
   step = "list the Demo Account's conversations";
-  const firstRow = page.getByRole("checkbox", { name: /^Select (?!all conversations$)/ }).first();
-  await firstRow.waitFor();
-  const title = (await firstRow.getAttribute("aria-label"))?.replace(/^Select /, "") ?? "";
+  const rows = page.getByRole("checkbox", { name: /^Select (?!all conversations$)/ });
+  await rows.first().waitFor();
+  const title = (await rows.first().getAttribute("aria-label"))?.replace(/^Select /, "") ?? "";
   const term = title.split(/[\s,]+/)[0];
   if (!term) throw new Error(`no search term in the first conversation's name "${title}"`);
 
+  // The row named `title` was on screen before the search, so finding it
+  // afterwards proves nothing. The search must reach the server and find at
+  // least one conversation, the list must shrink to the answer, and the row
+  // must open a conversation the answer holds.
   step = `search conversations for "${term}"`;
+  const answered = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === "/v1/conversations" && url.searchParams.get("q") === term;
+  });
   await search.fill(term);
   await search.press("Enter");
-  await page.waitForURL((url) => url.hash.includes(`q=${encodeURIComponent(term)}`));
+  const response = await answered;
+  if (!response.ok()) throw new Error(`the search answered ${response.status()}`);
+  const found = (await response.json()).items ?? [];
+  if (found.length === 0) throw new Error("the search found no conversation");
+  // The list renders only the rows in view, so a search that the website
+  // ignored still shows more rows than a short answer holds.
+  const deadline = Date.now() + STEP_TIMEOUT_MS;
+  while ((await rows.count()) > found.length) {
+    if (Date.now() > deadline) {
+      throw new Error(`the list still shows more than the ${found.length} conversation(s) found`);
+    }
+    await page.waitForTimeout(200);
+  }
   const result = page.getByRole("button", { name: title, exact: false }).first();
   await result.waitFor();
 
   step = `open the conversation "${title}"`;
   await result.click();
+  await page.waitForURL((url) => url.hash.startsWith("#/messages/"));
+  const opened = Number(new URL(page.url()).hash.match(/^#\/messages\/(\d+)/)?.[1]);
+  if (!found.some((conversation) => conversation.id === opened)) {
+    throw new Error(`the row opened conversation ${opened}, which the search did not answer with`);
+  }
   const main = page.getByRole("main");
   await main.getByRole("heading", { level: 2, name: title, exact: true }).waitFor();
   await main.getByText(/^[\d,]+ messages?$/).waitFor();
