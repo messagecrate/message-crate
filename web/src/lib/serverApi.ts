@@ -476,7 +476,13 @@ export async function fetchAsset(
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`${getBaseUrl()}${path}`, { method: "GET", headers, signal });
+  const res = await fetch(`${getBaseUrl()}${path}`, {
+    method: "GET",
+    headers,
+    signal,
+    // Never follow a redirect with the Session's header: `NEVER_FOLLOW` in `api.ts`.
+    redirect: "error",
+  });
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);

@@ -643,6 +643,13 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-10: **The app no longer follows a redirect with your login.** If
+  a misconfigured proxy in front of the server answered the app with a
+  redirect to another address, the app followed it and, in some older
+  browsers and system web views, sent your login along. The server never
+  redirects, so the app now refuses any redirect: the request fails as if
+  the server could not be reached, which points at the proxy instead of
+  sending your login somewhere else (#2294).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front

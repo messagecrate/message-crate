@@ -351,6 +351,9 @@ describe("attachments", () => {
       "http://127.0.0.1:8080/v1/assets/abc/thumbnail",
     ]);
     expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer mc-user-test" });
+    for (const [, init] of fetchMock.mock.calls) {
+      expect(init.redirect).toBe("error");
+    }
   });
 
   it("makes a Media Link and hands back URLs a media element can load from the server", async () => {

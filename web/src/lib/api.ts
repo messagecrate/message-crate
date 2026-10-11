@@ -158,6 +158,16 @@ export function problemFromBody(status: number, text: string): ApiError {
   return new ApiError(status, trimmed);
 }
 
+/**
+ * How every call that carries the Session's header treats a redirect: as a
+ * network error. `/v1` never redirects (`docs/architecture/http-api.md`,
+ * "Credentials and reach"), so a redirect comes from something in front of
+ * the server, such as a misconfigured proxy, and following it could send
+ * the Session token to another host in a WebView that keeps `Authorization`
+ * across origins. The failure reads as an unreachable server.
+ */
+const NEVER_FOLLOW: RequestRedirect = "error";
+
 async function request<T>(
   method: string,
   path: string,
@@ -180,6 +190,7 @@ async function request<T>(
     headers,
     body: body ? JSON.stringify(body) : undefined,
     signal,
+    redirect: NEVER_FOLLOW,
   });
 
   if (!res.ok) {
@@ -206,7 +217,13 @@ async function requestRaw<T>(
   if (authToken) {
     headers.Authorization = `Bearer ${authToken}`;
   }
-  const res = await fetch(`${baseUrl}${path}`, { method, headers, body, signal });
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers,
+    body,
+    signal,
+    redirect: NEVER_FOLLOW,
+  });
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);
@@ -240,6 +257,7 @@ async function requestText(
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
+    redirect: NEVER_FOLLOW,
   });
   const text = await res.text();
   if (!res.ok) {
