@@ -12,6 +12,7 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime},
 };
 
@@ -109,6 +110,9 @@ fn decrypted_in_system_temp() -> BTreeMap<String, Option<SystemTime>> {
 /// deleted again is not seen here. The test that fails when the copy goes
 /// there is
 /// `an_identities_request_decrypts_into_its_scratch_directory_while_it_runs`.
+///
+/// The line the reader logs once it has decrypted the backup reaches the
+/// sink the caller passed (#2645).
 #[test]
 fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     build_imessage_reader();
@@ -117,14 +121,28 @@ fn an_encrypted_backup_answers_the_identities_request_and_leaves_nothing() {
     let backup_before = paths_under(backup.path());
     let system_temp = SystemTemp::snapshot();
 
+    let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+    let log = {
+        let logged = Arc::clone(&logged);
+        LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
+    };
+
     let mut identities = backup_identities(
         backup.path(),
         true,
         Some(BACKUP_PASSWORD),
         scratch_root.path(),
-        LogSink::none(),
+        log,
     )
     .unwrap();
+
+    let logged = logged.lock().unwrap();
+    assert!(
+        logged
+            .iter()
+            .any(|line| line.starts_with("Decrypted iOS backup: ")),
+        "{logged:?}"
+    );
 
     identities.sort();
     assert_eq!(identities, vec![OWNER.to_string(), OWNER_EMAIL.to_string()]);

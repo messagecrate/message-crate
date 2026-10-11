@@ -17,7 +17,7 @@ use anyhow::bail;
 use imessage_reader_protocol::{Event, IdentitiesRequest, Platform, Request, Source};
 use message_crate_core::{LogSink, ProgressSink, ScratchDir};
 
-use crate::helper::Helper;
+use crate::helper::{Helper, locate};
 
 /// `Info.plist` → `Phone Number` from an iOS backup directory.
 ///
@@ -58,26 +58,19 @@ pub fn backup_identities(
     scratch_root: &Path,
     log: LogSink,
 ) -> anyhow::Result<Vec<String>> {
-    identities_with(
-        db_path,
-        ios,
-        backup_password,
-        scratch_root,
-        log,
-        |request, log| Helper::spawn(request, log, ProgressSink::none()),
-    )
+    let program = locate()?;
+    identities_with(db_path, ios, backup_password, scratch_root, &program, log)
 }
 
-/// [`backup_identities`], starting the program with `spawn`, which is given
-/// the request and the sink for the program's log lines. Tests pass a fake
-/// program.
+/// [`backup_identities`], starting the program at `program`. Tests pass a
+/// fake program.
 fn identities_with(
     db_path: &Path,
     ios: bool,
     backup_password: Option<&str>,
     scratch_root: &Path,
+    program: &Path,
     log: LogSink,
-    spawn: impl FnOnce(&Request, LogSink) -> anyhow::Result<Helper>,
 ) -> anyhow::Result<Vec<String>> {
     let scratch = ScratchDir::create(scratch_root)?;
     let request = Request::Identities(IdentitiesRequest {
@@ -90,7 +83,12 @@ fn identities_with(
     });
     // The program is stopped (by `finish`, or by its drop on an error)
     // before the scratch directory is deleted.
-    let mut values = read_identities(spawn(&request, log)?)?;
+    let mut values = read_identities(Helper::spawn_at(
+        program,
+        &request,
+        log,
+        ProgressSink::none(),
+    )?)?;
     drop(scratch);
     if ios {
         values.extend(ios_backup_phone_number(db_path));
@@ -207,7 +205,7 @@ mod tests {
         use message_crate_core::LogSink;
 
         use super::super::{identities_with, read_identities};
-        use crate::testutil::{fake_helper, source_line, spawn_fake, spawn_fake_logging_to};
+        use crate::testutil::{fake_helper, retry_while_busy, source_line, spawn_fake};
 
         fn request() -> Request {
             Request::Identities(IdentitiesRequest {
@@ -217,6 +215,25 @@ mod tests {
                     backup_password: None,
                 },
                 scratch_dir: "/nowhere/scratch".into(),
+            })
+        }
+
+        /// [`identities_with`] for a Mac `chat.db`, read by the fake at
+        /// `script`, with scratch directories under `root`.
+        fn identities_from(
+            script: &Path,
+            root: &Path,
+            log: LogSink,
+        ) -> anyhow::Result<Vec<String>> {
+            retry_while_busy(|| {
+                identities_with(
+                    Path::new("/nowhere/chat.db"),
+                    false,
+                    None,
+                    root,
+                    script,
+                    log.clone(),
+                )
             })
         }
 
@@ -259,15 +276,7 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
             );
             let script = fake_helper(dir.path(), &body);
 
-            let values = identities_with(
-                Path::new("/nowhere/chat.db"),
-                false,
-                None,
-                root.path(),
-                LogSink::none(),
-                |request, _| Ok(spawn_fake(&script, request)),
-            )
-            .unwrap();
+            let values = identities_from(&script, root.path(), LogSink::none()).unwrap();
             assert_eq!(values, vec!["+15555550110"]);
 
             let sent = fs::read_to_string(dir.path().join("request.json")).unwrap();
@@ -291,15 +300,7 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
             let body = format!("{}\nkill -9 $$", decrypt_into_scratch(dir.path()));
             let script = fake_helper(dir.path(), &body);
 
-            identities_with(
-                Path::new("/nowhere/chat.db"),
-                false,
-                None,
-                root.path(),
-                LogSink::none(),
-                |request, _| Ok(spawn_fake(&script, request)),
-            )
-            .unwrap_err();
+            identities_from(&script, root.path(), LogSink::none()).unwrap_err();
             assert!(
                 left_in(root.path()).is_empty(),
                 "{:?}",
@@ -320,15 +321,7 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
             let body = format!("{}\n{ANSWER}", source_line(PROTOCOL_VERSION));
             let script = fake_helper(dir.path(), &body);
 
-            identities_with(
-                Path::new("/nowhere/chat.db"),
-                false,
-                None,
-                root.path(),
-                LogSink::none(),
-                |request, _| Ok(spawn_fake(&script, request)),
-            )
-            .unwrap();
+            identities_from(&script, root.path(), LogSink::none()).unwrap();
             assert!(
                 left_in(root.path()).is_empty(),
                 "{:?}",
@@ -357,15 +350,7 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
                 LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
             };
 
-            let err = identities_with(
-                Path::new("/nowhere/chat.db"),
-                false,
-                None,
-                root.path(),
-                log,
-                |request, log| Ok(spawn_fake_logging_to(&script, request, &log)),
-            )
-            .unwrap_err();
+            let err = identities_from(&script, root.path(), log).unwrap_err();
             assert_eq!(format!("{err:#}"), "chat.db is locked");
             assert_eq!(*logged.lock().unwrap(), ["opening chat.db"]);
         }

@@ -37,25 +37,27 @@ pub fn fake_helper(dir: &Path, body: &str) -> PathBuf {
 ///
 /// Panics when the fake cannot be started.
 pub fn spawn_fake(path: &Path, request: &Request) -> Helper {
-    spawn_fake_logging_to(path, request, &LogSink::none())
+    retry_while_busy(|| Helper::spawn_at(path, request, LogSink::none(), ProgressSink::none()))
+        .unwrap_or_else(|e| panic!("start the fake helper: {e:#}"))
 }
 
-/// [`spawn_fake`], relaying the fake's log lines to `log`.
+/// Run `start`, which starts a fake, again while another test thread's fork
+/// still holds the fake's script open for writing (`ETXTBSY`), and return
+/// its first other result.
 ///
 /// # Panics
 ///
-/// Panics when the fake cannot be started.
-pub fn spawn_fake_logging_to(path: &Path, request: &Request, log: &LogSink) -> Helper {
+/// Panics when the fake stays busy.
+pub fn retry_while_busy<T>(mut start: impl FnMut() -> anyhow::Result<T>) -> anyhow::Result<T> {
     for _ in 0..50 {
-        match Helper::spawn_at(path, request, log.clone(), ProgressSink::none()) {
-            Ok(helper) => return helper,
+        match start() {
             Err(e)
                 if e.downcast_ref::<std::io::Error>()
                     .is_some_and(|io| io.raw_os_error() == Some(26)) =>
             {
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
-            Err(e) => panic!("start the fake helper: {e:#}"),
+            other => return other,
         }
     }
     panic!("the fake helper stayed busy");
