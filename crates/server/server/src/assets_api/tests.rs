@@ -1737,6 +1737,60 @@ async fn the_preview_route_serves_the_preview_and_the_asset_route_the_original()
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 }
 
+/// The server writes every Preview and Thumbnail path itself, so a path that
+/// is absolute or climbs out of the account's converted directory means a
+/// damaged row. The route answers `404` for it rather than the file it names,
+/// as the delete side leaves such a file alone (#2258).
+#[tokio::test]
+async fn a_preview_or_thumbnail_path_outside_the_converted_directory_is_not_served() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let converted_dir = state
+        .cfg
+        .paths
+        .assets_converted_dir_for_account(user.account_id);
+    let outside = converted_dir.parent().unwrap().join("outside.jpg");
+    fs::write(&outside, b"a file outside the converted directory").unwrap();
+
+    for stored in [
+        "../outside.jpg".to_string(),
+        outside.to_str().unwrap().to_string(),
+    ] {
+        let mut conn = state.db.acquire().await.unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        sqlx::query(
+            "UPDATE attachments SET derived_assets_path = $1,
+                thumbnail_sha256 = derived_sha256, thumbnail_assets_path = $1,
+                thumbnail_mime_type = derived_mime_type
+             WHERE sha256 = $2",
+        )
+        .bind(&stored)
+        .bind(sha)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        drop(conn);
+
+        for version in ["preview", "thumbnail"] {
+            let (status, text) = crate::test_support::get_raw(
+                state,
+                &format!("/v1/assets/{sha}/{version}"),
+                &user.token,
+            )
+            .await;
+            crate::test_support::expect_problem_for(
+                &format!("the {version} at {stored:?}"),
+                status,
+                &text,
+                crate::problem::ProblemType::NotFound,
+            );
+        }
+    }
+}
+
 /// A `HEAD` of a Preview or a Thumbnail is how a media element probes the
 /// file before it loads it, with an `Accept` that names no JSON. It answers
 /// the headers the `GET` would, never `406 Not Acceptable` (#1683). A `HEAD`
