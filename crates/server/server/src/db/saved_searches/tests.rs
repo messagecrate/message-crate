@@ -268,12 +268,13 @@ async fn names_over_max_len_are_rejected() {
 }
 
 #[tokio::test]
-async fn any_query_string_is_stored_verbatim() {
+async fn a_query_whose_words_no_list_takes_together_is_stored_verbatim() {
     let fixture = crate::test_support::test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    // Nonsense in the search language. The server stores it anyway: each
-    // list accepts its own subset of the language, so nothing validates here.
+    // No list takes both words, but each list accepts its own subset of the
+    // language, so only the length, the syntax and the limits are checked
+    // here, never a `word:`.
     let made = create(
         &mut conn,
         account,

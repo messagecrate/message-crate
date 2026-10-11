@@ -375,5 +375,13 @@ mod tests {
             .await;
             assert_eq!(created["query"], query);
         }
+
+        // A Saved Search runs on the conversation list, which has no `from:`.
+        let (status, text) = get_raw(&state, "/v1/conversations?q=from:me", &user.token).await;
+        expect_problem(status, &text, ProblemType::SearchQueryInvalid);
+        assert_eq!(
+            get_status(&state, "/v1/messages?q=from:me", &user.token).await,
+            StatusCode::OK
+        );
     }
 }
