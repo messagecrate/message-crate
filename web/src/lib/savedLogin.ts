@@ -6,7 +6,7 @@
  */
 import { ApiError } from "./api";
 import type { AuthState } from "./authContext";
-import { parsePersistedAuth } from "./authGuards";
+import { type ParsedPersistedAuth, parsePersistedAuth } from "./authGuards";
 import { getSession } from "./serverApi";
 import { readPref, removePref, writePref } from "./storage";
 
@@ -21,14 +21,8 @@ const SAVED_LOGIN_KEY = "message-crate-auth";
  */
 const SERVER_ADDRESS_KEY = "message-crate-server-address";
 
-export interface SavedLogin {
-  serverUrl: string;
-  token: string;
-  accountId: number;
-}
-
 /** The saved login, or null when none is saved or it cannot be read. */
-export function loadSavedLogin(): SavedLogin | null {
+export function loadSavedLogin(): ParsedPersistedAuth | null {
   const raw = readPref(SAVED_LOGIN_KEY);
   if (!raw) return null;
   return parsePersistedAuth(raw);
