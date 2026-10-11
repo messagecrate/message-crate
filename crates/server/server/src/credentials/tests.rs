@@ -202,7 +202,11 @@ async fn change_password_transaction_updates_all_credentials() {
         .await
         .unwrap()
         .unwrap();
-    assert!(passwords_match(Some(&stored_hash), "new-password"));
+    assert!(
+        passwords_match(Some(&stored_hash), "new-password")
+            .await
+            .unwrap()
+    );
     assert!(
         session_tokens::lookup_session(&mut conn, &old_session)
             .await
@@ -260,7 +264,11 @@ async fn change_password_transaction_rolls_back_every_credential() {
         .await
         .unwrap()
         .unwrap();
-    assert!(passwords_match(Some(&stored_hash), "old-password"));
+    assert!(
+        passwords_match(Some(&stored_hash), "old-password")
+            .await
+            .unwrap()
+    );
     assert_eq!(
         session_tokens::lookup_session(&mut conn, &old_session)
             .await
@@ -293,33 +301,74 @@ async fn change_password_transaction_rolls_back_every_credential() {
 /// password. Both share the maximum, the only thing stopping a megabyte of
 /// text reaching Argon2, which would hash it and make every login slow for
 /// everybody.
-#[test]
-fn the_owner_needs_one_character_and_a_user_needs_none() {
+///
+/// The hashes are made and checked on the blocking thread pool, and the
+/// refusals must still come back as the `validation-failed` they were.
+#[tokio::test]
+async fn the_owner_needs_one_character_and_a_user_needs_none() {
     assert!(
-        hash_owner_password("").is_err(),
+        matches!(
+            hash_owner_password("").await,
+            Err(ApiError::ValidationFailed(ref m)) if m == &["the owner must have a password"]
+        ),
         "an owner with no password"
     );
-    let owner_hash = hash_owner_password("a").expect("one character is the minimum");
+    let owner_hash = hash_owner_password("a")
+        .await
+        .expect("one character is the minimum");
     assert!(verify_password(&owner_hash, "a"));
+    assert!(passwords_match(Some(&owner_hash), "a").await.unwrap());
+    assert!(!passwords_match(Some(&owner_hash), "b").await.unwrap());
 
     assert_eq!(
-        hash_user_password("").expect("empty is allowed"),
+        hash_user_password("").await.expect("empty is allowed"),
         None,
         "an empty password is no password"
     );
     let user_hash = hash_user_password("a")
+        .await
         .expect("one character is allowed")
         .expect("and is a real password");
     assert!(verify_password(&user_hash, "a"));
+    assert!(verify_login_password(Some(&user_hash), "a").await.unwrap());
+    assert!(!verify_login_password(Some(&user_hash), "b").await.unwrap());
 
     // The maximum is in bytes, not characters, because that is what Argon2
     // costs. Exactly the limit is accepted; one byte more is not.
     let at_limit = "a".repeat(MAX_PASSWORD_BYTES);
-    hash_owner_password(&at_limit).expect("exactly the limit is allowed");
-    hash_user_password(&at_limit).expect("exactly the limit is allowed");
+    let owner_at_limit = hash_owner_password(&at_limit)
+        .await
+        .expect("exactly the limit is allowed");
+    assert!(verify_password(&owner_at_limit, &at_limit));
+    hash_user_password(&at_limit)
+        .await
+        .expect("exactly the limit is allowed");
     let over = "a".repeat(MAX_PASSWORD_BYTES + 1);
-    assert!(hash_owner_password(&over).is_err(), "one byte over");
-    assert!(hash_user_password(&over).is_err(), "one byte over");
+    for refused in [
+        hash_owner_password(&over).await.map(Some),
+        hash_user_password(&over).await,
+    ] {
+        assert!(
+            matches!(
+                refused,
+                Err(ApiError::ValidationFailed(ref m)) if m == &["password is too long"]
+            ),
+            "one byte over: {refused:?}"
+        );
+    }
+}
+
+/// A login to an account with no password takes the empty password only,
+/// and Argon2 still runs against the dummy hash for it.
+#[tokio::test]
+async fn a_login_to_an_account_with_no_password_takes_only_the_empty_one() {
+    for no_hash in [None, Some("")] {
+        assert!(verify_login_password(no_hash, "").await.unwrap());
+        assert!(!verify_login_password(no_hash, "anything").await.unwrap());
+    }
+    spend_dummy_password_check("anything")
+        .await
+        .expect("the dummy check runs");
 }
 
 /// The username rule, at both its edges and over its character set.

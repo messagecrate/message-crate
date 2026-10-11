@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::credentials::{
-    MAX_PASSWORD_BYTES, check_auth_rate_limit, dummy_password_hash, normalize_username,
-    password_bucket, unknown_username_bucket, verify_login_password, verify_password,
+    MAX_PASSWORD_BYTES, check_auth_rate_limit, normalize_username, password_bucket,
+    spend_dummy_password_check, unknown_username_bucket, verify_login_password,
 };
 use crate::db::audit_trail::{self, AuditReason};
 use crate::db::session_tokens::ConnectingApp;
@@ -184,7 +184,11 @@ pub async fn create_session(
         None => None,
     };
     let Some((account_id, stored_username)) = account else {
-        let _ = verify_password(dummy_password_hash(), &password);
+        // The connection goes back to the pool for the length of the Argon2
+        // run, as it does before the real check below.
+        drop(conn);
+        spend_dummy_password_check(&password).await?;
+        let mut conn = state.db.acquire().await?;
         audit_trail::record_refused_login(
             &mut conn,
             &username,
@@ -206,7 +210,13 @@ pub async fn create_session(
 
     let account = Some((account_id, stored_username.as_str()));
     let password_hash = account_profile::load_password_hash(&mut conn, account_id).await?;
-    if !verify_login_password(password_hash.as_deref(), &password) {
+    // Argon2 runs on the blocking thread pool with no pooled connection held,
+    // so a burst of logins neither stalls the async workers nor empties the
+    // pool. An account changed meanwhile is read afresh below.
+    drop(conn);
+    let verified = verify_login_password(password_hash.as_deref(), &password).await?;
+    let mut conn = state.db.acquire().await?;
+    if !verified {
         audit_trail::record_refused_login(
             &mut conn,
             &username,
