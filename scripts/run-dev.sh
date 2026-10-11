@@ -47,7 +47,8 @@ Usage: $(basename "$0") [--reset | --reset-demo [--large]] [--owner] [--sqlweb] 
                 for an empty claimed Message Crate; without it, --reset
                 or --reset-demo leaves it unclaimed so the Create Owner
                 screen is reachable. Refused unless ${CONFIG} binds
-                127.0.0.1, localhost or [::1].
+                127.0.0.1, localhost or [::1], written as one
+                bind = "..." line under [server].
   --sqlweb      Start sqlite-web on http://127.0.0.1:8081 (needs sqlite_web on PATH)
   --release     Build and run the optimized binary (seed and serve)
   -h, --help
@@ -140,20 +141,28 @@ config_bind() {
   echo "${value}"
 }
 
+# Prints why --owner is refused, what to write instead, and exits.
+refuse_owner() {
+  echo "error: --owner sets the password admin/admin, but $1" >&2
+  echo "       Write bind = \"127.0.0.1:<port>\", \"localhost:<port>\" or \"[::1]:<port>\"" >&2
+  echo "       on one line under [server], or leave out --owner and create the owner" >&2
+  echo "       in the web UI." >&2
+  exit 1
+}
+
 # --owner sets a password everyone knows, so it is refused when the server
 # would listen on an address other machines can reach. TOML can spell the
 # key in ways config_bind does not read (a dotted key, an inline table, a
-# quoted header), so a config that mentions bind anywhere outside a comment
-# without config_bind finding it is refused rather than guessed at.
+# quoted header or key, an escape sequence), so when config_bind finds
+# nothing, a bind key in any of those forms, or any \u or \U escape outside
+# a comment, is refused rather than guessed at.
 require_loopback_bind_for_owner() {
   local bind host
   bind="$(config_bind)"
   if [[ -z "${bind}" ]]; then
-    if grep -Eq '^[^#]*bind' "${CONFIG}"; then
-      echo "error: --owner sets the password admin/admin, but the bind in ${CONFIG}" >&2
-      echo "       could not be read. Write it as bind = \"127.0.0.1:<port>\" on one line" >&2
-      echo "       under [server], or leave out --owner and create the owner in the web UI." >&2
-      exit 1
+    if grep -Eq '^[^#]*(^|[[:space:].{,"'\''])bind["'\'']?[[:space:]]*=' "${CONFIG}" \
+      || grep -Eq '^[^#]*\\[uU]' "${CONFIG}"; then
+      refuse_owner "the [server] bind in ${CONFIG} is written in a form this script cannot read."
     fi
     # The server's default when [server] bind is absent: default_server_bind
     # in crates/server/server/src/config.rs. Change the two together.
@@ -167,13 +176,7 @@ require_loopback_bind_for_owner() {
   fi
   case "${host}" in
     127.0.0.1 | localhost | ::1) ;;
-    *)
-      echo "error: --owner sets the password admin/admin, but ${CONFIG} binds ${bind}," >&2
-      echo "       which other machines can reach. Set [server] bind to exactly" >&2
-      echo "       127.0.0.1:<port>, localhost:<port> or [::1]:<port>, or leave out --owner" >&2
-      echo "       and create the owner in the web UI." >&2
-      exit 1
-      ;;
+    *) refuse_owner "${CONFIG} binds ${bind}, which other machines can reach." ;;
   esac
 }
 
