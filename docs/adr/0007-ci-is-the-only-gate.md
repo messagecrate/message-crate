@@ -45,13 +45,15 @@ because its build needs the webkit and gtk system packages that job already
 installs; a second install would double the cost for no coverage.
 
 The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
-`cargo deny check advisories`, `npm audit --audit-level=high` for `web/` and
-for the API type generator in `scripts/openapi-typescript/`, and
+`cargo deny check advisories`, `npm audit --audit-level=high` for `web/`,
+for the API type generator in `scripts/openapi-typescript/` and for the
+browser check of the served website in `scripts/website-check/`, and
 `scripts/audit-docs.sh` for `docs/`, which fails on any high or critical
 advisory except the ones it lists as having no patched version. It is
 triggered by a pull request that touches a dependency manifest or lockfile
-(`Cargo.toml`, `Cargo.lock`, and the `src-tauri`, `web/`, `docs/` and
-`scripts/openapi-typescript/` manifests and lockfiles), the cargo-deny config
+(`Cargo.toml`, `Cargo.lock`, and the `src-tauri`, `web/`, `docs/`,
+`scripts/openapi-typescript/` and `scripts/website-check/` manifests and
+lockfiles), the cargo-deny config
 `deny.toml`, `audit.yml` itself or `scripts/audit-docs.sh`, by a weekly
 schedule, and by hand.
 
@@ -71,7 +73,13 @@ release Dockerfile from `main` once a night and starts the image the way
 `docker-build` does. That job sees only pull requests that change the
 Dockerfile, a Cargo manifest or the lockfile. A change elsewhere can still
 break the image, or make the server write outside `/app/data` at start, so
-that it no longer starts under the Compose files' read-only root filesystem. It gates
+that it no longer starts under the Compose files' read-only root filesystem.
+It then loads the website the image serves in a headless browser
+(`scripts/check-served-website.sh`), logs in to the Demo Account, searches
+and opens a conversation, and fails on a console error or a 5xx: the web
+app's tests mock the server and the server's tests never load the website,
+so nothing else runs the two together. That step pulls a browser image and
+takes minutes, so `docker-build` in `ci.yml` leaves it out. It gates
 nothing: it has no pull request trigger and is not in the ruleset's required
 list. A scheduled run does nothing when `main` is still at the commit the
 previous scheduled run saw. Its verdict arrives after the merge, so it reports
