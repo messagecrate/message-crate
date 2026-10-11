@@ -45,9 +45,7 @@ async fn open(config: &Path) -> OpenDb {
 async fn with_alice(config: &Path) {
     let opened = open(config).await;
     let mut conn = opened.conn().await.unwrap();
-    account_profile::insert_account_at(&mut conn, ALICE, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, ALICE, "alice").await;
 }
 
 async fn count(config: &Path, sql: &str) -> i64 {

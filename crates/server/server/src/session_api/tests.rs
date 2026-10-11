@@ -272,9 +272,7 @@ async fn a_session_lists_the_account_sources_oldest_first() {
 async fn logout_on_conn_leaves_registered_account() {
     let fixture = test_fixture().await;
     let mut conn = fixture.conn().await;
-    account_profile::insert_account_at(&mut conn, TEST_ACCOUNT, "alice", None, None)
-        .await
-        .unwrap();
+    crate::test_support::insert_account_with_id(&mut conn, TEST_ACCOUNT, "alice").await;
     let token = session_tokens::insert_account_session_token(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();

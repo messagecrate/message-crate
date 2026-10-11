@@ -126,11 +126,8 @@ mod tests {
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
         for account in [ACCOUNT_A, ACCOUNT_B] {
-            sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, $1)")
-                .bind(account)
-                .execute(&mut *conn)
-                .await
-                .unwrap();
+            crate::test_support::insert_account_with_id(&mut conn, account, &account.to_string())
+                .await;
         }
         (pool, dir)
     }

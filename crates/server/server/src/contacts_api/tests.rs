@@ -7,9 +7,9 @@ use message_ir::IdentityType;
 use crate::db::account_profile;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, expect_problem, expect_problem_response,
-    fixture_with_account, http_client, post_json, post_json_raw, register_via_api, stored_time,
-    test_fixture,
+    ConversationRow, MessageRow, RegisteredAccount, TestFixture, expect_problem,
+    expect_problem_response, fixture_with_account, http_client, post_json, post_json_raw,
+    register_via_api, stored_time, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -554,16 +554,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .unwrap();
 
     // Direct conversation with 2 messages.
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'd.jsonl')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, peer)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -604,16 +600,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (2, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::group(account, group_chat, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Sam')",
@@ -640,16 +632,12 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (9, $1, $2, 'individual', 'other.jsonl')",
-    )
-    .bind(account)
-    .bind(other)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(9),
+        ..ConversationRow::new(account, other)
+    }
+    .insert(&mut conn)
+    .await;
     MessageRow {
         timestamp: stored_time("2024-08-01T12:00:00.000Z"),
         body: Some("nope"),
@@ -719,16 +707,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (1, $1, $2, 'individual', 'd.jsonl')",
-    )
-    .bind(account)
-    .bind(sam_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::new(account, sam_handle)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (1, $1, 'Sam')",
@@ -758,16 +742,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (2, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(2),
+        ..ConversationRow::group(account, group_chat, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (2, $1, 'Sam')",
@@ -810,16 +790,12 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES (3, $1, $2, 'individual', 'pat.jsonl')",
-    )
-    .bind(account)
-    .bind(pat_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(3),
+        ..ConversationRow::new(account, pat_handle)
+    }
+    .insert(&mut conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES (3, $1, 'Pat')",
@@ -918,16 +894,12 @@ async fn a_conversation_with_two_of_a_contacts_identities_counts_once() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (1, $1, $2, 'group', 'Sam Group', 'g.jsonl')",
-    )
-    .bind(account)
-    .bind(group_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(1),
+        ..ConversationRow::group(account, group_chat, "Sam Group")
+    }
+    .insert(&mut conn)
+    .await;
     for handle in &handles {
         sqlx::query(
             "INSERT INTO participants (conversation_id, handle_id, name_alias)
@@ -968,18 +940,13 @@ async fn insert_conversation(
     participants: &[i64],
     trashed: bool,
 ) {
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, $3, $4, 'c.jsonl')",
-    )
-    .bind(id)
-    .bind(account)
-    .bind(chat_handle)
-    .bind(kind)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(id),
+        conversation_type: kind,
+        ..ConversationRow::new(account, chat_handle)
+    }
+    .insert(conn)
+    .await;
     for handle in participants {
         sqlx::query(
             "INSERT INTO participants (conversation_id, handle_id, name_alias)
@@ -2181,17 +2148,12 @@ async fn insert_direct_conversation(
             .await
             .unwrap(),
     };
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, source_file
-         ) VALUES ($1, $2, $3, 'individual', 't.jsonl')",
-    )
-    .bind(conversation_id)
-    .bind(account)
-    .bind(handle_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(conversation_id),
+        ..ConversationRow::new(account, handle_id)
+    }
+    .insert(conn)
+    .await;
     sqlx::query(
         "INSERT INTO participants (conversation_id, handle_id, name_alias)
          VALUES ($1, $2, NULL)",
@@ -2369,16 +2331,12 @@ async fn list_contacts_sorts_by_last_heard_with_silent_contacts_last() {
     )
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO conversations (
-            id, account_id, chat_handle_id, conversation_type, group_title, source_file
-         ) VALUES (4, $1, $2, 'group', 'Binned', 'b.jsonl')",
-    )
-    .bind(account)
-    .bind(binned_chat)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    ConversationRow {
+        id: Some(4),
+        ..ConversationRow::group(account, binned_chat, "Binned")
+    }
+    .insert(&mut conn)
+    .await;
     insert_message_from(
         &mut conn,
         account,

@@ -1205,15 +1205,9 @@ mod tests {
             link_account_handle(&mut conn, ACCOUNT_ID, "+15555550100", IdentityType::Phone)
                 .await
                 .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (account_id, chat_handle_id, conversation_type, source_file)
-             VALUES ($1, $2, 'individual', 'c.jsonl')",
-        )
-        .bind(ACCOUNT_ID)
-        .bind(handle_id)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        crate::test_support::ConversationRow::new(ACCOUNT_ID, handle_id)
+            .insert(&mut conn)
+            .await;
         sqlx::query(
             "INSERT INTO staging_conversations (
                 account_id, chat_handle_id, conversation_type, source_file
@@ -1268,16 +1262,12 @@ mod tests {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-        sqlx::query(
-            "INSERT INTO conversations (
-                id, account_id, chat_handle_id, conversation_type, source_file
-             ) VALUES (1, $1, $2, 'individual', 'c.jsonl')",
-        )
-        .bind(ACCOUNT_ID)
-        .bind(handle_id)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        crate::test_support::ConversationRow {
+            id: Some(1),
+            ..crate::test_support::ConversationRow::new(ACCOUNT_ID, handle_id)
+        }
+        .insert(&mut conn)
+        .await;
         let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         let msg_id = crate::test_support::MessageRow {
             is_from_me: true,
