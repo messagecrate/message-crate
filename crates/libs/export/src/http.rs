@@ -24,6 +24,10 @@ use message_crate_api_types::{ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
 
+/// How long one JSON call of an Export Run may take: starting it, reading
+/// one page of its messages, or closing it.
+const JSON_CALL_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// The body of `POST /v1/exports`.
 #[derive(Debug, serde::Serialize)]
 struct CreateExportBody<'a> {
@@ -51,7 +55,7 @@ pub fn create_export(
         .server_request(Method::POST, base_url, "/v1/exports", token)
         .header("Content-Type", "application/json")
         .body(body)
-        .timeout(Duration::from_secs(120))
+        .timeout(JSON_CALL_TIMEOUT)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let status = response.status();
@@ -87,7 +91,7 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
     let response = http
         .server_request(Method::GET, base_url, &path, token)
         .query(&[("limit", limit.to_string()), ("offset", offset.to_string())])
-        .timeout(Duration::from_secs(120))
+        .timeout(JSON_CALL_TIMEOUT)
         .send()
         .with_context(|| format!("{what} failed"))?;
 
@@ -140,7 +144,7 @@ pub fn close_export(
     let path = format!("/v1/exports/{export_id}/{}", action.path_segment());
     let response = http
         .server_request(Method::POST, base_url, &path, token)
-        .timeout(Duration::from_secs(120))
+        .timeout(JSON_CALL_TIMEOUT)
         .send()
         .with_context(|| format!("{what} failed"))?;
     let status = response.status();
@@ -150,8 +154,8 @@ pub fn close_export(
 
 /// How long one Asset fetch may take, from the request to its last byte.
 /// An Asset can be a video of several hundred megabytes, so five minutes
-/// leaves a slow link room to finish one, where the other calls here move
-/// a little JSON and allow less.
+/// leaves a slow link room to finish one, where a JSON call moves a page of
+/// messages at most and has [`JSON_CALL_TIMEOUT`].
 const ASSET_READ_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Fetch one Asset by its SHA-256 fingerprint to `dest`.
