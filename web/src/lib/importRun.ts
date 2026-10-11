@@ -54,20 +54,20 @@ export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveIm
   };
 }
 
-/** An Import Run's directory that could not be deleted, and why. */
-export type UndeletedDirectory = { path: string; reason: string };
+/** An Import Run's directory Message Crate left in place, and why. */
+export type DirectoryReason = { path: string; reason: string };
 
 /**
  * The directories of the account's Import Runs on this computer: `found`,
  * the ones to delete with the account, and `unreadable`, the ones the
  * operating system would not let Message Crate read. Those may be here with
- * the account's data, or the run may have been on another computer; Message
+ * the account's data, or the run may have been on another computer. Message
  * Crate cannot tell, and cannot delete them either, so they are named with
  * the system's reason once the account is deleted (#2651).
  */
 export type AccountRunDirectories = {
   found: string[];
-  unreadable: UndeletedDirectory[];
+  unreadable: DirectoryReason[];
 };
 
 /**
@@ -103,8 +103,8 @@ export async function accountRunDirectories(signal?: AbortSignal): Promise<Accou
  */
 export async function deleteRunDirectories(
   directories: readonly string[],
-): Promise<UndeletedDirectory[]> {
-  const undeleted: UndeletedDirectory[] = [];
+): Promise<DirectoryReason[]> {
+  const undeleted: DirectoryReason[] = [];
   for (const path of directories) {
     try {
       await invokeDeleteRunDir({ run_dir: path });

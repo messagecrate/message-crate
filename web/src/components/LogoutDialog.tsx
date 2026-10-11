@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { UndeletedDirectory } from "../lib/importRun";
+import type { DirectoryReason } from "../lib/importRun";
 import { useLogoutPrompt } from "../lib/logoutPromptContext";
 import Button from "./Button";
 import ConfirmDialog from "./ConfirmDialog";
@@ -14,6 +14,12 @@ const UPLOAD_PAUSING =
 
 const DELETED_ACCOUNT_UPLOAD_PAUSING =
   "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
+
+const UNDELETED_DIRECTORIES =
+  "Message Crate could not delete these directories of the deleted account's Import Runs. Delete them by hand to free the space they take:";
+
+const UNREADABLE_DIRECTORIES =
+  "Message Crate could not tell whether these directories of the deleted account's Import Runs are on this computer. If they are, delete them by hand:";
 
 const UPLOAD_NOT_PAUSED =
   "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
@@ -57,18 +63,20 @@ export default function LogoutDialog() {
       </Notice>
     );
   }
-  if (state?.kind === "undeletedDirectories") {
+  if (state?.kind === "leftDirectories") {
     return (
       <Notice
         title={
-          state.directories.length > 0
+          state.undeleted.length > 0
             ? "Directories of Import Runs left on this computer"
             : "Directories of Import Runs that may be left on this computer"
         }
         onDismiss={dismiss}
       >
-        <UndeletedDirectories directories={state.directories} />
-        <UnreadableDirectories directories={state.unreadable} />
+        <LeftDirectories lead={UNDELETED_DIRECTORIES} directories={state.undeleted} />
+        {/* These may hold the account's data, or the run may have been on
+            another computer, so the notice does not say they are here. */}
+        <LeftDirectories lead={UNREADABLE_DIRECTORIES} directories={state.unreadable} />
       </Notice>
     );
   }
@@ -116,33 +124,18 @@ function Notice({
   );
 }
 
-/** Names each Import Run's directory a deleted account left behind, and why. */
-function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
+/** Names each Import Run's directory of a deleted account in `directories`, and why, after `lead`. */
+function LeftDirectories({
+  lead,
+  directories,
+}: {
+  lead: string;
+  directories: readonly DirectoryReason[];
+}) {
   if (directories.length === 0) return null;
   return (
     <>
-      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-        Message Crate could not delete these directories of the deleted account's Import Runs.
-        Delete them by hand to free the space they take:
-      </p>
-      <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
-    </>
-  );
-}
-
-/**
- * Names each Import Run's directory of a deleted account that Message Crate
- * may not read, and why. It may hold the account's data, or the run may have
- * been on another computer, so the notice does not say it is there.
- */
-function UnreadableDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
-  if (directories.length === 0) return null;
-  return (
-    <>
-      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-        Message Crate could not tell whether these directories of the deleted account's Import Runs
-        are on this computer. If they are, delete them by hand:
-      </p>
+      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{lead}</p>
       <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
     </>
   );

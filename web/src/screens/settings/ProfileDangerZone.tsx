@@ -85,7 +85,7 @@ export function ProfileDangerZone({
   );
   // A look that failed deletes nothing, as the dialog says, even with an
   // earlier list still cached.
-  const runDirectoriesHere =
+  const accountDirectories =
     (checkDirectories && !runDirectories.isError ? runDirectories.data : undefined) ??
     NO_DIRECTORIES;
 
@@ -124,7 +124,7 @@ export function ProfileDangerZone({
       // named are deleted once the session is revoked.
       void logout({
         ask: false,
-        deletedAccountDirectories: runDirectoriesHere,
+        deletedAccountDirectories: accountDirectories,
       });
     } catch (e) {
       setDangerError(errorLine(e));
@@ -259,7 +259,7 @@ export function ProfileDangerZone({
                   // A look still under way holds the confirm, even with an earlier
                   // list cached: that list may miss a directory made since.
                   checking: runDirectories.isFetching,
-                  paths: runDirectoriesHere.found,
+                  paths: accountDirectories.found,
                   error: runDirectories.error?.message ?? "",
                 }
               : undefined

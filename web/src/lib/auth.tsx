@@ -272,7 +272,7 @@ function SessionProvider({ children }: { children: ReactNode }) {
         const undeleted = await deleteRunDirectories(deletedAccountDirectories.found);
         const { unreadable } = deletedAccountDirectories;
         if (undeleted.length > 0 || unreadable.length > 0) {
-          setPrompt({ kind: "undeletedDirectories", directories: undeleted, unreadable });
+          setPrompt({ kind: "leftDirectories", undeleted, unreadable });
         }
       } else if (!paused) {
         setPrompt({ kind: "notPaused" });
