@@ -91,7 +91,9 @@ pub struct PathStat {
     pub modified_unix_ms: Option<i64>,
     /// Why the operating system would not say what is at the path, when it
     /// would not; `None` when it answered, whether or not the path is there.
-    /// `exists` is `false` alongside it, because nothing is known.
+    /// `exists`, `is_file` and `is_directory` are `false` alongside it,
+    /// because nothing is known: [`path_stat_inner`] builds the refusal from
+    /// the absent stat and never sets both.
     pub unreadable: Option<PathUnreadable>,
 }
 
@@ -99,11 +101,21 @@ pub struct PathStat {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PathUnreadable {
-    /// `true` when the app is not allowed to read the path, such as a
-    /// directory macOS protects until the app has Full Disk Access.
-    pub permission_denied: bool,
+    /// What kind of refusal it was.
+    pub kind: PathUnreadableKind,
     /// The operating system's own words for the refusal.
     pub reason: String,
+}
+
+/// What kind of refusal an unreadable path met.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PathUnreadableKind {
+    /// The app is not allowed to read the path, such as a directory macOS
+    /// protects until the app has Full Disk Access.
+    PermissionDenied,
+    /// Any other error from the operating system.
+    Other,
 }
 
 /// Stat a path without canonicalizing it (the path may not exist yet). A
@@ -135,7 +147,11 @@ pub(crate) fn path_stat_inner(path: &str) -> PathStat {
         Err(err) => {
             return PathStat {
                 unreadable: Some(PathUnreadable {
-                    permission_denied: err.kind() == std::io::ErrorKind::PermissionDenied,
+                    kind: if err.kind() == std::io::ErrorKind::PermissionDenied {
+                        PathUnreadableKind::PermissionDenied
+                    } else {
+                        PathUnreadableKind::Other
+                    },
                     reason: err.to_string(),
                 }),
                 ..absent
@@ -831,11 +847,14 @@ mod tests {
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
         // Root reads past the mode bits, so there is nothing to refuse.
         if !refused {
+            eprintln!(
+                "skipped: the operating system let this user read past mode 000, as it does for root"
+            );
             return;
         }
 
         let unreadable = stat.unreadable.expect("a refused path is unreadable");
-        assert!(unreadable.permission_denied);
+        assert_eq!(unreadable.kind, PathUnreadableKind::PermissionDenied);
         assert!(!unreadable.reason.is_empty());
         assert!(!stat.exists && !stat.is_file && !stat.is_directory);
     }
