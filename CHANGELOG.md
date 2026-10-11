@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-10: **An attachment says why it has no copy a browser can show.**
+  When the server tries to make the Preview of a photo, video or recording
+  and cannot, opening it now says **No Preview could be made** and what
+  ffmpeg said about the file, such as that the file holds data it cannot
+  read, or that the original file is missing. It used to say only that no
+  copy existed yet, as if one were still coming, and the reason was in the
+  server's log alone. The reason goes away once a later try makes the
+  Preview (#2170).
+
 - 2026-10-10: **User Accounts shows which accounts have no password.** In
   Owner Home, the Status of an account that has no password now reads
   **No password** under it. Once such an account is active, anyone who
@@ -703,6 +712,14 @@ released versions carry their date on the heading.
   server shares. An account may now have 128 uploads in progress at once;
   the next is refused until one of them finishes or is cancelled (#2176).
 
+- 2026-10-10: **A request too large for the server reads the same
+  everywhere.** When the server refuses a request for being over its size
+  limit, the message now always reads "the request body is too large". It
+  used to read three ways depending on what was sent: "request body too
+  large" for an attachment, an import or an address book sent without a
+  stated size, "a part of this upload is at most" a number of bytes for a
+  part of a large attachment, and a technical sentence from the web
+  framework for some other requests (#2283).
 - 2026-10-10: **The server's log and the desktop app's Import Run logs no
   longer act on a terminal that shows them.** A file name in a backup or a
   tool's output can carry a terminal control character, such as the escape

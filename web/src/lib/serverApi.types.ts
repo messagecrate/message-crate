@@ -1871,6 +1871,15 @@ export interface components {
              *     preview's bytes are at `/v1/assets/{sha256}/preview`.
              */
             preview_mime_type: string | null;
+            /**
+             * @description Why the server could not make the attachment's preview the last
+             *     time it tried: what ffmpeg said about the file, or a phrase of the
+             *     server's when ffmpeg did not read it, such as when the original
+             *     file is missing. `null` while the attachment has a preview, once
+             *     the server decides the original is shown as it is, and until a try
+             *     has failed.
+             */
+            preview_not_made_reason: string | null;
             /** @description Content fingerprint of the stored bytes. */
             sha256: string | null;
             /**
@@ -1887,6 +1896,11 @@ export interface components {
              *     `/v1/assets/{sha256}/thumbnail`.
              */
             thumbnail_mime_type: string | null;
+            /**
+             * @description Why the server could not make the attachment's thumbnail the last
+             *     time it tried, as `preview_not_made_reason` says for the preview.
+             */
+            thumbnail_not_made_reason: string | null;
             /** @description OCR/ASR transcription, when processed. */
             transcription: string | null;
         };

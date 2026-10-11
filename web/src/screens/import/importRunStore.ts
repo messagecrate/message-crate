@@ -18,7 +18,8 @@ export type RunDirDeleteFailure = { path: string; reason: string };
  * or uploading on its own thread, and the person is meant to come back to
  * the run wherever it has got to (CONTEXT.md, "Import Run"). React state in
  * the screen was lost on every navigation; this store is read by the screen
- * and by the sidebar badge, and written only by `useImportJob`.
+ * and by the sidebar badge, and written only by `useImportJob` and the run's
+ * modules in `run/`.
  *
  * The store is named with the account that started the run, the rule ADR 0002
  * sets for every cache entry: another account logged in on the same desktop

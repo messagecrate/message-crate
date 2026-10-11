@@ -609,8 +609,8 @@ async fn an_upload_part_over_the_part_size_is_a_json_413() {
     );
     assert_eq!(
         problem.detail.as_deref(),
-        Some("a part of this upload is at most 16 bytes"),
-        "the sentence must be the handler's own, proving the layer did not answer: {text}"
+        Some("the request body is too large"),
+        "{text}"
     );
 }
 

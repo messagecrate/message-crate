@@ -13362,8 +13362,10 @@
           "original_name",
           "path",
           "preview_mime_type",
+          "preview_not_made_reason",
           "sha256",
           "thumbnail_mime_type",
+          "thumbnail_not_made_reason",
           "transcription"
         ],
         "properties": {
@@ -13406,6 +13408,13 @@
             ],
             "description": "MIME type of the attachment's preview, when it has one. The\npreview's bytes are at `/v1/assets/{sha256}/preview`."
           },
+          "preview_not_made_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the server could not make the attachment's preview the last\ntime it tried: what ffmpeg said about the file, or a phrase of the\nserver's when ffmpeg did not read it, such as when the original\nfile is missing. `null` while the attachment has a preview, once\nthe server decides the original is shown as it is, and until a try\nhas failed."
+          },
           "sha256": {
             "type": [
               "string",
@@ -13423,6 +13432,13 @@
               "null"
             ],
             "description": "MIME type of the attachment's thumbnail, once the server has made\nit; `null` until then. The thumbnail's bytes are at\n`/v1/assets/{sha256}/thumbnail`."
+          },
+          "thumbnail_not_made_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why the server could not make the attachment's thumbnail the last\ntime it tried, as `preview_not_made_reason` says for the preview."
           },
           "transcription": {
             "type": [

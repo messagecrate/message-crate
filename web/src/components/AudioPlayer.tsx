@@ -43,7 +43,7 @@ export default function AudioPlayer({ attachment }: { attachment: MessageAttachm
         </audio>
       ) : null}
       <div className="flex items-center justify-between gap-2 text-[0.75rem] text-muted">
-        <span>{media.note}</span>
+        <span className="min-w-0 break-words">{media.note}</span>
         <DownloadAttachmentButton attachment={attachment} look="text" />
       </div>
     </div>
