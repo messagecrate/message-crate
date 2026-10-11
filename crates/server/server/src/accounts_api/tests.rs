@@ -537,13 +537,29 @@ async fn the_profile_lists_a_number_once_with_every_service_it_is_on() {
     );
 }
 
-/// An account's identity is typed by its address, never by the service the
-/// request names: `ada@example.com` under `phone` is an email address. When
-/// the service decided the type, it was stored as a phone number (#1432). An
-/// email address on WhatsApp is refused with the reason, as a contact edit
-/// refuses it.
+/// The `(handle_type, service)` of every identity linked to the account.
+async fn linked_identity_types(state: &AppState, account_id: i64) -> Vec<(String, String)> {
+    let mut conn = state.db.acquire().await.unwrap();
+    sqlx::query_as(
+        "SELECT h.handle_type, h.service FROM account_handles ah
+         JOIN handles h ON h.id = ah.handle_id
+         WHERE ah.account_id = $1
+         ORDER BY h.id",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap()
+}
+
+/// An account's identity is typed by its service and then its address:
+/// `ada@example.com` on Text Message is an email address. When the service
+/// alone decided the type, it was stored as a phone number (#1432). An
+/// address with an `@` on WhatsApp is `other`, as an import stores it.
+/// Typed by its shape alone, `123456789012345@lid` was an email address,
+/// which WhatsApp carries none of, so adding it was refused (#2709).
 #[tokio::test]
-async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
+async fn an_account_identity_takes_its_type_from_its_service_and_address() {
     let (fixture, account) = fixture_with_account().await;
     let path = member(account.account_id);
 
@@ -552,26 +568,56 @@ async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
         &path,
         &account.token,
         serde_json::json!({
-            "identities": [{ "address": "ada@example.com", "service": "phone" }]
+            "identities": [
+                { "address": "ada@example.com", "service": "phone" },
+                { "address": "123456789012345@lid", "service": "whatsapp" }
+            ]
         }),
     )
     .await;
     assert_eq!(patched["phones"], serde_json::json!([]));
     assert_eq!(patched["emails"], serde_json::json!(["ada@example.com"]));
+    assert_eq!(
+        linked_identity_types(&fixture.state, account.account_id).await,
+        [
+            ("email".to_string(), "phone".to_string()),
+            ("other".to_string(), "whatsapp".to_string())
+        ]
+    );
+}
 
-    let sentence = patch_failure(
+/// Removing a WhatsApp internal id from the profile finds it as the `other`
+/// identity it was added as. Looked up by its shape alone, it was sought as
+/// an email address and stayed linked.
+#[tokio::test]
+async fn a_whatsapp_internal_id_is_removed_from_the_account() {
+    let (fixture, account) = fixture_with_account().await;
+    let path = member(account.account_id);
+    let identity = serde_json::json!([
+        { "address": "123456789012345@lid", "service": "whatsapp" }
+    ]);
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    account_profile::link_account_handle_with_service(
+        &mut conn,
+        account.account_id,
+        "123456789012345@lid",
+        IdentityType::Other,
+        Some("whatsapp"),
+    )
+    .await
+    .unwrap();
+    drop(conn);
+
+    let _: serde_json::Value = patch_json(
         &fixture.state,
         &path,
         &account.token,
-        serde_json::json!({
-            "identities": [{ "address": "ann@example.com", "service": "whatsapp" }]
-        }),
-        ProblemType::ValidationFailed,
+        serde_json::json!({ "remove_identities": identity }),
     )
     .await;
     assert_eq!(
-        sentence,
-        "ann@example.com is an email address, and WhatsApp carries no email addresses"
+        linked_identity_types(&fixture.state, account.account_id).await,
+        []
     );
 }
 
@@ -2700,36 +2746,6 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         linked_services(&mut conn, account_id, "+15555550100")
             .await
             .is_empty()
-    );
-}
-
-#[tokio::test]
-async fn profile_update_rolls_back_when_a_service_cannot_carry_the_identity() {
-    let fixture = test_fixture().await;
-    let account_id = fixture.account_with_id(101, "alice").await;
-    let mut conn = fixture.conn().await;
-
-    let result = update_profile_on_conn(
-        &mut conn,
-        account_id,
-        &UpdateAccountRequest {
-            preferred_name: Some(Some("Changed Name".into())),
-            identities: vec![LinkAccountIdentityRequest {
-                address: "alice@example.com".into(),
-                service: ApiIdentityService::Whatsapp,
-            }],
-            ..UpdateAccountRequest::default()
-        },
-        true,
-    )
-    .await;
-
-    assert!(result.is_err());
-    assert_eq!(
-        account_profile::load_preferred_name(&mut conn, account_id)
-            .await
-            .unwrap(),
-        None
     );
 }
 

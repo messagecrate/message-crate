@@ -846,11 +846,19 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-11: **A WhatsApp internal id can be added to a contact or to your
+  account by hand.** WhatsApp names some people by an internal id such as
+  `123456789012345@lid` rather than a phone number. Adding one by hand was
+  refused as an email address, which WhatsApp does not carry, though an
+  import stores the same id without trouble. An address with an `@` added
+  on WhatsApp is now stored as WhatsApp's own kind of identity, as an import
+  stores it, and one added on Text Message is still an email address
+  (#2709).
+
 - 2026-10-11: **An address book load refuses an identity its service cannot
   hold.** A row that put an email address on WhatsApp, or a username on
   either service, was stored as an identity that reaches nobody. The load now
-  refuses it, naming the row, the service and the kind of identity, as adding
-  one to a contact already did (#2212).
+  refuses it, naming the row, the service and the kind of identity (#2212).
 
 - 2026-10-10: **Contacts calls a search that finds nothing a search.** When
   the text in **Search contacts** matched no contact, the list said "No
