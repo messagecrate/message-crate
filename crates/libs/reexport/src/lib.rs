@@ -142,7 +142,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // staged again under the same names, and the convert pass replaces each
     // one in place, so the check counts one copy (#1759).
     let mut from_input = None;
-    let silent = LogSink::none();
+    let no_log = LogSink::none();
     if copy_attachments {
         let counted = match &sms_backup {
             Some(backup) => backup.counted(&mut documents, config),
@@ -155,7 +155,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
                 if stages_from_input {
                     &config.log
                 } else {
-                    &silent
+                    &no_log
                 },
             ),
         };

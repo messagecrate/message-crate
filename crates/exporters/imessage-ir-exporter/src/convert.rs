@@ -168,7 +168,7 @@ pub(crate) fn export(
     } = output;
 
     let mut collected = collect(helper, options)?;
-    options.check_cancel()?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
     let failures = collected.failures;
     // Both arms below write every message collected: a conversation with no
     // messages adds none here and is not written.
@@ -294,7 +294,7 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
     let stages_files = stages_attachment_files(options);
     let embed = options.attachment_embed;
     loop {
-        options.check_cancel()?;
+        message_crate_core::check_cancel(&options.convert_run.cancel)?;
         match helper.next_event()? {
             Event::Source {
                 encrypted: flag, ..
@@ -663,7 +663,7 @@ fn embed_attachment_bytes(
         let mut loads = std::mem::take(&mut conversation.attachment_loads).into_iter();
         for message in &mut conversation.messages {
             for attachment in &mut message.attachments {
-                options.check_cancel()?;
+                message_crate_core::check_cancel(&options.convert_run.cancel)?;
                 let bytes = match loads.next() {
                     Some(AttachmentLoad::Path { path, .. }) => {
                         read_attachment(helper, options, encrypted, None, &path, not_decrypted)?
@@ -703,7 +703,7 @@ fn write_conversations(
     let mut written = 0usize;
     let mut kept = 0u64;
     for (chat_identifier, conversation) in conversations {
-        options.check_cancel()?;
+        message_crate_core::check_cancel(&options.convert_run.cancel)?;
         written += 1;
         if conversation.messages.is_empty() {
             continue;

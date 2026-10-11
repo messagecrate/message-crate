@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
@@ -105,11 +105,6 @@ impl ExportOptions {
         })
     }
 
-    /// The shared cancel check.
-    pub fn check_cancel(&self) -> Result<()> {
-        message_crate_core::check_cancel(&self.convert_run.cancel).map_err(|e| anyhow!(e))
-    }
-
     /// When the Messages data was backed up, in Unix milliseconds: an
     /// iPhone backup's `Manifest.plist` date, or the last time Messages
     /// wrote a Mac's `chat.db`: the newest modification time of `chat.db`
@@ -159,7 +154,7 @@ fn run_with(
     spawn: impl FnOnce(&Request, LogSink, ProgressSink) -> Result<Helper>,
 ) -> Result<RunResult> {
     let options = options_from_export_config(config)?;
-    options.check_cancel()?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
     let output = convert::open_output(&options)?;
 
     // The program writes decrypted files into a directory of this run's own
@@ -186,7 +181,7 @@ fn run_with(
         helper.finish()?;
         report
     };
-    options.check_cancel()?;
+    message_crate_core::check_cancel(&options.convert_run.cancel)?;
 
     message_crate_core::finish_run(config, &report, config.media.mode.needs_tools())
 }
