@@ -33,8 +33,8 @@ released versions carry their date on the heading.
   `serve --bind` puts on a port other than 8080 reads healthy too. A
   container started for one command, such as
   `docker compose run --rm server reset-demo`, reads healthy while the
-  command runs, rather than unhealthy after five minutes (#2132, #2541,
-  #2542).
+  command runs, rather than unhealthy after five minutes. So does a container
+  that runs no server at all, such as a shell (#2132, #2541, #2542).
 
 - 2026-10-09: **An iMazing import keeps reactions, replies, deleted messages
   and edits.** Each reaction in an iMazing export is kept with its emoji and

@@ -13,10 +13,10 @@
 // serving container whose server has died has already exited, because tini
 // is PID 1 and the entrypoint execs the server, so a missing server never
 // means one that stopped answering. A `serve` that is not listening yet,
-// while it builds the Demo Account on a first start, fails the check;
-// failures inside --start-period do not count.
+// while it builds the Demo Account on a first start, fails the check. A
+// failure inside --start-period does not count.
 //
-// Exit 0 is healthy, 1 unhealthy; what it printed shows in
+// Exit 0 is healthy and 1 unhealthy. What it printed shows in
 // `docker inspect --format '{{json .State.Health}}' <container>`.
 
 const fs = require("node:fs");
@@ -25,8 +25,11 @@ const path = require("node:path");
 
 const SERVER = "message-crate-server";
 // The `st` column of /proc/net/tcp and tcp6 holds the kernel's TCP state as
-// hex; 0A is TCP_LISTEN.
+// hex. 0A is TCP_LISTEN.
 const TCP_STATE_LISTEN = "0A";
+// The hosts asked share this time between them. It stays under HEALTHCHECK
+// --timeout=5s in docker/Dockerfile, with a second left for node to start.
+const PROBE_BUDGET_MS = 4000;
 
 function argsOf(pid) {
   try {
@@ -131,7 +134,7 @@ async function main() {
   for (const address of addresses) {
     const url = `http://${address}/health`;
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(PROBE_BUDGET_MS / addresses.length) });
       if (response.ok) exit(0, `${url} answered ${response.status}`);
       failures.push(`${url} answered ${response.status}`);
     } catch (error) {
