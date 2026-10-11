@@ -605,3 +605,28 @@ fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
         [("+15555550101".to_string(), Some(1_500_000_000_000))]
     );
 }
+
+/// A parse stopped by a cancel stops the read with the typed `Cancelled`,
+/// and nothing is recorded as an error in the file.
+#[test]
+fn a_parse_stopped_by_a_cancel_returns_cancelled() {
+    let mut report = ReadReport::default();
+    let error =
+        keep_parse_error(Err(Cancelled.into()), Path::new("input.xml"), &mut report).unwrap_err();
+    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(report.errors.is_empty());
+}
+
+/// A parse error whose text is `cancelled` is recorded as an error in the
+/// file, not taken for a cancel: a cancel is told by its type.
+#[test]
+fn a_parse_error_reading_cancelled_is_recorded_not_taken_for_a_cancel() {
+    let mut report = ReadReport::default();
+    keep_parse_error(
+        Err(anyhow::anyhow!("cancelled")),
+        Path::new("input.xml"),
+        &mut report,
+    )
+    .unwrap();
+    assert_eq!(report.errors.len(), 1);
+}
