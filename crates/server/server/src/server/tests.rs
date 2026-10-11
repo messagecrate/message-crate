@@ -1491,6 +1491,41 @@ fn every_api_error_displays_its_detail_sentence() {
     );
 }
 
+/// A variant that carries only a sentence answers with that sentence as the
+/// `detail`, and displays the same sentence.
+#[test]
+fn every_message_variant_answers_its_sentence_as_the_detail() {
+    let variants: Vec<fn(String) -> ApiError> = vec![
+        ApiError::MalformedBody,
+        ApiError::UnsupportedMediaType,
+        ApiError::PayloadTooLarge,
+        ApiError::InvalidCredentials,
+        ApiError::AuthenticationRequired,
+        ApiError::UsernameTaken,
+        ApiError::NameTaken,
+        ApiError::DemoAccountProtected,
+        ApiError::NotTheOwner,
+        ApiError::RegistrationClosed,
+        ApiError::InsufficientScope,
+        ApiError::AccountDisabled,
+        ApiError::StateConflict,
+        ApiError::AssetUploadInvalid,
+        ApiError::NotFound,
+        ApiError::MethodNotAllowed,
+        ApiError::NotAcceptable,
+        ApiError::MediaLinkInvalid,
+    ];
+    for variant in variants {
+        let error = variant("the sentence".into());
+        assert_eq!(
+            error.to_problem().detail.as_deref(),
+            Some("the sentence"),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), "the sentence", "{error:?}");
+    }
+}
+
 #[test]
 fn a_sqlx_error_becomes_an_internal_error_and_keeps_its_message() {
     let error = ApiError::from(sqlx::Error::RowNotFound);
