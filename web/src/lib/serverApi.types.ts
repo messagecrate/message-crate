@@ -1782,9 +1782,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service to link it on; the phone service when omitted. It never
-             *     decides the identity's type, which comes from the address. A new email
-             *     address on WhatsApp is refused.
+             * @description The service to link it on; the phone service when omitted. The
+             *     address's shape picks the identity's type among those the service
+             *     carries: an address with an `@` is an email address on the phone
+             *     service, and `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };
@@ -3370,9 +3371,10 @@ export interface components {
              */
             address: string;
             /**
-             * @description The service the address is on. It never decides the identity's type,
-             *     which comes from the address: an email address is on the phone
-             *     service, and one on WhatsApp is refused.
+             * @description The service the address is on. The address's shape picks the
+             *     identity's type among those the service carries: an address with an
+             *     `@` is an email address on the phone service, and `other` on
+             *     WhatsApp, such as an internal id `123456789012345@lid`.
              */
             service: components["schemas"]["IdentityService"];
         };
@@ -5532,8 +5534,8 @@ export interface components {
              *     its own service whatever this names: on the named service first when
              *     it is there under more than one, else the phone service, then
              *     WhatsApp. When omitted, the new address takes the service of the
-             *     previous one. It never decides the new identity's type, which comes
-             *     from the address, and a new email address on WhatsApp is refused.
+             *     previous one. The new address's shape picks its type among those the
+             *     service carries, so an address with an `@` is `other` on WhatsApp.
              */
             service?: components["schemas"]["IdentityService"] | null;
         };

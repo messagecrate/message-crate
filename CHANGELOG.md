@@ -840,7 +840,7 @@ released versions carry their date on the heading.
   refused as an email address, which WhatsApp does not carry, though an
   import stores the same id without trouble. An address with an `@` added
   on WhatsApp is now stored as WhatsApp's own kind of identity, as an import
-  stores it, and one added on Text message is still an email address
+  stores it, and one added on Text Message is still an email address
   (#2709).
 
 - 2026-10-11: **An address book load refuses an identity its service cannot

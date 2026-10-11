@@ -179,8 +179,9 @@ internal ids (`…@lid`, `…@g.us`, `…@s.whatsapp.net`), which are `other`. T
 reaches an email address. Every service carries `other`, and neither carries
 a username. A shape the service cannot carry is never that type: an address
 with an `@` on WhatsApp is not an email address, however it looks, and an
-import, a contact edit and the account's profile store it as `other`. A name that is neither a number
-nor an address, such as the sender `AMAZON`, is `other` on every service. Why:
+import, a contact edit and the account's profile store it as `other`. A name
+that is neither a number nor an address, such as the sender `AMAZON`, is
+`other` on every service. Why:
 the service knows what it can carry, and the address alone does not. Typed
 by shape alone, a WhatsApp participant such as `123456789012345@lid` was
 stored as an email identity on WhatsApp, which no WhatsApp identity can be,
@@ -191,8 +192,8 @@ and the identities list named it `email`
 not carry is refused.** `IdentityService::carries` lists every pair, and an
 import stores no other. An identity added by hand to an account or a contact
 is typed by the rule above, so it takes a type its service carries. A row of
-an address book load states its type, and one whose service does not carry
-that type is refused, and the reason names the service and the type. Why: the check
+an address book load states its type. A row whose service does not carry that
+type is refused, and the reason names the service and the type. Why: the check
 refused an email address on WhatsApp and let every other pair through, so a
 new service or type would have been carried everywhere without anyone
 deciding it. Now a new one does not compile until someone does

@@ -472,9 +472,10 @@ pub struct LinkAccountIdentityRequest {
     /// 320 characters after trimming is refused with
     /// `422 Unprocessable Entity`.
     pub address: String,
-    /// The service the address is on. It never decides the identity's type,
-    /// which comes from the address: an email address is on the phone
-    /// service, and one on WhatsApp is refused.
+    /// The service the address is on. The address's shape picks the
+    /// identity's type among those the service carries: an address with an
+    /// `@` is an email address on the phone service, and `other` on
+    /// WhatsApp, such as an internal id `123456789012345@lid`.
     pub service: ApiIdentityService,
 }
 
@@ -597,10 +598,6 @@ impl UpdateAccountRequest {
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
 enum ProfileUpdateError {
-    /// The service does not carry an identity of the address's type, such
-    /// as an email address on WhatsApp.
-    #[error(transparent)]
-    ServiceCannotCarry(#[from] handles::ServiceCannotCarry),
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -621,8 +618,7 @@ impl From<sqlx::Error> for ProfileUpdateError {
 impl From<ProfileUpdateError> for ApiError {
     fn from(e: ProfileUpdateError) -> Self {
         match e {
-            err @ (ProfileUpdateError::ServiceCannotCarry(_)
-            | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
+            err @ ProfileUpdateError::UnknownTimeZone(_) => Self::validation(err.to_string()),
             ProfileUpdateError::Country(error) => error.into(),
             ProfileUpdateError::Db(err) => Self::Internal(err),
         }
@@ -675,7 +671,6 @@ async fn apply_profile_update(
         }
         let service = IdentityService::from(entry.service);
         let handle_type = handles::handle_type_on(raw, service);
-        handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(
             conn,
             account_id,

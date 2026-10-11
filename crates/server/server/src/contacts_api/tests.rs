@@ -1613,11 +1613,11 @@ async fn handle_type_and_service(
 /// An identity added by hand takes its type from its address within what its
 /// service carries: a number is a phone number on any service, an address
 /// with `@` on Text Message is an email address, and anything else is
-/// `other`. Typed by the
-/// service, `ada@example.com` under `imessage` was stored as a phone number
-/// (#1432); `imessage` is no longer a service a request can name (#1630).
+/// `other`. Typed by the service alone, `ada@example.com` under `imessage`
+/// was stored as a phone number (#1432); `imessage` is no longer a service a
+/// request can name (#1630).
 #[tokio::test]
-async fn a_handle_takes_its_type_from_its_address_not_the_service() {
+async fn a_handle_takes_its_type_from_its_service_and_address() {
     let fixture = test_fixture().await;
     let account = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
@@ -1646,8 +1646,10 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
 /// An identity typed into a contact is typed by its service and then its
 /// address, as an import types it: an `@` address on WhatsApp, such as the
 /// internal id `123456789012345@lid`, is `other`, and one on Text Message is
-/// an email address. Typed by its shape alone, the WhatsApp id was an email
-/// address, which WhatsApp carries none of, so adding it was refused (#2709).
+/// an email address. That holds for an address added and for one swapped in
+/// for a number, which stays on the number's service. Typed by its shape
+/// alone, the WhatsApp id was an email address, which WhatsApp carries none
+/// of, so the edit was refused (#2709).
 #[tokio::test]
 async fn a_contact_edit_types_a_new_at_address_by_its_service() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
@@ -1657,28 +1659,46 @@ async fn a_contact_edit_types_a_new_at_address_by_its_service() {
     drop(conn);
     let path = format!("/v1/contacts/{sam}");
 
-    for (address, service) in [
-        ("123456789012345@lid", "whatsapp"),
-        ("sam@example.com", "phone"),
+    for body in [
+        serde_json::json!({
+            "add_identity": { "address": "123456789012345@lid", "service": "whatsapp" }
+        }),
+        serde_json::json!({
+            "add_identity": { "address": "sam@example.com", "service": "phone" }
+        }),
+        serde_json::json!({
+            "add_identity": { "address": "+15555550170", "service": "whatsapp" }
+        }),
+        serde_json::json!({
+            "update_identity": {
+                "previous_address": "+15555550170",
+                "address": "222222222222222@lid"
+            }
+        }),
+        serde_json::json!({
+            "update_identity": {
+                "previous_address": "+15555550100",
+                "address": "sam.lee@example.com"
+            }
+        }),
     ] {
-        let _: serde_json::Value = crate::test_support::patch_json(
-            &fixture.state,
-            &path,
-            &account.token,
-            serde_json::json!({ "add_identity": { "address": address, "service": service } }),
-        )
-        .await;
+        let _: serde_json::Value =
+            crate::test_support::patch_json(&fixture.state, &path, &account.token, body).await;
     }
 
     let mut conn = fixture.state.db.acquire().await.unwrap();
-    assert_eq!(
-        handle_type_and_service(&mut conn, account.account_id, "123456789012345@lid").await,
-        ("other".to_string(), Some("whatsapp".to_string()))
-    );
-    assert_eq!(
-        handle_type_and_service(&mut conn, account.account_id, "sam@example.com").await,
-        ("email".to_string(), Some("phone".to_string()))
-    );
+    for (address, expected) in [
+        ("123456789012345@lid", ("other", "whatsapp")),
+        ("sam@example.com", ("email", "phone")),
+        ("222222222222222@lid", ("other", "whatsapp")),
+        ("sam.lee@example.com", ("email", "phone")),
+    ] {
+        assert_eq!(
+            handle_type_and_service(&mut conn, account.account_id, address).await,
+            (expected.0.to_string(), Some(expected.1.to_string())),
+            "{address}"
+        );
+    }
 }
 
 /// A WhatsApp internal id the import stored as `other` is linked as that row
