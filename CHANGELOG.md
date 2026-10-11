@@ -262,6 +262,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **No API token works on the owner's account.** The owner
+  cannot make an API token, but a token on the owner's account that got
+  there another way, such as in a restored database, used to import into
+  and export from the owner's account. The server now refuses it as if it
+  had never issued it. The owner's entry in User Accounts also used to
+  claim import, export and delete, which the owner never holds; it now
+  reports none (#2147).
 - 2026-10-10: **Logging in to a disabled account no longer tells a guesser
   the password was right.** A disabled account's login used to say the
   account was disabled only when the password was right. A wrong password got
