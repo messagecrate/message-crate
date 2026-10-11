@@ -638,6 +638,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **Cancelling an import at a Review deletes its files when
+  the connection drops after Message Crate took the cancel.** The desktop
+  app kept the import's staged files as if the cancel had failed, but no
+  import was left to resume or discard, so the files stayed on disk with
+  nothing that would ever delete them. The app now asks Message Crate
+  whether the import is still running, and deletes the files when it is
+  not (#2807).
+
 - 2026-10-11: **An attachment's file name in an Upload never picks up a
   file the server already holds.** An Upload sends each attachment's file
   first and names it by its fingerprint. The server also looked up the file
@@ -647,6 +655,7 @@ released versions carry their date on the heading.
   attachment by its fingerprint alone. An attachment whose fingerprint is
   not a real one now stops the Upload at that message and names the
   attachment, where it used to be counted as missing (#2259).
+
 - 2026-10-11: **Discarding an import keeps its files when Message Crate
   does not take the discard.** When you discarded an import, or cancelled
   one at a Review, and the server refused or could not be reached, the

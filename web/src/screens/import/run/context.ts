@@ -41,6 +41,7 @@ export type RunServer = {
   completeImport: typeof serverApi.completeImport;
   setImportStage: typeof importRun.setImportStage;
   discardImportRun: typeof importRun.discardImportRun;
+  getActiveImportRun: typeof importRun.getActiveImportRun;
   /** The session token logged in now, which the run's server calls send. */
   token: () => string | null;
   /** The account logged in now. */
