@@ -15,7 +15,7 @@
 # The stack runs under its own project name, on its own volume, published on
 # 127.0.0.1:<host-port> (18080 unless given), so it never touches a running
 # Message Crate or its data. It is removed, volume and all, on exit. Runs in
-# CI's "Docker image builds" job.
+# CI's "Docker image builds" job and in nightly.yml.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

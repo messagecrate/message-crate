@@ -31,7 +31,9 @@ A local checkout’s `.env.example` sets `COMPOSE_FILE=docker/compose.release.ym
 
 Do not run either Compose file at the same time as `./scripts/run-dev.sh`. That script also binds port 8080.
 
-Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three. A change that makes it write anywhere else stops the container at start. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account; CI's "Docker image builds" job runs it.
+Both files start the container with the same limits. It keeps no Linux capability (`cap_drop: [ALL]`), cannot gain one through a setuid program (`no-new-privileges`), and its root filesystem is read-only (`read_only: true`), with `/tmp` in memory for temporary files. The server writes only under `/app/data`, the data volume, so it runs under all three.
+
+A change that makes the server write anywhere else stops the container at start. `scripts/check-docker-compose.sh` starts `docker/compose.release.yml` on a built image, checks the limits are in force, and logs in to the Demo Account. CI's "Docker image builds" job and the nightly build run it.
 
 ## What the image contains
 
