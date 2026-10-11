@@ -43,12 +43,12 @@ Setting one up is outside this guide.
 
 Three things matter more once other computers can reach the server:
 
-- The Owner's password is the only thing between the network and every account.
+- The Owner's password is the only thing between the network and every account but the Demo Account.
 - **Let anyone who can reach this server create their own account**, under [Server Settings](/docs/user/features/owner/owner-home/#server-settings), should stay off, because "anyone" now means every device on the network.
-- The [Demo Account](/docs/user/features/owner/owner-home/#demo-account) has no password, so every device on the network can open it with **Explore Demo Account**.
-  It holds made-up conversations and can neither import nor delete messages for good, so it shows no real messages.
-  No setting closes it to the network, because its limits are fixed by the server.
-  An Owner who does not want it open deletes it under [User Accounts](/docs/user/features/owner/owner-home/#user-accounts), and a restart does not bring it back.
+- The Demo Account has no password, so every device on the network can open it with **Explore Demo Account**.
+  It holds made-up conversations and can't import, so no real messages reach it.
+  It can't delete messages for good either, so a visitor can't empty it for the next one.
+  An Owner who does not want it open deletes it, as [Demo Account](/docs/user/features/owner/owner-home/#demo-account) on Owner Home describes.
 
 ## Open it in a browser
 

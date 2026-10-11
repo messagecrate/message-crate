@@ -82,7 +82,8 @@ Nobody can be in the Demo Account during a build: the build logs out anyone alre
 
 The Demo Account is removed under **User Accounts**, as any account is, with **Delete account** in its **Danger zone**.
 That is how an Owner closes it to the network, because no setting does.
-A restart does not bring it back: the server builds it only for a new Message Crate, and **Add Demo Account** builds it again.
+A restart doesn't bring it back, because the server builds it only for a new Message Crate.
+**Add Demo Account** builds it again.
 Its page there shows its status, permissions, and identities, and none of them can be changed.
 
 Below the Demo Account:
