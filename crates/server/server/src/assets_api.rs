@@ -841,14 +841,25 @@ async fn stream_version(
             },
         )
         .await?;
-        let Some((path, mime_type)) = file else {
-            return Err(ApiError::NotFound(format!(
+        let no_version = || {
+            ApiError::NotFound(format!(
                 "asset has no {} yet",
                 version.to_string().to_lowercase()
-            )));
+            ))
+        };
+        let Some((path, mime_type)) = file else {
+            return Err(no_version());
         };
         let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-        stream_file(&converted_dir.join(path), mime_type, headers, None).await
+        let Some(full) = crate::asset_store::join_stored(
+            &converted_dir,
+            &path,
+            account,
+            &format!("{version} of {sha256}"),
+        ) else {
+            return Err(no_version());
+        };
+        stream_file(&full, mime_type, headers, None).await
     }
     .await;
     reader.with_cache_control(answer)
