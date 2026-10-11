@@ -2215,7 +2215,7 @@ mod kind_words {
             &[path],
             &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
                 assets_dir: &assets,
-                asset_root: dir,
+                asset_root: Some(dir),
                 mode: crate::imports_api::ImportMode::Append,
                 source,
                 account_id: ACCOUNT,

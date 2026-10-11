@@ -25,7 +25,7 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
     );
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "openextract",
         account_id: TEST_ACCOUNT,
@@ -249,7 +249,7 @@ async fn a_participant_with_no_address_and_no_name_is_never_created() {
     );
     let opts = ImportOptions::fixed(FixedImportArgs {
         assets_dir: &assets,
-        asset_root: tmp.path(),
+        asset_root: Some(tmp.path()),
         mode: ImportMode::Append,
         source: "openextract",
         account_id: TEST_ACCOUNT,
@@ -281,7 +281,7 @@ async fn append_on_conn(conn: &mut SqliteConnection, path: &Path, root: &Path, s
         &[path.to_path_buf()],
         &ImportOptions::fixed(FixedImportArgs {
             assets_dir: &assets,
-            asset_root: root,
+            asset_root: Some(root),
             mode: ImportMode::Append,
             source,
             account_id: TEST_ACCOUNT,
