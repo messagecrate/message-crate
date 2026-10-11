@@ -7,6 +7,7 @@ import { ApiError } from "../lib/api";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
+import { account } from "../test/apiShapes";
 import { Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
@@ -70,25 +71,15 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   listServerLogFiles: (...a: unknown[]) => listServerLogFiles(...a),
 }));
 
-const anAccount = {
+const anAccount = account({
   account_id: 101,
   username: "bob",
   preferred_name: "Bob Archer",
   time_zone: "America/New_York",
   phones: [{ address: "+15555550100", services: ["phone"] }],
-  emails: [],
-  is_demo: false,
-  is_owner: false,
-  disabled: false,
-  can_import: true,
-  can_export: true,
-  can_delete: false,
   message_count: 1234,
   storage_bytes: 2048,
-  last_login_at: null,
-  app: null,
-  app_build: null,
-};
+});
 
 /** The owner's own row, which leads the list and is account 1, the one logged in. */
 const theOwner = {

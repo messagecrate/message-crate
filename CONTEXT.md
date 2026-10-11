@@ -346,7 +346,9 @@ side panel and a content pane. The side panel lists Dashboard, Server Settings,
 User Accounts, Audit Trail and Logs; Dashboard shows what the whole Message Crate
 holds, Audit Trail what each user did and when, and Logs is named and holds nothing yet. The search bar narrows User Accounts by username or
 preferred name. User Accounts lists every account, the owner's own first,
-each by username with its preferred name, its status and its last login. There the owner adds
+each by username with its preferred name, its status and its last login. The
+status of an account that has no password reads No password under it, except
+for the Demo Account. There the owner adds
 accounts. An account's name opens that account's Settings, the screen its
 holder sees, where the owner sets its password, its status (active or
 disabled) and its permissions (import, export, delete), and deletes its
