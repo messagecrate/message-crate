@@ -152,8 +152,17 @@ pub(crate) fn process_attachment_files_with(
     }
 
     // Always sweep again so a failed convert cannot leave junk behind.
-    remove_msgmedia_temps(&attachments)?;
-    report.bytes_after = attachments_dir_bytes(&attachments)?;
+    let swept =
+        remove_msgmedia_temps(&attachments).and_then(|()| attachments_dir_bytes(&attachments));
+    report.bytes_after = match (swept, report.hevc_fallback.line()) {
+        (Ok(bytes), _) => bytes,
+        (Err(err), None) => return Err(err),
+        // The report is lost with this error, so the error carries the
+        // fallback its caller would have logged.
+        (Err(err), Some(line)) => {
+            return Err(err.context(format!("{line}. Then converting stopped")));
+        }
+    };
 
     emit(&mut log, &done_line_with_failures(mode, &report));
 
