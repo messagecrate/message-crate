@@ -122,10 +122,10 @@ The accounts' passwords don't protect it, because a password guards the server's
 
 The file should be encrypted before it travels, because a USB drive can be lost and a network share or a copy left behind can be read by others.
 `age` and `gpg` both encrypt a file with a passphrase.
-Neither comes with macOS or Windows, and most Linux installations have `gpg` but not `age`, so one of them may need installing first:
-
-- `age`: `brew install age` on macOS, `winget install FiloSottile.age` on Windows, and the package `age` on Linux.
-- `gpg`: `brew install gnupg` or GPG Suite on macOS, Gpg4win on Windows, and the package `gnupg` on Linux.
+Neither comes with macOS or Windows.
+Most Linux installations have `gpg` but not `age`.
+`age` installs with `brew install age` on macOS, `winget install FiloSottile.age` on Windows, and the package `age` on Linux.
+`gpg` installs with `brew install gnupg` or GPG Suite on macOS, Gpg4win on Windows, and the package `gnupg` on Linux.
 
 Either command below writes an encrypted copy beside the file and asks for the passphrase twice:
 
@@ -137,7 +137,8 @@ age -p -o message-crate-data.tar.gz.age message-crate-data.tar.gz
 gpg -c message-crate-data.tar.gz
 ```
 
-Neither tool removes the unencrypted file, so it is deleted next, and only the encrypted copy remains:
+Neither tool removes the unencrypted file.
+The next command deletes it, so only the encrypted copy remains:
 
 ```bash title="On the old computer: delete the unencrypted file"
 # Linux or macOS
