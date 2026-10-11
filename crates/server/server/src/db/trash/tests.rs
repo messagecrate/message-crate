@@ -391,6 +391,7 @@ async fn delete_trashed_conversation_removes_it_and_its_messages() {
         ACCOUNT_A,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -430,6 +431,7 @@ async fn delete_conversation_not_in_the_trash_is_refused_and_changes_nothing() {
         ACCOUNT_A,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -472,6 +474,7 @@ async fn a_restore_that_commits_while_delete_for_good_reads_keeps_the_conversati
             ACCOUNT_A,
             Trashable::Conversation(id),
             AuditActor::Holder,
+            crate::test_support::fixed_instant(),
         ),
     )
     .await
@@ -533,6 +536,7 @@ async fn delete_refuses_another_accounts_conversation_even_when_trashed() {
         ACCOUNT_B,
         Trashable::Conversation(id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -618,6 +622,7 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -695,6 +700,7 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -751,6 +757,7 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
         ACCOUNT_A,
         Trashable::Conversation(doomed),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -832,6 +839,7 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -841,6 +849,16 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         contact_row(&mut conn, contact_id).await,
         Some((String::new(), "user".into())),
         "the row stays, nameless, with the origin it was made with"
+    );
+    let last_modified: String =
+        sqlx::query_scalar("SELECT last_modified FROM contacts WHERE id = $1")
+            .bind(contact_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(
+        last_modified, "2026-03-14 12:00:00",
+        "last_modified is the instant the delete was given"
     );
     assert_eq!(
         count(
@@ -892,6 +910,7 @@ async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -928,6 +947,7 @@ async fn delete_contact_not_in_the_trash_is_refused_and_keeps_the_name() {
         ACCOUNT_A,
         Trashable::Contact(contact_id),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -971,10 +991,15 @@ async fn empty_trash_takes_everything_trashed_and_only_that() {
     .await
     .unwrap();
 
-    let orphaned = empty_trash(&mut conn, ACCOUNT_A, AuditActor::Holder)
-        .await
-        .unwrap()
-        .orphaned;
+    let orphaned = empty_trash(
+        &mut conn,
+        ACCOUNT_A,
+        AuditActor::Holder,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap()
+    .orphaned;
 
     assert_eq!(
         orphaned,
@@ -1024,10 +1049,15 @@ async fn empty_trash_on_an_empty_trash_is_a_noop() {
     let id = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550101").await;
 
     assert_eq!(
-        empty_trash(&mut conn, ACCOUNT_A, AuditActor::Holder)
-            .await
-            .unwrap()
-            .orphaned,
+        empty_trash(
+            &mut conn,
+            ACCOUNT_A,
+            AuditActor::Holder,
+            crate::test_support::fixed_instant(),
+        )
+        .await
+        .unwrap()
+        .orphaned,
         Vec::new()
     );
     assert_eq!(
@@ -1119,6 +1149,7 @@ async fn deleting_the_second_contact_leaves_the_first_as_it_was() {
         ACCOUNT_A,
         Trashable::Contact(second),
         AuditActor::Holder,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();

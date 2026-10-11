@@ -87,7 +87,7 @@ impl From<ExportRun> for OwnerExportRun {
 /// messages it matches now, count them, and record the run as `running` with
 /// the credential that started it, all in one transaction. The run's pages
 /// read that list, never the scope again, so what a run hands over is fixed
-/// when it is created.
+/// when it is created. The run starts at `now`.
 ///
 /// # Errors
 ///
@@ -100,6 +100,7 @@ pub async fn start_export_run(
     tool: Option<&str>,
     clock: (chrono_tz::Tz, chrono::NaiveDate),
     credential: &crate::db::audit_trail::CredentialUsed,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<ExportRun, ApiError> {
     let mut tx = crate::db::begin_write(conn).await?;
     let filter = scope_filter(&mut tx, account_id, scope, clock).await?;
@@ -111,6 +112,7 @@ pub async fn start_export_run(
             scope,
             tool,
         },
+        now,
     )
     .await?;
     crate::db::audit_trail::record_run_credential(
@@ -307,7 +309,8 @@ async fn close_export(
 ) -> Result<Json<ExportRun>, ApiError> {
     let mut conn = state.db.acquire().await?;
     running_export(&mut conn, account_id, export_id).await?;
-    if !exports::finish_export(&mut conn, account_id, export_id, status).await? {
+    if !exports::finish_export(&mut conn, account_id, export_id, status, chrono::Utc::now()).await?
+    {
         // Another closer won between the read above and this write. The run
         // is read again, so the answer names how it ended.
         let run = owned_export(&mut conn, account_id, export_id).await?;
@@ -351,6 +354,7 @@ pub(crate) async fn create_export(
         tool,
         clock,
         &auth.credential,
+        chrono::Utc::now(),
     )
     .await?;
     Ok(Created {

@@ -522,6 +522,7 @@ async fn decide_queued_decides_what_was_queued_after_the_last_sweep() {
         &mut state.db.acquire().await.unwrap(),
         alice.account_id,
         run,
+        crate::test_support::fixed_instant(),
     )
     .await
     .unwrap();
@@ -578,7 +579,13 @@ fn a_pass_without_ffprobe_keeps_what_one_with_it_decided_about_an_mp4() {
     runtime
         .block_on(async {
             let mut conn = state.db.acquire().await.unwrap();
-            crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run).await
+            crate::db::media_queue::queue_import_run(
+                &mut conn,
+                alice.account_id,
+                run,
+                crate::test_support::fixed_instant(),
+            )
+            .await
         })
         .unwrap();
 
@@ -649,9 +656,14 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
         .unwrap()
         .unwrap();
 
-    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run)
-        .await
-        .unwrap();
+    crate::db::media_queue::queue_import_run(
+        &mut conn,
+        alice.account_id,
+        run,
+        crate::test_support::fixed_instant(),
+    )
+    .await
+    .unwrap();
     crate::db::media_queue::remove(&mut conn, &worked_on)
         .await
         .unwrap();

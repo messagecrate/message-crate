@@ -438,6 +438,7 @@ pub(crate) async fn delete_contact(
         auth.account_id,
         Trashable::Contact(contact_id),
         crate::db::audit_trail::AuditActor::Holder,
+        chrono::Utc::now(),
     )
     .await?
     {

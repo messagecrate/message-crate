@@ -272,7 +272,8 @@ pub enum OrphanedFile {
 }
 
 /// Permanently delete a trashed conversation, or make a trashed contact
-/// Unknown again. See the module notes for what each means.
+/// Unknown again, its `last_modified` set to `now`. See the module notes for
+/// what each means.
 ///
 /// # Errors
 ///
@@ -283,6 +284,7 @@ pub async fn delete_trashed(
     account_id: i64,
     target: Trashable,
     actor: AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<DeleteOutcome> {
     // The checks run inside the write transaction, so a restore cannot commit
     // between the check of the Trash marker and the delete it allows.
@@ -310,7 +312,7 @@ pub async fn delete_trashed(
             orphaned
         }
         Trashable::Contact(id) => {
-            forget_contacts(&mut tx, account_id, &[id]).await?;
+            forget_contacts(&mut tx, account_id, &[id], now).await?;
             Vec::new()
         }
     };
@@ -319,8 +321,9 @@ pub async fn delete_trashed(
 }
 
 /// Empty the trash: delete every trashed conversation permanently and make
-/// every trashed contact Unknown, then clear both marker tables. One
-/// transaction, so the trash is either emptied or untouched.
+/// every trashed contact Unknown, its `last_modified` set to `now`, then
+/// clear both marker tables. One transaction, so the trash is either emptied
+/// or untouched.
 ///
 /// # Errors
 ///
@@ -330,6 +333,7 @@ pub async fn empty_trash(
     conn: &mut SqliteConnection,
     account_id: i64,
     actor: AuditActor,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<EmptiedTrash> {
     let mut tx = begin_write(conn).await?;
     let conversation_ids: Vec<i64> = sqlx::query_scalar(
@@ -353,7 +357,7 @@ pub async fn empty_trash(
     .fetch_all(&mut *tx)
     .await?;
     let orphaned = delete_conversations(&mut tx, account_id, &conversation_ids).await?;
-    forget_contacts(&mut tx, account_id, &contact_ids).await?;
+    forget_contacts(&mut tx, account_id, &contact_ids, now).await?;
     // The two calls above cleared the markers for the rows they found; this
     // also drops any marker whose row is already gone, which the marker
     // tables allow because neither carries a foreign key to its target.
@@ -543,16 +547,17 @@ async fn original_is_referenced(
 /// records what made the row and an import names a nameless contact
 /// whatever made it. The handles stay linked, so the conversations the
 /// person was in keep showing them as one participant — by handle now, since
-/// the name is blank.
+/// the name is blank. Their `last_modified` is set to `now`.
 async fn forget_contacts(
     conn: &mut SqliteConnection,
     account_id: i64,
     ids: &[i64],
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), sqlx::Error> {
     if ids.is_empty() {
         return Ok(());
     }
-    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let now = now.format("%Y-%m-%d %H:%M:%S").to_string();
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let placeholders = in_placeholders(3, chunk.len());
         let sql = format!(
