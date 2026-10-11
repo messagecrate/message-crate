@@ -68,6 +68,8 @@ libc = "0.2"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
 
 [dev-dependencies]
+# `testutil` reads an Import Run log back as level and text pairs.
+message-crate-core = { path = "../crates/core/message-crate-core", features = ["testutil"] }
 # `testutil` builds the sample conversation the Export Directory tests write.
 message-ir = { path = "../crates/libs/ir", features = ["testutil"] }
 # `testutil` gives the lock a test holds while it names a Tools Directory.

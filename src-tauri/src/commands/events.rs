@@ -287,6 +287,7 @@ mod tests {
     fn the_run_s_sink_logs_a_warning_at_warning_level() {
         use crate::app_directories::{RunLog, import_run_log};
         use message_crate_core::RunLogLevel;
+        use message_crate_core::testutil::run_log_lines;
         let logs = tempfile::tempdir().unwrap();
         let run = std::path::Path::new("/home/sam/message-crate/staging-whatsapp-261004-143000");
         let sink = log_sink_into(RunLog::open(logs.path(), run), |_| {});
@@ -294,14 +295,9 @@ mod tests {
         sink.emit("Reading the backup");
         sink.warn("wtsexporter failed (exit status: 1). Its output:\nOSError: [Errno 28]");
 
-        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
-        let levels: Vec<_> = text
-            .lines()
-            .map(|raw| {
-                message_crate_core::parse_run_log_line(0, raw)
-                    .unwrap()
-                    .level
-            })
+        let levels: Vec<_> = run_log_lines(&import_run_log(logs.path(), run))
+            .into_iter()
+            .map(|(level, _)| level)
             .collect();
         assert_eq!(
             levels,
