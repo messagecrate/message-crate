@@ -18,14 +18,24 @@ import { chromium } from "playwright";
 const OPERATORS = new Set(["and", "or", "not"]);
 
 // A word of a shown name to search for, and the first name holding it.
-// `conversations` are the items of the list answer the names were drawn
-// from. A bare word on the Conversations list matches, in any case, a
-// conversation's title, its participants' names and their addresses
-// (emit_text in crates/server/server/src/search/emit.rs), and the address
-// the conversation is held under, which for a conversation with one other
-// person is that person's address. So each conversation's text here is its
-// shown title and its participants' names and identities, and a word is
-// counted against that text, not against the names on screen.
+// `conversations` are the items of the list answer's first page, the one
+// the names on screen were drawn from. A bare word on the Conversations list
+// matches, in any case, a conversation's title, its participants' names and
+// identities (emit_text in crates/server/server/src/search/emit.rs), and the
+// text of the chat handle the conversation is held under. So each
+// conversation's text here is its shown title and its participants' names
+// and identities, and a word is counted against that text, not against the
+// names on screen.
+//
+// The list answer carries no chat handle, so its text is taken to be in the
+// participants already: a one-to-one conversation's handle is the other
+// person's identity, and a group's gives no text. Where that is wrong, the
+// check fails and never passes wrongly. One known gap: a one-to-one
+// conversation with no participant rows is shown under its handle's Contact
+// name, which the search does not read (#2737). The demo's one such
+// conversation is held under a number on no Contact (EMPTY_ONE_TO_ONE_HANDLE
+// in crates/server/demo-seed/src/personas.rs), so it is shown under that
+// number, which the search does read.
 //
 // The word picked is the one the fewest of those conversations hold, and at
 // least one must not hold it, so the search finds fewer conversations than
@@ -58,7 +68,7 @@ function narrowingTerm(names, conversations) {
   }
   if (best === null || best.holders === texts.length) {
     throw new Error(
-      `no word of a shown name is missing from one of the ${texts.length} listed conversations' names and addresses, so no search could narrow the list: ${JSON.stringify(names)}`,
+      `no word of a shown name is missing from one of the ${texts.length} conversations on the list's first page (titles, participant names and identities), so no search could narrow the list: ${JSON.stringify(names)}`,
     );
   }
   return best;
