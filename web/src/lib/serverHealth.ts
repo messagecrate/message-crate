@@ -57,6 +57,11 @@ export async function checkServerHealth(baseUrl: string, signal?: AbortSignal): 
       method: "GET",
       signal: timeoutController.signal,
       cache: "no-store",
+      // The probe sends no credential, but it must agree with the calls that
+      // do: they refuse a redirect (`NEVER_FOLLOW` in `api.ts`), so an address
+      // that redirects shows as unreachable here too, not as a green light
+      // beside a login that fails.
+      redirect: "error",
     });
     return res.ok;
   } catch {
