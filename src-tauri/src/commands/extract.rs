@@ -405,9 +405,9 @@ fn run_staging(
 /// validation problems are joined with `; `. The compress fields are not
 /// checked here: `Form` sees Clone for a real Compress choice, and
 /// [`media_settings_for`] checks them against the real one. For the same
-/// reason the form's ffmpeg check never refuses here, and
-/// [`media::ffmpeg_available`] is asked only if the form ever carries Convert
-/// or Compress.
+/// reason the form's ffmpeg check never refuses here: the form carries only
+/// Clone or Disabled, so [`media::ffmpeg_available`] is not asked. The Media
+/// stage checks ffmpeg against the real choice.
 fn build_exporter_config(
     scratch_dir: &Path,
     source: &str,

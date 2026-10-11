@@ -109,7 +109,8 @@ impl AttachmentMedia {
     }
 
     /// True when Convert or Compress is selected, which need ffmpeg and
-    /// ffprobe ([`media::ffmpeg_available`]).
+    /// ffprobe, both on `PATH` or both in the Tools Directory
+    /// ([`media::ffmpeg_available`]).
     pub fn needs_ffmpeg(self) -> bool {
         matches!(self, Self::Convert | Self::Compress)
     }
