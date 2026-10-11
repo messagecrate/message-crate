@@ -11,7 +11,7 @@ import Button from "./Button";
 import ContactLabel from "./ContactLabel";
 import { ContactDrawerHandles } from "./contactDrawer/ContactDrawerHandles";
 import {
-  type ContactBrowseKind,
+  type ContactBrowseScope,
   type ContactBrowseTarget,
   type ContactPreview,
   contactConversations,
@@ -256,9 +256,9 @@ function OneContactDrawer({
   const displayGroups =
     storedGroups && isUnknown ? [UNKNOWN_GROUP_LABEL, ...storedGroups] : storedGroups;
 
-  const browse = (args: { kind: ContactBrowseKind; handle?: string }) => {
+  const browse = (scope: ContactBrowseScope) => {
     if (!onBrowseConversations || !contactId) return;
-    onBrowseConversations({ contactId, kind: args.kind, handle: args.handle });
+    onBrowseConversations({ ...scope, contactId });
   };
 
   // The contact just left the list this drawer was opened from, so close it
