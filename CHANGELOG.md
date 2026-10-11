@@ -396,6 +396,11 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **The desktop app no longer hands its commands to every script
+  in its window.** The app put all of its commands, such as starting an
+  import from any directory, in one place any script in the window could
+  reach. The app never used them from there, so they are no longer put
+  there. Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
   directory of the one before it.** An SMS Backup+ export that stopped part
   way could leave an empty conversation directory behind, and the next
