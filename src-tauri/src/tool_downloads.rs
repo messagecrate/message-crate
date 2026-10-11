@@ -708,6 +708,27 @@ fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
     }
 }
 
+/// Record `pin`'s program, adopted in `dir`, with its file's stamp, and
+/// write the record. A failure goes to the process log and fails nothing:
+/// the program is in place either way, and without its entry the next start
+/// reads the file again.
+fn record_adopted_or_log(dir: &Path, manifest: &mut Manifest, pin: &Pinned) {
+    let program = pin.program;
+    match Stamp::at(&dir.join(program.file_name())) {
+        Ok(stamp) => {
+            manifest.insert(program, Written::of(pin, stamp));
+            write_manifest_or_log(dir, manifest, program);
+        }
+        Err(err) => {
+            let name = program.name();
+            eprintln!(
+                "{name} is in place in the Tools Directory, and was not recorded in {MANIFEST_FILE} \
+                 because {name}'s size and modified time could not be read: {err}"
+            );
+        }
+    }
+}
+
 /// Take the lock on [`LOCK_FILE`] in `dir`, making `dir` first. `None` when
 /// another check holds it. The lock is let go when the file is closed.
 fn lock_check(dir: &Path) -> io::Result<Option<File>> {
@@ -909,19 +930,7 @@ fn check(
                         continue;
                     }
                 }
-                // Without its entry the next start reads the file again and
-                // adopts it, so a stamp that can't be taken fails nothing.
-                match Stamp::at(&path) {
-                    Ok(stamp) => {
-                        manifest.insert(program, Written::of(pin, stamp));
-                        write_manifest_or_log(dir, &manifest, program);
-                    }
-                    Err(err) => eprintln!(
-                        "{} is in place in the Tools Directory, and {MANIFEST_FILE} was not written \
-                         because its size and modified time could not be read: {err}",
-                        program.name()
-                    ),
-                }
+                record_adopted_or_log(dir, &mut manifest, pin);
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
             Need::Download => wanted.push(pin),

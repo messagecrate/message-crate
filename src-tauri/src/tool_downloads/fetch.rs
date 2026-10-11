@@ -212,10 +212,11 @@ pub(super) fn install(
     };
     program.flush().map_err(write_error)?;
     program.as_file().sync_all().map_err(write_error)?;
-    // Not `CouldNotMakeExecutable`: that names a copy someone else put in
-    // place and says to change its owner. This is the app's own temporary
-    // file, deleted on the way out, so a failure here is the disk or the
-    // Tools Directory, which `CouldNotWrite` names, and Try again fits.
+    // Not `CouldNotMakeExecutable`: that blames a copy already in place in
+    // the Tools Directory and points to the package manager. This is the
+    // app's own temporary file, deleted on the way out, so a failure here is
+    // the disk or the Tools Directory, which `CouldNotWrite` names, and Try
+    // again fits.
     make_executable(program.path()).map_err(write_error)?;
     let target = dir.join(pinned.program.file_name());
     program
