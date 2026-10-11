@@ -76,7 +76,7 @@ fn refusal(result: anyhow::Result<ImportCounts>) -> String {
     reason.trim_start_matches([':', ' ']).to_string()
 }
 
-/// An attachment record that names only a stored blob by its fingerprint,
+/// An attachment record that names only a stored Asset by its fingerprint,
 /// with `mime_type` as the export's MIME claim.
 fn claimed(sha256: &str, mime_type: Option<&str>) -> AttachmentRecord {
     AttachmentRecord {
@@ -91,12 +91,12 @@ fn claimed(sha256: &str, mime_type: Option<&str>) -> AttachmentRecord {
     }
 }
 
-/// A blob the store already holds under `image/png` is reused when an
+/// An Asset the store already holds under `image/png` is reused when an
 /// attachment claims its sha256. The export's MIME type wins over the stored
 /// one when the record has one, and the stored one stands when it does not,
 /// because the export saw the original file and the store only guessed.
 #[test]
-fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
+fn a_reused_asset_takes_the_export_mime_type_when_the_record_has_one() {
     let tmp = TempDir::new().unwrap();
     let export_dir = tmp.path().join("export");
     let assets_dir = tmp.path().join("assets");
@@ -115,7 +115,7 @@ fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
         2,
     )
     .unwrap()
-    .expect("the stored blob is reused");
+    .expect("the stored Asset is reused");
     assert_eq!(stored.sha256, sha.as_str());
     assert_eq!(stored.mime_type.as_deref(), Some("image/jpeg"));
 
@@ -127,7 +127,7 @@ fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
         2,
     )
     .unwrap()
-    .expect("the stored blob is reused");
+    .expect("the stored Asset is reused");
     assert_eq!(stored.mime_type.as_deref(), Some("image/png"));
     assert_eq!(stats.deduped, 2);
     assert_eq!(stats.copied, 0);
