@@ -13,11 +13,17 @@
 // run and deletes the run directory. Every Upload assertion below goes
 // through approve first, because there is no other way to reach it.
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../../lib/api";
+import type { AccountProfile } from "../../lib/account";
+import { ApiError, setAccountId } from "../../lib/api";
+import { AuthContext } from "../../lib/authContext";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
+import { keys } from "../../lib/queryKeys";
+import { ANONYMOUS_ACCOUNT, routeQueryKey } from "../../lib/routeQueryKey";
 import type {
   DesktopJobResult,
   StagingSummary,
@@ -31,9 +37,22 @@ import type {
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
+import { account } from "../../test/apiShapes";
 import { fill, setupUser } from "../../test/user";
+import { ConvertSection } from "../settings/ConvertSection";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
-import { CLEARED_RUN, type ImportRunState, importRunStore } from "./importRunStore";
+import {
+  CLEARED_RUN,
+  createImportRunStore,
+  type ImportRunState,
+  type ImportRunStore,
+  importRunStore,
+  initialImportRunState,
+} from "./importRunStore";
+import type { ImportRunDeps } from "./run/context";
+import { createImportRunService } from "./run/service";
+import { parseStoredStagingSummary } from "./run/stagingSummary";
+import { useImportJob } from "./useImportJob";
 
 const createImportMock = vi.fn();
 const getServerStateMock = vi.fn();
@@ -51,7 +70,6 @@ const toolsStatusMock = vi.fn<() => Promise<ToolsStatus>>();
 const setImportStageMock = vi.fn();
 const discardImportRunMock = vi.fn();
 const invokeImessageBackupIdentitiesMock = vi.fn();
-const loadAccountProfileMock = vi.fn();
 const readRunRecordMock = vi.fn();
 const saveRunRecordMock = vi.fn();
 const invokeStartImportRunLogMock = vi.fn();
@@ -73,89 +91,101 @@ const onDesktopJobEventsMock = vi.fn(
   },
 );
 
-vi.mock("../../lib/tauri", async (importOriginal) => ({
-  // Settings → Convert, rendered beside the run, reads these.
-  EXPORT_FORMATS: (await importOriginal<typeof import("../../lib/tauri")>()).EXPORT_FORMATS,
-  invokeFormat: vi.fn(),
-  // The job's name comes first; the canned results below take what follows it.
-  awaitDesktopJob: (_job: string, ...args: Parameters<typeof runMock>) => runMock(...args),
-  invokeCancel: (...args: unknown[]) => cancelMock(...args),
-  invokeExtract: (...args: unknown[]) => invokeExtractMock(...args),
-  invokeUpload: (...args: unknown[]) => invokeUploadMock(...args),
-  invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
-  invokeSummarizeStaging: (...args: unknown[]) => invokeSummarizeStagingMock(...args),
-  invokeTranscodeStaging: (...args: unknown[]) => invokeTranscodeStagingMock(...args),
-  invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
-  invokeCreateRunDir: (...args: unknown[]) => createRunDirMock(...args),
-  invokeReadImportRunRecord: (...args: unknown[]) => readRunRecordMock(...args),
-  invokeSaveImportRunRecord: (...args: unknown[]) => saveRunRecordMock(...args),
-  invokeStartImportRunLog: (...args: unknown[]) => invokeStartImportRunLogMock(...args),
-  invokeToolsStatus: () => toolsStatusMock(),
-  ffmpegMissing: (await importOriginal<typeof import("../../lib/tauri")>()).ffmpegMissing,
-  invokeImessageBackupIdentities: (...args: unknown[]) =>
-    invokeImessageBackupIdentitiesMock(...args),
-  onDesktopJobEvents: (...args: [{ onProgress?: (event: ImportProgressEvent) => void }]) =>
-    onDesktopJobEventsMock(...args),
-}));
-
-vi.mock("../../lib/useAccountProfile", () => ({
-  useFetchAccountProfile:
-    () =>
-    (...args: unknown[]) =>
-      loadAccountProfileMock(...args),
-}));
-
-/** What `onAccountIdChange` was given; `logInAs` calls them, as `setAccountId` does. */
-const accountListeners = vi.hoisted(() => new Set<() => void>());
-
-vi.mock("../../lib/api", async (importOriginal) => ({
-  // `ApiError`, which tells a refused session from another failure.
-  ...(await importOriginal<typeof import("../../lib/api")>()),
-  getBaseUrl: () => "http://127.0.0.1:8080",
-  getToken: () => auth.token,
-  getAccountId: () => auth.accountId,
-  onAccountIdChange: (listener: () => void) => {
-    accountListeners.add(listener);
-    return () => accountListeners.delete(listener);
-  },
-}));
-
-// The three server calls this hook makes. Everything else in serverApi stays real,
-// since other modules in this graph import from it.
-vi.mock("../../lib/serverApi", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/serverApi")>()),
-  createImport: (...args: unknown[]) => createImportMock(...args),
-  getServerState: (...args: unknown[]) => getServerStateMock(...args),
-  completeImport: (...args: unknown[]) => completeImportMock(...args),
-}));
-
 /** The logged-in account. A test of two accounts on one desktop app changes it. */
 let auth: { token: string | null; accountId: number | null } = {
   token: "test-token",
   accountId: 1,
 };
-vi.mock("../../lib/authContext", () => ({
-  useAuth: () => auth,
-}));
 
-vi.mock("../../lib/tauri-check", () => ({
-  isTauri: () => true,
-}));
-
-vi.mock("../../lib/importRun", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/importRun")>();
+/**
+ * What the run works through, as fakes: the stubs above stand in for the
+ * desktop app's commands and the server's routes, and the session is `auth`.
+ */
+function fakeDeps(store: ImportRunStore): ImportRunDeps {
   return {
-    ...actual,
-    setImportStage: (...args: unknown[]) => setImportStageMock(...args),
-    discardImportRun: (...args: unknown[]) => discardImportRunMock(...args),
+    desktop: {
+      isTauri: () => true,
+      // The job's name comes first; the canned results below take what follows it.
+      awaitDesktopJob: (_job, ...args) => runMock(...(args as Parameters<typeof runMock>)),
+      invokeCancel: () => cancelMock(),
+      onDesktopJobEvents: (callbacks) => onDesktopJobEventsMock(callbacks),
+      invokeCreateRunDir: (...args) => createRunDirMock(...args),
+      invokeDeleteRunDir: (...args) => invokeDeleteRunDirMock(...args),
+      invokeExtract: (...args) => invokeExtractMock(...args),
+      invokeImessageBackupIdentities: (...args) => invokeImessageBackupIdentitiesMock(...args),
+      invokePathStat: (...args) => invokePathStatMock(...args),
+      invokeReadImportRunRecord: (...args) => readRunRecordMock(...args),
+      invokeSaveImportRunRecord: (...args) => saveRunRecordMock(...args),
+      invokeStartImportRunLog: (...args) => invokeStartImportRunLogMock(...args),
+      invokeSummarizeStaging: (...args) => invokeSummarizeStagingMock(...args),
+      invokeToolsStatus: () => toolsStatusMock(),
+      invokeTranscodeStaging: (...args) => invokeTranscodeStagingMock(...args),
+      invokeUpload: (...args) => invokeUploadMock(...args),
+    },
+    server: {
+      getServerState: (...args) => getServerStateMock(...args),
+      createImport: (...args) => createImportMock(...args),
+      completeImport: (...args) => completeImportMock(...args),
+      setImportStage: (...args) => setImportStageMock(...args),
+      discardImportRun: (...args) => discardImportRunMock(...args),
+      token: () => auth.token,
+      accountId: () => auth.accountId,
+      baseUrl: () => "http://127.0.0.1:8080",
+    },
+    store,
+    now: () => performance.now(),
   };
-});
+}
 
-// Imported after the mocks above so useImportJob picks up the mocked modules.
-const { useImportJob } = await import("./useImportJob");
-const { resetImportRun } = await import("./run/scratch");
-const { parseStoredStagingSummary } = await import("./run/stagingSummary");
-const { ConvertSection } = await import("../settings/ConvertSection");
+/**
+ * The run under test, over the app's one store, which the desktop job follows
+ * (`importRunStore.ts`).
+ */
+const service = createImportRunService(fakeDeps(importRunStore));
+
+/** Where the identity check reads the account profile; each test gets an empty one. */
+let queryClient = new QueryClient();
+
+/** The profile the identity check reads for the account `auth` names, with these addresses. */
+function setProfile(addresses: Pick<AccountProfile, "phones" | "emails">): void {
+  const { accountId } = auth;
+  queryClient.setQueryData(
+    routeQueryKey(accountId ?? ANONYMOUS_ACCOUNT, keys.accountProfile.all),
+    account({ account_id: accountId ?? 0, username: "sam", ...addresses }),
+  );
+}
+
+/** The screen's tree: a query client, and the account `auth` names logged in. */
+function Providers({ children }: { children: ReactNode }) {
+  const value = {
+    serverUrl: "http://127.0.0.1:8080",
+    token: auth.token,
+    accountId: auth.accountId,
+    isAuthenticated: auth.token != null,
+    login: async () => {},
+    updateToken: () => {},
+    logout: async () => {},
+    setServer: () => {},
+    retrySavedLogin: () => {},
+  };
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+    </QueryClientProvider>
+  );
+}
+
+/** `useImportJob` over `service`, for the account `auth` names. */
+function renderJob() {
+  return renderHook(() => useImportJob(service), { wrapper: Providers });
+}
+
+beforeEach(() => {
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+  });
+  setAccountId(auth.accountId);
+});
 
 /**
  * `runMock` stands in for `awaitDesktopJob`, which always calls the
@@ -330,7 +360,7 @@ function clearedFields(state: ImportRunState) {
 
 describe("useImportJob wiring", () => {
   beforeEach(() => {
-    resetImportRun();
+    service.reset();
     runMock.mockReset();
     // Every test's first run() call is extract; a test that also calls
     // approve() chains a second implementation for the Media stage or
@@ -371,8 +401,7 @@ describe("useImportJob wiring", () => {
     // existing test that doesn't set up its own probe/profile response
     // (needsIdentityStop is a no-op on an empty list, fail-open by design).
     invokeImessageBackupIdentitiesMock.mockResolvedValue([]);
-    loadAccountProfileMock.mockReset();
-    loadAccountProfileMock.mockResolvedValue({ phones: [], emails: [] });
+    setProfile({ phones: [], emails: [] });
     createImportMock.mockReset();
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
@@ -380,7 +409,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("clears every field a finished run leaves when the form comes back, and keeps the resume error and the delete failure", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form()));
     const deleteFailure = { path: "/home/sam/message-crate/staging-old", reason: "busy" };
     act(() =>
@@ -412,7 +441,7 @@ describe("useImportJob wiring", () => {
       seen.push(importRunStore.get());
       return { asset_max_bytes: 512 * MIB };
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(() => result.current.startImport(form()));
 
@@ -424,7 +453,7 @@ describe("useImportJob wiring", () => {
   it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     // Stored with the Import Run when it is created, before anything is staged.
@@ -453,7 +482,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "compress" })));
     expect(invokeExtractMock).toHaveBeenCalledWith(
       expect.objectContaining({ attachment_media: "compress", media_max_fps: "" }),
@@ -475,7 +504,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() =>
       result.current.startImport({ ...form({ attachmentMedia: "compress" }), source: "imazing" }),
     );
@@ -489,10 +518,10 @@ describe("useImportJob wiring", () => {
   it("records Copy for an iMazing or OpenExtract run whatever another source's form chose", async () => {
     // Skip was chosen on the Apple Messages form; the source then changed.
     for (const source of ["imazing", "openextract"]) {
-      resetImportRun();
+      service.reset();
       createImportMock.mockClear();
       runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() => result.current.startImport({ ...form({ attachmentMedia: "skip" }), source }));
 
       expect(createImportMock).toHaveBeenCalledWith(
@@ -509,7 +538,7 @@ describe("useImportJob wiring", () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() =>
       result.current.startImport(
         { ...form({ attachmentMedia: "copy" }), assetMaxBytes: 7 * MIB },
@@ -524,7 +553,7 @@ describe("useImportJob wiring", () => {
 
   it("resumes an interrupted Staging with the limit stored on the Import Run", async () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() =>
       result.current.startImport(
         { ...form({ attachmentMedia: "copy" }), assetMaxBytes: 7 * MIB },
@@ -541,7 +570,7 @@ describe("useImportJob wiring", () => {
 
   it("ends the import without staging anything when the server's limit cannot be read", async () => {
     getServerStateMock.mockRejectedValue(new Error("Failed to fetch"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(createImportMock).not.toHaveBeenCalled();
@@ -556,7 +585,7 @@ describe("useImportJob wiring", () => {
       asset_max_bytes: 512 * MIB,
     });
     createImportMock.mockResolvedValue({ id: 42 });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form()));
 
     expect(invokeStartImportRunLogMock).toHaveBeenCalledWith(
@@ -574,7 +603,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("stops at the Staging Review instead of uploading", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.phase).toBe("staging_review");
     expect(invokeUploadMock).not.toHaveBeenCalled();
@@ -586,10 +615,10 @@ describe("useImportJob wiring", () => {
       ["imessage-ios", true],
       ["imessage-macos", false],
     ] as const) {
-      resetImportRun();
+      service.reset();
       invokeImessageBackupIdentitiesMock.mockClear();
       runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() => result.current.startImport({ ...baseForm, source }));
       expect(invokeImessageBackupIdentitiesMock).toHaveBeenCalledWith(
         expect.objectContaining({ path: baseForm.backupPath, ios }),
@@ -598,14 +627,14 @@ describe("useImportJob wiring", () => {
   });
 
   it("reads no backup identities before a run of a source that has none to read", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, source: "whatsapp-android" }));
     expect(invokeImessageBackupIdentitiesMock).not.toHaveBeenCalled();
   });
 
   it("sends the form's zone with an iMazing extract, whose dates carry none", async () => {
     // Without it the exporter reads every date in the machine's zone (#689).
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, source: "imazing" }));
     expect(invokeExtractMock).toHaveBeenCalledWith(
       expect.objectContaining({ source: "imazing", timezone: "America/New_York" }),
@@ -613,7 +642,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("sends no zone for a source whose dates carry their own", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form()));
     expect(invokeExtractMock).toHaveBeenCalledWith(
       expect.not.objectContaining({ timezone: expect.anything() }),
@@ -622,7 +651,7 @@ describe("useImportJob wiring", () => {
 
   it("gives extract the mode the person chose under convert", async () => {
     // extract stages originals for it and records the choice for the Media stage.
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(invokeExtractMock).toHaveBeenCalledWith(
       expect.objectContaining({ attachment_media: "convert" }),
@@ -630,7 +659,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("records the stage as it goes", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     // No plan exists yet at either call — `setImportStage` still receives a
     // (harmlessly `undefined`) third argument; see `moveStage`.
@@ -656,7 +685,7 @@ describe("useImportJob wiring", () => {
 
   it("does not start Staging when the server does not record the write stage", async () => {
     failStageWrite("write");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(invokeExtractMock).not.toHaveBeenCalled();
@@ -669,7 +698,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not start the Media stage when the server does not record the `media` stage", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     failStageWrite("media");
     await act(() => result.current.approve());
@@ -683,7 +712,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not start the Upload when the server does not record the upload stage", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     failStageWrite("upload");
     await act(() => result.current.approve());
@@ -707,7 +736,7 @@ describe("useImportJob wiring", () => {
 
   it("goes back to the form, with no Import Error and no directory left, when the server refuses the session to the run's creation (#1677)", async () => {
     createImportMock.mockRejectedValue(sessionRefusal());
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(invokeExtractMock).not.toHaveBeenCalled();
@@ -723,7 +752,7 @@ describe("useImportJob wiring", () => {
     setImportStageMock.mockImplementation((_id: number, stage: string) =>
       stage === "staging_review" ? Promise.reject(sessionRefusal()) : Promise.resolve(),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     // The server holds the run at `write`, and the resume check offers it there.
@@ -737,7 +766,7 @@ describe("useImportJob wiring", () => {
 
   it("goes back to the form when the server refuses the session to approve's second write of the Review's stage (#1677)", async () => {
     failStageWrite("staging_review", 1);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     expect(result.current.reviewError).toMatch(/Failed to fetch/);
 
@@ -754,7 +783,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("goes back to the form, keeping the run and its directory, when the server refuses the session to the `media` stage (#1677)", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     setImportStageMock.mockImplementation((_id: number, stage: string) =>
       stage === "media" ? Promise.reject(sessionRefusal()) : Promise.resolve(),
@@ -771,7 +800,7 @@ describe("useImportJob wiring", () => {
 
   it("shows a failed staging_review write on the Staging Review, and approving writes it again first", async () => {
     failStageWrite("staging_review", 2);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(result.current.phase).toBe("staging_review");
@@ -799,7 +828,7 @@ describe("useImportJob wiring", () => {
     );
     const approved = stagingSummary({ mediaMode: "convert", conversations: 5 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     failStageWrite("media_review", 1);
     await act(() => result.current.approve());
@@ -822,7 +851,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
     expect(invokeTranscodeStagingMock).toHaveBeenCalled();
@@ -842,7 +871,7 @@ describe("useImportJob wiring", () => {
       lastDesktopJobEventCallbacks?.onProgress?.({ step: "check", done: 50, total: 200 });
       return stagingSummary();
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(result.current.phase).toBe("staging_review");
@@ -880,7 +909,7 @@ describe("useImportJob wiring", () => {
         return EXTRACT_RESULT;
       },
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(form({ attachmentMedia: "copy" }));
@@ -922,7 +951,7 @@ describe("useImportJob wiring", () => {
         return EXTRACT_RESULT;
       },
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(form({ attachmentMedia: "copy" }));
@@ -974,7 +1003,7 @@ describe("useImportJob wiring", () => {
         return EXTRACT_RESULT;
       },
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(form({ attachmentMedia: "copy" }));
@@ -990,7 +1019,7 @@ describe("useImportJob wiring", () => {
 
   it("uploads straight from the Staging Review under copy, because there is no Media Review", async () => {
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
     expect(invokeTranscodeStagingMock).not.toHaveBeenCalled();
@@ -1001,7 +1030,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     const approved = stagingSummary({ conversations: 3 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1013,7 +1042,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     invokeSummarizeStagingMock.mockClear();
     await act(() => result.current.approve());
@@ -1029,7 +1058,7 @@ describe("useImportJob wiring", () => {
     );
     const approved = stagingSummary({ mediaMode: "convert", conversations: 5 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1039,7 +1068,7 @@ describe("useImportJob wiring", () => {
 
   it("declining closes the run and deletes the directory", async () => {
     createRunDirMock.mockResolvedValue("/staging/run-1");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
     expect(discardImportRunMock).toHaveBeenCalledWith(1, [], []);
@@ -1063,7 +1092,7 @@ describe("useImportJob wiring", () => {
     readRunRecordMock.mockImplementation(async () => stored);
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, stagingIssue));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.cancelRun());
 
@@ -1088,7 +1117,7 @@ describe("useImportJob wiring", () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1115,7 +1144,7 @@ describe("useImportJob wiring", () => {
     readRunRecordMock.mockImplementation(async () => stored);
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.cancelRun());
 
@@ -1134,7 +1163,7 @@ describe("useImportJob wiring", () => {
       reason: "too large",
     };
     readRunRecordMock.mockResolvedValue({ issues: [carried] });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(readRunRecordMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
@@ -1154,7 +1183,7 @@ describe("useImportJob wiring", () => {
       reason: "connection refused",
     };
     readRunRecordMock.mockResolvedValue({ issues: [carried], lastStopIssues: [failed] });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7, [carried, failed], []);
@@ -1162,7 +1191,7 @@ describe("useImportJob wiring", () => {
 
   it("still discards a paused run, with no Import Errors, when its record cannot be read", async () => {
     readRunRecordMock.mockRejectedValue(new Error("not readable"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7, [], []);
@@ -1170,7 +1199,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("discards another device's run without reading or deleting a directory here", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.discardRun(7, null));
 
     expect(readRunRecordMock).not.toHaveBeenCalled();
@@ -1183,7 +1212,7 @@ describe("useImportJob wiring", () => {
     // no directory blocks the next import, and a directory with no run is litter
     // nothing will ever clean up.
     discardImportRunMock.mockRejectedValueOnce(new Error("offline"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
     expect(invokeDeleteRunDirMock).toHaveBeenCalled();
@@ -1196,7 +1225,7 @@ describe("useImportJob wiring", () => {
     // returnToForm — leaving the screen stuck on the Staging Review with a run the
     // server already considers discarded.
     invokeDeleteRunDirMock.mockRejectedValueOnce(new Error("disk full"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
     expect(discardImportRunMock).toHaveBeenCalledWith(1, [], []);
@@ -1213,7 +1242,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
     expect(result.current.phase).toBe("media_review");
@@ -1228,7 +1257,7 @@ describe("useImportJob wiring", () => {
   it("a successful import deletes its run directory once the server has recorded it", async () => {
     createRunDirMock.mockResolvedValue("/staging/run-3");
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1252,7 +1281,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1270,7 +1299,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("error sending request: connection refused");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1301,7 +1330,7 @@ describe("useImportJob wiring", () => {
         }),
       }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1359,7 +1388,7 @@ describe("useImportJob wiring", () => {
         conversationRow,
       ),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1393,7 +1422,7 @@ describe("useImportJob wiring", () => {
     };
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, stagingIssue));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(result.current.phase).toBe("staging_review");
@@ -1429,7 +1458,7 @@ describe("useImportJob wiring", () => {
       },
     );
     createRunDirMock.mockResolvedValue("/staging/run-9");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(savedBeforeStageEnded).toEqual([
@@ -1495,7 +1524,7 @@ describe("useImportJob wiring", () => {
           return EXTRACT_RESULT;
         },
       );
-      const { result, unmount } = renderHook(() => useImportJob());
+      const { result, unmount } = renderJob();
       await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
       unmount();
       expect(seen.record).toBeDefined();
@@ -1524,7 +1553,7 @@ describe("useImportJob wiring", () => {
       expect(leftByPart1).toEqual(
         expect.objectContaining({ issues: [], lastStopIssues: [notDecrypted] }),
       );
-      resetImportRun();
+      service.reset();
       completeImportMock.mockClear();
       readRunRecordMock.mockResolvedValue(leftByPart1);
       runMock.mockReset();
@@ -1532,7 +1561,7 @@ describe("useImportJob wiring", () => {
       runMock.mockImplementationOnce(
         runResult({ summary: "Upload finished.", report: okReport() }),
       );
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() =>
         result.current.startImport(form({ attachmentMedia: "copy" }), undefined, {
           runId: 1,
@@ -1591,7 +1620,7 @@ describe("useImportJob wiring", () => {
         return { summary: "Transcode finished.", transcode: undefined };
       },
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     let approved: Promise<void> = Promise.resolve();
     act(() => {
@@ -1631,7 +1660,7 @@ describe("useImportJob wiring", () => {
         return { summary: "Transcode finished.", transcode: undefined };
       },
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1647,7 +1676,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("chat.db is not readable");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(result.current.summaryView?.status).toBe("failed");
@@ -1668,7 +1697,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("ffmpeg exited with status 1");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1686,7 +1715,7 @@ describe("useImportJob wiring", () => {
       throw new Error("chat.db is not readable");
     });
     completeImportMock.mockRejectedValue(new TypeError("Failed to fetch"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(completeImportMock).toHaveBeenCalled();
@@ -1697,7 +1726,7 @@ describe("useImportJob wiring", () => {
     createRunDirMock.mockResolvedValue("/staging/run-5");
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     invokeDeleteRunDirMock.mockRejectedValueOnce(new Error("permission denied"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
 
@@ -1732,7 +1761,7 @@ describe("useImportJob wiring", () => {
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingReviewApproved);
     invokeSummarizeStagingMock.mockResolvedValueOnce(recomputed);
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve()); // Staging Review -> Media stage -> Media Review
     expect(result.current.phase).toBe("media_review");
@@ -1768,7 +1797,7 @@ describe("useImportJob wiring", () => {
     invokeSummarizeStagingMock.mockResolvedValueOnce(staged);
     invokeSummarizeStagingMock.mockResolvedValueOnce(afterMedia);
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.mediaSummary).toBeNull();
     await act(() => result.current.approve());
@@ -1786,7 +1815,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
     expect(result.current.phase).toBe("media_review");
@@ -1807,7 +1836,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("cancelled");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1831,7 +1860,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("cancelled");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1844,7 +1873,7 @@ describe("useImportJob wiring", () => {
     // must not lock the account out of importing — the run still completes
     // and frees the slot, same as before.
     runMock.mockRejectedValueOnce(new Error("ffmpeg exited with status 1"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -1865,7 +1894,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("cancelled");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
 
     expect(result.current.summaryView?.status).toBe("cancelled");
@@ -1883,7 +1912,7 @@ describe("useImportJob wiring", () => {
           releaseCreate = resolve;
         }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     let started: Promise<void> = Promise.resolve();
     act(() => {
       started = result.current.startImport(form({ attachmentMedia: "copy" }));
@@ -1900,7 +1929,7 @@ describe("useImportJob wiring", () => {
 
   it("does not start the upload when Cancel is pressed while the upload stage is written", async () => {
     let releaseStage: () => void = () => {};
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     setImportStageMock.mockImplementation((_id: number, stage: string) =>
       stage === "upload"
@@ -1929,7 +1958,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("pauses an Upload when the cancel flag is set: no /complete, and the staged files stay", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     runMock.mockImplementationOnce(
@@ -1953,7 +1982,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("pauses an Upload that ended short without a cancel, and keeps the staged files", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     runMock.mockImplementationOnce(
       runResult({
@@ -1974,7 +2003,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("keeps the staged files when Message Crate does not take the run's completion", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     completeImportMock.mockRejectedValue(new TypeError("Failed to fetch"));
@@ -2001,7 +2030,7 @@ describe("useImportJob wiring", () => {
     // count from the client would record a run that completed after a
     // resume as holding no messages, and the server makes no Saved Search
     // for that.
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     await act(() => result.current.approve());
@@ -2016,7 +2045,7 @@ describe("useImportJob wiring", () => {
     // A Cancel that reached the desktop side before the job started stopped
     // nothing, because no job was running yet, so it has to be sent again.
     let releaseUpload: () => void = () => {};
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     invokeUploadMock.mockImplementationOnce(
       () =>
@@ -2044,7 +2073,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("cancelled");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.cancel());
     expect(result.current.summaryView?.status).toBe("cancelled");
@@ -2063,7 +2092,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("chat.db is not readable");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
 
     const completeCall = completeImportMock.mock.calls.find(([id]) => id === 1);
@@ -2082,7 +2111,7 @@ describe("useImportJob wiring", () => {
     // resume check re-finds the same run (stage staging_review) and
     // offers it again.
     invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk full"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
 
     expect(result.current.phase).toBe("form");
@@ -2099,7 +2128,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(async () => {
       throw new Error("backup file not found");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
 
     expect(result.current.phase).toBe("done");
@@ -2121,7 +2150,7 @@ describe("useImportJob wiring", () => {
     // succeeds, so this pins the recompute after Media.
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "convert" }));
     invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk full"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
 
@@ -2156,7 +2185,7 @@ describe("useImportJob wiring", () => {
     // without this test noticing.
     runMock.mockImplementation(runResult({ summary: "Transcode finished.", transcode: undefined }));
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(async () => {
       void result.current.approve();
@@ -2174,7 +2203,7 @@ describe("useImportJob wiring", () => {
       await fn();
       throw new Error("ffmpeg missing");
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.approve());
     expect(invokeUploadMock).not.toHaveBeenCalled();
@@ -2186,7 +2215,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(() => result.current.startImport(baseForm));
     await act(() => result.current.approve());
@@ -2199,7 +2228,7 @@ describe("useImportJob wiring", () => {
 
   it("sends the server whole milliseconds, which is what it stores", async () => {
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(baseForm));
     await act(() => result.current.approve());
 
@@ -2219,7 +2248,7 @@ describe("useImportJob wiring", () => {
       modifiedUnixMs: 1_756_512_000_000,
     });
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(baseForm));
 
     const createCall = createImportMock.mock.calls[0];
@@ -2233,7 +2262,7 @@ describe("useImportJob wiring", () => {
 
   it("keeps the backup password out of the stored form snapshot", async () => {
     createRunDirMock.mockResolvedValue("/tmp/staging");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, backupPassword: "hunter2" }));
 
     const body = createImportMock.mock.calls[0]?.[0] as Record<string, unknown>;
@@ -2247,7 +2276,7 @@ describe("useImportJob wiring", () => {
   // the same password, so its resume has to ask for it again too (#941).
   it("records that a WhatsApp iPhone import was given the backup password", async () => {
     createRunDirMock.mockResolvedValue("/tmp/staging");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() =>
       result.current.startImport({
         ...baseForm,
@@ -2263,7 +2292,7 @@ describe("useImportJob wiring", () => {
 
   it("keeps the WhatsApp key out of the stored form snapshot", async () => {
     createRunDirMock.mockResolvedValue("/tmp/staging");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() =>
       result.current.startImport({
         ...baseForm,
@@ -2281,7 +2310,7 @@ describe("useImportJob wiring", () => {
 
   it("records that no password or key was given when the form had none", async () => {
     createRunDirMock.mockResolvedValue("/tmp/staging");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(baseForm));
 
     const body = createImportMock.mock.calls[0]?.[0] as Record<string, unknown>;
@@ -2294,7 +2323,7 @@ describe("useImportJob wiring", () => {
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(baseForm));
     await act(() => result.current.approve());
 
@@ -2309,7 +2338,7 @@ describe("useImportJob wiring", () => {
     // must sit pending, not silently vanish or get marked done.
     createRunDirMock.mockResolvedValue("/tmp/staging");
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, attachmentMedia: "convert" }));
 
     expect(result.current.phase).toBe("staging_review");
@@ -2327,7 +2356,7 @@ describe("useImportJob wiring", () => {
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, attachmentMedia: "convert" }));
     await act(() => result.current.approve());
 
@@ -2341,7 +2370,7 @@ describe("useImportJob wiring", () => {
     // what the user ultimately asked for. The media row (index 1) still
     // tells the convert/compress story once the Media stage itself runs.
     createRunDirMock.mockResolvedValue("/tmp/staging");
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport({ ...baseForm, attachmentMedia: "convert" }));
 
     expect(result.current.steps[0]?.detail).toMatch(/^Copied /);
@@ -2349,7 +2378,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("never probes ffmpeg tools under copy mode, which never needs them", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     expect(toolsStatusMock).not.toHaveBeenCalled();
     expect(result.current.mediaToolsMissing).toEqual([]);
@@ -2357,19 +2386,27 @@ describe("useImportJob wiring", () => {
 
   it("flags missing ffmpeg tools at the Staging Review under convert", async () => {
     toolsStatusMock.mockResolvedValue(ffmpegMissing());
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.mediaToolsMissing).toEqual(["ffmpeg"]);
   });
 
   it("names ffprobe alone when ffmpeg is found without it", async () => {
     toolsStatusMock.mockResolvedValue({ ...okProbe(), ffprobe: { state: "missing" } });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.mediaToolsMissing).toEqual(["ffprobe"]);
   });
 
   describe("the desktop job between stages (#1407)", () => {
+    // Convert shows its form only in the desktop app, which `isTauri` reads from the window.
+    beforeEach(() => {
+      Object.assign(window, { __TAURI_INTERNALS__: {} });
+    });
+    afterEach(() => {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    });
+
     /** Settings → Convert with both directories filled, so only a running job keeps it off. */
     async function renderConvert() {
       const user = setupUser();
@@ -2385,7 +2422,7 @@ describe("useImportJob wiring", () => {
       );
       const { view, convert } = await renderConvert();
       expect(convert).toBeEnabled();
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
 
       await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
       expect(result.current.phase).toBe("staging_review");
@@ -2401,7 +2438,7 @@ describe("useImportJob wiring", () => {
 
     it("lets the desktop job go when the run is cancelled at a review", async () => {
       const { view, convert } = await renderConvert();
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
       expect(convert).toBeDisabled();
 
@@ -2416,7 +2453,7 @@ describe("useImportJob wiring", () => {
       runMock.mockImplementationOnce(
         runResult({ summary: "Upload finished.", report: failedReport() }),
       );
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
       expect(currentDesktopJob()).toBe("Import Run");
       await act(() => result.current.approve());
@@ -2429,13 +2466,13 @@ describe("useImportJob wiring", () => {
       runMock.mockImplementationOnce(
         runResult({ summary: "Upload finished.", report: okReport() }),
       );
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
       await act(() => result.current.approve());
       expect(result.current.phase).toBe("done");
       expect(currentDesktopJob()).toBeNull();
 
-      resetImportRun();
+      service.reset();
       runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
         await fn();
         throw new Error("chat.db is not readable");
@@ -2444,6 +2481,34 @@ describe("useImportJob wiring", () => {
       expect(result.current.summaryView?.status).toBe("failed");
       expect(currentDesktopJob()).toBeNull();
     });
+  });
+
+  it("keeps the scratch of two services started side by side apart", async () => {
+    // Each service parks its own form at the identity stop. Were the scratch
+    // shared, the second park would replace the first, and the first
+    // service's run would be created from the second's backup.
+    const first = createImportRunService(fakeDeps(createImportRunStore(initialImportRunState([]))));
+    const second = createImportRunService(
+      fakeDeps(createImportRunStore(initialImportRunState([]))),
+    );
+    const sam = {
+      ...auth,
+      fetchProfile: async () => account({ account_id: 1, username: "sam" }),
+    };
+    invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
+    await first.startImport(sam, { ...form(), backupPath: "/backups/first.tar" });
+    await second.startImport(sam, { ...form(), backupPath: "/backups/second.tar" });
+    expect(first.store.get().phase).toBe("identity_stop");
+    expect(second.store.get().phase).toBe("identity_stop");
+
+    await first.continueAfterIdentityStop(sam);
+
+    expect(createImportMock).toHaveBeenCalledTimes(1);
+    expect(invokeExtractMock).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/backups/first.tar" }),
+    );
+    expect(first.store.get().phase).toBe("staging_review");
+    expect(second.store.get().phase).toBe("identity_stop");
   });
 
   describe("identity check", () => {
@@ -2457,11 +2522,11 @@ describe("useImportJob wiring", () => {
 
     it("stops at identity_stop when nothing the backup sent from is on the profile", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({
+      setProfile({
         phones: [{ address: "+15555550180", services: ["phone"] }],
         emails: [],
       });
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
@@ -2474,11 +2539,11 @@ describe("useImportJob wiring", () => {
 
     it("continueAfterIdentityStop proceeds and sends the identities on the run", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({
+      setProfile({
         phones: [{ address: "+15555550180", services: ["phone"] }],
         emails: [],
       });
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
@@ -2492,8 +2557,8 @@ describe("useImportJob wiring", () => {
 
     it("cancelIdentityStop returns to the form with nothing created", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({ phones: [], emails: [] });
-      const { result } = renderHook(() => useImportJob());
+      setProfile({ phones: [], emails: [] });
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
@@ -2506,11 +2571,11 @@ describe("useImportJob wiring", () => {
 
     it("proceeds without a stop when an identity matches, sending the list", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({
+      setProfile({
         phones: [{ address: "+1 555 555 0110", services: ["phone"] }],
         emails: [],
       });
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
@@ -2522,8 +2587,8 @@ describe("useImportJob wiring", () => {
 
     it("fails open when the probe errors", async () => {
       invokeImessageBackupIdentitiesMock.mockRejectedValue(new Error("locked"));
-      loadAccountProfileMock.mockResolvedValue({ phones: [], emails: [] });
-      const { result } = renderHook(() => useImportJob());
+      setProfile({ phones: [], emails: [] });
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm());
       });
@@ -2531,7 +2596,7 @@ describe("useImportJob wiring", () => {
     });
 
     it("does not probe non-iMessage sources", async () => {
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(sbrForm());
       });
@@ -2539,7 +2604,7 @@ describe("useImportJob wiring", () => {
     });
 
     it("resume_write reaches the Staging Review with the run's stored identities, without re-probing", async () => {
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(imessageForm(), undefined, {
           runId: 42,
@@ -2554,7 +2619,7 @@ describe("useImportJob wiring", () => {
 
     it("resume_write reads the backup with the password the form carries", async () => {
       // The Resume Import panel puts what was typed into the form (#966).
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.startImport(
           { ...imessageForm(), backupPassword: "hunter2" },
@@ -2572,7 +2637,7 @@ describe("useImportJob wiring", () => {
     });
 
     it("guards a double-click during the probe: probes once and creates at most one run", async () => {
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await Promise.all([
           result.current.startImport(imessageForm()),
@@ -2587,7 +2652,7 @@ describe("useImportJob wiring", () => {
 
 describe("useImportJob resume path", () => {
   beforeEach(() => {
-    resetImportRun();
+    service.reset();
     runMock.mockReset();
     // A resumed run only ever calls run() once, for the Upload — and, like
     // the wiring tests above, must actually call the invoke function so
@@ -2610,7 +2675,7 @@ describe("useImportJob resume path", () => {
   });
 
   it("passes the resumed run id and run directory through to invokeUpload", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
@@ -2630,7 +2695,7 @@ describe("useImportJob resume path", () => {
   it("skips staging resolve, run create, and extract when resuming an Upload", async () => {
     // An Upload that pauses again, so the run, and its directory, stay on screen.
     runMock.mockImplementation(runResult({ summary: "Upload finished.", report: failedReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -2654,7 +2719,7 @@ describe("useImportJob resume path", () => {
     // to carry — `setImportStage` still receives a third argument, but it's
     // `undefined`, which reaches the server identically to omitting it
     // entirely (JSON.stringify drops it).
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -2677,7 +2742,7 @@ describe("useImportJob resume path", () => {
   it("resumed Upload: the rows follow the mode the approved plan carries, not the form's", async () => {
     // The plan was read from the directory at the Media Review, so it carries
     // the compress mode Staging recorded; the stored form says copy.
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -2714,7 +2779,7 @@ describe("useImportJob resume path", () => {
         },
       ],
     });
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -2737,7 +2802,7 @@ describe("useImportJob resume path", () => {
         { kind: "skip", step: "upload", item: "attachments/big.mov", reason: "too_large" },
       ),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -2783,7 +2848,7 @@ describe("useImportJob resume path", () => {
         }),
       }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
@@ -2873,7 +2938,7 @@ describe("useImportJob resume path", () => {
         seen,
       ),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(baseForm, { runId: 7, runDir: "/staging/paused" });
     });
@@ -2909,7 +2974,7 @@ describe("useImportJob resume path", () => {
         seen,
       ),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.startImport(baseForm, { runId: 7, runDir: "/staging/paused" });
     });
@@ -2923,7 +2988,7 @@ describe("useImportJob resume path", () => {
   });
 
   it("still posts /complete against the resumed run id", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.startImport(baseForm, {
@@ -3023,7 +3088,7 @@ function activeRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
 
 describe("useImportJob resumeAtReview", () => {
   beforeEach(() => {
-    resetImportRun();
+    service.reset();
     runMock.mockReset();
     cancelMock.mockReset();
     createImportMock.mockReset();
@@ -3057,7 +3122,7 @@ describe("useImportJob resumeAtReview", () => {
     const seen: ImportRunState[] = [];
     const unsubscribe = importRunStore.subscribe(() => seen.push(importRunStore.get()));
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary());
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(activeRun({ stage: "staging_review" }), form());
@@ -3077,7 +3142,7 @@ describe("useImportJob resumeAtReview", () => {
 
   it("recomputes the summary fresh from the directory and lands on the Staging Review for a run waiting there", async () => {
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 9 }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(activeRun({ stage: "staging_review" }), form());
@@ -3107,7 +3172,7 @@ describe("useImportJob resumeAtReview", () => {
     readRunRecordMock.mockResolvedValue({ issues: [stagingIssue], parseMs: 1_500 });
     invokeSummarizeStagingMock.mockResolvedValue(stagingSummary());
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(activeRun({ stage: "staging_review" }), form());
@@ -3124,7 +3189,7 @@ describe("useImportJob resumeAtReview", () => {
     invokeSummarizeStagingMock.mockResolvedValueOnce(
       stagingSummary({ mediaMode: "convert", conversations: 9 }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(
@@ -3143,7 +3208,7 @@ describe("useImportJob resumeAtReview", () => {
     const actual = stagingSummary({ mediaMode: "convert", conversations: 3, attachments: 2 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(actual);
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "media_review", summary: approved }),
@@ -3178,7 +3243,7 @@ describe("useImportJob resumeAtReview", () => {
       stagingSummary({ mediaMode: "convert", conversations: 7 }),
     );
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "media", summary: approved }),
@@ -3223,7 +3288,7 @@ describe("useImportJob resumeAtReview", () => {
     );
     const approved = stagingSummary({ mediaMode: "convert", conversations: 7 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "media", summary: approved }),
@@ -3248,7 +3313,7 @@ describe("useImportJob resumeAtReview", () => {
     });
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 7 }));
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     let resumed!: Promise<void>;
     await act(async () => {
       resumed = result.current.resumeAtReview(
@@ -3277,7 +3342,7 @@ describe("useImportJob resumeAtReview", () => {
       stagingSummary({ mediaMode: "convert", conversations: 7 }),
     );
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "media" }),
@@ -3302,7 +3367,7 @@ describe("useImportJob resumeAtReview", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(
@@ -3331,7 +3396,7 @@ describe("useImportJob resumeAtReview", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
 
     await act(async () => {
       await result.current.resumeAtReview(
@@ -3364,7 +3429,7 @@ describe("useImportJob resumeAtReview", () => {
     ];
     invokeSummarizeStagingMock.mockResolvedValueOnce(actual);
 
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "media_review", summary: "not a valid staging summary" }),
@@ -3380,7 +3445,7 @@ describe("useImportJob resumeAtReview", () => {
   });
 
   it("does nothing for a run at a stage this function doesn't handle", async () => {
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(activeRun({ stage: "upload" }), form());
     });
@@ -3394,7 +3459,7 @@ describe("useImportJob resumeAtReview", () => {
     async (stage) => {
       invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk unavailable"));
 
-      const { result } = renderHook(() => useImportJob());
+      const { result } = renderJob();
       await act(async () => {
         await result.current.resumeAtReview(
           activeRun({ stage, summary: stagingSummary() }),
@@ -3414,7 +3479,7 @@ describe("useImportJob resumeAtReview", () => {
 
   it("clears a stale resumeError once a later resume attempt starts", async () => {
     invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk unavailable"));
-    const { result } = renderHook(() => useImportJob());
+    const { result } = renderJob();
     await act(async () => {
       await result.current.resumeAtReview(
         activeRun({ stage: "staging_review" }),
@@ -3503,7 +3568,7 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   beforeEach(() => {
     auth = ACCOUNT_A;
-    resetImportRun();
+    service.reset();
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockReset();
@@ -3526,23 +3591,21 @@ describe("one desktop app, two accounts (#1085)", () => {
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
     invokeImessageBackupIdentitiesMock.mockResolvedValue([]);
-    loadAccountProfileMock.mockResolvedValue({ phones: [], emails: [] });
+    setProfile({ phones: [], emails: [] });
   });
 
   afterEach(() => {
     auth = { token: "test-token", accountId: 1 };
   });
 
-  /** Log another account in, telling whoever follows the account, as `setAccountId` does. */
+  /** Log another account in, telling whoever follows the account. */
   function logInAs(account: typeof ACCOUNT_A): void {
     auth = account;
-    act(() => {
-      for (const listener of accountListeners) listener();
-    });
+    act(() => setAccountId(account.accountId));
   }
 
   it("holds the desktop job at A's review for A only, so B's Export and Convert stay on (#1407)", async () => {
-    const a = renderHook(() => useImportJob());
+    const a = renderJob();
     await act(() => a.result.current.startImport(form()));
     expect(a.result.current.phase).toBe("staging_review");
     expect(currentDesktopJob()).toBe("Import Run");
@@ -3557,18 +3620,18 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   it("does not offer account A's parked form to account B", async () => {
     invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-    loadAccountProfileMock.mockResolvedValue({
+    setProfile({
       phones: [{ address: "+15555550116", services: ["phone"] }],
       emails: [],
     });
-    const a = renderHook(() => useImportJob());
+    const a = renderJob();
     await act(() => a.result.current.startImport({ ...form(), backupPassword: "secret-of-A" }));
     expect(a.result.current.phase).toBe("identity_stop");
     a.unmount();
 
     // A logs out, B logs in on the same desktop app and opens Import.
     auth = ACCOUNT_B;
-    const b = renderHook(() => useImportJob());
+    const b = renderJob();
     expect(b.result.current.phase).toBe("form");
     expect(b.result.current.sourceIdentities).toBeNull();
     await act(() => b.result.current.continueAfterIdentityStop());
@@ -3583,7 +3646,7 @@ describe("one desktop app, two accounts (#1085)", () => {
           finishProbe = resolve;
         }),
     );
-    const a = renderHook(() => useImportJob());
+    const a = renderJob();
     let runOfA: Promise<void> = Promise.resolve();
     act(() => {
       runOfA = a.result.current.startImport({ ...form(), backupPassword: "secret-of-A" });
@@ -3603,13 +3666,13 @@ describe("one desktop app, two accounts (#1085)", () => {
   });
 
   it("shows account A's waiting review to A only, and B's actions leave it alone", async () => {
-    const a = renderHook(() => useImportJob());
+    const a = renderJob();
     await act(() => a.result.current.startImport(form()));
     expect(a.result.current.phase).toBe("staging_review");
     a.unmount();
 
     auth = ACCOUNT_B;
-    const b = renderHook(() => useImportJob());
+    const b = renderJob();
     expect(b.result.current.phase).toBe("form");
     expect(b.result.current.form).toBeNull();
     expect(b.result.current.runDir).toBeNull();
@@ -3626,7 +3689,7 @@ describe("one desktop app, two accounts (#1085)", () => {
 
     // A logs back in and finds the run where it was left.
     auth = ACCOUNT_A;
-    const aAgain = renderHook(() => useImportJob());
+    const aAgain = renderJob();
     expect(aAgain.result.current.phase).toBe("staging_review");
     expect(aAgain.result.current.runDir).toBe("/home/sam/message-crate/staging-iphone");
   });
@@ -3649,7 +3712,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     runMock.mockImplementationOnce(runResult(EXTRACT_RESULT));
     cancelMock.mockImplementation(async () => stopExtractOfA?.());
 
-    const a = renderHook(() => useImportJob());
+    const a = renderJob();
     let runOfA: Promise<void> = Promise.resolve();
     act(() => {
       runOfA = a.result.current.startImport(form());
@@ -3658,7 +3721,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     a.unmount();
 
     auth = ACCOUNT_B;
-    const b = renderHook(() => useImportJob());
+    const b = renderJob();
     await act(() => b.result.current.startImport(form()));
     await act(() => runOfA);
 

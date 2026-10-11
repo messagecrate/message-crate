@@ -6,8 +6,8 @@
  * and every remaining conversation recorded as failed (#1155). Logout pauses
  * the Upload first (CONTEXT.md, "Pause"), and asks before it does.
  *
- * The Import screen's run lives in `screens/import/useImportJob.ts` and the
- * modules in `screens/import/run/`. Its Upload (`run/upload.ts`) registers the
+ * The Import screen's run lives in `screens/import/run/` (`service.ts`, which
+ * `screens/import/useImportJob.ts` builds once for the app). Its Upload (`run/upload.ts`) registers the
  * pause here while it runs; `auth.tsx` reads it, without depending on the
  * screen.
  *
