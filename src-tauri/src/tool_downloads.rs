@@ -708,13 +708,13 @@ fn write_manifest_or_log(dir: &Path, manifest: &Manifest, program: Program) {
     }
 }
 
-/// Record `pin`'s program, adopted in `dir`, with its file's stamp, and
-/// write the record. A failure goes to the process log and fails nothing:
-/// the program is in place either way, and without its entry the next start
-/// reads the file again.
-fn record_adopted_or_log(dir: &Path, manifest: &mut Manifest, pin: &Pinned) {
+/// Record `pin`'s program, adopted at `path` in `dir`, with the stamp of
+/// `path`, and write the record in `dir`. A failure goes to the process log
+/// and fails nothing: the program is in place either way, and without its
+/// entry the next start reads the file again.
+fn record_adopted_or_log(dir: &Path, path: &Path, manifest: &mut Manifest, pin: &Pinned) {
     let program = pin.program;
-    match Stamp::at(&dir.join(program.file_name())) {
+    match Stamp::at(path) {
         Ok(stamp) => {
             manifest.insert(program, Written::of(pin, stamp));
             write_manifest_or_log(dir, manifest, program);
@@ -930,7 +930,7 @@ fn check(
                         continue;
                     }
                 }
-                record_adopted_or_log(dir, &mut manifest, pin);
+                record_adopted_or_log(dir, &path, &mut manifest, pin);
             }
             Need::DoesNotRun => downloads.set(pin.program, does_not_run(pin.program)),
             Need::Download => wanted.push(pin),
