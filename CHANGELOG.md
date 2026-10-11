@@ -351,6 +351,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **No account is created after the owner closes registration.**
+  A stranger's registration that arrived just as the owner closed
+  registration could still create an account. Whether registration is open
+  is now decided at the moment the account is written. A Message Crate with
+  registration closed also turns a stranger away at once, without first
+  working on the password they sent (#2231, #2232).
+
 - 2026-10-11: **A new username can no longer hold letters from other
   scripts.** A username could hold letters from any script,
   so `аdmin` written with a Cyrillic `а` made a second account that read
