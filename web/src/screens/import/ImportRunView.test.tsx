@@ -7,7 +7,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ImportJobFormValues } from "../../lib/importSources/types";
 import type { AttachmentForecast, StagingSummary, ToolStatus, ToolsStatus } from "../../lib/tauri";
-import { importForm } from "../../test/importForm";
+import { importForm, MIB } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
@@ -107,8 +107,6 @@ function finished(overrides: Partial<ImportSummaryView> = {}): ImportSummaryView
   };
 }
 
-const MB = 1024 * 1024;
-
 function file(
   name: string,
   sizeMb: number,
@@ -118,8 +116,8 @@ function file(
   return {
     path: `attachments/${name}`,
     name,
-    sizeBytes: sizeMb * MB,
-    estimateBytes: estimateMb * MB,
+    sizeBytes: sizeMb * MIB,
+    estimateBytes: estimateMb * MIB,
     verdict,
   };
 }

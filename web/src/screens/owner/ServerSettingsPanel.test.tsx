@@ -3,6 +3,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
+import { MIB } from "../../test/importForm";
 import { Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
@@ -21,8 +22,6 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   getServerState: () => new Promise(() => {}),
   getDemoAccount: () => new Promise(() => {}),
 }));
-
-const MIB = 1024 * 1024;
 
 function renderPanel() {
   return render(
