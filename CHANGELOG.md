@@ -396,6 +396,8 @@ released versions carry their date on the heading.
 
 #### Desktop app
 
+- 2026-10-10: **The desktop app no longer adds an unused, ready-made way to
+  call its commands to its window.** Nothing changes on screen (#2177).
 - 2026-10-10: **A new SMS Backup+ export clears out every conversation
   directory of the one before it.** An SMS Backup+ export that stopped part
   way could leave an empty conversation directory behind, and the next
