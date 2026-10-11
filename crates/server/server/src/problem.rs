@@ -17,9 +17,28 @@ pub const ERRORS_URL: &str = "https://messagecrate.app/docs/developer/reference/
 /// reader could act on.
 pub const INTERNAL_TYPE: &str = "about:blank";
 
-/// One registered kind of failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ProblemType {
+/// Declares [`ProblemType`] and its [`ProblemType::ALL`] from one list of
+/// variants, so a type cannot be declared and left out of `ALL`: the error
+/// pages ([`crate::error_docs`]) and the OpenAPI problem types
+/// ([`crate::openapi::shared_parts`]) walk `ALL`, and a type missing from it
+/// would ship with neither.
+macro_rules! problem_types {
+    ($($(#[$doc:meta])* $name:ident,)*) => {
+        /// One registered kind of failure.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum ProblemType {
+            $($(#[$doc])* $name,)*
+        }
+
+        impl ProblemType {
+            /// Every registered type, in the order the docs index lists them:
+            /// the order they are declared in.
+            pub const ALL: [Self; [$(stringify!($name)),*].len()] = [$(Self::$name),*];
+        }
+    };
+}
+
+problem_types! {
     /// A query parameter, path segment or body field parsed and then broke a rule.
     ValidationFailed,
     /// The request cannot be read: not valid JSON or JSONL, or a body that failed to arrive.
@@ -71,33 +90,6 @@ pub enum ProblemType {
 }
 
 impl ProblemType {
-    /// Every registered type, in the order the docs index lists them.
-    pub const ALL: [Self; 23] = [
-        Self::ValidationFailed,
-        Self::MalformedBody,
-        Self::UnsupportedMediaType,
-        Self::PayloadTooLarge,
-        Self::InvalidCredentials,
-        Self::AuthenticationRequired,
-        Self::RateLimited,
-        Self::UsernameTaken,
-        Self::NameTaken,
-        Self::DemoAccountProtected,
-        Self::NotTheOwner,
-        Self::RegistrationClosed,
-        Self::InsufficientScope,
-        Self::AccountDisabled,
-        Self::SearchQueryInvalid,
-        Self::StateConflict,
-        Self::IdentityExists,
-        Self::AssetUploadInvalid,
-        Self::NotFound,
-        Self::MethodNotAllowed,
-        Self::NotAcceptable,
-        Self::MediaLinkInvalid,
-        Self::RangeNotSatisfiable,
-    ];
-
     /// The last segment of the `type` URL and the page's file name.
     #[must_use]
     pub const fn slug(self) -> &'static str {
@@ -348,6 +340,17 @@ mod tests {
         ] {
             assert_eq!(byte_size(cap), text);
             assert!(page.contains(text), "the page does not name {text}: {page}");
+        }
+    }
+
+    /// `ALL` holds every variant once, in declaration order: the variant
+    /// with discriminant `i` sits at position `i`. `problem_types!` builds
+    /// it that way; this fails if `ALL` is ever written out by hand again
+    /// and falls out of step.
+    #[test]
+    fn all_holds_every_type_in_declaration_order() {
+        for (position, kind) in ProblemType::ALL.iter().enumerate() {
+            assert_eq!(*kind as usize, position, "{} is out of place", kind.slug());
         }
     }
 
