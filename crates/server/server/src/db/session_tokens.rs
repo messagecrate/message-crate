@@ -36,8 +36,8 @@ pub(crate) fn generate_prefixed_token(prefix: &str) -> Result<String> {
 }
 
 /// A token of `TOKEN_SUFFIX_LEN` characters after `prefix`, reading bytes
-/// from `fill` and drawing again for every byte `token_char` refuses, so each character is
-/// equally likely.
+/// from `fill` and drawing again for every byte `token_char` refuses, so
+/// each character is equally likely.
 fn prefixed_token_from(
     prefix: &str,
     mut fill: impl FnMut(&mut [u8]) -> Result<()>,
@@ -522,10 +522,12 @@ mod tests {
     /// again until the token has all its characters.
     #[test]
     fn refused_bytes_are_drawn_again() {
+        // Each read fills one buffer of `TOKEN_SUFFIX_LEN` bytes: first all
+        // refused but the last two, which are the first two characters.
+        let refused = vec![u8::MAX; TOKEN_SUFFIX_LEN - 2];
         let mut batches = [
-            // 30 refused bytes, then the first two characters.
-            [vec![255u8; 30], vec![0, 1]].concat(),
-            (2u8..34).collect::<Vec<u8>>(),
+            [refused, vec![0, 1]].concat(),
+            (2..).take(TOKEN_SUFFIX_LEN).collect::<Vec<u8>>(),
         ]
         .into_iter();
         let token = prefixed_token_from("mc-user-", |buf| {
