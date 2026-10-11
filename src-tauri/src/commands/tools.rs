@@ -116,9 +116,23 @@ pub struct ToolsStatus {
 
 /// Look for ffmpeg, ffprobe and wtsexporter where this process runs them from,
 /// and say how each one's download stands.
+///
+/// The lookups run the programs they find (`-version`, and `--help` for
+/// wtsexporter), so they run on a blocking-pool thread, never on the main
+/// thread: the window asks every second while a download runs, and a file
+/// still being copied in is started up to twenty times per lookup (#2692).
+///
+/// # Errors
+///
+/// Returns an error when the lookup's thread panicked.
 #[tauri::command]
-pub fn tools_status(downloads: tauri::State<'_, ToolDownloads>) -> ToolsStatus {
-    tools_status_with(&downloads, &pinned_programs())
+pub async fn tools_status(
+    downloads: tauri::State<'_, ToolDownloads>,
+) -> Result<ToolsStatus, String> {
+    let downloads = downloads.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || tools_status_with(&downloads, &pinned_programs()))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The programs the app has a download of for this computer.
@@ -341,7 +355,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn wtsexporter_is_reported_from_the_tools_directory() {
-        use std::os::unix::fs::PermissionsExt;
         let _lock = media::testutil::tools_test_lock();
         let previous = media::tools_dir();
         let tools = tempfile::tempdir().unwrap();
@@ -352,9 +365,7 @@ mod tests {
         let missing = tools_status_with(&downloads, &pinned).wtsexporter;
         let unavailable = tools_status_with(&downloads, &[]).wtsexporter;
         // A copy that answers `--help`, as a whole one does (#2692).
-        let program = tools.path().join(name);
-        std::fs::write(&program, "#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        media::testutil::write_runnable(&tools.path().join(name));
         let found = tools_status_with(&downloads, &pinned).wtsexporter;
         let found_by_hand = tools_status_with(&downloads, &[]).wtsexporter;
         media::set_tools_dir(previous);
