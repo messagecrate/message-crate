@@ -114,10 +114,13 @@ start-up option skips it.
 ## Note, 2026-10-11: a server that stops answering is killed
 
 The server can also end a third way: it still runs but no longer answers
-(#2204). While the login card is open, it asks the app for the server's
-state every three seconds, and each time the app asks the address whether a
-Message Crate answers, as it already did for one it only found. When two
-checks in a row find none, the app kills its server the way it does on
-close, and the login card says it stopped answering. One check is not
-enough, because a server can miss one answer. A server busy with a long
-write still answers, with a problem document, and counts as answering.
+(#2204). While the login card is open, the login card asks the app for the
+server's state every three seconds. Each time, the app asks the address
+whether a Message Crate answers, as it already did for one it only found.
+When two checks in a row find none, the app kills its server the way it
+does on close. The login card then says the server stopped answering. One
+check is not enough, because a server can miss one answer. A server busy
+with a long write usually answers with a problem document, which counts as
+answering. An import can still keep it from answering in time, so while a
+desktop job runs the app does not kill it, and the next check that finds
+nothing once no job runs does.

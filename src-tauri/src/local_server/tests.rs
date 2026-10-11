@@ -335,7 +335,7 @@ fn the_apps_own_server_is_killed_once_it_stops_answering() {
     let (state, actions) = step(state, Event::Check);
     assert_eq!(actions, [Action::Probe]);
     let (state, actions) = step(state, Event::Probed(Probe::Free));
-    assert_eq!(actions, [Action::Kill]);
+    assert_eq!(actions, [Action::KeepOutput, Action::Kill]);
     assert!(
         matches!(
             &state.phase,
@@ -346,13 +346,64 @@ fn the_apps_own_server_is_killed_once_it_stops_answering() {
     );
 }
 
-/// An answer to a check the app's own server is not waiting for, such as
-/// one asked before a restart for the network setting, is not counted.
+/// An import can keep the server from answering in time, so the app's own
+/// server is not killed while a desktop job runs, and is once none does.
+#[test]
+fn the_apps_own_server_is_not_killed_for_not_answering_while_a_job_runs() {
+    let (mut state, _) = step(at(own(false), false), Event::JobStarted);
+    for _ in 0..UNANSWERED_CHECKS + 1 {
+        let actions;
+        (state, _) = step(state, Event::Check);
+        (state, actions) = step(state, Event::Probed(Probe::Other));
+        assert_eq!(actions, [], "the import would be cut off");
+        assert!(matches!(state.phase, Phase::Own { .. }), "{state:?}");
+    }
+
+    let (state, _) = step(state, Event::JobEnded);
+    let (state, _) = step(state, Event::Check);
+    let (state, actions) = step(state, Event::Probed(Probe::Other));
+    assert_eq!(actions, [Action::KeepOutput, Action::Kill]);
+    assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
+}
+
+/// An answer to a check the app's own server is not waiting for is not
+/// counted.
 #[test]
 fn an_answer_nobody_asked_the_apps_own_server_for_is_not_counted() {
     let (state, actions) = step(at(own(false), false), Event::Probed(Probe::Free));
     assert_eq!(actions, []);
     assert_eq!(state.phase, own(false));
+}
+
+/// An answer asked before the app's server was killed or started, such as
+/// one asked before a restart for the network setting, is dropped: it is
+/// about the server that was replaced.
+#[test]
+fn an_answer_asked_of_a_replaced_server_is_dropped() {
+    let server = LocalServer::default();
+    let checking = Phase::Own {
+        open: false,
+        checking: true,
+        unanswered: 0,
+    };
+    {
+        let mut inner = server.lock();
+        inner.state = at(checking.clone(), false);
+        inner.generation = 2;
+    }
+
+    server.probed(1, Probe::Free);
+    assert_eq!(server.lock().state.phase, checking);
+
+    server.probed(2, Probe::Free);
+    assert_eq!(
+        server.lock().state.phase,
+        Phase::Own {
+            open: false,
+            checking: false,
+            unanswered: 1,
+        }
+    );
 }
 
 #[test]
@@ -794,9 +845,11 @@ mod with_a_script {
     #[test]
     fn a_ready_server_that_never_answers_is_killed_by_the_checks() {
         let dir = tempfile::tempdir().unwrap();
+        // The line to keep comes first, so it is kept before the app sees
+        // the server listen: both go through the same pipe and reader.
         let program = script(
             dir.path(),
-            &format!("echo '{LISTENING_LINE}{OWN_ADDRESS}'\nexec sleep 600"),
+            &format!("echo 'stuck here'\necho '{LISTENING_LINE}{OWN_ADDRESS}'\nexec sleep 600"),
         );
         let server = LocalServer::default();
         server.ensure_started(launch_at(free_address(), &program, dir.path()));
@@ -810,7 +863,9 @@ mod with_a_script {
 
         // Ask for the state the way the screens do. Each time is a check of
         // the address, where nothing listens.
-        let Status::Failed { message, .. } = (|| {
+        let Status::Failed {
+            message, details, ..
+        } = (|| {
             let deadline = Instant::now() + Duration::from_secs(20);
             loop {
                 let status = server.status();
@@ -820,10 +875,13 @@ mod with_a_script {
                 assert!(Instant::now() < deadline, "the server stayed ready");
                 thread::sleep(Duration::from_millis(20));
             }
-        })() else {
+        })()
+        else {
             panic!("a server that never answers must not stay ready");
         };
         assert_eq!(message, "Message Crate stopped answering.");
+        // What it last wrote is kept for a bug report.
+        assert!(details.contains("stuck here"), "{details}");
         assert!(server.lock().server.is_none());
         assert!(
             ends_or_is_killed(libc::pid_t::try_from(pid).unwrap()),
