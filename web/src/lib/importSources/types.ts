@@ -70,10 +70,10 @@ export type Readiness = {
 /**
  * What the Import screen and the run know about one backup source, in one
  * place. Each field is read for the selected source, so a new source needs
- * only its descriptor and, in `screens/import/formSections/`, its form
- * section, which renders the source's fields and so stays out of `lib/`.
- * The other exception is the Import screen's path checks as the paths are
- * typed: each fills its own source's stats (`pathStats`, `whatsappStats`),
+ * only its descriptor and its form section. The form section lives in
+ * `screens/import/formSections/`, because it renders the source's fields.
+ * The exception is the Import screen's path checks as the paths are typed:
+ * each fills its own source's stats (`pathStats`, `whatsappStats`),
  * which the source's readiness and form section read, so a source that
  * checks its paths adds a check and its stats there too.
  *
