@@ -121,6 +121,18 @@ docker compose -f docker/compose.release.yml up
 
 This works on a new volume only. `create-database` leaves an existing database as it is.
 
+### Point `cargo tauri dev` at the container
+
+The image allows no Vite origin, because one would let any page on port 5173 of the viewer's computer call the server.
+`cargo tauri dev` loads its window from `http://localhost:5173`, so the container needs that origin passed to `serve` with `--cors-origin`.
+The stack must be stopped first, because the run publishes port 8080 and fails while the stack holds it.
+
+```bash title="Serve with the Vite origin allowed"
+docker compose -f docker/compose.release.yml down
+docker compose -f docker/compose.release.yml run --rm --service-ports \
+  server serve --config config/config.toml --cors-origin http://localhost:5173
+```
+
 ### Rebuild without cache
 
 Use this after a failed build that used an old `.dockerignore`. Docker may otherwise reuse a layer that omitted `demo-seed` data files.
