@@ -12,29 +12,53 @@
 // load is a console error in Chromium, so a broken static/ bundle fails too.
 import { chromium } from "playwright";
 
-// A word of a shown name to search for, and the first name holding it. A
-// bare word on the Conversations list matches any name that contains it,
-// in any case (emit_text in crates/server/server/src/search/emit.rs), so a
-// word inside every shown name could narrow nothing. The word picked is the
-// one contained in the fewest shown names, and it must be missing from at
-// least one. Words are runs of letters and digits, so no punctuation reaches
-// the search syntax; words under three letters are skipped, as they sit
-// inside too many names to narrow anything.
-function narrowingTerm(titles) {
-  const lowered = titles.map((name) => name.toLowerCase());
+// The words the search reads as operators, in any case (word_or_operator in
+// crates/server/server/src/search/lex.rs), so a name word that is one of
+// them would not search for itself.
+const OPERATORS = new Set(["and", "or", "not"]);
+
+// A word of a shown name to search for, and the first name holding it.
+// `conversations` are the items of the list answer the names were drawn
+// from. A bare word on the Conversations list matches, in any case, a
+// conversation's title, its participants' names and their addresses
+// (emit_text in crates/server/server/src/search/emit.rs), and the address
+// the conversation is held under, which for a conversation with one other
+// person is that person's address. So each conversation's text here is its
+// shown title and its participants' names and identities, and a word is
+// counted against that text, not against the names on screen.
+//
+// The word picked is the one the fewest of those conversations hold, and at
+// least one must not hold it, so the search finds fewer conversations than
+// the list. A word no conversation holds is skipped, as the web app made it
+// up: "(unknown)" names a conversation with no title and no participants
+// (web/src/lib/conversationName.ts). Words are runs of letters and digits,
+// so no punctuation reaches the search syntax, and the operators above are
+// skipped; words under three letters are skipped too, as they sit inside too
+// many names to narrow anything.
+function narrowingTerm(names, conversations) {
+  const texts = conversations.map((conversation) =>
+    [
+      conversation.shown_title ?? "",
+      ...(conversation.participants ?? []).flatMap((p) => [p.name ?? "", p.identity ?? ""]),
+    ]
+      .join("\n")
+      .toLowerCase(),
+  );
   let best = null;
-  for (const name of titles) {
+  for (const name of names) {
     for (const word of name.split(/[^\p{L}\p{N}]+/u)) {
-      if (word.length < 3) continue;
-      const holders = lowered.filter((other) => other.includes(word.toLowerCase()));
-      if (best === null || holders.length < best.holders) {
-        best = { term: word, title: name, holders: holders.length };
+      const lowered = word.toLowerCase();
+      if (word.length < 3 || OPERATORS.has(lowered)) continue;
+      const holders = texts.filter((text) => text.includes(lowered)).length;
+      if (holders === 0) continue;
+      if (best === null || holders < best.holders) {
+        best = { term: word, title: name, holders };
       }
     }
   }
-  if (best === null || best.holders === titles.length) {
+  if (best === null || best.holders === texts.length) {
     throw new Error(
-      `no word of three letters or more is missing from one of the ${titles.length} shown names, so no search could narrow the list: ${JSON.stringify(titles)}`,
+      `no word of a shown name is missing from one of the ${texts.length} listed conversations' names and addresses, so no search could narrow the list: ${JSON.stringify(names)}`,
     );
   }
   return best;
@@ -95,13 +119,16 @@ try {
   await search.waitFor();
   await page.getByText("demo", { exact: true }).first().waitFor();
 
-  // The search term comes from the names the list shows, so the check does
-  // not depend on which names the demo generator picks: it needs only one
-  // shown name holding a word that another shown name lacks (#2731).
+  // The search term comes from the names the list shows and the list answer
+  // behind them, so the check does not depend on which names the demo
+  // generator picks: it needs only one shown name holding a word that some
+  // other listed conversation's title, participant names and addresses all
+  // lack (#2731).
   step = "list the Demo Account's conversations";
   const all = await listed;
   if (!all.ok()) throw new Error(`the list answered ${all.status()}`);
-  const allTotal = (await all.json()).total;
+  const listing = await all.json();
+  const allTotal = listing.total;
   const rows = page.getByRole("checkbox", { name: /^Select (?!all conversations$)/ });
   await rows.first().waitFor();
   const labels = await rows.evaluateAll((boxes) =>
@@ -110,7 +137,7 @@ try {
   const titles = labels
     .map((label) => label.replace(/^Select /, ""))
     .filter((name) => name !== "");
-  const { term, title } = narrowingTerm(titles);
+  const { term, title } = narrowingTerm(titles, listing.items ?? []);
 
   // The row named `title` was on screen before the search, so finding it
   // afterwards proves nothing. The search must reach the server, find fewer
