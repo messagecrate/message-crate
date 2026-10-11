@@ -348,6 +348,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-11: **The login screen no longer reads Disconnected for a moment
+  while an import runs.** An import can keep the server's database busy for
+  longer than its health check waits, so one check could fail though the
+  server was still answering, and the login screen read Disconnected until
+  its next check a second later. When the server answers a check with an
+  error, the login screen now checks once more three seconds later, and
+  reads Disconnected only when both fail (#2718).
+
 - 2026-10-11: **The Storage tab no longer says Top 100 attachments over an
   empty list.** An account with no attachments saw "Top 100 attachments by
   file size" above "No attachments with sizes yet". Under **Largest
