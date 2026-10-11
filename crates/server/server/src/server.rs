@@ -629,9 +629,10 @@ impl ApiError {
     }
 
     /// The sentence of a variant that carries nothing else, or `None` for a
-    /// variant with fields of its own. The one list of those variants, read
-    /// by [`Self::to_problem`] for the `detail` and by `Display`. A variant
-    /// put in the `None` arm needs an arm of its own in both.
+    /// variant with fields of its own. The one list of those variants:
+    /// [`Self::to_problem`] takes the `detail` from it and `Display` writes
+    /// it, both through [`Self::sentence`]. A variant put in the `None` arm
+    /// needs an arm of its own in both.
     fn message(&self) -> Option<&str> {
         match self {
             Self::MalformedBody(m)
@@ -782,7 +783,7 @@ impl ApiError {
                 problem.line = Some(*line as u64);
             }
             Self::Internal(_) => unreachable!("handled above"),
-            // The variants that carry only a sentence: `message` lists them.
+            // The variants that carry only a sentence, which `message` lists.
             _ => problem.detail = Some(self.sentence().to_string()),
         }
         problem
@@ -808,7 +809,7 @@ impl std::fmt::Display for ApiError {
             | Self::MalformedImportLine { detail, .. }
             | Self::IdentityExists { detail, .. }
             | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
-            // The variants that carry only a sentence: `message` lists them.
+            // The variants that carry only a sentence, which `message` lists.
             _ => f.write_str(self.sentence()),
         }
     }
