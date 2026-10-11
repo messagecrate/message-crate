@@ -166,7 +166,7 @@ The table has one row per Identity:
 
 | Column | Shows |
 |---|---|
-| **Service** | **Text message**, **Email**, or **WhatsApp** |
+| **Service** | **Text Message**, **Email**, or **WhatsApp** |
 | **Identity** | The phone number or email address |
 | **First sent** | The date of the earliest message the account holder sent from this Identity |
 | **Last sent** | The date of the latest message the account holder sent from this Identity |
@@ -180,7 +180,7 @@ A dash stands for a zero or a missing date.
 **Add identity** opens a dialog with a **Service** and an **Identity** field.
 A phone number must hold 7 to 15 digits, and spaces, dots, dashes, and parentheses are accepted.
 An Identity already in the list on the same service is refused.
-The same number on **Text message** and on **WhatsApp** counts as two Identities, so both can be listed.
+The same number on **Text Message** and on **WhatsApp** counts as two Identities, so both can be listed.
 
 The trash button on a row removes that Identity after a confirmation.
 The confirmation states how many direct and group messages will no longer be associated with the account.
