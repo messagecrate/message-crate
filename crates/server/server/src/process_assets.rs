@@ -1042,16 +1042,9 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
 
 /// The failure of a version that must be made while its original is not on
 /// disk.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("missing original")]
 struct MissingOriginal;
-
-impl std::fmt::Display for MissingOriginal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("missing original")
-    }
-}
-
-impl std::error::Error for MissingOriginal {}
 
 /// Why a version was not made, from `err`, the failure of making it, as the
 /// `/v1` Attachment answers it: what ffmpeg said about the file, with each
@@ -1077,7 +1070,7 @@ fn not_made_reason(err: &anyhow::Error, dirs: &[&Path]) -> String {
     if err.downcast_ref::<MissingOriginal>().is_some() {
         return "the original file is missing".to_string();
     }
-    "the server could not make it, and its log says why".to_string()
+    "the server ran into a problem making it".to_string()
 }
 
 /// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.

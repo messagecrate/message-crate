@@ -232,10 +232,9 @@ async fn decide_queued(
 /// leaves the queue once it is processed, whether or not every version could
 /// be made; a failure is logged, why each version was not made is recorded
 /// on the Asset's rows for the `/v1` Attachment to answer, and
-/// `process-assets` tries it again. An
-/// Asset queued again while it was worked on stays queued, and so does the
-/// one being worked on when `stop` is set. Without ffmpeg nothing is made
-/// and the queue is left as it is.
+/// `process-assets` tries it again. An Asset queued again while it was
+/// worked on stays queued, and so does the one being worked on when `stop`
+/// is set. Without ffmpeg nothing is made and the queue is left as it is.
 ///
 /// Before each conversion, the pass records whether every browser shows each
 /// original queued since it last looked as it is ([`decide_queued`]), so a

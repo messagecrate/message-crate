@@ -149,7 +149,7 @@ original already has with rows that do not name it yet, and removes the row.
 An Asset whose conversion fails leaves the queue too, with the failure in the
 server's log, and `process-assets` tries it again. The pass also records
 why each version was not made on the Asset's attachment rows
-(`attachments.derived_not_made_reason` and
+(`attachments.preview_not_made_reason` and
 `attachments.thumbnail_not_made_reason`), and the `/v1` Attachment answers it
 in `preview_not_made_reason` and `thumbnail_not_made_reason`, so the viewer
 says why there is no Preview. The reason is what ffmpeg said about the file,
@@ -157,11 +157,13 @@ with the paths it named made relative to the account's directories, or a
 phrase of the server's when ffmpeg did not read the file, such as when the
 original is missing. It never holds a path outside the data directory or the
 full error, whose context names the original's path and, for a missing
-ffmpeg, every directory the server looked in. A version made later clears
-it. A dry run records nothing, and neither does a conversion a stop killed.
-An Asset a later Import
-Run queues while the pass works on it is queued again rather than dropped,
-so the new run's rows get the versions too. The pass holds no database
+ffmpeg, every directory the server looked in. Only rows that name no such
+version get it, so a failed remake under `--force` leaves a working version
+without one. A version made later clears it, and so does deciding that the
+original is shown as it is. A dry run records nothing, and neither does a
+conversion a stop killed. An Asset a later Import Run queues while the pass
+works on it is queued again rather than dropped, so the new run's rows get
+the versions too. The pass holds no database
 connection while ffmpeg runs, and writes its part-made files in a work
 directory under the data directory. A server that stops, on Ctrl-C or
 SIGTERM, kills the ffmpeg the pass runs and waits for it, removes the work
@@ -184,6 +186,11 @@ computer for work nothing will record.
 Why record the reason: with it only in the server's log, the account saw an
 attachment with no Preview and no explanation, and the owner found the reason
 only by searching the log for the fingerprint (#2170).
+
+Why a phrase of the server's when ffmpeg did not read the file: a missing
+original is the commonest such failure, and an answer of `null` would read
+as a Preview still to come, which is what the reason exists to end. The
+phrase is fixed text, so it holds no path and nothing of the message.
 
 Why a table: the queue outlives the process, so a server stopped part-way
 works through what was left when it starts again, with nothing to redo and no

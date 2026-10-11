@@ -1138,7 +1138,7 @@ async fn not_made_reasons(
     attachment_id: i64,
 ) -> (Option<String>, Option<String>) {
     sqlx::query_as(
-        "SELECT derived_not_made_reason, thumbnail_not_made_reason
+        "SELECT preview_not_made_reason, thumbnail_not_made_reason
          FROM attachments WHERE id = $1",
     )
     .bind(attachment_id)
@@ -1193,6 +1193,75 @@ fn why_a_version_was_not_made_is_kept_until_it_is_made() {
             (None, None)
         );
     });
+}
+
+/// A remake under `--force` that fails leaves the working versions the rows
+/// name, so the `/v1` Attachment must not answer a reason beside them.
+#[test]
+fn a_failed_remake_of_a_working_version_records_no_reason() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+        let mut conn = opened.conn().await.unwrap();
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap();
+        let made = derived_of(&mut conn, attachment_id).await;
+        assert!(made.is_some(), "the first run makes the Preview");
+        let original = opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}"));
+        fs::write(&original, b"not a picture at all").unwrap();
+        let force = ProcessAssetsOptions {
+            force: true,
+            ..Default::default()
+        };
+
+        let stats = run(&opened, &force, &NOT_STOPPED).await.unwrap();
+
+        assert_eq!(stats.not_made, 1, "{stats:?}");
+        assert_eq!(derived_of(&mut conn, attachment_id).await, made);
+        assert_eq!(
+            not_made_reasons(&mut conn, attachment_id).await,
+            (None, None)
+        );
+    });
+}
+
+/// An original decided to be shown as it is needs no Preview, so why an
+/// earlier Preview could not be made goes with that decision.
+#[tokio::test]
+async fn deciding_an_original_is_shown_as_it_is_clears_why_its_preview_was_not_made() {
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let rows = OriginalRows {
+        account_id: ACCOUNT,
+        original_sha: SHA,
+    };
+    versions_db::record_not_made(&mut conn, rows, Version::Preview, "bad file")
+        .await
+        .unwrap();
+    versions_db::record_not_made(&mut conn, rows, Version::Thumbnail, "bad file")
+        .await
+        .unwrap();
+
+    versions_db::record_shown_as_is(&mut conn, rows, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (Some("bad file".into()), Some("bad file".into()))
+    );
+
+    versions_db::record_shown_as_is(&mut conn, rows, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        not_made_reasons(&mut conn, attachment_id).await,
+        (None, Some("bad file".into())),
+        "only the Preview's reason goes: a Thumbnail is still made"
+    );
 }
 
 /// A damaged Preview whose original is missing cannot be converted again.

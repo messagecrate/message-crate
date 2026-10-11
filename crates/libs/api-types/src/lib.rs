@@ -687,8 +687,9 @@ api_shape! {
         /// Why the server could not make the attachment's preview the last
         /// time it tried: what ffmpeg said about the file, or a phrase of the
         /// server's when ffmpeg did not read it, such as when the original
-        /// file is missing. `null` once the preview is made, and until a try
-        /// has failed.
+        /// file is missing. `null` once the preview is made, while the
+        /// attachment has one, once the server decides the original is shown
+        /// as it is, and until a try has failed.
         pub preview_not_made_reason: Option<String>,
         /// MIME type of the attachment's thumbnail, once the server has made
         /// it; `null` until then. The thumbnail's bytes are at

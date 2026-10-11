@@ -37,7 +37,7 @@ impl Version {
     /// time the media pass tried, `NULL` once it is made.
     pub(crate) fn not_made_reason_column(self) -> &'static str {
         match self {
-            Self::Preview => "derived_not_made_reason",
+            Self::Preview => "preview_not_made_reason",
             Self::Thumbnail => "thumbnail_not_made_reason",
         }
     }
@@ -223,8 +223,9 @@ pub async fn record(
 
 /// Record on every one of `rows` whether every browser shows the original
 /// as it is (`attachments.shown_as_is`), the decision the `/v1` Attachment
-/// answers. Rows that already say so are left alone. The update runs in a
-/// write transaction of its own, as [`record`] does.
+/// answers. An original shown as it is needs no Preview, so why one could
+/// not be made is cleared with it. Rows that already say so are left alone.
+/// The update runs in a write transaction of its own, as [`record`] does.
 ///
 /// # Errors
 ///
@@ -238,14 +239,16 @@ pub async fn record_shown_as_is(
         account_id,
         original_sha,
     } = rows;
+    let reason_column = Version::Preview.not_made_reason_column();
     let mut tx = begin_write(conn).await?;
-    sqlx::query(
+    sqlx::query(&format!(
         "UPDATE attachments
-         SET shown_as_is = $1
+         SET shown_as_is = $1,
+             {reason_column} = CASE WHEN $1 THEN NULL ELSE {reason_column} END
          WHERE sha256 = $2
-           AND shown_as_is != $1
-           AND message_id IN (SELECT id FROM messages WHERE account_id = $3)",
-    )
+           AND (shown_as_is != $1 OR ($1 AND {reason_column} IS NOT NULL))
+           AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
+    ))
     .bind(shown_as_is)
     .bind(original_sha)
     .bind(account_id)
@@ -254,10 +257,13 @@ pub async fn record_shown_as_is(
     tx.commit().await
 }
 
-/// Record on every one of `rows` why their `version` could not be made,
-/// the reason the `/v1` Attachment answers. A version made later clears it
-/// ([`record`], [`share`]). The update runs in a write transaction of its
-/// own, as [`record`] does.
+/// Record on each of `rows` that names no `version` why it could not be
+/// made, the reason the `/v1` Attachment answers. A row that names one keeps
+/// it and no reason: a remake under `--force` that fails, or a concurrent
+/// pass that made it first, leaves a version that works. A version made
+/// later clears it ([`record`], [`share`]), and so does deciding the
+/// original is shown as it is ([`record_shown_as_is`]). The update runs in
+/// a write transaction of its own, as [`record`] does.
 ///
 /// # Errors
 ///
@@ -272,12 +278,14 @@ pub async fn record_not_made(
         account_id,
         original_sha,
     } = rows;
+    let [_, path_column, _] = version.columns();
     let reason_column = version.not_made_reason_column();
     let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
          SET {reason_column} = $1
          WHERE sha256 = $2
+           AND COALESCE({path_column}, '') = ''
            AND {reason_column} IS NOT $1
            AND message_id IN (SELECT id FROM messages WHERE account_id = $3)"
     ))
