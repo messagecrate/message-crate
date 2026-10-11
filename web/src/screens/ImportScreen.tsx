@@ -9,13 +9,13 @@ import {
   imessageStatsForMethod,
   isImessageMethod,
   macMessagesDbPath,
-  type PathStat,
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
 import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { importSourceById, importSourceFor } from "../lib/importSources";
 import { splitEmails } from "../lib/importSources/androidSms";
 import { serverService } from "../lib/offeredService";
+import type { ImportPathStat } from "../lib/pathChecks";
 import { usePhoneCountries } from "../lib/phoneCountries";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
@@ -73,7 +73,11 @@ const NO_IDENTIFIERS: readonly string[] = [];
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
 const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
-function mapPathStat(raw: { exists: boolean; isFile: boolean; isDirectory: boolean }): PathStat {
+function mapPathStat(raw: {
+  exists: boolean;
+  isFile: boolean;
+  isDirectory: boolean;
+}): ImportPathStat {
   return {
     exists: raw.exists,
     isFile: raw.isFile,
@@ -81,7 +85,7 @@ function mapPathStat(raw: { exists: boolean; isFile: boolean; isDirectory: boole
   };
 }
 
-async function probePath(path: string): Promise<PathStat | null> {
+async function probePath(path: string): Promise<ImportPathStat | null> {
   const trimmed = path.trim();
   if (trimmed === "") return null;
   try {
