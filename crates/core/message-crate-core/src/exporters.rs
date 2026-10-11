@@ -305,10 +305,10 @@ impl Form {
 
     /// The [`ExporterConfig`] every source builder ends in. The caller gives
     /// the source's `inputs`, `obfuscate`, `media`, and `source`, and the
-    /// Scratch Directory; the output directory and output format are read
-    /// from the form. A run started from the form has no zone for
-    /// timestamps that carry none, no sinks, and no cancel flag yet, and does
-    /// not resume; the iMazing builder sets that zone on the result.
+    /// Scratch Directory. The output directory and output format come from
+    /// the form. A run started from the form does not resume. It has no
+    /// sinks, no cancel flag, and no zone for timestamps that carry none.
+    /// The iMazing builder sets that zone on the result.
     fn exporter_config(
         &self,
         inputs: Vec<PathBuf>,
