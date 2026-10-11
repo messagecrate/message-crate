@@ -83,6 +83,25 @@ a value that broke a rule, and a line holds only outcomes (below). The slug
 says which problem it was, and the request id joins the line to the answer
 the client received.
 
+## A failed request names the step that failed
+
+A request that fails with `500 Internal Server Error` leaves one `ERROR`
+line, written where its problem document is built, with the error's whole
+chain, outermost first. Each database statement adds the step it does to
+that chain, in a few words (`read the attachments of a page of messages`),
+so the line reads as the step and then the database's own message. The
+step is a fixed phrase: it never holds a value bound into the statement.
+
+Why: the request's span already names the route, but a route that runs
+several statements gives the same database message for each, and a line
+that does not say which statement failed sends the owner to the code to
+guess. Why a fixed phrase: a bound value can be a search word or a message's
+text, which a line never holds (below).
+
+`db/conversation_messages.rs` names every statement it runs; the other `db/`
+modules do not all name theirs yet
+([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
+
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past
