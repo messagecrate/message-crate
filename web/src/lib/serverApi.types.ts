@@ -1038,10 +1038,10 @@ export interface paths {
         head?: never;
         /**
          * Move a running Import Run to another stage.
-         * @description A run moves only forward through its stages, skipping the Media Stage and
-         *     its Review when the import converts nothing, or to the stage it is
-         *     already at. Any other move is a state conflict naming both stages, and
-         *     the run is left as it was.
+         * @description A run moves to the next stage, from the Staging Review straight to
+         *     Upload (the move made when the import converts nothing), or to the stage
+         *     it is already at. Any other move is a state conflict naming both stages,
+         *     and the run is left as it was.
          *
          *     The stage is a field of the run, so moving it is a `PATCH` of the run
          *     rather than a `POST` to a `stage` sub-resource: a path segment names a

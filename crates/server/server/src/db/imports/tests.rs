@@ -447,11 +447,11 @@ fn every_stage_round_trips_through_its_string() {
     assert_eq!(ImportStage::parse("gate_1"), None);
 }
 
-/// The moves the web app sends: a review re-recorded after its write
+/// The moves the desktop app makes: a review re-recorded after its write
 /// failed is a stage to itself, a resumed Staging writes `write` again, and
 /// approving moves forward. Media is skipped when the import converts
 /// nothing.
-const WEB_APP_MOVES: [(ImportStage, ImportStage); 6] = [
+const DESKTOP_APP_MOVES: [(ImportStage, ImportStage); 6] = [
     (ImportStage::Parse, ImportStage::Write),
     (ImportStage::Write, ImportStage::StagingReview),
     (ImportStage::StagingReview, ImportStage::Media),
@@ -464,7 +464,7 @@ const WEB_APP_MOVES: [(ImportStage, ImportStage); 6] = [
 fn a_stage_moves_only_along_the_order_a_run_passes_through() {
     for from in ImportStage::ALL {
         for to in ImportStage::ALL {
-            let expected = from == to || WEB_APP_MOVES.contains(&(from, to));
+            let expected = from == to || DESKTOP_APP_MOVES.contains(&(from, to));
             assert_eq!(
                 from.may_move_to(to),
                 expected,
@@ -482,18 +482,11 @@ fn a_stage_moves_only_along_the_order_a_run_passes_through() {
 async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    let id = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
-        .await
-        .unwrap();
-    for stage in [
-        ImportStage::Write,
-        ImportStage::StagingReview,
-        ImportStage::Upload,
-    ] {
-        set_import_stage(&mut conn, ACCOUNT_ID, id, stage, None)
-            .await
-            .unwrap();
-    }
+    let args = StartImportArgs {
+        stage: ImportStage::Upload,
+        ..default_start_args(ACCOUNT_ID)
+    };
+    let id = start_import(&mut conn, &args).await.unwrap();
 
     let err = set_import_stage(&mut conn, ACCOUNT_ID, id, ImportStage::Parse, Some("{}"))
         .await
@@ -520,13 +513,13 @@ async fn a_backward_stage_move_is_refused_and_the_stage_kept() {
     assert_eq!(row.summary_json, None, "a refused move records no summary");
 }
 
-/// Every move the web app sends is accepted, each review written twice as a
+/// Every move the desktop app makes is accepted, each review written twice as a
 /// resume after a failed write does.
 #[tokio::test]
-async fn every_move_the_web_app_sends_is_accepted() {
+async fn every_move_the_desktop_app_makes_is_accepted() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
-    for (from, to) in WEB_APP_MOVES {
+    for (from, to) in DESKTOP_APP_MOVES {
         let args = StartImportArgs {
             stage: from,
             ..default_start_args(ACCOUNT_ID)

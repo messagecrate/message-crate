@@ -67,9 +67,10 @@ impl ImportStage {
     ///
     /// A stage may be written again: a resumed Staging writes `write` once
     /// more, and a Review whose first write failed is written again before
-    /// it is approved. Otherwise a run only moves forward, along
-    /// [`Self::ALL`], with the Media Stage and its Review skipped when the
-    /// import converts nothing. A run never moves back: the next visit
+    /// it is approved. Otherwise a run moves to the next stage in
+    /// [`Self::ALL`], and the Staging Review may also move straight to
+    /// Upload, the move made when the import converts nothing. A run never
+    /// skips any other stage and never moves back: the next visit
     /// resumes it at the stage the server holds, so a backward move would
     /// resume it at work it has already done (#1227).
     pub fn may_move_to(self, next: Self) -> bool {
