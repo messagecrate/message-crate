@@ -183,8 +183,8 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-11: The way the Import screen moves from one step of an import to
-  the next was reworked inside, with nothing visible (#2252).
+- 2026-10-11: The way the Import screen moves between the form, a running
+  import and its reviews was reworked inside, with nothing visible (#2252).
 
 - 2026-10-11: The way the app keeps track of the logged-in account, the
   running desktop job and the Import Run was reworked inside, with nothing

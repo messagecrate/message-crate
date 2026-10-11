@@ -5,7 +5,7 @@ import type {
 } from "../../../components/import/ImportSummaryPanel";
 import { errorText } from "../../../lib/apiErrorMessage";
 import type { UploadFinishedReport } from "../../../lib/tauri";
-import { nextPhase, STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
+import { STAGING_LABEL, UPLOAD_LABEL } from "../importProgressState";
 import {
   filesSkippedOverRun,
   issueRequests,
@@ -20,7 +20,7 @@ import { recordError } from "./desktopJob";
 import { discardRunDirectory } from "./runDirectory";
 import { recordWritesSettled, saveCarriedRecord } from "./runRecordWrites";
 import { currentPart } from "./scratch";
-import { failActiveStep, setRowByLabel, updateSteps } from "./screen";
+import { failActiveStep, movePhase, setRowByLabel, updateSteps } from "./screen";
 import { endSessionIfRefused, leaveIfRefused, SessionRefusedError } from "./serverCalls";
 
 /**
@@ -172,12 +172,7 @@ export async function finishImport(
   }
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
-  ctx.store.set((state) => ({
-    summaryView: finalSummary,
-    phase: nextPhase(state.phase, "finish"),
-    running: false,
-    runDir,
-  }));
+  movePhase(ctx, "finish", { summaryView: finalSummary, running: false, runDir });
 }
 
 /**

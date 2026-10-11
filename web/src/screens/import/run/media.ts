@@ -8,7 +8,7 @@ import {
   type TranscodeFinishedReport,
 } from "../../../lib/tauri";
 import type { AttachmentMediaMode } from "../../../lib/types";
-import { MEDIA_LABEL, nextPhase } from "../importProgressState";
+import { MEDIA_LABEL } from "../importProgressState";
 import { mediaJobVerb } from "../reviewForecast";
 import type { RunContext } from "./context";
 import { recordError, runJob, summarizeStagingWithProgress } from "./desktopJob";
@@ -18,6 +18,7 @@ import {
   failActiveStep,
   mediaDoneDetail,
   mediaVerb,
+  movePhase,
   returnToFormWithError,
   setRowByLabel,
   waitAtReview,
@@ -61,7 +62,7 @@ export async function runMediaStage(
   approvedSummary?: StagingSummary,
 ): Promise<void> {
   const { store } = ctx;
-  store.set((state) => ({ running: true, phase: nextPhase(state.phase, "media_start") }));
+  movePhase(ctx, "media_start", { running: true });
   ctx.scratch.activeStage = "media";
   setRowByLabel(ctx, MEDIA_LABEL, {
     status: "active",

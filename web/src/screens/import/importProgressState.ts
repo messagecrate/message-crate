@@ -14,7 +14,9 @@ export type ImportStep = {
  * Where the Import screen is. The three stages of a run (CONTEXT.md,
  * "Stage") all show as `running`; the two reviews are phases of their
  * own, because the run is waiting for the person rather than working.
- * Only `nextPhase` decides which phase follows which.
+ * Only `nextPhase` decides which phase follows which. The one write outside
+ * it is the run service's `reset`, which replaces the whole store with a
+ * fresh form rather than moving a run on.
  */
 export const IMPORT_PHASES = [
   "form",
@@ -34,7 +36,7 @@ export const IMPORT_PHASE_EVENTS = [
   /** The backup sent from no address of the account's: ask the person first. */
   "identity_stop",
   /** Staging starts: a new run, a continue past the identity stop, or a resumed Staging or Upload. */
-  "start",
+  "staging_start",
   /** A run waiting at a review is resumed: its directory is read again before the review shows. */
   "resume",
   /** Staging ended, or a resume read the directory: wait at the Staging Review. */
@@ -55,7 +57,7 @@ export type ImportPhaseEvent = (typeof IMPORT_PHASE_EVENTS)[number];
 /** For each event, the phases it may come in and the phase it moves to. */
 const PHASE_MOVES: Record<ImportPhaseEvent, { from: readonly ImportPhase[]; to: ImportPhase }> = {
   identity_stop: { from: ["form"], to: "identity_stop" },
-  start: { from: ["form", "identity_stop"], to: "running" },
+  staging_start: { from: ["form", "identity_stop"], to: "running" },
   resume: { from: ["form"], to: "running" },
   // Not only after Staging: a run the server has mid Media, resumed with
   // ffmpeg missing, waits here too, a phase before the stage it stopped in.
@@ -70,9 +72,13 @@ const PHASE_MOVES: Record<ImportPhaseEvent, { from: readonly ImportPhase[]; to: 
 /**
  * The phase the Import screen moves to from `phase` on `event`: the one place
  * that decides it, as `local_server.rs`'s `step` is for the desktop's server.
- * Every phase write goes through it. A move the table does not hold is a bug
- * in the write that asked for it, so it throws rather than leave the screen
- * in a phase no rule put it in.
+ * Every phase write in `run/` goes through it, by way of `movePhase`.
+ *
+ * Unlike `step`, which leaves its state alone on an event it has no rule for,
+ * a move the table does not hold throws, so the test that runs the write
+ * fails. It is a bug in that write. In the app, the action that asked for the
+ * move stops there, none of its write lands, the screen stays in the phase it
+ * was in, and the error reaches the console.
  */
 export function nextPhase(phase: ImportPhase, event: ImportPhaseEvent): ImportPhase {
   const move = PHASE_MOVES[event];

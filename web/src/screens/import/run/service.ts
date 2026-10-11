@@ -5,7 +5,6 @@ import type { ActiveImportRun } from "../../../lib/importRun";
 import { importSourceFor } from "../../../lib/importSources";
 import type { ImportJobFormValues } from "../../../lib/importSources/types";
 import { createRunCancel } from "../../../lib/runCancel";
-import { nextPhase } from "../importProgressState";
 import { CLEARED_RUN, initialImportRunState } from "../importRunStore";
 import { mediaJobVerb } from "../reviewForecast";
 import type { ImportRunDeps, RunContext } from "./context";
@@ -16,6 +15,7 @@ import { dismissRunDirDeleteFailure } from "./runDirectory";
 import { beginRun, freshScratch, loadCarriedRecord } from "./scratch";
 import {
   initialSteps,
+  movePhase,
   resumeSteps,
   returnToForm,
   returnToFormWithError,
@@ -157,7 +157,7 @@ export function createImportRunService(deps: ImportRunDeps) {
         if (accountLeft(ctx)) return;
         if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
           ctx.scratch.pendingIdentityForm = form;
-          store.set((state) => ({ phase: nextPhase(state.phase, "identity_stop") }));
+          movePhase(ctx, "identity_stop");
           return;
         }
       } finally {
@@ -304,12 +304,11 @@ export function createImportRunService(deps: ImportRunDeps) {
       partiallyRan: boolean,
     ): Promise<void> {
       const mediaDone = review === "media_review";
-      store.set((state) => ({
+      movePhase(ctx, "resume", {
         steps: resumeSteps(known.attachmentMedia, mediaDone),
         computingSummary: true,
-        phase: nextPhase(state.phase, "resume"),
         running: true,
-      }));
+      });
       try {
         const actual = await summarizeStagingWithProgress(ctx, { run_dir: outputDir });
         const recorded = adoptRecordedMode(ctx, known, actual);

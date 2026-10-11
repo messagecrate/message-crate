@@ -184,8 +184,8 @@ describe("nextPhase", () => {
   // throws, so a phase write that tries one fails the test that runs it.
   const MOVES: [ImportPhase, ImportPhaseEvent, ImportPhase][] = [
     ["form", "identity_stop", "identity_stop"],
-    ["form", "start", "running"],
-    ["identity_stop", "start", "running"],
+    ["form", "staging_start", "running"],
+    ["identity_stop", "staging_start", "running"],
     ["form", "resume", "running"],
     ["running", "stop_at_staging_review", "staging_review"],
     ["running", "stop_at_media_review", "media_review"],
