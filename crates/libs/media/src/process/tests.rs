@@ -91,7 +91,7 @@ fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
     )
     .unwrap();
 
-    assert_eq!(outcome, TranscodeOutcome::Produced);
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
     assert_eq!(
         fs::read(&dest).unwrap(),
         b"the jpeg",
@@ -145,7 +145,7 @@ fn derivative_name_matches_what_the_media_step_actually_produces() {
         transcode_file(&src, &dest, MediaMode::Convert, &CompressOptions::default()).unwrap();
     // dest is built from name, so the file-name equality below would hold
     // even if transcode_file wrote nothing. Pin down that it actually ran.
-    assert_eq!(outcome, TranscodeOutcome::Produced);
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
     assert!(
         dest.exists(),
         "derivative_name promised a name nothing wrote"
@@ -584,6 +584,131 @@ fn compress_caps_the_frame_rate_and_falls_back_to_h264() {
     }
 }
 
+/// Two large videos in `attachments/` under `dir`, and compress options that
+/// send both to the encoder.
+fn two_large_videos(dir: &Path) -> (Vec<PathBuf>, CompressOptions) {
+    let attachments = dir.join("attachments");
+    fs::create_dir_all(&attachments).unwrap();
+    let files: Vec<PathBuf> = ["one.mov", "two.mov"]
+        .iter()
+        .map(|name| {
+            let path = attachments.join(name);
+            fs::write(&path, b"an h264 video").unwrap();
+            path
+        })
+        .collect();
+    let opts = CompressOptions {
+        min_size_bytes: 0,
+        ..CompressOptions::default()
+    };
+    (files, opts)
+}
+
+/// When H.264 stands in for a failed HEVC run, the report says why HEVC
+/// failed, for its caller to log as a warning (#2256).
+#[test]
+fn compress_reports_why_hevc_failed_when_h264_stands_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .failing_on("libx265");
+
+    let (report, _) =
+        process_attachment_files_with(&tools, dir.path(), &files, MediaMode::Compress, &opts, None)
+            .unwrap();
+
+    assert_eq!(report.processed, 2, "{:?}", report.errors);
+    let line = report.hevc_fallback.line().expect("a fallback reason");
+    assert!(
+        line.contains("ffmpeg failed (fake)") && line.contains("libx265"),
+        "the line carries ffmpeg's HEVC error: {line}"
+    );
+}
+
+/// A pass where HEVC works reports no fallback.
+#[test]
+fn compress_reports_no_fallback_when_hevc_works() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new().probing(video_probe("h264", 30.0));
+
+    let (report, _) =
+        process_attachment_files_with(&tools, dir.path(), &files, MediaMode::Compress, &opts, None)
+            .unwrap();
+
+    assert_eq!(report.hevc_fallback.line(), None);
+}
+
+/// When H.264 fails after HEVC, the error names both failures, and no
+/// fallback is reported, since no video was compressed as H.264.
+#[test]
+fn compress_reports_both_errors_when_h264_fails_after_hevc() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .failing_on("libx265")
+        .failing_on("libx264");
+
+    let (report, _) = process_attachment_files_with(
+        &tools,
+        dir.path(),
+        &files[..1],
+        MediaMode::Compress,
+        &opts,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
+    let error = &report.errors[0];
+    assert!(error.contains("HEVC failed"), "{error}");
+    assert!(error.contains("libx265"), "HEVC's reason is kept: {error}");
+    assert!(error.contains("libx264"), "H.264's reason is kept: {error}");
+    assert_eq!(report.hevc_fallback.line(), None);
+}
+
+/// A run's [`HevcFallback`] hands back a warning for its first reason only,
+/// so a caller that logs what it returns logs once per run.
+#[test]
+fn hevc_fallback_returns_a_warning_for_the_first_reason_only() {
+    let mut fallback = HevcFallback::default();
+
+    assert_eq!(fallback.record(None), None, "no fallback, no warning");
+    let first = fallback.record(Some("no libx265".into()));
+    assert_eq!(
+        first.as_deref(),
+        Some("HEVC encoding failed, so videos were compressed as H.264 instead: no libx265")
+    );
+    assert_eq!(fallback.record(Some("another reason".into())), None);
+    assert_eq!(fallback.record(None), None);
+    assert_eq!(fallback.line(), first, "the first reason is kept");
+}
+
+/// [`transcode_file`] hands why HEVC failed to its caller, which logs it.
+#[test]
+fn transcode_file_returns_why_hevc_failed_when_h264_stands_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let (files, opts) = two_large_videos(dir.path());
+    let dest = dir.path().join("out.mp4");
+    let tools = FakeTools::new()
+        .probing(video_probe("h264", 30.0))
+        .failing_on("libx265");
+
+    let outcome =
+        transcode_file_with(&tools, &files[0], &dest, MediaMode::Compress, &opts).unwrap();
+
+    let TranscodeOutcome::Produced {
+        hevc_failure: Some(reason),
+    } = outcome
+    else {
+        panic!("expected a produced file with HEVC's reason, got {outcome:?}");
+    };
+    assert!(reason.contains("libx265"), "{reason}");
+    assert!(dest.exists());
+}
+
 /// Max FPS is a ceiling: it never adds frames to a slower video (#965).
 #[test]
 fn compress_keeps_a_frame_rate_under_the_maximum_and_lowers_one_over_it() {
@@ -742,7 +867,7 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
     )
     .unwrap();
 
-    assert_eq!(outcome, TranscodeOutcome::Produced);
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
     assert_eq!(fs::read(&dest).unwrap(), b"the jpeg");
     assert!(src.exists(), "the original is never touched");
     assert_eq!(
@@ -934,7 +1059,7 @@ fn compress_turns_a_png_into_a_jpeg_with_the_real_ffmpeg() {
     )
     .unwrap();
 
-    assert_eq!(outcome, TranscodeOutcome::Produced);
+    assert_eq!(outcome, TranscodeOutcome::Produced { hevc_failure: None });
     assert!(
         fs::read(&dest).unwrap().starts_with(&[0xff, 0xd8]),
         "the derivative is not a JPEG"
@@ -1227,6 +1352,7 @@ fn the_done_line_counts_one_file_and_many_files() {
         bytes_before: 2_000,
         bytes_after: 500,
         errors: vec!["a.heic: ffmpeg failed".into()],
+        ..MediaReport::default()
     };
     assert_eq!(
         done_line_with_failures(MediaMode::Convert, &one),
@@ -1239,6 +1365,7 @@ fn the_done_line_counts_one_file_and_many_files() {
         bytes_before: 2_000,
         bytes_after: 2_000,
         errors: Vec::new(),
+        ..MediaReport::default()
     };
     assert_eq!(
         done_line_with_failures(MediaMode::Compress, &many),

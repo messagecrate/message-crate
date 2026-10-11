@@ -280,6 +280,7 @@ pub fn transcode_staging(
             &options,
             &cancel,
             &issues,
+            &events::run_log_sink(&app_handle, &run_log),
             &mut |progress| {
                 events::emit(
                     &app_handle,

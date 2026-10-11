@@ -62,6 +62,7 @@ fn a_converted_attachment_is_patched_before_its_final_name_exists() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -98,6 +99,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -130,6 +132,7 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -158,6 +161,7 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -168,6 +172,7 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -197,6 +202,7 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
         &options(MediaMode::Convert, 1),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -228,6 +234,7 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     );
 
@@ -269,6 +276,7 @@ fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &sink,
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -320,6 +328,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
         &options(MediaMode::Convert, 1),
         &CancelFlag::default(),
         &sink,
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -359,6 +368,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
         &opts,
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -369,6 +379,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
         &opts,
         &CancelFlag::default(),
         &sink,
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -416,6 +427,7 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
         &opts,
         &CancelFlag::default(),
         &sink,
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -451,6 +463,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -471,6 +484,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -491,6 +505,7 @@ fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
         &options(MediaMode::Convert, u64::MAX),
         &cancel,
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     );
 
@@ -523,6 +538,7 @@ fn progress_counts_the_work_it_actually_has() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |p| seen.push((p.done, p.total)),
     )
     .unwrap();
@@ -563,6 +579,7 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -622,6 +639,7 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -684,6 +702,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
         &options(MediaMode::Compress, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -731,6 +750,7 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -766,6 +786,7 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -817,6 +838,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -865,6 +887,7 @@ fn a_write_failure_leaves_the_final_name_uncommitted_and_the_original_untouched(
         &options(MediaMode::Convert, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     );
 
@@ -962,6 +985,7 @@ fn two_documents_sharing_one_compressed_original_both_end_pointing_at_the_commit
         &options(MediaMode::Compress, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -1010,6 +1034,7 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
         &options(MediaMode::Compress, u64::MAX),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -1071,6 +1096,7 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
         &options(MediaMode::Convert, 1),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -1113,6 +1139,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
         &options(MediaMode::Convert, 1),
         &cancel,
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |progress| {
             if progress.done == 1 {
                 cancel.store(true, Ordering::Relaxed);
@@ -1131,6 +1158,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
         &options(MediaMode::Convert, 1),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();
@@ -1224,6 +1252,7 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
             &options(mode, u64::MAX),
             &CancelFlag::default(),
             &IssueSink::none(),
+            &LogSink::none(),
             &mut |_| {
                 progress_calls += 1;
             },
@@ -1314,6 +1343,7 @@ fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
         &options(MediaMode::Convert, 1),
         &CancelFlag::default(),
         &IssueSink::none(),
+        &LogSink::none(),
         &mut |_| {},
     )
     .unwrap();

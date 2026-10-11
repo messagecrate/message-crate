@@ -652,6 +652,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-11: **The Import Run's log says why videos were compressed as H.264.**
+  When ffmpeg could not compress a video as HEVC, most often because it was
+  built without the HEVC encoder, the import compressed it as H.264 instead
+  and said nothing, so videos came out larger than expected with no reason
+  given. The Import Run's log now carries ffmpeg's reason as a warning,
+  once per import, and an import the server converts says in the server's
+  log that it happened. When H.264 fails as well, what is reported for the
+  video names both failures (#2256).
+
 - 2026-10-11: **A path the desktop app may not read says what to check on
   your operating system.** The Import form, and the list of Import Run
   directories left after an account is deleted, told people on Windows and

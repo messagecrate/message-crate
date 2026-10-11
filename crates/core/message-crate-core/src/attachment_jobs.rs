@@ -357,6 +357,9 @@ fn apply_convert_or_compress(
         Some(&mut emit),
     )
     .map_err(|e| format!("{e:#}"))?;
+    if let Some(line) = report.hevc_fallback.line() {
+        log.warn(line);
+    }
     apply_remap_to_jobs(jobs, &remap, output_dir);
     for err in &report.errors {
         mark_convert_error(jobs, err);

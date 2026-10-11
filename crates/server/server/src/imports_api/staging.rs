@@ -108,6 +108,8 @@ fn try_store_converted(
     else {
         return Ok(None);
     };
+    // `stage_all_files` logs it once the import's files are staged.
+    asset_stats.hevc_fallback.record(resolved.hevc_failure);
     // Bytes may have changed; drop any claimed SHA-256 fingerprint from the export.
     att.sha256 = None;
     att.mime_type = resolved.mime_type.or(att.mime_type.take());

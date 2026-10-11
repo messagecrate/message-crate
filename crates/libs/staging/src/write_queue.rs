@@ -657,6 +657,7 @@ fn run_media_post_pass(
         &transcode_options,
         cancel,
         &IssueSink::none(),
+        log,
         &mut |p| {
             let due = progress.emit(ProgressEvent::Media {
                 done: p.done,
@@ -674,6 +675,9 @@ fn run_media_post_pass(
         bytes_before: report.bytes_before,
         bytes_after: report.bytes_after,
         errors: Vec::new(),
+        // Left empty: `transcode_staged` already sent any HEVC fallback to
+        // `log` as a warning the moment it found one.
+        ..media::MediaReport::default()
     };
     if report.failed > 0 {
         // The per-file reasons are already on the attachments themselves.
