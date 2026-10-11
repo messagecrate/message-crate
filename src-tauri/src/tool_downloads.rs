@@ -359,8 +359,8 @@ pub enum DownloadError {
     CouldNotWrite(String),
     /// The program passed its checksum and is in place, and does not run.
     DoesNotRun(Program),
-    /// The check's thread, or the client the download goes through, could
-    /// not be started, so nothing was downloaded.
+    /// The check's thread could not be started, or the client the downloads
+    /// go through could not be built, so nothing was downloaded.
     CouldNotStart(String),
     /// The check stopped partway through the download, such as on a panic
     /// in its thread, so the download never ended.

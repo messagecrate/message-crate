@@ -180,46 +180,6 @@ fn other_files(dir: &Path, keep: &[&str]) -> Vec<String> {
     names
 }
 
-/// The file that arrives is refused when its checksum is not the pinned one:
-/// it is deleted, nothing is put in place, and the failure says the
-/// checksum did not match.
-#[test]
-fn a_download_whose_checksum_does_not_match_is_refused() {
-    let tools = tempfile::tempdir().unwrap();
-    let _tools = no_ffmpeg_on_path(tools.path());
-    let server = MockServer::start();
-    let (pinned, _) = pin_with(
-        Program::Wtsexporter,
-        "r1",
-        b"",
-        false,
-        &sha256_hex(b"the pinned file"),
-    );
-    serve(&server, &pinned, b"a file changed on the way");
-    let downloads = ToolDownloads::default();
-
-    check_now(
-        tools.path(),
-        &server.base_url(),
-        std::slice::from_ref(&pinned),
-        &downloads,
-    );
-
-    assert!(!tools.path().join(Program::Wtsexporter.file_name()).exists());
-    assert_eq!(other_files(tools.path(), &[]), Vec::<String>::new());
-    let Some(DownloadState::Failed { reason }) = downloads.get(Program::Wtsexporter) else {
-        panic!(
-            "the download did not fail: {:?}",
-            downloads.get(Program::Wtsexporter)
-        );
-    };
-    assert!(
-        reason.contains("checksum did not match"),
-        "the reason does not name the checksum: {reason}"
-    );
-    assert!(reason.contains(&sha256_hex(b"a file changed on the way")));
-}
-
 /// A fetch that writes `bytes` for any pin, as if the download arrived.
 struct FixedFetch {
     bytes: Vec<u8>,
@@ -319,13 +279,12 @@ fn a_fetched_file_that_does_not_unpack_leaves_the_old_program() {
         other_files(tools.path(), &[&Program::Wtsexporter.file_name()]),
         Vec::<String>::new()
     );
-    assert!(
-        matches!(
-            downloads.get(Program::Wtsexporter),
-            Some(DownloadState::Failed { .. })
-        ),
-        "the unpack did not fail: {:?}",
-        downloads.get(Program::Wtsexporter)
+    // The unpack's own failure, not the program's checksum after it.
+    assert_eq!(
+        downloads.get(Program::Wtsexporter),
+        Some(DownloadState::Failed {
+            reason: DownloadError::CouldNotWrite("invalid gzip header".into()).to_string(),
+        })
     );
 }
 

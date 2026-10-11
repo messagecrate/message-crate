@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use super::{DownloadError, Pinned, Stamp, Written, temp_prefix};
 
 /// Gets a pinned asset.
-pub(super) trait Fetch: Send + Sync {
+pub(super) trait Fetch: Send {
     /// Write `pinned`'s asset to `into` as it arrives, telling `progress`
     /// the bytes received so far and the total when it is known.
     ///
