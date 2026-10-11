@@ -251,7 +251,7 @@ impl OwnedImportRun {
 ///
 /// # Errors
 ///
-/// Returns the error of recording the outcome ([`imports::complete_import_at`]):
+/// Returns the error of recording the outcome ([`imports::complete_import`]):
 /// a run that is not found or not running, kept apart from a database fault
 /// so the handler maps each to its status. A shortcut that cannot be made is
 /// a warning, never an error.
@@ -273,7 +273,7 @@ async fn complete_run_at(
     outcome: &CompleteImportArgs,
     now: chrono::DateTime<chrono::Utc>,
 ) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
-    let row = imports::complete_import_at(conn, account_id, import_id, outcome, now).await?;
+    let row = imports::complete_import(conn, account_id, import_id, outcome, now).await?;
     create_import_saved_search(conn, account_id, &row).await;
     create_import_contact_group(conn, account_id, &row).await;
     Ok(row)

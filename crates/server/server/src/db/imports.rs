@@ -753,31 +753,20 @@ pub async fn discard_running_import(
     Ok(Some(running))
 }
 
-/// [`complete_import_at`] now, for a test that does not care which day the
-/// run finished on.
-#[cfg(test)]
-pub async fn complete_import(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    import_id: i64,
-    args: &CompleteImportArgs,
-) -> std::result::Result<ImportRow, ImportLookupError> {
-    complete_import_at(conn, account_id, import_id, args, Utc::now()).await
-}
-
 /// Finish a running import at the instant `now`: prefer client counts, else
 /// derive from linked messages. A run that has already finished is its
 /// permanent record and is never rewritten, so completing one is
 /// [`ImportLookupError::InvalidRun`] (`409`), checked first and again by
 /// the update itself, so two completions racing cannot both land. The
-/// caller passes the instant, so a test names the day the run finished on.
+/// caller passes the instant, so a test names it rather than reading the
+/// clock.
 ///
 /// # Errors
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
 /// [`ImportLookupError::InvalidRun`] when it is no longer running,
 /// and [`ImportLookupError::Db`] when a statement fails.
-pub(crate) async fn complete_import_at(
+pub(crate) async fn complete_import(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,

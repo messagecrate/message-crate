@@ -210,20 +210,21 @@ async fn complete_run(state: &crate::server::AppState, token: &str, import_id: i
     finished_at[..10].to_string()
 }
 
-/// Complete `import_id` at noon UTC on `day`, as the route does but at an
-/// instant the test names, so its shortcuts are named after `day` at any
-/// hour the test runs.
-pub(super) async fn complete_run_on(
-    state: &crate::server::AppState,
-    import_id: i64,
-    day: chrono::NaiveDate,
-) {
+/// Complete `import_id` at [`crate::test_support::fixed_instant`], so its
+/// shortcuts are named after that day at any hour the test runs. It calls
+/// `complete_run_at` as `complete_run` does, bypassing the route and its
+/// token and ownership checks, and first moves the run's start an hour
+/// before that instant so the run still starts before it finishes.
+pub(super) async fn complete_run_at_fixed_instant(state: &crate::server::AppState, import_id: i64) {
+    let finished = crate::test_support::fixed_instant();
     let mut conn = state.db.acquire().await.unwrap();
-    let account: i64 = sqlx::query_scalar("SELECT account_id FROM imports WHERE id = $1")
-        .bind(import_id)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let account: i64 =
+        sqlx::query_scalar("UPDATE imports SET started_at = $1 WHERE id = $2 RETURNING account_id")
+            .bind((finished - chrono::Duration::hours(1)).to_rfc3339())
+            .bind(import_id)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
     super::complete_run_at(
         &mut conn,
         account,
@@ -232,7 +233,7 @@ pub(super) async fn complete_run_on(
             status: "completed".into(),
             ..Default::default()
         },
-        day.and_hms_opt(12, 0, 0).unwrap().and_utc(),
+        finished,
     )
     .await
     .unwrap();
@@ -272,16 +273,15 @@ pub(super) async fn completed_run(
 }
 
 /// Create an Import Run for `source`, post `body` as its one batch, complete
-/// it on `day`, and hand back the run's id.
-pub(super) async fn completed_run_on(
+/// it with [`complete_run_at_fixed_instant`], and hand back the run's id.
+pub(super) async fn completed_run_at_fixed_instant(
     state: &crate::server::AppState,
     token: &str,
     source: &str,
     body: String,
-    day: chrono::NaiveDate,
 ) -> i64 {
     let import_id = posted_run(state, token, source, body).await;
-    complete_run_on(state, import_id, day).await;
+    complete_run_at_fixed_instant(state, import_id).await;
     import_id
 }
 
