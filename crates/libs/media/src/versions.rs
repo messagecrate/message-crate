@@ -30,7 +30,7 @@ const PREVIEW_VIDEO_LONG_EDGE: u32 = 1920;
 /// and WebP images, and MP3 audio, each with the test its file's first
 /// [`HEAD_LEN`] bytes must pass to be one. MP4 is one too, but only with
 /// H.264 video, which only the file can tell ([`browser_shows`]).
-const SHOWN_AS_IS: &[(&str, fn(&[u8]) -> bool)] = &[
+const SHOWN_AS_IS: &[(&str, StartsAs)] = &[
     ("image/jpeg", |head| head.starts_with(&[0xFF, 0xD8, 0xFF])),
     ("image/png", |head| head.starts_with(b"\x89PNG\r\n\x1A\n")),
     ("image/gif", |head| head.starts_with(b"GIF8")),
@@ -39,6 +39,9 @@ const SHOWN_AS_IS: &[(&str, fn(&[u8]) -> bool)] = &[
     }),
     ("audio/mpeg", is_mp3),
 ];
+
+/// Whether the first bytes of a file are those of one media type.
+type StartsAs = fn(&[u8]) -> bool;
 
 /// How many bytes from the start of a file [`SHOWN_AS_IS`] reads.
 const HEAD_LEN: u64 = 12;
