@@ -288,7 +288,7 @@ pub async fn run(
         None => list_account_ids(&mut *opened.conn().await?, &cfg.paths.data_dir).await?,
     };
     if account_ids.is_empty() {
-        bail!("no accounts found — create an account or run reset-demo first");
+        bail!("no accounts found: create an account or run reset-demo first");
     }
 
     let work = work_dir(&cfg.paths.data_dir)?;
