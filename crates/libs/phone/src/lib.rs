@@ -4,6 +4,10 @@
 //! by the server, by the contacts book, and by [`OwnerHandleSet`].
 //! [`Handle::parse`] is where an exporter classifies an address before it
 //! keys it: a phone number, an email address, or a sender name.
+//! [`IdentityType`] is the type of an identity: phone, email, username, or
+//! other. It is defined
+//! here, and `message-ir` re-exports it for the conversation file, so this
+//! crate does not depend on the conversation model.
 //!
 //! A number carries its country only when that is certain: written with its
 //! `+` code, or written without it in a country a person or the source
@@ -17,11 +21,47 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use anyhow::{Context, Result, bail};
-use message_ir::IdentityType;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 pub use countries::{COUNTRIES, Country, country};
+
+/// Kind of a participant identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentityType {
+    /// Telephone number.
+    Phone,
+    /// Email address.
+    Email,
+    /// App username (e.g. Telegram `@user`).
+    Username,
+    /// Any identity that is not phone, email, or username.
+    Other,
+}
+
+impl IdentityType {
+    /// Lowercase storage id (`phone` / `email` / `username` / `other`).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Phone => "phone",
+            Self::Email => "email",
+            Self::Username => "username",
+            Self::Other => "other",
+        }
+    }
+
+    /// Parse a storage id; unknown values map to `Other`.
+    pub fn parse(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "phone" => Self::Phone,
+            "email" => Self::Email,
+            "username" => Self::Username,
+            _ => Self::Other,
+        }
+    }
+}
 
 /// Minimum digit length after stripping formatting.
 ///

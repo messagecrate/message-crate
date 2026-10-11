@@ -170,6 +170,21 @@ describe("apiClient request shape", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("refuses a redirect on every kind of call, so the Session's header never follows one", async () => {
+    const fetchSpy = stubOkFetch();
+    setToken("mc-user-abc123");
+
+    await apiClient.get("/v1/conversations");
+    await apiClient.postRaw("/v1/imports/1/conversations", "{}", "application/x-ndjson");
+    await apiClient.postText("/v1/contacts/address-book", { ids: [4] });
+
+    const calls = fetchSpy.mock.calls as [string, RequestInit][];
+    expect(calls).toHaveLength(3);
+    for (const [, init] of calls) {
+      expect(init.redirect).toBe("error");
+    }
+  });
+
   it("puts the path after the base URL", async () => {
     const fetchSpy = stubOkFetch();
     setBaseUrl("https://server.example.test");
