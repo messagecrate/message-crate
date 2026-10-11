@@ -282,6 +282,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-10: **A screen the server refuses shows its error at once.**
+  When the server refused to show something, because it was not found, not
+  allowed, or asked too often, the website and the desktop app asked a second
+  time before showing the error, which held the error back a second or more
+  and, when the server had said it was being asked too often, asked once
+  more. They now show the error after the first answer, and ask again only
+  when the server could not be reached or failed on its own side (#2169).
 - 2026-10-10: **The website and the desktop app no longer follow a
   redirect with your Session.** If a misconfigured proxy in front of the
   server answered with a redirect to another address, the website or the
@@ -688,6 +695,14 @@ released versions carry their date on the heading.
   server asked for the attachment again and said nothing about why. The
   attachment is still sent again, and the server's log now names the file
   it could not read and the error (#2171).
+- 2026-10-10: **The server's log and the desktop app's Import Run logs no
+  longer act on a terminal that shows them.** A file name in a backup or a
+  tool's output can carry a terminal control character, such as the escape
+  that clears the screen. Both logs wrote it as it was, so opening the file
+  with `cat`, `less -r` or `tail` could clear the screen or rewrite what it
+  showed. Both now write each control character escaped, such as `\x1b`,
+  and the **Logs** panel and a run's row in Settings → Storage show it the
+  same way (#2275).
 - 2026-10-10: **A caching proxy no longer keeps a photo or video after its
   link has run out.** When a page shows an attachment, the server hands it a
   link that works for an hour, or until you log out. A caching proxy in front
