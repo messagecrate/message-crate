@@ -72,14 +72,15 @@ export interface StagingDirectorySetting {
   defaultRoot: string;
 }
 
-/** The Staging Directory the desktop process keeps. */
+/** The Staging Directory the desktop process keeps, and its default. */
 export async function invokeStagingDirectory(): Promise<StagingDirectorySetting> {
   return invoke("staging_root");
 }
 
 /**
- * Store the Staging Directory. An empty string goes back to the default.
- * Directories made under the earlier setting keep working.
+ * Store the Staging Directory, and return it with its default. An empty
+ * string goes back to the default. Directories made under the earlier
+ * setting keep working.
  */
 export async function invokeSetStagingDirectory(root: string): Promise<StagingDirectorySetting> {
   return invoke("set_staging_root", { root });
