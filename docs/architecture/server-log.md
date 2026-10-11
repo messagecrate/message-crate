@@ -99,7 +99,8 @@ guess. Why a fixed phrase: a bound value can be a search word or a message's
 text, which a line never holds (below).
 
 `db/conversation_messages.rs` names every statement it runs; the other `db/`
-modules do not all name theirs yet.
+modules do not all name theirs yet
+([#2667](https://github.com/messagecrate/message-crate/issues/2667)).
 
 ## Trimmed by size only: 5 files of 50 MB
 
