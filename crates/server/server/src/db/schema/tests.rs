@@ -551,6 +551,26 @@ async fn other_fingerprint_rebuilds_to_current() {
     assert_eq!(accounts, 0, "the rebuild drops data");
 }
 
+/// `VACUUM` lists a full-text search table's shadow tables before the table
+/// itself, and defensive mode refuses to drop a shadow table on its own. The
+/// rebuild still runs on a database that has been through `VACUUM`, as one
+/// `reset-demo` built has (#2249).
+#[tokio::test]
+async fn a_vacuumed_database_rebuilds_to_current() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("VACUUM").execute(&mut *conn).await.unwrap();
+    stamp_user_version(&mut conn, SCHEMA_FINGERPRINT ^ 1)
+        .await
+        .unwrap();
+    ensure_schema(&mut conn).await.unwrap();
+    let version: i64 = sqlx::query_scalar("PRAGMA user_version")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(version, SCHEMA_FINGERPRINT);
+}
+
 #[tokio::test]
 async fn one_running_import_per_account() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
